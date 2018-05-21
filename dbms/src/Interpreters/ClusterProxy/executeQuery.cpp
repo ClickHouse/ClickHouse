@@ -23,39 +23,37 @@ BlockInputStreams executeQuery(
     const std::string query = queryToString(query_ast);
 
     Settings new_settings = settings;
-    new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.limits.max_execution_time);
+    new_settings.queue_max_wait_ms = Cluster::saturate(new_settings.queue_max_wait_ms, settings.max_execution_time);
 
     /// Does not matter on remote servers, because queries are sent under different user.
     new_settings.max_concurrent_queries_for_user = 0;
-    new_settings.limits.max_memory_usage_for_user = 0;
+    new_settings.max_memory_usage_for_user = 0;
     /// This setting is really not for user and should not be sent to remote server.
-    new_settings.limits.max_memory_usage_for_all_queries = 0;
+    new_settings.max_memory_usage_for_all_queries = 0;
 
     /// Set as unchanged to avoid sending to remote server.
     new_settings.max_concurrent_queries_for_user.changed = false;
-    new_settings.limits.max_memory_usage_for_user.changed = false;
-    new_settings.limits.max_memory_usage_for_all_queries.changed = false;
+    new_settings.max_memory_usage_for_user.changed = false;
+    new_settings.max_memory_usage_for_all_queries.changed = false;
 
     Context new_context(context);
     new_context.setSettings(new_settings);
 
     ThrottlerPtr user_level_throttler;
-    if (settings.limits.max_network_bandwidth_for_user)
-        if (auto process_list_element = context.getProcessListElement())
-            if (auto user_process_list = process_list_element->user_process_list)
-                user_level_throttler = user_process_list->user_throttler;
+    if (auto process_list_element = context.getProcessListElement())
+        user_level_throttler = process_list_element->getUserNetworkThrottler();
 
     /// Network bandwidth limit, if needed.
     ThrottlerPtr throttler;
-    if (settings.limits.max_network_bandwidth || settings.limits.max_network_bytes)
+    if (settings.max_network_bandwidth || settings.max_network_bytes)
     {
         throttler = std::make_shared<Throttler>(
-                settings.limits.max_network_bandwidth,
-                settings.limits.max_network_bytes,
+                settings.max_network_bandwidth,
+                settings.max_network_bytes,
                 "Limit for bytes to send or receive over network exceeded.",
                 user_level_throttler);
     }
-    else if (settings.limits.max_network_bandwidth_for_user)
+    else
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())

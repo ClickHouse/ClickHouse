@@ -13,10 +13,10 @@ namespace DB
 StorageSystemBuildOptions::StorageSystemBuildOptions(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         { "name", std::make_shared<DataTypeString>() },
         { "value", std::make_shared<DataTypeString>() },
-    };
+    }));
 }
 
 

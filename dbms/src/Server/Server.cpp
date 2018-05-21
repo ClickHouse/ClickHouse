@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <errno.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -10,6 +11,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,19 +26,20 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DNSCacheUpdater.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Storages/registerStorages.h>
-#include "ConfigReloader.h"
+#include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
 #include "StatusFile.h"
 #include "TCPHandlerFactory.h"
 
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -64,7 +67,7 @@ static std::string getCanonicalPath(std::string && path)
         throw Exception("path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
-    return path;
+    return std::move(path);
 }
 
 void Server::uninitialize()
@@ -102,12 +105,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setGlobalContext(*global_context);
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
-    bool has_zookeeper = false;
-    if (config().has("zookeeper"))
-    {
-        global_context->setZooKeeper(std::make_shared<zkutil::ZooKeeper>(config(), "zookeeper"));
-        has_zookeeper = true;
-    }
+    bool has_zookeeper = config().has("zookeeper");
 
     zkutil::ZooKeeperNodeCache main_config_zk_node_cache([&] { return global_context->getZooKeeper(); });
     if (loaded_config.has_zk_includes)
@@ -174,7 +172,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone `" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of hard queries.
+    /// Directory with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         global_context->setTemporaryPath(tmp_path);
@@ -196,8 +194,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
-    Poco::File(path + "flags/").createDirectories();
-    global_context->setFlagsPath(path + "flags/");
+    {
+        Poco::File(path + "flags/").createDirectories();
+        global_context->setFlagsPath(path + "flags/");
+    }
+
+    /** Directory with user provided files that are usable by 'file' table function.
+      */
+    {
+
+        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
+        global_context->setUserFilesPath(user_files_path);
+        Poco::File(user_files_path).createDirectories();
+    }
 
     if (config().has("interserver_http_port"))
     {
@@ -221,14 +230,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
     if (config().has("macros"))
-        global_context->setMacros(Macros(config(), "macros"));
+        global_context->setMacros(std::make_unique<Macros>(config(), "macros"));
 
     /// Initialize main config reloader.
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
     auto main_config_reloader = std::make_unique<ConfigReloader>(config_path,
         include_from_path,
         std::move(main_config_zk_node_cache),
-        [&](ConfigurationPtr config) { global_context->setClustersConfig(config); },
+        [&](ConfigurationPtr config)
+        {
+            buildLoggers(*config);
+            global_context->setClustersConfig(config);
+            global_context->setMacros(std::make_unique<Macros>(*config, "macros"));
+        },
         /* already_loaded = */ true);
 
     /// Initialize users config reloader.
@@ -246,6 +260,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
         zkutil::ZooKeeperNodeCache([&] { return global_context->getZooKeeper(); }),
         [&](ConfigurationPtr config) { global_context->setUsersConfig(config); },
         /* already_loaded = */ false);
+
+    /// Reload config in SYSTEM RELOAD CONFIG query.
+    global_context->setConfigReloadCallback([&]()
+    {
+        main_config_reloader->reload();
+        users_config_reloader->reload();
+    });
 
     /// Limit on total number of concurrently executed queries.
     global_context->getProcessList().setMaxSize(config().getInt("max_concurrent_queries", 0));
@@ -275,6 +296,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Loading metadata.");
     loadMetadataSystem(*global_context);
+    /// After attaching system databases we can initialize system log.
+    global_context->initializeSystemLogs();
     /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
     attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
     /// Then, load remaining databases
@@ -301,6 +324,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
     }
 
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+    }
+    else
+    {
+        /// Initialize a watcher updating DNS cache in case of network errors
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+    }
+
     {
         Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
@@ -313,7 +348,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         std::vector<std::string> listen_hosts = DB::getMultipleValuesFromConfig(config(), "", "listen_host");
 
-        bool listen_try = config().getUInt("listen_try", false);
+        bool listen_try = config().getBool("listen_try", false);
         if (listen_hosts.empty())
         {
             listen_hosts.emplace_back("::1");
@@ -330,14 +365,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
             }
             catch (const Poco::Net::DNSException & e)
             {
-                if (e.code() == EAI_FAMILY
+                const auto code = e.code();
+                if (code == EAI_FAMILY
 #if defined(EAI_ADDRFAMILY)
-                    || e.code() == EAI_ADDRFAMILY
+                    || code == EAI_ADDRFAMILY
 #endif
                     )
                 {
                     LOG_ERROR(log,
-                        "Cannot resolve listen_host (" << host << "), error: " << e.message() << ". "
+                        "Cannot resolve listen_host (" << host << "), error " << e.code() << ": " << e.message() << ". "
                         "If it is an IPv6 address and your host has disabled IPv6, then consider to "
                         "specify IPv4 address to listen in <listen_host> element of configuration "
                         "file. Example: <listen_host>0.0.0.0</listen_host>");
@@ -348,6 +384,27 @@ int Server::main(const std::vector<std::string> & /*args*/)
             return socket_address;
         };
 
+        auto socket_bind_listen = [&](auto & socket, const std::string & host, UInt16 port, bool secure = 0)
+        {
+               auto address = make_socket_address(host, port);
+#if !POCO_CLICKHOUSE_PATCH || POCO_VERSION <= 0x02000000 // TODO: fill correct version
+               if (secure)
+                   /// Bug in old poco, listen() after bind() with reusePort param will fail because have no implementation in SecureServerSocketImpl
+                   /// https://github.com/pocoproject/poco/pull/2257
+                   socket.bind(address, /* reuseAddress = */ true);
+               else
+#endif
+#if POCO_VERSION < 0x01080000
+                   socket.bind(address, /* reuseAddress = */ true);
+#else
+                   socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config().getBool("listen_reuse_port", false));
+#endif
+
+               socket.listen(/* backlog = */ config().getUInt("listen_backlog", 64));
+
+               return address;
+        };
+
         for (const auto & listen_host : listen_hosts)
         {
             /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
@@ -356,37 +413,36 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// HTTP
                 if (config().has("http_port"))
                 {
-                    Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("http_port"));
-                    Poco::Net::ServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
-                    http_socket.setSendTimeout(settings.http_send_timeout);
-
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("http_port"));
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
                         server_pool,
-                        http_socket,
+                        socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening http://" + http_socket_address.toString());
+                    LOG_INFO(log, "Listening http://" + address.toString());
                 }
 
                 /// HTTPS
                 if (config().has("https_port"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     std::call_once(ssl_init_once, SSLInit);
-                    Poco::Net::SocketAddress http_socket_address = make_socket_address(listen_host, config().getInt("https_port"));
-                    Poco::Net::SecureServerSocket http_socket(http_socket_address);
-                    http_socket.setReceiveTimeout(settings.http_receive_timeout);
-                    http_socket.setSendTimeout(settings.http_send_timeout);
 
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
-                        new HTTPHandlerFactory(*this, "HTTPHandler-factory"),
+                        new HTTPHandlerFactory(*this, "HTTPSHandler-factory"),
                         server_pool,
-                        http_socket,
+                        socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening https://" + http_socket_address.toString());
+                    LOG_INFO(log, "Listening https://" + address.toString());
 #else
                     throw Exception{"HTTPS protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -397,33 +453,33 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port"))
                 {
                     std::call_once(ssl_init_once, SSLInit);
-                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_port"));
-                    Poco::Net::ServerSocket tcp_socket(tcp_address);
-                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
-                    tcp_socket.setSendTimeout(settings.send_timeout);
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
+                    socket.setReceiveTimeout(settings.receive_timeout);
+                    socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
                         new TCPHandlerFactory(*this),
                         server_pool,
-                        tcp_socket,
+                        socket,
                         new Poco::Net::TCPServerParams));
 
-                    LOG_INFO(log, "Listening tcp: " + tcp_address.toString());
+                    LOG_INFO(log, "Listening tcp: " + address.toString());
                 }
 
                 /// TCP with SSL
-                if (config().has("tcp_ssl_port"))
+                if (config().has("tcp_port_secure"))
                 {
-#if Poco_NetSSL_FOUND
-                    Poco::Net::SocketAddress tcp_address = make_socket_address(listen_host, config().getInt("tcp_ssl_port"));
-                    Poco::Net::SecureServerSocket tcp_socket(tcp_address);
-                    tcp_socket.setReceiveTimeout(settings.receive_timeout);
-                    tcp_socket.setSendTimeout(settings.send_timeout);
+#if USE_POCO_NETSSL
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
+                    socket.setReceiveTimeout(settings.receive_timeout);
+                    socket.setSendTimeout(settings.send_timeout);
                     servers.emplace_back(new Poco::Net::TCPServer(
-                        new TCPHandlerFactory(*this),
+                        new TCPHandlerFactory(*this, /* secure= */ true ),
                                                                   server_pool,
-                                                                  tcp_socket,
+                                                                  socket,
                                                                   new Poco::Net::TCPServerParams));
-                    LOG_INFO(log, "Listening tcp_ssl: " + tcp_address.toString());
+                    LOG_INFO(log, "Listening tcp_secure: " + address.toString());
 #else
                     throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
@@ -437,23 +493,23 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// Interserver IO HTTP
                 if (config().has("interserver_http_port"))
                 {
-                    Poco::Net::SocketAddress interserver_address = make_socket_address(listen_host, config().getInt("interserver_http_port"));
-                    Poco::Net::ServerSocket interserver_io_http_socket(interserver_address);
-                    interserver_io_http_socket.setReceiveTimeout(settings.http_receive_timeout);
-                    interserver_io_http_socket.setSendTimeout(settings.http_send_timeout);
+                    Poco::Net::ServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_http_port"));
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
                     servers.emplace_back(new Poco::Net::HTTPServer(
                         new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                         server_pool,
-                        interserver_io_http_socket,
+                        socket,
                         http_params));
 
-                    LOG_INFO(log, "Listening interserver: " + interserver_address.toString());
+                    LOG_INFO(log, "Listening interserver http: " + address.toString());
                 }
             }
             catch (const Poco::Net::NetException & e)
             {
-                if (listen_try && (e.code() == POCO_EPROTONOSUPPORT || e.code() == POCO_EADDRNOTAVAIL))
-                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.what() << ": " << e.message()
+                if (listen_try)
+                    LOG_ERROR(log, "Listen [" << listen_host << "]: " << e.code() << ": " << e.what() << ": " << e.message()
                         << "  If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, then consider to "
                         "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                         "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
@@ -468,6 +524,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+
+        main_config_reloader->start();
+        users_config_reloader->start();
 
         {
             std::stringstream message;

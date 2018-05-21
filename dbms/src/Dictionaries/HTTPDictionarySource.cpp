@@ -20,8 +20,10 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     Block & sample_block, const Context & context)
     : log(&Logger::get("HTTPDictionarySource")),
+    update_time{std::chrono::system_clock::from_time_t(0)},
     dict_struct{dict_struct_},
     url{config.getString(config_prefix + ".url", "")},
+    update_field{config.getString(config_prefix + ".update_field", "")},
     format{config.getString(config_prefix + ".format")},
     sample_block{sample_block},
     context(context),
@@ -31,8 +33,10 @@ HTTPDictionarySource::HTTPDictionarySource(const DictionaryStructure & dict_stru
 
 HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
     : log(&Logger::get("HTTPDictionarySource")),
+    update_time{other.update_time},
     dict_struct{other.dict_struct},
     url{other.url},
+    update_field{other.update_field},
     format{other.format},
     sample_block{other.sample_block},
     context(other.context),
@@ -40,10 +44,42 @@ HTTPDictionarySource::HTTPDictionarySource(const HTTPDictionarySource & other)
 {
 }
 
+void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
+{
+    if (update_time != std::chrono::system_clock::from_time_t(0))
+    {
+        auto tmp_time = update_time;
+        update_time = std::chrono::system_clock::now();
+        time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
+        char buffer [80];
+        struct tm * timeinfo;
+        timeinfo = localtime (&hr_time);
+        strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", timeinfo);
+        std::string str_time(buffer);
+        uri.addQueryParameter(update_field, str_time);
+    }
+    else
+    {
+        update_time = std::chrono::system_clock::now();
+        uri.addQueryParameter(update_field, "0000-00-00 00:00:00");
+    }
+}
+
 BlockInputStreamPtr HTTPDictionarySource::loadAll()
 {
     LOG_TRACE(log, "loadAll " + toString());
     Poco::URI uri(url);
+    auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET,
+                                                            ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts);
+    auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
+    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(in_ptr));
+}
+
+BlockInputStreamPtr HTTPDictionarySource::loadUpdatedAll()
+{
+    Poco::URI uri(url);
+    getUpdateFieldAndDate(uri);
+    LOG_TRACE(log, "loadUpdatedAll " + uri.toString());
     auto in_ptr = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET,
                                                             ReadWriteBufferFromHTTP::OutStreamCallback(), timeouts);
     auto input_stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
@@ -95,6 +131,11 @@ bool HTTPDictionarySource::isModified() const
 bool HTTPDictionarySource::supportsSelectiveLoad() const
 {
     return true;
+}
+
+bool HTTPDictionarySource::hasUpdateField() const
+{
+    return !update_field.empty();
 }
 
 DictionarySourcePtr HTTPDictionarySource::clone() const

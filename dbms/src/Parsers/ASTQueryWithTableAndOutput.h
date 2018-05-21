@@ -15,9 +15,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
-
-    ASTQueryWithTableAndOutput() = default;
-    explicit ASTQueryWithTableAndOutput(const StringRange range_) : ASTQueryWithOutput(range_) {}
+    bool temporary{false};
 
 protected:
     void formatHelper(const FormatSettings & settings, const char * name) const
@@ -32,10 +30,6 @@ template <typename AstIDAndQueryNames>
 class ASTQueryWithTableAndOutputImpl : public ASTQueryWithTableAndOutput
 {
 public:
-    ASTQueryWithTableAndOutputImpl() = default;
-
-    explicit ASTQueryWithTableAndOutputImpl(const StringRange range_) : ASTQueryWithTableAndOutput(range_) {}
-
     String getID() const override { return AstIDAndQueryNames::ID + ("_" + database) + "_" + table; };
 
     ASTPtr clone() const override

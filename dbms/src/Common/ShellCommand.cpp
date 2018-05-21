@@ -1,13 +1,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <dlfcn.h>
-
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
+#include <port/unistd.h>
 
 
 namespace DB

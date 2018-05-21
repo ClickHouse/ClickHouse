@@ -24,6 +24,8 @@ public:
         SYNC_REPLICA,
         RELOAD_DICTIONARY,
         RELOAD_DICTIONARIES,
+        RELOAD_EMBEDDED_DICTIONARIES,
+        RELOAD_CONFIG,
         STOP_MERGES,
         START_MERGES,
         STOP_REPLICATION_QUEUES,
@@ -38,9 +40,6 @@ public:
     String target_dictionary;
     //String target_replica_database;
     //String target_replica_table;
-
-    ASTSystemQuery() = default;
-    explicit ASTSystemQuery(const StringRange range) : IAST(range) {}
 
     String getID() const override { return "SYSTEM query"; };
 

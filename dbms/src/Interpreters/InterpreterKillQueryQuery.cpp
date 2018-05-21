@@ -75,7 +75,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 
     const ColumnString & query_id_col = typeid_cast<const ColumnString &>(*processes_block.getByName("query_id").column);
     const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
-    const ClientInfo & my_client = context.getProcessListElement()->client_info;
+    const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
 
     for (size_t i = 0; i < num_processes; ++i)
     {
@@ -85,7 +85,7 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
         if (my_client.current_query_id == query_id && my_client.current_user == user)
             continue;
 
-        if (context.getSettingsRef().limits.readonly && my_client.current_user != user)
+        if (context.getSettingsRef().readonly && my_client.current_user != user)
         {
             throw Exception("Readonly user " + my_client.current_user + " attempts to kill query created by " + user,
                     ErrorCodes::READONLY);
@@ -102,7 +102,6 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
 class SyncKillQueryInputStream : public IProfilingBlockInputStream
 {
 public:
-
     SyncKillQueryInputStream(ProcessList & process_list_, QueryDescriptors && processes_to_stop_, Block && processes_block_,
                              const Block & res_sample_block_)
         : process_list(process_list_),
@@ -110,7 +109,7 @@ public:
         processes_block(std::move(processes_block_)),
         res_sample_block(res_sample_block_)
     {
-        total_rows_approx = processes_to_stop.size();
+        addTotalRowsApprox(processes_to_stop.size());
     }
 
     String getName() const override
@@ -136,7 +135,7 @@ public:
                 if (curr_process.processed)
                     continue;
 
-                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user);
+                auto code = process_list.sendCancelToQuery(curr_process.query_id, curr_process.user, true);
 
                 if (code != CancellationCode::QueryIsNotInitializedYet && code != CancellationCode::CancelSent)
                 {
@@ -148,8 +147,7 @@ public:
             }
 
             /// KILL QUERY could be killed also
-            /// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
-            if (is_cancelled)
+            if (isCancelled())
                 break;
 
             /// Sleep if there are unprocessed queries
@@ -191,7 +189,7 @@ BlockIO InterpreterKillQueryQuery::execute()
 
         for (const auto & query_desc : queries_to_stop)
         {
-            auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user);
+            auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
             insertResultRow(query_desc.source_num, code, processes_block, header, res_columns);
         }
 

@@ -5,81 +5,13 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
 
 
-class SipHash;
-
-
 namespace DB
 {
-
-
-/// Checksum of one file.
-struct MergeTreeDataPartChecksum
-{
-    using uint128 = CityHash_v1_0_2::uint128;
-
-    size_t file_size {};
-    uint128 file_hash {};
-
-    bool is_compressed = false;
-    size_t uncompressed_size {};
-    uint128 uncompressed_hash {};
-
-    MergeTreeDataPartChecksum() {}
-    MergeTreeDataPartChecksum(size_t file_size_, uint128 file_hash_) : file_size(file_size_), file_hash(file_hash_) {}
-    MergeTreeDataPartChecksum(size_t file_size_, uint128 file_hash_, size_t uncompressed_size_, uint128 uncompressed_hash_)
-        : file_size(file_size_), file_hash(file_hash_), is_compressed(true),
-        uncompressed_size(uncompressed_size_), uncompressed_hash(uncompressed_hash_) {}
-
-    void checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const;
-    void checkSize(const String & path) const;
-};
-
-
-/** Checksums of all non-temporary files.
-  * For compressed files, the check sum and the size of the decompressed data are stored to not depend on the compression method.
-  */
-struct MergeTreeDataPartChecksums
-{
-    using Checksum = MergeTreeDataPartChecksum;
-
-    /// The order is important.
-    using FileChecksums = std::map<String, Checksum>;
-    FileChecksums files;
-
-    void addFile(const String & file_name, size_t file_size, Checksum::uint128 file_hash);
-
-    void add(MergeTreeDataPartChecksums && rhs_checksums);
-
-    /// Checks that the set of columns and their checksums are the same. If not, throws an exception.
-    /// If have_uncompressed, for compressed files it compares the checksums of the decompressed data. Otherwise, it compares only the checksums of the files.
-    void checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const;
-
-    /// Checks that the directory contains all the needed files of the correct size. Does not check the checksum.
-    void checkSizes(const String & path) const;
-
-    /// Serializes and deserializes in human readable form.
-    bool read(ReadBuffer & in); /// Returns false if the checksum is too old.
-    bool read_v2(ReadBuffer & in);
-    bool read_v3(ReadBuffer & in);
-    bool read_v4(ReadBuffer & in);
-    void write(WriteBuffer & out) const;
-
-    bool empty() const
-    {
-        return files.empty();
-    }
-
-    /// Checksum from the set of checksums of .bin files.
-    void summaryDataChecksum(SipHash & hash) const;
-
-    String toString() const;
-    static MergeTreeDataPartChecksums parse(const String & s);
-};
-
 
 class MergeTreeData;
 
@@ -97,21 +29,30 @@ struct MergeTreeDataPart
 
     MergeTreeDataPart(MergeTreeData & storage_, const String & name_);
 
-    const Checksum * tryGetChecksum(const String & name, const String & ext) const;
-    /// Returns checksum of column's binary file.
-    const Checksum * tryGetBinChecksum(const String & name) const;
-    /// Returns checksum of column's mrk file.
-    const Checksum * tryGetMrkChecksum(const String & name) const;
-
-    /// Returns the size of .bin file for column `name` if found, zero otherwise
-    size_t getColumnCompressedSize(const String & name) const;
-    size_t getColumnUncompressedSize(const String & name) const;
-    /// Returns the size of .mrk file for column `name` if found, zero otherwise
-    size_t getColumnMrkSize(const String & name) const;
-
     /// Returns the name of a column with minimum compressed size (as returned by getColumnSize()).
     /// If no checksums are present returns the name of the first physically existing column.
     String getColumnNameWithMinumumCompressedSize() const;
+
+    struct ColumnSize
+    {
+        size_t marks = 0;
+        size_t data_compressed = 0;
+        size_t data_uncompressed = 0;
+
+        void add(const ColumnSize & other)
+        {
+            marks += other.marks;
+            data_compressed += other.data_compressed;
+            data_uncompressed += other.data_uncompressed;
+        }
+    };
+
+    /// NOTE: Returns zeros if column files are not found in checksums.
+    /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
+    ///   (either by locking columns_lock, or by locking table structure).
+    ColumnSize getColumnSize(const String & name, const IDataType & type) const;
+
+    ColumnSize getTotalColumnsSize() const;
 
     /// Returns full path to part dir
     String getFullPath() const;
@@ -136,10 +77,11 @@ struct MergeTreeDataPart
 
     size_t rows_count = 0;
     size_t marks_count = 0;
-    std::atomic<size_t> size_in_bytes {0};  /// size in bytes, 0 - if not counted;
-                                            ///  is used from several threads without locks (it is changed with ALTER).
+    std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
+                                            /// Is used from several threads without locks (it is changed with ALTER).
     time_t modification_time = 0;
-    mutable time_t remove_time = std::numeric_limits<time_t>::max(); /// When the part is removed from the working set.
+    /// When the part is removed from the working set. Changes once.
+    mutable std::atomic<time_t> remove_time { std::numeric_limits<time_t>::max() };
 
     /// If true, the destructor will delete the directory with the part.
     bool is_temp = false;
@@ -255,7 +197,7 @@ struct MergeTreeDataPart
     /// Columns description.
     NamesAndTypesList columns;
 
-    using ColumnToSize = std::map<std::string, size_t>;
+    using ColumnToSize = std::map<std::string, UInt64>;
 
     /** It is blocked for writing when changing columns, checksums or any part files.
         * Locked to read when reading columns, checksums or any part files.
@@ -275,7 +217,7 @@ struct MergeTreeDataPart
     ~MergeTreeDataPart();
 
     /// Calculate the total size of the entire directory with all the files
-    static size_t calculateTotalSize(const String & from);
+    static UInt64 calculateTotalSizeOnDisk(const String & from);
 
     void remove() const;
 
@@ -297,10 +239,8 @@ struct MergeTreeDataPart
     bool hasColumnFiles(const String & column) const;
 
     /// For data in RAM ('index')
-    size_t getIndexSizeInBytes() const;
-    size_t getIndexSizeInAllocatedBytes() const;
-    /// Total size of *.mrk files
-    size_t getTotalMrkSizeInBytes() const;
+    UInt64 getIndexSizeInBytes() const;
+    UInt64 getIndexSizeInAllocatedBytes() const;
 
 private:
     /// Reads columns names and types from columns.txt
@@ -319,6 +259,8 @@ private:
     void loadPartitionAndMinMaxIndex();
 
     void checkConsistency(bool require_part_metadata);
+
+    ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
 };
 
 

@@ -2,18 +2,25 @@
 
 #include <IO/Progress.h>
 
-#include <Interpreters/Limits.h>
-
 #include <DataStreams/BlockStreamProfileInfo.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/SizeLimits.h>
+
+#include <Interpreters/SettingsCommon.h>
 
 #include <atomic>
+
 
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int QUERY_WAS_CANCELLED;
+}
+
 class QuotaForIntervals;
-struct ProcessListElement;
+class ProcessListElement;
 class IProfilingBlockInputStream;
 
 using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>;
@@ -26,6 +33,8 @@ using ProfilingBlockInputStreamPtr = std::shared_ptr<IProfilingBlockInputStream>
   */
 class IProfilingBlockInputStream : public IBlockInputStream
 {
+    friend struct BlockStreamProfileInfo;
+
 public:
     IProfilingBlockInputStream();
 
@@ -56,10 +65,10 @@ public:
       * Call this method only after all the data has been retrieved with `read`,
       *  otherwise there will be problems if any data at the same time is computed in another thread.
       */
-    virtual const Block & getTotals();
+    virtual Block getTotals();
 
     /// The same for minimums and maximums.
-    const Block & getExtremes() const;
+    Block getExtremes();
 
 
     /** Set the execution progress bar callback.
@@ -98,21 +107,20 @@ public:
 
     /** Set the approximate total number of rows to read.
       */
-    void setTotalRowsApprox(size_t value) { total_rows_approx = value; }
+    void addTotalRowsApprox(size_t value) { total_rows_approx += value; }
 
 
     /** Ask to abort the receipt of data as soon as possible.
       * By default - just sets the flag is_cancelled and asks that all children be interrupted.
       * This function can be called several times, including simultaneously from different threads.
+      * Have two modes:
+      *  with kill = false only is_cancelled is set - streams will stop silently with returning some processed data.
+      *  with kill = true also is_killed set - queries will stop with exception.
       */
-    virtual void cancel();
+    virtual void cancel(bool kill);
 
-    /** Do you want to abort the receipt of data.
-     */
-    bool isCancelled() const
-    {
-        return is_cancelled.load(std::memory_order_seq_cst);
-    }
+    bool isCancelled() const;
+    bool isCancelledOrThrowIfKilled() const;
 
     /** What limitations and quotas should be checked.
       * LIMITS_CURRENT - checks amount of data read by current stream only (BlockStreamProfileInfo is used for check).
@@ -132,10 +140,7 @@ public:
     {
         LimitsMode mode = LIMITS_CURRENT;
 
-        /// If it is zero, corresponding limit check isn't performed.
-        size_t max_rows_to_read = 0;
-        size_t max_bytes_to_read = 0;
-        OverflowMode read_overflow_mode = OverflowMode::THROW;
+        SizeLimits size_limits;
 
         Poco::Timespan max_execution_time = 0;
         OverflowMode timeout_overflow_mode = OverflowMode::THROW;
@@ -171,6 +176,7 @@ public:
 protected:
     BlockStreamProfileInfo info;
     std::atomic<bool> is_cancelled{false};
+    std::atomic<bool> is_killed{false};
     ProgressCallback progress_callback;
     ProcessListElement * process_list_elem = nullptr;
 
@@ -180,14 +186,16 @@ protected:
     Block totals;
     /// Minimums and maximums. The first row of the block - minimums, the second - the maximums.
     Block extremes;
-    /// The approximate total number of rows to read. For progress bar.
-    size_t total_rows_approx = 0;
+
+
+    void addChild(BlockInputStreamPtr & child)
+    {
+        std::unique_lock lock(children_mutex);
+        children.push_back(child);
+    }
 
 private:
     bool enabled_extremes = false;
-
-    /// Information about the approximate total number of rows is collected in the parent source.
-    std::atomic_bool collected_total_rows_approx {false};
 
     /// The limit on the number of rows/bytes has been exceeded, and you need to stop execution on the next `read` call, as if the thread has run out.
     bool limit_exceeded_need_break = false;
@@ -198,6 +206,9 @@ private:
 
     QuotaForIntervals * quota = nullptr;    /// If nullptr - the quota is not used.
     double prev_elapsed = 0;
+
+    /// The approximate total number of rows to read. For progress bar.
+    size_t total_rows_approx = 0;
 
     /// The successors must implement this function.
     virtual Block readImpl() = 0;
@@ -210,20 +221,24 @@ private:
 
     void updateExtremes(Block & block);
 
-    /** Check constraints and quotas.
-      * But only those that can be tested within each separate source.
+    /** Check limits and quotas.
+      * But only those that can be checked within each separate stream.
       */
-    bool checkDataSizeLimits();
-    bool checkTimeLimits();
+    bool checkTimeLimit();
     void checkQuota(Block & block);
 
-    /// Gather information about the approximate total number of rows from all children.
-    void collectTotalRowsApprox();
 
-    /** Send information about the approximate total number of rows to the progress bar.
-      * It is done so that sending occurs only in the upper stream.
-      */
-    void collectAndSendTotalRowsApprox();
+    template <typename F>
+    void forEachProfilingChild(F && f)
+    {
+        /// NOTE: Acquire a read lock, therefore f() should be thread safe
+        std::shared_lock lock(children_mutex);
+
+        for (auto & child : children)
+            if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(child.get()))
+                if (f(*p_child))
+                    return;
+    }
 };
 
 }

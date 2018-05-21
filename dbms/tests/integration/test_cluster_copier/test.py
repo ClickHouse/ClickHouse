@@ -129,8 +129,8 @@ class Task2:
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM cluster(cluster0, default, a)")) == TSV("85\n")
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count(), uniqExact(date) FROM cluster(cluster1, default, b)")) == TSV("85\t85\n")
 
-        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM b")) == TSV("1\n")
-        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM b")) == TSV("0\n")
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT jumpConsistentHash(intHash64(d), 2) FROM b")) == TSV("0\n")
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT jumpConsistentHash(intHash64(d), 2) FROM b")) == TSV("1\n")
 
         assert TSV(self.cluster.instances['s1_0_0'].query("SELECT uniqExact(partition) IN (12, 13) FROM system.parts WHERE active AND database='default' AND table='b'")) == TSV("1\n")
         assert TSV(self.cluster.instances['s1_1_0'].query("SELECT uniqExact(partition) IN (12, 13) FROM system.parts WHERE active AND database='default' AND table='b'")) == TSV("1\n")
@@ -138,6 +138,34 @@ class Task2:
         instance = cluster.instances['s0_0_0']
         ddl_check_query(instance, "DROP TABLE a ON CLUSTER cluster0")
         ddl_check_query(instance, "DROP TABLE b ON CLUSTER cluster1")
+
+
+class Task_test_block_size:
+
+    def __init__(self, cluster):
+        self.cluster = cluster
+        self.zk_task_path="/clickhouse-copier/task_test_block_size"
+        self.copier_task_config = open(os.path.join(CURRENT_TEST_DIR, 'task_test_block_size.xml'), 'r').read()
+        self.rows = 1000000
+
+
+    def start(self):
+        instance = cluster.instances['s0_0_0']
+
+        ddl_check_query(instance, """
+            CREATE TABLE test_block_size ON CLUSTER shard_0_0 (partition Date, d UInt64)
+            ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/test_block_size', '{replica}')
+            ORDER BY d""", 2)
+
+        instance.query("INSERT INTO test_block_size SELECT toDate(0) AS partition, number as d FROM system.numbers LIMIT {}".format(self.rows))
+
+
+    def check(self):
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM cluster(cluster1, default, test_block_size)")) == TSV("{}\n".format(self.rows))
+
+        instance = cluster.instances['s0_0_0']
+        ddl_check_query(instance, "DROP TABLE test_block_size ON CLUSTER shard_0_0", 2)
+        ddl_check_query(instance, "DROP TABLE test_block_size ON CLUSTER cluster1")
 
 
 def execute_task(task, cmd_options):
@@ -155,7 +183,7 @@ def execute_task(task, cmd_options):
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
-        '--config', '/etc/clickhouse-server/config-preprocessed.xml',
+        '--config', '/etc/clickhouse-server/config-copier.xml',
         '--task-path', zk_task_path,
         '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options
@@ -184,19 +212,23 @@ def execute_task(task, cmd_options):
         zk.delete(zk_task_path, recursive=True)
 
 
+# Tests
+
 def test_copy1_simple(started_cluster):
     execute_task(Task1(started_cluster), [])
-
 
 def test_copy1_with_recovering(started_cluster):
     execute_task(Task1(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
-
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])
 
-def test_copy_month_to_week_partition(started_cluster):
-    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.1)])
+def test_copy_month_to_week_partition_with_recovering(started_cluster):
+    execute_task(Task2(started_cluster), ['--copy-fault-probability', str(0.3)])
+
+def test_block_size(started_cluster):
+    execute_task(Task_test_block_size(started_cluster), [])
+
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

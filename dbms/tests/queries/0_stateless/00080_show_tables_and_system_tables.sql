@@ -9,6 +9,9 @@ SHOW TABLES from test_show_tables;
 
 SELECT name, toUInt32(metadata_modification_time) > 0, engine_full, create_table_query FROM system.tables WHERE database = 'test_show_tables' ORDER BY name FORMAT TSVRaw;
 
+CREATE TEMPORARY TABLE test_temporary_table (id UInt64);
+SELECT name FROM system.tables WHERE is_temporary = 1 AND name = 'test_temporary_table';
+
 DROP DATABASE test_show_tables;
 
 

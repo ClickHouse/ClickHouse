@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 
 
-#include <iostream>
 
 namespace DB
 {
@@ -24,6 +23,7 @@ void registerFunctionsExternalDictionaries(FunctionFactory &);
 void registerFunctionsExternalModels(FunctionFactory &);
 void registerFunctionsFormatting(FunctionFactory &);
 void registerFunctionsHashing(FunctionFactory &);
+void registerFunctionsConsistentHashing(FunctionFactory &);
 void registerFunctionsHigherOrder(FunctionFactory &);
 void registerFunctionsLogical(FunctionFactory &);
 void registerFunctionsMiscellaneous(FunctionFactory &);
@@ -41,7 +41,7 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsCharset(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
-
+void registerFunctionsProjection(FunctionFactory &);
 
 void registerFunctions()
 {
@@ -60,6 +60,7 @@ void registerFunctions()
     registerFunctionsExternalModels(factory);
     registerFunctionsFormatting(factory);
     registerFunctionsHashing(factory);
+    registerFunctionsConsistentHashing(factory);
     registerFunctionsHigherOrder(factory);
     registerFunctionsLogical(factory);
     registerFunctionsMiscellaneous(factory);
@@ -77,6 +78,7 @@ void registerFunctions()
     registerFunctionsCharset(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
+    registerFunctionsProjection(factory);
 }
 
 }

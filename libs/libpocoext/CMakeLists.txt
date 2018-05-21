@@ -1,9 +1,16 @@
 add_library (pocoext ${SPLIT_SHARED}
     src/LevelFilterChannel.cpp
     src/ThreadNumber.cpp
+    src/SessionPoolHelpers.cpp
 
     include/Poco/Ext/LevelFilterChannel.h
-    include/Poco/Ext/ThreadNumber.h)
+    include/Poco/Ext/ThreadNumber.h
+    include/Poco/Ext/SessionPoolHelpers.h)
+
+if (Poco_Data_FOUND)
+    target_include_directories (pocoext PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_link_libraries(pocoext ${Poco_Data_LIBRARY})
+endif()
 
 target_include_directories (pocoext PUBLIC include PRIVATE ${COMMON_INCLUDE_DIR})
 

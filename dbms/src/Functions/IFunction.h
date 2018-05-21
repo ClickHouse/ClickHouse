@@ -2,11 +2,20 @@
 
 #include <memory>
 
+#include <Common/config.h>
 #include <Core/Names.h>
 #include <Core/Field.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
+
+
+namespace llvm
+{
+    class LLVMContext;
+    class Value;
+    class IRBuilderBase;
+}
 
 
 namespace DB
@@ -31,7 +40,7 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
 };
 
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
@@ -39,10 +48,10 @@ using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
 class PreparedFunctionImpl : public IPreparedFunction
 {
 public:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result) final;
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final;
 
 protected:
-    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) = 0;
+    virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
 
     /** Default implementation in presence of Nullable arguments or NULL constants as arguments is the following:
       *  if some of arguments are NULL constants then return NULL constant,
@@ -64,9 +73,13 @@ protected:
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
 private:
-    bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result);
-    bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result);
+    bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
+                                           size_t input_rows_count);
+    bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
+                                                       size_t input_rows_count);
 };
+
+using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
 
 /// Function with known arguments and return type.
 class IFunctionBase
@@ -85,10 +98,29 @@ public:
     virtual PreparedFunctionPtr prepare(const Block & sample_block) const = 0;
 
     /// TODO: make const
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result)
+    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-        return prepare(block)->execute(block, arguments, result);
+        return prepare(block)->execute(block, arguments, result, input_rows_count);
     }
+
+#if USE_EMBEDDED_COMPILER
+
+    virtual bool isCompilable() const { return false; }
+
+    /** Produce LLVM IR code that operates on scalar values. See `toNativeType` in DataTypes/Native.h
+      * for supported value types and how they map to LLVM types.
+      *
+      * NOTE: the builder is actually guaranteed to be exactly `llvm::IRBuilder<>`, so you may safely
+      *       downcast it to that type. This method is specified with `IRBuilderBase` because forward-declaring
+      *       templates with default arguments is impossible and including LLVM in such a generic header
+      *       as this one is a major pain.
+      */
+    virtual llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const
+    {
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+#endif
 
     /** Should we evaluate this function while constant folding, if arguments are constants?
       * Usually this is true. Notable counterexample is function 'sleep'.
@@ -249,7 +281,7 @@ class IFunction : public std::enable_shared_from_this<IFunction>,
 public:
     String getName() const override = 0;
     /// TODO: make const
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override = 0;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override = 0;
 
     /// Override this functions to change default implementation behavior. See details in IMyFunction.
     bool useDefaultImplementationForNulls() const override { return true; }
@@ -259,7 +291,6 @@ public:
     using PreparedFunctionImpl::execute;
     using FunctionBuilderImpl::getReturnTypeImpl;
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
-
     using FunctionBuilderImpl::getReturnType;
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const final
@@ -267,17 +298,51 @@ public:
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const final
+    {
+        throw Exception("isCompilable without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    llvm::Value * compile(llvm::IRBuilderBase & /*builder*/, ValuePlaceholders /*values*/) const final
+    {
+        throw Exception("compile without explicit types is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+#endif
+
     const DataTypes & getArgumentTypes() const final
     {
         throw Exception("getArgumentTypes is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    const DataTypePtr & getReturnType() const override
+    const DataTypePtr & getReturnType() const final
     {
         throw Exception("getReturnType is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
 
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable(const DataTypes & arguments) const;
+
+    llvm::Value * compile(llvm::IRBuilderBase &, const DataTypes & arguments, ValuePlaceholders values) const;
+
+#endif
+
 protected:
+
+#if USE_EMBEDDED_COMPILER
+
+    virtual bool isCompilableImpl(const DataTypes &) const { return false; }
+
+    virtual llvm::Value * compileImpl(llvm::IRBuilderBase &, const DataTypes &, ValuePlaceholders) const
+    {
+        throw Exception(getName() + " is not JIT-compilable", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+#endif
+
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & /*arguments*/, const DataTypePtr & /*return_type*/) const final
     {
         throw Exception("buildImpl is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
@@ -294,9 +359,9 @@ public:
     String getName() const override { return function->getName(); }
 
 protected:
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) final
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
     {
-        return function->executeImpl(block, arguments, result);
+        return function->executeImpl(block, arguments, result, input_rows_count);
     }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
@@ -316,6 +381,14 @@ public:
 
     const DataTypes & getArgumentTypes() const override { return arguments; }
     const DataTypePtr & getReturnType() const override { return return_type; }
+
+#if USE_EMBEDDED_COMPILER
+
+    bool isCompilable() const override { return function->isCompilable(arguments); }
+
+    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return function->compile(builder, arguments, std::move(values)); }
+
+#endif
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override { return std::make_shared<DefaultExecutable>(function); }
 

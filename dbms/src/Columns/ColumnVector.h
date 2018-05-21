@@ -231,6 +231,11 @@ public:
         return UInt64(data[n]);
     }
 
+    bool getBool(size_t n) const override
+    {
+        return bool(data[n]);
+    }
+
     Int64 getInt(size_t n) const override
     {
         return Int64(data[n]);
@@ -243,11 +248,11 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    MutableColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    MutableColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
 
-    MutableColumnPtr replicate(const IColumn::Offsets & offsets) const override;
+    ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
     void getExtremes(Field & min, Field & max) const override;
 
@@ -263,7 +268,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-
+    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()

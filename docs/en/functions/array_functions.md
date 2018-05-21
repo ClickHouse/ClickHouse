@@ -62,7 +62,6 @@ arrayConcat(arrays)
 ```sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
-
 ```
 ┌─res───────────┐
 │ [1,2,3,4,5,6] │
@@ -203,7 +202,6 @@ arrayPopBack(array)
 ```sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
-
 ```
 ┌─res───┐
 │ [1,2] │
@@ -227,7 +225,6 @@ arrayPopFront(array)
 ```sql
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
-
 ```
 ┌─res───┐
 │ [2,3] │
@@ -245,7 +242,7 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../data_types/index.md#data_types)".
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about ClickHouse data types, read the section "[Data types](../data_types/index.md#data_types)".
 
 **Example**
 
@@ -270,14 +267,13 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about the types of data in ClickHouse, see "[Data types](../data_types/index.md#data_types)".
+- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about ClickHouse data types, read the section "[Data types](../data_types/index.md#data_types)".
 
 **Example**
 
 ```sql
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
-
 ```
 ┌─res───────┐
 │ ['a','b'] │
@@ -295,7 +291,7 @@ arraySlice(array, offset[, length])
 **Arguments**
 
 - `array` –  Array of data.
-- `offset` – Offset from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
+- `offset` – Indent from the edge of the array. A positive value indicates an offset on the left, and a negative value is an indent on the right. Numbering of the array items begins with 1.
 - `length` - The length of the required slice. If you specify a negative value, the function returns an open slice `[offset, array_length - length)`. If you omit the value, the function returns the slice `[offset, the_end_of_array]`.
 
 **Example**
@@ -303,7 +299,6 @@ arraySlice(array, offset[, length])
 ```sql
 SELECT arraySlice([1, 2, 3, 4, 5], 2, 3) AS res
 ```
-
 ```
 ┌─res─────┐
 │ [2,3,4] │

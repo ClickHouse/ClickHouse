@@ -14,6 +14,7 @@ CLICKHOUSE_GROUP=${CLICKHOUSE_USER}
 SHELL=/bin/bash
 PROGRAM=clickhouse-server
 GENERIC_PROGRAM=clickhouse
+EXTRACT_FROM_CONFIG=${GENERIC_PROGRAM}-extract-from-config
 SYSCONFDIR=/etc/$PROGRAM
 CLICKHOUSE_LOGDIR=/var/log/clickhouse-server
 CLICKHOUSE_LOGDIR_USER=root
@@ -27,6 +28,9 @@ RETVAL=0
 
 CLICKHOUSE_PIDDIR=/var/run/$PROGRAM
 CLICKHOUSE_PIDFILE="$CLICKHOUSE_PIDDIR/$PROGRAM.pid"
+
+# Some systems lack "flock"
+command -v flock >/dev/null && FLOCK=flock
 
 
 # Override defaults from optional config file
@@ -87,8 +91,8 @@ die()
 # Check that configuration file is Ok.
 check_config()
 {
-    if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
-        su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$GENERIC_PROGRAM extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" >/dev/null || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
+    if [ -x "$BINDIR/$EXTRACT_FROM_CONFIG" ]; then
+        su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path" >/dev/null || die "Configuration file ${CLICKHOUSE_CONFIG} doesn't parse successfully. Won't restart server. You may use forcerestart if you are sure.";
     fi
 }
 
@@ -99,8 +103,8 @@ initdb()
         su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${SYSCONFDIR}" || chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${SYSCONFDIR}
     fi
 
-    if [ -x "$BINDIR/$GENERIC_PROGRAM" ]; then
-        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$GENERIC_PROGRAM extract-from-config --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
+    if [ -x "$BINDIR/$EXTRACT_FROM_CONFIG" ]; then
+        CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path")
         if [ "(" "$?" -ne "0" ")" -o "(" -z "${CLICKHOUSE_DATADIR_FROM_CONFIG}" ")" ]; then
             die "Cannot obtain value of path from config file: ${CLICKHOUSE_CONFIG}";
         fi
@@ -164,7 +168,7 @@ start()
         if ! is_running; then
             # Lock should not be held while running child process, so we release the lock. Note: obviously, there is race condition.
             # But clickhouse-server has protection from simultaneous runs with same data directory.
-            su -s $SHELL ${CLICKHOUSE_USER} -c "flock -u 9; exec -a \"$PROGRAM\" \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
+            su -s $SHELL ${CLICKHOUSE_USER} -c "$FLOCK -u 9; exec -a \"$PROGRAM\" \"$BINDIR/$PROGRAM\" --daemon --pid-file=\"$CLICKHOUSE_PIDFILE\" --config-file=\"$CLICKHOUSE_CONFIG\""
             EXIT_STATUS=$?
             if [ $EXIT_STATUS -ne 0 ]; then
                 break
@@ -231,22 +235,34 @@ forcerestart()
     start
 }
 
+use_cron()
+{
+    # 1. running systemd
+    if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
+        return 1
+    fi
+    # 2. disabled by config
+    if [ -z "$CLICKHOUSE_CRONFILE" ]; then
+        return 2
+    fi
+    return 0
+}
 
 enable_cron()
 {
-    [ ! -z "$CLICKHOUSE_CRONFILE" ] && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
+    use_cron && sed -i 's/^#*//' "$CLICKHOUSE_CRONFILE"
 }
 
 
 disable_cron()
 {
-    [ ! -z "$CLICKHOUSE_CRONFILE" ] && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
+    use_cron && sed -i 's/^#*/#/' "$CLICKHOUSE_CRONFILE"
 }
 
 
 is_cron_disabled()
 {
-    [ -z "$CLICKHOUSE_CRONFILE" ] && return 0
+    use_cron || return 0
 
     # Assumes that either no lines are commented or all lines are commented.
     # Also please note, that currently cron file for ClickHouse has only one line (but some time ago there was more).
@@ -332,7 +348,7 @@ esac
 
 
 (
-    if flock -n 9; then
+    if $FLOCK -n 9; then
         main "$@"
     else
         echo "Init script is already running" && exit 1

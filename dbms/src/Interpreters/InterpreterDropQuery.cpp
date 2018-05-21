@@ -32,7 +32,7 @@ BlockIO InterpreterDropQuery::execute()
     checkAccess(drop);
 
     if (!drop.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+        return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
@@ -41,7 +41,8 @@ BlockIO InterpreterDropQuery::execute()
 
     if (drop_database && drop.detach)
     {
-        context.detachDatabase(drop.database);
+        auto database = context.detachDatabase(drop.database);
+        database->shutdown();
         return {};
     }
 
@@ -192,7 +193,7 @@ BlockIO InterpreterDropQuery::execute()
 void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 {
     const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.limits.readonly;
+    auto readonly = settings.readonly;
 
     /// It's allowed to drop temporary tables.
     if (!readonly || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))

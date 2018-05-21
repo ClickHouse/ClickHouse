@@ -11,9 +11,14 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+    extern const int THERE_IS_NO_QUERY;
+}
 
 BlockIO InterpreterShowCreateQuery::execute()
 {
@@ -34,10 +39,24 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 
 BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 {
-    const ASTShowCreateQuery & ast = typeid_cast<const ASTShowCreateQuery &>(*query_ptr);
+    const auto & ast = dynamic_cast<const ASTQueryWithTableAndOutput &>(*query_ptr);
+
+    if (ast.temporary && !ast.database.empty())
+        throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
+
+    ASTPtr create_query;
+    if (ast.temporary)
+        create_query = context.getCreateExternalTableQuery(ast.table);
+    else if (ast.table.empty())
+        create_query = context.getCreateDatabaseQuery(ast.database);
+    else
+        create_query = context.getCreateTableQuery(ast.database, ast.table);
+
+    if (!create_query && ast.temporary)
+        throw Exception("Unable to show the create query of " + ast.table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     std::stringstream stream;
-    formatAST(*context.getCreateQuery(ast.database, ast.table), stream, false, true);
+    formatAST(*create_query, stream, false, true);
     String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();

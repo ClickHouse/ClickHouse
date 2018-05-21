@@ -98,7 +98,7 @@ static inline const IColumn & extractElementColumn(const IColumn & column, size_
 
 void DataTypeTuple::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    const auto & tuple = get<const Tuple &>(field).t;
+    const auto & tuple = get<const Tuple &>(field).toUnderType();
     for (const auto & idx_elem : ext::enumerate(elems))
         idx_elem.second->serializeBinary(tuple[idx_elem.first], ostr);
 }
@@ -107,7 +107,7 @@ void DataTypeTuple::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     const size_t size = elems.size();
     field = Tuple(TupleBackend(size));
-    TupleBackend & tuple = get<Tuple &>(field).t;
+    TupleBackend & tuple = get<Tuple &>(field).toUnderType();
     for (const auto i : ext::range(0, size))
         elems[i]->deserializeBinary(tuple[i], istr);
 }
@@ -329,10 +329,10 @@ void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
 MutableColumnPtr DataTypeTuple::createColumn() const
 {
     size_t size = elems.size();
-    Columns tuple_columns(size);
+    MutableColumns tuple_columns(size);
     for (size_t i = 0; i < size; ++i)
         tuple_columns[i] = elems[i]->createColumn();
-    return ColumnTuple::create(tuple_columns);
+    return ColumnTuple::create(std::move(tuple_columns));
 }
 
 Field DataTypeTuple::getDefault() const

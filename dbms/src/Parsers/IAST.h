@@ -40,13 +40,9 @@ public:
     ASTs children;
     StringRange range;
 
-    /** A string with a full query.
-      * This pointer does not allow it to be deleted while the range refers to it.
-      */
-    StringPtr query_string;
+    /// This pointer does not allow it to be deleted while the range refers to it.
+    StringPtr owned_string;
 
-    IAST() = default;
-    IAST(const StringRange range_) : range(range_) {}
     virtual ~IAST() = default;
 
     /** Get the canonical name of the column if the element is a column */
@@ -69,14 +65,8 @@ public:
 
     ASTPtr ptr() { return shared_from_this(); }
 
-    /** Get a deep copy of the tree. */
+    /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
-
-    /** Get text, describing and identifying this element and its subtree.
-      * Usually it consist of element's id and getTreeID of all children.
-      */
-    String getTreeID() const;
-    void getTreeIDImpl(WriteBuffer & out) const;
 
     /** Get hash code, identifying this element and its subtree.
       */
@@ -201,6 +191,8 @@ public:
     }
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
+
+    void cloneChildren();
 
 public:
     /// For syntax highlighting.

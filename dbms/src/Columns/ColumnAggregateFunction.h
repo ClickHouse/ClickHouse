@@ -152,11 +152,11 @@ public:
 
     void popBack(size_t n) override;
 
-    MutableColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    MutableColumnPtr replicate(const Offsets & offsets) const override;
+    ColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;
 

@@ -37,14 +37,11 @@ namespace ErrorCodes
 
 StorageMerge::StorageMerge(
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     name(name_), source_database(source_database_),
     table_name_regexp(table_name_regexp_), context(context_)
 {
@@ -87,30 +84,24 @@ bool StorageMerge::isRemote() const
 }
 
 
-namespace
+bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
 {
-    using NodeHashToSet = std::map<IAST::Hash, SetPtr>;
+    /// It's beneficial if it is true for at least one table.
+    StorageListWithLocks selected_tables = getSelectedTables();
 
-    void relinkSetsImpl(const ASTPtr & query, const NodeHashToSet & node_hash_to_set, PreparedSets & new_sets)
+    size_t i = 0;
+    for (const auto & table : selected_tables)
     {
-        auto hash = query->getTreeHash();
-        auto it = node_hash_to_set.find(hash);
-        if (node_hash_to_set.end() != it)
-            new_sets[query.get()] = it->second;
+        if (table.first->mayBenefitFromIndexForIn(left_in_operand))
+            return true;
 
-        for (const auto & child : query->children)
-            relinkSetsImpl(child, node_hash_to_set, new_sets);
+        ++i;
+        /// For simplicity reasons, check only first ten tables.
+        if (i > 10)
+            break;
     }
 
-    /// Re-link prepared sets onto cloned and modified AST.
-    void relinkSets(const ASTPtr & query, const PreparedSets & old_sets, PreparedSets & new_sets)
-    {
-        NodeHashToSet node_hash_to_set;
-        for (const auto & node_set : old_sets)
-            node_hash_to_set.emplace(node_set.first->getTreeHash(), node_set.second);
-
-        relinkSetsImpl(query, node_hash_to_set, new_sets);
-    }
+    return false;
 }
 
 
@@ -184,7 +175,7 @@ BlockInputStreams StorageMerge::read(
 
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.size() == 0)
-            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumnsList()));
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(table->getColumns().getAllPhysical()));
 
         /// Substitute virtual column for its value when querying tables.
         ASTPtr modified_query_ast = query->clone();
@@ -192,8 +183,7 @@ BlockInputStreams StorageMerge::read(
 
         SelectQueryInfo modified_query_info;
         modified_query_info.query = modified_query_ast;
-
-        relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
+        modified_query_info.sets = query_info.sets;
 
         BlockInputStreams source_streams;
 
@@ -222,12 +212,12 @@ BlockInputStreams StorageMerge::read(
                         header = getSampleBlockForColumns(column_names);
                         break;
                     case QueryProcessingStage::WithMergeableState:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, QueryProcessingStage::WithMergeableState, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
+                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::WithMergeableState, 0,
+                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
                         break;
                     case QueryProcessingStage::Complete:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, QueryProcessingStage::Complete, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names))).execute().in->getHeader());
+                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::Complete, 0,
+                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
                         break;
                 }
             }
@@ -336,11 +326,11 @@ void StorageMerge::alter(const AlterCommands & params, const String & database_n
             throw Exception("Storage engine " + getName() + " doesn't support primary key.", ErrorCodes::NOT_IMPLEMENTED);
 
     auto lock = lockStructureForAlter(__PRETTY_FUNCTION__);
-    params.apply(columns, materialized_columns, alias_columns, column_defaults);
 
-    context.getDatabase(database_name)->alterTable(
-        context, table_name,
-        columns, materialized_columns, alias_columns, column_defaults, {});
+    ColumnsDescription new_columns = getColumns();
+    params.apply(new_columns);
+    context.getDatabase(database_name)->alterTable(context, table_name, new_columns, {});
+    setColumns(new_columns);
 }
 
 
@@ -367,7 +357,6 @@ void registerStorageMerge(StorageFactory & factory)
 
         return StorageMerge::create(
             args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             source_database, table_name_regexp, args.context);
     });
 }

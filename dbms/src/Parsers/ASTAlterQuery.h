@@ -31,6 +31,8 @@ public:
         FETCH_PARTITION,
         FREEZE_PARTITION,
 
+        DELETE,
+
         NO_TYPE,
     };
 
@@ -59,6 +61,9 @@ public:
           */
         ASTPtr partition;
 
+        /// For DELETE WHERE: the predicate that filters the rows to delete.
+        ASTPtr predicate;
+
         bool detach = false;        /// true for DETACH PARTITION
 
         bool part = false;          /// true for ATTACH PART
@@ -86,8 +91,6 @@ public:
 
 
     void addParameters(const Parameters & params);
-
-    explicit ASTAlterQuery(StringRange range_ = StringRange());
 
     /** Get the text that identifies this element. */
     String getID() const override;

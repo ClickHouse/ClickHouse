@@ -30,6 +30,7 @@
     M(ArenaAllocChunks) \
     M(ArenaAllocBytes) \
     M(FunctionExecute) \
+    M(TableFunctionExecute) \
     M(MarkCacheHits) \
     M(MarkCacheMisses) \
     M(CreatedReadBufferOrdinary) \
@@ -55,14 +56,20 @@
     \
     M(ZooKeeperInit) \
     M(ZooKeeperTransactions) \
-    M(ZooKeeperGetChildren) \
+    M(ZooKeeperList) \
     M(ZooKeeperCreate) \
     M(ZooKeeperRemove) \
     M(ZooKeeperExists) \
     M(ZooKeeperGet) \
     M(ZooKeeperSet) \
     M(ZooKeeperMulti) \
+    M(ZooKeeperCheck) \
+    M(ZooKeeperClose) \
+    M(ZooKeeperWatchResponse) \
     M(ZooKeeperExceptions) \
+    M(ZooKeeperWaitMicroseconds) \
+    M(ZooKeeperBytesSent) \
+    M(ZooKeeperBytesReceived) \
     \
     M(DistributedConnectionFailTry) \
     M(DistributedConnectionMissingTable) \
@@ -71,6 +78,8 @@
     \
     M(CompileAttempt) \
     M(CompileSuccess) \
+    \
+    M(CompileFunction) \
     \
     M(ExternalSortWritePart) \
     M(ExternalSortMerge) \
@@ -131,7 +140,9 @@
     M(RWLockAcquiredReadLocks) \
     M(RWLockAcquiredWriteLocks) \
     M(RWLockReadersWaitMilliseconds) \
-    M(RWLockWritersWaitMilliseconds)
+    M(RWLockWritersWaitMilliseconds) \
+    \
+    M(NetworkErrors)
 
 namespace ProfileEvents
 {

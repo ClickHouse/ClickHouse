@@ -26,7 +26,7 @@ MutableColumnPtr ColumnFunction::cloneResized(size_t size) const
     return ColumnFunction::create(size, function, capture);
 }
 
-MutableColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
+ColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
 {
     if (size_ != offsets.size())
         throw Exception("Size of offsets (" + toString(offsets.size()) + ") doesn't match size of column ("
@@ -40,7 +40,7 @@ MutableColumnPtr ColumnFunction::replicate(const Offsets & offsets) const
     return ColumnFunction::create(replicated_size, function, capture);
 }
 
-MutableColumnPtr ColumnFunction::cut(size_t start, size_t length) const
+ColumnPtr ColumnFunction::cut(size_t start, size_t length) const
 {
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
@@ -49,7 +49,7 @@ MutableColumnPtr ColumnFunction::cut(size_t start, size_t length) const
     return ColumnFunction::create(length, function, capture);
 }
 
-MutableColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (size_ != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column ("
@@ -68,7 +68,7 @@ MutableColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size
     return ColumnFunction::create(filtered_size, function, capture);
 }
 
-MutableColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
 {
     if (limit == 0)
         limit = size_;
@@ -194,7 +194,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     for (size_t i = 0; i < captured_columns.size(); ++i)
         arguments[i] = i;
 
-    function->execute(block, arguments, captured_columns.size());
+    function->execute(block, arguments, captured_columns.size(), size_);
 
     return block.getByPosition(captured_columns.size());
 }

@@ -35,10 +35,12 @@ class ASTCreateQuery;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
+using StorageWeakPtr = std::weak_ptr<IStorage>;
 
 struct Settings;
 
 class AlterCommands;
+struct MutationCommands;
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -82,6 +84,10 @@ class IStorage : public std::enable_shared_from_this<IStorage>, private boost::n
 public:
     /// The main name of the table type (for example, StorageMergeTree).
     virtual std::string getName() const = 0;
+
+    /** The name of the table.
+      */
+    virtual std::string getTableName() const = 0;
 
     /** Returns true if the storage receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
@@ -253,6 +259,12 @@ public:
     virtual bool optimize(const ASTPtr & /*query*/, const ASTPtr & /*partition*/, bool /*final*/, bool /*deduplicate*/, const Context & /*context*/)
     {
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Mutate the table contents
+    virtual void mutate(const MutationCommands &, const Context &)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If the table have to do some complicated work on startup,

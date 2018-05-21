@@ -14,6 +14,7 @@ void registerAggregateFunctionGroupUniqArray(AggregateFunctionFactory &);
 void registerAggregateFunctionGroupArrayInsertAt(AggregateFunctionFactory &);
 void registerAggregateFunctionsQuantile(AggregateFunctionFactory &);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory &);
+void registerAggregateFunctionWindowFunnel(AggregateFunctionFactory &);
 void registerAggregateFunctionsMinMaxAny(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsStable(AggregateFunctionFactory &);
 void registerAggregateFunctionsStatisticsSimple(AggregateFunctionFactory &);
@@ -23,6 +24,7 @@ void registerAggregateFunctionsUniq(AggregateFunctionFactory &);
 void registerAggregateFunctionUniqUpTo(AggregateFunctionFactory &);
 void registerAggregateFunctionTopK(AggregateFunctionFactory &);
 void registerAggregateFunctionsBitwise(AggregateFunctionFactory &);
+void registerAggregateFunctionsMaxIntersections(AggregateFunctionFactory &);
 
 void registerAggregateFunctionCombinatorIf(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorArray(AggregateFunctionCombinatorFactory &);
@@ -44,6 +46,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionGroupArrayInsertAt(factory);
         registerAggregateFunctionsQuantile(factory);
         registerAggregateFunctionsSequenceMatch(factory);
+        registerAggregateFunctionWindowFunnel(factory);
         registerAggregateFunctionsMinMaxAny(factory);
         registerAggregateFunctionsStatisticsStable(factory);
         registerAggregateFunctionsStatisticsSimple(factory);
@@ -53,6 +56,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
+        registerAggregateFunctionsMaxIntersections(factory);
     }
 
     {

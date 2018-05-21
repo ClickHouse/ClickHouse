@@ -1,7 +1,7 @@
 #pragma once
 
 #include <sys/types.h>
-#include <unistd.h>
+#include <port/unistd.h>
 #include <iostream>
 #include <memory>
 #include <functional>
@@ -23,7 +23,7 @@
 #include <common/Types.h>
 #include <common/logger_useful.h>
 #include <daemon/GraphiteWriter.h>
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 
 namespace Poco { class TaskManager; }
 
@@ -67,7 +67,7 @@ public:
     void reloadConfiguration();
 
     /// Строит необходимые логгеры
-    void buildLoggers();
+    void buildLoggers(Poco::Util::AbstractConfiguration & config);
 
     /// Определяет параметр командной строки
     void defineOptions(Poco::Util::OptionSet & _options) override;
@@ -228,6 +228,11 @@ protected:
     std::string config_path;
     ConfigProcessor::LoadedConfig loaded_config;
     Poco::Util::AbstractConfiguration * last_configuration = nullptr;
+
+private:
+
+    /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
+    std::string config_logger;
 };
 
 

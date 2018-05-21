@@ -108,24 +108,14 @@ Block CollapsingSortedBlockInputStream::readImpl()
     if (finished)
         return {};
 
-    if (children.size() == 1)
-        return children[0]->read();
-
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
 
     if (merged_columns.empty())
         return {};
-
-    /// Additional initialization.
-    if (first_negative.empty())
-        sign_column_number = header.getPositionByName(sign_column);
-
 
     merge(merged_columns, queue);
     return header.cloneWithColumns(std::move(merged_columns));

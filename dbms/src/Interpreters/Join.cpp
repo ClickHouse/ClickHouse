@@ -31,15 +31,13 @@ namespace ErrorCodes
 
 
 Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
-    const Limits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+    const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
     : kind(kind_), strictness(strictness_),
     key_names_left(key_names_left_),
     key_names_right(key_names_right_),
     use_nulls(use_nulls_),
     log(&Logger::get("Join")),
-    max_rows(limits.max_rows_in_join),
-    max_bytes(limits.max_bytes_in_join),
-    overflow_mode(limits.join_overflow_mode)
+    limits(limits)
 {
 }
 
@@ -240,16 +238,6 @@ size_t Join::getTotalByteCount() const
     }
 
     return res;
-}
-
-
-bool Join::checkSizeLimits() const
-{
-    if (max_rows && getTotalRowCount() > max_rows)
-        return false;
-    if (max_bytes && getTotalByteCount() > max_bytes)
-        return false;
-    return true;
 }
 
 
@@ -522,27 +510,7 @@ bool Join::insertFromBlock(const Block & block)
         }
     }
 
-    if (!checkSizeLimits())
-    {
-        switch (overflow_mode)
-        {
-            case OverflowMode::THROW:
-                throw Exception("Join size limit exceeded."
-                    " Rows: " + toString(getTotalRowCount()) +
-                    ", limit: " + toString(max_rows) +
-                    ". Bytes: " + toString(getTotalByteCount()) +
-                    ", limit: " + toString(max_bytes) + ".",
-                    ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-            case OverflowMode::BREAK:
-                return false;
-
-            default:
-                throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-        }
-    }
-
-    return true;
+    return limits.check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
 

@@ -128,7 +128,7 @@ public:
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[0]->isString())
+        if (!arguments[1]->isString())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -339,7 +339,7 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         Generator generator;
         generator.init(block, arguments);
@@ -514,7 +514,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         String delimiter;
         if (arguments.size() == 2)

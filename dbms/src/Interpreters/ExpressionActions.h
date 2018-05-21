@@ -67,6 +67,10 @@ public:
     std::string result_name;
     DataTypePtr result_type;
 
+    /// For conditional projections (projections on subset of rows)
+    std::string row_projection_column;
+    bool is_row_projection_complementary = false;
+
     /// For ADD_COLUMN.
     ColumnPtr added_column;
 
@@ -88,9 +92,12 @@ public:
 
     /// If result_name_ == "", as name "function_name(arguments separated by commas) is used".
     static ExpressionAction applyFunction(
-        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "");
+        const FunctionBuilderPtr & function_, const std::vector<std::string> & argument_names_, std::string result_name_ = "",
+        const std::string & row_projection_column = "");
 
-    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_);
+    static ExpressionAction addColumn(const ColumnWithTypeAndName & added_column_,
+                                      const std::string & row_projection_column,
+                                      bool is_row_projection_complementary);
     static ExpressionAction removeColumn(const std::string & removed_name);
     static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
@@ -107,7 +114,8 @@ private:
     friend class ExpressionActions;
 
     void prepare(Block & sample_block);
-    void execute(Block & block) const;
+    size_t getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
+    void execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void executeOnTotals(Block & block) const;
 };
 
@@ -207,8 +215,6 @@ private:
 
     void addImpl(ExpressionAction action, Names & new_names);
 
-    /// Try to improve something without changing the lists of input and output columns.
-    void optimize();
     /// Move all arrayJoin as close as possible to the end.
     void optimizeArrayJoin();
 };

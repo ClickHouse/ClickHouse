@@ -44,7 +44,7 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
-    InterpreterSelectQuery interpreter{query_ast, context, processed_stage};
+    InterpreterSelectQuery interpreter{query_ast, context, {}, processed_stage};
     BlockInputStreamPtr stream = interpreter.execute().in;
 
     /** Materialization is needed, since from remote servers the constants come materialized.
@@ -157,9 +157,9 @@ void SelectStreamFactory::createForShard(
         /// Do it lazily to avoid connecting in the main thread.
 
         auto lazily_create_stream = [
-                pool = shard_info.pool, shard_num = shard_info.shard_num, query, query_ast, context, throttler,
+                pool = shard_info.pool, shard_num = shard_info.shard_num, query, header = header, query_ast, context, throttler,
                 main_table = main_table, external_tables = external_tables, stage = processed_stage,
-                local_delay, this]()
+                local_delay]()
             -> BlockInputStreamPtr
         {
             std::vector<ConnectionPoolWithFailover::TryResult> try_results;

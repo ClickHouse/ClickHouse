@@ -32,7 +32,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 };
 
 
@@ -59,7 +59,7 @@ public:
         return std::const_pointer_cast<FunctionExpression>(shared_from_this());
     }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         Block expr_block;
         for (size_t i = 0; i < arguments.size(); ++i)
@@ -143,7 +143,7 @@ public:
         return std::const_pointer_cast<FunctionCapture>(shared_from_this());
     }
 
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         ColumnsWithTypeAndName columns;
         columns.reserve(arguments.size());
@@ -168,8 +168,7 @@ public:
 
         auto function = std::make_shared<FunctionExpression>(expression_actions, types, names,
                                                              function_return_type, expression_return_name);
-        auto size = block.rows();
-        block.getByPosition(result).column = ColumnFunction::create(size, std::move(function), columns);
+        block.getByPosition(result).column = ColumnFunction::create(input_rows_count, std::move(function), columns);
     }
 
     size_t getNumberOfArguments() const override { return captured_types.size(); }

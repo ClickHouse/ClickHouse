@@ -6,6 +6,7 @@
 #include <Analyzers/AnalyzeResultOfQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -25,6 +26,11 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <algorithm>
+#include <sstream>
+#include <unordered_map>
+#include <vector>
+#include <memory>
 
 
 namespace DB
@@ -72,8 +78,8 @@ void processLiteral(const String & column_name, const ASTPtr & ast, TypeAndConst
     TypeAndConstantInference::ExpressionInfo expression_info;
     expression_info.node = ast;
     expression_info.is_constant_expression = true;
-    expression_info.value = literal->value;
-    expression_info.data_type = applyVisitor(FieldToDataType(), expression_info.value);
+    expression_info.data_type = applyVisitor(FieldToDataType(), literal->value);
+    expression_info.value = convertFieldToType(literal->value, *expression_info.data_type);
     info.emplace(column_name, std::move(expression_info));
 }
 
@@ -250,7 +256,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         size_t result_position = argument_numbers.size();
         block_with_constants.insert({nullptr, expression_info.data_type, column_name});
 
-        function_ptr->execute(block_with_constants, argument_numbers, result_position);
+        function_ptr->execute(block_with_constants, argument_numbers, result_position, 1);
 
         const auto & result_column = block_with_constants.getByPosition(result_position).column;
         if (result_column->isColumnConst())
