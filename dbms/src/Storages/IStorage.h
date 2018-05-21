@@ -107,6 +107,9 @@ public:
     /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
     virtual bool supportsReplication() const { return false; }
 
+    /** Returns true if the storage supports deduplication of inserted data blocks . */
+    virtual bool supportsDeduplication() const { return false; }
+
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
       * This will take an extra lock that does not allow starting ALTER MODIFY.
