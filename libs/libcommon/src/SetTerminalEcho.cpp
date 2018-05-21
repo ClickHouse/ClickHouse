@@ -17,7 +17,7 @@ void SetTerminalEcho(bool enable)
     auto handle = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     if (!GetConsoleMode(handle, &mode))
-        throw std::runtime_error(std::string("SetTerminalEcho failed get:") + std::to_string(GetLastError()));
+        throw std::runtime_error(std::string("SetTerminalEcho failed get: ") + std::to_string(GetLastError()));
 
     if (!enable)
         mode &= ~ENABLE_ECHO_INPUT;
@@ -25,11 +25,11 @@ void SetTerminalEcho(bool enable)
         mode |= ENABLE_ECHO_INPUT;
 
     if (!SetConsoleMode(handle, mode))
-        throw std::runtime_error(std::string("SetTerminalEcho failed set:") + std::to_string(GetLastError()));
+        throw std::runtime_error(std::string("SetTerminalEcho failed set: ") + std::to_string(GetLastError()));
 #else
     struct termios tty;
     if (tcgetattr(STDIN_FILENO, &tty))
-        throw std::runtime_error(std::string("SetTerminalEcho failed get:") + strerror(errno));
+        throw std::runtime_error(std::string("SetTerminalEcho failed get: ") + strerror(errno));
     if (!enable)
         tty.c_lflag &= ~ECHO;
     else
@@ -37,6 +37,6 @@ void SetTerminalEcho(bool enable)
 
     auto ret = tcsetattr(STDIN_FILENO, TCSANOW, &tty);
     if (ret)
-        throw std::runtime_error(std::string("SetTerminalEcho failed set:") + strerror(errno));
+        throw std::runtime_error(std::string("SetTerminalEcho failed set: ") + strerror(errno));
 #endif
 }
