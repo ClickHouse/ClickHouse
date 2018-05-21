@@ -5,6 +5,7 @@
 #include <Poco/File.h>
 #include <Common/Exception.h>
 #include <port/unistd.h>
+#include <errno.h>
 
 
 namespace DB

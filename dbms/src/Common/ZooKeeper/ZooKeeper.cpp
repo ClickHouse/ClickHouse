@@ -367,6 +367,16 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
+std::string ZooKeeper::getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback)
+{
+    int32_t code = 0;
+    std::string res;
+    if (tryGetWatch(path, res, stat, watch_callback, &code))
+        return res;
+    else
+        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+}
+
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat, const EventPtr & watch, int * return_code)
 {
     return tryGetWatch(path, res, stat, callbackForEvent(watch), return_code);
@@ -739,6 +749,18 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
     return future;
 }
 
+int32_t ZooKeeper::tryMultiNoThrow(const Requests & requests, Responses & responses)
+{
+    try
+    {
+        return multiImpl(requests, responses);
+    }
+    catch (const ZooKeeperImpl::Exception & e)
+    {
+        return e.code;
+    }
+}
+
 
 size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses) const
 {
@@ -759,7 +781,7 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & re
 
 KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
     : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(code, responses)), code),
-    requests(requests), responses(responses)
+    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(code, responses))
 {
 }
 

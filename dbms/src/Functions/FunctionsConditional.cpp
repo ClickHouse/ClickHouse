@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
+#include <vector>
 
 
 namespace DB
@@ -40,7 +41,7 @@ String FunctionMultiIf::getName() const
 }
 
 
-void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     /** We will gather values from columns in branches to result column,
       *  depending on values of conditions.
@@ -123,7 +124,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             break;
     }
 
-    size_t rows = block.rows();
+    size_t rows = input_rows_count;
     MutableColumnPtr res = return_type->createColumn();
 
     for (size_t i = 0; i < rows; ++i)
@@ -274,7 +275,7 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
     return fun_transform.getReturnType(transform_args);
 }
 
-void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     if (!args.size())
         throw Exception{"Function " + getName() + " expects at least 1 arguments",
@@ -322,14 +323,14 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
     size_t dst_array_pos = temp_block.columns();
     temp_block.insert({nullptr, dst_array_type, ""});
 
-    fun_array.execute(temp_block, src_array_args, src_array_pos);
-    fun_array.execute(temp_block, dst_array_args, dst_array_pos);
+    fun_array.execute(temp_block, src_array_args, src_array_pos, input_rows_count);
+    fun_array.execute(temp_block, dst_array_args, dst_array_pos, input_rows_count);
 
     /// Execute transform.
     FunctionTransform fun_transform;
 
     ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
-    fun_transform.execute(temp_block, transform_args, result);
+    fun_transform.execute(temp_block, transform_args, result, input_rows_count);
 
     /// Put the result into the original block.
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);

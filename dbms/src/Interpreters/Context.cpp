@@ -15,6 +15,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <DataStreams/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -39,7 +40,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -111,6 +112,7 @@ struct ContextShared
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
     String flags_path;                                      /// Path to the directory with some control flags for server maintenance.
+    String user_files_path;                                 /// Path to the directory with user provided files, usable by 'file' table function.
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
@@ -130,6 +132,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
+    BackgroundSchedulePoolPtr schedule_pool;                /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -482,19 +485,29 @@ String Context::getTemporaryPath() const
 String Context::getFlagsPath() const
 {
     auto lock = getLock();
-    if (!shared->flags_path.empty())
-        return shared->flags_path;
-
-    shared->flags_path = shared->path + "flags/";
-    Poco::File(shared->flags_path).createDirectories();
     return shared->flags_path;
 }
 
+String Context::getUserFilesPath() const
+{
+    auto lock = getLock();
+    return shared->user_files_path;
+}
 
 void Context::setPath(const String & path)
 {
     auto lock = getLock();
+
     shared->path = path;
+
+    if (shared->tmp_path.empty())
+        shared->tmp_path = shared->path + "tmp/";
+
+    if (shared->flags_path.empty())
+        shared->flags_path = shared->path + "flags/";
+
+    if (shared->user_files_path.empty())
+        shared->user_files_path = shared->path + "user_files/";
 }
 
 void Context::setTemporaryPath(const String & path)
@@ -507,6 +520,12 @@ void Context::setFlagsPath(const String & path)
 {
     auto lock = getLock();
     shared->flags_path = path;
+}
+
+void Context::setUserFilesPath(const String & path)
+{
+    auto lock = getLock();
+    shared->user_files_path = path;
 }
 
 void Context::setConfig(const ConfigurationPtr & config)
@@ -590,6 +609,12 @@ QuotaForIntervals & Context::getQuota()
 
 void Context::checkDatabaseAccessRights(const std::string & database_name) const
 {
+    auto lock = getLock();
+    checkDatabaseAccessRightsImpl(database_name);
+}
+
+void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
+{
     if (client_info.current_user.empty() || (database_name == "system"))
     {
          /// An unnamed user, i.e. server, has access to all databases.
@@ -603,8 +628,8 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
-    checkDatabaseAccessRights(from.first);
-    checkDatabaseAccessRights(where.first);
+    checkDatabaseAccessRightsImpl(from.first);
+    checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].insert(where);
 
     // Notify table of dependencies change
@@ -616,8 +641,8 @@ void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAnd
 void Context::removeDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
 {
     auto lock = getLock();
-    checkDatabaseAccessRights(from.first);
-    checkDatabaseAccessRights(where.first);
+    checkDatabaseAccessRightsImpl(from.first);
+    checkDatabaseAccessRightsImpl(where.first);
     shared->view_dependencies[from].erase(where);
 
     // Notify table of dependencies change
@@ -638,7 +663,7 @@ Dependencies Context::getDependencies(const String & database_name, const String
     }
     else
     {
-        checkDatabaseAccessRights(db);
+        checkDatabaseAccessRightsImpl(db);
     }
 
     ViewDependencies::const_iterator iter = shared->view_dependencies.find(DatabaseAndTableName(db, table_name));
@@ -653,7 +678,7 @@ bool Context::isTableExist(const String & database_name, const String & table_na
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     return shared->databases.end() != it
@@ -665,7 +690,7 @@ bool Context::isDatabaseExist(const String & database_name) const
 {
     auto lock = getLock();
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
     return shared->databases.end() != shared->databases.find(db);
 }
 
@@ -680,7 +705,7 @@ void Context::assertTableExists(const String & database_name, const String & tab
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() == it)
@@ -697,7 +722,7 @@ void Context::assertTableDoesntExist(const String & database_name, const String 
 
     String db = resolveDatabase(database_name, current_database);
     if (check_database_access_rights)
-        checkDatabaseAccessRights(db);
+        checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
@@ -711,7 +736,7 @@ void Context::assertDatabaseExists(const String & database_name, bool check_data
 
     String db = resolveDatabase(database_name, current_database);
     if (check_database_access_rights)
-        checkDatabaseAccessRights(db);
+        checkDatabaseAccessRightsImpl(db);
 
     if (shared->databases.end() == shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
@@ -723,7 +748,7 @@ void Context::assertDatabaseDoesntExist(const String & database_name) const
     auto lock = getLock();
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     if (shared->databases.end() != shared->databases.find(db))
         throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
@@ -790,7 +815,7 @@ StoragePtr Context::getTableImpl(const String & database_name, const String & ta
     }
 
     String db = resolveDatabase(database_name, current_database);
-    checkDatabaseAccessRights(db);
+    checkDatabaseAccessRightsImpl(db);
 
     Databases::const_iterator it = shared->databases.find(db);
     if (shared->databases.end() == it)
@@ -1305,6 +1330,14 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     return *shared->background_pool;
 }
 
+BackgroundSchedulePool & Context::getSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->schedule_pool)
+        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.background_schedule_pool_size);
+    return *shared->schedule_pool;
+}
+
 void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1335,8 +1368,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
 bool Context::hasZooKeeper() const
 {
-    std::lock_guard<std::mutex> lock(shared->zookeeper_mutex);
-    return shared->zookeeper != nullptr;
+    return getConfigRef().has("zookeeper");
 }
 
 
@@ -1384,9 +1416,28 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 
 void Context::reloadClusterConfig()
 {
-    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
-    auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-    shared->clusters = std::make_unique<Clusters>(config, settings);
+    while (true)
+    {
+        ConfigurationPtr cluster_config;
+        {
+            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            cluster_config = shared->clusters_config;
+        }
+
+        auto & config = cluster_config ? *cluster_config : getConfigRef();
+        auto new_clusters = std::make_unique<Clusters>(config, settings);
+
+        {
+            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            if (shared->clusters_config.get() == cluster_config.get())
+            {
+                shared->clusters = std::move(new_clusters);
+                return;
+            }
+
+            /// Clusters config has been suddenly changed, recompute clusters
+        }
+    }
 }
 
 

@@ -1,4 +1,3 @@
-
 message (STATUS "Building: tcmalloc_minimal_internal")
 
 add_library (tcmalloc_minimal_internal

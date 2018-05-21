@@ -63,16 +63,13 @@ namespace
             const char * user_pw_end = strchr(address.data(), '@');
             const char * colon = strchr(address.data(), ':');
             if (!user_pw_end || !colon)
-                throw Exception{
-                    "Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
+                throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
                     ErrorCodes::INCORRECT_FILE_NAME};
 
             const bool has_pw = colon < user_pw_end;
             const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
             if (!host_end)
-                throw Exception{
-                    "Shard address '" + address + "' does not contain port",
-                    ErrorCodes::INCORRECT_FILE_NAME};
+                throw Exception{"Shard address '" + address + "' does not contain port", ErrorCodes::INCORRECT_FILE_NAME};
 
             const char * has_db = strchr(address.data(), '#');
             const char * port_end = has_db ? has_db : address_end;
@@ -159,7 +156,7 @@ void StorageDistributedDirectoryMonitor::run()
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
-    const auto pool_factory = [&storage, &name, &timeouts] (const std::string & host, const UInt16 port,
+    const auto pool_factory = [&storage, &timeouts] (const std::string & host, const UInt16 port,
                                                  const Protocol::Secure secure,
                                                  const std::string & user, const std::string & password,
                                                  const std::string & default_database)
@@ -167,7 +164,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,
             user, password, timeouts,
-            storage.getName() + '_' + name,
+            storage.getName() + '_' + user,
             Protocol::Compression::Enable,
             secure);
     };

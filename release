@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# Advanced usage:
+# Test gcc-8:
+# env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang6 build:
+# env DIST=bionic EXTRAPACKAGES="clang-6.0 libstdc++-8-dev lld-6.0 liblld-6.0-dev libclang-6.0-dev liblld-6.0" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang7 build:
+# env DIST=unstable EXTRAPACKAGES="clang-7 libstdc++-8-dev lld-7 liblld-7-dev libclang-7-dev liblld-7" DEB_CC=clang-7 DEB_CXX=clang++-7 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang6 without internal compiler (for low memory arm64):
+# env DIST=bionic DISABLE_PARALLEL=1 EXTRAPACKAGES="clang-6.0 libstdc++-8-dev" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -23,7 +33,7 @@ while [[ $1 == --* ]]
 do
     if [[ $1 == '--test' ]]; then
         TEST='yes'
-        VERSION_POSTFIX+=-test
+        VERSION_POSTFIX+=+test
         shift
     elif [[ $1 == '--check-build-dependencies' ]]; then
         DEBUILD_NODEPS_OPTIONS=""
@@ -56,27 +66,26 @@ done
 if [ -n "$SANITIZER" ]
 then
     CMAKE_BUILD_TYPE=$SANITIZER
-    VERSION_POSTFIX+=-${SANITIZER,,}
+    VERSION_POSTFIX+=+${SANITIZER,,}
     # todo: нужно ли отключить libtcmalloc?
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
     # GLIBC_COMPATIBILITY отключен по умолчанию
-    export DEB_CC=clang-5.0
-    export DEB_CXX=clang++-5.0
+    export DEB_CC=${DEB_CC=clang-5.0}
+    export DEB_CXX=${DEB_CXX=clang++-5.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 lld-5.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    VERSION_POSTFIX+=-$BUILD_TYPE
+    VERSION_POSTFIX+=+$BUILD_TYPE
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
     LIBTCMALLOC_OPTS="-DDEBUG_TCMALLOC=1"
-    VERSION_POSTFIX+=-$BUILD_TYPE
+    VERSION_POSTFIX+=+$BUILD_TYPE
 fi
 
-if [ -z "$THREAD_COUNT" ] ; then
-    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4`
-fi
+CMAKE_FLAGS=" $LIBTCMALLOC_OPTS $CMAKE_FLAGS"
+[[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
+[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 export CMAKE_FLAGS
 export EXTRAPACKAGES
 
@@ -87,11 +96,11 @@ gen_changelog "$REVISION" "" "$AUTHOR" ""
 
 if [ -z "$USE_PBUILDER" ] ; then
     # Build (only binary packages).
-    debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+    debuild -e PATH -e SSH_AUTH_SOCK \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
-    export DIST=${DIST:=artful}
+    export DIST=${DIST:=bionic}
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
     . $CURDIR/debian/.pbuilderrc
 
