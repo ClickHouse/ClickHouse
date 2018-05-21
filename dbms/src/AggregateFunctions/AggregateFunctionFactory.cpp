@@ -54,7 +54,7 @@ static DataTypes convertTypesWithDictionaryToNested(const DataTypes & types)
             res_types.push_back(type);
     }
 
-    return std::move(res_types);
+    return res_types;
 }
 
 AggregateFunctionPtr AggregateFunctionFactory::get(

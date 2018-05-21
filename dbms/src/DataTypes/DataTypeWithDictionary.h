@@ -158,7 +158,7 @@ private:
     template <typename ColumnType>
     MutableColumnPtr createColumnImpl() const;
 
-    friend class CreateColumnVector;
+    friend struct CreateColumnVector;
 };
 
 }

@@ -145,7 +145,7 @@ private:
     void buildIndex();
     ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder->assumeMutable().get()); }
     const ColumnType * getRawColumnPtr() const { return static_cast<ColumnType *>(column_holder.get()); }
-    IndexType insert(const StringRefWrapper<ColumnType> & ref, IndexType value);
+    IndexType insertIntoMap(const StringRefWrapper<ColumnType> & ref, IndexType value);
 
 };
 
@@ -213,7 +213,7 @@ void ColumnUnique<ColumnType, IndexType>::buildIndex()
 }
 
 template <typename ColumnType, typename IndexType>
-IndexType ColumnUnique<ColumnType, IndexType>::insert(const StringRefWrapper<ColumnType> & ref, IndexType value)
+IndexType ColumnUnique<ColumnType, IndexType>::insertIntoMap(const StringRefWrapper<ColumnType> & ref, IndexType value)
 {
     if (!index)
         buildIndex();
@@ -242,7 +242,7 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueInsert(const Field & x)
         return getDefaultValueIndex();
 
     column->insert(x);
-    auto pos = insert(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
+    auto pos = insertIntoMap(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
     if (pos != prev_size)
         column->popBack(1);
 
@@ -272,7 +272,7 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueInsertData(const char * pos, s
     if (!index->has(StringRefWrapper<ColumnType>(StringRef(pos, length))))
     {
         column->insertData(pos, length);
-        return static_cast<size_t>(insert(StringRefWrapper<ColumnType>(StringRef(pos, length)), size));
+        return static_cast<size_t>(insertIntoMap(StringRefWrapper<ColumnType>(StringRef(pos, length)), size));
     }
 
     return size;
@@ -299,7 +299,7 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueInsertDataWithTerminatingZero(
         return getDefaultValueIndex();
     }
 
-    auto position = insert(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
+    auto position = insertIntoMap(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
     if (position != prev_size)
         column->popBack(1);
 
@@ -319,7 +319,7 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueDeserializeAndInsertFromArena(
         return getDefaultValueIndex();
     }
 
-    auto index_pos = insert(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
+    auto index_pos = insertIntoMap(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
     if (index_pos != prev_size)
         column->popBack(1);
 
