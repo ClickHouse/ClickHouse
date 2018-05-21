@@ -2,12 +2,14 @@
 
 #include <list>
 #include <vector>
+#include <set>
 #include <memory>
 #include <mutex>
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <Poco/Event.h>
 #include <Core/Block.h>
+#include <common/ThreadPool.h>
 
 #include <iostream>
 
@@ -366,45 +368,46 @@ public:
 using ProcessorPtr = std::shared_ptr<IProcessor>;
 
 
-/** Wraps pipeline in a single processor.
-  * This processor has no inputs and outputs and just executes the pipeline,
-  *  performing all synchronous work from the current thread.
-  */
-class SequentialPipelineExecutor : IProcessor
+/// Look for first Ready or Async processor by depth-first search in needed input ports and full output ports.
+/// NOTE: Pipeline must not have cycles.
+template <typename Visit, typename Finish>
+void traverse(IProcessor & processor, Visit && visit, Finish && finish)
 {
-private:
-    std::list<ProcessorPtr> processors;
-    IProcessor * current_processor = nullptr;
-
-    /// Look for first Ready or Async processor by depth-first search in needed input ports.
-    /// NOTE: Pipeline must not have cycles.
-    template <typename Visit, typename Finish>
-    void traverse(IProcessor & processor, Visit && visit, Finish && finish)
+    IProcessor::Status status;
+    do
     {
-        Status status;
-        do
-        {
-            status = processor.prepare();
-        } while (status == Status::Again);
+        status = processor.prepare();
+    } while (status == IProcessor::Status::Again);
 
 //        processor.dump();
 //        std::cerr << "status: " << static_cast<int>(status) << "\n\n";
 
-        visit(processor, status);
+    visit(processor, status);
 
-        if (status == Status::Ready || status == Status::Async)
-            return finish(processor, status);
+    if (status == IProcessor::Status::Ready || status == IProcessor::Status::Async)
+        return finish(processor, status);
 
-        if (status == Status::NeedData)
-            for (auto & input : processor.getInputs())
-                if (input.isNeeded())
-                    traverse(input.getOutputPort().getProcessor(), std::forward<Visit>(visit), std::forward<Finish>(finish));
+    if (status == IProcessor::Status::NeedData)
+        for (auto & input : processor.getInputs())
+            if (input.isNeeded())
+                traverse(input.getOutputPort().getProcessor(), std::forward<Visit>(visit), std::forward<Finish>(finish));
 
-        if (status == Status::PortFull)
-            for (auto & output : processor.getOutputs())
-                if (output.hasData())
-                    traverse(output.getInputPort().getProcessor(), std::forward<Visit>(visit), std::forward<Finish>(finish));
-    }
+    if (status == IProcessor::Status::PortFull)
+        for (auto & output : processor.getOutputs())
+            if (output.hasData())
+                traverse(output.getInputPort().getProcessor(), std::forward<Visit>(visit), std::forward<Finish>(finish));
+}
+
+
+/** Wraps pipeline in a single processor.
+  * This processor has no inputs and outputs and just executes the pipeline,
+  *  performing all synchronous work from the current thread.
+  */
+class SequentialPipelineExecutor : public IProcessor
+{
+private:
+    std::list<ProcessorPtr> processors;
+    IProcessor * current_processor = nullptr;
 
 public:
     SequentialPipelineExecutor(const std::list<ProcessorPtr> & processors)
@@ -472,6 +475,109 @@ public:
             throw Exception("Bad pipeline");
 
         current_processor->schedule(watch);
+    }
+};
+
+
+/** Wraps pipeline in a single processor.
+  * This processor has no inputs and outputs and just executes the pipeline,
+  *  performing all synchronous work within a threadpool.
+  */
+class ParallelPipelineExecutor : public IProcessor
+{
+private:
+    std::list<ProcessorPtr> processors;
+    ThreadPool & pool;
+
+    std::set<IProcessor *> active_processors;
+    std::mutex mutex;
+
+    IProcessor * current_processor = nullptr;
+    Status current_status;
+
+public:
+    ParallelPipelineExecutor(const std::list<ProcessorPtr> & processors, ThreadPool & pool)
+        : processors(processors), pool(pool)
+    {
+    }
+
+    String getName() const override { return "ParallelPipelineExecutor"; }
+
+    Status prepare() override
+    {
+        current_processor = nullptr;
+
+        bool has_someone_to_wait = false;
+
+        for (auto & element : processors)
+        {
+            traverse(*element,
+                [&] (IProcessor &, Status status)
+                {
+                    if (status == Status::Wait)
+                        has_someone_to_wait = true;
+                },
+                [&] (IProcessor & processor, Status status)
+                {
+                    std::lock_guard lock(mutex);
+                    if (active_processors.count(&processor))
+                    {
+                        has_someone_to_wait = true;
+                    }
+                    else
+                    {
+                        current_processor = &processor;
+                        current_status = status;
+                    }
+                });
+
+            if (current_processor)
+                break;
+        }
+
+        if (current_processor)
+            return Status::Async;
+
+        if (has_someone_to_wait)
+            return Status::Wait;
+
+        for (auto & element : processors)
+        {
+            if (element->prepare() == Status::NeedData)
+                throw Exception("Pipeline stuck: " + element->getName() + " processor needs input data but no one is going to generate it");
+            if (element->prepare() == Status::PortFull)
+                throw Exception("Pipeline stuck: " + element->getName() + " processor has data in output port but no one is going to consume it");
+        }
+
+        return Status::Finished;
+    }
+
+    void schedule(EventCounter & watch) override
+    {
+        if (!current_processor)
+            throw Exception("Bad pipeline");
+
+        if (current_status == Status::Async)
+        {
+            current_processor->schedule(watch);
+        }
+        else
+        {
+            {
+                std::lock_guard lock(mutex);
+                active_processors.insert(current_processor);
+            }
+
+            pool.schedule([processor = current_processor, &watch, this]
+            {
+                processor->work();
+                {
+                    std::lock_guard lock(mutex);
+                    active_processors.erase(processor);
+                }
+                watch.notify();
+            });
+        }
     }
 };
 
@@ -698,12 +804,6 @@ public:
         return Status::Again;
     }
 };
-
-
-/*class AsynchronousProcessor : public IProcessor
-{
-
-};*/
 
 
 class LimitTransform : public IProcessor

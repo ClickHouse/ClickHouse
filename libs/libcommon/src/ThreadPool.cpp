@@ -2,33 +2,41 @@
 #include <iostream>
 
 
-ThreadPool::ThreadPool(size_t m_size)
-    : m_size(m_size)
+ThreadPool::ThreadPool(size_t num_threads)
+    : ThreadPool(num_threads, num_threads)
 {
-    threads.reserve(m_size);
-    for (size_t i = 0; i < m_size; ++i)
-        threads.emplace_back([this] { worker(); });
 }
 
-void ThreadPool::schedule(Job job)
+
+ThreadPool::ThreadPool(size_t num_threads, size_t queue_size)
+    : num_threads(num_threads), queue_size(queue_size)
+{
+    threads.reserve(num_threads);
+}
+
+
+void ThreadPool::schedule(Job job, int priority)
 {
     {
         std::unique_lock<std::mutex> lock(mutex);
-        has_free_thread.wait(lock, [this] { return active_jobs < m_size || shutdown; });
+        job_finished.wait(lock, [this] { return !queue_size || active_jobs < queue_size || shutdown; });
         if (shutdown)
             return;
 
-        jobs.push(std::move(job));
+        jobs.emplace(std::move(job), priority);
         ++active_jobs;
+
+        if (threads.size() < std::min(num_threads, active_jobs))
+            threads.emplace_back([this] { worker(); });
     }
-    has_new_job_or_shutdown.notify_one();
+    new_job_or_shutdown.notify_one();
 }
 
 void ThreadPool::wait()
 {
     {
         std::unique_lock<std::mutex> lock(mutex);
-        has_free_thread.wait(lock, [this] { return active_jobs == 0; });
+        job_finished.wait(lock, [this] { return active_jobs == 0; });
 
         if (first_exception)
         {
@@ -46,7 +54,7 @@ ThreadPool::~ThreadPool()
         shutdown = true;
     }
 
-    has_new_job_or_shutdown.notify_all();
+    new_job_or_shutdown.notify_all();
 
     for (auto & thread : threads)
         thread.join();
@@ -68,12 +76,12 @@ void ThreadPool::worker()
 
         {
             std::unique_lock<std::mutex> lock(mutex);
-            has_new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
+            new_job_or_shutdown.wait(lock, [this] { return shutdown || !jobs.empty(); });
             need_shutdown = shutdown;
 
             if (!jobs.empty())
             {
-                job = std::move(jobs.front());
+                job = jobs.top().job;
                 jobs.pop();
             }
             else
@@ -97,8 +105,8 @@ void ThreadPool::worker()
                     shutdown = true;
                     --active_jobs;
                 }
-                has_free_thread.notify_all();
-                has_new_job_or_shutdown.notify_all();
+                job_finished.notify_all();
+                new_job_or_shutdown.notify_all();
                 return;
             }
         }
@@ -108,7 +116,7 @@ void ThreadPool::worker()
             --active_jobs;
         }
 
-        has_free_thread.notify_all();
+        job_finished.notify_all();
     }
 }
 
