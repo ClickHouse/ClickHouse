@@ -42,7 +42,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
     clockid_t clock_type)
     : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
 {
     try
     {
@@ -383,7 +383,17 @@ void MergeTreeReader::readData(
     };
 
     double & avg_value_size_hint = avg_value_size_hints[name];
-    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, avg_value_size_hint, true, {});
+    if (column.withDictionary())
+    {
+        for (size_t read_rows = 0; read_rows < max_rows_to_read; read_rows += index_granularity)
+        {
+            size_t rows_to_read = std::min(index_granularity, max_rows_to_read - read_rows);
+            type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, rows_to_read, avg_value_size_hint, true, {});
+            continue_reading = true;
+        }
+    }
+    else
+        type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, avg_value_size_hint, true, {});
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 
