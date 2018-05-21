@@ -22,10 +22,13 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
 {
+
+class ReplicatedMergeTreeMergeSelectingThread;
 
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
@@ -186,6 +189,7 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
+    friend class ReplicatedMergeTreeMergeSelectingThread;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -253,16 +257,19 @@ private:
 
     /// Threads.
 
-    /// A thread that keeps track of the updates in the logs of all replicas and loads them into the queue.
-    std::thread queue_updating_thread;
-    zkutil::EventPtr queue_updating_event = std::make_shared<Poco::Event>();
+    /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
+    bool queue_update_in_progress = false;
+    BackgroundSchedulePool::TaskHandle queue_updating_task_handle;
 
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
-    /// A thread that selects parts to merge.
-    std::thread merge_selecting_thread;
-    Poco::Event merge_selecting_event;
+    /// A task that selects parts to merge.
+    BackgroundSchedulePool::TaskHandle merge_selecting_task_handle;
+
+    /// State for merge selecting thread
+    std::unique_ptr<ReplicatedMergeTreeMergeSelectingThread> merge_sel_state;
+
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
     /// If true then new entries might added to the queue, so we must pull logs before selecting parts for merge.
@@ -271,8 +278,6 @@ private:
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
-    /// Is used to wakeup cleanup_thread
-    Poco::Event cleanup_thread_event;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
@@ -287,8 +292,6 @@ private:
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
 
     Logger * log;
-
-    /// Initialization.
 
     /** Creates the minimum set of nodes in ZooKeeper.
       */
@@ -342,9 +345,9 @@ private:
     /// Running jobs from the queue.
 
     /** Copies the new entries from the logs of all replicas to the queue of this replica.
-      * If next_update_event != nullptr, calls this event when new entries appear in the log.
+      * If next_update_task_handle != nullptr, schedules this task when new entries appear in the log.
       */
-    void pullLogsToQueue(zkutil::EventPtr next_update_event = nullptr);
+    void pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_task_handle = nullptr);
 
     /** Execute the action from the queue. Throws an exception if something is wrong.
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.
