@@ -271,6 +271,12 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             chain.addStep();
         }
 
+        if (query_analyzer->appendPreWhere(chain, !res.first_stage))
+        {
+            res.before_where = chain.getLastActions();
+            chain.addStep();
+        }
+
         if (res.need_aggregate)
         {
             query_analyzer->appendGroupBy(chain, !res.first_stage);
