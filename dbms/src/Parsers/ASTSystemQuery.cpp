@@ -33,6 +33,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "START LISTEN QUERIES";
         case Type::RESTART_REPLICAS:
             return "RESTART REPLICAS";
+        case Type::RESTART_REPLICA:
+            return "RESTART REPLICA";
         case Type::SYNC_REPLICA:
             return "SYNC REPLICA";
         case Type::RELOAD_DICTIONARY:
@@ -47,6 +49,14 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "STOP MERGES";
         case Type::START_MERGES:
             return "START MERGES";
+        case Type::STOP_FETCHES:
+            return "STOP FETCHES";
+        case Type::START_FETCHES:
+            return "START FETCHES";
+        case Type::STOP_REPLICATED_SENDS:
+            return "STOP REPLICATED SENDS";
+        case Type::START_REPLICATEDS_SENDS:
+            return "START REPLICATED SENDS";
         case Type::STOP_REPLICATION_QUEUES:
             return "STOP REPLICATION QUEUES";
         case Type::START_REPLICATION_QUEUES:
@@ -62,10 +72,38 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
     settings.ostr << typeToString(type);
 
-    if (type == Type::RELOAD_DICTIONARY)
+    auto print_database_table = [&] ()
+    {
+        settings.ostr << " ";
+
+        if (!target_database.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_database)
+                          << (settings.hilite ? hilite_none : "") << ".";
+        }
+
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_table)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
+    if (   type == Type::STOP_MERGES
+        || type == Type::START_MERGES
+        || type == Type::STOP_FETCHES
+        || type == Type::START_FETCHES
+        || type == Type::STOP_REPLICATED_SENDS
+        || type == Type::START_REPLICATEDS_SENDS
+        || type == Type::STOP_REPLICATION_QUEUES
+        || type == Type::START_REPLICATION_QUEUES)
+    {
+        if (!target_table.empty())
+            print_database_table();
+    }
+    else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA)
+    {
+        print_database_table();
+    }
+    else if (type == Type::RELOAD_DICTIONARY)
         settings.ostr << " " << backQuoteIfNeed(target_dictionary);
-    else if (type == Type::SYNC_REPLICA)
-        throw Exception("SYNC_REPLICA isn't supported yet", ErrorCodes::NOT_IMPLEMENTED);
 }
 
 

@@ -12,8 +12,7 @@ namespace DB
 
 /** Supports multiple names of active parts of data.
   * Repeats part of the MergeTreeData functionality.
-  * TODO: generalize with MergeTreeData. It is possible to leave this class approximately as is and use it from MergeTreeData.
-  *       Then in MergeTreeData you can make map<String, DataPartPtr> data_parts and all_data_parts.
+  * TODO: generalize with MergeTreeData
   */
 class ActiveDataPartSet
 {
@@ -26,19 +25,21 @@ public:
     /// If not found, returns an empty string.
     String getContainingPart(const String & name) const;
 
-    Strings getParts() const; /// In ascending order of the partition_id and block number.
+    /// Returns parts in ascending order of the partition_id and block number.
+    Strings getParts() const;
 
     size_t size() const;
+
+    /// Do not block mutex.
+    void addUnlocked(const String & name);
+    String getContainingPartUnlocked(const MergeTreePartInfo & part_info) const;
+    Strings getPartsUnlocked() const;
 
 private:
     MergeTreeDataFormatVersion format_version;
 
     mutable std::mutex mutex;
     std::map<MergeTreePartInfo, String> part_info_to_name;
-
-    /// Do not block mutex.
-    void addImpl(const String & name);
-    String getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }

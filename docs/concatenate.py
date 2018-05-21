@@ -20,12 +20,12 @@ import re
 import os
 
 if len(sys.argv) < 2:
-    print "Usage: concatenate.py language_dir"
-    print "Example: concatenate.py ru"
+    print("Usage: concatenate.py language_dir")
+    print("Example: concatenate.py ru")
     sys.exit(1)
 
 if not os.path.exists(sys.argv[1]):
-    print "Pass language_dir correctly. For example, 'ru'."
+    print("Pass language_dir correctly. For example, 'ru'.")
     sys.exit(2)
 
 # Configuration
@@ -43,8 +43,8 @@ for l in cfg_file:
         path = (l[l.index(':') + 1:]).strip(" '\n")
         files_to_concatenate.append(path)
 
-print str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:"
-print files_to_concatenate
+print(str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:")
+print(files_to_concatenate)
 
 # 2. Concatenate all of the files in the list
 
@@ -68,7 +68,7 @@ for path in files_to_concatenate:
             if sharp_pos > -1:
                 return '[' + text + '](' + link[sharp_pos:] + ')'
             else:
-                print 'ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.'
+                print('ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
                 # return '['+text+'](#'+link.replace('/','-')+')'
 
     for l in file:

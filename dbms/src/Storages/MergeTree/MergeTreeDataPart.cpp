@@ -13,6 +13,7 @@
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/localBackup.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -366,29 +367,45 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
 }
 
 
-void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix) const
+String MergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
+    String res;
     unsigned try_no = 0;
-    auto dst_name = [&, this] { return (to_detached ? "detached/" : "") + prefix + name + (try_no ? "_try" + DB::toString(try_no) : ""); };
+    auto dst_name = [&, this] { return "detached/" + prefix + name + (try_no ? "_try" + DB::toString(try_no) : ""); };
 
-    if (to_detached)
+    /** If you need to detach a part, and directory into which we want to rename it already exists,
+        *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
+        * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
+        * No more than 10 attempts are made so that there are not too many junk directories left.
+        */
+    while (try_no < 10)
     {
-        /** If you need to detach a part, and directory into which we want to rename it already exists,
-            *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
-            * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
-            * No more than 10 attempts are made so that there are not too many junk directories left.
-            */
-        while (try_no < 10 && Poco::File(storage.full_path + dst_name()).exists())
-        {
-            LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
-                " Will detach to directory with '_tryN' suffix.");
-            ++try_no;
-        }
+        res = dst_name();
+
+        if (!Poco::File(storage.full_path + res).exists())
+            return res;
+
+        LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
+            " Will detach to directory with '_tryN' suffix.");
+        ++try_no;
     }
 
-    renameTo(dst_name());
+    return res;
 }
 
+void MergeTreeDataPart::renameToDetached(const String & prefix) const
+{
+    renameTo(getRelativePathForDetachedPart(prefix));
+}
+
+
+void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
+{
+    Poco::Path src(getFullPath());
+    Poco::Path dst(storage.full_path + getRelativePathForDetachedPart(prefix));
+    /// Backup is not recursive (max_level is 0), so do not copy inner directories
+    localBackup(src, dst, 0);
+}
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {

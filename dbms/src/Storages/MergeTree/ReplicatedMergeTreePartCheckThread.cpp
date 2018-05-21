@@ -21,33 +21,33 @@ ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageRe
     : storage(storage_),
     log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, PartCheckThread)"))
 {
+    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreePartCheckThread", [this] { run(); });
+    task_handle->schedule();
 }
 
+ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
+{
+    stop();
+    storage.context.getSchedulePool().removeTask(task_handle);
+}
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
-
-    if (need_stop)
-        need_stop = false;
-    else
-        thread = std::thread([this] { run(); });
+    need_stop = false;
+    task_handle->activate();
+    task_handle->schedule();
 }
-
 
 void ReplicatedMergeTreePartCheckThread::stop()
 {
+    //based on discussion on https://github.com/yandex/ClickHouse/pull/1489#issuecomment-344756259
+    //using the schedule pool there is no problem in case stop is called two time in row and the start multiple times
+
     std::lock_guard<std::mutex> lock(start_stop_mutex);
-
     need_stop = true;
-    if (thread.joinable())
-    {
-        wakeup_event.set();
-        thread.join();
-        need_stop = false;
-    }
+    task_handle->deactivate();
 }
-
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
 {
@@ -58,7 +58,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
     parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
     parts_set.insert(name);
-    wakeup_event.set();
+    task_handle->schedule();
 }
 
 
@@ -273,7 +273,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
                 storage.removePartAndEnqueueFetch(part_name);
 
                 /// Delete part locally.
-                storage.data.renameAndDetachPart(part, "broken_");
+                storage.data.forgetPartAndMoveToDetached(part, "broken_");
             }
         }
         else if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
@@ -284,7 +284,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
             ProfileEvents::increment(ProfileEvents::ReplicatedPartChecksFailed);
 
             LOG_ERROR(log, "Unexpected part " << part_name << " in filesystem. Removing.");
-            storage.data.renameAndDetachPart(part, "unexpected_");
+            storage.data.forgetPartAndMoveToDetached(part, "unexpected_");
         }
         else
         {
@@ -309,95 +309,83 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
 void ReplicatedMergeTreePartCheckThread::run()
 {
-    setThreadName("ReplMTPartCheck");
+    if (need_stop)
+        return;
 
-    while (!need_stop)
+    try
     {
-        try
+        time_t current_time = time(nullptr);
+
+        /// Take part from the queue for verification.
+        PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
+        time_t min_check_time = std::numeric_limits<time_t>::max();
+
         {
-            time_t current_time = time(nullptr);
+            std::lock_guard<std::mutex> lock(parts_mutex);
 
-            /// Take part from the queue for verification.
-            PartsToCheckQueue::iterator selected = parts_queue.end();    /// end from std::list is not get invalidated
-            time_t min_check_time = std::numeric_limits<time_t>::max();
-
+            if (parts_queue.empty())
             {
-                std::lock_guard<std::mutex> lock(parts_mutex);
-
-                if (parts_queue.empty())
+                if (!parts_set.empty())
                 {
-                    if (!parts_set.empty())
+                    LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
+                    parts_set.clear();
+                }
+            }
+            else
+            {
+                for (auto it = parts_queue.begin(); it != parts_queue.end(); ++it)
+                {
+                    if (it->second <= current_time)
                     {
-                        LOG_ERROR(log, "Non-empty parts_set with empty parts_queue. This is a bug.");
-                        parts_set.clear();
+                        selected = it;
+                        break;
                     }
-                }
-                else
-                {
-                    for (auto it = parts_queue.begin(); it != parts_queue.end(); ++it)
-                    {
-                        if (it->second <= current_time)
-                        {
-                            selected = it;
-                            break;
-                        }
 
-                        if (it->second < min_check_time)
-                            min_check_time = it->second;
-                    }
-                }
-            }
-
-            if (selected == parts_queue.end())
-            {
-                /// Poco::Event is triggered immediately if `signal` was before the `wait` call.
-                /// We can wait a little more than we need due to the use of the old `current_time`.
-
-                if (min_check_time != std::numeric_limits<time_t>::max() && min_check_time > current_time)
-                    wakeup_event.tryWait(1000 * (min_check_time - current_time));
-                else
-                    wakeup_event.wait();
-
-                continue;
-            }
-
-            checkPart(selected->first);
-
-            if (need_stop)
-                break;
-
-            /// Remove the part from check queue.
-            {
-                std::lock_guard<std::mutex> lock(parts_mutex);
-
-                if (parts_queue.empty())
-                {
-                    LOG_ERROR(log, "Someone erased cheking part from parts_queue. This is a bug.");
-                }
-                else
-                {
-                    parts_set.erase(selected->first);
-                    parts_queue.erase(selected);
+                    if (it->second < min_check_time)
+                        min_check_time = it->second;
                 }
             }
         }
-        catch (const zkutil::KeeperException & e)
+
+        if (selected == parts_queue.end())
+            return;
+
+        checkPart(selected->first);
+
+        if (need_stop)
+            return;
+
+        /// Remove the part from check queue.
         {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            std::lock_guard<std::mutex> lock(parts_mutex);
 
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
-                break;
+            if (parts_queue.empty())
+            {
+                LOG_ERROR(log, "Someone erased cheking part from parts_queue. This is a bug.");
+            }
+            else
+            {
+                parts_set.erase(selected->first);
+                parts_queue.erase(selected);
+            }
+        }
 
-            wakeup_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-            wakeup_event.tryWait(PART_CHECK_ERROR_SLEEP_MS);
-        }
+        task_handle->schedule();
     }
+    catch (const zkutil::KeeperException & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-    LOG_DEBUG(log, "Part check thread finished");
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            return;
+
+        task_handle->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        task_handle->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+    }
 }
 
 }
