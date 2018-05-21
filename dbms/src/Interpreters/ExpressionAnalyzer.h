@@ -23,7 +23,9 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
-using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangeHash>;
+/// Will compare sets by their position in query string. It's possible because IAST::clone() doesn't chane IAST::range.
+/// It should be taken into account when we want to change AST part which contains sets.
+using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
