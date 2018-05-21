@@ -206,7 +206,8 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     size_t limit,
     double /*avg_value_size_hint*/,
     bool position_independent_encoding,
-    SubstreamPath path) const
+    SubstreamPath path,
+    const DeserializeBinaryBulkStatePtr & state) const
 {
     ColumnArray & column_array = typeid_cast<ColumnArray &>(column);
 
@@ -229,7 +230,7 @@ void DataTypeArray::deserializeBinaryBulkWithMultipleStreams(
     if (last_offset < nested_column.size())
         throw Exception("Nested column is longer than last offset", ErrorCodes::LOGICAL_ERROR);
     size_t nested_limit = last_offset - nested_column.size();
-    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, getter, nested_limit, 0, position_independent_encoding, path);
+    nested->deserializeBinaryBulkWithMultipleStreams(nested_column, getter, nested_limit, 0, position_independent_encoding, path, state);
 
     /// Check consistency between offsets and elements subcolumns.
     /// But if elements column is empty - it's ok for columns of Nested types that was added by ALTER.

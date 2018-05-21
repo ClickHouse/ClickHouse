@@ -216,7 +216,8 @@ void TinyLogBlockInputStream::readData(const String & name, const IDataType & ty
         return &streams[stream_name]->compressed;
     };
 
-    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, limit, 0, true, {}); /// TODO Use avg_value_size_hint.
+    auto state = type.createDeserializeBinaryBulkState();
+    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, limit, 0, true, {}, state); /// TODO Use avg_value_size_hint.
 }
 
 

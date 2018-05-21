@@ -29,16 +29,19 @@ public:
             OutputStreamGetter getter,
             size_t offset,
             size_t limit,
-            bool /*position_independent_encoding*/,
+            bool position_independent_encoding,
             SubstreamPath path) const override;
+
+    DeserializeBinaryBulkStatePtr createDeserializeBinaryBulkState() const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
             InputStreamGetter getter,
             size_t limit,
-            double /*avg_value_size_hint*/,
-            bool /*position_independent_encoding*/,
-            SubstreamPath path) const override;
+            double avg_value_size_hint,
+            bool position_independent_encoding,
+            SubstreamPath path,
+            const DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;

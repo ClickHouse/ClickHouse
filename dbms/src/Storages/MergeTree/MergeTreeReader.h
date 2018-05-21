@@ -22,6 +22,7 @@ class MergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
+    using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
     MergeTreeReader(const String & path, /// Path to the directory containing the part
         const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
@@ -90,6 +91,8 @@ private:
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
+    /// Stores states for IDataType::deserializeBinaryBulk
+    DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     String path;
     MergeTreeData::DataPartPtr data_part;
 
