@@ -54,7 +54,8 @@ public:
         const String & host,
         int port,
         const ConnectionTimeouts & timeouts,
-        bool to_detached = false);
+        bool to_detached = false,
+        const String & tmp_prefix_ = "");
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
