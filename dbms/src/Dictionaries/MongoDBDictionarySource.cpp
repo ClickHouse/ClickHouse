@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
 #include <Poco/Util/AbstractConfiguration.h>
 
 #pragma GCC diagnostic push

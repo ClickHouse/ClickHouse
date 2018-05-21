@@ -174,7 +174,8 @@ dynamicConfigFile=/etc/zookeeper-{{ cluster['name'] }}/conf/zoo.cfg.dynamic
 Java version:
 
 ```text
-Java(TM) SE Runtime Environment (build 1.8.0_25-b17)Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
+Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
+Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
 
 JVM parameters:

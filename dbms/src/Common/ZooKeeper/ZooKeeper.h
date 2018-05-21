@@ -113,6 +113,7 @@ public:
     bool existsWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    std::string getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.
@@ -148,11 +149,8 @@ public:
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
     int32_t tryMulti(const Requests & requests, Responses & responses);
-    /// Throws nothing, just alias of multiImpl
-    int32_t tryMultiNoThrow(const Requests & requests, Responses & responses)
-    {
-        return multiImpl(requests, responses);
-    }
+    /// Throws nothing (even session expired errors)
+    int32_t tryMultiNoThrow(const Requests & requests, Responses & responses);
 
     Int64 getClientID();
 
@@ -184,26 +182,31 @@ public:
     ///
     /// Future should not be destroyed before the result is gotten.
 
-    std::future<ZooKeeperImpl::ZooKeeper::GetResponse> asyncGet(const std::string & path);
+    using FutureGet = std::future<ZooKeeperImpl::ZooKeeper::GetResponse>;
+    FutureGet asyncGet(const std::string & path);
 
-    std::future<ZooKeeperImpl::ZooKeeper::GetResponse> asyncTryGet(const std::string & path);
+    FutureGet asyncTryGet(const std::string & path);
 
-    std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> asyncExists(const std::string & path);
+    using FutureExists = std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ;
+    FutureExists asyncExists(const std::string & path);
 
-    std::future<ZooKeeperImpl::ZooKeeper::ListResponse> asyncGetChildren(const std::string & path);
+    using FutureGetChildren = std::future<ZooKeeperImpl::ZooKeeper::ListResponse>;
+    FutureGetChildren asyncGetChildren(const std::string & path);
 
-    std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> asyncRemove(const std::string & path, int32_t version = -1);
+    using FutureRemove = std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse>;
+    FutureRemove asyncRemove(const std::string & path, int32_t version = -1);
 
     /// Doesn't throw in the following cases:
     /// * The node doesn't exist
     /// * The versions do not match
     /// * The node has children
-    std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse> asyncTryRemove(const std::string & path, int32_t version = -1);
+    FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1);
 
-    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> asyncMulti(const Requests & ops);
+    using FutureMulti = std::future<ZooKeeperImpl::ZooKeeper::MultiResponse>;
+    FutureMulti asyncMulti(const Requests & ops);
 
     /// Like the previous one but don't throw any exceptions on future.get()
-    std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> tryAsyncMulti(const Requests & ops);
+    FutureMulti tryAsyncMulti(const Requests & ops);
 
     static std::string error2string(int32_t code);
 

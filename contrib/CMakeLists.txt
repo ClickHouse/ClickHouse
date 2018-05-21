@@ -21,7 +21,7 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     add_subdirectory (double-conversion)
 endif ()
 
@@ -113,11 +113,7 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
-    if (APPLE) # tests never end
-        set (BUILD_TESTING 0 CACHE INTERNAL "")
-    else ()
-        set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
-    endif ()
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
     add_subdirectory (capnproto/c++)
@@ -132,7 +128,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (USE_INTERNAL_SSL_LIBRARY)
+    if (USE_INTERNAL_SSL_LIBRARY OR (DEFINED ENABLE_POCO_NETSSL AND NOT ENABLE_POCO_NETSSL))
         set (DISABLE_INTERNAL_OPENSSL 1 CACHE INTERNAL "")
         set (ENABLE_NETSSL 0 CACHE INTERNAL "") # TODO!
         set (ENABLE_CRYPTO 0 CACHE INTERNAL "") # TODO!
@@ -145,8 +141,13 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (ENABLE_TESTS ${_save})
     set (CMAKE_CXX_FLAGS ${save_CMAKE_CXX_FLAGS})
     set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    if (OPENSSL_FOUND AND TARGET Crypto)
+
+    if (OPENSSL_FOUND AND TARGET Crypto AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
         target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
+endif ()
+
+if (USE_INTERNAL_LLVM_LIBRARY)
+    add_subdirectory (llvm/llvm)
 endif ()

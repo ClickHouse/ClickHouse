@@ -149,12 +149,15 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
+    auto path_exists = Poco::File(full_path).exists();
     /// Creating directories, if not exist.
     Poco::File(full_path).createDirectories();
+
     Poco::File(full_path + "detached").createDirectory();
 
     String version_file_path = full_path + "format_version.txt";
-    if (!attach)
+    // When data path not exists, ignore the format_version check
+    if (!attach || !path_exists)
     {
         format_version = min_format_version;
         WriteBufferFromFile buf(version_file_path);
@@ -771,10 +774,7 @@ void MergeTreeData::clearOldPartsFromFilesystem()
 void MergeTreeData::setPath(const String & new_full_path)
 {
     if (Poco::File{new_full_path}.exists())
-        throw Exception{
-            "Target path already exists: " + new_full_path,
-            /// @todo existing target can also be a file, not directory
-            ErrorCodes::DIRECTORY_ALREADY_EXISTS};
+        throw Exception{"Target path already exists: " + new_full_path, ErrorCodes::DIRECTORY_ALREADY_EXISTS};
 
     Poco::File(full_path).renameTo(new_full_path);
 
@@ -1005,7 +1005,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
                 /// This is temporary name for expression. TODO Invent the name more safely.
                 const String new_type_name_column = '#' + new_type_name + "_column";
                 out_expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
+                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }, "", false));
 
                 const auto & function = FunctionFactory::instance().get("CAST", context);
                 out_expression->add(ExpressionAction::applyFunction(
@@ -2172,7 +2172,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit()
     return total_covered_parts;
 }
 
-bool MergeTreeData::isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
+bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
     String column_name = node->getColumnName();
 
@@ -2180,33 +2180,35 @@ bool MergeTreeData::isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(c
         if (column_name == column.column_name)
             return true;
 
-    if (partition_expr_ast && partition_expr_ast->children.at(0)->getColumnName() == column_name)
-        return true;
+    for (const auto & column : minmax_idx_sort_descr)
+        if (column_name == column.column_name)
+            return true;
 
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))
         if (func->arguments->children.size() == 1)
-            return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
+            return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(func->arguments->children.front());
 
     return false;
 }
 
 bool MergeTreeData::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const
 {
-    /// Make sure that the left side of the IN operator contain part of the primary key.
-    /// If there is a tuple on the left side of the IN operator, at least one item of the tuple must be part of the primary key (probably wrapped by a chain of some acceptable functions).
+    /// Make sure that the left side of the IN operator contain part of the key.
+    /// If there is a tuple on the left side of the IN operator, at least one item of the tuple
+    ///  must be part of the key (probably wrapped by a chain of some acceptable functions).
     const ASTFunction * left_in_operand_tuple = typeid_cast<const ASTFunction *>(left_in_operand.get());
     if (left_in_operand_tuple && left_in_operand_tuple->name == "tuple")
     {
         for (const auto & item : left_in_operand_tuple->arguments->children)
-            if (isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(item))
+            if (isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(item))
                 return true;
 
         /// The tuple itself may be part of the primary key, so check that as a last resort.
-        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
     else
     {
-        return isPrimaryKeyOrPartitionKeyColumnPossiblyWrappedInFunctions(left_in_operand);
+        return isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(left_in_operand);
     }
 }
 

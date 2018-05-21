@@ -25,9 +25,9 @@ if [ "${TEST_CONNECT}" ]; then
     if  [ "${TEST_SSL}" ]; then
         echo "<yandex><https_port>8443</https_port><tcp_port_secure>9440</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
         echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
-
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
+        chmod a+r /etc/clickhouse-server/*
         CLIENT_ADD="--secure"
     fi
 

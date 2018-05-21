@@ -1,4 +1,4 @@
-set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error")
+add_definitions(-Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor -U_LIBCPP_DEBUG)
 
 add_library(clickhouse-compiler-lib
     driver.cpp
@@ -8,12 +8,12 @@ add_library(clickhouse-compiler-lib
 
 target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions -g0)
 
-llvm_map_components_to_libraries(REQUIRED_LLVM_LIBRARIES all)
+llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
+if (TERMCAP_LIBRARY)
+    list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
+endif ()
+list(APPEND REQUIRED_LLVM_LIBRARIES ${CMAKE_DL_LIBS})
 
-# We link statically with zlib, and LLVM (sometimes) tries to bring its own dependency.
-list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-lz")
-# Wrong library in freebsd:
-list(REMOVE_ITEM REQUIRED_LLVM_LIBRARIES "-l/usr/lib/libexecinfo.so")
 
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
@@ -46,8 +46,6 @@ LLVMSupport
 #Polly
 #PollyISL
 #PollyPPCG
-
-libtinfo.a
 
 PUBLIC ${ZLIB_LIBRARIES} ${EXECINFO_LIBRARY} Threads::Threads
 )

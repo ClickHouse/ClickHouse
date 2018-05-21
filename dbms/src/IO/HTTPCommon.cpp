@@ -1,7 +1,7 @@
 #include <IO/HTTPCommon.h>
 
 #include <Common/config.h>
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/InvalidCertificateHandler.h>
@@ -30,7 +30,7 @@ std::once_flag ssl_init_once;
 void SSLInit()
 {
     // http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
     Poco::Net::initializeSSL();
 #endif
 }

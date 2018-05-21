@@ -369,14 +369,17 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     Files files;
 
     Poco::Path merge_dir_path(config_path);
-    merge_dir_path.setExtension("d");
+    std::set<std::string> merge_dirs;
 
-    std::vector<std::string> merge_dirs;
-    merge_dirs.push_back(merge_dir_path.toString());
-    if (merge_dir_path.getBaseName() != "conf")    {
-        merge_dir_path.setBaseName("conf");
-        merge_dirs.push_back(merge_dir_path.toString());
-    }
+    /// Add path_to_config/config_name.d dir
+    merge_dir_path.setExtension("d");
+    merge_dirs.insert(merge_dir_path.toString());
+    /// Add path_to_config/conf.d dir
+    merge_dir_path.setBaseName("conf");
+    merge_dirs.insert(merge_dir_path.toString());
+    /// Add path_to_config/config.d dir
+    merge_dir_path.setBaseName("config");
+    merge_dirs.insert(merge_dir_path.toString());
 
     for (const std::string & merge_dir_name : merge_dirs)
     {

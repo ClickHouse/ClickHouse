@@ -26,6 +26,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
+    extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
 }
 
 
@@ -706,4 +707,59 @@ struct SettingString
     }
 };
 
+
+struct SettingChar
+{
+private:
+    void checkStringIsACharacter(const String & x) const
+    {
+        if (x.size() != 1)
+            throw Exception("A setting's value string has to be an exactly one character long", ErrorCodes::SIZE_OF_FIXED_STRING_DOESNT_MATCH);
+    }
+public:
+    char value;
+    bool changed = false;
+
+    SettingChar(char x = '\0') : value(x) {}
+
+    operator char() const { return value; }
+    SettingChar & operator= (char x) { set(x); return *this; }
+
+    String toString() const
+    {
+        return String(1, value);
+    }
+
+    void set(char x)
+    {
+        value = x;
+        changed = true;
+    }
+
+    void set(const String & x)
+    {
+        checkStringIsACharacter(x);
+        value = x[0];
+        changed = true;
+    }
+
+    void set(const Field & x)
+    {
+        const String & s = safeGet<const String &>(x);
+        set(s);
+    }
+
+    void set(ReadBuffer & buf)
+    {
+        String x;
+        readBinary(x, buf);
+        checkStringIsACharacter(x);
+        set(x);
+    }
+
+    void write(WriteBuffer & buf) const
+    {
+        writeBinary(toString(), buf);
+    }
+};
 }

@@ -9,24 +9,31 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
 DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
-[ -x "${CUR_DIR}/clickhouse-server" ] && [ -x "${CUR_DIR}/clickhouse-client" ] && BIN_DIR= # Allow run in /usr/bin
-[ -x "${BUILD_DIR}/dbms/src/Server/clickhouse-server" ] && BIN_DIR=${BIN_DIR=$BUILD_DIR/dbms/src/Server/}
-[ -f "${CUR_DIR}/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
-CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=${CONFIG_DIR}}
-CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=${CONFIG_DIR}}
+export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
+[ -x "$CUR_DIR/clickhouse-server" ] && [ -x "${CUR_DIR}/${CLICKHOUSE_BINARY}-client" ] && BIN_DIR= # Allow run in /usr/bin
+[ -x "$BUILD_DIR/dbms/src/Server/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/src/Server/}
+[ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
+CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=$CONFIG_DIR}
+CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
 [ ! -f "${CONFIG_CLIENT_DIR}client-test.xml" ] && CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR:=/etc/clickhouse-client/}
 [ ! -f "${CONFIG_SERVER_DIR}server-test.xml" ] && CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR:=/etc/clickhouse-server/}
 CONFIG_CLIENT=${CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
-[ -x "${CUR_DIR}/clickhouse-test" ] && TEST_DIR=${TEST_DIR=${CUR_DIR}/}
-[ -d "${CUR_DIR}/queries" ] && QUERIES_DIR=${QUERIES_DIR=${CUR_DIR}/queries}
+[ -x "$CUR_DIR/clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/}
+[ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
+[ ! -d "$QUERIES_DIR" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
 [ ! -d "$QUERIES_DIR" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
+CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 
 rm -rf $DATA_DIR
 mkdir -p $LOG_DIR
 
-openssl dhparam -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.dhParamsFile` 256
-openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile` -out `${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.certificateFile`
+DHPARAM=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile`
+PRIVATEKEY=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile`
+CERT=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG --key=openSSL.server.certificateFile`
+# Do not generate in case broken extract-config
+[ -n "$DHPARAM" ] && openssl dhparam -out $DHPARAM 256
+[ -n "$PRIVATEKEY" ] && [ -n "$CERT" ] && openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout $PRIVATEKEY -out $CERT
 
 if [ "$TEST_GDB" ]; then
     echo -e "run \nset pagination off \nset logging file $DATA_DIR/gdb.log \nset logging on \nthread apply all backtrace \ndetach \nquit " > $DATA_DIR/gdb.cmd
@@ -35,7 +42,7 @@ fi
 
 # Start a local clickhouse server which will be used to run tests
 #PATH=$PATH:$BIN_DIR \
-$GDB ${BIN_DIR}clickhouse-server --config-file=${CLICKHOUSE_CONFIG} > $LOG_DIR/stdout 2>&1 &
+$GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
 
@@ -62,7 +69,9 @@ trap finish EXIT SIGINT SIGQUIT SIGTERM
 if [ -n "$*" ]; then
     $*
 else
+    TEST_RUN=${TEST_RUN=1}
+    TEST_PERF=${TEST_PERF=1}
     ${BIN_DIR}clickhouse-client --config ${CONFIG_CLIENT} -q 'SELECT * from system.build_options;'
-    PATH=$PATH:$BIN_DIR \
-      ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient ${CONFIG_CLIENT} --configserver ${CLICKHOUSE_CONFIG} --tmp $DATA_DIR/tmp --queries ${QUERIES_DIR} $TEST_OPT0 $TEST_OPT
+    [ "$TEST_RUN" ] && env PATH=$PATH:$BIN_DIR ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient $CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT
+    ( [ "$TEST_PERF" ] && ${BIN_DIR}clickhouse-performance-test --port `$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port` --r $CUR_DIR/performance --skip-tags=long $* ) || true
 fi

@@ -11,9 +11,10 @@ matrix:
 #
 #      addons:
 #        apt:
+#          update: true
 #          sources:
 #            - ubuntu-toolchain-r-test
-#          packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl ]
+#          packages: [ g++-7,            libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl ]
 #
 #      env:
 #        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
@@ -33,10 +34,11 @@ matrix:
 
       addons:
         apt:
+          update: true
           sources:
             - ubuntu-toolchain-r-test
             - llvm-toolchain-trusty-5.0
-          packages: [ g++-7, clang-5.0, lld-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libzookeeper-mt-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl]
+          packages: [ g++-7, clang-5.0, lld-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl]
 
       env:
         - MATRIX_EVAL="export CC=clang-5.0 && export CXX=clang++-5.0"
@@ -77,6 +79,7 @@ matrix:
 
       addons:
         apt:
+          update: true
           packages: [ pbuilder, fakeroot, debhelper ]
 
       script:
@@ -94,6 +97,7 @@ matrix:
 #
 #      addons:
 #        apt:
+#          update: true
 #          packages: [ pbuilder, fakeroot, debhelper ]
 #
 #      env:
@@ -115,6 +119,7 @@ matrix:
 #
 #      addons:
 #        apt:
+#          update: true
 #          packages: [ pbuilder, fakeroot, debhelper ]
 #
 #      env:
@@ -137,7 +142,7 @@ matrix:
 #        - brew link --overwrite gcc || true
 #
 #      env:
-#        - MATRIX_EVAL="export CC=gcc-7 && export CXX=g++-7"
+#        - MATRIX_EVAL="export CC=gcc-8 && export CXX=g++-8"
 #
 #      script:
 #        - env CMAKE_FLAGS="-DUSE_INTERNAL_BOOST_LIBRARY=1" utils/travis/normal.sh

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <sys/resource.h>
+#include <errno.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -10,6 +11,7 @@
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,6 +26,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DNSCacheUpdater.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -36,7 +39,7 @@
 #include "StatusFile.h"
 #include "TCPHandlerFactory.h"
 
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -64,7 +67,7 @@ static std::string getCanonicalPath(std::string && path)
         throw Exception("path configuration parameter is empty");
     if (path.back() != '/')
         path += '/';
-    return path;
+    return std::move(path);
 }
 
 void Server::uninitialize()
@@ -169,7 +172,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     DateLUT::instance();
     LOG_TRACE(log, "Initialized DateLUT with time zone `" << DateLUT::instance().getTimeZone() << "'.");
 
-    /// Directory with temporary data for processing of hard queries.
+    /// Directory with temporary data for processing of heavy queries.
     {
         std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         global_context->setTemporaryPath(tmp_path);
@@ -191,8 +194,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
-    Poco::File(path + "flags/").createDirectories();
-    global_context->setFlagsPath(path + "flags/");
+    {
+        Poco::File(path + "flags/").createDirectories();
+        global_context->setFlagsPath(path + "flags/");
+    }
+
+    /** Directory with user provided files that are usable by 'file' table function.
+      */
+    {
+
+        std::string user_files_path = config().getString("user_files_path", path + "user_files/");
+        global_context->setUserFilesPath(user_files_path);
+        Poco::File(user_files_path).createDirectories();
+    }
 
     if (config().has("interserver_http_port"))
     {
@@ -248,7 +262,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /* already_loaded = */ false);
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
-    global_context->setConfigReloadCallback([&]() {
+    global_context->setConfigReloadCallback([&]()
+    {
         main_config_reloader->reload();
         users_config_reloader->reload();
     });
@@ -307,6 +322,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// DDL worker should be started after all tables were loaded
         String ddl_zookeeper_path = config().getString("distributed_ddl.path", "/clickhouse/task_queue/ddl/");
         global_context->setDDLWorker(std::make_shared<DDLWorker>(ddl_zookeeper_path, *global_context, &config(), "distributed_ddl"));
+    }
+
+    std::unique_ptr<DNSCacheUpdater> dns_cache_updater;
+    if (config().has("disable_internal_dns_cache") && config().getInt("disable_internal_dns_cache"))
+    {
+        /// Disable DNS caching at all
+        DNSResolver::instance().setDisableCacheFlag();
+    }
+    else
+    {
+        /// Initialize a watcher updating DNS cache in case of network errors
+        dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
     }
 
     {
@@ -402,7 +429,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// HTTPS
                 if (config().has("https_port"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     std::call_once(ssl_init_once, SSLInit);
 
                     Poco::Net::SecureServerSocket socket;
@@ -442,7 +469,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// TCP with SSL
                 if (config().has("tcp_port_secure"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);

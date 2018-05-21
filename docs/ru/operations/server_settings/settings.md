@@ -660,6 +660,16 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
+## user_files_path
+
+Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../table_functions/file.md#table_functions-file).
+
+**Пример**
+
+```xml
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
 <a name="server_settings-users_config"></a>
 
 ## users_config

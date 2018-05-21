@@ -3,7 +3,9 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
-
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ProjectionManipulation.h>
+#include <Parsers/StringRange.h>
 
 namespace DB
 {
@@ -21,7 +23,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
-using PreparedSets = std::unordered_map<IAST*, SetPtr>;
+using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangeHash>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -54,6 +56,31 @@ struct SubqueryForSet
 /// ID of subquery -> what to do with it.
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
+struct ScopeStack
+{
+    struct Level
+    {
+        ExpressionActionsPtr actions;
+        NameSet new_columns;
+    };
+
+    using Levels = std::vector<Level>;
+
+    Levels stack;
+    Settings settings;
+
+    ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
+
+    void pushLevel(const NamesAndTypesList & input_columns);
+
+    size_t getColumnLevel(const std::string & name);
+
+    void addAction(const ExpressionAction & action);
+
+    ExpressionActionsPtr popLevel();
+
+    const Block & getSampleBlock() const;
+};
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
@@ -139,6 +166,7 @@ public:
 
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
+
 
 private:
     ASTPtr ast;
@@ -271,8 +299,10 @@ private:
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
-    struct ScopeStack;
-    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
+    bool isThereArrayJoin(const ASTPtr & ast);
+
+    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack,
+                        ProjectionManipulatorPtr projection_manipulator);
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 

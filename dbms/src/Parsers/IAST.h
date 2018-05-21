@@ -65,7 +65,7 @@ public:
 
     ASTPtr ptr() { return shared_from_this(); }
 
-    /** Get a deep copy of the tree. */
+    /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
 
     /** Get hash code, identifying this element and its subtree.
@@ -191,6 +191,8 @@ public:
     }
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
+
+    void cloneChildren();
 
 public:
     /// For syntax highlighting.

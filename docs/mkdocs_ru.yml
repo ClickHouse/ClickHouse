@@ -122,9 +122,10 @@ pages:
 
 - 'Табличные функции':
   - 'Введение': 'table_functions/index.md'
-  - 'remote': 'table_functions/remote.md'
+  - 'file': 'table_functions/file.md'
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
+  - 'remote': 'table_functions/remote.md'
 
 - 'Форматы':
   - 'Введение': 'formats/index.md'
@@ -213,7 +214,7 @@ pages:
 - 'Словари':
   - 'Введение': 'dicts/index.md'
   - 'Внешние словари':
-    - 'Внешние словари': 'dicts/external_dicts.md'
+    - 'Общее описание': 'dicts/external_dicts.md'
     - 'Настройка внешнего словаря': 'dicts/external_dicts_dict.md'
     - 'Хранение словарей в памяти': 'dicts/external_dicts_dict_layout.md'
     - 'Обновление словарей': 'dicts/external_dicts_dict_lifetime.md'

@@ -107,6 +107,10 @@ StorageSet::StorageSet(
     : StorageSetOrJoinBase{path_, name_, columns_},
     set(std::make_shared<Set>(SizeLimits()))
 {
+    Block header = getSampleBlock();
+    header = header.sortColumns();
+    set->setHeader(header);
+
     restore();
 }
 
