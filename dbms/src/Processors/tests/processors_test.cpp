@@ -146,12 +146,15 @@ try
     auto source1 = std::make_shared<SleepyNumbersSource>(100, 100000);
     auto source2 = std::make_shared<SleepyNumbersSource>(1000, 200000);
 
+    auto queue = std::make_shared<QueueBuffer>(header);
+
     auto resize = std::make_shared<ResizeProcessor>(InputPorts{Block(header), Block(header), Block(header)}, OutputPorts{Block(header)});
     auto limit = std::make_shared<LimitTransform>(Block(header), 100, 0);
     auto sink = std::make_shared<PrintSink>();
 
     connect(source0->getPort(), limit0->getInputPort());
-    connect(limit0->getOutputPort(), resize->getInputs()[0]);
+    connect(limit0->getOutputPort(), queue->getInputPort());
+    connect(queue->getOutputPort(), resize->getInputs()[0]);
     connect(source1->getPort(), resize->getInputs()[1]);
     connect(source2->getPort(), resize->getInputs()[2]);
     connect(resize->getOutputs()[0], limit->getInputPort());
