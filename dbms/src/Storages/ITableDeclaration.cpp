@@ -198,7 +198,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const 
             throw Exception("There is no column with name " + name + ". There are columns: "
                 + listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        if (it->second->getName() != jt->second->getName())
+        if (!it->second->equals(*jt->second))
             throw Exception("Type mismatch for column " + name + ". Column has type "
                 + jt->second->getName() + ", got type " + it->second->getName(), ErrorCodes::TYPE_MISMATCH);
 
