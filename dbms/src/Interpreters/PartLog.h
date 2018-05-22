@@ -55,10 +55,15 @@ class PartLog : public SystemLog<PartLogElement>
 {
     using SystemLog<PartLogElement>::SystemLog;
 
+    using MutableDataPartPtr = std::shared_ptr<MergeTreeDataPart>;
+    using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
+
 public:
     /// Add a record about creation of new part.
-    static bool addNewPartToTheLog(Context & context, const MergeTreeDataPart & part, UInt64 elapsed_ns,
-                                   const ExecutionStatus & execution_status = {});
+    static bool addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
+                           const ExecutionStatus & execution_status = {});
+    static bool addNewParts(Context & context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
+                            const ExecutionStatus & execution_status = {});
 };
 
 }

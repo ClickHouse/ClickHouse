@@ -175,7 +175,7 @@ void ReplicatedMergeTreeRestartingThread::completeShutdown()
 {
     try
     {
-        storage.data_parts_exchange_endpoint_holder->cancelForever();
+        storage.data_parts_exchange_endpoint_holder->getBlocker().cancelForever();
         storage.data_parts_exchange_endpoint_holder = nullptr;
 
         /// Cancel fetches and merges to force the queue_task to finish ASAP.
@@ -257,22 +257,18 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != ZooKeeperImpl::ZooKeeper::ZOK)
         return;
 
+    /// Firstly, remove parts from ZooKeeper
+    storage.tryRemovePartsFromZooKeeperWithRetries(failed_parts);
+
     for (auto part_name : failed_parts)
     {
         auto part = storage.data.getPartIfExists(
             part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
+
         if (part)
         {
             LOG_DEBUG(log, "Found part " << part_name << " with failed quorum. Moving to detached. This shouldn't happen often.");
-
-            zkutil::Requests ops;
-            zkutil::Responses responses;
-            storage.removePartFromZooKeeper(part_name, ops);
-            auto code = zookeeper->tryMulti(ops, responses);
-            if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
-                LOG_WARNING(log, "Part " << part_name << " with failed quorum is not in ZooKeeper. This shouldn't happen often.");
-
-            storage.data.renameAndDetachPart(part, "noquorum_");
+            storage.data.forgetPartAndMoveToDetached(part, "noquorum_");
         }
     }
 }

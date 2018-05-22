@@ -143,8 +143,6 @@ public:
     }
 
     ActionBlocker & getBlocker() { return endpoint->blocker; }
-    void cancelForever() { getBlocker().cancelForever(); }
-    ActionBlocker::LockHolder cancel() { return getBlocker().cancel(); }
 
 private:
     String name;

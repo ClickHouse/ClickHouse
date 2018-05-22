@@ -64,9 +64,9 @@ void ReplicatedMergeTreeAlterThread::run()
 
         bool changed_version = (stat.version != storage.columns_version);
 
-        {
-            /// If you need to lock table structure, then suspend merges.
-            ActionBlocker::LockHolder merge_blocker;
+            {
+                /// If you need to lock table structure, then suspend merges.
+                ActionLock merge_blocker;
 
             if (changed_version || force_recheck_parts)
                 merge_blocker = storage.merger.merges_blocker.cancel();
@@ -79,10 +79,10 @@ void ReplicatedMergeTreeAlterThread::run()
                 /// Temporarily cancel part checks to avoid locking for long time.
                 auto temporarily_stop_part_checks = storage.part_check_thread.temporarilyStop();
 
-                /// Temporarily cancel parts sending
-                ActionBlocker::LockHolder data_parts_exchange_blocker;
-                if (storage.data_parts_exchange_endpoint_holder)
-                    data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->cancel();
+                    /// Temporarily cancel parts sending
+                    ActionLock data_parts_exchange_blocker;
+                    if (storage.data_parts_exchange_endpoint_holder)
+                        data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->getBlocker().cancel();
 
                 /// Temporarily cancel part fetches
                 auto fetches_blocker = storage.fetcher.blocker.cancel();

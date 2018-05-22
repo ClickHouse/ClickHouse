@@ -19,8 +19,6 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
-friend class MergeTreeBlockOutputStream;
-
 public:
     void startup() override;
     void shutdown() override;
@@ -69,6 +67,7 @@ public:
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void drop() override;
@@ -78,6 +77,8 @@ public:
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
     bool checkTableCanBeDropped() const override;
+
+    ActionLock getActionLock(StorageActionBlockType action_type) const override;
 
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
@@ -113,8 +114,6 @@ private:
 
     BackgroundProcessingPool::TaskHandle merge_task_handle;
 
-    friend struct CurrentlyMergingPartsTagger;
-
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
@@ -123,6 +122,10 @@ private:
                String * out_disable_reason = nullptr);
 
     bool mergeTask();
+
+    friend class MergeTreeBlockOutputStream;
+    friend class MergeTreeData;
+    friend struct CurrentlyMergingPartsTagger;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
