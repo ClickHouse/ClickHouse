@@ -64,6 +64,8 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
     rd_kafka_message_t * current;
     Poco::Logger * log;
     size_t read_messages;
+    const bool add_line_feed;
+    char * msg_ptr;
 
     bool nextImpl() override
     {
@@ -92,7 +94,18 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
         // Consume message and mark the topic/partition offset
         // The offsets will be committed in the insertSuffix() method after the block is completed
         // If an exception is thrown before that would occur, the client will rejoin without comitting offsets
-        BufferBase::set(reinterpret_cast<char *>(msg->payload), msg->len, 0);
+        if (!add_line_feed)
+            BufferBase::set(reinterpret_cast<char *>(msg->payload), msg->len, 0);
+        else
+        {
+            // ReadBuffer will make messages into a stream without separate messages each other, 
+            // but for Row-based inputstream such as CSV or TSV, there should be a '\n' separator between each message;
+            msg_ptr = new char[msg->len+1];
+            memcpy(msg_ptr, msg->payload, msg->len);
+            msg_ptr[msg->len]='\n';
+
+            BufferBase::set(msg_ptr, msg->len+1, 0);
+        }
         current = msg;
         ++read_messages;
         return true;
@@ -104,12 +117,17 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
         {
             rd_kafka_message_destroy(current);
             current = nullptr;
+            if (msg_ptr != nullptr){
+                delete msg_ptr;
+                msg_ptr = nullptr;
+            }
         }
     }
 
 public:
-    ReadBufferFromKafkaConsumer(rd_kafka_t * consumer_, Poco::Logger * log_)
-        : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr), log(log_), read_messages(0) {}
+    ReadBufferFromKafkaConsumer(rd_kafka_t * consumer_, Poco::Logger * log_, const bool add_line_feed_)
+        : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr), log(log_), read_messages(0), 
+        add_line_feed(add_line_feed_), msg_ptr(nullptr) {}
 
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
@@ -143,8 +161,16 @@ public:
 
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
-        read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        bool add_line_feed = false;
+        String format_name = storage.format_name;
+        if (storage.format_name.back() == '~')
+        {
+            add_line_feed = true;
+            format_name.erase(format_name.size()-1, 1);
+        }
+
+        read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log, add_line_feed);
+        reader = FormatFactory::instance().getInput(format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     ~KafkaBlockInputStream() override

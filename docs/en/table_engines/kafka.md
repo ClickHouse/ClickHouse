@@ -17,7 +17,8 @@ Parameters:
 - `broker_list` – A comma-separated list of brokers (`localhost:9092`).
 - `topic_list` – A list of Kafka topics (`my_topic`).
 - `group_name` – A group of Kafka consumers (`group1`). Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
-- `--format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section.
+- `--format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section. 
+- If the message without line feed, and it is row based message, you should append '~' into format, for example 'CSV~', 'JSONEachRow~'. Otherwise there will be an Exception "Expected end of line".
 - `schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
 
