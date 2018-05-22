@@ -9,7 +9,7 @@ namespace ErrorCodes
 }
 
 CuttingUnionAllRequiredColumnBlockInputStream::CuttingUnionAllRequiredColumnBlockInputStream(
-    const BlockInputStreamPtr input, const Names & required_columns)
+    const BlockInputStreamPtr & input, const Names & required_columns)
 {
     children.emplace_back(input);
     Block sample_block = input->getHeader();
