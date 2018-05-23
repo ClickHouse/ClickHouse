@@ -1,9 +1,18 @@
 #include <iostream>
 #include <thread>
 #include <atomic>
-#include <Processors/Processor.h>
+#include <Processors/IProcessor.h>
+#include <Processors/ISource.h>
+#include <Processors/ISink.h>
+#include <Processors/ResizeProcessor.h>
+#include <Processors/LimitTransform.h>
+#include <Processors/QueueBuffer.h>
+#include <Processors/SequentialPipelineExecutor.h>
+#include <Processors/ParallelPipelineExecutor.h>
+
 #include <Columns/ColumnsNumber.h>
 #include <common/ThreadPool.h>
+#include <Common/EventCounter.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
