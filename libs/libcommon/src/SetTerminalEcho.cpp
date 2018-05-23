@@ -3,12 +3,14 @@
 #include <common/SetTerminalEcho.h>
 #include <stdexcept>
 #include <cstring>
+#include <string>
 
 #ifdef WIN32
 #include <windows.h>
 #else
 #include <termios.h>
 #include <unistd.h>
+#include <errno.h>
 #endif
 
 void SetTerminalEcho(bool enable)
