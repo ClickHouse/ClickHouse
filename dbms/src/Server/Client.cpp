@@ -1385,10 +1385,18 @@ public:
 
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
+        unsigned line_length = boost::program_options::options_description::m_default_line_length;
+        unsigned min_description_length = line_length / 2;
+        if (!stdin_is_not_tty)
+        {
+            line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
+            min_description_length = std::min(min_description_length, line_length - 2);
+        }
+
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        boost::program_options::options_description main_description("Main options", terminal_size.ws_col);
+        boost::program_options::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
