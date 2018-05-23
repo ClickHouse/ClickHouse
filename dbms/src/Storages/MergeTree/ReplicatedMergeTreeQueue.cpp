@@ -94,7 +94,7 @@ void ReplicatedMergeTreeQueue::initialize(
 
 void ReplicatedMergeTreeQueue::insertUnlocked(LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed, std::lock_guard<std::mutex> &)
 {
-    for (const String & virtual_part_name : entry->getVirtualPartNames())
+    for (const String & virtual_part_name : entry->getNewPartNames())
         virtual_parts.add(virtual_part_name);
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
@@ -509,7 +509,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(const MergeTreePartIn
         if (!elem->currently_executing || elem->znode_name == range_znode)
             continue;
 
-        for (const String & new_part_name : elem->getVirtualPartNames())
+        for (const String & new_part_name : elem->getBlockingPartNames())
         {
             if (!range.isDisjoint(MergeTreePartInfo::fromPartName(new_part_name, format_version)))
             {
@@ -569,7 +569,7 @@ bool ReplicatedMergeTreeQueue::isNotCoveredByFuturePartsImpl(const String & new_
     {
         auto future_part = MergeTreePartInfo::fromPartName(future_part_name, format_version);
 
-        if (future_part.contains(result_part))
+        if (!future_part.contains(result_part))
         {
             out_reason = "Not executing log entry for part " + new_part_name + " because it is covered by part "
                          + future_part_name + " that is currently executing";
@@ -603,7 +603,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
 {
     if (entry.type == LogEntry::MERGE_PARTS || entry.type == LogEntry::GET_PART)
     {
-        for (const String & new_part_name : entry.getVirtualPartNames())
+        for (const String & new_part_name : entry.getBlockingPartNames())
         {
             if (!isNotCoveredByFuturePartsImpl(new_part_name, out_postpone_reason, lock))
             {
@@ -688,7 +688,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(ReplicatedMerge
     ++entry->num_tries;
     entry->last_attempt_time = time(nullptr);
 
-    for (const String & new_part_name : entry->getVirtualPartNames())
+    for (const String & new_part_name : entry->getBlockingPartNames())
     {
         if (!queue.future_parts.insert(new_part_name).second)
             throw Exception("Tagging already tagged future part " + new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
@@ -709,7 +709,7 @@ void ReplicatedMergeTreeQueue::CurrentlyExecuting::setActualPartName(const Repli
         return;
 
     if (!queue.future_parts.insert(entry.actual_new_part_name).second)
-        throw Exception("Attaching already exsisting future part " + entry.actual_new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Attaching already existing future part " + entry.actual_new_part_name + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -720,7 +720,7 @@ ReplicatedMergeTreeQueue::CurrentlyExecuting::~CurrentlyExecuting()
     entry->currently_executing = false;
     entry->execution_complete.notify_all();
 
-    for (const String & new_part_name : entry->getVirtualPartNames())
+    for (const String & new_part_name : entry->getBlockingPartNames())
     {
         if (!queue.future_parts.erase(new_part_name))
             LOG_ERROR(queue.log, "Untagging already untagged future part " + new_part_name + ". This is a bug.");
