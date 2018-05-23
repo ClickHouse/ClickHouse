@@ -101,8 +101,15 @@ void MergeTreeDataMergerMutator::FuturePart::assign(MergeTreeData::DataPartsVect
         DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
         for (const auto & part : parts)
         {
-            min_date = std::min(min_date, part->getMinDate());
-            max_date = std::max(max_date, part->getMaxDate());
+            /// NOTE: getting min and max dates from part names (instead of part data) because we want
+            /// the merged part name be determined only by source part names.
+            /// It is simpler this way when the real min and max dates for the block range can change
+            /// (e.g. after an ALTER DELETE command).
+            DayNum_t part_min_date;
+            DayNum_t part_max_date;
+            MergeTreePartInfo::parseMinMaxDatesFromPartName(part->name, part_min_date, part_max_date);
+            min_date = std::min(min_date, part_min_date);
+            max_date = std::max(max_date, part_max_date);
         }
 
         name = part_info.getPartNameV0(min_date, max_date);
@@ -789,10 +796,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         to.writeSuffixAndFinalizePart(new_data_part);
     else
         to.writeSuffixAndFinalizePart(new_data_part, &all_columns, &checksums_gathered_columns);
-
-    /// For convenience, even CollapsingSortedBlockInputStream can not return zero rows.
-    if (0 == to.getRowsCount())
-        throw Exception("Empty part after merge", ErrorCodes::LOGICAL_ERROR);
 
     return new_data_part;
 }

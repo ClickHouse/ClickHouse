@@ -1463,12 +1463,12 @@ MergeTreeData::DataPartsVector MergeTreeData::renameTempPartAndReplace(
       * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
       */
     if (increment)
+    {
         part_info.min_block = part_info.max_block = increment->get();
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        part_name = part_info.getPartNameV0(part->getMinDate(), part->getMaxDate());
+        part_name = part->getNewName(part_info);
+    }
     else
-        part_name = part_info.getPartName();
+        part_name = part->name;
 
     LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << part_name << ".");
 
