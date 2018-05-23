@@ -25,7 +25,7 @@ using Codecs = std::vector<CodecPtr>;
 class ICompressionCodec : private boost::noncopyable
 {
 public:
-    uint8_t bytecode const;
+    uint8_t bytecode = 0x0;
     DataTypePtr dataType;
 
     /// Name of codec (examples: LZ4(...), None).
@@ -35,18 +35,19 @@ public:
     virtual const char * getFamilyName() const = 0;
 
     /// Header for serialization, containing bytecode and parameters
-    virtual size_t writeHeader(char* header) const = 0;
+    virtual size_t writeHeader(char* header);
     /// Header parser for parameters
-    virtual size_t parseHeader(const char* header) = 0;
+    virtual size_t parseHeader(const char* header);
     /// Maximum amount of bytes for compression needed
     virtual size_t getMaxCompressedSize(size_t uncompressed_size) const = 0;
+    virtual size_t getMaxDecompressedSize(size_t compressed_size) const = 0;
 
     /// Block compression and decompression methods
-    virtual size_t compress(const char* source, char* dest, int inputSize, int maxOutputSize) const = 0;
-    virtual size_t decompress(void* dest, size_t maxOutputSize, const void* source, size_t inputSize) const = 0;
+    virtual size_t compress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const = 0;
+    virtual size_t decompress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const = 0;
 
     /// Data type information provider
-    virtual void setDataType(DataTypePtr ) = 0;
+    virtual void setDataType(DataTypePtr data_type) = 0;
 
     virtual ~ICompressionCodec() {}
 };

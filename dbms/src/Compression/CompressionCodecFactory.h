@@ -31,6 +31,7 @@ public:
     CodecPtr get(const String & family_name, const ASTPtr & parameters) const;
     CodecPtr get(const ASTPtr & ast) const;
     CodecPtr get_pipe(const String & full_declaration) const;
+    CodecPtr get_pipe(const char* header) const;
 
     /// Register a codec family by its name.
     void registerCodec(const String & family_name, Creator creator);

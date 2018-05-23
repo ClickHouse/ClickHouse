@@ -3,6 +3,7 @@
 #include <memory>
 #include <Common/COWPtr.h>
 #include <boost/noncopyable.hpp>
+#include <common/unaligned.h>
 #include <Core/Field.h>
 #include <Compression/ICompressionCodec.h>
 
@@ -15,15 +16,30 @@ namespace DB
 class CompressionPipeline : ICompressionCodec {
 private:
     CodecPtrs codecs;
-    std::vector<uint32_t> input_sizes;
-    std::vector<uint32_t> output_sizes;
+    /// Sizes of data mutations, from original to later compressions
+    std::vector<uint32_t> data_sizes;
 public:
     CompressionPipeline(CodecPtrs codecs)
         : codecs (codecs)
+    {}
+
+    CompressionPipeline(const char* header)
     {
-        for (auto & codec: codecs) {
-            auto codec_header = codec.getHeader();
-            header.insert(header.end(), codec_header.begin(), codec_header.end());
+        const CompressionCodecFactory & codec_factory = CompressionCodecFactory::instance();
+        auto _header = header;
+        /// Read codecs, while continuation bit is set
+        do {
+            CodecPtr _codec = codec_factory.get((*_header) & (~CodecHeaderBits::CONTINUATION_BIT));
+            auto read_chars = _codec.parseHeader(_header + 1);
+            codecs.push_back(_codec);
+            _header += 1 + read_chars; /// Move reader to the next codec
+        }
+        while ((*_header) & CodecHeaderBits::CONTINUATION_BIT);
+        /// Load and reverse sizes part of a header, listed from later codecs to the original size, - see `compress`.
+        output_sizes.resize(codecs.size() + 1);
+        auto codecs_amount = codecs.size();
+        for (size_t i = 0; i <= codecs_amount; ++i) {
+            output_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&sizes[sizeof(UInt32) * i]);
         }
     }
 
@@ -38,63 +54,80 @@ public:
     };
 
     /// Header for serialization, containing bytecode and parameters
-    size_t writeHeader(uint8_t* out)
+    size_t writeHeader(char* out)
     {
-        size_t hs = 0;
-        for (; hs < header.size(); ++hs)
-            out[hs] = header[hs];
-        return hs;
+        for (int i = codecs.size() - 1; i >= 0; --i)
+        {
+            auto wrote = codecs[i].writeHeader(out);
+            out |= i ? reinterpret_cast<char>(CodecHeaderBits::CONTINUATION_BIT) : 0;
+            out += wrote;
+        }
+        for (int i = data_sizes.size() - 1; i >= 0; --i)
+        {
+            unalignedStore(&out[sizeof(uint32_t) * i], data_sizes[i]);
+        }
     };
 
-    /// Maximum amount of bytes for compression needed
+    /** Maximum amount of bytes for compression needed
+     * Returns size of first codec in pipeline as for iterative approach.
+     * @param uncompressed_size - data to be compressed in bytes;
+     * @return size of maximum buffer for first compression needed.
+     */
     size_t getMaxCompressedSize(size_t uncompressed_size)
     {
-        size_t max_compressed = uncompressed_size, compressed = uncompressed_size;
-        for (auto & codec : codecs) {
-            compressed = codec.getMaxCompressedSize(compressed);
-            max_compressed = std::max(compressed, max_compressed);
-        }
-        return max_compressed;
+        return codecs[0].getMaxCompressedSize(uncompressed_size);
+    };
+
+    size_t getMaxDecompressedSize(size_t compressed_size)
+    {
+        return data_sizes.back();
     };
 
     /// Block compression and decompression methods
-    size_t compress(const char* source, char* dest, int inputSize, int maxOutputSize)
+    size_t compress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize)
     {
         bool first = true, it = true;
-        char* tmpdest = new char[maxOutputSize];
-        for (auto & codec: codecs) {
-            if (first) {
-                inputSize = codec.compress(source, dest, inputSize, maxOutputSize);
-            }
-            else {
-                if (it)
-                    inputSize = codec.compress(dest, tmpdest, inputSize, maxOutputSize);
-                else
-                    inputSize = codec.compress(tmpdest, dest, inputSize, maxOutputSize);
-            }
+        PODArray<char> buffer;
+        data_sizes.resize(1);
+        data_sizes[0] = inputSize;
+
+        PODArray<char>* _source = *source, *_dest = *dest;
+        for (int i = 0; i < codecs.size(); ++i) {
+            (*_dest).resize(maxOutputSize);
+            inputSize = codecs[i].compress(_source, _dest, inputSize, maxOutputSize);
+            data_sizes.push_back(inputSize);
+
+            maxOutputSize = i + 1 < codecs.size() ? codecs[i + 1].getMaxCompressedSize(inputSize) : inputSize;
+            _source = _dest;
+            _dest = *_dest == dest ? *buffer : *dest;
         }
-        if (it) {
-            memcpy();
-        }
-        return inputSize;
-    };
-    size_t decompress(void* dest, size_t maxOutputSize, const void* source, size_t inputSize)
-    {
-        bool first = true;
-        auto _dest = dest;
-        for (auto & codec : boost::adaptors::reverse(codecs)) {
-            dest = _dest;
-            if (first) {
-                inputSize = codec.decompress(dest, maxOutputSize, source, inputSize);
-            }
-            else
-                inputSize = codec.decompress(dest, maxOutputSize, dest, inputSize);
+
+        if (_dest == *dest) {
+            dest.assign(buffer);
         }
         return inputSize;
     };
 
-    /// Checks that two instances belong to the same type
-    bool equals(const CompressionPipeline & rhs) const = 0;
+    size_t decompress(const PODArray<char>& source, PODArray<char>& dest, size_t inputSize, size_t maxOutputSize)
+    {
+        assert (codecs.size() + 1 == data_sizes.size()); /// All mid sizes should be presented
+
+        PODArray<char> buffer;
+        PODArray<char> *_source = *source, *_dest = *dest;
+        for (int i = codecs.size() - 1; i >= 0; --i) {
+            (*_dest).resize(maxOutputSize);
+            inputSize = codecs[i].decompress(source, dest, inputSize, maxOutputSize);
+            maxOutputSize = data_sizes[i];
+
+            _source = _dest;
+            _dest = (_dest == *dest) ? *buffer : *dest;
+        }
+
+        if (_dest == *dest) {
+            dest.assign(buffer);
+        }
+        return inputSize;
+    };
 
     ~CompressionPipeline() {}
 };
