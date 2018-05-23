@@ -1,5 +1,6 @@
 add_subdirectory (Columns)
 add_subdirectory (Common)
+add_subdirectory (Compression)
 add_subdirectory (Core)
 add_subdirectory (DataStreams)
 add_subdirectory (DataTypes)
