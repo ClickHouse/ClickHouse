@@ -97,7 +97,7 @@ struct ReplicatedMergeTreeLogEntryData
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
 
     /// Returns set of parts that will appear after the entry execution
-    /// These parts are added to future_parts
+    /// These parts are added to virtual_parts
     Strings getNewPartNames() const
     {
         /// Clear column actually does not produce new parts
@@ -119,7 +119,7 @@ struct ReplicatedMergeTreeLogEntryData
     }
 
     /// Returns set of parts that should be blocked during the entry execution
-    /// These parts are added to virtual_parts
+    /// These parts are added to future_parts
     Strings getBlockingPartNames() const
     {
         Strings res = getNewPartNames();
@@ -149,7 +149,7 @@ struct ReplicatedMergeTreeLogEntryData
 };
 
 
-struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
+struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std::enable_shared_from_this<ReplicatedMergeTreeLogEntry>
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
@@ -157,6 +157,8 @@ struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
 
     static Ptr parse(const String & s, const zkutil::Stat & stat);
 };
+
+using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
 
 }
