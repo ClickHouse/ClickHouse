@@ -1787,7 +1787,7 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 }
 
 
-void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 {
     const size_t parts_count = getMaxPartsCountForPartition();
     if (parts_count < settings.parts_to_delay_insert)
@@ -1815,6 +1815,17 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
         until->tryWait(delay_milliseconds);
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
+}
+
+void MergeTreeData::throwInsertIfNeeded() const
+{
+    const size_t parts_count = getMaxPartsCountForPartition();
+
+    if (parts_count >= settings.parts_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+    }
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(

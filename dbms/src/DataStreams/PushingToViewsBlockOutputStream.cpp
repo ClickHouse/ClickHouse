@@ -18,6 +18,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       */
     addTableLock(storage->lockStructure(true, __PRETTY_FUNCTION__));
 
+    /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
+    /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
+    bool disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
+
     if (!table.empty())
     {
         Dependencies dependencies = context.getDependencies(database, table);
@@ -27,7 +31,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         {
             views_context = std::make_unique<Context>(context);
             // Do not deduplicate insertions into MV if the main insertion is Ok
-            views_context->getSettingsRef().insert_deduplicate = false;
+            if (disable_deduplication_for_children)
+                views_context->getSettingsRef().insert_deduplicate = false;
         }
 
         for (const auto & database_table : dependencies)
@@ -87,6 +92,53 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             throw;
         }
     }
+}
+
+void PushingToViewsBlockOutputStream::writePrefix()
+{
+    if (output)
+        output->writePrefix();
+
+    for (auto & view : views)
+    {
+        try
+        {
+            view.out->writePrefix();
+        }
+        catch (Exception & ex)
+        {
+            ex.addMessage("while write prefix to view " + view.database + "." + view.table);
+            throw;
+        }
+    }
+}
+
+void PushingToViewsBlockOutputStream::writeSuffix()
+{
+    if (output)
+        output->writeSuffix();
+
+    for (auto & view : views)
+    {
+        try
+        {
+            view.out->writeSuffix();
+        }
+        catch (Exception & ex)
+        {
+            ex.addMessage("while write prefix to view " + view.database + "." + view.table);
+            throw;
+        }
+    }
+}
+
+void PushingToViewsBlockOutputStream::flush()
+{
+    if (output)
+        output->flush();
+
+    for (auto & view : views)
+        view.out->flush();
 }
 
 }
