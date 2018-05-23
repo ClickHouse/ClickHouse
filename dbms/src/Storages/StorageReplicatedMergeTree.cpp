@@ -2122,7 +2122,7 @@ namespace
             {
                 *out_reason = "Part " + part_name + " cannot be merged yet";
                 if (!covering_part.empty())
-                    *out_reason += ", a merge " + covering_part + " a covering it has already assigned";
+                    *out_reason += ", a merge " + covering_part + " covering it has already assigned";
                 else
                     *out_reason += ", it is temporarily disabled";
             }
@@ -3165,6 +3165,10 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
         auto zookeeper = getZooKeeper();
         auto block_number_lock = allocateBlockNumber(partition_id, zookeeper);
         right = block_number_lock->getNumber();
+
+        /// Create a nonincrement_block_numbers node in order not to block merges
+        AbandonableLockInZooKeeper::createAbandonedIfNotExists(
+                zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(right), *zookeeper);
         block_number_lock->unlock();
     }
 

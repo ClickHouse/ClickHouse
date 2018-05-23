@@ -199,10 +199,8 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
     const String & partition_id = part_info.partition_id;
     for (auto i = part_info.min_block; i <= part_info.max_block; ++i)
     {
-        zookeeper->createIfNotExists(storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id, "");
         AbandonableLockInZooKeeper::createAbandonedIfNotExists(
-            storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(i),
-            *zookeeper);
+                storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(i), *zookeeper);
     }
 }
 
