@@ -25,6 +25,7 @@ private:
     using Creator = std::function<CodecPtr(const ASTPtr & parameters)>;
     using SimpleCreator = std::function<CodecPtr()>;
     using CodecsDictionary = std::unordered_map<String, Creator>;
+    using ByteCodecsDictionary = std::unordered_map<char, Creator>;
 
 public:
     CodecPtr get(const String & full_name) const;
@@ -39,8 +40,12 @@ public:
     /// Register a simple codec, that have no parameters.
     void registerSimpleCodec(const String & name, SimpleCreator creator);
 
+    /// Register a codec by its bytecode, it could not have parameters.
+    void registerCodecBytecode(const char& bytecode, SimpleCreator creator);
+
 private:
     CodecsDictionary codecs;
+    ByteCodecsDictionary bytecodes_codecs;
 
     CompressionCodecFactory();
     friend class ext::singleton<CompressionCodecFactory>;

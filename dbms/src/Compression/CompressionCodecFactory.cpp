@@ -112,6 +112,17 @@ void CompressionCodecFactory::registerSimpleCodec(const String & name, SimpleCre
     });
 }
 
+void CompressionCodecFactory::registerCodecBytecode(const char& bytecode, SimpleCreator creator)
+{
+    if (creator == nullptr)
+        throw Exception("CompressionCodecFactory: the codec has been provided a null constructor",
+                        ErrorCodes::LOGICAL_ERROR); // TODO: add bytecode to exception
+
+    if (!bytecodes_codecs.emplace(bytecode, creator).second)
+        throw Exception("CompressionCodecFactory: the codec bytecode is not unique",
+                        ErrorCodes::LOGICAL_ERROR); // TODO: add bytecode to exception
+}
+
 
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);

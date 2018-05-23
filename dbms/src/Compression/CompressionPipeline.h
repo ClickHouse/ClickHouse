@@ -129,6 +129,15 @@ public:
         return inputSize;
     };
 
+    void setDataType(DataTypePtr data_type)
+    {
+        data_type = data_type;
+        for (auto & codec: codecs)
+        {
+            codec.setDataType(data_type);
+        }
+    }
+
     ~CompressionPipeline() {}
 };
 

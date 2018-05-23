@@ -4,36 +4,39 @@ namespace DB {
 
 class CompressionCodecLZ4 : ICompressionCodec
 {
-private:
 public:
-    static constexpr bool is_hc = false;
+    static const uint8_t bytecode = 0x84;
+    static const bool is_hc = false;
+    int8_t argument = 1;
+
     std::string getName() const override
     {
-        return "LZ4()"
+        return "LZ4()";
     }
 
     const char * getFamilyName() const override
     {
-        return "LZ4"
+        return "LZ4";
     }
 
-    std::vector<uint8_t> getHeader() const override;
-    size_t getCompressedSize(size_t uncompressed_size) const override;
+    size_t writeHeader(char* header) const override;
+    size_t parseHeader(const char* header) const override;
 
-    size_t compress(const char* source, char* dest, int inputSize, int maxOutputSize) const override;
-    size_t decompress(void* dest, size_t maxOutputSize, const void* source, size_t inputSize) const override;
+    size_t getMaxCompressedSize(size_t uncompressed_size) const override;
 
-    bool equals(const ICompressionCodec & rhs) const override;
+    size_t compress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const override;
+    size_t decompress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const override;
 };
 
 class CompressionCodecLZ4HC : CompressionCodecLZ4
 {
 public:
-    static constexpr bool is_hc = true;
+    static const uint8_t bytecode = 0x82;
+    static const bool is_hc = true;
 
     std::string getName() const override
     {
-        return "LZ4HC()"
+        return "LZ4HC()";
     }
 };
 

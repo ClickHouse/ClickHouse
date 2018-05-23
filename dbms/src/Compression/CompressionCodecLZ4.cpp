@@ -22,6 +22,44 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
+size_t CompressionCodecLZ4::writeHeader(char* header)
+{
+    *header = bytecode;
+    *(header + 1) = reinterpret_cast<char>(argument);
+    return 2;
+}
+
+size_t CompressionCodecLZ4::parseHeader(const char* header)
+{
+    argument = reinterpret_cast<int8_t>(*header);
+    return 1;
+}
+
+size_t CompressionCodecLZ4::getMaxCompressedSize(size_t uncompressed_size)
+{
+    return LZ4_COMPRESSBOUND(uncompressed_size);
+}
+
+size_t CompressionCodecLZ4::compress(const PODArray<char>& source, PODArray<char>& dest,
+                                     int inputSize, int maxOutputSize)
+{
+    auto wrote = LZ4_compress_default(
+            source.begin(),
+            dest,
+            inputSize,
+            maxOutputSize
+    );
+    return wrote;
+}
+
+size_t CompressionCodecLZ4::decompress(const PODArray<char>& source, PODArray<char>& dest,
+                                       int inputSize, int maxOutputSize)
+{
+    auto read = LZ4_decompress_fast(source, dest, maxOutputSize);
+    if (read < 0)
+        throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+    return read;
+}
 
 template<typename T>
 static CodecPtr create(const ASTPtr &arguments)
@@ -40,14 +78,24 @@ static CodecPtr create(const ASTPtr &arguments)
     return std::make_shared<T>(arg->value.get<String>());
 }
 
+template<typename T>
+CodecPtr createSimple()
+{
+    return std::make_shared<T>();
+}
+
 void registerCodecLZ4(CompressionCodecFactory &factory)
 {
-    factory.registerDataType("LZ4", create<CompressionCodecLZ4>);
+    factory.registerCodec("LZ4", create<CompressionCodecLZ4>);
+    factory.registerSimpleCodec("LZ4", createSimple<CompressionCodecLZ4>);
+    factory.registerCodecBytecode(CompressionCodecLZ4::bytecode, createSimple<CompressionCodecLZ4>);
 }
 
 void registerCodecLZ4HC(CompressionCodecFactory &factory)
 {
-    factory.registerDataType("LZ4HC", create<CompressionCodecLZ4HC>);
+    factory.registerCodec("LZ4HC", create<CompressionCodecLZ4HC>);
+    factory.registerSimpleCodec("LZ4HC", createSimple<CompressionCodecLZ4HC>);
+    factory.registerCodecBytecode(CompressionCodecLZ4HC::bytecode, createSimple<CompressionCodecLZ4HC>);
 }
 
 }
