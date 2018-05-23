@@ -108,7 +108,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     last_block_is_duplicate = false;
 
     /// TODO Is it possible to not lock the table structure here?
-    storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
+    storage.data.delayInsertOrThrowIfNeeded(&storage.restarting_thread->getWakeupEvent());
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -400,6 +400,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
         LOG_TRACE(log, "Quorum satisfied");
     }
+}
+
+void ReplicatedMergeTreeBlockOutputStream::writePrefix()
+{
+    storage.data.throwInsertIfNeeded();
 }
 
 
