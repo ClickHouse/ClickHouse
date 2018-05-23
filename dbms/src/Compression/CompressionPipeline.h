@@ -1,13 +1,22 @@
+#pragma once
+
+#include <memory>
+#include <Common/COWPtr.h>
+#include <boost/noncopyable.hpp>
+#include <Core/Field.h>
+#include <Compression/ICompressionCodec.h>
+
 
 namespace DB
 {
 /** Create codecs compression pipeline for sequential compression.
   * For example: CODEC(LZ4, ZSTD)
   */
-class CompressionPipeline {
+class CompressionPipeline : ICompressionCodec {
 private:
     CodecPtrs codecs;
-    std::vector<uint8_t> header;
+    std::vector<uint32_t> input_sizes;
+    std::vector<uint32_t> output_sizes;
 public:
     CompressionPipeline(CodecPtrs codecs)
         : codecs (codecs)
@@ -38,11 +47,11 @@ public:
     };
 
     /// Maximum amount of bytes for compression needed
-    size_t getCompressedSize(size_t uncompressed_size)
+    size_t getMaxCompressedSize(size_t uncompressed_size)
     {
         size_t max_compressed = uncompressed_size, compressed = uncompressed_size;
         for (auto & codec : codecs) {
-            compressed = codec.getCompressedSize(compressed);
+            compressed = codec.getMaxCompressedSize(compressed);
             max_compressed = std::max(compressed, max_compressed);
         }
         return max_compressed;
@@ -65,7 +74,7 @@ public:
             }
         }
         if (it) {
-            memcpy()
+            memcpy();
         }
         return inputSize;
     };
