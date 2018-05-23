@@ -56,6 +56,8 @@ add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
 add_headers_and_sources(dbms src/Processors)
+add_headers_and_sources(dbms src/Processors/Executors)
+add_headers_and_sources(dbms src/Processors/Formats)
 add_headers_only(dbms src/Server)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})

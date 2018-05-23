@@ -1,5 +1,5 @@
-#include <Processors/SequentialPipelineExecutor.h>
-#include <Processors/traverse.h>
+#include <Processors/Executors/SequentialPipelineExecutor.h>
+#include <Processors/Executors/traverse.h>
 
 
 namespace DB

@@ -7,8 +7,8 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueueBuffer.h>
-#include <Processors/SequentialPipelineExecutor.h>
-#include <Processors/ParallelPipelineExecutor.h>
+#include <Processors/Executors/SequentialPipelineExecutor.h>
+#include <Processors/Executors/ParallelPipelineExecutor.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <common/ThreadPool.h>

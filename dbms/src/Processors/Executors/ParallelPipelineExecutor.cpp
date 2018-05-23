@@ -1,7 +1,7 @@
 #include <Common/EventCounter.h>
 #include <common/ThreadPool.h>
-#include <Processors/ParallelPipelineExecutor.h>
-#include <Processors/traverse.h>
+#include <Processors/Executors/ParallelPipelineExecutor.h>
+#include <Processors/Executors/traverse.h>
 
 
 namespace DB
