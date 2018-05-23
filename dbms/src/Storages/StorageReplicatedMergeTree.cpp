@@ -1350,11 +1350,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         future_mutated_part.name = entry.new_part_name;
 
         new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands.commands, context);
-        if (new_part->rows_count)
-            data.renameTempPartAndReplace(new_part, nullptr, &transaction);
-        else
-            throw Exception("The part was fully deleted, this case is not implemented yet",
-                ErrorCodes::NOT_IMPLEMENTED); /// TODO
+        data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
         {
@@ -1986,12 +1982,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMutatePart(const MergeTreeDataP
     MergeTreePartInfo new_part_info = part.info;
     new_part_info.mutation = mutation_version;
 
-    /// TODO: extract common code.
-    String new_part_name;
-    if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        new_part_name = new_part_info.getPartNameV0(part.getMinDate(), part.getMaxDate());
-    else
-        new_part_name = new_part_info.getPartName();
+    String new_part_name = part.getNewName(new_part_info);
 
     ReplicatedMergeTreeLogEntryData entry;
     entry.type = LogEntry::MUTATE_PART;
