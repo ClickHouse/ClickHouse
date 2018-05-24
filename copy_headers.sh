@@ -67,6 +67,7 @@ done
 for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
 do
     dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
@@ -74,6 +75,7 @@ done
 for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
 do
     dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
