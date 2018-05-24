@@ -1,7 +1,5 @@
 #!/bin/bash -e
 
-set -x
-
 # Этот скрипт собирает все заголовочные файлы, нужные для компиляции некоторого translation unit-а
 #  и копирует их с сохранением путей в директорию DST.
 # Это затем может быть использовано, чтобы скомпилировать translation unit на другом сервере,
@@ -47,8 +45,8 @@ for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 
     sed -r -e 's/^-\.o://');
 do
     dst_file=$src_file;
-    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
     [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
+    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
