@@ -45,7 +45,7 @@ size_t CompressionCodecLZ4::compress(const PODArray<char>& source, PODArray<char
 {
     auto wrote = LZ4_compress_default(
             source.begin(),
-            dest,
+            &dest[0],
             inputSize,
             maxOutputSize
     );
@@ -55,7 +55,7 @@ size_t CompressionCodecLZ4::compress(const PODArray<char>& source, PODArray<char
 size_t CompressionCodecLZ4::decompress(const PODArray<char>& source, PODArray<char>& dest,
                                        int inputSize, int maxOutputSize)
 {
-    auto read = LZ4_decompress_fast(source, dest, maxOutputSize);
+    auto read = LZ4_decompress_fast(source, &dest[0], maxOutputSize);
     if (read < 0)
         throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
     return read;

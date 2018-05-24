@@ -1577,6 +1577,11 @@ CompressionSettings Context::chooseCompressionSettings(size_t part_size, double 
     return shared->compression_settings_selector->choose(part_size, part_size_ratio);
 }
 
+CompressionSettings Context::chooseCompressionSettings(size_t part_size, double part_size_ratio, ColumnCodecs codecs) const
+{
+
+}
+
 
 const MergeTreeSettings & Context::getMergeTreeSettings()
 {

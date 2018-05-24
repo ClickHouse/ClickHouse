@@ -203,7 +203,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     /// This effectively chooses minimal compression method:
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
-    auto compression_settings = data.context.chooseCompressionSettings(0, 0);
+    auto compression_settings = data.context.chooseCompressionSettings(0, 0, data.getColumns().codecs);
 
     NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_settings);

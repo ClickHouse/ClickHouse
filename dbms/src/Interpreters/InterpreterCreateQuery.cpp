@@ -7,6 +7,8 @@
 
 #include <Common/escapeForFileName.h>
 
+#include <Compression/CompressionCodecFactory.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -207,11 +209,13 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
         /// parse codec definition and store pipe for column
         if (col_decl.codec) {
-            codecs.emplace(col_decl.name, typeid_cast<const ASTFunction *>(col_decl.codec.get())->name);
+            CodecPtr column_pipe = CompressionCodecFactory::instance().get_pipe(col_decl.codec);
+            column_pipe.setDataType(columns.back().type.get());
+            codecs.emplace(col_decl.name, column_pipe);
         }
         else
-            /// by default use None compression
-            codecs.emplace(col_decl.name, CompressionPipeline::instance().get(0))
+            /// by default use config specified
+            codecs.emplace(col_decl.name, nullptr);
     }
 
     /// set missing types and wrap default_expression's in a conversion-function if necessary

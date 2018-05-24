@@ -7,11 +7,11 @@ class CompressionCodecLZ4 : ICompressionCodec
 public:
     static const uint8_t bytecode = 0x84;
     static const bool is_hc = false;
-    int8_t argument = 1;
+    uint8_t argument = 1;
 
     std::string getName() const override
     {
-        return "LZ4()";
+        return "LZ4(" + std::to_string(argument) + ")";
     }
 
     const char * getFamilyName() const override
