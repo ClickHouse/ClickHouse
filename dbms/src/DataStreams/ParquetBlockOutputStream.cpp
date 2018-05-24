@@ -24,11 +24,25 @@ template <typename NumericType, typename ArrowBuilderType>
 void ParquetBlockOutputStream::fillArrowArrayWithNumericColumnData(ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array)
 {
     const PaddedPODArray<NumericType> & internal_data = static_cast<const ColumnVector<NumericType> &>(*write_column).getData();
-
     ArrowBuilderType numeric_builder;
-    // TODO: check status.ok()
-    /*arrow::Status status = */numeric_builder.AppendValues(internal_data.data(), internal_data.size());
-    /*arrow::Status status = */numeric_builder.Finish(&arrow_array);
+
+    arrow::Status append_status = numeric_builder.AppendValues(internal_data.data(), internal_data.size());
+    if (!append_status.ok())
+    {
+        throw Exception(
+            "Error while building a parquet column \"" + write_column->getName() + "\": " + append_status.ToString()/*,
+            ErrorCodes::TODO*/
+        );
+    }
+
+    arrow::Status finish_status = numeric_builder.Finish(&arrow_array);
+    if (!finish_status.ok())
+    {
+        throw Exception(
+            "Error while writing a parquet column \"" + write_column->getName() + "\": " + finish_status.ToString()/*,
+            ErrorCodes::TODO*/
+        );
+    }
 }
 
 void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array)
@@ -39,12 +53,25 @@ void ParquetBlockOutputStream::fillArrowArrayWithStringColumnData(ColumnPtr writ
     for (size_t string_i = 0; string_i != internal_column.size(); ++string_i)
     {
         StringRef && string_ref = internal_column.getDataAt(string_i);
-        // TODO: check status.ok()
-        /*arrow::Status status = */string_builder.Append(string_ref.data, string_ref.size);
+
+        arrow::Status append_status = string_builder.Append(string_ref.data, string_ref.size);
+        if (!append_status.ok())
+        {
+            throw Exception(
+                "Error while building a parquet column \"" + write_column->getName() + "\": " + append_status.ToString()/*,
+                ErrorCodes::TODO*/
+            );
+        }
     }
 
-    // TODO: check status.ok()
-    /*arrow::Status status = */string_builder.Finish(&arrow_array);
+    arrow::Status finish_status = string_builder.Finish(&arrow_array);
+    if (!finish_status.ok())
+    {
+        throw Exception(
+            "Error while writing a parquet column \"" + write_column->getName() + "\": " + finish_status.ToString()/*,
+            ErrorCodes::TODO*/
+        );
+    }
 }
 
 void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array)
@@ -54,12 +81,25 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(ColumnPtr write_
 
     for (size_t value_i = 0; value_i != internal_data.size(); ++value_i)
     {
-        // TODO: check status.ok()
         /// Implicitly converts UInt16 to Int32
-        /*arrow::Status status = */date32_builder.Append(internal_data[value_i]);
+        arrow::Status append_status = date32_builder.Append(internal_data[value_i]);
+        if (!append_status.ok())
+        {
+            throw Exception(
+                "Error while building a parquet column \"" + write_column->getName() + "\": " + append_status.ToString()/*,
+                ErrorCodes::TODO*/
+            );
+        }
     }
 
-    /*arrow::Status status = */date32_builder.Finish(&arrow_array);
+    arrow::Status finish_status = date32_builder.Finish(&arrow_array);
+    if (!finish_status.ok())
+    {
+        throw Exception(
+            "Error while writing a parquet column \"" + write_column->getName() + "\": " + finish_status.ToString()/*,
+            ErrorCodes::TODO*/
+        );
+    }
 }
 
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
@@ -138,14 +178,15 @@ void ParquetBlockOutputStream::write(const Block & block)
     // TODO: calculate row_group_size
     /* const UInt64 row_group_size = std::min(1, GiB_in_bytes / sizeof(UInt64) / arrow_table->num_rows()); */
 
-    // TODO: check Status.ok()
-    arrow::Status status = parquet::arrow::WriteTable(
+    arrow::Status write_status = parquet::arrow::WriteTable(
         *arrow_table, arrow::default_memory_pool(), sink,
         /* row_group_size = */arrow_table->num_rows(), parquet::default_writer_properties(),
         parquet::arrow::default_arrow_writer_properties()
     );
-    std::shared_ptr<arrow::Buffer> table_buffer = sink->GetBuffer();
+    if (!write_status.ok())
+        throw Exception("Error while writing a table: " + write_status.ToString()/*, ErrorCodes::TODO*/);
 
+    std::shared_ptr<arrow::Buffer> table_buffer = sink->GetBuffer();
     writeString(reinterpret_cast<const char *>(table_buffer->data()), table_buffer->size(), ostr);
 }
 

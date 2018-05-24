@@ -175,10 +175,12 @@ Block ParquetBlockInputStream::readImpl()
     // TODO: maybe use parquet::RandomAccessSource?
     auto reader = parquet::ParquetFileReader::Open(std::make_shared<::arrow::io::BufferReader>(buffer));
     parquet::arrow::FileReader filereader(::arrow::default_memory_pool(), std::move(reader));
-
     std::shared_ptr<arrow::Table> table;
-    // TODO: Use an internal Exception?
-    PARQUET_THROW_NOT_OK(filereader.ReadTable(&table));
+
+    // TODO: also catch a ParquetException?
+    arrow::Status read_status = filereader.ReadTable(&table);
+    if (!read_status.ok())
+        throw Exception("Error while reading parquet data: " + read_status.ToString()/*, ErrorCodes::TODO*/);
 
     if (0 == table->num_rows())
         throw Exception("Empty table in input data"/*, ErrorCodes::TODO*/);
@@ -241,8 +243,6 @@ Block ParquetBlockInputStream::readImpl()
             case arrow::Type::DATE32:
                 fillColumnWithDate32Data(arrow_column, read_column);
                 break;
-                /* fillColumnWithNumericData<UInt32>(arrow_column, read_column); */
-            // TODO: check that values smaller than INT32 are being read correctly
 #define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
             case ARROW_NUMERIC_TYPE: \
                 fillColumnWithNumericData<CPP_NUMERIC_TYPE>(arrow_column, read_column); \
@@ -250,10 +250,8 @@ Block ParquetBlockInputStream::readImpl()
 
             FOR_ARROW_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
-            // TODO: arrow::Type::DATE32
-            // TODO: arrow::Type::DATE64
-
-            // TODO: add other types
+            // TODO: support TIMESTAMP_MICROS and TIMESTAMP_MILLIS with truncated micro- and milliseconds?
+            // TODO: read JSON as a string?
             default:
                 throw Exception("Unsupported parquet type " + arrow_column->type()->name()/*, ErrorCodes::TODO*/);
 
