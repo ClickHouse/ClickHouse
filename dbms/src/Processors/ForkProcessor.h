@@ -19,7 +19,7 @@ class ForkProcessor : public IProcessor
 {
 public:
     ForkProcessor(Block header, size_t num_outputs)
-        : IProcessor(InputPorts{header}, OutputPorts(num_inputs, header))
+        : IProcessor(InputPorts{header}, OutputPorts(num_outputs, header))
     {
     }
 

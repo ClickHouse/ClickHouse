@@ -49,7 +49,11 @@ ResizeProcessor::Status ResizeProcessor::prepare()
         if (all_inputs_have_no_data)
         {
             if (all_inputs_finished)
+            {
+                for (auto & output : outputs)
+                    output.setFinished();
                 return Status::Finished;
+            }
             else
                 return Status::NeedData;
         }

@@ -6,6 +6,7 @@
 #include <Processors/ISink.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
+#include <Processors/ForkProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueueBuffer.h>
 #include <Processors/Executors/SequentialPipelineExecutor.h>
@@ -118,12 +119,14 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink()
-        : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }}))
+    PrintSink(String prefix)
+        : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
+        prefix(std::move(prefix))
     {
     }
 
 private:
+    String prefix;
     WriteBufferFromFileDescriptor out{STDOUT_FILENO};
 
     void consume(Block block) override
@@ -133,6 +136,7 @@ private:
 
         for (size_t row_num = 0; row_num < rows; ++row_num)
         {
+            writeString(prefix, out);
             for (size_t column_num = 0; column_num < columns; ++column_num)
             {
                 if (column_num != 0)
@@ -178,25 +182,33 @@ try
     connect(limit3->getOutputPort(), concat->getInputs()[0]);
     connect(limit4->getOutputPort(), concat->getInputs()[1]);
 
+    auto fork = std::make_shared<ForkProcessor>(header, 2);
+
+    connect(concat->getOutputPort(), fork->getInputPort());
+
+    auto print_after_concat = std::make_shared<PrintSink>("---------- ");
+
+    connect(fork->getOutputs()[1], print_after_concat->getPort());
+
     auto resize = std::make_shared<ResizeProcessor>(header, 4, 1);
 
     connect(queue->getOutputPort(), resize->getInputs()[0]);
     connect(source1->getPort(), resize->getInputs()[1]);
     connect(source2->getPort(), resize->getInputs()[2]);
-    connect(concat->getOutputPort(), resize->getInputs()[3]);
+    connect(fork->getOutputs()[0], resize->getInputs()[3]);
 
     auto limit = std::make_shared<LimitTransform>(header, 100, 0);
 
     connect(resize->getOutputs()[0], limit->getInputPort());
 
-    auto sink = std::make_shared<PrintSink>();
+    auto sink = std::make_shared<PrintSink>("");
 
     connect(limit->getOutputPort(), sink->getPort());
 
-    printPipeline({source0, source1, source2, source3, source4, limit0, limit3, limit4, limit, queue, concat, resize, sink});
+    printPipeline({source0, source1, source2, source3, source4, limit0, limit3, limit4, limit, queue, concat, fork, print_after_concat, resize, sink});
 
     ThreadPool pool(4, 10);
-    ParallelPipelineExecutor executor({sink}, pool);
+    ParallelPipelineExecutor executor({sink, print_after_concat}, pool);
     //SequentialPipelineExecutor executor({sink});
 
     EventCounter watch;

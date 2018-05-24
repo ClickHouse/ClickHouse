@@ -33,6 +33,8 @@ ForkProcessor::Status ForkProcessor::prepare()
         if (input.isFinished())
         {
             input.setNotNeeded();
+            for (auto & output : outputs)
+                output.setFinished();
             return Status::Finished;
         }
         else

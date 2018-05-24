@@ -12,7 +12,10 @@ ISource::ISource(Block header)
 ISource::Status ISource::prepare()
 {
     if (finished)
+    {
+        output.setFinished();
         return Status::Finished;
+    }
 
     if (output.hasData())
         return Status::PortFull;

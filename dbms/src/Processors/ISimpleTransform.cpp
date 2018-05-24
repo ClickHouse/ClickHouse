@@ -33,7 +33,10 @@ ISimpleTransform::Status ISimpleTransform::prepare()
     }
 
     if (input.isFinished())
+    {
+        output.setFinished();
         return Status::Finished;
+    }
 
     input.setNeeded();
     return Status::NeedData;
