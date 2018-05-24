@@ -1,4 +1,4 @@
-<a name="file"></a>
+<a name="table_engines-file"></a>
 
 # File(Format)
 
@@ -16,7 +16,7 @@
 File(Format)
 ```
 
-`Format` необходимо выбирать из тех, которые ClickHouse может и читать и писать. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../formats/index.md#formats).
+`Format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT` и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../formats/index.md#formats).
 
 Сервер ClickHouse не позволяет указать путь к файлу, с которым будет работать `File`. Используется путь к хранилищу, определенный параметром [path](../operations/server_settings/settings.md#server_settings-path) в конфигурации сервера.
 
