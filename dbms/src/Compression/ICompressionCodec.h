@@ -34,6 +34,8 @@ public:
     /// Name of codec family (example: LZ4, ZSTD).
     virtual const char * getFamilyName() const = 0;
 
+    virtual size_t getArgHeaderSize() const = 0;
+
     /// Header for serialization, containing bytecode and parameters
     virtual size_t writeHeader(char* header);
     /// Header parser for parameters

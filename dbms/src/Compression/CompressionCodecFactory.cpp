@@ -35,7 +35,7 @@ CodecPtr CompressionCodecFactory::get_pipe(const String & full_declaration) cons
     return CompressionPipeline(codecs);
 }
 
-CodecPtr CompressionCodecFactory::get_pipe(const char* header) const
+CodecPtr CompressionCodecFactory::get_pipe(ReadBuffer * header) const
 {
     return CompressionPipeline(header);
 }

@@ -23,23 +23,31 @@ public:
         : codecs (codecs)
     {}
 
-    CompressionPipeline(const char* header)
+    CompressionPipeline(ReadBuffer* header)
     {
         const CompressionCodecFactory & codec_factory = CompressionCodecFactory::instance();
-        auto _header = header;
+        char last_codec_bytecode;
+        PODArray<char> _header;
+        _header.size(1);
+        header->readStrict(&_header[0], 1);
         /// Read codecs, while continuation bit is set
         do {
-            CodecPtr _codec = codec_factory.get((*_header) & (~CodecHeaderBits::CONTINUATION_BIT));
-            auto read_chars = _codec.parseHeader(_header + 1);
+            last_codec_bytecode = (_header[0]) & (~CodecHeaderBits::CONTINUATION_BIT);
+            CodecPtr _codec = codec_factory.get(last_codec_bytecode);
+            _header.resize(_codec.getArgHeaderSize());
+            header->readStrict(&_header[0], _codec.getArgHeaderSize());
+            auto read_chars = _codec.parseHeader(&_header[0]);
             codecs.push_back(_codec);
-            _header += 1 + read_chars; /// Move reader to the next codec
+            header->readStrict(&_header[0], 1);
         }
-        while ((*_header) & CodecHeaderBits::CONTINUATION_BIT);
+        while (last_codec_bytecode & CodecHeaderBits::CONTINUATION_BIT);
         /// Load and reverse sizes part of a header, listed from later codecs to the original size, - see `compress`.
-        output_sizes.resize(codecs.size() + 1);
         auto codecs_amount = codecs.size();
+        _header.resize(codecs_amount + 1);
+        output_sizes.resize(codecs_amount + 1);
+        header->readStrict(&_header[0], sizeof(UInt32) * (codecs_amount + 1));
         for (size_t i = 0; i <= codecs_amount; ++i) {
-            output_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&sizes[sizeof(UInt32) * i]);
+            output_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&_header[sizeof(UInt32) * i]);
         }
     }
 
