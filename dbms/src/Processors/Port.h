@@ -36,7 +36,7 @@ public:
     Port(const Block & header)
         : header(header) {}
 
-    Block getHeader() const { return header; }
+    const Block & getHeader() const { return header; }
     bool isConnected() const { return state != nullptr; }
 
     void assumeConnected() const
