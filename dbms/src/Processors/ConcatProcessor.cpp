@@ -34,11 +34,15 @@ ConcatProcessor::Status ConcatProcessor::prepare()
     if (input.isFinished())
     {
         input.setNotNeeded();
+
         ++current_input;
+        if (current_input == inputs.end())
+            return Status::Finished;
+
         current_input->setNeeded();
     }
 
-    return Status::Again;
+    return Status::NeedData;
 }
 
 }

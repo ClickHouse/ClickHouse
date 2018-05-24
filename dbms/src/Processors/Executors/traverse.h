@@ -11,11 +11,7 @@ namespace DB
 template <typename Visit>
 void traverse(IProcessor & processor, Visit && visit)
 {
-    IProcessor::Status status;
-    do
-    {
-        status = visit(processor);
-    } while (status == IProcessor::Status::Again);
+    IProcessor::Status status = visit(processor);
 
     if (status == IProcessor::Status::Ready || status == IProcessor::Status::Async)
         return;

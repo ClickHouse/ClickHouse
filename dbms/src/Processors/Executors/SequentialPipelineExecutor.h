@@ -1,6 +1,6 @@
 #pragma once
 
-#include <list>
+#include <vector>
 
 #include <Processors/IProcessor.h>
 
@@ -15,11 +15,11 @@ namespace DB
 class SequentialPipelineExecutor : public IProcessor
 {
 private:
-    std::list<ProcessorPtr> processors;
+    Processors processors;
     IProcessor * current_processor = nullptr;
 
 public:
-    SequentialPipelineExecutor(const std::list<ProcessorPtr> & processors);
+    SequentialPipelineExecutor(const Processors & processors);
 
     String getName() const override { return "SequentialPipelineExecutor"; }
 
