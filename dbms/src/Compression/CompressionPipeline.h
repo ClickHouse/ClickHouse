@@ -18,6 +18,7 @@ private:
     CodecPtrs codecs;
     /// Sizes of data mutations, from original to later compressions
     std::vector<uint32_t> data_sizes;
+    size_t header_size = 0;
 public:
     CompressionPipeline(CodecPtrs codecs)
         : codecs (codecs)
@@ -29,26 +30,35 @@ public:
         char last_codec_bytecode;
         PODArray<char> _header;
         _header.size(1);
-        header->readStrict(&_header[0], 1);
         /// Read codecs, while continuation bit is set
         do {
+            header->readStrict(&_header[0], 1);
+            header_size += 1;
+
             last_codec_bytecode = (_header[0]) & (~CodecHeaderBits::CONTINUATION_BIT);
             CodecPtr _codec = codec_factory.get(last_codec_bytecode);
+
             _header.resize(_codec.getArgHeaderSize());
             header->readStrict(&_header[0], _codec.getArgHeaderSize());
-            auto read_chars = _codec.parseHeader(&_header[0]);
+            header_size += _codec.parseHeader(&_header[0]);
             codecs.push_back(_codec);
-            header->readStrict(&_header[0], 1);
         }
         while (last_codec_bytecode & CodecHeaderBits::CONTINUATION_BIT);
         /// Load and reverse sizes part of a header, listed from later codecs to the original size, - see `compress`.
         auto codecs_amount = codecs.size();
-        _header.resize(codecs_amount + 1);
         output_sizes.resize(codecs_amount + 1);
+
+        _header.resize(sizeof(UInt32) * (codecs_amount + 1));
         header->readStrict(&_header[0], sizeof(UInt32) * (codecs_amount + 1));
+
         for (size_t i = 0; i <= codecs_amount; ++i) {
             output_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&_header[sizeof(UInt32) * i]);
         }
+    }
+
+    size_t getHeaderSize() const
+    {
+        return header_size;
     }
 
     String getName() const
@@ -76,6 +86,16 @@ public:
         }
     };
 
+    size_t getCompressedSize()
+    {
+        return data_sizes.back();
+    };
+
+    size_t getDecompressedSize()
+    {
+        return data_sizes.front();
+    };
+
     /** Maximum amount of bytes for compression needed
      * Returns size of first codec in pipeline as for iterative approach.
      * @param uncompressed_size - data to be compressed in bytes;
@@ -88,7 +108,7 @@ public:
 
     size_t getMaxDecompressedSize(size_t compressed_size)
     {
-        return data_sizes.back();
+        return data_sizes.front();
     };
 
     /// Block compression and decompression methods
