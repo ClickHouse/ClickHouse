@@ -37,7 +37,10 @@ ConcatProcessor::Status ConcatProcessor::prepare()
 
         ++current_input;
         if (current_input == inputs.end())
+        {
+            output.setFinished();
             return Status::Finished;
+        }
 
         current_input->setNeeded();
     }
