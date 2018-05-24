@@ -29,6 +29,12 @@ namespace DB
   * Different ports may have different structure. For example, ports may correspond to different resultsets
   *  or semantically different parts of result.
   *
+  * Processor may modify its ports (create another processors and connect to them) on the fly.
+  * Example: first execute the subquery; on basis of subquery result
+  *  determine how to execute the rest of query and build the corresponding pipeline.
+  *
+  * Processor may simply wait for another processor to execute without transferring any data from it.
+  * For this purpose it should connect its input port to another processor, and indicate need of data.
   *
   * Examples:
   *
@@ -70,16 +76,21 @@ namespace DB
   * Select. Has one or multiple inputs and one output.
   * Read blocks from inputs and check that blocks on inputs are "parallel": correspond to each other in number of rows.
   * Construct a new block by selecting some subset (or all) of columns from inputs.
+  * Example: collect columns - function arguments before function execution.
   *
   *
-  * TODO Ports may carry algebraic properties about streams of data.
-  * For example, that data comes ordered by specific key; or grouped by specific key; or have unique values of specific key.
+  * TODO Processor may provide an estimate about total number of rows that will be pushed to its output ports.
+  *
   * TODO Processors may carry algebraic properties about transformations they do.
   * For example, that processor doesn't change number of rows; doesn't change order of rows, doesn't change the set of rows, etc.
   *
+  * TODO Ports may carry algebraic properties about streams of data.
+  * For example, that data comes ordered by specific key; or grouped by specific key; or have unique values of specific key.
+  *
   * TODO Processor should have declarative representation, that is able to be serialized and parsed.
-  * Example: read_from_merge_tree(database, table, Piece(0, 10), Parts(Part('name', MarkRanges(MarkRange(0, 100), ...)), ...))
+  * Example: read_from_merge_tree(database, table, Columns(a, b, c), Piece(0, 10), Parts(Part('name', MarkRanges(MarkRange(0, 100), ...)), ...))
   * It's reasonable to have an intermediate language for declaration of pipelines.
+  *
   * TODO Processor with all its parameters should represent "pure" function on streams of data from its input ports.
   * It's in question, what kind of "pure" function do we mean.
   * For example, data streams are considered equal up to order unless ordering properties are stated explicitly.
