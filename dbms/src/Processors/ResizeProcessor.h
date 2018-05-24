@@ -20,8 +20,11 @@ namespace DB
 class ResizeProcessor : public IProcessor
 {
 public:
-    /// TODO Check that structure of all ports is equal; check that there is non zero number of inputs and outputs.
-    using IProcessor::IProcessor;
+    /// TODO Check that there is non zero number of inputs and outputs.
+    ResizeProcessor(Block header, size_t num_inputs, size_t num_outputs)
+        : IProcessor(InputPorts(num_inputs, header), OutputPorts(num_outputs, header))
+    {
+    }
 
     String getName() const override { return "Resize"; }
 

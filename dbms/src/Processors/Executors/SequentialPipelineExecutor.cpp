@@ -5,7 +5,7 @@
 namespace DB
 {
 
-SequentialPipelineExecutor::SequentialPipelineExecutor(const std::list<ProcessorPtr> & processors)
+SequentialPipelineExecutor::SequentialPipelineExecutor(const Processors & processors)
     : processors(processors)
 {
 }

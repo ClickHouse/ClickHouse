@@ -5,10 +5,12 @@
 #include <Processors/ISource.h>
 #include <Processors/ISink.h>
 #include <Processors/ResizeProcessor.h>
+#include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/QueueBuffer.h>
 #include <Processors/Executors/SequentialPipelineExecutor.h>
 #include <Processors/Executors/ParallelPipelineExecutor.h>
+#include <Processors/printPipeline.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <common/ThreadPool.h>
@@ -76,7 +78,7 @@ public:
             return Status::PortFull;
 
         output.push(std::move(current_block));
-        return Status::Again;
+        return Status::Async;
     }
 
     void schedule(EventCounter & watch) override
@@ -150,24 +152,48 @@ try
 {
     auto source0 = std::make_shared<NumbersSource>(0, 300000);
     auto header = source0->getPort().getHeader();
-    auto limit0 = std::make_shared<LimitTransform>(Block(header), 10, 0);
+    auto limit0 = std::make_shared<LimitTransform>(header, 10, 0);
+
+    connect(source0->getPort(), limit0->getInputPort());
+
+    auto queue = std::make_shared<QueueBuffer>(header);
+
+    connect(limit0->getOutputPort(), queue->getInputPort());
 
     auto source1 = std::make_shared<SleepyNumbersSource>(100, 100000);
     auto source2 = std::make_shared<SleepyNumbersSource>(1000, 200000);
 
-    auto queue = std::make_shared<QueueBuffer>(header);
+    auto source3 = std::make_shared<NumbersSource>(10, 100000);
+    auto limit3 = std::make_shared<LimitTransform>(header, 5, 0);
 
-    auto resize = std::make_shared<ResizeProcessor>(InputPorts{Block(header), Block(header), Block(header)}, OutputPorts{Block(header)});
-    auto limit = std::make_shared<LimitTransform>(Block(header), 100, 0);
-    auto sink = std::make_shared<PrintSink>();
+    connect(source3->getPort(), limit3->getInputPort());
 
-    connect(source0->getPort(), limit0->getInputPort());
-    connect(limit0->getOutputPort(), queue->getInputPort());
+    auto source4 = std::make_shared<NumbersSource>(10, 100000);
+    auto limit4 = std::make_shared<LimitTransform>(header, 5, 0);
+
+    connect(source4->getPort(), limit4->getInputPort());
+
+    auto concat = std::make_shared<ConcatProcessor>(header, 2);
+
+    connect(limit3->getOutputPort(), concat->getInputs()[0]);
+    connect(limit4->getOutputPort(), concat->getInputs()[1]);
+
+    auto resize = std::make_shared<ResizeProcessor>(header, 4, 1);
+
     connect(queue->getOutputPort(), resize->getInputs()[0]);
     connect(source1->getPort(), resize->getInputs()[1]);
     connect(source2->getPort(), resize->getInputs()[2]);
+    connect(concat->getOutputPort(), resize->getInputs()[3]);
+
+    auto limit = std::make_shared<LimitTransform>(header, 100, 0);
+
     connect(resize->getOutputs()[0], limit->getInputPort());
+
+    auto sink = std::make_shared<PrintSink>();
+
     connect(limit->getOutputPort(), sink->getPort());
+
+    printPipeline({source0, source1, source2, source3, source4, limit0, limit3, limit4, limit, queue, concat, resize, sink});
 
     ThreadPool pool(4, 10);
     ParallelPipelineExecutor executor({sink}, pool);

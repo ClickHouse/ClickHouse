@@ -16,14 +16,16 @@ namespace DB
 class ConcatProcessor : public IProcessor
 {
 public:
-    ConcatProcessor(InputPorts inputs_, OutputPort output_)
-        : IProcessor(std::move(inputs_), {std::move(output_)}), current_input(inputs.begin())
+    ConcatProcessor(Block header, size_t num_inputs)
+        : IProcessor(InputPorts(num_inputs, header), OutputPorts{header}), current_input(inputs.begin())
     {
     }
 
     String getName() const override { return "Concat"; }
 
     Status prepare() override;
+
+    OutputPort & getOutputPort() { return outputs[0]; }
 
 private:
     InputPorts::iterator current_input;

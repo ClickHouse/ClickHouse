@@ -63,6 +63,13 @@ public:
             throw Exception("Port does not belong to Processor");
         return *processor;
     }
+
+    const IProcessor & getProcessor() const
+    {
+        if (!processor)
+            throw Exception("Port does not belong to Processor");
+        return *processor;
+    }
 };
 
 
@@ -107,6 +114,12 @@ public:
         assumeConnected();
         return *output_port;
     }
+
+    const OutputPort & getOutputPort() const
+    {
+        assumeConnected();
+        return *output_port;
+    }
 };
 
 
@@ -135,6 +148,12 @@ public:
     }
 
     InputPort & getInputPort()
+    {
+        assumeConnected();
+        return *input_port;
+    }
+
+    const InputPort & getInputPort() const
     {
         assumeConnected();
         return *input_port;

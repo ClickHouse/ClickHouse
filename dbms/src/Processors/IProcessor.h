@@ -79,13 +79,12 @@ namespace DB
   * Example: collect columns - function arguments before function execution.
   *
   *
-  * TODO Processor may provide an estimate about total number of rows that will be pushed to its output ports.
-  *
   * TODO Processors may carry algebraic properties about transformations they do.
   * For example, that processor doesn't change number of rows; doesn't change order of rows, doesn't change the set of rows, etc.
   *
   * TODO Ports may carry algebraic properties about streams of data.
   * For example, that data comes ordered by specific key; or grouped by specific key; or have unique values of specific key.
+  * And also simple properties, including lower and upper bound on number of rows.
   *
   * TODO Processor should have declarative representation, that is able to be serialized and parsed.
   * Example: read_from_merge_tree(database, table, Columns(a, b, c), Piece(0, 10), Parts(Part('name', MarkRanges(MarkRange(0, 100), ...)), ...))
@@ -142,9 +141,6 @@ public:
         /// Processor is doing some work in background.
         /// You may wait for next event or do something else and then you should call 'prepare' again.
         Wait,
-
-        /// Call 'prepare' again.
-        Again,
     };
 
     /** Method 'prepare' is responsible for all cheap ("instantenous": O(1) of data volume, no wait) calculations.
@@ -201,6 +197,7 @@ public:
 };
 
 using ProcessorPtr = std::shared_ptr<IProcessor>;
+using Processors = std::vector<ProcessorPtr>;
 
 
 }

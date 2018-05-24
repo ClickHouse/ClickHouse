@@ -7,7 +7,7 @@
 namespace DB
 {
 
-ParallelPipelineExecutor::ParallelPipelineExecutor(const std::list<ProcessorPtr> & processors, ThreadPool & pool)
+ParallelPipelineExecutor::ParallelPipelineExecutor(const std::vector<ProcessorPtr> & processors, ThreadPool & pool)
     : processors(processors), pool(pool)
 {
 }

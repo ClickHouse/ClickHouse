@@ -1,6 +1,6 @@
 #pragma once
 
-#include <list>
+#include <vector>
 #include <set>
 #include <mutex>
 #include <Processors/IProcessor.h>
@@ -18,7 +18,7 @@ namespace DB
 class ParallelPipelineExecutor : public IProcessor
 {
 private:
-    std::list<ProcessorPtr> processors;
+    Processors processors;
     ThreadPool & pool;
 
     std::set<IProcessor *> active_processors;
@@ -28,7 +28,7 @@ private:
     Status current_status;
 
 public:
-    ParallelPipelineExecutor(const std::list<ProcessorPtr> & processors, ThreadPool & pool);
+    ParallelPipelineExecutor(const Processors & processors, ThreadPool & pool);
 
     String getName() const override { return "ParallelPipelineExecutor"; }
 
