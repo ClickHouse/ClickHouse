@@ -11,6 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <common/unaligned.h>
+#include <Compression/CompressionCodecFactory.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressedStream.h>
@@ -47,21 +48,11 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
     own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
-    compressed_in->readStrict(&own_compressed_buffer[0], COMPRESSED_BLOCK_HEADER_SIZE);
+    compression_pipe = CompressionCodecFactory::instance().get_pipe(compressed_in);
 
-    UInt8 method = own_compressed_buffer[0];    /// See CompressedWriteBuffer.h
-
-    size_t & size_compressed = size_compressed_without_checksum;
-
-    if (method == static_cast<UInt8>(CompressionMethodByte::LZ4) ||
-        method == static_cast<UInt8>(CompressionMethodByte::ZSTD) ||
-        method == static_cast<UInt8>(CompressionMethodByte::NONE))
-    {
-        size_compressed = unalignedLoad<UInt32>(&own_compressed_buffer[1]);
-        size_decompressed = unalignedLoad<UInt32>(&own_compressed_buffer[5]);
-    }
-    else
-        throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+    size_compressed_without_checksum = compression_pipe.getCompressedSize();
+    size_t size_compressed = size_compressed_without_checksum + compression_pipe.getHeaderSize();
+    size_decompressed = compression_pipe.getDecompressedSize();
 
     if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
@@ -69,10 +60,10 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed + sizeof(checksum));
 
     /// Is whole compressed block located in 'compressed_in' buffer?
-    if (compressed_in->offset() >= COMPRESSED_BLOCK_HEADER_SIZE &&
-        compressed_in->position() + size_compressed - COMPRESSED_BLOCK_HEADER_SIZE <= compressed_in->buffer().end())
+    if (compressed_in->offset() >= compression_pipe.getHeaderSize() &&
+        compressed_in->position() + size_compressed - compression_pipe.getHeaderSize() <= compressed_in->buffer().end())
     {
-        compressed_in->position() -= COMPRESSED_BLOCK_HEADER_SIZE;
+        compressed_in->position() -= compression_pipe.getHeaderSize();
         compressed_buffer = compressed_in->position();
         compressed_in->position() += size_compressed;
     }
@@ -80,7 +71,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     {
         own_compressed_buffer.resize(size_compressed);
         compressed_buffer = &own_compressed_buffer[0];
-        compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
+        compressed_in->readStrict(compressed_buffer + compression_pipe.getHeaderSize(),
+                                  size_compressed - compression_pipe.getHeaderSize());
     }
 
     if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed))
@@ -95,28 +87,8 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
-    UInt8 method = compressed_buffer[0];    /// See CompressedWriteBuffer.h
-
-    if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
-    {
-        if (LZ4_decompress_fast(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed) < 0)
-            throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
-    }
-    else if (method == static_cast<UInt8>(CompressionMethodByte::ZSTD))
-    {
-        size_t res = ZSTD_decompress(
-            to, size_decompressed,
-            compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed_without_checksum - COMPRESSED_BLOCK_HEADER_SIZE);
-
-        if (ZSTD_isError(res))
-            throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);
-    }
-    else if (method == static_cast<UInt8>(CompressionMethodByte::NONE))
-    {
-        memcpy(to, &compressed_buffer[COMPRESSED_BLOCK_HEADER_SIZE], size_decompressed);
-    }
-    else
-        throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
+    compression_pipe.decompress(compressed_buffer + compression_pipe.getHeaderSize(), to,
+                                size_compressed_without_checksum, size_decompressed);
 }
 
 
