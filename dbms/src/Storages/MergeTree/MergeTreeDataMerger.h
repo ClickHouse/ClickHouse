@@ -19,7 +19,6 @@ class MergeProgressCallback;
 class MergeTreeDataMerger
 {
 public:
-    using CancellationHook = std::function<void()>;
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String * reason)>;
 
     struct FuturePart
@@ -41,8 +40,6 @@ public:
 
 public:
     MergeTreeDataMerger(MergeTreeData & data_, const BackgroundProcessingPool & pool_);
-
-    void setCancellationHook(CancellationHook cancellation_hook_);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
       * It depends on number of free threads in background_pool and amount of free space in disk.
@@ -133,8 +130,6 @@ private:
 
     /// When the last time you wrote to the log that the disk space was running out (not to write about this too often).
     time_t disk_space_warning_time = 0;
-
-    CancellationHook cancellation_hook;
 };
 
 
