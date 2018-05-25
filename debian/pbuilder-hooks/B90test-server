@@ -3,6 +3,7 @@ set -e
 set -x
 
 TEST_CONNECT=${TEST_CONNECT=1}
+TEST_SSL=${TEST_SSL=1}
 PACKAGE_INSTALL=${PACKAGE_INSTALL=1}
 PORT_RANDOM=${PORT_RANDOM=1}
 
@@ -42,7 +43,6 @@ export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=8443}
 if [ "${TEST_CONNECT}" ]; then
     [ "${PORT_RANDOM}" ] && echo "<yandex><http_port>${CLICKHOUSE_PORT_HTTP}</http_port><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><interserver_http_port>${CLICKHOUSE_PORT_INTERSERVER}</interserver_http_port></yandex>" > /etc/clickhouse-server/config.d/port.xml
 
-    TEST_SSL=${TEST_SSL=1}
     if  [ "${TEST_SSL}" ]; then
         [ "${PORT_RANDOM}" ] && echo "<yandex><https_port>${CLICKHOUSE_PORT_HTTPS}</https_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
         echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
