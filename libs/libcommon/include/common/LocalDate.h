@@ -62,7 +62,7 @@ public:
         init(time);
     }
 
-    LocalDate(DayNum_t day_num)
+    LocalDate(DayNum day_num)
     {
         const auto & values = DateLUT::instance().getValues(day_num);
         m_year  = values.year;
@@ -103,12 +103,12 @@ public:
         return DateLUT::instance().makeDate(m_year, m_month, m_day);
     }
 
-    DayNum_t getDayNum() const
+    DayNum getDayNum() const
     {
         return DateLUT::instance().makeDayNum(m_year, m_month, m_day);
     }
 
-    operator DayNum_t() const
+    operator DayNum() const
     {
         return getDayNum();
     }
