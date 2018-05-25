@@ -50,11 +50,16 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
+#include <Client/Completion.h>
+#include <Client/Commands.h>
 #include "InterruptListener.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <ext/scope_guard.h>
 
+static Completion::HashTable ht;
+char ** commands_completion(const char *, int, int);
+char * commands_generator(const char *, int);
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -67,7 +72,6 @@
 /// This codes are possibly not supported everywhere.
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
-
 
 namespace DB
 {
@@ -336,6 +340,17 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
+    void init_suggestions(Completion::HashTable *ht)
+    {
+        Completion::init_hash_table(ht, 128);
+        COMMAND *cmd = commands;
+        while (cmd->name) {
+            Completion::hash_add_word(ht, cmd->name);
+            cmd++;
+        }
+        rl_attempted_completion_function = commands_completion;
+    }
+
 
     int mainImpl()
     {
@@ -446,9 +461,10 @@ private:
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+            init_suggestions(&ht);
 
             /// Turn tab completion off.
-            rl_bind_key('\t', rl_insert);
+//            rl_bind_key('\t', rl_insert);
 
             /// Load command history if present.
             if (config().has("history_file"))
@@ -1533,7 +1549,6 @@ public:
 
 }
 
-
 int mainEntryClickHouseClient(int argc, char ** argv)
 {
     DB::Client client;
@@ -1549,4 +1564,37 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     }
 
     return client.run();
+}
+
+char ** commands_completion(const char *text, int start, int end)
+{
+    rl_attempted_completion_over = start + end + 1;
+    return rl_completion_matches(text, commands_generator);
+}
+
+char * commands_generator(const char * text, int state)
+{
+    static int text_length;
+    static Completion::Bucket *bucket;
+    static Completion::HashEntry *entry;
+    char * found;
+
+    if (!state) text_length = (uint) strlen(text);
+
+    if (text_length > 0) {
+        if (!state) {
+            uint length;
+
+            bucket = Completion::hash_find_all_matches(&ht, text, (uint)strlen(text), &length);
+            if (!bucket) return (char *) nullptr;
+            entry = bucket->entry;
+        }
+        if (entry) {
+            found = strdup(entry->text);
+            entry = entry->next;
+            return found;
+        }
+    }
+
+    return (char *) nullptr;
 }
