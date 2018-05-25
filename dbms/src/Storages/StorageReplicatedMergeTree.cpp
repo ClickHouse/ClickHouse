@@ -53,11 +53,13 @@
 namespace ProfileEvents
 {
     extern const Event ReplicatedPartMerges;
+    extern const Event ReplicatedPartMutations;
     extern const Event ReplicatedPartFailedFetches;
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
     extern const Event DataAfterMergeDiffersFromReplica;
+    extern const Event DataAfterMutationDiffersFromReplica;
 }
 
 namespace CurrentMetrics
@@ -1093,6 +1095,63 @@ bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
 }
 
 
+void StorageReplicatedMergeTree::writePartLog(
+    PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
+    const String & new_part_name,
+    const MergeTreeData::DataPartPtr & result_part,
+    const MergeTreeData::DataPartsVector & source_parts,
+    const MergeListEntry * merge_entry) const
+{
+    try
+    {
+        auto part_log = context.getPartLog(database_name);
+        if (!part_log)
+            return;
+
+        PartLogElement part_log_elem;
+
+        part_log_elem.event_type = type;
+
+        part_log_elem.error = static_cast<UInt16>(execution_status.code);
+        part_log_elem.exception = execution_status.message;
+
+        part_log_elem.event_time = time(nullptr);
+        /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
+        part_log_elem.duration_ms = elapsed_ns / 10000000;
+
+        part_log_elem.database_name = database_name;
+        part_log_elem.table_name = table_name;
+        part_log_elem.part_name = new_part_name;
+
+        if (result_part)
+        {
+            part_log_elem.bytes_compressed_on_disk = result_part->bytes_on_disk;
+            part_log_elem.rows = result_part->rows_count;
+        }
+
+        part_log_elem.source_part_names.reserve(source_parts.size());
+        for (const auto & source_part : source_parts)
+            part_log_elem.source_part_names.push_back(source_part->name);
+
+        if (merge_entry)
+        {
+
+            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
+            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
+
+            part_log_elem.rows = (*merge_entry)->rows_written;
+            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
+        }
+
+        part_log->add(part_log_elem);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
+}
+
+
 bool StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTree::LogEntry & entry)
 {
     // Log source part names just in case
@@ -1174,49 +1233,13 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
     MergeTreeData::Transaction transaction;
     MergeTreeData::MutableDataPartPtr part;
 
-    /// Logging
     Stopwatch stopwatch;
+
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        try
-        {
-            auto part_log = context.getPartLog(database_name);
-            if (!part_log)
-                return;
-
-            PartLogElement part_log_elem;
-
-            part_log_elem.event_type = PartLogElement::MERGE_PARTS;
-            part_log_elem.event_time = time(nullptr);
-            /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-            part_log_elem.duration_ms = stopwatch.elapsed() / 1000000;
-
-            part_log_elem.database_name = database_name;
-            part_log_elem.table_name = table_name;
-            part_log_elem.part_name = entry.new_part_name;
-
-            if (part)
-                part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
-
-            part_log_elem.source_part_names.reserve(parts.size());
-            for (const auto & source_part : parts)
-                part_log_elem.source_part_names.push_back(source_part->name);
-
-            part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
-            part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
-
-            part_log_elem.rows = (*merge_entry)->rows_written;
-            part_log_elem.bytes_uncompressed = (*merge_entry)->bytes_written_uncompressed;
-
-            part_log_elem.error = static_cast<UInt16>(execution_status.code);
-            part_log_elem.exception = execution_status.message;
-
-            part_log->add(part_log_elem);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
+        writePartLog(
+            PartLogElement::MERGE_PARTS, execution_status, stopwatch.elapsed(),
+            entry.new_part_name, part, parts, merge_entry.get());
     };
 
     try
@@ -1288,7 +1311,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MergeTreeData::DataPartPtr source_part = data.getActiveContainingPart(source_part_name);
     if (!source_part)
     {
-        LOG_DEBUG(log, "Source part for " << entry.new_part_name << " is not ready; will try to fetch it instead");
+        LOG_DEBUG(log, "Source part " + source_part_name + " for " << entry.new_part_name << " is not ready; will try to fetch it instead");
         return false;
     }
 
@@ -1300,7 +1323,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     }
 
     /// TODO - some better heuristic?
-    size_t estimated_space_for_result = source_part->bytes_on_disk;
+    size_t estimated_space_for_result = MergeTreeDataMergerMutator::estimateNeededDiskSpace({source_part});
 
     if (entry.create_time + data.settings.prefer_fetch_merged_part_time_threshold.totalSeconds() <= time(nullptr)
         && estimated_space_for_result >= data.settings.prefer_fetch_merged_part_size_threshold)
@@ -1327,28 +1350,22 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     MergeTreeData::MutableDataPartPtr new_part;
     MergeTreeData::Transaction transaction;
 
-    /// Logging
+    MergeTreeDataMergerMutator::FuturePart future_mutated_part;
+    future_mutated_part.parts.push_back(source_part);
+    future_mutated_part.part_info = new_part_info;
+    future_mutated_part.name = entry.new_part_name;
+
     Stopwatch stopwatch;
-    auto write_part_log = [&] (const ExecutionStatus & /* execution_status */)
+
+    auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        try
-        {
-            /// TODO
-            return;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
+        writePartLog(
+            PartLogElement::MUTATE_PART, execution_status, stopwatch.elapsed(),
+            entry.new_part_name, new_part, future_mutated_part.parts, nullptr);
     };
 
     try
     {
-        MergeTreeDataMergerMutator::FuturePart future_mutated_part;
-        future_mutated_part.parts.push_back(source_part);
-        future_mutated_part.part_info = new_part_info;
-        future_mutated_part.name = entry.new_part_name;
-
         new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands.commands, context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
@@ -1362,7 +1379,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
             {
                 transaction.rollback();
 
-                ProfileEvents::increment(ProfileEvents::DataAfterMergeDiffersFromReplica);
+                ProfileEvents::increment(ProfileEvents::DataAfterMutationDiffersFromReplica);
 
                 LOG_ERROR(log, getCurrentExceptionMessage(false) << ". "
                     "Data after mutation is not byte-identical to data on another replicas. "
@@ -1376,14 +1393,11 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
             throw;
         }
 
-        /// TODO immediately delete the old part so that it doesn't waste space.
-
         /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the entry will remain in the queue, and we will try again.
           */
         merge_selecting_event.set();
-        /// TODO metrics (ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);)
-
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
         write_part_log({});
 
         return true;
@@ -2290,42 +2304,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
-        try
-        {
-            auto part_log = context.getPartLog(database_name);
-            if (!part_log)
-                return;
-
-            PartLogElement part_log_elem;
-
-            part_log_elem.event_time = time(nullptr);
-            part_log_elem.event_type = PartLogElement::DOWNLOAD_PART;
-            /// TODO: Stop stopwatch in outer code to exclude ZK timings and so on
-            part_log_elem.duration_ms = stopwatch.elapsed() / 10000000;
-
-            part_log_elem.database_name = database_name;
-            part_log_elem.table_name = table_name;
-            part_log_elem.part_name = part_name;
-
-            if (part)
-            {
-                part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
-                part_log_elem.rows = part->rows_count; /// Could be approximate (?)
-            }
-
-            part_log_elem.source_part_names.reserve(replaced_parts.size());
-            for (const auto & replaced_part : replaced_parts)
-                part_log_elem.source_part_names.push_back(replaced_part->name);
-
-            part_log_elem.error = static_cast<UInt16>(execution_status.code);
-            part_log_elem.exception = execution_status.message;
-
-            part_log->add(part_log_elem);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
+        writePartLog(
+            PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
+            part_name, part, replaced_parts, nullptr);
     };
 
     try
