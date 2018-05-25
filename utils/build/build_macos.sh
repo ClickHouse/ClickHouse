@@ -12,7 +12,7 @@ fi
 
 ## Install required compilers, tools, libraries
 
-brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext zlib readline boost --cc=gcc-7
+brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext readline
 
 ## Checkout ClickHouse sources
 
