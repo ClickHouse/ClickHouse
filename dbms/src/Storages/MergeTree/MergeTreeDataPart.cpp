@@ -231,21 +231,21 @@ String MergeTreeDataPart::getNameWithPrefix() const
 }
 
 
-DayNum_t MergeTreeDataPart::getMinDate() const
+DayNum MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1)
-        return DayNum_t(minmax_idx.min_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+        return DayNum(minmax_idx.min_values[storage.minmax_idx_date_column_pos].get<UInt64>());
     else
-        return DayNum_t();
+        return DayNum();
 }
 
 
-DayNum_t MergeTreeDataPart::getMaxDate() const
+DayNum MergeTreeDataPart::getMaxDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1)
-        return DayNum_t(minmax_idx.max_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+        return DayNum(minmax_idx.max_values[storage.minmax_idx_date_column_pos].get<UInt64>());
     else
-        return DayNum_t();
+        return DayNum();
 }
 
 
@@ -469,8 +469,8 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
     if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date;
-        DayNum_t max_date;
+        DayNum min_date;
+        DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
         const auto & date_lut = DateLUT::instance();

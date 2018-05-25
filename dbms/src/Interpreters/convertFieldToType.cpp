@@ -72,10 +72,10 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 }
 
 
-DayNum_t stringToDate(const String & s)
+DayNum stringToDate(const String & s)
 {
     ReadBufferFromString in(s);
-    DayNum_t date{};
+    DayNum date{};
 
     readDateText(date, in);
     if (!in.eof())
