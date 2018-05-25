@@ -112,7 +112,7 @@ struct ToDateTimeImpl
 
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(DayNum_t(d));
+        return time_zone.fromDayNum(DayNum(d));
     }
 };
 
@@ -175,7 +175,7 @@ struct FormatImpl<DataTypeDate>
 {
     static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
-        writeDateText(DayNum_t(x), wb);
+        writeDateText(DayNum(x), wb);
     }
 };
 
@@ -307,7 +307,7 @@ template <typename DataType> void parseImpl(typename DataType::FieldType & x, Re
 
 template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
-    DayNum_t tmp(0);
+    DayNum tmp(0);
     readDateText(tmp, rb);
     x = tmp;
 }

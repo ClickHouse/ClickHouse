@@ -52,7 +52,7 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
                 result += '-';
 
             if (typeid_cast<const DataTypeDate *>(storage.partition_key_sample.getByPosition(i).type.get()))
-                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(value[i].safeGet<UInt64>())));
+                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 
