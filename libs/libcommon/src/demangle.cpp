@@ -1,15 +1,22 @@
 #include <common/demangle.h>
-#include <stdlib.h>
-#if !_MSC_VER
-#include <cxxabi.h>
-#endif
 
+#if _MSC_VER
+
+std::string demangle(const char * name, int & status)
+{
+    status = 0;
+    return name;
+}
+
+#else
+
+#include <stdlib.h>
+#include <cxxabi.h>
 
 std::string demangle(const char * name, int & status)
 {
     std::string res;
 
-#if !_MSC_VER
     char * demangled_str = abi::__cxa_demangle(name, 0, 0, &status);
     if (demangled_str)
     {
@@ -26,7 +33,8 @@ std::string demangle(const char * name, int & status)
     }
     else
         res = name;
-#endif
 
     return res;
 }
+
+#endif
