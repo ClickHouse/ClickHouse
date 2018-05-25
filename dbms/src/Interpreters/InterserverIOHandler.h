@@ -85,25 +85,27 @@ public:
     void addEndpoint(const String & name, InterserverIOEndpointPtr endpoint)
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (endpoint_map.count(name))
+        bool inserted = endpoint_map.try_emplace(name, std::move(endpoint)).second;
+        if (!inserted)
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
-        endpoint_map[name] = std::move(endpoint);
     }
 
     void removeEndpoint(const String & name)
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (!endpoint_map.count(name))
+        if (!endpoint_map.erase(name))
             throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
-        endpoint_map.erase(name);
     }
 
     InterserverIOEndpointPtr getEndpoint(const String & name)
+    try
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (!endpoint_map.count(name))
-            throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
-        return endpoint_map[name];
+        return endpoint_map.at(name);
+    }
+    catch (...)
+    {
+        throw Exception("No interserver IO endpoint named " + name, ErrorCodes::NO_SUCH_INTERSERVER_IO_ENDPOINT);
     }
 
 private:
@@ -129,17 +131,15 @@ public:
     }
 
     ~InterserverIOEndpointHolder()
+    try
     {
-        try
-        {
-            handler.removeEndpoint(name);
-            /// After destroying the object, `endpoint` can still live, since its ownership is acquired during the processing of the request,
-            /// see InterserverIOHTTPHandler.cpp
-        }
-        catch (...)
-        {
-            tryLogCurrentException("~InterserverIOEndpointHolder");
-        }
+        handler.removeEndpoint(name);
+        /// After destroying the object, `endpoint` can still live, since its ownership is acquired during the processing of the request,
+        /// see InterserverIOHTTPHandler.cpp
+    }
+    catch (...)
+    {
+        tryLogCurrentException("~InterserverIOEndpointHolder");
     }
 
     ActionBlocker & getBlocker() { return endpoint->blocker; }

@@ -359,5 +359,10 @@ if __name__ == '__main__':
     if args.client is None:
         args.client = args.binary + '-client'
         if args.configclient:
-            args.client += ' -c' + args.configclient
+            args.client += ' --config-file=' + args.configclient
+        if os.getenv("CLICKHOUSE_HOST"):
+            args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
+        if os.getenv("CLICKHOUSE_PORT_TCP"):
+            args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+
     main(args)
