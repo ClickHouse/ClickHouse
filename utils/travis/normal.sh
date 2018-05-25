@@ -5,6 +5,8 @@
 # env CXX=clang++-5.0 CC=clang-5.0 utils/travis/normal.sh
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CXX=${CXX=g++}
+CC=${CC=gcc}
 
 set -e
 set -x

@@ -5,6 +5,7 @@
 
 /** Demangles C++ symbol name.
   * When demangling fails, returns the original name and sets status to non-zero.
+  * TODO: Write msvc version (now returns the same string)
   */
 std::string demangle(const char * name, int & status);
 
