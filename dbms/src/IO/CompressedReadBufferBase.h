@@ -2,6 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Compression/CompressionPipeline.h>
+#include <Compression/CompressionCodecFactory.h>
 
 
 namespace DB

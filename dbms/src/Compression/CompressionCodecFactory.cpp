@@ -1,5 +1,3 @@
-#include <Compression/CompressionCodecFactory.h>
-#include <Compression/CompressionPipeline.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -7,6 +5,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
+#include <Compression/CompressionCodecFactory.h>
+#include <Compression/CompressionPipeline.h>
 
 
 namespace DB
@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
-    extern const int CODEC_TYPE_CANNOT_HAVE_ARGUMENTS;
+    extern const int CODEC_CANNOT_HAVE_ARGUMENTS;
 }
 
 
@@ -126,7 +126,7 @@ void CompressionCodecFactory::registerSimpleCodec(const String & name, SimpleCre
     registerCodec(name, [name, creator](const ASTPtr & ast)
     {
         if (ast)
-            throw Exception("Codec type " + name + " cannot have arguments", ErrorCodes::CODEC_TYPE_CANNOT_HAVE_ARGUMENTS);
+            throw Exception("Codec type " + name + " cannot have arguments", ErrorCodes::CODEC_CANNOT_HAVE_ARGUMENTS);
         return creator();
     });
 }

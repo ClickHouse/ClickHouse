@@ -1,4 +1,5 @@
-#include <Compression/ICompressionCodec.h>
+#include <Common/PODArray.h>
+#include <Compression/CompressionCodecFactory.h>
 
 namespace DB {
 
@@ -21,7 +22,7 @@ public:
 
     size_t getHeaderSize() const { return 0; }
 
-    size_t writeHeader(char *) const override;
+    size_t writeHeader(char *) override;
     size_t parseHeader(const char *);
 
     size_t getCompressedSize() const override;

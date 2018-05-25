@@ -18,7 +18,7 @@ extern const int CANNOT_COMPRESS;
 }
 
 
-size_t CompressionCodecZSTD::writeHeader(char* header) const
+size_t CompressionCodecZSTD::writeHeader(char* header)
 {
     *header = bytecode;
     *(header + 1) = static_cast<char>(argument);

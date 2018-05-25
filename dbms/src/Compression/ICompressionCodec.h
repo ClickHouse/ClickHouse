@@ -39,7 +39,7 @@ public:
     size_t getHeaderSize() const { return 0; };
 
     /// Header for serialization, containing bytecode and parameters
-    virtual size_t writeHeader(char *) const;
+    virtual size_t writeHeader(char *) = 0;
 
     /// Header parser for parameters
     size_t parseHeader(const char *) { return 0; };

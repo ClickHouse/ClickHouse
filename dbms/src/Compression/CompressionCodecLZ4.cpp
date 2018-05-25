@@ -23,7 +23,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECOMPRESS;
 }
 
-size_t CompressionCodecLZ4::writeHeader(char* header) const
+size_t CompressionCodecLZ4::writeHeader(char* header)
 {
     *header = bytecode;
     *(header + 1) = static_cast<char>(argument);

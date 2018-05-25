@@ -86,7 +86,7 @@ public:
     }
 
     /// Header for serialization, containing bytecode and parameters
-    size_t writeHeader(char* out)
+    size_t writeHeader(char* out) override
     {
         size_t wrote_size = 0;
         for (int i = codecs.size() - 1; i >= 0; --i)

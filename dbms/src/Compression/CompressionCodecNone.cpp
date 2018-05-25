@@ -1,5 +1,3 @@
-#include <Common/PODArray.h>
-#include <Compression/CompressionCodecFactory.h>
 #include <Compression/CompressionCodecNone.h>
 
 namespace DB
@@ -8,6 +6,11 @@ namespace DB
 size_t CompressionCodecNone::getMaxCompressedSize(size_t uncompressed_size) const
 {
     return uncompressed_size;
+}
+
+size_t CompressionCodecNone::getMaxDecompressedSize(size_t compressed_size) const
+{
+    return compressed_size;
 }
 
 size_t CompressionCodecNone::compress(char* source, PODArray<char>& dest,
@@ -39,7 +42,7 @@ size_t CompressionCodecNone::parseHeader(const char*)
     return 0;
 }
 
-size_t CompressionCodecNone::writeHeader(char* header) const
+size_t CompressionCodecNone::writeHeader(char* header)
 {
     *header = bytecode;
     return sizeof(char);

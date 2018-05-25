@@ -24,7 +24,7 @@ public:
         return "ZSTD";
     }
 
-    size_t writeHeader(char* header) const override;
+    size_t writeHeader(char* header) override;
     size_t parseHeader(const char* header);
     size_t getHeaderSize() const;
 
