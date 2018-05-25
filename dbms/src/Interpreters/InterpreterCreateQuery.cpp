@@ -209,8 +209,8 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
         }
         /// parse codec definition and store pipe for column
         if (col_decl.codec) {
-            CodecPtr column_pipe = CompressionCodecFactory::instance().get_pipe(col_decl.codec);
-            column_pipe.setDataType(columns.back().type.get());
+            auto column_pipe = CompressionCodecFactory::instance().get_pipe(col_decl.codec);
+            column_pipe->setDataType(columns.back().type);
             codecs.emplace(col_decl.name, column_pipe);
         }
         else

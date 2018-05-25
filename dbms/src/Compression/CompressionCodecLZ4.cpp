@@ -2,6 +2,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Compression/ICompressionCodec.h>
 
+#include <lz4.h>
+
 #include <Compression/CompressionCodecLZ4.h>
 #include <Compression/CompressionCodecFactory.h>
 
@@ -16,35 +18,34 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int TOO_LARGE_STRING_SIZE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNEXPECTED_AST_STRUCTURE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_DECOMPRESS;
 }
 
-size_t CompressionCodecLZ4::writeHeader(char* header)
+size_t CompressionCodecLZ4::writeHeader(char* header) const
 {
     *header = bytecode;
-    *(header + 1) = reinterpret_cast<char>(argument);
+    *(header + 1) = static_cast<char>(argument);
     return 2;
 }
 
 size_t CompressionCodecLZ4::parseHeader(const char* header)
 {
-    argument = reinterpret_cast<int8_t>(*header);
+    argument = static_cast<uint8_t>(*header);
     return 1;
 }
 
-size_t CompressionCodecLZ4::getMaxCompressedSize(size_t uncompressed_size)
+size_t CompressionCodecLZ4::getMaxCompressedSize(size_t uncompressed_size) const
 {
     return LZ4_COMPRESSBOUND(uncompressed_size);
 }
 
-size_t CompressionCodecLZ4::compress(const PODArray<char>& source, PODArray<char>& dest,
+size_t CompressionCodecLZ4::compress(char* source, PODArray<char>& dest,
                                      int inputSize, int maxOutputSize)
 {
     auto wrote = LZ4_compress_default(
-            source.begin(),
+            &source[0],
             &dest[0],
             inputSize,
             maxOutputSize
@@ -52,11 +53,11 @@ size_t CompressionCodecLZ4::compress(const PODArray<char>& source, PODArray<char
     return wrote;
 }
 
-size_t CompressionCodecLZ4::decompress(const PODArray<char>& source, PODArray<char>& dest,
+size_t CompressionCodecLZ4::decompress(char* source, PODArray<char>& dest,
                                        int inputSize, int maxOutputSize)
 {
-    auto read = LZ4_decompress_fast(source, &dest[0], maxOutputSize);
-    if (read < 0)
+    auto read = LZ4_decompress_fast(reinterpret_cast<char*>(source), &dest[0], inputSize);
+    if (read > maxOutputSize || read < 0)
         throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
     return read;
 }
@@ -72,14 +73,14 @@ static CodecPtr create(const ASTPtr &arguments)
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ASTLiteral *arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
-    if (!arg || arg->value.getType() != Field::Types::UInt8)
-        throw Exception("Parameter for LZ4 codec must be uint8 literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (!arg || arg->value.getType() != Field::Types::UInt64)
+        throw Exception("Parameter for LZ4 codec must be UInt64 literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<T>(arg->value.get<String>());
+    return std::make_shared<T>(static_cast<uint8_t>(arg->value.get<UInt64>()));
 }
 
 template<typename T>
-CodecPtr createSimple()
+static CodecPtr createSimple()
 {
     return std::make_shared<T>();
 }

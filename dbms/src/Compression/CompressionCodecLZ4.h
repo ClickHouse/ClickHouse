@@ -2,14 +2,19 @@
 
 namespace DB {
 
-class CompressionCodecLZ4 : ICompressionCodec
+class CompressionCodecLZ4 : public ICompressionCodec
 {
 public:
+    CompressionCodecLZ4() {}
+    CompressionCodecLZ4(uint8_t _argument)
+    : argument(_argument)
+    {}
+
     static const uint8_t bytecode = 0x84;
     static const bool is_hc = false;
     uint8_t argument = 1;
 
-    std::string getName() const override
+    std::string getName() const
     {
         return "LZ4(" + std::to_string(argument) + ")";
     }
@@ -20,24 +25,45 @@ public:
     }
 
     size_t writeHeader(char* header) const override;
-    size_t parseHeader(const char* header) const override;
+    size_t parseHeader(const char* header);
+
+    size_t getHeaderSize() const { return sizeof(argument); };
+
+    size_t getCompressedSize() const { return 0; };
+    size_t getDecompressedSize() const { return 0; };
 
     size_t getMaxCompressedSize(size_t uncompressed_size) const override;
+    size_t getMaxDecompressedSize(size_t) const { return 0; };
 
-    size_t compress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const override;
-    size_t decompress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const override;
+    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override;
+    size_t decompress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override;
+
+    size_t decompress(char *, char *, int, int)
+    {
+        return 0;
+    }
+
+    ~CompressionCodecLZ4() {}
 };
 
-class CompressionCodecLZ4HC : CompressionCodecLZ4
+class CompressionCodecLZ4HC final : public CompressionCodecLZ4
 {
 public:
-    static const uint8_t bytecode = 0x82;
+    CompressionCodecLZ4HC() {}
+    CompressionCodecLZ4HC(uint8_t _argument)
+    : argument(_argument)
+            {}
+    uint8_t argument = 1;
+
+    static const uint8_t bytecode = 0x86;
     static const bool is_hc = true;
 
-    std::string getName() const override
+    std::string getName() const
     {
-        return "LZ4HC()";
+        return "LZ4HC(" + std::to_string(argument) + ")";
     }
+
+    ~CompressionCodecLZ4HC() {}
 };
 
 }

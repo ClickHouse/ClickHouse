@@ -1,4 +1,3 @@
-#include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionCodecFactory.h>
 #include <Compression/CompressionPipeline.h>
 #include <Parsers/parseQuery.h>
@@ -23,21 +22,30 @@ namespace ErrorCodes
 }
 
 
-CodecPtr CompressionCodecFactory::get_pipe(const String & full_declaration) const
+CodecPtr CompressionCodecFactory::get_pipe(ASTPtr& ast_codec)
+{
+    Codecs codecs;
+    for (auto & codec : typeid_cast<IAST &>(*ast_codec).children) {
+        codecs.emplace_back(std::move(get(codec)));
+    }
+    return std::make_shared<CompressionPipeline>(codecs);
+}
+
+CodecPtr CompressionCodecFactory::get_pipe(String & full_declaration)
 {
     ParserCodecDeclarationList parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_declaration.data() + full_declaration.size(), "codecs", 0);
+    ASTPtr ast = parseQuery(parser, full_declaration.data(), full_declaration.data() + full_declaration.size(), "codecs", 0);
     // construct pipeline out of codecs
-    CodecPtrs codecs;
+    Codecs codecs;
     for (auto & codec : typeid_cast<IAST &>(*ast).children) {
         codecs.emplace_back(std::move(get(codec)));
     }
-    return CompressionPipeline(codecs);
+    return std::make_shared<CompressionPipeline>(codecs);
 }
 
-CodecPtr CompressionCodecFactory::get_pipe(ReadBuffer * header) const
+CodecPtr CompressionCodecFactory::get_pipe(ReadBuffer *& header)
 {
-    return CompressionPipeline(header);
+    return std::make_shared<CompressionPipeline>(header);
 }
 
 CodecPtr CompressionCodecFactory::get(const String & full_name) const
@@ -83,6 +91,17 @@ CodecPtr CompressionCodecFactory::get(const String & family_name, const ASTPtr &
     throw Exception("Unknown codec family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
+CodecPtr CompressionCodecFactory::get(char& bytecode) const
+{
+
+    {
+        auto it = bytecodes_codecs.find(bytecode);
+        if (bytecodes_codecs.end() != it)
+            return it->second();
+    }
+
+    throw Exception("Unknown codec bytecode: " + std::to_string(bytecode), ErrorCodes::UNKNOWN_TYPE);
+}
 
 void CompressionCodecFactory::registerCodec(const String & family_name, Creator creator)
 {
@@ -128,7 +147,6 @@ void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
 void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
-void registerCodecDelta(CompressionCodecFactory & factory);
 
 CompressionCodecFactory::CompressionCodecFactory()
 {
@@ -136,7 +154,6 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecLZ4(*this);
     registerCodecLZ4HC(*this);
     registerCodecZSTD(*this);
-    registerCodecDelta(*this);
 }
 
 }

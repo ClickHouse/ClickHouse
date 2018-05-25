@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Compression/ICompressionCodec.h>
+#include <Storages/ColumnCodec.h>
 #include <IO/CompressedStream.h>
 
 

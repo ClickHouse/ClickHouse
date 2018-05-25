@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
-#include <Compression/ICompressionCodec.h>
+#include <Compression/CompressionPipeline.h>
 
 
 namespace DB

@@ -2,31 +2,47 @@
 
 namespace DB {
 
-class CompressionCodecZSTD : ICompressionCodec
+class CompressionCodecZSTD final : public ICompressionCodec
 {
-private:
 public:
+    CompressionCodecZSTD() {}
+    CompressionCodecZSTD(uint8_t _argument)
+            : argument(_argument)
+    {}
+
+    static const uint8_t bytecode = 0x94;
+    static const bool is_hc = false;
+    uint8_t argument = 1;
+
+    std::string getName() const
+    {
+        return "ZSTD(" + std::to_string(argument) + ")";
+    }
+
+    const char * getFamilyName() const override
+    {
+        return "ZSTD";
+    }
+
+    size_t writeHeader(char* header) const override;
+    size_t parseHeader(const char* header);
+    size_t getHeaderSize() const;
+
+    size_t getCompressedSize() const { return 0; };
+    size_t getDecompressedSize() const { return 0; };
+
+    size_t getMaxCompressedSize(size_t uncompressed_size) const override;
+    size_t getMaxDecompressedSize(size_t) const { return 0; };
+
+    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override;
+    size_t decompress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override;
+
+    size_t decompress(char *, char *, int, int)
+    {
+        return 0;
+    }
+
+    ~CompressionCodecZSTD() {}
 };
-
-
-static CodecPtr create(const ASTPtr & arguments)
-{
-    if (!arguments)
-        return std::make_shared<CompressionCodecZSTD>();
-
-    if (arguments->children.size() != 1)
-        throw Exception("ZSTD codec can optionally have only one argument - ???", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
-    if (!arg || arg->value.getType() != Field::Types::String)
-        throw Exception("Parameter for ZSTD codec must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return std::make_shared<CompressionCodecZSTD>(arg->value.get<String>());
-}
-
-void registerCodecZSTD(CompressionCodecFactory & factory)
-{
-    factory.registerDataType("ZSTD", create);
-}
 
 }

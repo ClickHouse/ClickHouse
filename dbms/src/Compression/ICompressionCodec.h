@@ -1,9 +1,9 @@
 #pragma once
 
 #include <memory>
-#include <Common/COWPtr.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Field.h>
+#include <Common/PODArray.h>
 #include <DataTypes/IDataType.h>
 
 
@@ -11,7 +11,8 @@ namespace DB
 {
 
 class ICompressionCodec;
-using CodecPtr = std::shared_ptr<const ICompressionCodec>;
+
+using CodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CodecPtr>;
 
 
@@ -25,37 +26,47 @@ using Codecs = std::vector<CodecPtr>;
 class ICompressionCodec : private boost::noncopyable
 {
 public:
-    uint8_t bytecode = 0x0;
-    DataTypePtr dataType;
+    std::vector<uint32_t> data_sizes;
+    DataTypePtr data_type;
+    static const uint8_t bytecode = 0x0;
 
     /// Name of codec (examples: LZ4(...), None).
-    virtual String getName() const { return getFamilyName(); };
+    String getName() const { return getFamilyName(); };
 
     /// Name of codec family (example: LZ4, ZSTD).
-    virtual const char * getFamilyName() const = 0;
+    virtual const char *getFamilyName() const = 0;
 
-    virtual size_t getArgHeaderSize() const = 0;
+    size_t getHeaderSize() const { return 0; };
 
     /// Header for serialization, containing bytecode and parameters
-    virtual size_t writeHeader(char* header);
+    virtual size_t writeHeader(char *) const;
+
     /// Header parser for parameters
-    virtual size_t parseHeader(const char* header);
+    size_t parseHeader(const char *) { return 0; };
+
+    /// Parsed sizes from data block
+    virtual size_t getCompressedSize() const = 0;
+
+    virtual size_t getDecompressedSize() const = 0;
+
     /// Maximum amount of bytes for compression needed
     virtual size_t getMaxCompressedSize(size_t uncompressed_size) const = 0;
+
     virtual size_t getMaxDecompressedSize(size_t compressed_size) const = 0;
 
     /// Block compression and decompression methods
-    virtual size_t compress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const = 0;
-    virtual size_t decompress(const PODArray<char>& source, PODArray<char>& dest, int inputSize, int maxOutputSize) const = 0;
+    virtual size_t compress(char* source, PODArray<char> &dest, int inputSize, int maxOutputSize) = 0;
+
+    virtual size_t decompress(char *source, char *dest, int inputSize, int maxOutputSize) = 0;
+    virtual size_t decompress(char *source, PODArray<char> &dest, int inputSize, int maxOutputSize) = 0;
 
     /// Data type information provider
-    virtual void setDataType(DataTypePtr data_type) = 0;
+    void setDataType(DataTypePtr _data_type)
+    {
+        data_type = _data_type;
+    };
 
     virtual ~ICompressionCodec() {}
 };
 
-enum class CodecHeaderBits : UInt8
-{
-    CONTINUATION_BIT = 0x01
-};
 }
