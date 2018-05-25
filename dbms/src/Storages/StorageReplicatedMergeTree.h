@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
@@ -347,6 +348,13 @@ private:
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.
       */
     bool executeLogEntry(const LogEntry & entry);
+
+    void writePartLog(
+        PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
+        const String & new_part_name,
+        const MergeTreeData::DataPartPtr & result_part,
+        const MergeTreeData::DataPartsVector & source_parts,
+        const MergeListEntry * merge_entry) const;
 
     void executeDropRange(const LogEntry & entry);
 

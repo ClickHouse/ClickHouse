@@ -44,6 +44,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric BackgroundPoolTask;
+    extern const Metric PartMutation;
 }
 
 namespace DB
@@ -812,6 +813,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     if (future_part.parts.size() != 1)
         throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
             "This is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
 
     const auto & source_part = future_part.parts[0];
     LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
