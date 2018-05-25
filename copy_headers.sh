@@ -37,6 +37,7 @@ done
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 # The latter options are the same that are added while building packages.
 
+# TODO: Does not work on macos:
 GCC_ROOT=`$CLANG -v 2>&1 | grep "Selected GCC installation"| sed -n -e 's/^.*: //p'`
 
 for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
