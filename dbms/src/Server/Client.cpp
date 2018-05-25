@@ -15,6 +15,7 @@
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
 #include <common/find_first_symbols.h>
+#include <common/SetTerminalEcho.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -52,6 +53,7 @@
 #include "InterruptListener.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <ext/scope_guard.h>
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -197,7 +199,25 @@ private:
 
             default_database = config.getString("database", "");
             user = config.getString("user", "");
-            password = config.getString("password", "");
+
+            if (config.getBool("ask-password", false))
+            {
+                if (config.has("password"))
+                    throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
+
+                std::cout << "Password for user " << user << ": ";
+                SetTerminalEcho(false);
+
+                SCOPE_EXIT({
+                    SetTerminalEcho(true);
+                });
+                std::getline(std::cin, password);
+                std::cout << std::endl;
+            }
+            else
+            {
+                password = config.getString("password", "");
+            }
 
             compression = config.getBool("compression", true)
                 ? Protocol::Compression::Enable
@@ -461,8 +481,9 @@ private:
             query_id = config().getString("query_id", "");
             nonInteractive();
 
+            /// If exception code isn't zero, we should return non-zero return code anyway.
             if (last_exception)
-                return last_exception->code();
+                return last_exception->code() != 0 ? last_exception->code() : -1;
 
             return 0;
         }
@@ -1364,18 +1385,27 @@ public:
 
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
+        unsigned line_length = boost::program_options::options_description::m_default_line_length;
+        unsigned min_description_length = line_length / 2;
+        if (!stdin_is_not_tty)
+        {
+            line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
+            min_description_length = std::min(min_description_length, line_length - 2);
+        }
+
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        boost::program_options::options_description main_description("Main options", terminal_size.ws_col);
+        boost::program_options::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
             ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
             ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
             ("port", boost::program_options::value<int>()->default_value(9000), "server port")
             ("secure,s", "secure")
-            ("user,u", boost::program_options::value<std::string>(), "user")
+            ("user,u", boost::program_options::value<std::string>()->default_value("default"), "user")
             ("password", boost::program_options::value<std::string>(), "password")
+            ("ask-password", "ask-password")
             ("query_id", boost::program_options::value<std::string>(), "query_id")
             ("query,q", boost::program_options::value<std::string>(), "query")
             ("database,d", boost::program_options::value<std::string>(), "database")
@@ -1482,7 +1512,8 @@ public:
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
             config().setString("password", options["password"].as<std::string>());
-
+        if (options.count("ask-password"))
+            config().setBool("ask-password", true);
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))

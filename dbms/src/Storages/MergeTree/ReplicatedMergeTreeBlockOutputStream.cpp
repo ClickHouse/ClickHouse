@@ -108,7 +108,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     last_block_is_duplicate = false;
 
     /// TODO Is it possible to not lock the table structure here?
-    storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
+    storage.data.delayInsertOrThrowIfNeeded(&storage.restarting_thread->getWakeupEvent());
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -161,11 +161,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
 
             /// Set a special error code if the block is duplicate
             int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
-            PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed(), ExecutionStatus(error));
+            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus(error));
         }
         catch (...)
         {
-            PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
             throw;
         }
     }
@@ -176,7 +176,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 {
     last_block_is_duplicate = false;
 
-    /// NOTE No delay in this case. That's Ok.
+    /// NOTE: No delay in this case. That's Ok.
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -189,11 +189,11 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
     try
     {
         commitPart(zookeeper, part, "");
-        PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed());
+        PartLog::addNewPart(storage.context, part, watch.elapsed());
     }
     catch (...)
     {
-        PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
         throw;
     }
 }
@@ -208,47 +208,20 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
     /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
-    /// Deduplication stuff
+    /// Allocate new block number and check for duplicates
     bool deduplicate_block = !block_id.empty();
-    String block_id_path;
-    zkutil::Requests deduplication_check_ops;
-    zkutil::Requests * deduplication_check_ops_ptr = nullptr;
+    String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
+    auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
 
-    if (deduplicate_block)
+    if (!block_number_lock)
     {
-        block_id_path = storage.zookeeper_path + "/blocks/" + block_id;
-
-        /// Lets check for duplicates in advance, to avoid superflous block numbers allocation
-        deduplication_check_ops.emplace_back(zkutil::makeCreateRequest(block_id_path, "", zkutil::CreateMode::Persistent));
-        deduplication_check_ops.emplace_back(zkutil::makeRemoveRequest(block_id_path, -1));
-        deduplication_check_ops_ptr = &deduplication_check_ops;
+        part->is_duplicate = true;
+        last_block_is_duplicate = true;
+        ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+        return;
     }
 
-    AbandonableLockInZooKeeper block_number_lock;
-    try
-    {
-        /// 2 RTT
-        block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, deduplication_check_ops_ptr);
-    }
-    catch (const zkutil::KeeperMultiException & e)
-    {
-        if (deduplicate_block && e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && e.getPathForFirstFailedOp() == block_id_path)
-        {
-            LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (skip the insertion)");
-            part->is_duplicate = true;
-            last_block_is_duplicate = true;
-            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
-            return;
-        }
-
-        throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
-    }
-    catch (const zkutil::KeeperException & e)
-    {
-        throw Exception("Cannot allocate block number in ZooKeeper: " + e.displayText(), ErrorCodes::KEEPER_EXCEPTION);
-    }
-
-    Int64 block_number = block_number_lock.getNumber();
+    Int64 block_number = block_number_lock->getNumber();
 
     /// Set part attributes according to part_number. Prepare an entry for log.
 
@@ -277,33 +250,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     /// Information about the part.
     zkutil::Requests ops;
 
-    if (deduplicate_block)
-    {
-        /// Make final duplicate check and commit block_id
-        ops.emplace_back(
-            zkutil::makeCreateRequest(
-                block_id_path,
-                toString(block_number),  /// We will able to know original part number for duplicate blocks, if we want.
-                zkutil::CreateMode::Persistent));
-    }
-
-    /// Information about the part, in the replica data.
-
-    ops.emplace_back(zkutil::makeCheckRequest(
-        storage.zookeeper_path + "/columns",
-        storage.columns_version));
-    ops.emplace_back(zkutil::makeCreateRequest(
-        storage.replica_path + "/parts/" + part->name,
-        "",
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(
-        storage.replica_path + "/parts/" + part->name + "/columns",
-        part->columns.toString(),
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(
-        storage.replica_path + "/parts/" + part->name + "/checksums",
-        storage.getChecksumsForZooKeeper(part->checksums),
-        zkutil::CreateMode::Persistent));
+    storage.getCommitPartOps(ops, part, block_id_path);
 
     /// Replication log.
     ops.emplace_back(zkutil::makeCreateRequest(
@@ -312,7 +259,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         zkutil::CreateMode::PersistentSequential));
 
     /// Deletes the information that the block number is used for writing.
-    block_number_lock.getUnlockOps(ops);
+    block_number_lock->getUnlockOps(ops);
 
     /** If you need a quorum - create a node in which the quorum is monitored.
         * (If such a node already exists, then someone has managed to make another quorum record at the same time, but for it the quorum has not yet been reached.
@@ -362,10 +309,10 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     if (multi_code == ZooKeeperImpl::ZooKeeper::ZOK)
     {
         transaction.commit();
-        storage.merge_selecting_event.set();
+        storage.merge_selecting_task_handle->schedule();
 
         /// Lock nodes have been already deleted, do not delete them in destructor
-        block_number_lock.assumeUnlocked();
+        block_number_lock->assumeUnlocked();
     }
     else if (zkutil::isUserError(multi_code))
     {
@@ -453,6 +400,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
         LOG_TRACE(log, "Quorum satisfied");
     }
+}
+
+void ReplicatedMergeTreeBlockOutputStream::writePrefix()
+{
+    storage.data.throwInsertIfNeeded();
 }
 
 

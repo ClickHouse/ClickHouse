@@ -388,16 +388,23 @@ std::string LocalServer::getHelpFooter() const
 
 void LocalServer::init(int argc, char ** argv)
 {
+    namespace po = boost::program_options;
+
     /// Don't parse options with Poco library, we prefer neat boost::program_options
     stopOptionsProcessing();
 
-    winsize terminal_size{};
-    ioctl(0, TIOCGWINSZ, &terminal_size);
-
-    namespace po = boost::program_options;
+    unsigned line_length = po::options_description::m_default_line_length;
+    unsigned min_description_length = line_length / 2;
+    if (isatty(STDIN_FILENO))
+    {
+        winsize terminal_size{};
+        ioctl(0, TIOCGWINSZ, &terminal_size);
+        line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
+        min_description_length = std::min(min_description_length, line_length - 2);
+    }
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
-    po::options_description description("Main options", terminal_size.ws_col);
+    po::options_description description("Main options", line_length, min_description_length);
     description.add_options()
         ("help", "produce help message")
         ("config-file,c", po::value<std::string>(), "config-file path")

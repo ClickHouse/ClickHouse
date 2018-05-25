@@ -61,23 +61,3 @@ ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 
 # Help is not skipped
 [[ `${CLICKHOUSE_LOCAL} --help | wc -l` > 100 ]]
-
-
-if [ -t 0 ] ; then
-    # this shell has a std-input, so we're not in batch mode
-
-    # Check that help width is adaptive
-    stty cols 99999
-    rows1=`${CLICKHOUSE_LOCAL} --help | wc -l`
-    stty cols 80
-    rows2=`${CLICKHOUSE_LOCAL} --help | wc -l`
-    [[ $rows1 < $rows2 ]]
-
-    stty cols 99999
-    rows1=`${CLICKHOUSE_CLIENT} --help | wc -l`
-    stty cols 80
-    rows2=`${CLICKHOUSE_CLIENT} --help | wc -l`
-    [[ $rows1 < $rows2 ]]
-
-    shopt -s checkwinsize || true
-fi

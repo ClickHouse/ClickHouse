@@ -2,11 +2,13 @@
 
 #include <optional>
 
+#include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -76,11 +78,36 @@ private:
       */
     ActiveDataPartSet virtual_parts;
 
+    /// List of subscribers
+    /// A subscriber callback is called when an entry queue is deleted
+    mutable std::mutex subscribers_mutex;
+
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */)>;
+    using Subscribers = std::list<SubscriberCallBack>;
+    using SubscriberIterator = Subscribers::iterator;
+
+    friend class SubscriberHandler;
+    struct SubscriberHandler : public boost::noncopyable
+    {
+        SubscriberHandler(SubscriberIterator it, ReplicatedMergeTreeQueue & queue) : it(it), queue(queue) {}
+        ~SubscriberHandler();
+
+    private:
+        SubscriberIterator it;
+        ReplicatedMergeTreeQueue & queue;
+    };
+
+    Subscribers subscribers;
+
+    /// Notify subscribers about queue change
+    void notifySubscribers(size_t new_queue_size);
+
+
     Logger * log = nullptr;
 
 
     /// Put a set of (already existing) parts in virtual_parts.
-    void initVirtualParts(const MergeTreeData::DataParts & parts);
+    void addVirtualParts(const MergeTreeData::DataParts & parts);
 
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     bool load(zkutil::ZooKeeperPtr zookeeper);
@@ -112,8 +139,9 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
-    /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
-    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> &) const;
+    /// Returns list of currently executing entries blocking execution a command modifying specified range
+    size_t getConflictsCountForRange(const MergeTreePartInfo & range, const String & range_znode, String * out_conflicts_description,
+                               std::lock_guard<std::mutex> &) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -137,9 +165,11 @@ private:
 public:
     ReplicatedMergeTreeQueue(MergeTreeDataFormatVersion format_version_)
         : format_version(format_version_)
-        , virtual_parts(format_version)
+        , virtual_parts(format_version_)
     {
     }
+
+    ~ReplicatedMergeTreeQueue();
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
@@ -156,20 +186,19 @@ public:
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
-      * If next_update_event != nullptr, will call this event when new entries appear in the log.
+      * If next_update_task_handle != nullptr, will schedule this task when new entries appear in the log.
       * Returns true if new entries have been.
       */
-    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    bool pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle next_update_task_handle);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+    void removeGetsAndMergesInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
 
-    /** Disables future merges and fetches inside entry.new_part_name
-     *  If there are currently executing merges or fetches then throws exception.
+    /** Throws and exception if there are currently executing entries in the range .
      */
-    void disableMergesAndFetchesInRange(const LogEntry & entry);
+    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const String & range_znode_name);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -192,7 +221,7 @@ public:
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
     /// Will a part in the future be merged into a larger part (or merges of parts in this range are prohibited)?
-    bool partWillBeMergedOrMergesDisabled(const String & part_name) const;
+    bool partWillBeMergedOrMergesDisabled(const String & part_name, String * out_covering_part = nullptr) const;
 
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
@@ -204,6 +233,17 @@ public:
 
     /// Count the number of merges in the queue.
     size_t countMerges() const;
+
+    Strings getVirtualParts() const
+    {
+        return virtual_parts.getParts();
+    }
+
+    /// A blocker that stops selects from the queue
+    ActionBlocker block;
+
+    /// Adds a subscriber
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 
     struct Status
     {

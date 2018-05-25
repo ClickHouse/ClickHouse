@@ -113,6 +113,7 @@ public:
     bool existsWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
 
     std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    std::string getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.

@@ -20,6 +20,8 @@
 #include <boost/multi_index/ordered_index.hpp>
 #include <boost/multi_index/global_fun.hpp>
 #include <boost/range/iterator_range_core.hpp>
+#include "../../Core/Types.h"
+
 
 namespace DB
 {
@@ -94,6 +96,7 @@ public:
     using DataPart = MergeTreeDataPart;
 
     using MutableDataPartPtr = std::shared_ptr<DataPart>;
+    using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
     /// After the DataPart is added to the working set, it cannot be changed.
     using DataPartPtr = std::shared_ptr<const DataPart>;
 
@@ -106,9 +109,16 @@ public:
     {
         DataPartState state;
         const MergeTreePartInfo & info;
-
-        DataPartStateAndInfo(DataPartState state, const MergeTreePartInfo & info) : state(state), info(info) {}
     };
+
+    /// Auxiliary structure for index comparison
+    struct DataPartStateAndPartitionID
+    {
+        DataPartState state;
+        String partition_id;
+    };
+
+    STRONG_TYPEDEF(String, PartitionID);
 
     struct LessDataPart
     {
@@ -117,6 +127,8 @@ public:
         bool operator()(const DataPartPtr & lhs, const MergeTreePartInfo & rhs) const { return lhs->info < rhs; }
         bool operator()(const MergeTreePartInfo & lhs, const DataPartPtr & rhs) const { return lhs < rhs->info; }
         bool operator()(const DataPartPtr & lhs, const DataPartPtr & rhs) const { return lhs->info < rhs->info; }
+        bool operator()(const MergeTreePartInfo & lhs, const PartitionID & rhs) const { return lhs.partition_id < rhs.toUnderType(); }
+        bool operator()(const PartitionID & lhs, const MergeTreePartInfo & rhs) const { return lhs.toUnderType() < rhs.partition_id; }
     };
 
     struct LessStateDataPart
@@ -138,10 +150,25 @@ public:
         {
             return static_cast<size_t>(state) < static_cast<size_t>(info.state);
         }
+
+        bool operator() (const DataPartStateAndInfo & lhs, const DataPartStateAndPartitionID & rhs) const
+        {
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.info.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.partition_id);
+        }
+
+        bool operator() (const DataPartStateAndPartitionID & lhs, const DataPartStateAndInfo & rhs) const
+        {
+            return std::forward_as_tuple(static_cast<UInt8>(lhs.state), lhs.partition_id)
+                   < std::forward_as_tuple(static_cast<UInt8>(rhs.state), rhs.info.partition_id);
+        }
     };
 
     using DataParts = std::set<DataPartPtr, LessDataPart>;
     using DataPartsVector = std::vector<DataPartPtr>;
+
+    using DataPartsLock = std::unique_lock<std::mutex>;
+    DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     /// Auxiliary object to add a set of parts into the working set in two steps:
     /// * First, as PreCommitted parts (the parts are ready, but not yet in the active set).
@@ -153,8 +180,7 @@ public:
     public:
         Transaction() {}
 
-        /// Return parts marked Obsolete as a result of the transaction commit.
-        DataPartsVector commit();
+        DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
         void rollback();
 
@@ -215,7 +241,7 @@ public:
         }
 
         DataPartPtr data_part;
-        std::unique_lock<std::mutex> alter_lock;
+        DataPartsLock alter_lock;
 
         DataPart::Checksums new_checksums;
         NamesAndTypesList new_columns;
@@ -347,9 +373,14 @@ public:
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
+
+    /// Returns all parts in specified partition
+    DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id);
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
+    DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
@@ -358,7 +389,8 @@ public:
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
-    void delayInsertIfNeeded(Poco::Event * until = nullptr);
+    void delayInsertOrThrowIfNeeded(Poco::Event *until = nullptr) const;
+    void throwInsertIfNeeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
     /// It is assumed that the part does not intersect with existing parts.
@@ -374,16 +406,32 @@ public:
     DataPartsVector renameTempPartAndReplace(
         MutableDataPartPtr & part, SimpleIncrement * increment = nullptr, Transaction * out_transaction = nullptr);
 
+    /// Low-level version of previous one, doesn't lock mutex
+    void renameTempPartAndReplace(
+            MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction, DataPartsLock & lock,
+            DataPartsVector * out_covered_parts = nullptr);
+
     /// Removes parts from the working set parts.
     /// Parts in add must already be in data_parts with PreCommitted, Committed, or Outdated states.
     /// If clear_without_timeout is true, the parts will be deleted at once, or during the next call to
     /// clearOldParts (ignoring old_parts_lifetime).
-    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout);
+    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock * acquired_lock = nullptr);
+    void removePartsFromWorkingSet(const DataPartsVector & remove, bool clear_without_timeout, DataPartsLock & acquired_lock);
 
-    /// Renames the part to detached/<prefix>_<part> and forgets about it. The data won't be deleted in
-    /// clearOldParts.
+    /// Removes all parts from the working set parts
+    ///  for which (partition_id = drop_range.partition_id && min_block >= drop_range.min_block && max_block <= drop_range.max_block).
+    /// If a part intersecting drop_range.max_block is found, an exception will be thrown.
+    /// Used in REPLACE PARTITION command;
+    DataPartsVector removePartsInRangeFromWorkingSet(const MergeTreePartInfo & drop_range, bool clear_without_timeout,
+                                                     bool skip_intersecting_parts, DataPartsLock & lock);
+
+    /// Renames the part to detached/<prefix>_<part> and removes it from working set.
+    void removePartsFromWorkingSetAndCloneToDetached(const DataPartsVector & parts, bool clear_without_timeout, const String & prefix = "");
+
+    /// Renames the part to detached/<prefix>_<part> and removes it from data_parts,
+    //// so it will not be deleted in clearOldParts.
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
-    void renameAndDetachPart(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false, bool move_to_detached = true);
+    void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
@@ -477,6 +525,13 @@ public:
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & partition, const Context & context);
 
+    /// Extracts MergeTreeData of other *MergeTree* storage
+    ///  and checks that their structure suitable for ALTER TABLE ATTACH PARTITION FROM
+    /// Tables structure should be locked.
+    MergeTreeData * checkStructureAndGetMergeTreeData(const StoragePtr & source_table) const;
+
+    MergeTreeData::MutableDataPartPtr cloneAndLoadDataPart(const MergeTreeData::DataPartPtr & src_part, const String & tmp_part_prefix,
+                                                           const MergeTreePartInfo & dst_part_info);
 
     MergeTreeDataFormatVersion format_version;
 
@@ -515,6 +570,8 @@ private:
     friend class StorageMergeTree;
     friend class ReplicatedMergeTreeAlterThread;
     friend class MergeTreeDataMerger;
+    friend class StorageMergeTree;
+    friend class StorageReplicatedMergeTree;
 
     bool require_part_metadata;
 
@@ -587,6 +644,13 @@ private:
         return {begin, end};
     }
 
+    boost::iterator_range<DataPartIteratorByInfo> getDataPartsPartitionRange(const String & partition_id) const
+    {
+        auto begin = data_parts_by_info.lower_bound(PartitionID(partition_id), LessDataPart());
+        auto end = data_parts_by_info.upper_bound(PartitionID(partition_id), LessDataPart());
+        return {begin, end};
+    }
+
     static decltype(auto) getStateModifier(DataPartState state)
     {
         return [state] (const DataPartPtr & part) { part->state = state; };
@@ -641,7 +705,7 @@ private:
     void removePartContributionToColumnSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
-    DataPartPtr getAnyPartInPartition(const String & partition_id, std::lock_guard<std::mutex> & data_parts_lock);
+    DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock);
 
     /// Return parts in the Committed set that are covered by the new_part_info or the part that covers it.
     /// Will check that the new part doesn't already exist and that it doesn't intersect existing part.
@@ -649,7 +713,7 @@ private:
         const MergeTreePartInfo & new_part_info,
         const String & new_part_name,
         DataPartPtr & out_covering_part,
-        std::lock_guard<std::mutex> & data_parts_lock) const;
+        DataPartsLock & data_parts_lock) const;
 
     /// Checks whether the column is in the primary key, possibly wrapped in a chain of functions with single argument.
     bool isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;

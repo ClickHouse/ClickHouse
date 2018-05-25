@@ -45,6 +45,7 @@ for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 
     sed -r -e 's/^-\.o://');
 do
     dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
     dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
     mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
@@ -56,19 +57,25 @@ done
 
 for src_file in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep -E '/lib/clang/|/include/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
-    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$src_file";
+    dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
 
 # Even more platform-specific headers
 for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
 do
-    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$src_file";
+    dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
 
 for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
 do
-    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$src_file";
+    dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -r -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
