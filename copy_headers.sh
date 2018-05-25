@@ -17,7 +17,7 @@
 
 SOURCE_PATH=${1:-.}
 DST=${2:-$SOURCE_PATH/../headers}
-BUILD_PATH=${3:-$SOURCE_PATH/build}
+BUILD_PATH=${BUILD_PATH=${3:-$SOURCE_PATH/build}}
 
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
