@@ -72,8 +72,8 @@ static CodecPtr create(const ASTPtr &arguments)
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ASTLiteral *arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
-    if (!arg || arg->value.getType() != Field::Types::String)
-        throw Exception("Parameter for LZ4 codec must be string literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (!arg || arg->value.getType() != Field::Types::UInt8)
+        throw Exception("Parameter for LZ4 codec must be uint8 literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return std::make_shared<T>(arg->value.get<String>());
 }
