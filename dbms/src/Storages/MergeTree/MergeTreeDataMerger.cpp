@@ -115,11 +115,6 @@ MergeTreeDataMerger::MergeTreeDataMerger(MergeTreeData & data_, const Background
 {
 }
 
-void MergeTreeDataMerger::setCancellationHook(CancellationHook cancellation_hook_)
-{
-    cancellation_hook = cancellation_hook_;
-}
-
 
 size_t MergeTreeDataMerger::getMaxPartsSizeForMerge()
 {

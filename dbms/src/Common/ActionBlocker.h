@@ -10,25 +10,25 @@ namespace DB
 class ActionBlocker
 {
 private:
-    mutable std::atomic<int> counter{0};
+    std::atomic<int> counter{0};
 
 public:
     bool isCancelled() const { return counter > 0; }
 
     /// Temporarily blocks corresponding actions (while the returned object is alive)
     struct LockHolder;
-    LockHolder cancel() const { return LockHolder(this); }
+    LockHolder cancel() { return LockHolder(this); }
 
     /// Cancel the actions forever.
-    void cancelForever() const { ++counter; }
+    void cancelForever() { ++counter; }
 
-    /// Returns reference to counter to allow to watch on it directly.
-    auto & getCounter() { return counter; }
+    /// Returns reference to the counter to allow observing it directly.
+    const auto & getCounter() { return counter; }
 
     /// Blocks related action while a BlockerHolder instance exists
     struct LockHolder
     {
-        explicit LockHolder(const ActionBlocker * var_ = nullptr) : var(var_)
+        explicit LockHolder(ActionBlocker * var_ = nullptr) : var(var_)
         {
             if (var)
                 ++var->counter;
@@ -56,7 +56,7 @@ public:
         }
 
     private:
-        const ActionBlocker * var = nullptr;
+        ActionBlocker * var = nullptr;
     };
 };
 
