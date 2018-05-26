@@ -171,13 +171,14 @@ Block ParquetBlockInputStream::readImpl()
     }
 
     // TODO: is it possible to read metadata only and then read columns one by one?
+    // TODO: seems like row groups are especially for that (kinda)
     arrow::Buffer buffer(file_data);
     // TODO: maybe use parquet::RandomAccessSource?
     auto reader = parquet::ParquetFileReader::Open(std::make_shared<::arrow::io::BufferReader>(buffer));
     parquet::arrow::FileReader filereader(::arrow::default_memory_pool(), std::move(reader));
     std::shared_ptr<arrow::Table> table;
 
-    // TODO: also catch a ParquetException?
+    // TODO: also catch a ParquetException thrown by filereader?
     arrow::Status read_status = filereader.ReadTable(&table);
     if (!read_status.ok())
         throw Exception("Error while reading parquet data: " + read_status.ToString()/*, ErrorCodes::TODO*/);
@@ -204,10 +205,6 @@ Block ParquetBlockInputStream::readImpl()
         if (name_to_column_ptr.find(header_column.name) == name_to_column_ptr.end())
             // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
             throw Exception("Column \"" + header_column.name + "\" is not presented in input data" /*, ErrorCodes::TODO*/);
-
-        // TODO: timezones?
-        // TODO: https://github.com/apache/parquet-format/blob/master/LogicalTypes.md
-            // TODO: how to interpet a JSON doc?
 
         std::shared_ptr<arrow::Column> arrow_column = name_to_column_ptr[header_column.name];
         arrow::Type::type arrow_type = arrow_column->type()->id();
@@ -252,6 +249,7 @@ Block ParquetBlockInputStream::readImpl()
 #undef DISPATCH
             // TODO: support TIMESTAMP_MICROS and TIMESTAMP_MILLIS with truncated micro- and milliseconds?
             // TODO: read JSON as a string?
+            // TODO: read UUID as a string?
             default:
                 throw Exception("Unsupported parquet type " + arrow_column->type()->name()/*, ErrorCodes::TODO*/);
 
