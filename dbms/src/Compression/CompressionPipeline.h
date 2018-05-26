@@ -14,7 +14,6 @@ namespace DB
 /** Create codecs compression pipeline for sequential compression.
   * For example: CODEC(LZ4, ZSTD)
   */
-class ReadBuffer;
 
 using CodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CodecPtr>;
@@ -31,13 +30,12 @@ private:
     size_t header_size = 0;
     DataTypePtr data_type;
 public:
-    CompressionPipeline();
 
-    CompressionPipeline(Codecs _codecs)
+    CompressionPipeline(Codecs& _codecs)
         : codecs (_codecs)
     {}
 
-    CompressionPipeline(ReadBuffer *& header);
+    CompressionPipeline(ReadBuffer* header);
 
     size_t getHeaderSize() const
     {
@@ -66,7 +64,7 @@ public:
         for (int i = codecs.size() - 1; i >= 0; --i)
         {
             auto wrote = codecs[i]->writeHeader(out);
-            *out |= i ? static_cast<char>(CompressionMethodByte::CONT_BIT) : 0;
+            *out |= i ? static_cast<char>(CompressionMethodByte::CONTINUATION_BIT) : 0;
             out += wrote;
             wrote_size += wrote;
         }
@@ -129,8 +127,6 @@ public:
 
     size_t decompress(char* source, char* dest, int inputSize, int maxOutputSize)
     {
-        assert (codecs.size() + 1 == data_sizes.size()); /// All mid sizes should be presented
-
         PODArray<char> buffer;
         PODArray<char> *_source = reinterpret_cast<PODArray<char>*>(source), *_dest = reinterpret_cast<PODArray<char>*>(dest);
         for (int i = codecs.size() - 1; i >= 0; --i) {
@@ -157,11 +153,9 @@ public:
         }
     }
 
-    static PipePtr get_pipe(ReadBuffer*& header);
+    static PipePtr get_pipe(ReadBuffer* header);
     static PipePtr get_pipe(String &);
     static PipePtr get_pipe(ASTPtr &);
-
-    ~CompressionPipeline() {}
 };
 
 }

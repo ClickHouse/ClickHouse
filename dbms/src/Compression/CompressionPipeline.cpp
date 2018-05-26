@@ -9,12 +9,7 @@ namespace DB
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
-CompressionPipeline::CompressionPipeline()
-{
-    throw Exception("Pipeline could not be created without arguments", 0);
-}
-
-CompressionPipeline::CompressionPipeline(ReadBuffer *& header)
+CompressionPipeline::CompressionPipeline(ReadBuffer* header)
 {
     const CompressionCodecFactory & codec_factory = CompressionCodecFactory::instance();
     char last_codec_bytecode;
@@ -25,7 +20,7 @@ CompressionPipeline::CompressionPipeline(ReadBuffer *& header)
         header->readStrict(&_header[0], 1);
         header_size += 1;
 
-        last_codec_bytecode = (_header[0]) & ~static_cast<uint8_t>(CompressionMethodByte::CONT_BIT);
+        last_codec_bytecode = (_header[0]) & ~static_cast<uint8_t>(CompressionMethodByte::CONTINUATION_BIT);
         auto _codec = codec_factory.get(last_codec_bytecode);
 
         _header.resize(_codec->getHeaderSize());
@@ -33,7 +28,7 @@ CompressionPipeline::CompressionPipeline(ReadBuffer *& header)
         header_size += _codec->parseHeader(&_header[0]);
         codecs.push_back(_codec);
     }
-    while (last_codec_bytecode & static_cast<uint8_t>(CompressionMethodByte::CONT_BIT));
+    while (last_codec_bytecode & static_cast<uint8_t>(CompressionMethodByte::CONTINUATION_BIT));
     /// Load and reverse sizes part of a header, listed from later codecs to the original size, - see `compress`.
     auto codecs_amount = codecs.size();
     data_sizes.resize(codecs_amount + 1);
@@ -47,7 +42,7 @@ CompressionPipeline::CompressionPipeline(ReadBuffer *& header)
     }
 }
 
-PipePtr CompressionPipeline::get_pipe(ReadBuffer *& header)
+PipePtr CompressionPipeline::get_pipe(ReadBuffer* header)
 {
     return std::make_shared<CompressionPipeline>(header);
 }
