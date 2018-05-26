@@ -8,8 +8,21 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/CMakeLists.txt")
    set (MISSING_INTERNAL_POCO_LIBRARY 1)
 endif ()
 
+set (POCO_COMPONENTS Net XML SQL Data)
+if (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL)
+    list (APPEND POCO_COMPONENTS Crypto NetSSL)
+endif ()
+if (NOT DEFINED ENABLE_POCO_MONGODB OR ENABLE_POCO_MONGODB)
+    list (APPEND POCO_COMPONENTS MongoDB)
+endif ()
+# TODO: after new poco release with SQL library rename ENABLE_POCO_ODBC -> ENABLE_POCO_SQLODBC
+if (NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC)
+    list (APPEND POCO_COMPONENTS DataODBC)
+    #list (APPEND POCO_COMPONENTS SQLODBC) # future
+endif ()
+
 if (NOT USE_INTERNAL_POCO_LIBRARY)
-    find_package (Poco COMPONENTS Net NetSSL XML SQL Data Crypto DataODBC MongoDB)
+    find_package (Poco COMPONENTS ${POCO_COMPONENTS})
 endif ()
 
 if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
@@ -46,12 +59,10 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         "${ClickHouse_SOURCE_DIR}/contrib/poco/Util/include/"
     )
 
-    if (NOT DEFINED POCO_ENABLE_MONGODB OR POCO_ENABLE_MONGODB)
-        set (Poco_MongoDB_FOUND 1)
+    if (NOT DEFINED ENABLE_POCO_MONGODB OR ENABLE_POCO_MONGODB)
         set (Poco_MongoDB_LIBRARY PocoMongoDB)
         set (Poco_MongoDB_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/MongoDB/include/")
     endif ()
-
 
     if (EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/")
         set (Poco_SQL_FOUND 1)
@@ -60,8 +71,7 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
              "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/include"
              "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include"
              )
-        if (ODBC_FOUND)
-            set (Poco_SQLODBC_FOUND 1)
+        if ((NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC) AND ODBC_FOUND)
             set (Poco_SQLODBC_INCLUDE_DIRS
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
@@ -73,8 +83,8 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         set (Poco_Data_FOUND 1)
         set (Poco_Data_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
         set (Poco_Data_LIBRARY PocoData)
-        if (ODBC_FOUND)
-            set (Poco_DataODBC_FOUND 1)
+        if ((NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC) AND ODBC_FOUND)
+            set (USE_POCO_DATAODBC 1)
             set (Poco_DataODBC_INCLUDE_DIRS
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
                 ${ODBC_INCLUDE_DIRECTORIES}
@@ -84,8 +94,7 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     endif ()
 
     # TODO! fix internal ssl
-    if (OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY)
-        set (Poco_NetSSL_FOUND 1)
+    if (OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         set (Poco_NetSSL_LIBRARY PocoNetSSL)
         set (Poco_Crypto_LIBRARY PocoCrypto)
     endif ()
@@ -103,7 +112,20 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
     set (Poco_XML_LIBRARY PocoXML)
 endif ()
 
-message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_MongoDB_LIBRARY}; MongoDB=${Poco_MongoDB_FOUND}, DataODBC=${Poco_DataODBC_FOUND}, NetSSL=${Poco_NetSSL_FOUND}")
+if (Poco_NetSSL_LIBRARY AND Poco_Crypto_LIBRARY)
+    set (USE_POCO_NETSSL 1)
+endif ()
+if (Poco_MongoDB_LIBRARY)
+    set (USE_POCO_MONGODB 1)
+endif ()
+if (Poco_DataODBC_LIBRARY)
+    set (USE_POCO_DATAODBC 1)
+endif ()
+if (Poco_SQLODBC_LIBRARY)
+    set (USE_POCO_SQLODBC 1)
+endif ()
+
+message(STATUS "Using Poco: ${Poco_INCLUDE_DIRS} : ${Poco_Foundation_LIBRARY},${Poco_Util_LIBRARY},${Poco_Net_LIBRARY},${Poco_NetSSL_LIBRARY},${Poco_Crypto_LIBRARY},${Poco_XML_LIBRARY},${Poco_Data_LIBRARY},${Poco_DataODBC_LIBRARY},${Poco_SQL_LIBRARY},${Poco_SQLODBC_LIBRARY},${Poco_MongoDB_LIBRARY}; MongoDB=${USE_POCO_MONGODB}, DataODBC=${USE_POCO_DATAODBC}, NetSSL=${USE_POCO_NETSSL}")
 
 # How to make sutable poco:
 # use branch:

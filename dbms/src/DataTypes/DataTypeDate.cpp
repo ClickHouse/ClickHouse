@@ -11,12 +11,12 @@ namespace DB
 
 void DataTypeDate::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    writeDateText(DayNum_t(static_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr);
+    writeDateText(DayNum(static_cast<const ColumnUInt16 &>(column).getData()[row_num]), ostr);
 }
 
 static void deserializeText(IColumn & column, ReadBuffer & istr)
 {
-    DayNum_t x;
+    DayNum x;
     readDateText(x, istr);
     static_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
@@ -40,7 +40,7 @@ void DataTypeDate::serializeTextQuoted(const IColumn & column, size_t row_num, W
 
 void DataTypeDate::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
 {
-    DayNum_t x;
+    DayNum x;
     assertChar('\'', istr);
     readDateText(x, istr);
     assertChar('\'', istr);
@@ -56,7 +56,7 @@ void DataTypeDate::serializeTextJSON(const IColumn & column, size_t row_num, Wri
 
 void DataTypeDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
 {
-    DayNum_t x;
+    DayNum x;
     assertChar('"', istr);
     readDateText(x, istr);
     assertChar('"', istr);

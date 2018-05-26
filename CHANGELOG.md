@@ -1,3 +1,8 @@
+# ClickHouse release 1.1.54381, 2018-05-14
+
+## Bug fixes:
+* Fixed a nodes leak in ZooKeeper when ClickHouse loses connection to ZooKeeper server.
+
 # ClickHouse release 1.1.54380, 2018-04-21
 
 ## New features:
@@ -16,7 +21,7 @@
 * Fixed an error in ZooKeeper client library which led to watches loses, freezing of distributed DDL queue and slowing replication queue if non-empty `chroot` prefix is used in ZooKeeper configuration.
 
 ## Backward incompatible changes:
-* Removed support of expressions like `(a, b) IN (SELECT (a, b))` (instead of them you can use their equivalent `(a, b) IN (SELECT a, b)`). In previous releases, these expressions led to undermined data filtering or caused errors.
+* Removed support of expressions like `(a, b) IN (SELECT (a, b))` (instead of them you can use their equivalent `(a, b) IN (SELECT a, b)`). In previous releases, these expressions led to undetermined data filtering or caused errors.
 
 # ClickHouse release 1.1.54378, 2018-04-16
 ## New features:

@@ -32,6 +32,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/Join.h>
+#include <Interpreters/ProjectionManipulation.h>
+#include <Interpreters/evaluateConstantExpression.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -58,7 +60,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include "ProjectionManipulation.h"
+#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -1484,7 +1486,7 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
             return;
     }
 
-    prepared_sets[subquery_or_table_name.get()] = std::move(set);
+    prepared_sets[subquery_or_table_name->range] = std::move(set);
 }
 
 
@@ -1513,7 +1515,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         {
             const ASTPtr & arg = args.children.at(1);
 
-            if (!prepared_sets.count(arg.get())) /// Not already prepared.
+            if (!prepared_sets.count(arg->range)) /// Not already prepared.
             {
                 if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
                 {
@@ -1548,7 +1550,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
     const ASTPtr & arg = args.children.at(1);
 
     /// Already converted.
-    if (prepared_sets.count(arg.get()))
+    if (prepared_sets.count(arg->range))
         return;
 
     /// If the subquery or table name for SELECT.
@@ -1571,7 +1573,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
 
                 if (storage_set)
                 {
-                    prepared_sets[arg.get()] = storage_set->getSet();
+                    prepared_sets[arg->range] = storage_set->getSet();
                     return;
                 }
             }
@@ -1582,7 +1584,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            prepared_sets[arg.get()] = subquery_for_set.set;
+            prepared_sets[arg->range] = subquery_for_set.set;
             return;
         }
 
@@ -1628,7 +1630,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         }
 
         subquery_for_set.set = set;
-        prepared_sets[arg.get()] = set;
+        prepared_sets[arg->range] = set;
     }
     else
     {
@@ -1645,82 +1647,72 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     if (args.children.size() != 2)
         throw Exception("Wrong number of arguments passed to function in", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTPtr & arg = args.children.at(1);
-
-    DataTypes set_element_types;
     const ASTPtr & left_arg = args.children.at(0);
+    const ASTPtr & right_arg = args.children.at(1);
 
-    const ASTFunction * left_arg_tuple = typeid_cast<const ASTFunction *>(left_arg.get());
-
-    /** NOTE If tuple in left hand side specified non-explicitly
-      * Example: identity((a, b)) IN ((1, 2), (3, 4))
-      *  instead of       (a, b)) IN ((1, 2), (3, 4))
-      * then set creation doesn't work correctly.
-      */
-    if (left_arg_tuple && left_arg_tuple->name == "tuple")
+    auto getTupleTypeFromAst = [this](const ASTPtr & node) -> DataTypePtr
     {
-        for (const auto & arg : left_arg_tuple->arguments->children)
-            set_element_types.push_back(sample_block.getByName(arg->getColumnName()).type);
-    }
-    else
-    {
-        DataTypePtr left_type = sample_block.getByName(left_arg->getColumnName()).type;
-        set_element_types.push_back(left_type);
-    }
-
-    /// The case `x in (1, 2)` distinguishes from the case `x in 1` (also `x in (1)`).
-    bool single_value = false;
-    ASTPtr elements_ast = arg;
-
-    if (ASTFunction * set_func = typeid_cast<ASTFunction *>(arg.get()))
-    {
-        if (set_func->name == "tuple")
+        auto ast_function = typeid_cast<const ASTFunction *>(node.get());
+        if (ast_function && ast_function->name == "tuple" && !ast_function->arguments->children.empty())
         {
-            if (set_func->arguments->children.empty())
-            {
-                /// Empty set.
-                elements_ast = set_func->arguments;
-            }
-            else
-            {
-                /// Distinguish the case `(x, y) in ((1, 2), (3, 4))` from the case `(x, y) in (1, 2)`.
-                ASTFunction * any_element = typeid_cast<ASTFunction *>(set_func->arguments->children.at(0).get());
-                if (set_element_types.size() >= 2 && (!any_element || any_element->name != "tuple"))
-                    single_value = true;
-                else
-                    elements_ast = set_func->arguments;
-            }
+            /// Won't parse all values of outer tuple.
+            auto element = ast_function->arguments->children.at(0);
+            std::pair<Field, DataTypePtr> value_raw = evaluateConstantExpression(element, context);
+            return std::make_shared<DataTypeTuple>(DataTypes({value_raw.second}));
         }
-        else
-        {
-            if (set_element_types.size() >= 2)
-                throw Exception("Incorrect type of 2nd argument for function " + node->name
-                    + ". Must be subquery or set of " + toString(set_element_types.size()) + "-element tuples.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            single_value = true;
-        }
-    }
-    else if (typeid_cast<ASTLiteral *>(arg.get()))
-    {
-        single_value = true;
-    }
-    else
-    {
-        throw Exception("Incorrect type of 2nd argument for function " + node->name + ". Must be subquery or set of values.",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+        return evaluateConstantExpression(node, context).second;
+    };
 
-    if (single_value)
+    const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
+    const DataTypePtr & right_arg_type = getTupleTypeFromAst(right_arg);
+
+    std::function<size_t(const DataTypePtr &)> getTupleDepth;
+    getTupleDepth = [&getTupleDepth](const DataTypePtr & type) -> size_t
+    {
+        if (auto tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+            return 1 + (tuple_type->getElements().empty() ? 0 : getTupleDepth(tuple_type->getElements().at(0)));
+
+        return 0;
+    };
+
+    size_t left_tuple_depth = getTupleDepth(left_arg_type);
+    size_t right_tuple_depth = getTupleDepth(right_arg_type);
+
+    DataTypes set_element_types = {left_arg_type};
+    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    if (left_tuple_type && left_tuple_type->getElements().size() != 1)
+        set_element_types = left_tuple_type->getElements();
+
+    ASTPtr elements_ast = nullptr;
+
+    /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
+    if (left_tuple_depth == right_tuple_depth)
     {
         ASTPtr exp_list = std::make_shared<ASTExpressionList>();
-        exp_list->children.push_back(elements_ast);
+        exp_list->children.push_back(right_arg);
         elements_ast = exp_list;
     }
+    /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
+    else if (left_tuple_depth + 1 == right_tuple_depth)
+    {
+        ASTFunction * set_func = typeid_cast<ASTFunction *>(right_arg.get());
+
+        if (!set_func || set_func->name != "tuple")
+            throw Exception("Incorrect type of 2nd argument for function " + node->name
+                            + ". Must be subquery or set of elements with type " + left_arg_type->getName() + ".",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        elements_ast = set_func->arguments;
+    }
+    else
+        throw Exception("Invalid types for IN function: "
+                        + left_arg_type->getName() + " and " + right_arg_type->getName() + ".",
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
     set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
-    prepared_sets[arg.get()] = std::move(set);
+    prepared_sets[right_arg->range] = std::move(set);
 }
 
 
@@ -2089,8 +2081,10 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         /// If the function has an argument-lambda expression, you need to determine its type before the recursive call.
         bool has_lambda_arguments = false;
 
-        for (auto & child : node->arguments->children)
+        for (size_t arg = 0; arg < node->arguments->children.size(); ++arg)
         {
+            auto & child = node->arguments->children[arg];
+
             ASTFunction * lambda = typeid_cast<ASTFunction *>(child.get());
             if (lambda && lambda->name == "lambda")
             {
@@ -2108,12 +2102,12 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 /// Select the name in the next cycle.
                 argument_names.emplace_back();
             }
-            else if (prepared_sets.count(child.get()))
+            else if (prepared_sets.count(child->range) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
-                const SetPtr & set = prepared_sets[child.get()];
+                const SetPtr & set = prepared_sets[child->range];
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
@@ -2204,9 +2198,9 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
                     Names captured;
                     Names required = lambda_actions->getRequiredColumns();
-                    for (size_t j = 0; j < required.size(); ++j)
-                        if (findColumn(required[j], lambda_arguments) == lambda_arguments.end())
-                            captured.push_back(required[j]);
+                    for (const auto & required_arg : required)
+                        if (findColumn(required_arg, lambda_arguments) == lambda_arguments.end())
+                            captured.push_back(required_arg);
 
                     /// We can not name `getColumnName()`,
                     ///  because it does not uniquely define the expression (the types of arguments can be different).
@@ -2226,9 +2220,9 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
         if (only_consts)
         {
-            for (size_t i = 0; i < argument_names.size(); ++i)
+            for (const auto & argument_name : argument_names)
             {
-                if (!actions_stack.getSampleBlock().has(argument_names[i]))
+                if (!actions_stack.getSampleBlock().has(argument_name))
                 {
                     arguments_present = false;
                     break;
