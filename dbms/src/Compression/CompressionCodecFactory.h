@@ -4,30 +4,31 @@
 #include <functional>
 #include <unordered_map>
 #include <ext/singleton.h>
-#include <IO/ReadBuffer.h>
+
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+
 #include <Common/typeid_cast.h>
+#include <Compression/ICompressionCodec.h>
+
 #include <Poco/String.h>
-#include <Compression/CompressionPipeline.h>
 
 
 namespace DB
 {
 
-class ICompressionCodec;
-using CodecPtr = std::shared_ptr<ICompressionCodec>;
-
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
+class CompressionPipeline;
+using PipePtr = std::shared_ptr<CompressionPipeline>;
 
 
 /** Creates a codec object by name of compression algorithm family and parameters, also creates codecs pipe.
   */
-class CompressionCodecFactory : public ext::singleton<CompressionCodecFactory>
+class CompressionCodecFactory final : public ext::singleton<CompressionCodecFactory>
 {
 private:
     using Creator = std::function<CodecPtr(const ASTPtr & parameters)>;
@@ -40,9 +41,9 @@ public:
     CodecPtr get(const String & family_name, const ASTPtr & parameters) const;
     CodecPtr get(const ASTPtr & ast) const;
     CodecPtr get(char&) const;
-    CodecPtr get_pipe(String & full_declaration);
-    CodecPtr get_pipe(ReadBuffer * header);
-    CodecPtr get_pipe(ASTPtr& header);
+    PipePtr get_pipe(ReadBuffer *&) const;
+    PipePtr get_pipe(String &) const;
+    PipePtr get_pipe(ASTPtr &) const;
 
     /// Register a codec family by its name.
     void registerCodec(const String & family_name, Creator creator);
@@ -56,9 +57,6 @@ public:
 private:
     CodecsDictionary codecs;
     ByteCodecsDictionary bytecodes_codecs;
-
-    CompressionCodecFactory();
-    friend class ext::singleton<CompressionCodecFactory>;
 };
 
 }

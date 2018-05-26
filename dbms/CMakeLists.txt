@@ -31,9 +31,6 @@ find_package (Threads)
 
 add_subdirectory (src)
 
-set(dbms_headers)
-set(dbms_sources src/Compression/CompressionPipeline.cpp src/Compression/CompressionPipeline.h src/Compression/ICompressionCodec.cpp src/Compression/ICompressionCodec.h src/Compression/CompressionCodecFactory.cpp src/Compression/CompressionCodecFactory.h src/Compression/CompressionCodecNone.cpp src/Compression/CompressionCodecNone.h src/Compression/CompressionCodecZSTD.cpp src/Compression/CompressionCodecZSTD.h src/Compression/CompressionCodecLZ4.cpp src/Compression/CompressionCodecLZ4.h)
-
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_common_io src/Common)
@@ -51,6 +48,7 @@ add_headers_and_sources(dbms src/Dictionaries/Embedded/GeodataProviders)
 add_headers_and_sources(dbms src/Interpreters)
 add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
+add_headers_and_sources(dbms src/Compression)
 add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)

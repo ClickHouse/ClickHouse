@@ -1,5 +1,6 @@
 #include <Compression/CompressionCodecFactory.h>
 
+#include <IO/ReadBuffer.h>
 
 namespace DB
 {
@@ -14,31 +15,7 @@ namespace ErrorCodes
 }
 
 
-CodecPtr CompressionCodecFactory::get_pipe(ASTPtr& ast_codec)
-{
-    Codecs codecs;
-    for (auto & codec : typeid_cast<IAST &>(*ast_codec).children) {
-        codecs.emplace_back(std::move(get(codec)));
-    }
-    return std::make_shared<CompressionPipeline>(codecs);
-}
 
-CodecPtr CompressionCodecFactory::get_pipe(String & full_declaration)
-{
-    ParserCodecDeclarationList parser;
-    ASTPtr ast = parseQuery(parser, full_declaration.data(), full_declaration.data() + full_declaration.size(), "codecs", 0);
-    // construct pipeline out of codecs
-    Codecs codecs;
-    for (auto & codec : typeid_cast<IAST &>(*ast).children) {
-        codecs.emplace_back(std::move(get(codec)));
-    }
-    return std::make_shared<CompressionPipeline>(codecs);
-}
-
-CodecPtr CompressionCodecFactory::get_pipe(ReadBuffer * header)
-{
-    return std::make_shared<CompressionPipeline>(header);
-}
 
 CodecPtr CompressionCodecFactory::get(const String & full_name) const
 {

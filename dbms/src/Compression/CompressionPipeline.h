@@ -5,6 +5,7 @@
 #include <boost/noncopyable.hpp>
 #include <common/unaligned.h>
 #include <Core/Field.h>
+#include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionCodecFactory.h>
 #include <IO/CompressedStream.h>
 #include <IO/ReadBuffer.h>
