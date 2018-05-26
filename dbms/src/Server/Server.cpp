@@ -26,6 +26,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DNSCacheUpdater.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -38,12 +39,9 @@
 #include "StatusFile.h"
 #include "TCPHandlerFactory.h"
 
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SecureServerSocket.h>
-#include <Interpreters/DNSCacheUpdater.h>
-
-
 #endif
 
 namespace CurrentMetrics
@@ -431,7 +429,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// HTTPS
                 if (config().has("https_port"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     std::call_once(ssl_init_once, SSLInit);
 
                     Poco::Net::SecureServerSocket socket;
@@ -471,7 +469,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// TCP with SSL
                 if (config().has("tcp_port_secure"))
                 {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);

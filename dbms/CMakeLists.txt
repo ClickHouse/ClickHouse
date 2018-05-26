@@ -103,7 +103,9 @@ if (USE_EMBEDDED_COMPILER)
     llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
     if (TERMCAP_LIBRARY)
         list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
-    endif()
+    endif ()
+    list(APPEND REQUIRED_LLVM_LIBRARIES ${CMAKE_DL_LIBS})
+
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
@@ -145,6 +147,7 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Data_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
+    ${ELF_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
     ${CMAKE_DL_LIBS}
 )
@@ -168,7 +171,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if (Poco_SQLODBC_FOUND)
+if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
     target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
@@ -182,7 +185,7 @@ if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
     target_include_directories (dbms PRIVATE ${Poco_Data_INCLUDE_DIRS})
 endif()
 
-if (Poco_DataODBC_FOUND)
+if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
@@ -190,13 +193,12 @@ if (Poco_DataODBC_FOUND)
     endif()
 endif()
 
-
-if (Poco_MongoDB_FOUND)
+if (USE_POCO_MONGODB)
     target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
 endif()
 
-if (Poco_NetSSL_FOUND)
-    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY})
+if (USE_POCO_NETSSL)
+    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
@@ -242,6 +244,12 @@ target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSI
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+if (USE_EMBEDDED_COMPILER)
+    add_custom_target(copy-headers ALL env CLANG=${CMAKE_CURRENT_BINARY_DIR}/src/Server/clickhouse-clang BUILD_PATH=${ClickHouse_BINARY_DIR} DESTDIR=${ClickHouse_SOURCE_DIR} ${ClickHouse_SOURCE_DIR}/copy_headers.sh ${ClickHouse_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/headers DEPENDS clickhouse-clang WORKING_DIRECTORY ${ClickHouse_SOURCE_DIR} SOURCES ${ClickHouse_SOURCE_DIR}/copy_headers.sh)
+    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/headers DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse COMPONENT clickhouse)
+    add_dependencies(clickhouse-bundle copy-headers)
+endif ()
 
 add_subdirectory (tests)
 

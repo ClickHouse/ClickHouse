@@ -93,8 +93,8 @@ void MergeTreeDataMerger::FuturePart::assign(MergeTreeData::DataPartsVector part
 
     if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
-        DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
+        DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
+        DayNum max_date = DayNum(std::numeric_limits<UInt16>::min());
         for (const auto & part : parts)
         {
             min_date = std::min(min_date, part->getMinDate());

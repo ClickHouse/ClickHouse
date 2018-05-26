@@ -21,7 +21,7 @@
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
@@ -57,7 +57,7 @@ void Connection::connect()
 
         if (static_cast<bool>(secure))
         {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};

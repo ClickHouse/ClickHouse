@@ -657,6 +657,16 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
+## user_files_path
+
+A catalog with user files. Used in a [file()](../../table_functions/file.md#table_functions-file) table function.
+
+**Example**
+
+```xml
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
 <a name="server_settings-users_config"></a>
 
 ## users_config
