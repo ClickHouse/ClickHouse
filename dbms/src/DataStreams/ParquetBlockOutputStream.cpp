@@ -20,6 +20,11 @@ ParquetBlockOutputStream::ParquetBlockOutputStream(WriteBuffer & ostr_, const Bl
 {
 }
 
+void ParquetBlockOutputStream::flush()
+{
+    ostr.next();
+}
+
 void checkAppendStatus(arrow::Status & append_status, const std::string & column_name)
 {
     if (!append_status.ok())
@@ -101,9 +106,6 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(ColumnPtr write_
         M(Float64, arrow::DoubleBuilder)
 
 
-// TODO: create a better row_group_size estimation
-/* static constexpr const UInt64 GiB_in_bytes = 1 << 30; */
-
 void ParquetBlockOutputStream::write(const Block & block)
 {
     block.checkNumberOfRows();
@@ -122,7 +124,6 @@ void ParquetBlockOutputStream::write(const Block & block)
 
         // TODO: support NULLs
         arrow_fields.emplace_back(new arrow::Field(column.name, internal_type_to_arrow_type[column.type->getName()], /*nullable = */false));
-        // TODO: !keep in mind that arrow and parquet types are not interchangeable!
         std::shared_ptr<arrow::Array> arrow_array;
 
         String internal_type_name = column.type->getName();
@@ -143,7 +144,9 @@ void ParquetBlockOutputStream::write(const Block & block)
         {
             fillArrowArrayWithDateColumnData(column.column, arrow_array); \
         }
-        // TODO: are there internal types that are convertable to parquet/arrow once?
+        // TODO: there are also internal types that are convertable to parquet/arrow once:
+        // 1. FixedString(N)
+        // 2. DateTime
         else
         {
             throw Exception(
@@ -161,8 +164,7 @@ void ParquetBlockOutputStream::write(const Block & block)
     // TODO: get rid of extra copying
     std::shared_ptr<parquet::InMemoryOutputStream> sink = std::make_shared<parquet::InMemoryOutputStream>();
 
-    // TODO: calculate row_group_size
-    /* const UInt64 row_group_size = std::min(1, GiB_in_bytes / sizeof(UInt64) / arrow_table->num_rows()); */
+    // TODO: calculate row_group_size depending on a number of rows and table size
 
     arrow::Status write_status = parquet::arrow::WriteTable(
         *arrow_table, arrow::default_memory_pool(), sink,
@@ -175,10 +177,5 @@ void ParquetBlockOutputStream::write(const Block & block)
     std::shared_ptr<arrow::Buffer> table_buffer = sink->GetBuffer();
     writeString(reinterpret_cast<const char *>(table_buffer->data()), table_buffer->size(), ostr);
 }
-
-/* void ParquetBlockOutputStream::flush() */
-/* { */
-/*     ostr.next(); */
-/* } */
 
 };

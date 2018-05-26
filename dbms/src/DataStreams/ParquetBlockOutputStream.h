@@ -14,7 +14,7 @@ public:
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
-    /* void flush() override; */
+    void flush() override;
 
     String getContentType() const override { return "application/octet-stream"; }
 
@@ -43,7 +43,9 @@ private:
         {"Date",  arrow::date32()},
 
         {"String", arrow::utf8()}//,
-        // TODO: add other types
+        // TODO: add other types:
+        // 1. FixedString
+        // 2. DateTime
     };
 };
 

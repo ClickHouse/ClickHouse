@@ -8,13 +8,10 @@
 #include <DataTypes/DataTypeDate.h>
 // TODO: refine includes
 #include <arrow/api.h>
-/* #include <DataStreams/MarkInCompressedFile.h> */
-/* #include <Common/PODArray.h> */
 
 namespace DB
 {
 
-// TODO: move a common parts for parquet and arrow to smth like ArrowBlockInputStream
 class ParquetBlockInputStream : public IProfilingBlockInputStream
 {
 public:
@@ -53,7 +50,10 @@ private:
         {arrow::Type::DATE32, std::make_shared<DataTypeDate>()},
 
         {arrow::Type::STRING, std::make_shared<DataTypeString>()}//,
-        // TODO: add other types
+        // TODO: add other types that are convertable to internal ones:
+        // 0. ENUM?
+        // 1. UUID -> String
+        // 2. JSON -> String
     };
 
     // TODO: check that this class implements every part of its parent
