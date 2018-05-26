@@ -1,14 +1,12 @@
 #pragma once
 
 #include <memory>
-#include <Common/COWPtr.h>
-#include <boost/noncopyable.hpp>
 #include <common/unaligned.h>
-#include <Core/Field.h>
-#include <Compression/ICompressionCodec.h>
-#include <Compression/CompressionCodecFactory.h>
 #include <IO/CompressedStream.h>
 #include <IO/ReadBuffer.h>
+#include <Compression/CompressionCodecFactory.h>
+#include <Compression/ICompressionCodec.h>
+#include <DataTypes/IDataType.h>
 
 
 namespace DB
@@ -16,55 +14,30 @@ namespace DB
 /** Create codecs compression pipeline for sequential compression.
   * For example: CODEC(LZ4, ZSTD)
   */
+class ReadBuffer;
 
-class CompressionPipeline final : public ICompressionCodec
+using CodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CodecPtr>;
+
+class CompressionPipeline;
+using PipePtr = std::shared_ptr<CompressionPipeline>;
+
+class CompressionPipeline
 {
 private:
     Codecs codecs;
     /// Sizes of data mutations, from original to later compressions
     std::vector<uint32_t> data_sizes;
     size_t header_size = 0;
+    DataTypePtr data_type;
 public:
-    CompressionPipeline()
-    {
-        throw Exception("Pipeline could not be created without arguments", 0);
-    }
+    CompressionPipeline();
 
     CompressionPipeline(Codecs _codecs)
         : codecs (_codecs)
     {}
 
-    CompressionPipeline(ReadBuffer *& header)
-    {
-        const CompressionCodecFactory & codec_factory = CompressionCodecFactory::instance();
-        char last_codec_bytecode;
-        PODArray<char> _header;
-        _header.resize(1);
-        /// Read codecs, while continuation bit is set
-        do {
-            header->readStrict(&_header[0], 1);
-            header_size += 1;
-
-            last_codec_bytecode = (_header[0]) & ~static_cast<uint8_t>(CompressionMethodByte::CONT_BIT);
-            auto _codec = codec_factory.get(last_codec_bytecode);
-
-            _header.resize(_codec->getHeaderSize());
-            header->readStrict(&_header[0], _codec->getHeaderSize());
-            header_size += _codec->parseHeader(&_header[0]);
-            codecs.push_back(_codec);
-        }
-        while (last_codec_bytecode & static_cast<uint8_t>(CompressionMethodByte::CONT_BIT));
-        /// Load and reverse sizes part of a header, listed from later codecs to the original size, - see `compress`.
-        auto codecs_amount = codecs.size();
-        data_sizes.resize(codecs_amount + 1);
-
-        _header.resize(sizeof(UInt32) * (codecs_amount + 1));
-        header->readStrict(&_header[0], sizeof(UInt32) * (codecs_amount + 1));
-
-        for (size_t i = 0; i <= codecs_amount; ++i) {
-            data_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&_header[sizeof(UInt32) * i]);
-        }
-    }
+    CompressionPipeline(ReadBuffer *& header);
 
     size_t getHeaderSize() const
     {
@@ -87,7 +60,7 @@ public:
     }
 
     /// Header for serialization, containing bytecode and parameters
-    size_t writeHeader(char* out) override
+    size_t writeHeader(char* out)
     {
         size_t wrote_size = 0;
         for (int i = codecs.size() - 1; i >= 0; --i)
@@ -131,7 +104,7 @@ public:
     }
 
     /// Block compression and decompression methods
-    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override
+    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize)
     {
         PODArray<char> buffer;
         data_sizes.resize(1);
@@ -154,7 +127,7 @@ public:
         return inputSize;
     }
 
-    size_t decompress(char* source, char* dest, int inputSize, int maxOutputSize) override
+    size_t decompress(char* source, char* dest, int inputSize, int maxOutputSize)
     {
         assert (codecs.size() + 1 == data_sizes.size()); /// All mid sizes should be presented
 
@@ -184,10 +157,9 @@ public:
         }
     }
 
-    size_t decompress(char*, PODArray<char>&, int, int) override
-    {
-        return 0;
-    }
+    static PipePtr get_pipe(ReadBuffer*& header);
+    static PipePtr get_pipe(String &);
+    static PipePtr get_pipe(ASTPtr &);
 
     ~CompressionPipeline() {}
 };

@@ -82,7 +82,7 @@ using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
 /// Codecs - map from name to CodecPtr (pipeline)
-using ColumnCodecs = std::unordered_map<std::string, CodecPtr>;
+using ColumnCodecs = std::unordered_map<std::string, PipePtr>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)

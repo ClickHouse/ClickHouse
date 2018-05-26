@@ -1,16 +1,13 @@
+#include <Compression/CompressionCodecLZ4.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Compression/ICompressionCodec.h>
 
 #include <lz4.h>
-
-#include <Compression/CompressionCodecLZ4.h>
-#include <Compression/CompressionCodecFactory.h>
-
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <Common/typeid_cast.h>
+#include <Compression/CompressionCodecFactory.h>
 
 
 namespace DB

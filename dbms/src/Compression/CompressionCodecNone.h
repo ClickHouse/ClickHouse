@@ -1,5 +1,4 @@
-#include <Common/PODArray.h>
-#include <Compression/CompressionCodecFactory.h>
+#include <Compression/ICompressionCodec.h>
 
 namespace DB {
 

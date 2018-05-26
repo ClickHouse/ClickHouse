@@ -12,7 +12,6 @@
 #include <Common/Exception.h>
 #include <common/unaligned.h>
 #include <Compression/CompressionPipeline.h>
-#include <Compression/CompressionCodecFactory.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -49,7 +48,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     CityHash_v1_0_2::uint128 checksum;
     compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
-    compression_pipe = CompressionCodecFactory::instance().get_pipe(compressed_in);
+    *compression_pipe = CompressionPipeline(compressed_in);
 
     size_compressed_without_checksum = compression_pipe->getCompressedSize();
     size_t size_compressed = size_compressed_without_checksum + compression_pipe->getHeaderSize();

@@ -1,4 +1,5 @@
 #include <Compression/CompressionCodecNone.h>
+#include <Compression/CompressionCodecFactory.h>
 
 namespace DB
 {

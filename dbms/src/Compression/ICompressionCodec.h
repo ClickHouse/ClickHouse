@@ -31,18 +31,23 @@ public:
     static const uint8_t bytecode = 0x0;
 
     /// Name of codec (examples: LZ4(...), None).
-    String getName() const { return getFamilyName(); };
+    virtual String getName() const { return getFamilyName(); };
 
     /// Name of codec family (example: LZ4, ZSTD).
     virtual const char *getFamilyName() const = 0;
 
-    size_t getHeaderSize() const { return 0; };
+    virtual size_t getHeaderSize() const
+    {
+        return 0;
+    };
 
     /// Header for serialization, containing bytecode and parameters
     virtual size_t writeHeader(char *) = 0;
 
     /// Header parser for parameters
-    size_t parseHeader(const char *) { return 0; };
+    virtual size_t parseHeader(const char *) {
+        return 0;
+    };
 
     /// Parsed sizes from data block
     virtual size_t getCompressedSize() const = 0;
@@ -61,7 +66,7 @@ public:
     virtual size_t decompress(char *source, PODArray<char> &dest, int inputSize, int maxOutputSize) = 0;
 
     /// Data type information provider
-    void setDataType(DataTypePtr _data_type)
+    virtual void setDataType(DataTypePtr _data_type)
     {
         data_type = _data_type;
     };

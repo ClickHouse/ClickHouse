@@ -4,7 +4,6 @@
 #include <zstd.h>
 
 #include <Parsers/ASTLiteral.h>
-
 #include <Common/typeid_cast.h>
 
 namespace DB

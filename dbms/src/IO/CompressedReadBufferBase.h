@@ -1,12 +1,11 @@
 #pragma once
 
 #include <Common/PODArray.h>
-#include <Compression/CompressionCodecFactory.h>
-#include <Compression/CompressionPipeline.h>
 
 
 namespace DB
 {
+class CompressionPipeline;
 
 class ReadBuffer;
 
@@ -17,7 +16,7 @@ class CompressedReadBufferBase
 {
 protected:
     ReadBuffer * compressed_in;
-    PipePtr compression_pipe;
+    CompressionPipeline* compression_pipe;
 
     /// If 'compressed_in' buffer has whole compressed block - then use it. Otherwise copy parts of data to 'own_compressed_buffer'.
     PODArray<char> own_compressed_buffer;

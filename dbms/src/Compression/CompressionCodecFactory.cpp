@@ -1,4 +1,11 @@
 #include <Compression/CompressionCodecFactory.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Common/typeid_cast.h>
+#include <Poco/String.h>
 
 #include <IO/ReadBuffer.h>
 
@@ -14,8 +21,17 @@ namespace ErrorCodes
     extern const int CODEC_CANNOT_HAVE_ARGUMENTS;
 }
 
+CodecPtr CompressionCodecFactory::get(char& bytecode) const
+{
 
+    {
+        auto it = bytecodes_codecs.find(bytecode);
+        if (bytecodes_codecs.end() != it)
+            return it->second();
+    }
 
+    throw Exception("Unknown codec bytecode: " + std::to_string(bytecode), ErrorCodes::UNKNOWN_TYPE);
+}
 
 CodecPtr CompressionCodecFactory::get(const String & full_name) const
 {
@@ -60,18 +76,6 @@ CodecPtr CompressionCodecFactory::get(const String & family_name, const ASTPtr &
     throw Exception("Unknown codec family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
-CodecPtr CompressionCodecFactory::get(char& bytecode) const
-{
-
-    {
-        auto it = bytecodes_codecs.find(bytecode);
-        if (bytecodes_codecs.end() != it)
-            return it->second();
-    }
-
-    throw Exception("Unknown codec bytecode: " + std::to_string(bytecode), ErrorCodes::UNKNOWN_TYPE);
-}
-
 void CompressionCodecFactory::registerCodec(const String & family_name, Creator creator)
 {
     if (creator == nullptr)
@@ -110,7 +114,6 @@ void CompressionCodecFactory::registerCodecBytecode(const char& bytecode, Simple
         throw Exception("CompressionCodecFactory: the codec bytecode is not unique",
                         ErrorCodes::LOGICAL_ERROR); // TODO: add bytecode to exception
 }
-
 
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
