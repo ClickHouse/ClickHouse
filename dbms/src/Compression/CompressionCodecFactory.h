@@ -4,8 +4,15 @@
 #include <functional>
 #include <unordered_map>
 #include <ext/singleton.h>
-#include <Compression/ICompressionCodec.h>
 #include <IO/ReadBuffer.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Common/typeid_cast.h>
+#include <Poco/String.h>
+#include <Compression/CompressionPipeline.h>
 
 
 namespace DB
@@ -20,7 +27,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 /** Creates a codec object by name of compression algorithm family and parameters, also creates codecs pipe.
   */
-class CompressionCodecFactory final : public ext::singleton<CompressionCodecFactory>
+class CompressionCodecFactory : public ext::singleton<CompressionCodecFactory>
 {
 private:
     using Creator = std::function<CodecPtr(const ASTPtr & parameters)>;
@@ -34,7 +41,7 @@ public:
     CodecPtr get(const ASTPtr & ast) const;
     CodecPtr get(char&) const;
     CodecPtr get_pipe(String & full_declaration);
-    CodecPtr get_pipe(ReadBuffer *& header);
+    CodecPtr get_pipe(ReadBuffer * header);
     CodecPtr get_pipe(ASTPtr& header);
 
     /// Register a codec family by its name.

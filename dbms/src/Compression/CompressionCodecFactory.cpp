@@ -1,12 +1,4 @@
-#include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Common/typeid_cast.h>
-#include <Poco/String.h>
 #include <Compression/CompressionCodecFactory.h>
-#include <Compression/CompressionPipeline.h>
 
 
 namespace DB
@@ -43,7 +35,7 @@ CodecPtr CompressionCodecFactory::get_pipe(String & full_declaration)
     return std::make_shared<CompressionPipeline>(codecs);
 }
 
-CodecPtr CompressionCodecFactory::get_pipe(ReadBuffer *& header)
+CodecPtr CompressionCodecFactory::get_pipe(ReadBuffer * header)
 {
     return std::make_shared<CompressionPipeline>(header);
 }
