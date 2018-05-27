@@ -30,12 +30,10 @@ private:
     size_t header_size = 0;
     DataTypePtr data_type;
 public:
-
+    CompressionPipeline(ReadBuffer* header);
     CompressionPipeline(Codecs& _codecs)
         : codecs (_codecs)
     {}
-
-    CompressionPipeline(ReadBuffer* header);
 
     size_t getHeaderSize() const
     {
@@ -125,21 +123,23 @@ public:
         return inputSize;
     }
 
-    size_t decompress(char* source, char* dest, int inputSize, int maxOutputSize)
+    size_t decompress(char* source, char* dest, int inputSize, int)
     {
-        PODArray<char> buffer;
-        PODArray<char> *_source = reinterpret_cast<PODArray<char>*>(source), *_dest = reinterpret_cast<PODArray<char>*>(dest);
+        PODArray<char> buffer1, buffer2;
+        size_t midOutputSize = data_sizes[codecs.size()];
+        char *_source = source;
+        auto *_dest = &buffer1;
         for (int i = codecs.size() - 1; i >= 0; --i) {
-            (*_dest).resize(maxOutputSize);
-            inputSize = codecs[i]->decompress(&(*_source)[0], &(*_dest)[0], inputSize, maxOutputSize);
-            maxOutputSize = data_sizes[i];
-
-            _source = _dest;
-            _dest = (_dest == reinterpret_cast<PODArray<char>*>(dest)) ? &buffer : reinterpret_cast<PODArray<char>*>(dest);
-        }
-
-        if (_dest == reinterpret_cast<PODArray<char>*>(dest)) {
-            memcpy(dest, &buffer[0], maxOutputSize);
+            if (!i) /// output would be dest
+            {
+                inputSize = codecs[i]->decompress(_source, dest, inputSize, getDecompressedSize());
+            } else {
+                (*_dest).resize(midOutputSize);
+                inputSize = codecs[i]->decompress(_source, &(*_dest)[0], inputSize, midOutputSize);
+                _source = &(*_dest)[0];
+                _dest = _dest == &buffer1 ? &buffer2 : &buffer1;
+                midOutputSize = data_sizes[i - 1];
+            }
         }
         return inputSize;
     }
@@ -154,7 +154,6 @@ public:
     }
 
     static PipePtr get_pipe(ReadBuffer* header);
-    static PipePtr get_pipe(String &);
     static PipePtr get_pipe(ASTPtr &);
 };
 

@@ -51,34 +51,35 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     compression_pipe = CompressionPipeline::get_pipe(compressed_in);
 
     size_compressed_without_checksum = compression_pipe->getCompressedSize();
-    size_t size_compressed = size_compressed_without_checksum + compression_pipe->getHeaderSize();
+    size_t size_compressed_without_header = size_compressed_without_checksum - compression_pipe->getHeaderSize();
     size_decompressed = compression_pipe->getDecompressedSize();
 
-    if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
+    if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception("Too large size_compressed. Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed + sizeof(checksum));
+    ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(checksum));
 
     /// Is whole compressed block located in 'compressed_in' buffer?
     if (compressed_in->offset() >= compression_pipe->getHeaderSize() &&
-        compressed_in->position() + size_compressed - compression_pipe->getHeaderSize() <= compressed_in->buffer().end())
+        compressed_in->position() + size_compressed_without_header <= compressed_in->buffer().end())
     {
         compressed_in->position() -= compression_pipe->getHeaderSize();
         compressed_buffer = compressed_in->position();
-        compressed_in->position() += size_compressed;
+        compressed_in->position() += size_compressed_without_checksum;
     }
     else
     {
-        own_compressed_buffer.resize(size_compressed);
+        own_compressed_buffer.resize(size_compressed_without_checksum);
         compressed_buffer = &own_compressed_buffer[0];
-        compressed_in->readStrict(compressed_buffer + compression_pipe->getHeaderSize(),
-                                  size_compressed - compression_pipe->getHeaderSize());
+        compressed_in->position() -= compression_pipe->getHeaderSize();
+        compressed_in->readStrict(&compressed_buffer[0],
+                                  size_compressed_without_header);
     }
 
-    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed))
+    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed_without_checksum))
         throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
-    return size_compressed + sizeof(checksum);
+    return size_compressed_without_checksum + sizeof(checksum);
 }
 
 
@@ -87,9 +88,9 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
-    auto header_size = compression_pipe->getHeaderSize();
-    compression_pipe->decompress(compressed_buffer + header_size, to,
-                                 size_compressed_without_checksum, size_decompressed);
+    compression_pipe->decompress(&compressed_buffer[compression_pipe->getHeaderSize()], to,
+                                 size_compressed_without_checksum - compression_pipe->getHeaderSize(),
+                                 size_decompressed);
 }
 
 

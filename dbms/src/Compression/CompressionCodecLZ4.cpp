@@ -50,11 +50,11 @@ size_t CompressionCodecLZ4::compress(char* source, PODArray<char>& dest,
     return wrote;
 }
 
-size_t CompressionCodecLZ4::decompress(char* source, PODArray<char>& dest,
+size_t CompressionCodecLZ4::decompress(char* source, char* dest,
                                        int inputSize, int maxOutputSize)
 {
-    auto read = LZ4_decompress_fast(reinterpret_cast<char*>(source), &dest[0], inputSize);
-    if (read > maxOutputSize || read < 0)
+    auto read = LZ4_decompress_fast(source, dest, maxOutputSize);
+    if (read > inputSize || read < 0)
         throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
     return read;
 }
@@ -85,7 +85,9 @@ static CodecPtr createSimple()
 void registerCodecLZ4(CompressionCodecFactory &factory)
 {
     factory.registerCodec("LZ4", create<CompressionCodecLZ4>);
+    factory.registerSimpleCodec("LZ4Old", createSimple<CompressionCodecLZ4Old>);
     factory.registerCodecBytecode(CompressionCodecLZ4::bytecode, createSimple<CompressionCodecLZ4>);
+    factory.registerCodecBytecode(CompressionCodecLZ4Old::bytecode, createSimple<CompressionCodecLZ4Old>);
 }
 
 void registerCodecLZ4HC(CompressionCodecFactory &factory)

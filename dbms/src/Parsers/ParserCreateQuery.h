@@ -117,7 +117,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 {
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
-    ParserIdentifierWithParameters codec_parser;
+    ParserCodec codec_parser;
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};

@@ -47,7 +47,7 @@ enum class CompressionMethodByte : uint8_t
     NONE     = 0x02,
     LZ4      = 0x82,
     ZSTD     = 0x90,
-    CONTINUATION_BIT = 0x00,
+    CONTINUATION_BIT = 0x01,
 };
 
 }

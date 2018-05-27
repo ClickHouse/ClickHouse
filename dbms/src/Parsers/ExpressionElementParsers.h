@@ -89,6 +89,13 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
+class ParserCodec : public IParserBase
+{
+protected:
+    const char * getName() const { return "codec"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
 class ParserCastExpression : public IParserBase
 {
     /// this name is used for identifying CAST expression among other function calls

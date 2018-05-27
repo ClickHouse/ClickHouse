@@ -278,6 +278,40 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
+bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    std::cout << "parsing codec" << std::endl;
+    ParserIdentifier id_parser;
+    ParserCodecDeclarationList codecs;
+
+    ASTPtr identifier;
+    ASTPtr expr_list_args;
+
+    if (!id_parser.parse(pos, identifier, expected) ||
+            !boost::iequals("codec" , typeid_cast<ASTIdentifier &>(*identifier).name))
+        return false;
+
+    if (pos->type != TokenType::OpeningRoundBracket)
+        return false;
+    ++pos;
+
+    if (!codecs.parse(pos, expr_list_args, expected))
+        return false;
+
+    if (pos->type != TokenType::ClosingRoundBracket)
+        return false;
+    ++pos;
+
+    auto function_node = std::make_shared<ASTFunction>();
+    function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
+
+    function_node->children = expr_list_args->children;
+
+    node = function_node;
+    return true;
+}
+
+
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     const auto begin = pos;

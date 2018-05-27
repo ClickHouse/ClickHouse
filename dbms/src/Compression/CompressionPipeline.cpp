@@ -1,7 +1,4 @@
-#include <Compression/CompressionPipeline.h>
-#include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseQuery.h>
-#include <IO/ReadBuffer.h>
+
 
 namespace DB
 {
@@ -41,9 +38,7 @@ CompressionPipeline::CompressionPipeline(ReadBuffer* header)
     header->readStrict(&_header[0], sizeof(UInt32) * (codecs_amount + 1));
 
     for (size_t i = 0; i <= codecs_amount; ++i)
-    {
         data_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&_header[sizeof(UInt32) * i]);
-    }
 }
 
 PipePtr CompressionPipeline::get_pipe(ReadBuffer* header)
@@ -54,19 +49,7 @@ PipePtr CompressionPipeline::get_pipe(ReadBuffer* header)
 PipePtr CompressionPipeline::get_pipe(ASTPtr& ast_codec)
 {
     Codecs codecs;
-    for (auto & codec : typeid_cast<IAST &>(*ast_codec).children) {
-        codecs.emplace_back(std::move(CompressionCodecFactory::instance().get(codec)));
-    }
-    return std::make_shared<CompressionPipeline>(codecs);
-}
-
-PipePtr CompressionPipeline::get_pipe(String & full_declaration)
-{
-    ParserCodecDeclarationList parser;
-    ASTPtr ast = parseQuery(parser, full_declaration.data(), full_declaration.data() + full_declaration.size(), "codecs", 0);
-    // construct pipeline out of codecs
-    Codecs codecs;
-    for (auto & codec : typeid_cast<IAST &>(*ast).children) {
+    for (auto & codec : typeid_cast<ASTFunction &>(*ast_codec).children) {
         codecs.emplace_back(std::move(CompressionCodecFactory::instance().get(codec)));
     }
     return std::make_shared<CompressionPipeline>(codecs);
