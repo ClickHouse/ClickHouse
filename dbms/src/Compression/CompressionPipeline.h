@@ -26,7 +26,7 @@ class CompressionPipeline
 private:
     Codecs codecs;
     /// Sizes of data mutations, from original to later compressions
-    std::vector<uint32_t> data_sizes;
+    std::vector<UInt32> data_sizes;
     size_t header_size = 0;
     DataTypePtr data_type;
 public:

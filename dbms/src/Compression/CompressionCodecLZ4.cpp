@@ -85,14 +85,12 @@ static CodecPtr createSimple()
 void registerCodecLZ4(CompressionCodecFactory &factory)
 {
     factory.registerCodec("LZ4", create<CompressionCodecLZ4>);
-    factory.registerSimpleCodec("LZ4", createSimple<CompressionCodecLZ4>);
     factory.registerCodecBytecode(CompressionCodecLZ4::bytecode, createSimple<CompressionCodecLZ4>);
 }
 
 void registerCodecLZ4HC(CompressionCodecFactory &factory)
 {
     factory.registerCodec("LZ4HC", create<CompressionCodecLZ4HC>);
-    factory.registerSimpleCodec("LZ4HC", createSimple<CompressionCodecLZ4HC>);
     factory.registerCodecBytecode(CompressionCodecLZ4HC::bytecode, createSimple<CompressionCodecLZ4HC>);
 }
 

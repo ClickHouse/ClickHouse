@@ -33,6 +33,7 @@ CompressionPipeline::CompressionPipeline(ReadBuffer* header)
     auto codecs_amount = codecs.size();
     data_sizes.resize(codecs_amount + 1);
 
+    header_size += sizeof(UInt32) * (codecs_amount + 1);
     _header.resize(sizeof(UInt32) * (codecs_amount + 1));
     header->readStrict(&_header[0], sizeof(UInt32) * (codecs_amount + 1));
 
