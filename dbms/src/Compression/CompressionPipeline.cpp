@@ -14,18 +14,21 @@ CompressionPipeline::CompressionPipeline(ReadBuffer* header)
     const CompressionCodecFactory & codec_factory = CompressionCodecFactory::instance();
     char last_codec_bytecode;
     PODArray<char> _header;
-    _header.resize(1);
     /// Read codecs, while continuation bit is set
     do {
+        _header.resize(1);
         header->readStrict(&_header[0], 1);
         header_size += 1;
 
-        last_codec_bytecode = (_header[0]) & ~static_cast<uint8_t>(CompressionMethodByte::CONTINUATION_BIT);
+        last_codec_bytecode = _header[0] & ~static_cast<uint8_t>(CompressionMethodByte::CONTINUATION_BIT);
         auto _codec = codec_factory.get(last_codec_bytecode);
 
-        _header.resize(_codec->getHeaderSize());
-        header->readStrict(&_header[0], _codec->getHeaderSize());
-        header_size += _codec->parseHeader(&_header[0]);
+        if (_codec->getHeaderSize())
+        {
+            _header.resize(_codec->getHeaderSize());
+            header->readStrict(&_header[0], _codec->getHeaderSize());
+            header_size += _codec->parseHeader(&_header[0]);
+        }
         codecs.push_back(_codec);
     }
     while (last_codec_bytecode & static_cast<uint8_t>(CompressionMethodByte::CONTINUATION_BIT));
