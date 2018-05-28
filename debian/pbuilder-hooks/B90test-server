@@ -56,7 +56,7 @@ if [ "${TEST_CONNECT}" ]; then
 
     function finish {
         service clickhouse-server stop
-        tail -n 100 /var/log/clickhouse-server/*.log /var/log/stderr
+        tail -n 100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
         sleep 1
         killall -9 clickhouse-server || true
     }
@@ -66,7 +66,7 @@ if [ "${TEST_CONNECT}" ]; then
     sleep 3
 
     # TODO: remove me or make only on error:
-    tail -n100 /var/log/clickhouse-server/*.log /var/log/stderr
+    tail -n100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
 
     clickhouse-client --port $CLICKHOUSE_PORT_TCP -q "SELECT * from system.build_options;"
     clickhouse-client ${CLIENT_ADD} -q "SELECT toDateTime(1);"
