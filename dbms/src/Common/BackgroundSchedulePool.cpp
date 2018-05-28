@@ -49,7 +49,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled = true;
 
-    if(!executing)
+    if (!executing)
     {
         if (delayed)
             pool.cancelDelayedTask(shared_from_this(), lock);
