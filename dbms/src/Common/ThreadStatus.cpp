@@ -45,7 +45,6 @@ static UInt64 getCurrentTimeMicroseconds(clockid_t clock_type = CLOCK_MONOTONIC)
     return ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000UL;
 }
 
-
 struct RusageCounters
 {
     /// In microseconds
@@ -79,16 +78,16 @@ struct RusageCounters
 
     void setCurrent()
     {
-        rusage rusage;
-        getrusage(RUSAGE_THREAD, &rusage);
+        ::rusage rusage;
+        ::getrusage(RUSAGE_THREAD, &rusage);
         set(rusage, getCurrentTimeMicroseconds());
     }
 
     void set(const ::rusage & rusage, UInt64 real_time_)
     {
         real_time = real_time_;
-        user_time = rusage.ru_utime.tv_sec * 1000000UL + rusage.ru_utime.tv_usec;
-        sys_time = rusage.ru_utime.tv_sec * 1000000UL + rusage.ru_utime.tv_usec;
+        user_time = rusage.ru_utime.tv_sec * 1000000UL + rusage.ru_utime.tv_usec / 1000UL;
+        sys_time = rusage.ru_stime.tv_sec * 1000000UL + rusage.ru_stime.tv_usec  / 1000UL;
 
         page_reclaims = static_cast<UInt64>(rusage.ru_minflt);
         voluntary_context_switches = static_cast<UInt64>(rusage.ru_nvcsw);
@@ -292,6 +291,8 @@ struct ScopeCurrentThread
         current_thread->thread_exited = true;
     }
 };
+
+ThreadStatusPtr ThreadStatus::getCurrent() const { return current_thread; }
 
 thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
 

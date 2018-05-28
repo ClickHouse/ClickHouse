@@ -110,7 +110,8 @@ public:
     void logPeakMemoryUsage() const;
 
     /// To be able to temporarily stop memory tracker
-    DB::ActionBlockerSingleThread blocker;
+    /// TODO: Use more lightweight implementation
+    DB::ActionBlocker blocker;
 };
 
 
@@ -123,4 +124,4 @@ namespace CurrentMemoryTracker
 }
 
 
-DB::ActionBlockerSingleThread::LockHolder getCurrentMemoryTrackerBlocker();
+DB::ActionLock getCurrentMemoryTrackerBlocker();

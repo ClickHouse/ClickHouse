@@ -134,3 +134,59 @@ private:
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
 };
+
+
+/// Like ordinary StopWatch, but uses getrusage() system call
+struct StopWatchRusage
+{
+    StopWatchRusage() = default;
+
+    void start()    { start_ts = Timestamp::current(); is_running = true; }
+    void stop()     { stop_ts = Timestamp::current(); is_running = false; }
+    void reset()    { start_ts = Timestamp(); stop_ts = Timestamp(); is_running = false; }
+    void restart()  { start(); }
+
+    UInt64 elapsed(bool count_user = true, bool count_sys = true) const
+    {
+        return elapsedNanoseconds(count_user, count_sys);
+    }
+
+    UInt64 elapsedNanoseconds(bool count_user = true, bool count_sys = true) const
+    {
+        return (is_running ? Timestamp::current() : stop_ts).nanoseconds(count_user, count_sys) - start_ts.nanoseconds(count_user, count_sys);
+    }
+
+    UInt64 elapsedMicroseconds(bool count_user = true, bool count_sys = true) const
+    {
+        return elapsedNanoseconds(count_user, count_sys) / 1000UL;
+    }
+
+    UInt64 elapsedMilliseconds(bool count_user = true, bool count_sys = true) const
+    {
+        return elapsedNanoseconds(count_user, count_sys) / 1000000UL;
+    }
+
+    double elapsedSeconds(bool count_user = true, bool count_sys = true) const
+    {
+        return static_cast<double>(elapsedNanoseconds(count_user, count_sys)) / 1000000000.0;
+    }
+
+private:
+
+    struct Timestamp
+    {
+        UInt64 user_ns = 0;
+        UInt64 sys_ns = 0;
+
+        static Timestamp current();
+
+        UInt64 nanoseconds(bool count_user = true, bool count_sys = true) const
+        {
+            return (count_user ? user_ns : 0) + (count_sys ? sys_ns : 0);
+        }
+    };
+
+    Timestamp start_ts;
+    Timestamp stop_ts;
+    bool is_running = false;
+};

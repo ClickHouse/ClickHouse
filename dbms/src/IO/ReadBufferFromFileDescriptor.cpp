@@ -14,6 +14,7 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorRead;
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
+    extern const Event DiskReadElapsedMicroseconds;
     extern const Event Seek;
 }
 
@@ -47,6 +48,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
+        StopWatchRusage watch_ru;
         std::optional<Stopwatch> watch;
         if (profile_callback)
             watch.emplace(clock_type);
@@ -67,6 +69,9 @@ bool ReadBufferFromFileDescriptor::nextImpl()
 
         if (res > 0)
             bytes_read += res;
+
+        watch_ru.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch_ru.elapsedMicroseconds());
 
         if (profile_callback)
         {
@@ -114,12 +119,16 @@ off_t ReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
     else
     {
         ProfileEvents::increment(ProfileEvents::Seek);
+        StopWatchRusage watch_ru;
 
         pos = working_buffer.end();
-        off_t res = lseek(fd, new_pos, SEEK_SET);
+        off_t res = ::lseek(fd, new_pos, SEEK_SET);
         if (-1 == res)
             throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
         pos_in_file = new_pos;
+
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch_ru.elapsedMicroseconds());
+
         return res;
     }
 }
