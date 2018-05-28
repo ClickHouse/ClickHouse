@@ -72,7 +72,9 @@ PipePtr CompressionPipeline::get_pipe(ASTPtr& ast_codec)
     for (auto & codec : ast_codecs) {
         codecs.emplace_back(std::move(CompressionCodecFactory::instance().get(codec)));
     }
-    return std::make_shared<CompressionPipeline>(codecs);
+    auto tmp = std::make_shared<CompressionPipeline>(codecs);
+    tmp->codec_ptr = ast_codec;
+    return tmp;
 }
 
 String CompressionPipeline::getName() const

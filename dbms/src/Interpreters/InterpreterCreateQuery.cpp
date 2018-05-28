@@ -336,6 +336,12 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             column_declaration->default_expression = it->second.expression->clone();
         }
 
+        const auto ct = columns.codecs.find(column.name);
+        if (ct != std::end(columns.codecs))
+        {
+            column_declaration->codec = ct->second->codec_ptr->clone();
+        }
+
         columns_list->children.push_back(column_declaration_ptr);
     }
 

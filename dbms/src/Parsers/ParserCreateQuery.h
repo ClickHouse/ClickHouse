@@ -142,13 +142,9 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else
         pos = fallback_pos;
 
-    ASTPtr codec, _codec;
+    ASTPtr codec;
     const auto codec_fallback_pos = pos;
-    if (codec_parser.parse(pos, _codec, expected))
-    {
-        codec = _codec;
-    }
-    else
+    if (!codec_parser.parse(pos, codec, expected))
         pos = codec_fallback_pos;
 
     /// parse {DEFAULT, MATERIALIZED, ALIAS}

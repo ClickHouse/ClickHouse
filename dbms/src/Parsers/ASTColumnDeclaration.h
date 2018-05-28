@@ -32,7 +32,6 @@ public:
             res->children.push_back(res->type);
         }
 
-
         if (codec)
         {
             res->codec = codec->clone();

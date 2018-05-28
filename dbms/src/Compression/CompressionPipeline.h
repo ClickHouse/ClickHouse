@@ -33,6 +33,7 @@ private:
     size_t header_size = 0;
     DataTypePtr data_type;
 public:
+    ASTPtr codec_ptr;
     CompressionPipeline(ReadBuffer* header);
     CompressionPipeline(Codecs& _codecs)
         : codecs (_codecs)

@@ -135,9 +135,6 @@ void CompressedWriteBuffer::nextImpl()
     }
 
     CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer_ptr, compressed_size);
-    if (compression_settings.codec)
-        std::cout << "WRITE HEAD SIZE " << std::to_string(compression_settings.codec->getHeaderSize()) << std::endl;
-    std::cout << std::to_string(checksum.first) << std::to_string(checksum.second) << std::endl;
     out.write(reinterpret_cast<const char *>(&checksum), sizeof(checksum));
 
     out.write(compressed_buffer_ptr, compressed_size);

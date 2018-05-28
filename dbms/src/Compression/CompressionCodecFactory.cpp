@@ -15,7 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_BYTECODE;
+    extern const int UNKNOWN_CODEC;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CODEC_CANNOT_HAVE_ARGUMENTS;
@@ -30,7 +30,7 @@ CodecPtr CompressionCodecFactory::get(char& bytecode) const
             return it->second();
     }
 
-    throw Exception("Unknown codec bytecode: " + std::to_string(bytecode), ErrorCodes::UNKNOWN_TYPE);
+    throw Exception("Unknown codec bytecode: " + std::to_string(bytecode), ErrorCodes::UNKNOWN_CODEC);
 }
 
 CodecPtr CompressionCodecFactory::get(const String & full_name) const
@@ -73,7 +73,7 @@ CodecPtr CompressionCodecFactory::get(const String & family_name, const ASTPtr &
             return it->second(parameters);
     }
 
-    throw Exception("Unknown codec family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
+    throw Exception("Unknown codec family: " + family_name, ErrorCodes::UNKNOWN_CODEC);
 }
 
 void CompressionCodecFactory::registerCodec(const String & family_name, Creator creator)
