@@ -84,7 +84,6 @@ ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) co
     return part_info_to_name.end();
 }
 
-
 Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
 {
     auto it_middle = part_info_to_name.lower_bound(part_info);
@@ -123,7 +122,6 @@ Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info
     return covered;
 }
 
-
 Strings ActiveDataPartSet::getParts() const
 {
     Strings res;
@@ -134,11 +132,9 @@ Strings ActiveDataPartSet::getParts() const
     return res;
 }
 
-
 size_t ActiveDataPartSet::size() const
 {
     return part_info_to_name.size();
 }
-
 
 }

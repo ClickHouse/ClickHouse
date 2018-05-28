@@ -1486,7 +1486,7 @@ void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table
             return;
     }
 
-    prepared_sets[subquery_or_table_name.get()] = std::move(set);
+    prepared_sets[subquery_or_table_name->range] = std::move(set);
 }
 
 
@@ -1515,7 +1515,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
         {
             const ASTPtr & arg = args.children.at(1);
 
-            if (!prepared_sets.count(arg.get())) /// Not already prepared.
+            if (!prepared_sets.count(arg->range)) /// Not already prepared.
             {
                 if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
                 {
@@ -1550,7 +1550,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
     const ASTPtr & arg = args.children.at(1);
 
     /// Already converted.
-    if (prepared_sets.count(arg.get()))
+    if (prepared_sets.count(arg->range))
         return;
 
     /// If the subquery or table name for SELECT.
@@ -1573,7 +1573,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
 
                 if (storage_set)
                 {
-                    prepared_sets[arg.get()] = storage_set->getSet();
+                    prepared_sets[arg->range] = storage_set->getSet();
                     return;
                 }
             }
@@ -1584,7 +1584,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         /// If you already created a Set with the same subquery / table.
         if (subquery_for_set.set)
         {
-            prepared_sets[arg.get()] = subquery_for_set.set;
+            prepared_sets[arg->range] = subquery_for_set.set;
             return;
         }
 
@@ -1630,7 +1630,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         }
 
         subquery_for_set.set = set;
-        prepared_sets[arg.get()] = set;
+        prepared_sets[arg->range] = set;
     }
     else
     {
@@ -1712,7 +1712,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
 
     SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
     set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
-    prepared_sets[right_arg.get()] = std::move(set);
+    prepared_sets[right_arg->range] = std::move(set);
 }
 
 
@@ -2102,12 +2102,12 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 /// Select the name in the next cycle.
                 argument_names.emplace_back();
             }
-            else if (prepared_sets.count(child.get()) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
+            else if (prepared_sets.count(child->range) && functionIsInOrGlobalInOperator(node->name) && arg == 1)
             {
                 ColumnWithTypeAndName column;
                 column.type = std::make_shared<DataTypeSet>();
 
-                const SetPtr & set = prepared_sets[child.get()];
+                const SetPtr & set = prepared_sets[child->range];
 
                 /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
                 ///  so that sets with the same literal representation do not fuse together (they can have different types).
