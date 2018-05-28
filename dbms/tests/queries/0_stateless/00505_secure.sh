@@ -7,6 +7,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Not default server config needed
 
+
+if [ -n $CLICKHOUSE_CONFIG_CLIENT ]; then
+    USE_CONFIG="--config $CLICKHOUSE_CONFIG_CLIENT"
+fi
+
+
 tcp_port_secure=`$CLICKHOUSE_EXTRACT_CONFIG -k tcp_port_secure 2>/dev/null`
 if [ -z $tcp_port_secure ]; then
     # Secure port disabled. Fake result
@@ -14,13 +20,13 @@ if [ -z $tcp_port_secure ]; then
 else
 
     if [[ $CLICKHOUSE_CLIENT != *"--port"* ]]; then
-        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
+        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
 
         # Auto port detect. Cant test with re-definedvia command line ports
-        $CLICKHOUSE_CLIENT --secure -q "SELECT 1";
+        $CLICKHOUSE_CLIENT $USE_CONFIG --secure -q "SELECT 1";
     else
         CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:="${CLICKHOUSE_BINARY}-client"}
-        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
+        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
         echo 1
     fi
 
