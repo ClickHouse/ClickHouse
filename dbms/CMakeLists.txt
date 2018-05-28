@@ -31,6 +31,9 @@ find_package (Threads)
 
 add_subdirectory (src)
 
+set(dbms_headers)
+set(dbms_sources)
+
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
 add_headers_and_sources(clickhouse_common_io src/Common)

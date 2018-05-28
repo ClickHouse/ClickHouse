@@ -61,7 +61,7 @@ size_t CompressionCodecZSTD::decompress(char* source, char* dest,
 
 size_t CompressionCodecZSTD::getHeaderSize() const
 {
-    return sizeof(argument);
+    return 1;
 }
 
 static CodecPtr create(const ASTPtr & arguments)
@@ -79,10 +79,15 @@ static CodecPtr create(const ASTPtr & arguments)
     return std::make_shared<CompressionCodecZSTD>(static_cast<uint8_t>(arg->value.get<UInt64>()));
 }
 
+static CodecPtr simpleCreate()
+{
+    return std::make_shared<CompressionCodecZSTD>();
+}
+
 void registerCodecZSTD(CompressionCodecFactory &factory)
 {
     factory.registerCodec("ZSTD", create);
-    factory.registerCodecBytecode(CompressionCodecZSTD::bytecode, static_cast<CodecPtr(*)()>([] { return CodecPtr(std::make_shared<CompressionCodecZSTD>()); }));
+    factory.registerCodecBytecode(CompressionCodecZSTD::bytecode, simpleCreate);
 }
 
 }

@@ -41,10 +41,11 @@ size_t CompressionCodecNone::parseHeader(const char*)
 size_t CompressionCodecNone::writeHeader(char* header)
 {
     *header = bytecode;
-    return sizeof(char);
+    return 1;
 }
 
-void registerCodecNone(CompressionCodecFactory &factory) {
+void registerCodecNone(CompressionCodecFactory &factory)
+{
     auto creator = static_cast<CodecPtr(*)()>([] { return CodecPtr(std::make_shared<CompressionCodecNone>()); });
 
     factory.registerSimpleCodec("None", creator);

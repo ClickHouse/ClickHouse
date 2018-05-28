@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int CANNOT_DECOMPRESS;
+    extern const int CANNOT_COMPRESS;
 }
 
 size_t CompressionCodecLZ4::writeHeader(char* header)
@@ -47,6 +48,8 @@ size_t CompressionCodecLZ4::compress(char* source, char* dest,
             inputSize,
             maxOutputSize
     );
+    if (!wrote)
+        throw Exception("Cannot LZ4_compress_default", ErrorCodes::CANNOT_COMPRESS);
     return wrote;
 }
 
@@ -66,8 +69,7 @@ static CodecPtr create(const ASTPtr &arguments)
         return std::make_shared<T>();
 
     if (arguments->children.size() != 1)
-        throw Exception("LZ4 codec can optionally have only one argument - ???",
-                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("LZ4 codec can optionally have only one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     const ASTLiteral *arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
     if (!arg || arg->value.getType() != Field::Types::UInt64)

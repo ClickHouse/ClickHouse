@@ -27,7 +27,7 @@ public:
     size_t writeHeader(char* header) override;
     size_t parseHeader(const char* header);
 
-    size_t getHeaderSize() const { return sizeof(argument); };
+    size_t getHeaderSize() const { return 1; };
 
     size_t getCompressedSize() const { return 0; };
     size_t getDecompressedSize() const { return 0; };

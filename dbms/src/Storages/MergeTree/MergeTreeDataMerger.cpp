@@ -656,7 +656,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMerger::mergePartsToTemporaryPart
 
     auto compression_settings = data.context.chooseCompressionSettings(
             merge_entry->total_size_bytes_compressed,
-            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes(),
+            const_cast<ColumnCodecs&>(data.getColumns().codecs));
 
     MergedBlockOutputStream to{
         data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, aio_threshold};

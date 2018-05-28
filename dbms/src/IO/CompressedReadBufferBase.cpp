@@ -50,8 +50,8 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     compression_pipe = CompressionPipeline::get_pipe(compressed_in);
 
-    size_compressed_without_checksum = compression_pipe->getCompressedSize();
-    size_t size_compressed_without_header = size_compressed_without_checksum - compression_pipe->getHeaderSize();
+    size_t size_compressed_without_header = compression_pipe->getCompressedSize();
+    size_compressed_without_checksum = size_compressed_without_header + compression_pipe->getHeaderSize();
     size_decompressed = compression_pipe->getDecompressedSize();
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
@@ -76,21 +76,20 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
                                   size_compressed_without_checksum);
     }
 
-    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed_without_checksum))
+    if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(&compressed_buffer[0], size_compressed_without_checksum))
         throw Exception("Checksum doesn't match: corrupted data.", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 
     return size_compressed_without_checksum + sizeof(checksum);
 }
 
 
-void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, size_t size_compressed_without_checksum)
+void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, size_t)
 {
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
     compression_pipe->decompress(&compressed_buffer[compression_pipe->getHeaderSize()], to,
-                                 size_compressed_without_checksum - compression_pipe->getHeaderSize(),
-                                 size_decompressed);
+                                 compression_pipe->getCompressedSize(), size_decompressed);
 }
 
 

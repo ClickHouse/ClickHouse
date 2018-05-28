@@ -15,7 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TYPE;
+    extern const int UNKNOWN_BYTECODE;
     extern const int ILLEGAL_SYNTAX_FOR_DATA_TYPE;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int CODEC_CANNOT_HAVE_ARGUMENTS;
