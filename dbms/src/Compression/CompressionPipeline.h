@@ -1,12 +1,11 @@
 #pragma once
 
-#include <memory>
 #include <common/unaligned.h>
-#include <IO/CompressedStream.h>
 #include <IO/ReadBuffer.h>
-#include <Compression/CompressionCodecFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <DataTypes/IDataType.h>
+#include <Common/PODArray.h>
+#include <Parsers/IAST.h>
 
 
 namespace DB
@@ -14,6 +13,10 @@ namespace DB
 /** Create codecs compression pipeline for sequential compression.
   * For example: CODEC(LZ4, ZSTD)
   */
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 using CodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CodecPtr>;
@@ -21,7 +24,7 @@ using Codecs = std::vector<CodecPtr>;
 class CompressionPipeline;
 using PipePtr = std::shared_ptr<CompressionPipeline>;
 
-class CompressionPipeline
+class CompressionPipeline final : public ICompressionCodec
 {
 private:
     Codecs codecs;
@@ -35,126 +38,36 @@ public:
         : codecs (_codecs)
     {}
 
-    size_t getHeaderSize() const
-    {
-        return header_size;
-    }
+    static PipePtr get_pipe(ReadBuffer* header);
+    static PipePtr get_pipe(ASTPtr &);
 
-    String getName() const
-    {
-        String name("CODEC(");
-        bool first = true;
-        for (auto & codec: codecs)
-            name += first ? codec->getName() : ", " + codec->getName();
-        name += ")";
-        return name;
-    }
+    String getName() const;
 
-    const char *getFamilyName() const
-    {
-        return "CODEC";
-    }
-
+    const char *getFamilyName() const override;
     /// Header for serialization, containing bytecode and parameters
-    size_t writeHeader(char* out)
-    {
-        size_t wrote_size = 0;
-        for (int i = codecs.size() - 1; i >= 0; --i)
-        {
-            auto wrote = codecs[i]->writeHeader(out);
-            *out |= i ? static_cast<char>(CompressionMethodByte::CONTINUATION_BIT) : 0;
-            out += wrote;
-            wrote_size += wrote;
-        }
-        for (int i = data_sizes.size() - 1; i >= 0; --i)
-        {
-            unalignedStore(&out[sizeof(uint32_t) * i], data_sizes[i]);
-            wrote_size += sizeof(uint32_t) * i;
-        }
-        return wrote_size;
-    }
+    size_t writeHeader(char* out);
+    size_t getHeaderSize() const;
 
-    size_t getCompressedSize() const
-    {
-        return data_sizes.back();
-    }
-
-    size_t getDecompressedSize() const
-    {
-        return data_sizes.front();
-    }
+    size_t getCompressedSize() const;
+    size_t getDecompressedSize() const;
 
     /** Maximum amount of bytes for compression needed
      * Returns size of first codec in pipeline as for iterative approach.
      * @param uncompressed_size - data to be compressed in bytes;
      * @return size of maximum buffer for first compression needed.
      */
-    size_t getMaxCompressedSize(size_t uncompressed_size) const
-    {
-        return codecs[0]->getMaxCompressedSize(uncompressed_size);
-    }
-
-    size_t getMaxDecompressedSize(size_t) const
-    {
-        return data_sizes.front();
-    }
+    size_t getMaxCompressedSize(size_t uncompressed_size) const;
+    size_t getMaxDecompressedSize(size_t) const;
 
     /// Block compression and decompression methods
-    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize)
+    size_t compress(char *source, PODArray<char> &dest, int inputSize, int maxOutputSize);
+    size_t compress(char*, char*, int, int)
     {
-        PODArray<char> buffer;
-        data_sizes.resize(1);
-        data_sizes[0] = inputSize;
-
-        PODArray<char> *_source = reinterpret_cast<PODArray<char>*>(source), *_dest = &dest;
-        for (size_t i = 0; i < codecs.size(); ++i) {
-            (*_dest).resize(maxOutputSize);
-            inputSize = codecs[i]->compress(&(*_source)[0], *_dest, inputSize, maxOutputSize);
-            data_sizes.push_back(inputSize);
-
-            maxOutputSize = i + 1 < codecs.size() ? codecs[i + 1]->getMaxCompressedSize(inputSize) : inputSize;
-            _source = _dest;
-            _dest = *_dest == dest ? &buffer : &dest;
-        }
-
-        if (_dest == &dest) {
-            dest.assign(buffer);
-        }
-        return inputSize;
+        throw Exception("Could not compress into `char*` from Pipeline", ErrorCodes::NOT_IMPLEMENTED);
     }
+    size_t decompress(char* source, char* dest, int inputSize, int) override;
 
-    size_t decompress(char* source, char* dest, int inputSize, int)
-    {
-        PODArray<char> buffer1, buffer2;
-        size_t midOutputSize = data_sizes[codecs.size()];
-        char *_source = source;
-        auto *_dest = &buffer1;
-        for (int i = codecs.size() - 1; i >= 0; --i) {
-            if (!i) /// output would be dest
-            {
-                inputSize = codecs[i]->decompress(_source, dest, inputSize, getDecompressedSize());
-            } else {
-                (*_dest).resize(midOutputSize);
-                inputSize = codecs[i]->decompress(_source, &(*_dest)[0], inputSize, midOutputSize);
-                _source = &(*_dest)[0];
-                _dest = _dest == &buffer1 ? &buffer2 : &buffer1;
-                midOutputSize = data_sizes[i - 1];
-            }
-        }
-        return inputSize;
-    }
-
-    void setDataType(DataTypePtr _data_type)
-    {
-        data_type = _data_type;
-        for (auto & codec: codecs)
-        {
-            codec->setDataType(data_type);
-        }
-    }
-
-    static PipePtr get_pipe(ReadBuffer* header);
-    static PipePtr get_pipe(ASTPtr &);
+    void setDataType(DataTypePtr _data_type) override;
 };
 
 }

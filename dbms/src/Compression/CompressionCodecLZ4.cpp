@@ -38,12 +38,12 @@ size_t CompressionCodecLZ4::getMaxCompressedSize(size_t uncompressed_size) const
     return LZ4_COMPRESSBOUND(uncompressed_size);
 }
 
-size_t CompressionCodecLZ4::compress(char* source, PODArray<char>& dest,
+size_t CompressionCodecLZ4::compress(char* source, char* dest,
                                      int inputSize, int maxOutputSize)
 {
     auto wrote = LZ4_compress_default(
-            &source[0],
-            &dest[0],
+            source,
+            dest,
             inputSize,
             maxOutputSize
     );

@@ -59,7 +59,7 @@ void IMergedBlockOutputStream::addStreams(
             path + stream_name, DATA_FILE_EXTENSION,
             path + stream_name, MARKS_FILE_EXTENSION,
             max_compress_block_size,
-            compression_settings,
+            compression_settings.getNamedSettings(name),
             estimated_size,
             aio_threshold);
     };

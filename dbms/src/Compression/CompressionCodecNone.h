@@ -28,15 +28,9 @@ public:
     size_t getDecompressedSize() const override;
 
     size_t getMaxCompressedSize(size_t uncompressed_size) const override;
-    size_t getMaxDecompressedSize(size_t uncompressed_size) const override;
 
-    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override;
+    size_t compress(char* source, char* dest, int inputSize, int maxOutputSize) override;
     size_t decompress(char* source, char* dest, int inputSize, int maxOutputSize) override;
-
-    size_t decompress(char*, PODArray<char>&, int, int) override
-    {
-        return 0;
-    }
 
     ~CompressionCodecNone() {}
 };

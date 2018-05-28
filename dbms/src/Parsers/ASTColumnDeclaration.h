@@ -35,7 +35,7 @@ public:
 
         if (codec)
         {
-            res->codec = codec;
+            res->codec = codec->clone();
             res->children.push_back(res->codec);
         }
 

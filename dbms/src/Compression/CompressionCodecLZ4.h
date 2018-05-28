@@ -33,14 +33,8 @@ public:
     size_t getDecompressedSize() const { return 0; };
 
     size_t getMaxCompressedSize(size_t uncompressed_size) const override;
-    size_t getMaxDecompressedSize(size_t) const { return 0; };
 
-    size_t compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize) override;
-    size_t decompress(char*, PODArray<char>&, int, int)
-    {
-        return 0;
-    }
-
+    size_t compress(char* source, char* dest, int inputSize, int maxOutputSize) override;
     size_t decompress(char *, char *, int, int) override;
 
     ~CompressionCodecLZ4() {}
@@ -52,11 +46,11 @@ public:
     CompressionCodecLZ4HC() {}
     CompressionCodecLZ4HC(uint8_t _argument)
     : argument(_argument)
-            {}
-    uint8_t argument = 1;
+    {}
 
     static const uint8_t bytecode = 0x86;
     static const bool is_hc = true;
+    uint8_t argument = 1;
 
     std::string getName() const
     {
@@ -84,10 +78,22 @@ public:
         return 1;
     }
 
-    size_t getHeaderSize() const { return 0; }
-    size_t parseHeader(const char*) { return 0; }
+    size_t getHeaderSize() const
+    {
+        return 0;
+    }
+    size_t parseHeader(const char*)
+    {
+        return 0;
+    }
 
-    size_t getCompressedSize() const { return 0; }
-    size_t getDecompressedSize() const { return 0; }
+    size_t getCompressedSize() const
+    {
+        return 0;
+    }
+    size_t getDecompressedSize() const
+    {
+        return 0;
+    }
 };
 }

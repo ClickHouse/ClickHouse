@@ -280,7 +280,6 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::cout << "parsing codec" << std::endl;
     ParserIdentifier id_parser;
     ParserCodecDeclarationList codecs;
 
@@ -305,9 +304,10 @@ bool ParserCodec::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto function_node = std::make_shared<ASTFunction>();
     function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
 
-    function_node->children = expr_list_args->children;
-
+    function_node->parameters = expr_list_args;
+    function_node->children.push_back(function_node->parameters);
     node = function_node;
+
     return true;
 }
 

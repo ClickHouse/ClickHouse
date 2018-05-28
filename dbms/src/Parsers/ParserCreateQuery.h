@@ -144,8 +144,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
 
     ASTPtr codec, _codec;
     const auto codec_fallback_pos = pos;
-    if (codec_parser.parse(pos, _codec, expected) &&
-        boost::iequals("CODEC" , typeid_cast<ASTFunction &>(*_codec).name))
+    if (codec_parser.parse(pos, _codec, expected))
     {
         codec = _codec;
     }

@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 class ICompressionCodec;
 
 using CodecPtr = std::shared_ptr<ICompressionCodec>;
@@ -23,8 +28,7 @@ using Codecs = std::vector<CodecPtr>;
   *
   * Codec is totally immutable object. You can always share them.
   */
-class ICompressionCodec : private boost::noncopyable
-{
+class ICompressionCodec : private boost::noncopyable {
 public:
     std::vector<uint32_t> data_sizes;
     DataTypePtr data_type;
@@ -36,34 +40,27 @@ public:
     /// Name of codec family (example: LZ4, ZSTD).
     virtual const char *getFamilyName() const = 0;
 
-    virtual size_t getHeaderSize() const
-    {
-        return 0;
-    };
-
+    /// Header size provider for parsing
+    virtual size_t getHeaderSize() const { return 0; };
     /// Header for serialization, containing bytecode and parameters
     virtual size_t writeHeader(char *) = 0;
-
     /// Header parser for parameters
-    virtual size_t parseHeader(const char *) {
-        return 0;
-    };
+    virtual size_t parseHeader(const char *) { return 0; };
 
     /// Parsed sizes from data block
     virtual size_t getCompressedSize() const = 0;
-
     virtual size_t getDecompressedSize() const = 0;
 
     /// Maximum amount of bytes for compression needed
     virtual size_t getMaxCompressedSize(size_t uncompressed_size) const = 0;
 
-    virtual size_t getMaxDecompressedSize(size_t compressed_size) const = 0;
-
-    /// Block compression and decompression methods
-    virtual size_t compress(char* source, PODArray<char> &dest, int inputSize, int maxOutputSize) = 0;
-
+    /// Block compression and decompression methods for Pipeline and Codec
+    virtual size_t compress(char *, PODArray<char> &, int, int)
+    {
+        throw Exception("Cannot compress into PODArray from Codec " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+    virtual size_t compress(char* source, char* dest, int inputSize, int maxOutputSize) = 0;
     virtual size_t decompress(char *source, char *dest, int inputSize, int maxOutputSize) = 0;
-    virtual size_t decompress(char *source, PODArray<char> &dest, int inputSize, int maxOutputSize) = 0;
 
     /// Data type information provider
     virtual void setDataType(DataTypePtr _data_type)

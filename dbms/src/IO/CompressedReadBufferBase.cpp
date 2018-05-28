@@ -73,7 +73,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         compressed_buffer = &own_compressed_buffer[0];
         compressed_in->position() -= compression_pipe->getHeaderSize();
         compressed_in->readStrict(&compressed_buffer[0],
-                                  size_compressed_without_header);
+                                  size_compressed_without_checksum);
     }
 
     if (!disable_checksum && checksum != CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed_without_checksum))

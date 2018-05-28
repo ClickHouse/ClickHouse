@@ -35,10 +35,10 @@ size_t CompressionCodecZSTD::getMaxCompressedSize(size_t uncompressed_size) cons
     return ZSTD_compressBound(uncompressed_size);
 }
 
-size_t CompressionCodecZSTD::compress(char* source, PODArray<char>& dest,
+size_t CompressionCodecZSTD::compress(char* source, char* dest,
                                       int inputSize, int maxOutputSize)
 {
-    size_t res = ZSTD_compress(&dest[0], maxOutputSize,
+    size_t res = ZSTD_compress(dest, maxOutputSize,
                                source, inputSize,
                                argument);
 
@@ -48,10 +48,10 @@ size_t CompressionCodecZSTD::compress(char* source, PODArray<char>& dest,
     return res;
 }
 
-size_t CompressionCodecZSTD::decompress(char* source, PODArray<char>& dest,
+size_t CompressionCodecZSTD::decompress(char* source, char* dest,
                                         int inputSize, int maxOutputSize)
 {
-    size_t res = ZSTD_decompress(&dest[0], maxOutputSize, &source[0], inputSize);
+    size_t res = ZSTD_decompress(dest, maxOutputSize, source, inputSize);
 
     if (ZSTD_isError(res))
         throw Exception("Cannot ZSTD_decompress: " + std::string(ZSTD_getErrorName(res)), ErrorCodes::CANNOT_DECOMPRESS);

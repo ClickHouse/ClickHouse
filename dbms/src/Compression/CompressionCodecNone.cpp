@@ -9,15 +9,10 @@ size_t CompressionCodecNone::getMaxCompressedSize(size_t uncompressed_size) cons
     return uncompressed_size;
 }
 
-size_t CompressionCodecNone::getMaxDecompressedSize(size_t compressed_size) const
-{
-    return compressed_size;
-}
-
-size_t CompressionCodecNone::compress(char* source, PODArray<char>& dest,
+size_t CompressionCodecNone::compress(char* source, char* dest,
                                       int inputSize, int)
 {
-    memcpy(&dest[0], source, inputSize);
+    memcpy(dest, source, inputSize);
     return inputSize;
 }
 
