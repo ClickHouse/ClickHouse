@@ -1,3 +1,8 @@
+# ClickHouse release 1.1.54383, 2018-05-22
+
+## Bug fixes:
+* Fixed a slowdown of replication queue if a table has many replicas.
+
 # ClickHouse release 1.1.54381, 2018-05-14
 
 ## Bug fixes:
