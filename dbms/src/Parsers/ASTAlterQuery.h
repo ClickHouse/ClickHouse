@@ -28,6 +28,7 @@ public:
 
         DROP_PARTITION,
         ATTACH_PARTITION,
+        REPLACE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
 
@@ -57,7 +58,8 @@ public:
           */
         ASTPtr primary_key;
 
-        /** In DROP PARTITION and RESHARD PARTITION queries, the value or ID of the partition is stored here.
+        /** Used in DROP PARTITION, RESHARD PARTITION and ATTACH PARTITION FROM queries.
+         *  The value or ID of the partition is stored here.
           */
         ASTPtr partition;
 
@@ -79,6 +81,12 @@ public:
         /** For FREEZE PARTITION - place local backup to directory with specified name.
           */
         String with_name;
+
+        /// REPLACE(ATTACH) PARTITION partition FROM db.table
+        String from_database;
+        String from_table;
+        /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
+        bool replace = true;
 
         /// deep copy
         void clone(Parameters & p) const;

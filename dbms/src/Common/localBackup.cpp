@@ -1,3 +1,4 @@
+#include "localBackup.h"
 #include <sys/stat.h>
 #include <string>
 #include <iostream>
@@ -18,8 +19,12 @@ namespace ErrorCodes
 }
 
 
-static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level)
+static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level,
+                            std::optional<size_t> max_level)
 {
+    if (max_level && level > max_level.value())
+        return;
+
     if (level >= 1000)
         throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
 
@@ -66,12 +71,12 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
         }
         else
         {
-            localBackupImpl(source, destination, level + 1);
+            localBackupImpl(source, destination, level + 1, max_level);
         }
     }
 }
 
-void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path)
+void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, std::optional<size_t> max_level)
 {
     if (Poco::File(destination_path).exists()
         && Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())
@@ -90,7 +95,7 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
     {
         try
         {
-            localBackupImpl(source_path, destination_path, 0);
+            localBackupImpl(source_path, destination_path, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {

@@ -1,5 +1,6 @@
 #include <optional>
 #include <Common/FieldVisitors.h>
+#include <Common/localBackup.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
@@ -16,6 +17,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -28,6 +30,12 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
+    extern const int INCOMPATIBLE_COLUMNS;
+}
+
+namespace ActionLocks
+{
+    extern const StorageActionBlockType PartsMerge;
 }
 
 
@@ -379,6 +387,9 @@ bool StorageMergeTree::mergeTask()
     if (shutdown_called)
         return false;
 
+    if (merger.merges_blocker.isCancelled())
+        return false;
+
     try
     {
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
@@ -407,7 +418,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
-    MergeTreeData::DataParts parts = data.getDataParts();
+    auto parts = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     std::vector<MergeTreeData::AlterDataPartTransactionPtr> transactions;
 
@@ -422,7 +433,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
     for (const auto & part : parts)
     {
         if (part->info.partition_id != partition_id)
-            continue;
+            throw Exception("Unexpected partition ID " + part->info.partition_id + ". This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         if (auto transaction = data.alterDataPart(part, columns_for_parts, data.primary_expr_ast, false))
             transactions.push_back(std::move(transaction));
@@ -462,32 +473,33 @@ bool StorageMergeTree::optimize(
 
 void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & partition, bool detach, const Context & context)
 {
-    /// Asks to complete merges and does not allow them to start.
-    /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.merges_blocker.cancel();
-    /// Waits for completion of merge and does not start new ones.
-    auto lock = lockForAlter(__PRETTY_FUNCTION__);
-
-    String partition_id = data.getPartitionIDFromQuery(partition, context);
-
-    size_t removed_parts = 0;
-    MergeTreeData::DataParts parts = data.getDataParts();
-
-    for (const auto & part : parts)
     {
-        if (part->info.partition_id != partition_id)
-            continue;
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = merger.merges_blocker.cancel();
+        /// Waits for completion of merge and does not start new ones.
+        auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
-        LOG_DEBUG(log, "Removing part " << part->name);
-        ++removed_parts;
+        String partition_id = data.getPartitionIDFromQuery(partition, context);
+
+        /// TODO: should we include PreComitted parts like in Replicated case?
+        auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data.removePartsFromWorkingSet(parts_to_remove, true);
 
         if (detach)
-            data.renameAndDetachPart(part, "");
-        else
-            data.removePartsFromWorkingSet({part}, false);
+        {
+            /// If DETACH clone parts to detached/ directory
+            for (const auto & part : parts_to_remove)
+            {
+                LOG_INFO(log, "Detaching " << part->relative_path);
+                part->makeCloneInDetached("");
+            }
+        }
+
+        LOG_INFO(log, (detach ? "Detached " : "Removed ") << parts_to_remove.size() << " parts inside partition ID " << partition_id << ".");
     }
 
-    LOG_INFO(log, (detach ? "Detached " : "Removed ") << removed_parts << " parts inside partition ID " << partition_id << ".");
+    data.clearOldPartsFromFilesystem();
 }
 
 
@@ -549,6 +561,81 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
     data.freezePartition(partition, with_name, context);
+}
+
+void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
+{
+    auto lock1 = lockStructure(false, __PRETTY_FUNCTION__);
+    auto lock2 = source_table->lockStructure(false, __PRETTY_FUNCTION__);
+
+    Stopwatch watch;
+    MergeTreeData * src_data = data.checkStructureAndGetMergeTreeData(source_table);
+    String partition_id = data.getPartitionIDFromQuery(partition, context);
+
+    MergeTreeData::DataPartsVector src_parts = src_data->getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    MergeTreeData::MutableDataPartsVector dst_parts;
+
+    static const String TMP_PREFIX = "tmp_replace_from_";
+
+    for (const MergeTreeData::DataPartPtr & src_part : src_parts)
+    {
+        /// This will generate unique name in scope of current server process.
+        Int64 temp_index = data.insert_increment.get();
+        MergeTreePartInfo dst_part_info(partition_id, temp_index, temp_index, src_part->info.level);
+
+        std::shared_lock<std::shared_mutex> part_lock(src_part->columns_lock);
+        dst_parts.emplace_back(data.cloneAndLoadDataPart(src_part, TMP_PREFIX, dst_part_info));
+    }
+
+    /// ATTACH empty part set
+    if (!replace && dst_parts.empty())
+        return;
+
+    MergeTreePartInfo drop_range;
+    if (replace)
+    {
+        drop_range.partition_id = partition_id;
+        drop_range.min_block = 0;
+        drop_range.max_block = increment.get(); // there will be a "hole" in block numbers
+        drop_range.level = std::numeric_limits<decltype(drop_range.level)>::max();
+    }
+
+    /// Atomically add new parts and remove old ones
+    try
+    {
+        {
+            /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
+            ///  and we should be able to rollback already added (Precomitted) parts
+            MergeTreeData::Transaction transaction;
+
+            auto data_parts_lock = data.lockParts();
+
+            /// Populate transaction
+            for (MergeTreeData::MutableDataPartPtr & part : dst_parts)
+                data.renameTempPartAndReplace(part, &increment, &transaction, data_parts_lock);
+
+            transaction.commit(&data_parts_lock);
+
+            /// If it is REPLACE (not ATTACH), remove all parts which max_block_number less then min_block_number of the first new block
+            if (replace)
+                data.removePartsInRangeFromWorkingSet(drop_range, true, false, data_parts_lock);
+        }
+
+        PartLog::addNewParts(this->context, dst_parts, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewParts(this->context, dst_parts, watch.elapsed(), ExecutionStatus::fromCurrentException());
+        throw;
+    }
+}
+
+ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type) const
+{
+    if (action_type == ActionLocks::PartsMerge)
+        return merger.merges_blocker.cancel();
+
+    return {};
 }
 
 }

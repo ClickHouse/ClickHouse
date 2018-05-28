@@ -23,6 +23,8 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     if (!p_where_expression.parse(pos, query->where_expression, expected))
         return false;
 
+    query->children.emplace_back(query->where_expression);
+
     if (ParserKeyword{"SYNC"}.ignore(pos))
         query->sync = true;
     else if (ParserKeyword{"ASYNC"}.ignore(pos))
