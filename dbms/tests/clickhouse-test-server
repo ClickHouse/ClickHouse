@@ -58,23 +58,35 @@ if [ "$TEST_GDB" ]; then
 fi
 
 # Start a local clickhouse server which will be used to run tests
-#PATH=$PATH:$BIN_DIR \
-$GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- --http_port=$CLICKHOUSE_PORT_HTTP --tcp_port=$CLICKHOUSE_PORT_TCP --https_port=$CLICKHOUSE_PORT_HTTPS --tcp_port_secure=$CLICKHOUSE_PORT_TCP_SECURE --interserver_http_port=$CLICKHOUSE_PORT_INTERSERVER > $LOG_DIR/stdout 2>&1 &
+
+# TODO: fix change shard ports:
+#    --remote_servers.test_shard_localhost_secure.shard.replica.port=$CLICKHOUSE_PORT_TCP_SECURE \
+#    --remote_servers.test_shard_localhost.shard.replica.port=$CLICKHOUSE_PORT_TCP \
+
+$GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
+    --http_port=$CLICKHOUSE_PORT_HTTP \
+    --tcp_port=$CLICKHOUSE_PORT_TCP \
+    --https_port=$CLICKHOUSE_PORT_HTTPS \
+    --tcp_port_secure=$CLICKHOUSE_PORT_TCP_SECURE \
+    --interserver_http_port=$CLICKHOUSE_PORT_INTERSERVER \
+    > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
+
+
 
 if [ "$GDB" ]; then
     # Long symbols read
     sleep 40
 fi
 
-tail -n50 $LOG_DIR/*
+tail -n50 $LOG_DIR/*.log || true
 
 # Define needed stuff to kill test clickhouse server after tests completion
 function finish {
     kill $CH_PID || true
     wait
-    tail -n 50 $LOG_DIR/*
+    tail -n 50 $LOG_DIR/*.log || true
     if [ "$GDB" ]; then
         cat $DATA_DIR/gdb.log || true
     fi
