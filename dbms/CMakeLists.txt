@@ -251,7 +251,7 @@ if (USE_EMBEDDED_COMPILER)
 
     if (USE_INTERNAL_LLVM_LIBRARY)
         set(CLANG_HEADERS_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm/clang/lib/Headers")
-        set(CLANG_HEADERS_DEST "${CMAKE_CURRENT_BINARY_DIR}/headers${CMAKE_INSTALL_FULL_LIBDIR}/clang/${LLVM_VERSION}/include") # original: ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include
+        set(CLANG_HEADERS_DEST "${CMAKE_CURRENT_BINARY_DIR}/headers/usr/local/lib/clang/${LLVM_VERSION}/include") # original: ${LLVM_LIBRARY_OUTPUT_INTDIR}/clang/${CLANG_VERSION}/include
         add_custom_target(copy-headers-clang ALL ${CMAKE_COMMAND} -E make_directory ${CLANG_HEADERS_DEST} && ${CMAKE_COMMAND} -E copy_if_different ${CLANG_HEADERS_DIR}/* ${CLANG_HEADERS_DEST} )
         add_dependencies(copy-headers copy-headers-clang)
     endif ()
