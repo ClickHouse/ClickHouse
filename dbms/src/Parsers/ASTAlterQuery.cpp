@@ -135,6 +135,19 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
                 << (p.part ? "PART " : "PARTITION ") << (settings.hilite ? hilite_none : "");
             p.partition->formatImpl(settings, state, frame);
         }
+        else if (p.type == ASTAlterQuery::REPLACE_PARTITION)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << (p.replace ? "REPLACE" : "ATTACH") << " PARTITION "
+                << (settings.hilite ? hilite_none : "");
+            p.partition->formatImpl(settings, state, frame);
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM " << (settings.hilite ? hilite_none : "");
+            if (!p.from_database.empty())
+            {
+                settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(p.from_database)
+                              << (settings.hilite ? hilite_none : "") << ".";
+            }
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(p.from_table) << (settings.hilite ? hilite_none : "");
+        }
         else if (p.type == ASTAlterQuery::FETCH_PARTITION)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "FETCH "

@@ -72,8 +72,16 @@ BlockIO InterpreterAlterQuery::execute()
                 table->attachPartition(command.partition, command.part, context);
                 break;
 
+            case PartitionCommand::REPLACE_PARTITION:
+                {
+                    String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                    auto from_storage = context.getTable(from_database, command.from_table);
+                    table->replacePartitionFrom(from_storage, command.partition, command.replace, context);
+                }
+                break;
+
             case PartitionCommand::FETCH_PARTITION:
-                table->fetchPartition(command.partition, command.from, context);
+                table->fetchPartition(command.partition, command.from_zookeeper_path, context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
@@ -186,6 +194,11 @@ void InterpreterAlterQuery::parseAlter(
         else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
         {
             out_partition_commands.emplace_back(PartitionCommand::attachPartition(params.partition, params.part));
+        }
+        else if (params.type == ASTAlterQuery::REPLACE_PARTITION)
+        {
+            out_partition_commands.emplace_back(
+                PartitionCommand::replacePartition(params.partition, params.replace, params.from_database, params.from_table));
         }
         else if (params.type == ASTAlterQuery::FETCH_PARTITION)
         {

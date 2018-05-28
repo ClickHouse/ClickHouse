@@ -25,32 +25,9 @@ public:
     Block getHeader() const override { return storage->getSampleBlock(); }
     void write(const Block & block) override;
 
-    void flush() override
-    {
-        if (output)
-            output->flush();
-
-        for (auto & view : views)
-            view.out->flush();
-    }
-
-    void writePrefix() override
-    {
-        if (output)
-            output->writePrefix();
-
-        for (auto & view : views)
-            view.out->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        if (output)
-            output->writeSuffix();
-
-        for (auto & view : views)
-            view.out->writeSuffix();
-    }
+    void flush() override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
     StoragePtr storage;

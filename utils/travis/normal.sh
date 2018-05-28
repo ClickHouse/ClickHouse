@@ -5,6 +5,8 @@
 # env CXX=clang++-5.0 CC=clang-5.0 utils/travis/normal.sh
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+CXX=${CXX=g++}
+CC=${CC=gcc}
 
 set -e
 set -x
@@ -22,15 +24,15 @@ date
 
 mkdir -p build
 cd build
-cmake $CUR_DIR/../.. -D CMAKE_CXX_COMPILER=`which $DEB_CXX $CXX` -D CMAKE_C_COMPILER=`which $DEB_CC $CC` \
+cmake $CUR_DIR/../.. -DCMAKE_CXX_COMPILER=`which $DEB_CXX $CXX` -DCMAKE_C_COMPILER=`which $DEB_CC $CC` \
     `# Does not optimize to speedup build, skip debug info to use less disk` \
-    -D CMAKE_C_FLAGS_ADD="-O0 -g0" -D CMAKE_CXX_FLAGS_ADD="-O0 -g0" \
+    -DCMAKE_C_FLAGS_ADD="-O0 -g0" -DCMAKE_CXX_FLAGS_ADD="-O0 -g0" \
     `# ignore ccache disabler on trusty` \
-    -D CMAKE_C_COMPILER_LAUNCHER=`which ccache` -D CMAKE_CXX_COMPILER_LAUNCHER=`which ccache` \
+    -DCMAKE_C_COMPILER_LAUNCHER=`which ccache` -DCMAKE_CXX_COMPILER_LAUNCHER=`which ccache` \
     `# Use all possible contrib libs from system` \
-    -D UNBUNDLED=1 \
+    -DUNBUNDLED=1 \
     `# Disable all features` \
-    -D ENABLE_CAPNP=0 -D ENABLE_RDKAFKA=0 -D ENABLE_EMBEDDED_COMPILER=0 -D ENABLE_TCMALLOC=0 -D ENABLE_UNWIND=0 -D ENABLE_MYSQL=0 -D USE_INTERNAL_LLVM_LIBRARY=0 $CMAKE_FLAGS \
+    -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DUSE_INTERNAL_LLVM_LIBRARY=0 $CMAKE_FLAGS \
     && make -j `nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4` clickhouse-bundle \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \

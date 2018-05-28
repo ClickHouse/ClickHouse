@@ -23,10 +23,10 @@ cd "${WORKSPACE}/llvm/build"
 
 # NOTE You must build LLVM with the same ABI as ClickHouse.
 # For example, if you compile ClickHouse with libc++, you must add
-#  -D LLVM_ENABLE_LIBCXX=1
+#  -DLLVM_ENABLE_LIBCXX=1
 # to the line below.
 
-cmake -D CMAKE_BUILD_TYPE:STRING=Release ../llvm
+cmake -DCMAKE_BUILD_TYPE:STRING=Release ../llvm
 
 make -j $THREADS
 $SUDO make install
