@@ -98,16 +98,16 @@ void MergeTreeDataMergerMutator::FuturePart::assign(MergeTreeData::DataPartsVect
 
     if (parts.front()->storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date = DayNum_t(std::numeric_limits<UInt16>::max());
-        DayNum_t max_date = DayNum_t(std::numeric_limits<UInt16>::min());
+        DayNum min_date = DayNum(std::numeric_limits<UInt16>::max());
+        DayNum max_date = DayNum(std::numeric_limits<UInt16>::min());
         for (const auto & part : parts)
         {
             /// NOTE: getting min and max dates from part names (instead of part data) because we want
             /// the merged part name be determined only by source part names.
             /// It is simpler this way when the real min and max dates for the block range can change
             /// (e.g. after an ALTER DELETE command).
-            DayNum_t part_min_date;
-            DayNum_t part_max_date;
+            DayNum part_min_date;
+            DayNum part_max_date;
             MergeTreePartInfo::parseMinMaxDatesFromPartName(part->name, part_min_date, part_max_date);
             min_date = std::min(min_date, part_min_date);
             max_date = std::max(max_date, part_max_date);

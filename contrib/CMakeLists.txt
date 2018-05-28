@@ -1,5 +1,5 @@
 if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -std=c++1z")
 endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)

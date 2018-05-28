@@ -79,6 +79,9 @@ struct MergeTreeDataPartChecksums
     /// Checksum from the set of checksums of .bin files (for deduplication).
     void computeTotalChecksumDataOnly(SipHash & hash) const;
 
+    /// SipHash of all all files hashes represented as hex string
+    String getTotalChecksumHex() const;
+
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
 };

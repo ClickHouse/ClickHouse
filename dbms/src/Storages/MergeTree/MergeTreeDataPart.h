@@ -8,6 +8,8 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Columns/IColumn.h>
 #include <shared_mutex>
+#include "../../../../contrib/poco/Foundation/include/Poco/Path.h"
+#include "../../Core/Types.h"
 
 
 namespace DB
@@ -65,8 +67,8 @@ struct MergeTreeDataPart
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
 
     /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
-    DayNum_t getMinDate() const;
-    DayNum_t getMaxDate() const;
+    DayNum getMinDate() const;
+    DayNum getMaxDate() const;
 
     bool isEmpty() const { return rows_count == 0; }
 
@@ -180,7 +182,7 @@ struct MergeTreeDataPart
         MinMaxIndex() = default;
 
         /// For month-based partitioning.
-        MinMaxIndex(DayNum_t min_date, DayNum_t max_date)
+        MinMaxIndex(DayNum min_date, DayNum max_date)
             : min_values(1, static_cast<UInt64>(min_date))
             , max_values(1, static_cast<UInt64>(max_date))
             , initialized(true)
@@ -229,8 +231,14 @@ struct MergeTreeDataPart
     /// Changes only relative_dir_name, you need to update other metadata (name, is_temp) explicitly
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = true) const;
 
-    /// Renames a part by appending a prefix to the name. To_detached - also moved to the detached directory.
-    void renameAddPrefix(bool to_detached, const String & prefix) const;
+    /// Generate unique path to detach part
+    String getRelativePathForDetachedPart(const String & prefix) const;
+
+    /// Moves a part to detached/ directory and adds prefix to its name
+    void renameToDetached(const String & prefix) const;
+
+    /// Makes clone of a part in detached/ directory via hard links
+    void makeCloneInDetached(const String & prefix) const;
 
     /// Populates columns_to_size map (compressed size).
     void accumulateColumnSizes(ColumnToSize & column_to_size) const;

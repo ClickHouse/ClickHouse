@@ -2,12 +2,14 @@
 
 #include <optional>
 
+#include <Common/ActionBlocker.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -71,6 +73,7 @@ private:
     /// Used to not perform other actions at the same time with these parts.
     StringSet future_parts;
 
+
     /// Protects virtual_parts, log_pointer, mutations.
     /// If you intend to lock both target_state_mutex and queue_mutex, lock target_state_mutex first.
     mutable std::mutex target_state_mutex;
@@ -90,14 +93,41 @@ private:
     std::map<String, ReplicatedMergeTreeMutationEntry> mutations_by_znode;
     std::unordered_map<String, std::map<Int64, const ReplicatedMergeTreeMutationEntry *>> mutations_by_partition;
 
+
     /// Provides only one simultaneous call to pullLogsToQueue.
     std::mutex pull_logs_to_queue_mutex;
+
+
+    /// List of subscribers
+    /// A subscriber callback is called when an entry queue is deleted
+    mutable std::mutex subscribers_mutex;
+
+    using SubscriberCallBack = std::function<void(size_t /* queue_size */)>;
+    using Subscribers = std::list<SubscriberCallBack>;
+    using SubscriberIterator = Subscribers::iterator;
+
+    friend class SubscriberHandler;
+    struct SubscriberHandler : public boost::noncopyable
+    {
+        SubscriberHandler(SubscriberIterator it, ReplicatedMergeTreeQueue & queue) : it(it), queue(queue) {}
+        ~SubscriberHandler();
+
+    private:
+        SubscriberIterator it;
+        ReplicatedMergeTreeQueue & queue;
+    };
+
+    Subscribers subscribers;
+
+    /// Notify subscribers about queue change
+    void notifySubscribers(size_t new_queue_size);
+
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
 
     /// Put a set of (already existing) parts in virtual_parts.
-    void initVirtualParts(const MergeTreeData::DataParts & parts);
+    void addVirtualParts(const MergeTreeData::DataParts & parts);
 
     /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
     bool load(zkutil::ZooKeeperPtr zookeeper);
@@ -138,8 +168,10 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
-    /// Returns list of currently executing entries blocking execution of specified CLEAR_COLUMN command
-    Queue getConflictsForClearColumnCommand(const LogEntry & entry, String * out_conflicts_description, std::lock_guard<std::mutex> & queue_lock) const;
+    /// Returns list of currently executing entries blocking execution a command modifying specified range
+    size_t getConflictsCountForRange(
+        const MergeTreePartInfo & range, const String & range_znode, String * out_conflicts_description,
+        std::lock_guard<std::mutex> & queue_lock) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -163,6 +195,8 @@ private:
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_);
 
+    ~ReplicatedMergeTreeQueue();
+
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
         const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
 
@@ -180,24 +214,24 @@ public:
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
-      * If next_update_event != nullptr, will call this event when new entries appear in the log.
+      * If update_task_handle != nullptr, will schedule this task when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       */
-    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle update_task_handle);
 
-    /// Load new mutation entries. If something new is loaded, notify storage.merge_selecting_event.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::EventPtr next_update_event);
+    /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task_handle.
+    /// If update_task_handle != nullptr, will schedule this task when new mutations appear in ZK.
+    void updateMutations(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle update_task_handle);
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
 
-    /** Disables future merges and fetches inside entry.new_part_name
-     *  If there are currently executing merges or fetches then throws exception.
+    /** Throws and exception if there are currently executing entries in the range .
      */
-    void disableMergesAndFetchesInRange(const LogEntry & entry);
+    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const String & range_znode_name);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -236,6 +270,12 @@ public:
       * Locks queue's mutex.
       */
     bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
+
+    /// A blocker that stops selects from the queue
+    ActionBlocker actions_blocker;
+
+    /// Adds a subscriber
+    SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 
     struct Status
     {

@@ -828,7 +828,7 @@ private:
 
         if (is_date)
         {
-            DayNum_t date;
+            DayNum date;
             ReadBufferFromMemory in(string_value.data, string_value.size);
             readDateText(date, in);
             if (!in.eof())

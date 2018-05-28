@@ -188,10 +188,29 @@ Strings ZooKeeper::getChildren(
     return res;
 }
 
+Strings ZooKeeper::getChildrenWatch(
+    const std::string & path, Stat * stat, WatchCallback watch_callback)
+{
+    Strings res;
+    check(tryGetChildrenWatch(path, res, stat, watch_callback), path);
+    return res;
+}
+
 int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
                                 Stat * stat, const EventPtr & watch)
 {
     int32_t code = getChildrenImpl(path, res, stat, callbackForEvent(watch));
+
+    if (!(code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNONODE))
+        throw KeeperException(code, path);
+
+    return code;
+}
+
+int32_t ZooKeeper::tryGetChildrenWatch(const std::string & path, Strings & res,
+                                Stat * stat, WatchCallback watch_callback)
+{
+    int32_t code = getChildrenImpl(path, res, stat, watch_callback);
 
     if (!(code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNONODE))
         throw KeeperException(code, path);
@@ -362,6 +381,16 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
     int32_t code = 0;
     std::string res;
     if (tryGet(path, res, stat, watch, &code))
+        return res;
+    else
+        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+}
+
+std::string ZooKeeper::getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback)
+{
+    int32_t code = 0;
+    std::string res;
+    if (tryGetWatch(path, res, stat, watch_callback, &code))
         return res;
     else
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
