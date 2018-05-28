@@ -6,6 +6,8 @@
 #include <Common/Stopwatch.h>
 #include <common/logger_useful.h>
 #include <chrono>
+#include "ThreadStatus.h"
+
 
 namespace CurrentMetrics
 {
@@ -230,9 +232,11 @@ void BackgroundSchedulePool::threadFunction()
 {
     setThreadName("BackgrSchedPool");
 
-    MemoryTracker memory_tracker;
-    memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
-    current_memory_tracker = &memory_tracker;
+    if (current_thread)
+    {
+        ThreadStatus::setCurrentThreadParentQuery(nullptr);
+        current_thread->memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
+    }
 
     while (!shutdown)
     {
@@ -242,8 +246,6 @@ void BackgroundSchedulePool::threadFunction()
             task_notification.execute();
         }
     }
-
-    current_memory_tracker = nullptr;
 }
 
 

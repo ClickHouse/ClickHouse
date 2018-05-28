@@ -41,6 +41,7 @@ public:
 
     static void setCurrentThreadParentQuery(QueryStatus * parent_process);
     static void setCurrentThreadFromSibling(const ThreadStatusPtr & sibling_thread);
+    ThreadStatusPtr getCurrent() const;
 
     ~ThreadStatus();
 

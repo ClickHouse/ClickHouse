@@ -39,6 +39,11 @@
     M(CreatedReadBufferAIO) \
     M(CreatedWriteBufferOrdinary) \
     M(CreatedWriteBufferAIO) \
+    M(DiskReadElapsedMicroseconds) \
+    M(DiskWriteElapsedMicroseconds) \
+    M(NetworkReceiveElapsedMicroseconds) \
+    M(NetworkSendElapsedMicroseconds) \
+    M(ThrottlerSleepMicroseconds) \
     \
     M(ReplicatedPartFetches) \
     M(ReplicatedPartFailedFetches) \
