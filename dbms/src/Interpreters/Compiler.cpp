@@ -239,6 +239,7 @@ void Compiler::compile(
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/c++/*/backward"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/lib/clang/*/include"                /// if clang installed manually
+            " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/clang/*/include"                      /// if clang build from submodules
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include-fixed"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include"
             " -isystem " INTERNAL_COMPILER_HEADERS_ROOT "/usr/local/include"                            /// if something installed manually

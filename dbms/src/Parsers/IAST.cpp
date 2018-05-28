@@ -94,4 +94,11 @@ size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
     return res;
 }
 
+
+void IAST::cloneChildren()
+{
+    for (auto & child : children)
+        child = child->clone();
+}
+
 }

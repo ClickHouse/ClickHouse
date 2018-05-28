@@ -641,8 +641,8 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
-        if (prepared_sets.count(args[1].get())
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1].get()], key_column_num))
+        if (prepared_sets.count(args[1]->range)
+            && isTupleIndexable(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
         {
             key_arg_pos = 0;
             is_set_const = true;
@@ -1016,7 +1016,7 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
         {
             auto in_func = typeid_cast<const ASTFunction *>(element.in_function.get());
             const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
-            PreparedSets::const_iterator it = prepared_sets.find(args[1].get());
+            PreparedSets::const_iterator it = prepared_sets.find(args[1]->range);
             if (in_func && it != prepared_sets.end())
             {
                 rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));

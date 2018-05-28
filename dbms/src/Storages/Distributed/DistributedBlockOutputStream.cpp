@@ -376,7 +376,8 @@ void DistributedBlockOutputStream::writeSuffix()
             {
                 if (job.stream)
                 {
-                    pool->schedule([&job] () {
+                    pool->schedule([&job] ()
+                    {
                         job.stream->writeSuffix();
                     });
                 }

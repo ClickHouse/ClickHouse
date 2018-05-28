@@ -50,9 +50,16 @@ BlockIO InterpreterAlterQuery::execute()
 
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
-    parseAlter(alter.parameters, alter_commands, partition_commands);
+    MutationCommands mutation_commands;
+    parseAlter(alter.parameters, alter_commands, partition_commands, mutation_commands);
 
-    partition_commands.validate(table.get());
+    if (!mutation_commands.commands.empty())
+    {
+        mutation_commands.validate(*table, context);
+        table->mutate(mutation_commands, context);
+    }
+
+    partition_commands.validate(*table);
     for (const PartitionCommand & command : partition_commands)
     {
         switch (command.type)
@@ -65,8 +72,16 @@ BlockIO InterpreterAlterQuery::execute()
                 table->attachPartition(command.partition, command.part, context);
                 break;
 
+            case PartitionCommand::REPLACE_PARTITION:
+                {
+                    String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                    auto from_storage = context.getTable(from_database, command.from_table);
+                    table->replacePartitionFrom(from_storage, command.partition, command.replace, context);
+                }
+                break;
+
             case PartitionCommand::FETCH_PARTITION:
-                table->fetchPartition(command.partition, command.from, context);
+                table->fetchPartition(command.partition, command.from_zookeeper_path, context);
                 break;
 
             case PartitionCommand::FREEZE_PARTITION:
@@ -79,18 +94,20 @@ BlockIO InterpreterAlterQuery::execute()
         }
     }
 
-    if (alter_commands.empty())
-        return {};
-
-    alter_commands.validate(table.get(), context);
-    table->alter(alter_commands, database_name, table_name, context);
+    if (!alter_commands.empty())
+    {
+        alter_commands.validate(*table, context);
+        table->alter(alter_commands, database_name, table_name, context);
+    }
 
     return {};
 }
 
 void InterpreterAlterQuery::parseAlter(
     const ASTAlterQuery::ParameterContainer & params_container,
-    AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
+    AlterCommands & out_alter_commands,
+    PartitionCommands & out_partition_commands,
+    MutationCommands & out_mutation_commands)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -178,6 +195,11 @@ void InterpreterAlterQuery::parseAlter(
         {
             out_partition_commands.emplace_back(PartitionCommand::attachPartition(params.partition, params.part));
         }
+        else if (params.type == ASTAlterQuery::REPLACE_PARTITION)
+        {
+            out_partition_commands.emplace_back(
+                PartitionCommand::replacePartition(params.partition, params.replace, params.from_database, params.from_table));
+        }
         else if (params.type == ASTAlterQuery::FETCH_PARTITION)
         {
             out_partition_commands.emplace_back(PartitionCommand::fetchPartition(params.partition, params.from));
@@ -186,13 +208,17 @@ void InterpreterAlterQuery::parseAlter(
         {
             out_partition_commands.emplace_back(PartitionCommand::freezePartition(params.partition, params.with_name));
         }
+        else if (params.type == ASTAlterQuery::DELETE)
+        {
+            out_mutation_commands.commands.emplace_back(MutationCommand::delete_(params.predicate));
+        }
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
     }
 }
 
 
-void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
+void InterpreterAlterQuery::PartitionCommands::validate(const IStorage & table)
 {
     for (const PartitionCommand & command : *this)
     {
@@ -200,7 +226,7 @@ void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
         {
             String column_name = command.column_name.safeGet<String>();
 
-            if (!table->getColumns().hasPhysical(column_name))
+            if (!table.getColumns().hasPhysical(column_name))
             {
                 throw Exception("Wrong column name. Cannot find column " + column_name + " to clear it from partition",
                     DB::ErrorCodes::ILLEGAL_COLUMN);

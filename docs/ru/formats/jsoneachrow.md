@@ -1,3 +1,5 @@
+<a name="jsoneachrow"></a>
+
 # JSONEachRow
 
 Выводит данные в виде отдельных JSON объектов для каждой строки (newline delimited JSON).

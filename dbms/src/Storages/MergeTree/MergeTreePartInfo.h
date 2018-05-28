@@ -52,7 +52,7 @@ struct MergeTreePartInfo
     }
 
     String getPartName() const;
-    String getPartNameV0(DayNum_t left_date, DayNum_t right_date) const;
+    String getPartNameV0(DayNum left_date, DayNum right_date) const;
     UInt64 getBlocksCount() const
     {
         return static_cast<UInt64>(max_block - min_block + 1);
@@ -62,7 +62,7 @@ struct MergeTreePartInfo
 
     static bool tryParsePartName(const String & dir_name, MergeTreePartInfo * part_info, MergeTreeDataFormatVersion format_version);
 
-    static void parseMinMaxDatesFromPartName(const String & part_name, DayNum_t & min_date, DayNum_t & max_date);
+    static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
     static bool contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version);
 };

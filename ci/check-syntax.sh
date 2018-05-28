@@ -10,7 +10,7 @@ source default-config
 mkdir -p "${WORKSPACE}/build"
 pushd "${WORKSPACE}/build"
 
-cmake -D CMAKE_BUILD_TYPE=Debug $CMAKE_FLAGS ../sources
+cmake -DCMAKE_BUILD_TYPE=Debug $CMAKE_FLAGS ../sources
 
 make -j $THREADS re2_st # Generated headers
 

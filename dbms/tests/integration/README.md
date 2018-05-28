@@ -16,6 +16,8 @@ Don't use Docker from your system repository.
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
 * [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml kazoo PyMySQL`
 
+If you want install on modern debian/ubuntu: `sudo apt install -y docker docker-compose python-pytest python-dicttoxml python-docker python-pymysql python-kazoo`
+
 If you want to run the tests under a non-privileged user, you must add this user to `docker` group: `sudo usermod -aG docker $USER` and re-login.
 (You must close all your sessions (for example, restart your computer))
 To check, that you have access to Docker, run `docker ps`.
