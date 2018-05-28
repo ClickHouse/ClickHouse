@@ -63,7 +63,6 @@ namespace detail
 /// Creates the string by itself and allows to get it.
 class WriteBufferFromOwnString : public detail::StringHolder, public WriteBufferFromString
 {
-
 public:
     WriteBufferFromOwnString() : WriteBufferFromString(value) {}
 

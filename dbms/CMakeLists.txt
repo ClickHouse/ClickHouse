@@ -198,7 +198,7 @@ if (USE_POCO_MONGODB)
 endif()
 
 if (USE_POCO_NETSSL)
-    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY})
+    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
@@ -244,6 +244,12 @@ target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSI
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+if (USE_EMBEDDED_COMPILER)
+    add_custom_target(copy-headers ALL env CLANG=${CMAKE_CURRENT_BINARY_DIR}/src/Server/clickhouse-clang BUILD_PATH=${ClickHouse_BINARY_DIR} DESTDIR=${ClickHouse_SOURCE_DIR} ${ClickHouse_SOURCE_DIR}/copy_headers.sh ${ClickHouse_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/headers DEPENDS clickhouse-clang WORKING_DIRECTORY ${ClickHouse_SOURCE_DIR} SOURCES ${ClickHouse_SOURCE_DIR}/copy_headers.sh)
+    install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/headers DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse COMPONENT clickhouse)
+    add_dependencies(clickhouse-bundle copy-headers)
+endif ()
 
 add_subdirectory (tests)
 

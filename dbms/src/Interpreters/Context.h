@@ -40,6 +40,7 @@ class ExternalDictionaries;
 class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
+class BackgroundSchedulePool;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -69,6 +70,8 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 struct SystemLogs;
 using SystemLogsPtr = std::shared_ptr<SystemLogs>;
+class ActionLocksManager;
+using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
 
 /// (database name, table name)
@@ -328,6 +331,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
@@ -369,6 +373,8 @@ public:
     void reloadConfig() const;
 
     void shutdown();
+
+    ActionLocksManagerPtr getActionLocksManager();
 
     enum class ApplicationType
     {

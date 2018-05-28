@@ -537,7 +537,7 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(DayNum_t date, WriteBuffer & buf)
+inline void writeDateText(DayNum date, WriteBuffer & buf)
 {
     if (unlikely(!date))
     {
