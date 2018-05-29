@@ -116,7 +116,7 @@ try
     {
         ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration.getString("path", "/var/lib/clickhouse/"));
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "/var/lib/clickhouse/"));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
