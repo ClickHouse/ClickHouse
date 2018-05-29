@@ -1,4 +1,4 @@
-option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" 0)
+option (ENABLE_EMBEDDED_COMPILER "Set to TRUE to enable support for 'compile' option for query execution" 1)
 option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library. Default: system library for quicker developer builds." ${APPLE})
 
 if (ENABLE_EMBEDDED_COMPILER)
@@ -55,3 +55,14 @@ if (ENABLE_EMBEDDED_COMPILER)
         message(STATUS "LLVM C++ compiler flags: ${LLVM_CXXFLAGS}")
     endif()
 endif()
+
+
+function(llvm_libs_all REQUIRED_LLVM_LIBRARIES)
+    llvm_map_components_to_libnames (result all)
+    list (REMOVE_ITEM result "LTO" "LLVM")
+    if (TERMCAP_LIBRARY)
+        list (APPEND result ${TERMCAP_LIBRARY})
+    endif ()
+    list (APPEND result ${CMAKE_DL_LIBS})
+    set (${REQUIRED_LLVM_LIBRARIES} ${result} PARENT_SCOPE)
+endfunction()
