@@ -100,7 +100,7 @@ if [ -n "$*" ]; then
 else
     TEST_RUN=${TEST_RUN=1}
     TEST_PERF=${TEST_PERF=1}
-    ${BIN_DIR}clickhouse-client --config ${CLICKHOUSE_CONFIG_CLIENT} --port $CLICKHOUSE_PORT_TCP -q 'SELECT * from system.build_options;'
+    ${BIN_DIR}clickhouse-client --config ${CLICKHOUSE_CONFIG_CLIENT} --port $CLICKHOUSE_PORT_TCP -m -n -q 'SELECT * from system.build_options; SELECT * FROM system.clusters;'
     [ "$TEST_RUN" ] && env PATH=$PATH:$BIN_DIR ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient $CLICKHOUSE_CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT
     ( [ "$TEST_PERF" ] && ${BIN_DIR}clickhouse-performance-test --port $CLICKHOUSE_PORT_TCP --r $CUR_DIR/performance --skip-tags=long $* ) || true
 fi
