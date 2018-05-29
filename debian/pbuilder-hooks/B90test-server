@@ -2,38 +2,61 @@
 set -e
 set -x
 
-for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
-    apt-get install -y --force-yes "$PKG" || true
-    apt-get remove -y "$PKG" || true
-done
+TEST_CONNECT=${TEST_CONNECT=1}
+TEST_SSL=${TEST_SSL=1}
+PACKAGE_INSTALL=${PACKAGE_INSTALL=1}
+TEST_PORT_RANDOM=${TEST_PORT_RANDOM=1}
 
-dpkg --auto-deconfigure -i /tmp/buildd/*.deb || true
-apt install -y -f --allow-downgrades || true
-dpkg -l | grep clickhouse || true
+if [ "${PACKAGE_INSTALL}" ]; then
+    for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
+        apt-get install -y --force-yes "$PKG" || true
+        apt-get remove -y "$PKG" || true
+    done
 
-# Some test references uses specific timezone
-ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
-echo 'Europe/Moscow' > /etc/timezone
-dpkg-reconfigure -f noninteractive tzdata
+    dpkg --auto-deconfigure -i /tmp/buildd/*.deb || true
+    apt install -y -f --allow-downgrades || true
+    dpkg -l | grep clickhouse || true
+
+    # Some test references uses specific timezone
+    ln -fs /usr/share/zoneinfo/Europe/Moscow /etc/localtime
+    echo 'Europe/Moscow' > /etc/timezone
+    dpkg-reconfigure -f noninteractive tzdata
+fi
 
 mkdir -p /etc/clickhouse-server/config.d /etc/clickhouse-client/config.d
 
-TEST_CONNECT=${TEST_CONNECT=1}
-if [ "${TEST_CONNECT}" ]; then
+if [ "${TEST_PORT_RANDOM}" ]; then
+    CLICKHOUSE_PORT_BASE=${CLICKHOUSE_PORT_BASE:=$(( ( RANDOM % 50000 ) + 10000 ))}
+    CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=$(($CLICKHOUSE_PORT_BASE + 1))}
+    CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=$(($CLICKHOUSE_PORT_BASE + 2))}
+    CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=$(($CLICKHOUSE_PORT_BASE + 3))}
+    CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=$(($CLICKHOUSE_PORT_BASE + 4))}
+    CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=$(($CLICKHOUSE_PORT_BASE + 5))}
+fi
 
-    TEST_SSL=${TEST_SSL=1}
+export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=9000}
+export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=8123}
+export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=9009}
+export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=9440}
+export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=8443}
+
+if [ "${TEST_CONNECT}" ]; then
+    [ "${TEST_PORT_RANDOM}" ] && echo "<yandex><http_port>${CLICKHOUSE_PORT_HTTP}</http_port><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><interserver_http_port>${CLICKHOUSE_PORT_INTERSERVER}</interserver_http_port></yandex>" > /etc/clickhouse-server/config.d/port.xml
+
     if  [ "${TEST_SSL}" ]; then
-        echo "<yandex><https_port>8443</https_port><tcp_port_secure>9440</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+        [ "${TEST_PORT_RANDOM}" ] && echo "<yandex><https_port>${CLICKHOUSE_PORT_HTTPS}</https_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
         echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
         chmod a+r /etc/clickhouse-server/*
-        CLIENT_ADD="--secure"
+        CLIENT_ADD+="--secure --port $CLICKHOUSE_PORT_TCP_SECURE"
+    else
+        CLIENT_ADD+="--port $CLICKHOUSE_PORT_TCP"
     fi
 
     function finish {
         service clickhouse-server stop
-        tail -n 100 /var/log/clickhouse-server/*
+        tail -n 100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
         sleep 1
         killall -9 clickhouse-server || true
     }
@@ -43,9 +66,9 @@ if [ "${TEST_CONNECT}" ]; then
     sleep 3
 
     # TODO: remove me or make only on error:
-    tail -n100 /var/log/clickhouse-server/*
+    tail -n100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
 
-    clickhouse-client -q "SELECT * from system.build_options;"
+    clickhouse-client --port $CLICKHOUSE_PORT_TCP -q "SELECT * from system.build_options;"
     clickhouse-client ${CLIENT_ADD} -q "SELECT toDateTime(1);"
 
     ( [ "${TEST_RUN}" ] && clickhouse-test --queries /usr/share/clickhouse-test/queries --tmp /tmp/clickhouse-test/ ${TEST_OPT} ) || ${TEST_TRUE:=true}

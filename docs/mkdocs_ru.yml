@@ -177,7 +177,7 @@ pages:
 - 'Операторы': 'operators/index.md'
 
 - 'Функции':
-  - 'Общее описание': 'functions/index.md'
+  - 'Введение': 'functions/index.md'
   - 'Арифметические функции': 'functions/arithmetic_functions.md'
   - 'Функции сравнения': 'functions/comparison_functions.md'
   - 'Логические функции': 'functions/logical_functions.md'
@@ -204,6 +204,7 @@ pages:
   - 'Функции для работы со словарями Яндекс.Метрики': 'functions/ym_dict_functions.md'
   - 'Функции для реализации оператора IN.': 'functions/in_functions.md'
   - 'Функция arrayJoin': 'functions/array_join.md'
+  - 'Функции для работы с географическими координатами': 'functions/geo.md'
 
 - 'Агрегатные функции':
   - 'Введение': 'agg_functions/index.md'

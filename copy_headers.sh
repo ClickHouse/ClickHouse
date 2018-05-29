@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+# set -x
+
 # Этот скрипт собирает все заголовочные файлы, нужные для компиляции некоторого translation unit-а
 #  и копирует их с сохранением путей в директорию DST.
 # Это затем может быть использовано, чтобы скомпилировать translation unit на другом сервере,
@@ -17,7 +19,7 @@
 
 SOURCE_PATH=${1:-.}
 DST=${2:-$SOURCE_PATH/../headers}
-BUILD_PATH=${3:-$SOURCE_PATH/build}
+BUILD_PATH=${BUILD_PATH=${3:-$SOURCE_PATH/build}}
 
 PATH="/usr/local/bin:/usr/local/sbin:/usr/bin:$PATH"
 
@@ -30,23 +32,29 @@ START_HEADERS=$(echo \
     $SOURCE_PATH/dbms/src/Interpreters/SpecializedAggregator.h \
     $SOURCE_PATH/dbms/src/AggregateFunctions/AggregateFunction*.h)
 
+for header in $START_HEADERS; do
+    START_HEADERS_INCLUDE+="-include $header "
+done
+
 # Опция -mcx16 для того, чтобы выбиралось больше заголовочных файлов (с запасом).
 # The latter options are the same that are added while building packages.
 
+# TODO: Does not work on macos:
 GCC_ROOT=`$CLANG -v 2>&1 | grep "Selected GCC installation"| sed -n -e 's/^.*: //p'`
 
 for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 -mpopcnt -O3 -g -fPIC -fstack-protector -D_FORTIFY_SOURCE=2 \
     -I $GCC_ROOT/include \
     -I $GCC_ROOT/include-fixed \
     $(cat "$BUILD_PATH/include_directories.txt") \
-    $(echo $START_HEADERS | sed -r -e 's/[^ ]+/-include \0/g') \
+    $START_HEADERS_INCLUDE \
     - |
     tr -d '\\' |
-    sed -r -e 's/^-\.o://');
+    sed -E -e 's/^-\.o://');
 do
     dst_file=$src_file;
-    dst_file=$(echo $dst_file | sed -r -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
-    mkdir -p "$DST/$(echo $dst_file | sed -r -e 's/\/[^/]*$/\//')";
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
+    dst_file=$(echo $dst_file | sed -E -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
+    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
 
@@ -56,19 +64,25 @@ done
 
 for src_file in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep -E '/lib/clang/|/include/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
-    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$src_file";
+    dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
 
 # Even more platform-specific headers
 for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
 do
-    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$src_file";
+    dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
 
 for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
 do
-    mkdir -p "$DST/$(echo $src_file | sed -r -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$src_file";
+    dst_file=$src_file;
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+    cp "$src_file" "$DST/$dst_file";
 done
