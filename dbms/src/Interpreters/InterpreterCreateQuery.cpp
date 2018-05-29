@@ -340,7 +340,8 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto ct = columns.codecs.find(column.name);
         if (ct != std::end(columns.codecs))
         {
-            column_declaration->codec = ct->second->codec_ptr->clone();
+            if (ct->second && ct->second->codec_ptr)
+                column_declaration->codec = ct->second->codec_ptr->clone();
         }
 
         columns_list->children.push_back(column_declaration_ptr);

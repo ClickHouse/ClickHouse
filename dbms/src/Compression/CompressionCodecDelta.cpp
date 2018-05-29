@@ -49,13 +49,12 @@ size_t CompressionCodecDelta::parseHeader(const char* header)
 
 void CompressionCodecDelta::compress_bytes(char* source, char* dest, size_t size) const
 {
-    char* tmp_arr = new char[element_size] {};
-    for (size_t i = 0; i < size / element_size; ++i)
+    char* tmp_arr = source;
+    for (size_t i = 1; i < size / element_size; ++i)
     {
         for (size_t j = 0; j < element_size; ++j)
             dest[i * element_size + j] = source[i * element_size + j] - tmp_arr[j];
-
-        memcpy(tmp_arr, source + i * element_size, element_size);
+        tmp_arr = source + element_size * i;
     }
 }
 
@@ -63,11 +62,11 @@ template <typename T>
 void CompressionCodecDelta::compress_num(char* source, char* dest, size_t size) const
 {
     T* arr = reinterpret_cast<T*>(source), *dest_arr = reinterpret_cast<T*>(dest);
-    T elem = 0;
-    for (size_t i = 0; i < size / element_size; ++i)
+    T* elem = arr;
+    for (size_t i = 1; i < size / element_size; ++i)
     {
-        dest_arr[i] = elem - arr[i];
-        memcpy(&elem, arr + i * element_size, element_size);
+        dest_arr[i] = *elem - arr[i];
+        elem = arr + i * element_size;
     }
 }
 
@@ -118,13 +117,12 @@ size_t CompressionCodecDelta::compress(char* source, char* dest, int inputSize, 
 
 void CompressionCodecDelta::decompress_bytes(char* source, char* dest, size_t size) const
 {
-    char* tmp_arr = new char[element_size] {};
-    for (size_t i = 0; i < size / element_size; ++i)
+    char* tmp_arr = source;
+    for (size_t i = 1; i < size / element_size; ++i)
     {
         for (size_t j = 0; j < element_size; ++j)
             dest[i * element_size + j] = source[i * element_size + j] + tmp_arr[j];
-
-        memcpy(tmp_arr, dest + i * element_size, element_size);
+        tmp_arr = dest + i * element_size;
     }
 }
 
@@ -132,11 +130,11 @@ template <typename T>
 void CompressionCodecDelta::decompress_num(char* source, char* dest, size_t size) const
 {
     T* arr = reinterpret_cast<T*>(source), *dest_arr = reinterpret_cast<T*>(dest);
-    T elem = 0;
+    T* elem = arr;
     for (size_t i = 0; i < size / element_size; ++i)
     {
-        dest_arr[i] = elem + arr[i];
-        memcpy(&elem, arr + i * element_size, element_size);
+        dest_arr[i] = *elem + arr[i];
+        elem = dest_arr + i * element_size;
     }
 }
 
