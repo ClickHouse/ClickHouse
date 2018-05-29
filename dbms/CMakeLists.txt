@@ -100,11 +100,7 @@ else ()
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
-    if (TERMCAP_LIBRARY)
-        list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
-    endif ()
-    list(APPEND REQUIRED_LLVM_LIBRARIES ${CMAKE_DL_LIBS})
+    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
