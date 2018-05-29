@@ -27,6 +27,7 @@ private:
 
     int netlink_socket_fd = -1;
     int netlink_family_id = 0;
+    int initial_tid = -1;
 };
 
 }

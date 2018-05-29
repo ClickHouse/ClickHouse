@@ -7,7 +7,7 @@
 #include <Common/CurrentMetrics.h>
 #include <common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
-#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 
@@ -99,7 +99,7 @@ protected:
         /// If there were no calculations yet, calculate the first block synchronously
         if (!started)
         {
-            ThreadStatusPtr main_thread = current_thread;
+            auto main_thread = CurrentThread::get();
             calculate(main_thread);
             started = true;
         }
@@ -124,7 +124,7 @@ protected:
     void next()
     {
         ready.reset();
-        pool.schedule([this, main_thread=current_thread] () { calculate(main_thread); });
+        pool.schedule([this, main_thread=CurrentThread::get()] () { calculate(main_thread); });
     }
 
 
@@ -132,14 +132,13 @@ protected:
     void calculate(ThreadStatusPtr main_thread)
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
+        CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
 
         try
         {
             if (first)
             {
                 first = false;
-                if (main_thread)
-                    ThreadStatus::setCurrentThreadFromSibling(main_thread);
                 setThreadName("AsyncBlockInput");
                 children.back()->readPrefix();
             }

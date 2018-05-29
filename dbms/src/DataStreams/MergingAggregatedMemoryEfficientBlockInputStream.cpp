@@ -3,7 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <DataStreams/MergingAggregatedMemoryEfficientBlockInputStream.h>
-#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 
 
 namespace CurrentMetrics
@@ -176,11 +176,10 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
         {
             auto & child = children[i];
 
-            auto main_thread = current_thread;
+            auto main_thread = CurrentThread::get();
             reading_pool->schedule([&child, main_thread]
             {
-                if (main_thread)
-                    ThreadStatus::setCurrentThreadFromSibling(main_thread);
+                CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
                 setThreadName("MergeAggReadThr");
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                 child->readPrefix();
@@ -297,7 +296,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
 void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(ThreadStatusPtr main_thread)
 {
     if (main_thread)
-        ThreadStatus::setCurrentThreadFromSibling(main_thread);
+        CurrentThread::attachQueryFromSiblingThread(main_thread);
     setThreadName("MergeAggMergThr");
     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
@@ -485,8 +484,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
                 auto main_thread = current_thread;
                 reading_pool->schedule([&input, &read_from_input, main_thread]
                 {
-                    if (main_thread)
-                        ThreadStatus::setCurrentThreadFromSibling(main_thread);
+                    CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
                     setThreadName("MergeAggReadThr");
                     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                     read_from_input(input);

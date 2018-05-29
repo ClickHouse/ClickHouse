@@ -21,10 +21,10 @@
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <common/demangle.h>
 #include <Interpreters/config_compile.h>
-#include "Common/ThreadStatus.h"
 
 
 namespace ProfileEvents
@@ -141,9 +141,8 @@ Aggregator::Aggregator(const Params & params_)
     isCancelled([]() { return false; })
 {
     /// Use query-level memory tracker
-    if (current_thread)
-        if (auto memory_tracker = current_thread->memory_tracker.getParent())
-            memory_usage_before_aggregation = memory_tracker->get();
+    if (auto memory_tracker = CurrentThread::getMemoryTracker().getParent())
+        memory_usage_before_aggregation = memory_tracker->get();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -801,9 +800,8 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
-    if (current_thread)
-        if (auto memory_tracker = current_thread->memory_tracker.getParent())
-            current_memory_usage = memory_tracker->get();
+    if (auto memory_tracker = CurrentThread::getMemoryTracker().getParent())
+        current_memory_usage = memory_tracker->get();
 
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
 
@@ -1278,7 +1276,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
 {
     auto converter = [&](size_t bucket, ThreadStatusPtr main_thread)
     {
-        ThreadStatus::setCurrentThreadFromSibling(main_thread);
+        CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1293,7 +1291,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (method.data.impls[bucket].empty())
                 continue;
 
-            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, current_thread));
+            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::get()));
 
             if (thread_pool)
                 thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
@@ -1723,13 +1721,13 @@ private:
             return;
 
         parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
-            max_scheduled_bucket_num, current_thread));
+            max_scheduled_bucket_num, CurrentThread::get()));
     }
 
     void thread(Int32 bucket_num, ThreadStatusPtr main_thread)
     {
-        ThreadStatus::setCurrentThreadFromSibling(main_thread);
         setThreadName("MergingAggregtd");
+        CurrentThread::attachQueryFromSiblingThread(main_thread);
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
         try
@@ -2035,7 +2033,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadStatusPtr main_thread)
         {
-            ThreadStatus::setCurrentThreadFromSibling(main_thread);
+            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
@@ -2069,7 +2067,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = std::bind(merge_bucket, bucket, aggregates_pool, current_thread);
+            auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::get());
 
             if (thread_pool)
                 thread_pool->schedule(task);

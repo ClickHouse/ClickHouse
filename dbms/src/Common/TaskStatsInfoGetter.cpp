@@ -209,12 +209,14 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
         throwFromErrno("Can't bind PF_NETLINK socket");
 
     netlink_family_id = get_family_id(netlink_socket_fd);
+
+    initial_tid = getCurrentTID();
 }
 
 void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid) const
 {
     if (tid < 0)
-        tid = getCurrentTID();
+        tid = initial_tid;
 
     get_taskstats(netlink_socket_fd, netlink_family_id, tid, stat);
 }
@@ -222,7 +224,7 @@ void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid) const
 bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid) const
 {
     if (tid < 0)
-        tid = getCurrentTID();
+        tid = initial_tid;
 
     Exception e;
     return get_taskstats(netlink_socket_fd, netlink_family_id, tid, stat, &e);
