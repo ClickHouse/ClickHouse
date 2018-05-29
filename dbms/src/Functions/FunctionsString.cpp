@@ -1175,7 +1175,7 @@ public:
         return std::make_shared<DataTypeNumber<UInt8>>();
     }
     
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnPtr column_ptr = block.getByPosition(arguments[0]).column;
         
