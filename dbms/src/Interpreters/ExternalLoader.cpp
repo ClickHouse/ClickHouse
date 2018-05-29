@@ -42,12 +42,12 @@ void ExternalLoader::reloadPeriodically()
 }
 
 
-ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config,
+ExternalLoader::ExternalLoader(const Poco::Util::AbstractConfiguration & config_main,
                                const ExternalLoaderUpdateSettings & update_settings,
                                const ExternalLoaderConfigSettings & config_settings,
                                std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
                                Logger * log, const std::string & loadable_object_name)
-        : config(config)
+        : config_main(config_main)
         , update_settings(update_settings)
         , config_settings(config_settings)
         , config_repository(std::move(config_repository))
@@ -212,7 +212,7 @@ void ExternalLoader::reloadAndUpdate(bool throw_on_error)
 
 void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool force_reload, const std::string & only_dictionary)
 {
-    const auto config_paths = config_repository->list(config, config_settings.path_setting_name);
+    const auto config_paths = config_repository->list(config_main, config_settings.path_setting_name);
 
     for (const auto & config_path : config_paths)
     {
@@ -249,7 +249,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         const auto last_modified = config_repository->getLastModificationTime(config_path);
         if (force_reload || last_modified > config_last_modified)
         {
-            auto config = config_repository->load(config_path);
+            auto config = config_repository->load(config_path, config_main.getString("path", "/var/lib/clickhouse/"));
 
             /// Definitions of loadable objects may have changed, recreate all of them
 

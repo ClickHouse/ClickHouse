@@ -23,7 +23,7 @@ public:
 
     virtual Poco::Timestamp getLastModificationTime(const std::string & config_file) const = 0;
 
-    virtual Poco::AutoPtr<Poco::Util::AbstractConfiguration> load(const std::string & config_file) const = 0;
+    virtual Poco::AutoPtr<Poco::Util::AbstractConfiguration> load(const std::string & config_file, const std::string & preprocessed_dir = "") const = 0;
 
     virtual ~IExternalLoaderConfigRepository() {}
 };

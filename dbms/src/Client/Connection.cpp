@@ -25,8 +25,6 @@
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
 
-#include <Core/iostream_debug_helpers.h>
-
 namespace CurrentMetrics
 {
     extern const Metric SendExternalTables;
@@ -125,8 +123,6 @@ void Connection::sendHello()
     //LOG_TRACE(log_wrapper.get(), "Sending hello");
 
     writeVarUInt(Protocol::Client::Hello, *out);
- 
-DUMP(client_name);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);

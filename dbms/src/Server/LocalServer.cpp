@@ -75,7 +75,10 @@ void LocalServer::applyCmdSettings(Context & context)
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
 void LocalServer::tryInitPath()
 {
-    std::string path = config().getString("path", "");
+    std::string path;
+    if (!config().has("path") || (path = config().getString("path")).empty())
+        path = "/var/lib/clickhouse/";
+
     Poco::trimInPlace(path);
 
     if (!path.empty())
@@ -113,7 +116,7 @@ try
     {
         ConfigProcessor config_processor(config().getString("config-file", "config.xml"), false, true);
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration.getString("path", "/var/lib/clickhouse/"));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
@@ -339,7 +342,7 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config);
+        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", "/var/lib/clickhouse/"));
         users_config = loaded_config.configuration;
     }
     else
