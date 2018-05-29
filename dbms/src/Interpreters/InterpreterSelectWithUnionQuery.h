@@ -44,6 +44,7 @@ private:
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
 
+    std::vector<Names> required_result_column_names_for_selects;
     std::vector<std::unique_ptr<InterpreterSelectQuery>> nested_interpreters;
 
     Block result_header;

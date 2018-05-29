@@ -226,10 +226,10 @@ BlockIO InterpreterSelectQuery::execute()
     return res;
 }
 
-BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
+BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams(bool dry_run)
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, false);
+    executeImpl(pipeline, input, dry_run);
     return pipeline.streams;
 }
 

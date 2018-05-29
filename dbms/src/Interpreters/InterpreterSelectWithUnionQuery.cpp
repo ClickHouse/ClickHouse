@@ -9,6 +9,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
+#include <DataStreams/CuttingUnionAllRequiredColumnBlockInputStream.h>
 
 
 namespace DB
@@ -49,7 +50,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     nested_interpreters.reserve(num_selects);
 
+    BlockInputStreams streams;
     std::vector<Names> required_result_column_names_for_other_selects(num_selects);
+
+    required_result_column_names_for_other_selects[0] = required_result_column_names;
     if (!required_result_column_names.empty() && num_selects > 1)
     {
         /// Result header if there are no filtering by 'required_result_column_names'.
@@ -78,25 +82,33 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
     for (size_t query_num = 0; query_num < num_selects; ++query_num)
     {
-        const Names & current_required_result_column_names = query_num == 0
-            ? required_result_column_names
-            : required_result_column_names_for_other_selects[query_num];
+        const Names & current_required_result_column_names = required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
             ast.list_of_selects->children.at(query_num), context, current_required_result_column_names, to_stage, subquery_depth));
+
+        BlockInputStreamPtr input = nested_interpreters.back()->executeWithMultipleStreams(true).front();
+
+        /// When duplicate column in union query & exists 'required_result_column_names'
+        /// should be to cutting header
+        /// because exists duplicate and not needed column in header
+        if (num_selects > 1)
+            input = std::make_shared<CuttingUnionAllRequiredColumnBlockInputStream>(input, current_required_result_column_names);
+
+        streams.emplace_back(input);
     }
 
     /// Determine structure of result.
 
     if (num_selects == 1)
     {
-        result_header = nested_interpreters.front()->getSampleBlock();
+        result_header = streams.front()->getHeader();;
     }
     else
     {
         Blocks headers(num_selects);
         for (size_t query_num = 0; query_num < num_selects; ++query_num)
-            headers[query_num] = nested_interpreters[query_num]->getSampleBlock();
+            headers[query_num] = streams[query_num]->getHeader();
 
         result_header = headers.front();
         size_t num_columns = result_header.columns();
@@ -142,6 +154,8 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             /// BTW, result column names are from first SELECT.
         }
     }
+
+    required_result_column_names_for_selects = required_result_column_names_for_other_selects;
 }
 
 
@@ -165,9 +179,14 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams()
 {
     BlockInputStreams nested_streams;
 
-    for (auto & interpreter : nested_interpreters)
+    for (size_t query_num = 0, size = nested_interpreters.size(); query_num < size; ++query_num)
     {
-        BlockInputStreams streams = interpreter->executeWithMultipleStreams();
+        BlockInputStreams streams = nested_interpreters[query_num]->executeWithMultipleStreams();
+
+        if (nested_interpreters.size() > 1)
+            for (auto & stream : streams)
+                stream = std::make_shared<CuttingUnionAllRequiredColumnBlockInputStream>(stream, required_result_column_names_for_selects[query_num]);
+
         nested_streams.insert(nested_streams.end(), streams.begin(), streams.end());
     }
 

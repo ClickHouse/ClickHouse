@@ -59,7 +59,7 @@ public:
     BlockIO execute() override;
 
     /// Execute the query and return multuple streams for parallel processing.
-    BlockInputStreams executeWithMultipleStreams();
+    BlockInputStreams executeWithMultipleStreams(bool dry_run = false);
 
     Block getSampleBlock();
 
