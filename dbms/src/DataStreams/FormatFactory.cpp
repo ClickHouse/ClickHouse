@@ -33,6 +33,9 @@
 #if USE_CAPNP
 #include <DataStreams/CapnProtoRowInputStream.h>
 #endif
+/* #if USE_PROTOBUF */
+#include <DataStreams/ProtobufRowInputStream.h>
+/* #endif */
 
 #include <boost/algorithm/string.hpp>
 
@@ -109,6 +112,23 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         return wrap_row_stream(std::make_shared<CapnProtoRowInputStream>(buf, sample, schema_dir, tokens[0], tokens[1]));
     }
 #endif
+/* #if USE_PROTOBUF */
+    else if (name == "Protobuf")
+    {
+        // TODO: is it normal to use the one setting for all schema-based formats?
+
+        // TODO: get rid of code repetition
+        std::vector<String> tokens;
+        auto schema_and_root = settings.format_schema.toString();
+        boost::split(tokens, schema_and_root, boost::is_any_of(":"));
+        if (tokens.size() != 2)
+            throw Exception("Format Protobuf requires 'format_schema' setting to have a schema_file:root_object format, e.g. 'schema.proto:Message'");
+
+        const String & schema_dir = context.getFormatSchemaPath();
+
+        return wrap_row_stream(std::make_shared<ProtobufRowInputStream>(buf, sample, schema_dir, tokens[0], tokens[1]));
+    }
+/* #endif */
     else if (name == "TabSeparatedRaw"
         || name == "TSVRaw"
         || name == "Pretty"
@@ -177,6 +197,9 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, true, settings.output_format_pretty_max_rows, context);
     else if (name == "PrettySpaceNoEscapes")
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, sample, true, settings.output_format_pretty_max_rows, context);
+    // TODO:
+    /* else if (name == "Protobuf") */
+    /*     return std::make_shared<ProtobufBlockOutputStream>(buf, sample); */
     else if (name == "Vertical")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(
             buf, sample, settings.output_format_pretty_max_rows), sample);

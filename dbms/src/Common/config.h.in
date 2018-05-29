@@ -8,6 +8,7 @@
 #cmakedefine01 USE_VECTORCLASS
 #cmakedefine01 USE_RDKAFKA
 #cmakedefine01 USE_CAPNP
+#cmakedefine01 USE_PROTOBUF
 #cmakedefine01 USE_EMBEDDED_COMPILER
 #cmakedefine01 LLVM_HAS_RTTI
 #cmakedefine01 USE_POCO_SQLODBC
