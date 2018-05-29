@@ -186,8 +186,10 @@ size_t CompressionPipeline::compress(char* source, PODArray<char>& dest, int inp
     /// Write header data
     dest.resize(getHeaderSize() + inputSize);
     size_t header_wrote_size = writeHeader(&dest[0]);
+
     if (getHeaderSize() != header_wrote_size)
         throw Exception("Bad header formatting", ErrorCodes::LOGICAL_ERROR);
+
     dest.insert(dest.begin() + getHeaderSize(), buffer.begin(), buffer.end());
 
     return inputSize + header_wrote_size;
@@ -213,8 +215,10 @@ size_t CompressionPipeline::decompress(char* source, char* dest, int inputSize, 
             _dest = _dest == &buffer1 ? &buffer2 : &buffer1;
         }
     }
+
     if ((int64_t)midOutputSize != outputSize)
         throw Exception("Decoding problem", ErrorCodes::LOGICAL_ERROR);
+
     return inputSize;
 }
 
@@ -225,6 +229,12 @@ void CompressionPipeline::setDataType(DataTypePtr _data_type)
     {
         codec->setDataType(data_type);
     }
+}
+
+std::vector<UInt32> CompressionPipeline::getDataSizes() const
+{
+    auto ds(data_sizes);
+    return ds;
 }
 
 };

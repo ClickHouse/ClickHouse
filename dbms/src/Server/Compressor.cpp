@@ -33,22 +33,25 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
     {
         in.ignore(16);    /// checksum
 
-        char header[COMPRESSED_BLOCK_HEADER_SIZE];
-        in.readStrict(header, COMPRESSED_BLOCK_HEADER_SIZE);
-
-        UInt32 size_compressed = unalignedLoad<UInt32>(&header[1]);
+        auto pipe = DB::CompressionPipeline::get_pipe(&in);
+        UInt32 size_compressed = pipe->getCompressedSize();
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
             throw DB::Exception("Too large size_compressed. Most likely corrupted data.", DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
-        UInt32 size_decompressed = unalignedLoad<UInt32>(&header[5]);
+        auto data_sizes = pipe->getDataSizes();
+        for (size_t i = 0; i < data_sizes.size(); ++i)
+        {
+            if (i) DB::writeChar('\t', out);
+            if (i != data_sizes.size() - 1)
+                DB::writeText(data_sizes[i], out);
+            else
+                DB::writeText(data_sizes[i] + pipe->getHeaderSize(), out);
 
-        DB::writeText(size_decompressed, out);
-        DB::writeChar('\t', out);
-        DB::writeText(size_compressed, out);
+        }
         DB::writeChar('\n', out);
 
-        in.ignore(size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
+        in.ignore(size_compressed);
     }
 }
 
@@ -66,7 +69,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("zstd", "use ZSTD instead of LZ4")
         ("level", "compression level")
         ("none", "use no compression instead of LZ4")
-        ("custom", boost::program_options::value<DB::String>()->default_value(""), "custom compression pipeline")
+        ("custom", boost::program_options::value<DB::String>(), "custom compression pipeline")
         ("stat", "print block statistics of compressed data")
     ;
 

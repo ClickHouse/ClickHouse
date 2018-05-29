@@ -40,7 +40,7 @@ public:
     /// Name of codec family (example: LZ4, ZSTD).
     virtual const char *getFamilyName() const = 0;
 
-    /// Header size provider for parsing
+    /// Header size of internal header (arguments, excluding bytecode), size parsed by parseHeader
     virtual size_t getHeaderSize() const { return 0; };
     /// Header for serialization, containing bytecode and parameters
     virtual size_t writeHeader(char *) = 0;

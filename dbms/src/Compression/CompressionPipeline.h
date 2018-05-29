@@ -69,6 +69,8 @@ public:
     }
     size_t decompress(char* source, char* dest, int inputSize, int) override;
 
+    std::vector<UInt32> getDataSizes() const;
+
     void setDataType(DataTypePtr _data_type) override;
 };
 
