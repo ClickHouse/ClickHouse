@@ -44,6 +44,13 @@ struct CompressionSettings
     {
     }
 
+    CompressionSettings(CompressionMethod method_, int level_, PipePtr codec_)
+            : method(method_)
+            , level(level_)
+            , codec(codec_)
+    {
+    }
+
     CompressionSettings(CompressionMethod method_, ColumnCodecs codecs_, const String & name)
         : method(method_)
         , codecs(codecs_)

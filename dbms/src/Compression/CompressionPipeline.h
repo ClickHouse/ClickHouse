@@ -40,6 +40,7 @@ public:
     {}
 
     static PipePtr get_pipe(ReadBuffer* header);
+    static PipePtr get_pipe(const String & codecs);
     static PipePtr get_pipe(ASTPtr &);
 
     String getName() const;

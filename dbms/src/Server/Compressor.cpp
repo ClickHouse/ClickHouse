@@ -9,6 +9,9 @@
 #include <IO/CompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Compression/CompressionPipeline.h>
+
+#include <Poco/String.h>
 
 
 namespace DB
@@ -63,6 +66,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         ("zstd", "use ZSTD instead of LZ4")
         ("level", "compression level")
         ("none", "use no compression instead of LZ4")
+        ("custom", boost::program_options::value<DB::String>()->default_value(""), "custom compression pipeline")
         ("stat", "print block statistics of compressed data")
     ;
 
@@ -83,18 +87,23 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         bool use_zstd = options.count("zstd");
         bool stat_mode = options.count("stat");
         bool use_none = options.count("none");
+        bool use_custom = options.count("custom");
         unsigned block_size = options["block-size"].as<unsigned>();
 
         DB::CompressionMethod method = DB::CompressionMethod::LZ4;
 
+        DB::PipePtr compression_pipe;
         if (use_lz4hc)
             method = DB::CompressionMethod::LZ4HC;
         else if (use_zstd)
             method = DB::CompressionMethod::ZSTD;
         else if (use_none)
             method = DB::CompressionMethod::NONE;
+        else if (use_custom)
+            compression_pipe = DB::CompressionPipeline::get_pipe(options["custom"].as<DB::String>());
 
-        DB::CompressionSettings settings(method, options.count("level") > 0 ? options["level"].as<int>() : DB::CompressionSettings::getDefaultLevel(method));
+        DB::CompressionSettings settings(method, options.count("level") > 0 ? options["level"].as<int>() : DB::CompressionSettings::getDefaultLevel(method),
+                                         compression_pipe);
 
         DB::ReadBufferFromFileDescriptor rb(STDIN_FILENO);
         DB::WriteBufferFromFileDescriptor wb(STDOUT_FILENO);

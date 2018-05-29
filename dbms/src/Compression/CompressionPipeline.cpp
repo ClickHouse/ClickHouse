@@ -3,6 +3,8 @@
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/parseQuery.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionPipeline.h>
 #include <Compression/CompressionCodecFactory.h>
@@ -75,6 +77,20 @@ PipePtr CompressionPipeline::get_pipe(ASTPtr& ast_codec)
     auto tmp = std::make_shared<CompressionPipeline>(codecs);
     tmp->codec_ptr = ast_codec;
     return tmp;
+}
+
+PipePtr CompressionPipeline::get_pipe(const String & full_declaration)
+{
+    Codecs codecs;
+    ParserCodecDeclarationList codecs_parser;
+    ASTPtr ast = parseQuery(codecs_parser, full_declaration.data(),
+                            full_declaration.data() + full_declaration.size(),
+                            "codecs", 0);
+    ASTs & ast_codecs = typeid_cast<ASTExpressionList &>(*ast).children;
+    for (auto & codec : ast_codecs) {
+        codecs.emplace_back(std::move(CompressionCodecFactory::instance().get(codec)));
+    }
+    return std::make_shared<CompressionPipeline>(codecs);
 }
 
 String CompressionPipeline::getName() const
@@ -182,7 +198,7 @@ size_t CompressionPipeline::decompress(char* source, char* dest, int inputSize, 
     PODArray<char> buffer1, buffer2;
     char *_source = source;
     auto *_dest = &buffer1;
-    size_t midOutputSize;
+    size_t midOutputSize = 0;
     for (int i = codecs.size() - 1; i >= 0; --i) {
         midOutputSize = data_sizes[i];
         if (!i) /// output would be dest
