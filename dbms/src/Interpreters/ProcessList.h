@@ -78,6 +78,7 @@ class QueryStatus
 protected:
     friend class ProcessList;
     friend class ThreadStatus;
+    friend class CurrentThread;
     friend class ProcessListEntry;
 
     String query;

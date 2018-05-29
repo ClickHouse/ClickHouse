@@ -66,6 +66,12 @@ namespace ProfileEvents
         /// Reset metrics and parent
         void reset();
 
+        /// Set parent (thread unsafe)
+        void setParent(Counters * parent_)
+        {
+            parent = parent_;
+        }
+
         /// Reset metrics
         void resetCounters();
 

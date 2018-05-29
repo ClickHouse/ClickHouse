@@ -2,7 +2,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 #include <memory>
-#include <ext/shared_ptr_helper.h>
 #include <mutex>
 
 
@@ -17,11 +16,14 @@ namespace DB
 
 class QueryStatus;
 class ThreadStatus;
-struct ScopeCurrentThread;
+class ScopeCurrentThread;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 
 
-class ThreadStatus : public ext::shared_ptr_helper<ThreadStatus>
+extern thread_local ThreadStatusPtr current_thread;
+
+
+class ThreadStatus
 {
 public:
 
@@ -32,32 +34,39 @@ public:
     int os_thread_id = -1;
     std::mutex mutex;
 
-    void init(QueryStatus * parent_query_, ProfileEvents::Counters * parent_counters, MemoryTracker * parent_memory_tracker);
-    void onStart();
-    void onExit();
+public:
+
+    /// A constructor
+    static ThreadStatusPtr create();
 
     /// Reset all references and metrics
     void reset();
 
-    static void setCurrentThreadParentQuery(QueryStatus * parent_process);
-    static void setCurrentThreadFromSibling(const ThreadStatusPtr & sibling_thread);
-    ThreadStatusPtr getCurrent() const;
-
     ~ThreadStatus();
 
-    friend struct ScopeCurrentThread;
+protected:
 
-//protected:
     ThreadStatus();
+    void attachQuery(
+            QueryStatus *parent_query_,
+            ProfileEvents::Counters *parent_counters,
+            MemoryTracker *parent_memory_tracker,
+            bool check_detached = true);
+    void detachQuery();
+    void updatePerfomanceCountersImpl();
 
-    bool initialized = false;
-    bool thread_exited = false;
+    bool is_active_query = false;
+    bool is_active_thread = false;
+    bool is_first_query_of_the_thread = true;
     Poco::Logger * log;
 
-    struct Impl;
-    std::shared_ptr<Impl> impl;
-};
+    friend class CurrentThreadScope;
+    friend class CurrentThread;
+    friend struct TasksStatsCounters;
 
-extern thread_local ThreadStatusPtr current_thread;
+    struct Impl;
+    std::unique_ptr<Impl> impl;
+    Impl & getImpl() { return *impl; }
+};
 
 }

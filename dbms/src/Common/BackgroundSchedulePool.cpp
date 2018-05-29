@@ -4,9 +4,10 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <common/logger_useful.h>
 #include <chrono>
-#include "ThreadStatus.h"
 
 
 namespace CurrentMetrics
@@ -232,11 +233,8 @@ void BackgroundSchedulePool::threadFunction()
 {
     setThreadName("BackgrSchedPool");
 
-    if (current_thread)
-    {
-        ThreadStatus::setCurrentThreadParentQuery(nullptr);
-        current_thread->memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
-    }
+    CurrentThread::attachQuery(nullptr);
+    CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
     while (!shutdown)
     {

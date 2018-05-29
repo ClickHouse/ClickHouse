@@ -7,6 +7,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <common/logger_useful.h>
@@ -165,15 +166,10 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Query-level memory tracker is already set in the QueryStatus constructor
 
-            if (!current_thread)
-                throw Exception("Thread is not initialized", ErrorCodes::LOGICAL_ERROR);
-
-            if (current_thread)
-            {
-                current_thread->setCurrentThreadParentQuery(&*process_it);
-                current_thread->memory_tracker.setOrRaiseLimit(settings.max_memory_usage);
-                current_thread->memory_tracker.setDescription("(for thread)");
-            }
+            /// Attach master thread
+            CurrentThread::attachQuery(&*process_it);
+            current_thread->memory_tracker.setOrRaiseLimit(settings.max_memory_usage);
+            current_thread->memory_tracker.setDescription("(for thread)");
 
             if (!user_process_list.user_throttler)
             {
@@ -201,7 +197,7 @@ ProcessListEntry::~ProcessListEntry()
 
     /// Finalize all threads statuses
     {
-        current_thread->onExit();
+        CurrentThread::detachQuery();
 
         std::lock_guard lock(it->threads_mutex);
 
