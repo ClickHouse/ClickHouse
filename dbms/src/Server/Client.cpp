@@ -51,7 +51,7 @@
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
 #include <Client/Completion.h>
-#include <Client/Commands.h>
+#include <Client/QueryParts.h>
 #include "InterruptListener.h"
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -343,10 +343,10 @@ private:
     void init_suggestions(Completion::HashTable *ht)
     {
         Completion::init_hash_table(ht, 128);
-        COMMAND *cmd = commands;
-        while (cmd->name) {
-            Completion::hash_add_word(ht, cmd->name);
-            cmd++;
+        QUERYPART *qP = queryParts;
+        while (qP->name) {
+            Completion::hash_add_word(ht, qP->name);
+            qP++;
         }
         rl_attempted_completion_function = commands_completion;
     }
