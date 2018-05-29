@@ -535,7 +535,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             }
             preprocessed_dir = loaded_config.configuration->getString("path");
         }
-        preprocessed_dir += "/config_preprocessed/";
+        preprocessed_dir += "/preprocessed_config/";
         // TODO: strip path!
         auto new_path = loaded_config.config_path;
         std::replace( new_path.begin(), new_path.end(), '/', '_');
