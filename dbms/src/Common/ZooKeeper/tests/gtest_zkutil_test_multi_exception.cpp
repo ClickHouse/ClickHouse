@@ -17,9 +17,9 @@ using namespace DB;
 
 TEST(zkutil, zookeeper_connected)
 {
-    auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
     try
     {
+        auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
         zookeeper->exists("/");
     }
     catch (...)
