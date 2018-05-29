@@ -145,6 +145,14 @@ private:
             plain_offset = Poco::File(data_path).getSize();
         }
 
+        Stream(const std::string & data_path, size_t max_compress_block_size, ColumnCodecs codecs, const String & name) :
+                plain(data_path, max_compress_block_size, O_APPEND | O_CREAT | O_WRONLY),
+                compressed(plain, CompressionSettings(CompressionMethod::LZ4, codecs, name),
+                           max_compress_block_size)
+        {
+            plain_offset = Poco::File(data_path).getSize();
+        }
+
         WriteBufferFromFile plain;
         CompressedWriteBuffer compressed;
 
@@ -301,7 +309,10 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
             return;
 
         const auto & file = storage.files[stream_name];
-        const auto stream_it = streams.try_emplace(stream_name, storage.files[stream_name].data_file.path(), storage.max_compress_block_size).first;
+        const auto codecs = storage.getColumns().codecs;
+        const auto stream_it = streams.try_emplace(stream_name,
+                                                   storage.files[stream_name].data_file.path(),
+                                                   storage.max_compress_block_size, codecs, name).first;
 
         Mark mark;
         mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();

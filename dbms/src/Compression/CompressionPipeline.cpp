@@ -130,16 +130,11 @@ size_t CompressionPipeline::writeHeader(char* out)
 size_t CompressionPipeline::getHeaderSize() const
 {
     /// Header size as sum of codecs headers' sizes
-    if (!header_size)
-    {
-        size_t _hs = sizeof(UInt32); /// decompressed size
-        for (auto &codec : codecs)
-            ///    bytecode  + arguments part + data size part
-            _hs += 1 + codec->getHeaderSize() + sizeof(UInt32);
-        return _hs;
-    }
-
-    return header_size;
+    size_t _hs = sizeof(UInt32); /// decompressed size
+    for (auto &codec : codecs)
+        ///    bytecode  + arguments part + data size part
+        _hs += 1 + codec->getHeaderSize() + sizeof(UInt32);
+    return _hs;
 }
 
 
@@ -150,6 +145,7 @@ size_t CompressionPipeline::getMaxCompressedSize(size_t uncompressed_size) const
 
 size_t CompressionPipeline::compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize)
 {
+    data_sizes.clear();
     PODArray<char> buffer;
     char *_source = source;
     auto *_dest = &dest;
