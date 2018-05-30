@@ -26,10 +26,10 @@ namespace Completion
         ht->buckets = (Bucket **)calloc(size, sizeof(Bucket));
         if (!ht->buckets) {
             ht->initialized = false;
-            return FAILURE;
+            return HASH_FAILURE;
         }
         ht->initialized = true;
-        return SUCCESS;
+        return HASH_SUCCESS;
     }
 
     void hash_add_word(HashTable *ht, char *word)
@@ -48,7 +48,7 @@ namespace Completion
         Bucket *bucket;
 
         if (keyLength <= 0) {
-            return FAILURE;
+            return HASH_FAILURE;
         }
         hash = ht->hashFunction(key, keyLength);
         bucketIndex = hash % ht->tableSize;
@@ -58,20 +58,20 @@ namespace Completion
                 if (!memcmp(bucket->key, key, keyLength)) {
                     auto *entry = (HashEntry *) calloc(1, sizeof(HashEntry));
                     if (entry == nullptr) {
-                        return FAILURE;
+                        return HASH_FAILURE;
                     }
                     entry->text = word;
                     entry->next = bucket->entry;
                     bucket->entry = entry;
 
-                    return SUCCESS;
+                    return HASH_SUCCESS;
                 }
             }
             bucket = bucket->next;
         }
         bucket = (Bucket *) calloc(1, sizeof(Bucket));
         if (bucket == nullptr) {
-            return FAILURE;
+            return HASH_FAILURE;
         }
         bucket->key = key;
         bucket->keyLength = keyLength;
@@ -79,7 +79,7 @@ namespace Completion
 
         bucket->entry = (HashEntry *) calloc(1, sizeof(HashEntry));
         if (bucket->entry == nullptr) {
-            return FAILURE;
+            return HASH_FAILURE;
         }
 
         bucket->entry->text = word;
@@ -89,7 +89,7 @@ namespace Completion
 
         ht->buckets[bucketIndex] = bucket;
 
-        return SUCCESS;
+        return HASH_SUCCESS;
     }
 
     Bucket * hash_find_all_matches(HashTable *ht, const char *word, uint length, uint *res_length)
@@ -116,6 +116,11 @@ namespace Completion
         *res_length = 0;
 
         return (Bucket *) nullptr;
+    }
+
+    void hash_free(HashTable *ht)
+    {
+        free(ht->buckets);
     }
 }
 
