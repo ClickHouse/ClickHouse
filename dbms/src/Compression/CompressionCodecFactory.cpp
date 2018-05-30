@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int CODEC_CANNOT_HAVE_ARGUMENTS;
 }
 
-CodecPtr CompressionCodecFactory::get(char& bytecode) const
+CompressionCodecPtr CompressionCodecFactory::get(char& bytecode) const
 {
 
     {
@@ -33,14 +33,14 @@ CodecPtr CompressionCodecFactory::get(char& bytecode) const
     throw Exception("Unknown codec bytecode: " + std::to_string(bytecode), ErrorCodes::UNKNOWN_CODEC);
 }
 
-CodecPtr CompressionCodecFactory::get(const String & full_name) const
+CompressionCodecPtr CompressionCodecFactory::get(const String & full_name) const
 {
     ParserIdentifierWithOptionalParameters parser;
     ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "codec", 0);
     return get(ast);
 }
 
-CodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
+CompressionCodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
 {
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(ast.get()))
     {
@@ -63,7 +63,7 @@ CodecPtr CompressionCodecFactory::get(const ASTPtr & ast) const
     throw Exception("Unexpected AST element for compression codec.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-CodecPtr CompressionCodecFactory::get(const String & family_name, const ASTPtr & parameters) const
+CompressionCodecPtr CompressionCodecFactory::get(const String & family_name, const ASTPtr & parameters) const
 {
 
     {
@@ -117,7 +117,6 @@ void CompressionCodecFactory::registerCodecBytecode(const char& bytecode, Simple
 
 void registerCodecNone(CompressionCodecFactory & factory);
 void registerCodecLZ4(CompressionCodecFactory & factory);
-void registerCodecLZ4HC(CompressionCodecFactory & factory);
 void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecDelta(CompressionCodecFactory & factory);
 
@@ -125,7 +124,6 @@ CompressionCodecFactory::CompressionCodecFactory()
 {
     registerCodecNone(*this);
     registerCodecLZ4(*this);
-    registerCodecLZ4HC(*this);
     registerCodecZSTD(*this);
     registerCodecDelta(*this);
 }

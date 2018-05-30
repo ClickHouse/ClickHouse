@@ -17,8 +17,8 @@ namespace ErrorCodes
 
 class ICompressionCodec;
 
-using CodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CodecPtr>;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 
 /** Properties of codec.
@@ -55,12 +55,12 @@ public:
     virtual size_t getMaxCompressedSize(size_t uncompressed_size) const = 0;
 
     /// Block compression and decompression methods for Pipeline and Codec
-    virtual size_t compress(char *, PODArray<char> &, int, int)
+    virtual size_t compress(char *, PODArray<char> &, size_t, size_t)
     {
         throw Exception("Cannot compress into PODArray from Codec " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
-    virtual size_t compress(char* source, char* dest, int inputSize, int maxOutputSize) = 0;
-    virtual size_t decompress(char *source, char *dest, int inputSize, int maxOutputSize) = 0;
+    virtual size_t compress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) = 0;
+    virtual size_t decompress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) = 0;
 
     /// Data type information provider
     virtual void setDataType(DataTypePtr _data_type)

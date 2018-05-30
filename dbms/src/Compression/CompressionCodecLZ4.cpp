@@ -3,6 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <lz4.h>
+#include <lz4hc.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -24,14 +25,12 @@ namespace ErrorCodes
 size_t CompressionCodecLZ4::writeHeader(char* header)
 {
     *header = bytecode;
-    *(header + 1) = static_cast<char>(argument);
-    return 2;
+    return 1;
 }
 
-size_t CompressionCodecLZ4::parseHeader(const char* header)
+size_t CompressionCodecLZ4::parseHeader(const char*)
 {
-    argument = static_cast<uint8_t>(*header);
-    return 1;
+    return 0;
 }
 
 size_t CompressionCodecLZ4::getMaxCompressedSize(size_t uncompressed_size) const
@@ -39,8 +38,8 @@ size_t CompressionCodecLZ4::getMaxCompressedSize(size_t uncompressed_size) const
     return LZ4_COMPRESSBOUND(uncompressed_size);
 }
 
-size_t CompressionCodecLZ4::compress(char* source, char* dest,
-                                     int inputSize, int maxOutputSize)
+size_t CompressionCodecLZ4::compress(char *source, char *dest,
+                                     size_t inputSize, size_t maxOutputSize)
 {
     auto wrote = LZ4_compress_default(
             source,
@@ -53,17 +52,32 @@ size_t CompressionCodecLZ4::compress(char* source, char* dest,
     return wrote;
 }
 
-size_t CompressionCodecLZ4::decompress(char* source, char* dest,
-                                       int inputSize, int maxOutputSize)
+size_t CompressionCodecLZ4::decompress(char *source, char *dest,
+                                       size_t inputSize, size_t maxOutputSize)
 {
     auto read = LZ4_decompress_fast(source, dest, maxOutputSize);
-    if (read > inputSize || read < 0)
+    if (read > static_cast<int64_t>(inputSize) || read < 0)
         throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
     return read;
 }
 
+size_t CompressionCodecLZ4HC::compress(char* source, char* dest, size_t inputSize, size_t maxOutputSize)
+{
+    auto wrote = LZ4_compress_HC(
+            source,
+            dest,
+            inputSize,
+            maxOutputSize,
+            argument
+    );
+
+    if (!wrote)
+        throw Exception("Cannot LZ4_compress_default", ErrorCodes::CANNOT_COMPRESS);
+    return wrote;
+}
+
 template<typename T>
-static CodecPtr create(const ASTPtr &arguments)
+static CompressionCodecPtr create(const ASTPtr &arguments)
 {
     if (!arguments)
         return std::make_shared<T>();
@@ -79,7 +93,7 @@ static CodecPtr create(const ASTPtr &arguments)
 }
 
 template<typename T>
-static CodecPtr createSimple()
+static CompressionCodecPtr createSimple()
 {
     return std::make_shared<T>();
 }
@@ -87,15 +101,8 @@ static CodecPtr createSimple()
 void registerCodecLZ4(CompressionCodecFactory &factory)
 {
     factory.registerCodec("LZ4", create<CompressionCodecLZ4>);
-    factory.registerSimpleCodec("LZ4Old", createSimple<CompressionCodecLZ4Old>);
     factory.registerCodecBytecode(CompressionCodecLZ4::bytecode, createSimple<CompressionCodecLZ4>);
-    factory.registerCodecBytecode(CompressionCodecLZ4Old::bytecode, createSimple<CompressionCodecLZ4Old>);
-}
-
-void registerCodecLZ4HC(CompressionCodecFactory &factory)
-{
     factory.registerCodec("LZ4HC", create<CompressionCodecLZ4HC>);
-    factory.registerCodecBytecode(CompressionCodecLZ4HC::bytecode, createSimple<CompressionCodecLZ4HC>);
 }
 
 }

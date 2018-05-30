@@ -95,7 +95,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
         DB::CompressionMethod method = DB::CompressionMethod::LZ4;
 
-        DB::PipePtr compression_pipe;
+        DB::CompressionPipePtr compression_pipe;
         if (use_lz4hc)
             method = DB::CompressionMethod::LZ4HC;
         else if (use_zstd)

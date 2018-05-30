@@ -48,8 +48,8 @@ public:
     void compress_bytes(char* source, char* dest, size_t size) const;
     void decompress_bytes(char* source, char* dest, size_t size) const;
 
-    size_t compress(char* source, char* dest, int inputSize, int maxOutputSize) override;
-    size_t decompress(char *, char *, int, int) override;
+    size_t compress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) override;
+    size_t decompress(char *, char *, size_t, size_t) override;
 
     void setDataType(DataTypePtr data_type);
 

@@ -11,7 +11,7 @@ namespace DB
 {
 
 class ICompressionCodec;
-using CodecPtr = std::shared_ptr<ICompressionCodec>;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
@@ -22,16 +22,16 @@ using ASTPtr = std::shared_ptr<IAST>;
 class CompressionCodecFactory final : public ext::singleton<CompressionCodecFactory>
 {
 private:
-    using Creator = std::function<CodecPtr(const ASTPtr & parameters)>;
-    using SimpleCreator = std::function<CodecPtr()>;
+    using Creator = std::function<CompressionCodecPtr(const ASTPtr & parameters)>;
+    using SimpleCreator = std::function<CompressionCodecPtr()>;
     using CodecsDictionary = std::unordered_map<String, Creator>;
     using ByteCodecsDictionary = std::unordered_map<char, SimpleCreator>;
 
 public:
-    CodecPtr get(const String & full_name) const;
-    CodecPtr get(const String & family_name, const ASTPtr & parameters) const;
-    CodecPtr get(const ASTPtr & ast) const;
-    CodecPtr get(char& bytecode) const;
+    CompressionCodecPtr get(const String & full_name) const;
+    CompressionCodecPtr get(const String & family_name, const ASTPtr & parameters) const;
+    CompressionCodecPtr get(const ASTPtr & ast) const;
+    CompressionCodecPtr get(char& bytecode) const;
 
     /// Register a codec family by its name.
     void registerCodec(const String & family_name, Creator creator);

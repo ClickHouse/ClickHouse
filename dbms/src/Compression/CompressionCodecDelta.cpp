@@ -50,11 +50,12 @@ size_t CompressionCodecDelta::parseHeader(const char* header)
 void CompressionCodecDelta::compress_bytes(char* source, char* dest, size_t size) const
 {
     char* tmp_arr = source;
+    memcpy(dest, source, element_size);
     for (size_t i = 1; i < size / element_size; ++i)
     {
         for (size_t j = 0; j < element_size; ++j)
             dest[i * element_size + j] = source[i * element_size + j] - tmp_arr[j];
-        tmp_arr = source + element_size * i;
+        tmp_arr += element_size;
     }
 }
 
@@ -63,14 +64,15 @@ void CompressionCodecDelta::compress_num(char* source, char* dest, size_t size) 
 {
     T* arr = reinterpret_cast<T*>(source), *dest_arr = reinterpret_cast<T*>(dest);
     T* elem = arr;
+    memcpy(dest, source, element_size);
     for (size_t i = 1; i < size / element_size; ++i)
     {
-        dest_arr[i] = *elem - arr[i];
-        elem = arr + i * element_size;
+        dest_arr[i] = arr[i] - (*elem);
+        elem += 1;
     }
 }
 
-size_t CompressionCodecDelta::compress(char* source, char* dest, int inputSize, int)
+size_t CompressionCodecDelta::compress(char *source, char *dest, size_t inputSize, size_t)
 {
     if (inputSize % element_size)
         throw Exception("Data type does not fit input size.", ErrorCodes::LOGICAL_ERROR);
@@ -103,9 +105,9 @@ size_t CompressionCodecDelta::compress(char* source, char* dest, int inputSize, 
         case 3:
             switch (element_size)
             {
-                case 4: compress_num<float>(source, dest, inputSize); break;
-                case 8: compress_num<double>(source, dest, inputSize); break;
-                default: compress_num<float>(source, dest, inputSize); break;
+                case 4: compress_num<Float32>(source, dest, inputSize); break;
+                case 8: compress_num<Float64>(source, dest, inputSize); break;
+                default: compress_num<Float32>(source, dest, inputSize); break;
             }
             break;
         default:
@@ -117,12 +119,13 @@ size_t CompressionCodecDelta::compress(char* source, char* dest, int inputSize, 
 
 void CompressionCodecDelta::decompress_bytes(char* source, char* dest, size_t size) const
 {
-    char* tmp_arr = source;
+    char* tmp_arr = dest;
+    memcpy(dest, source, element_size);
     for (size_t i = 1; i < size / element_size; ++i)
     {
         for (size_t j = 0; j < element_size; ++j)
             dest[i * element_size + j] = source[i * element_size + j] + tmp_arr[j];
-        tmp_arr = dest + i * element_size;
+        tmp_arr += element_size;
     }
 }
 
@@ -130,18 +133,21 @@ template <typename T>
 void CompressionCodecDelta::decompress_num(char* source, char* dest, size_t size) const
 {
     T* arr = reinterpret_cast<T*>(source), *dest_arr = reinterpret_cast<T*>(dest);
-    T* elem = arr;
-    for (size_t i = 0; i < size / element_size; ++i)
+    T* elem = dest_arr;
+    memcpy(dest, source, element_size);
+    for (size_t i =1; i < size / element_size; ++i)
     {
         dest_arr[i] = *elem + arr[i];
-        elem = dest_arr + i * element_size;
+        elem += 1;
     }
 }
 
-size_t CompressionCodecDelta::decompress(char* source, char* dest, int inputSize, int)
+size_t CompressionCodecDelta::decompress(char *source, char *dest, size_t inputSize, size_t)
 {
     if (inputSize % element_size)
-        throw Exception("Data type does not fit input size.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Data type (size " + std::to_string(element_size) + ") "
+                        "does not fit input size (" + std::to_string(inputSize) + ").",
+                        ErrorCodes::LOGICAL_ERROR);
 
     switch (delta_type)
     {
@@ -184,7 +190,7 @@ size_t CompressionCodecDelta::decompress(char* source, char* dest, int inputSize
 }
 
 
-static CodecPtr create(const ASTPtr &arguments) {
+static CompressionCodecPtr create(const ASTPtr &arguments) {
     if (!arguments)
         return std::make_shared<CompressionCodecDelta>();
 
@@ -208,7 +214,7 @@ static CodecPtr create(const ASTPtr &arguments) {
     );
 }
 
-CodecPtr createSimple()
+CompressionCodecPtr createSimple()
 {
     return std::make_shared<CompressionCodecDelta>();
 }

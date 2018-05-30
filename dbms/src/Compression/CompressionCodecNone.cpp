@@ -9,15 +9,15 @@ size_t CompressionCodecNone::getMaxCompressedSize(size_t uncompressed_size) cons
     return uncompressed_size;
 }
 
-size_t CompressionCodecNone::compress(char* source, char* dest,
-                                      int inputSize, int)
+size_t CompressionCodecNone::compress(char *source, char *dest,
+                                      size_t inputSize, size_t)
 {
     memcpy(dest, source, inputSize);
     return inputSize;
 }
 
-size_t CompressionCodecNone::decompress(char* source, char* dest,
-                                        int inputSize, int)
+size_t CompressionCodecNone::decompress(char *source, char *dest,
+                                        size_t inputSize, size_t)
 {
     memcpy(dest, source, inputSize);
     return inputSize;
@@ -46,7 +46,7 @@ size_t CompressionCodecNone::writeHeader(char* header)
 
 void registerCodecNone(CompressionCodecFactory &factory)
 {
-    auto creator = static_cast<CodecPtr(*)()>([] { return CodecPtr(std::make_shared<CompressionCodecNone>()); });
+    auto creator = static_cast<CompressionCodecPtr(*)()>([] { return CompressionCodecPtr(std::make_shared<CompressionCodecNone>()); });
 
     factory.registerSimpleCodec("None", creator);
     factory.registerCodecBytecode(0x0, creator);

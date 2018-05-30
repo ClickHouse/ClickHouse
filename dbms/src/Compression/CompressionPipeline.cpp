@@ -55,14 +55,18 @@ CompressionPipeline::CompressionPipeline(ReadBuffer* header)
     for (size_t i = 0; i <= codecs_amount; ++i)
         data_sizes[codecs_amount - i] = unalignedLoad<UInt32>(&_header[sizeof(UInt32) * i]);
     data_sizes[codecs_amount] -= getHeaderSize(); /// remove header size from last data size
+
+    if (header_size != getHeaderSize())
+        throw("Incorrect header read size: " + std::to_string(header_size) + ", expected " +
+              std::to_string(getHeaderSize()), ErrorCodes::LOGICAL_ERROR);
 }
 
-PipePtr CompressionPipeline::get_pipe(ReadBuffer* header)
+CompressionPipePtr CompressionPipeline::get_pipe(ReadBuffer* header)
 {
     return std::make_shared<CompressionPipeline>(header);
 }
 
-PipePtr CompressionPipeline::get_pipe(ASTPtr& ast_codec)
+CompressionPipePtr CompressionPipeline::get_pipe(ASTPtr& ast_codec)
 {
     Codecs codecs;
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_codec).children;
@@ -79,7 +83,7 @@ PipePtr CompressionPipeline::get_pipe(ASTPtr& ast_codec)
     return tmp;
 }
 
-PipePtr CompressionPipeline::get_pipe(const String & full_declaration)
+CompressionPipePtr CompressionPipeline::get_pipe(const String & full_declaration)
 {
     Codecs codecs;
     ParserCodecDeclarationList codecs_parser;
@@ -153,35 +157,34 @@ size_t CompressionPipeline::getHeaderSize() const
     return _hs;
 }
 
-
 size_t CompressionPipeline::getMaxCompressedSize(size_t uncompressed_size) const
 {
     return codecs[0]->getMaxCompressedSize(uncompressed_size);
 }
 
-size_t CompressionPipeline::compress(char* source, PODArray<char>& dest, int inputSize, int maxOutputSize)
+size_t CompressionPipeline::compress(char *source, PODArray<char> &dest, size_t inputSize, size_t maxOutputSize)
 {
     data_sizes.clear();
-    PODArray<char> buffer;
+    data_sizes.resize(codecs.size() + 1);
+    data_sizes[0] = inputSize;
     char *_source = source;
-    auto *_dest = &dest;
+    auto *_dest = &buffer1;
 
     for (size_t i = 0; i < codecs.size(); ++i)
     {
-        data_sizes.push_back(inputSize);
         (*_dest).resize(maxOutputSize);
         inputSize = codecs[i]->compress(_source, &(*_dest)[0], inputSize, maxOutputSize);
 
         _source = &(*_dest)[0];
-        _dest = _dest == &dest ? &buffer: &dest;
+        _dest = _dest == &dest ? &buffer1: &dest;
         maxOutputSize = i + 1 < codecs.size() ? codecs[i + 1]->getMaxCompressedSize(inputSize) : inputSize;
+        data_sizes[i + 1] = maxOutputSize;
     }
-    data_sizes.push_back(maxOutputSize);
 
     if (_dest != &dest)
     {
-        buffer.resize(inputSize);
-        memcpy(&buffer[0], &dest[0], inputSize);
+        buffer1.resize(inputSize);
+        memcpy(&buffer1[0], &dest[0], inputSize);
     }
     /// Write header data
     dest.resize(getHeaderSize() + inputSize);
@@ -190,14 +193,13 @@ size_t CompressionPipeline::compress(char* source, PODArray<char>& dest, int inp
     if (getHeaderSize() != header_wrote_size)
         throw Exception("Bad header formatting", ErrorCodes::LOGICAL_ERROR);
 
-    dest.insert(dest.begin() + getHeaderSize(), buffer.begin(), buffer.end());
+    memcpy(&dest[header_wrote_size], &buffer1[0], maxOutputSize);
 
-    return inputSize + header_wrote_size;
+    return maxOutputSize + header_wrote_size;
 }
 
-size_t CompressionPipeline::decompress(char* source, char* dest, int inputSize, int outputSize)
+size_t CompressionPipeline::decompress(char *source, char *dest, size_t inputSize, size_t outputSize)
 {
-    PODArray<char> buffer1, buffer2;
     char *_source = source;
     auto *_dest = &buffer1;
     size_t midOutputSize = 0;
@@ -216,7 +218,7 @@ size_t CompressionPipeline::decompress(char* source, char* dest, int inputSize, 
         }
     }
 
-    if ((int64_t)midOutputSize != outputSize)
+    if (midOutputSize != outputSize)
         throw Exception("Decoding problem", ErrorCodes::LOGICAL_ERROR);
 
     return inputSize;

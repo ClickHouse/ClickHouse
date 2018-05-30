@@ -8,6 +8,6 @@
 
 namespace DB {
 
-using ColumnCodecs = std::unordered_map<std::string, PipePtr>;
+using ColumnCodecs = std::unordered_map<std::string, CompressionPipePtr>;
 
 }

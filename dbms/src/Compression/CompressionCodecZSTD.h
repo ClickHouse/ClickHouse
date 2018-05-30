@@ -10,7 +10,7 @@ public:
             : argument(_argument)
     {}
 
-    static const uint8_t bytecode = 0x94;
+    static const uint8_t bytecode = 0x90;
     static const bool is_hc = false;
     uint8_t argument = 1;
 
@@ -33,8 +33,8 @@ public:
 
     size_t getMaxCompressedSize(size_t uncompressed_size) const override;
 
-    size_t compress(char* source, char* dest, int inputSize, int maxOutputSize) override;
-    size_t decompress(char* source, char* dest, int inuptSize, int maxOutputSize) override;
+    size_t compress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) override;
+    size_t decompress(char *source, char *dest, size_t inuptSize, size_t maxOutputSize) override;
 
     ~CompressionCodecZSTD() {}
 };

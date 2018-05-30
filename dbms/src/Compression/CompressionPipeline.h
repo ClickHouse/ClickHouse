@@ -18,11 +18,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-using CodecPtr = std::shared_ptr<ICompressionCodec>;
-using Codecs = std::vector<CodecPtr>;
+using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
+using Codecs = std::vector<CompressionCodecPtr>;
 
 class CompressionPipeline;
-using PipePtr = std::shared_ptr<CompressionPipeline>;
+using CompressionPipePtr = std::shared_ptr<CompressionPipeline>;
 
 class CompressionPipeline final : public ICompressionCodec
 {
@@ -32,6 +32,8 @@ private:
     std::vector<UInt32> data_sizes;
     size_t header_size = 0;
     DataTypePtr data_type;
+    PODArray<char> buffer1;
+    PODArray<char> buffer2;
 public:
     ASTPtr codec_ptr;
     CompressionPipeline(ReadBuffer* header);
@@ -39,9 +41,9 @@ public:
         : codecs (_codecs)
     {}
 
-    static PipePtr get_pipe(ReadBuffer* header);
-    static PipePtr get_pipe(const String & codecs);
-    static PipePtr get_pipe(ASTPtr &);
+    static CompressionPipePtr get_pipe(ReadBuffer* header);
+    static CompressionPipePtr get_pipe(const String & codecs);
+    static CompressionPipePtr get_pipe(ASTPtr &);
 
     String getName() const;
 
@@ -58,16 +60,16 @@ public:
      * @param uncompressed_size - data to be compressed in bytes;
      * @return size of maximum buffer for first compression needed.
      */
-    size_t getMaxCompressedSize(size_t uncompressed_size) const;
+    size_t getMaxCompressedSize(size_t uncompressed_size) const override;
     size_t getMaxDecompressedSize(size_t) const;
 
     /// Block compression and decompression methods
-    size_t compress(char *source, PODArray<char> &dest, int inputSize, int maxOutputSize);
-    size_t compress(char*, char*, int, int)
+    size_t compress(char *source, PODArray<char> &dest, size_t inputSize, size_t maxOutputSize);
+    size_t compress(char *, char *, size_t, size_t)
     {
         throw Exception("Could not compress into `char*` from Pipeline", ErrorCodes::NOT_IMPLEMENTED);
     }
-    size_t decompress(char* source, char* dest, int inputSize, int) override;
+    size_t decompress(char *source, char *dest, size_t inputSize, size_t) override;
 
     std::vector<UInt32> getDataSizes() const;
 
