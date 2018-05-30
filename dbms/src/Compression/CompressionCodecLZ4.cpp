@@ -72,7 +72,7 @@ size_t CompressionCodecLZ4HC::compress(char* source, char* dest, size_t inputSiz
     );
 
     if (!wrote)
-        throw Exception("Cannot LZ4_compress_default", ErrorCodes::CANNOT_COMPRESS);
+        throw Exception("Cannot LZ4_compress_HC", ErrorCodes::CANNOT_COMPRESS);
     return wrote;
 }
 
