@@ -130,14 +130,13 @@ POST 'http://localhost:8123/?query=DROP TABLE t'
 
 For successful requests that don't return a data table, an empty response body is returned.
 
-You can use compression when transmitting data.
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you will need to use the special clickhouse-compressor program to work with it (it is installed with the clickhouse-client package).
 
-For using ClickHouse internal compression format, and you will need to use the special compressor program to work with it (sudo apt-get install compressor-metrika-yandex).
 If you specified 'compress=1' in the URL, the server will compress the data it sends you.
 If you specified 'decompress=1' in the URL, the server will decompress the same data that you pass in the POST method.
 
-Also standard gzip-based HTTP compression can be used. To send gzip compressed POST data just add `Content-Encoding: gzip` to request headers, and gzip POST body.
-To get response compressed, you need to add `Accept-Encoding: gzip` to request headers, and turn on ClickHouse setting called `enable_http_compression`.
+It is also possible to use the standard gzip-based HTTP compression. To send a POST request compressed using gzip, append the request header `Content-Encoding: gzip`.
+In order for ClickHouse to compress the response using gzip, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse setting `enable_http_compression`.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 
@@ -174,7 +173,8 @@ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @
 ```
 
 If the user name is not indicated, the username 'default' is used. If the password is not indicated, an empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:
+http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the section "Settings".
 
@@ -194,11 +194,11 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-You can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` GET parameter in HTTP request. You can use any alphanumeric string as a session_id. By default session will be timed out after 60 seconds of inactivity. You can change that by setting `default_session_timeout` in server config file, or by adding GET parameter `session_timeout`. You can also check the status of the session by using GET parameter `session_check=1`. When using sessions you can't run 2 queries with the same session_id simultaneously.
+Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You can get the progress of query execution in X-ClickHouse-Progress headers, by enabling setting send_progress_in_http_headers.
+You have the option to receive information about the progress of query execution in X-ClickHouse-Progress headers. To do this, enable the setting send_progress_in_http_headers.
 
-Running query are not aborted automatically after closing HTTP connection. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
+Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
 The optional 'query_id' parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
 
 The optional 'quota_key' parameter can be passed as the quota key (any string). For more information, see the section "Quotas".
@@ -220,3 +220,4 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 ```
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
+

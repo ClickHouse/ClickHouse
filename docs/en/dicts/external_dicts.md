@@ -21,11 +21,12 @@ The dictionary config file has the following format:
 
     <!--Optional element. File name with substitutions-->
     <include_from>/etc/metrika.xml</include_from>
-    
+
+
     <dictionary>
-        <!-- Dictionary configuration -->    
+        <!-- Dictionary configuration -->
     </dictionary>
-            
+
     ...
 
     <dictionary>
@@ -43,11 +44,3 @@ See also "[Functions for working with external dictionaries](../functions/ext_di
 You can convert values ​​for a small dictionary by describing it in a `SELECT` query (see the [transform](../functions/other_functions.md#other_functions-transform) function). This functionality is not related to external dictionaries.
 
 </div>
-
-```eval_rst
-.. toctree::
-    :glob:
-   
-    external_dicts_dict*
-```
-

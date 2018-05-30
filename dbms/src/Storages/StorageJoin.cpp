@@ -30,9 +30,7 @@ StorageJoin::StorageJoin(
 {
     for (const auto & key : key_names)
         if (!getColumns().hasPhysical(key))
-            throw Exception{
-                "Key column (" + key + ") does not exist in table declaration.",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
+            throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     /// NOTE StorageJoin doesn't use join_use_nulls setting.
 

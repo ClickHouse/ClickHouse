@@ -81,13 +81,12 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     {
         return wrap_row_stream(std::make_shared<ValuesRowInputStream>(buf, sample, context, settings.input_format_values_interpret_expressions));
     }
-    else if (name == "CSV")
+    else if (name == "CSV" || name == "CSVWithNames")
     {
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, ','));
-    }
-    else if (name == "CSVWithNames")
-    {
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, ',', true));
+        char csv_delimiter = settings.format_csv_delimiter;
+        bool with_names = name == "CSVWithNames";
+
+        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, csv_delimiter, with_names));
     }
     else if (name == "TSKV")
     {
@@ -152,10 +151,13 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true), sample);
     else if (name == "TabSeparatedRaw" || name == "TSVRaw")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample), sample);
-    else if (name == "CSV")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample), sample);
-    else if (name == "CSVWithNames")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, true), sample);
+    else if (name == "CSV" || name == "CSVWithNames")
+    {
+        char csv_delimiter = settings.format_csv_delimiter;
+        bool with_names = name == "CSVWithNames";
+
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, csv_delimiter, with_names), sample);
+    }
     else if (name == "Pretty")
         return std::make_shared<PrettyBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
     else if (name == "PrettyCompact")

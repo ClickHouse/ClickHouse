@@ -3,7 +3,6 @@
 #include <Functions/FunctionFactory.h>
 
 
-#include <iostream>
 
 namespace DB
 {
@@ -42,7 +41,7 @@ void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsCharset(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
-
+void registerFunctionsProjection(FunctionFactory &);
 
 void registerFunctions()
 {
@@ -79,6 +78,7 @@ void registerFunctions()
     registerFunctionsCharset(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
+    registerFunctionsProjection(factory);
 }
 
 }

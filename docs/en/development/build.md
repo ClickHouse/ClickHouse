@@ -14,10 +14,10 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 ## Install Git and CMake
 
 ```bash
-sudo apt-get install git cmake3
+sudo apt-get install git cmake
 ```
 
-Or just cmake on newer systems.
+Or cmake3 instead of cmake on older systems.
 
 ## Detect the number of threads
 

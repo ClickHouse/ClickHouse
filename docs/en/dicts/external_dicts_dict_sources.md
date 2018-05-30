@@ -135,7 +135,7 @@ Installing unixODBC and the ODBC driver for PostgreSQL:
 Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 
 ```
-[DEFAULT]
+    [DEFAULT]
     Driver = myconnection
 
     [myconnection]
@@ -159,9 +159,9 @@ The dictionary configuration in ClickHouse:
 <dictionary>
     <name>table_name</name>
     <source>
-        <odbc>
-            <!-- You can specifiy the following parameters in connection_string: -->
-            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+    <odbc>
+        <!-- You can specifiy the following parameters in connection_string: -->
+        <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
             <connection_string>DSN=myconnection</connection_string>
             <table>postgresql_table</table>
         </odbc>
@@ -195,7 +195,7 @@ Ubuntu OS.
 Installing the driver: :
 
 ```
-sudo apt-get install tdsodbc freetds-bin sqsh
+    sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
 Configuring the driver: :

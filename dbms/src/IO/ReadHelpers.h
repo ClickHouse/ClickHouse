@@ -483,7 +483,7 @@ inline void readDateText(LocalDate & date, ReadBuffer & buf)
         readDateTextFallback(date, buf);
 }
 
-inline void readDateText(DayNum_t & date, ReadBuffer & buf)
+inline void readDateText(DayNum & date, ReadBuffer & buf)
 {
     LocalDate local_date;
     readDateText(local_date, buf);

@@ -15,3 +15,4 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 ## bitShiftLeft(a, b)
 
 ## bitShiftRight(a, b)
+

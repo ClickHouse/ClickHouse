@@ -12,7 +12,7 @@ namespace DB
 
 /** Repository with configurations of user-defined objects (dictionaries, models).
   * Used by ExternalLoader.
-  */ 
+  */
 class IExternalLoaderConfigRepository
 {
 public:

@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <Common/ProfileEvents.h>
 

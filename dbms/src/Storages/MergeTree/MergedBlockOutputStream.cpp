@@ -260,7 +260,7 @@ std::string MergedBlockOutputStream::getPartPath() const
     return part_path;
 }
 
- /// If data is pre-sorted.
+/// If data is pre-sorted.
 void MergedBlockOutputStream::write(const Block & block)
 {
     writeImpl(block, nullptr);

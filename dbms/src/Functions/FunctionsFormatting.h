@@ -54,7 +54,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (!(    executeType<UInt8>(block, arguments, result)
             ||    executeType<UInt16>(block, arguments, result)
@@ -147,7 +147,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (!(    executeType<UInt8>(block, arguments, result)
             ||    executeType<UInt16>(block, arguments, result)

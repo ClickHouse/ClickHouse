@@ -150,7 +150,7 @@ private:
                 --ptr->refcount;
                 if (!ptr->refcount)
                 {
-                    if (std::uncaught_exception())
+                    if (std::uncaught_exceptions())
                         delete ptr;
                     else
                         ptr->output_blocks->push_back(ptr);

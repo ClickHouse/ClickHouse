@@ -2,70 +2,77 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 
 generate_function_register(Arithmetic
-  FunctionPlus
-  FunctionMinus
-  FunctionMultiply
-  FunctionDivideFloating
-  FunctionDivideIntegral
-  FunctionDivideIntegralOrZero
-  FunctionModulo
-  FunctionNegate
-  FunctionAbs
-  FunctionBitAnd
-  FunctionBitOr
-  FunctionBitXor
-  FunctionBitNot
-  FunctionBitShiftLeft
-  FunctionBitShiftRight
-  FunctionBitRotateLeft
-  FunctionBitRotateRight
-  FunctionLeast
-  FunctionGreatest
-  FunctionBitTest
-  FunctionBitTestAny
-  FunctionBitTestAll
-  FunctionGCD
-  FunctionLCM
-  FunctionIntExp2
-  FunctionIntExp10
+    FunctionPlus
+    FunctionMinus
+    FunctionMultiply
+    FunctionDivideFloating
+    FunctionDivideIntegral
+    FunctionDivideIntegralOrZero
+    FunctionModulo
+    FunctionNegate
+    FunctionAbs
+    FunctionBitAnd
+    FunctionBitOr
+    FunctionBitXor
+    FunctionBitNot
+    FunctionBitShiftLeft
+    FunctionBitShiftRight
+    FunctionBitRotateLeft
+    FunctionBitRotateRight
+    FunctionLeast
+    FunctionGreatest
+    FunctionBitTest
+    FunctionBitTestAny
+    FunctionBitTestAll
+    FunctionGCD
+    FunctionLCM
+    FunctionIntExp2
+    FunctionIntExp10
 )
 
 generate_function_register(Array
-  FunctionArray
-  FunctionArrayElement
-  FunctionHas
-  FunctionIndexOf
-  FunctionCountEqual
-  FunctionArrayEnumerate
-  FunctionArrayEnumerateUniq
-  FunctionArrayUniq
-  FunctionEmptyArrayUInt8
-  FunctionEmptyArrayUInt16
-  FunctionEmptyArrayUInt32
-  FunctionEmptyArrayUInt64
-  FunctionEmptyArrayInt8
-  FunctionEmptyArrayInt16
-  FunctionEmptyArrayInt32
-  FunctionEmptyArrayInt64
-  FunctionEmptyArrayFloat32
-  FunctionEmptyArrayFloat64
-  FunctionEmptyArrayDate
-  FunctionEmptyArrayDateTime
-  FunctionEmptyArrayString
-  FunctionEmptyArrayToSingle
-  FunctionRange
-  FunctionArrayReduce
-  FunctionArrayReverse
-  FunctionArrayConcat
-  FunctionArraySlice
-  FunctionArrayPushBack
-  FunctionArrayPushFront
-  FunctionArrayPopBack
-  FunctionArrayPopFront
-  FunctionArrayHasAll
-  FunctionArrayHasAny
-  FunctionArrayIntersect
-  FunctionArrayResize
+    FunctionArray
+    FunctionArrayElement
+    FunctionHas
+    FunctionIndexOf
+    FunctionCountEqual
+    FunctionArrayEnumerate
+    FunctionArrayEnumerateUniq
+    FunctionArrayUniq
+    FunctionEmptyArrayUInt8
+    FunctionEmptyArrayUInt16
+    FunctionEmptyArrayUInt32
+    FunctionEmptyArrayUInt64
+    FunctionEmptyArrayInt8
+    FunctionEmptyArrayInt16
+    FunctionEmptyArrayInt32
+    FunctionEmptyArrayInt64
+    FunctionEmptyArrayFloat32
+    FunctionEmptyArrayFloat64
+    FunctionEmptyArrayDate
+    FunctionEmptyArrayDateTime
+    FunctionEmptyArrayString
+    FunctionEmptyArrayToSingle
+    FunctionRange
+    FunctionArrayReduce
+    FunctionArrayReverse
+    FunctionArrayConcat
+    FunctionArraySlice
+    FunctionArrayPushBack
+    FunctionArrayPushFront
+    FunctionArrayPopBack
+    FunctionArrayPopFront
+    FunctionArrayHasAll
+    FunctionArrayHasAny
+    FunctionArrayIntersect
+    FunctionArrayResize
+)
+
+generate_function_register(Projection
+    FunctionOneOrZero
+    FunctionProject
+    FunctionBuildProjectionComposition
+    FunctionRestoreProjection
 )
 
 
@@ -101,4 +108,8 @@ endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (tests)
+endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    target_include_directories (clickhouse_functions BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()

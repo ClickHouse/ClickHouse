@@ -3,6 +3,7 @@
 #include <string>
 #include <cstring>
 #include <cstddef>
+#include <type_traits>
 
 
 namespace detail

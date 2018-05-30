@@ -194,9 +194,9 @@ void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_nu
 }
 
 
-void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
+void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr); });
+    read(*this, column, [&istr, delimiter](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr, delimiter); });
 }
 
 

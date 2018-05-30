@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <Poco/File.h>
 #include <common/logger_useful.h>

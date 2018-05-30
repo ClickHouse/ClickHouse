@@ -837,6 +837,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     Stopwatch watch;
     size_t rows = data_variants.size();
 
+    Poco::File(params.tmp_path).createDirectories();
     auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);

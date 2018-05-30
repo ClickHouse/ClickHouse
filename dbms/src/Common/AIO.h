@@ -15,6 +15,7 @@
 #include <linux/aio_abi.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <errno.h>
 
 
 /** Small wrappers for asynchronous I/O.

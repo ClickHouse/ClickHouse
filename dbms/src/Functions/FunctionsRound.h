@@ -93,6 +93,10 @@ struct RoundToExp2Impl
     {
         return roundDownToPowerOfTwo<T>(x);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 
@@ -120,6 +124,10 @@ struct RoundDurationImpl
             : (x < 36000 ? 18000
             : 36000))))))))))))));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 template <typename A>
@@ -137,6 +145,10 @@ struct RoundAgeImpl
             : (x < 55 ? 45
             : 55)))));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false;
+#endif
 };
 
 
@@ -572,7 +584,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (!(    executeForType<UInt8>(block, arguments, result)
             ||    executeForType<UInt16>(block, arguments, result)

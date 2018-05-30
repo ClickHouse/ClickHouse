@@ -2,7 +2,7 @@
 
 ## Q1 2018
 
-### New functionality
+### New fuctionality
 
 - Support for `UPDATE` and `DELETE`.
 
@@ -13,9 +13,9 @@
 ```sql
 CREATE TABLE t
 (
-    x Array(Array(String)), 
+    x Array(Array(String)),
     z Nested(
-        x Array(String), 
+        x Array(String),
         y Nested(...))
 )
 ENGINE = MergeTree ORDER BY x
@@ -26,7 +26,7 @@ ENGINE = MergeTree ORDER BY x
    External tables can be integrated into ClickHouse using external dictionaries. This new functionality is a convenient alternative to connecting external tables.
 
 ```sql
-SELECT ... 
+SELECT ...
 FROM mysql('host:port', 'db', 'table', 'user', 'password')`
 ```
 
@@ -34,8 +34,7 @@ FROM mysql('host:port', 'db', 'table', 'user', 'password')`
 
 - Effective data copying between ClickHouse clusters.
 
-   Now you can copy data with the remote() function. For example: `
-INSERT INTO t SELECT * FROM remote(...) `.
+   Now you can copy data with the remote() function. For example: `INSERT INTO t SELECT * FROM remote(...) `.
 
    This operation will have improved performance.
 
@@ -48,7 +47,9 @@ INSERT INTO t SELECT * FROM remote(...) `.
 ### New functionality
 
 - UPDATE/DELETE conform to the EU GDPR.
+
 - Protobuf and Parquet input and output formats.
+
 - Creating dictionaries using DDL queries.
 
    Currently, dictionaries that are part of the database schema are defined in external XML files. This is inconvenient and counter-intuitive. The new approach should fix it.

@@ -1,13 +1,25 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionHelpers.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeNothing.h>
-#include <Columns/ColumnConst.h>
-#include <Interpreters/ExpressionActions.h>
+#include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Native.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
+#include <cstdlib>
+#include <memory>
+#include <optional>
+
+#if USE_EMBEDDED_COMPILER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h>
+#pragma GCC diagnostic pop
+#endif
 
 
 namespace DB
@@ -19,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+
 namespace
 {
 
@@ -26,7 +39,7 @@ namespace
 /** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
   * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
   */
-ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result)
+ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     ColumnPtr result_null_map_column;
 
@@ -49,7 +62,7 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
 
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
 
         if (elem.column->isColumnConst())
             continue;
@@ -134,7 +147,8 @@ bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 }
 }
 
-bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result)
+bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
+                                                                     size_t input_rows_count)
 {
     ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
 
@@ -176,14 +190,15 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
     for (size_t i = 0; i < arguments_size; ++i)
         temporary_argument_numbers[i] = i;
 
-    execute(temporary_block, temporary_argument_numbers, arguments_size);
+    execute(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
 
-    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, block.rows());
+    block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, input_rows_count);
     return true;
 }
 
 
-bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result)
+bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
+                                                         size_t input_rows_count)
 {
     if (args.empty() || !useDefaultImplementationForNulls())
         return false;
@@ -192,30 +207,31 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
 
     if (null_presence.has_null_constant)
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Null());
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
         return true;
     }
 
     if (null_presence.has_nullable)
     {
         Block temporary_block = createBlockWithNestedColumns(block, args, result);
-        execute(temporary_block, args, result);
-        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args, result);
+        execute(temporary_block, args, result, temporary_block.rows());
+        block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args,
+                                                            result, input_rows_count);
         return true;
     }
 
     return false;
 }
 
-void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result)
+void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
-    if (defaultImplementationForConstantArguments(block, args, result))
+    if (defaultImplementationForConstantArguments(block, args, result, input_rows_count))
         return;
 
-    if (defaultImplementationForNulls(block, args, result))
+    if (defaultImplementationForNulls(block, args, result, input_rows_count))
         return;
 
-    executeImpl(block, args, result);
+    executeImpl(block, args, result, input_rows_count);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
@@ -254,4 +270,71 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
     return getReturnTypeImpl(arguments);
 }
+
+#if USE_EMBEDDED_COMPILER
+
+static std::optional<DataTypes> removeNullables(const DataTypes & types)
+{
+    for (const auto & type : types)
+    {
+        if (!typeid_cast<const DataTypeNullable *>(type.get()))
+            continue;
+        DataTypes filtered;
+        for (const auto & type : types)
+            filtered.emplace_back(removeNullable(type));
+        return filtered;
+    }
+    return {};
+}
+
+bool IFunction::isCompilable(const DataTypes & arguments) const
+{
+    if (useDefaultImplementationForNulls())
+        if (auto denulled = removeNullables(arguments))
+            return isCompilableImpl(*denulled);
+    return isCompilableImpl(arguments);
+}
+
+llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes & arguments, ValuePlaceholders values) const
+{
+    if (useDefaultImplementationForNulls())
+    {
+        if (auto denulled = removeNullables(arguments))
+        {
+            /// FIXME: when only one column is nullable, this can actually be slower than the non-jitted version
+            ///        because this involves copying the null map while `wrapInNullable` reuses it.
+            auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+            auto * fail = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+            auto * join = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+            auto * zero = llvm::Constant::getNullValue(toNativeType(b, makeNullable(getReturnTypeImpl(*denulled))));
+            for (size_t i = 0; i < arguments.size(); i++)
+            {
+                if (!arguments[i]->isNullable())
+                    continue;
+                /// Would be nice to evaluate all this lazily, but that'd change semantics: if only unevaluated
+                /// arguments happen to contain NULLs, the return value would not be NULL, though it should be.
+                auto * value = values[i]();
+                auto * ok = llvm::BasicBlock::Create(b.GetInsertBlock()->getContext(), "", b.GetInsertBlock()->getParent());
+                b.CreateCondBr(b.CreateExtractValue(value, {1}), fail, ok);
+                b.SetInsertPoint(ok);
+                values[i] = [value = b.CreateExtractValue(value, {0})]() { return value; };
+            }
+            auto * result = b.CreateInsertValue(zero, compileImpl(builder, *denulled, std::move(values)), {0});
+            auto * result_block = b.GetInsertBlock();
+            b.CreateBr(join);
+            b.SetInsertPoint(fail);
+            auto * null = b.CreateInsertValue(zero, b.getTrue(), {1});
+            b.CreateBr(join);
+            b.SetInsertPoint(join);
+            auto * phi = b.CreatePHI(result->getType(), 2);
+            phi->addIncoming(result, result_block);
+            phi->addIncoming(null, fail);
+            return phi;
+        }
+    }
+    return compileImpl(builder, arguments, std::move(values));
+}
+
+#endif
+
 }

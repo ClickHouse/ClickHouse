@@ -157,13 +157,17 @@ SELECT a, b, c FROM (SELECT ...)
 
 Отсутствует отдельный запрос для удаления представлений. Чтобы удалить представление, следует использовать `DROP TABLE`.
 
+<a name="queries-attach"></a>
+
 ## ATTACH
-Запрос полностью аналогичен запросу `CREATE`, но
+Запрос полностью аналогичен запросу `CREATE`, но:
+
 - вместо слова `CREATE` используется слово `ATTACH`;
 - запрос не создаёт данные на диске, а предполагает, что данные уже лежат в соответствующих местах, и всего лишь добавляет информацию о таблице в сервер.
-После выполнения запроса ATTACH, сервер будет знать о существовании таблицы.
 
-Если таблица перед этим была отсоединена (``DETACH``), т.е. её структура известна, то можно использовать сокращенную форму записи без определения структуры.
+После выполнения `ATTACH`, сервер будет знать о существовании таблицы.
+
+Если таблица перед этим была отсоединена (`DETACH`), т.е. её структура известна, то можно использовать сокращенную форму записи без определения структуры.
 
 ```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name
@@ -308,10 +312,10 @@ SELECT * FROM system.parts WHERE active
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 мая   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 мая   13 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 мая   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
 ```
 
 Здесь `20140317_20140323_2_2_0`, `20140317_20140323_4_4_0` - директории кусков.

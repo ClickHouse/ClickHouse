@@ -4,14 +4,15 @@ Priority: optional
 Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
-               ninja-build [amd64 i386],
-               gcc-7, g++-7,
+               ninja-build,
+               gcc-7 [amd64 i386] | gcc-8 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386],
+               clang-6.0 [arm64 armhf] | clang-5.0 [arm64 armhf] | clang-7 [arm64 armhf],
                libc6-dev,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
                libltdl-dev,
                libreadline-dev,
-               libssl-dev,
+               libssl1.0-dev | libssl-dev,
                unixodbc-dev
 Standards-Version: 3.9.8
 

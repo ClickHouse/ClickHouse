@@ -15,6 +15,7 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <DataStreams/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -24,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionSettingsSelector.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
@@ -39,7 +41,7 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/UncompressedCache.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -131,6 +133,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
+    BackgroundSchedulePoolPtr schedule_pool;                /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -139,7 +142,7 @@ struct ContextShared
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
-
+    ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -1328,6 +1331,14 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     return *shared->background_pool;
 }
 
+BackgroundSchedulePool & Context::getSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->schedule_pool)
+        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.background_schedule_pool_size);
+    return *shared->schedule_pool;
+}
+
 void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1406,9 +1417,28 @@ std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name
 
 void Context::reloadClusterConfig()
 {
-    std::lock_guard<std::mutex> lock(shared->clusters_mutex);
-    auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
-    shared->clusters = std::make_unique<Clusters>(config, settings);
+    while (true)
+    {
+        ConfigurationPtr cluster_config;
+        {
+            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            cluster_config = shared->clusters_config;
+        }
+
+        auto & config = cluster_config ? *cluster_config : getConfigRef();
+        auto new_clusters = std::make_unique<Clusters>(config, settings);
+
+        {
+            std::lock_guard<std::mutex> lock(shared->clusters_mutex);
+            if (shared->clusters_config.get() == cluster_config.get())
+            {
+                shared->clusters = std::move(new_clusters);
+                return;
+            }
+
+            /// Clusters config has been suddenly changed, recompute clusters
+        }
+    }
 }
 
 
@@ -1700,6 +1730,16 @@ String Context::getFormatSchemaPath() const
 void Context::setFormatSchemaPath(const String & path)
 {
     shared->format_schema_path = path;
+}
+
+std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
+{
+    auto lock = getLock();
+
+    if (!shared->action_locks_manager)
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
+
+    return shared->action_locks_manager;
 }
 
 

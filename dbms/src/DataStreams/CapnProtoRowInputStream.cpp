@@ -122,7 +122,12 @@ CapnProtoRowInputStream::CapnProtoRowInputStream(ReadBuffer & istr_, const Block
 {
 
     // Parse the schema and fetch the root object
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
     auto schema = parser->impl.parseDiskFile(schema_file, getSchemaPath(schema_dir, schema_file), {});
+#pragma GCC diagnostic pop
+
     root = schema.getNested(root_object).asStruct();
 
     /**

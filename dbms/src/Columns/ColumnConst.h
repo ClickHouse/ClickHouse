@@ -91,6 +91,11 @@ public:
         return data->getInt(0);
     }
 
+    bool getBool(size_t) const override
+    {
+        return data->getBool(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -188,6 +193,7 @@ public:
     bool isFixedAndContiguous() const override { return data->isFixedAndContiguous(); }
     bool valuesHaveFixedSize() const override { return data->valuesHaveFixedSize(); }
     size_t sizeOfValueIfFixed() const override { return data->sizeOfValueIfFixed(); }
+    StringRef getRawData() const override { return data->getRawData(); }
 
     /// Not part of the common interface.
 

@@ -16,43 +16,44 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
              Password can be empty.
 
              If you want to specify SHA256, place it in the 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
-                          How to generate a decent password:             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'             
-                          The first line has the password and the second line has the corresponding SHA256.
-        -->        
+                          Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+
+             How to generate decent password:
+             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+             In first line will be password and in second - corresponding SHA256.
+        -->
         <password></password>
-                
         <!-- A list of networks that access is allowed from.
             Each list item has one of the following forms:
             <ip>IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
             <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example: ^example\d\d-\d\d-\d\.yandex\.ru$                
-            For verification, a DNS PTR query is made for the customer's address and a regular expression is applied to the result.
-            Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-            We strongly recommend that the regex ends with \.yandex\.ru$.
+            <host_regexp> Regular expression for host names. For example: ^example\d\d-\d\d-\d\.yandex\.ru$
+                For verification, a DNS PTR query is made for the customer's address and a regular expression is applied to the result.
+                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
+                We strongly recommend that the regex ends with \.yandex\.ru$.
 
             If you are installing ClickHouse yourself, enter:
-                 <networks>                        
-                         <ip>::/0</ip>
+                <networks>
+                        <ip>::/0</ip>
                 </networks>
-         -->        
-         <networks incl="networks" />        
-         
-         <!-- Settings profile for the user. -->        
-         <profile>default</profile>        
-         
-         <!-- Quota for the user. -->        
-         <quota>default</quota>    
-    </default>    
-         
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->    
-    <web>        
-        <password></password>        
-        <networks incl="networks" />        
-        <profile>web</profile>        
-        <quota>default</quota>        
-        <allow_databases>           
-            <database>test</database>
+        -->
+        <networks incl="networks" />
+
+        <!-- Settings profile for the user. -->
+        <profile>default</profile>
+
+        <!-- Quota for the user. -->
+        <quota>default</quota>
+    </default>
+
+    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
+    <web>
+        <password></password>
+        <networks incl="networks" />
+        <profile>web</profile>
+        <quota>default</quota>
+        <allow_databases>
+        <database>test</database>
         </allow_databases>
     </web>
 </users>
@@ -97,4 +98,3 @@ Access to the `system` database is always allowed (since this database is used f
 The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn't allowed.
 
 Database access is not related to the [readonly](settings/query_complexity.md#query_complexity_readonly) setting. You can't grant full access to one database and `readonly` access to another one.
-

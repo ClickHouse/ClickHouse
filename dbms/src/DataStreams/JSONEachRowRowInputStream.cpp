@@ -130,7 +130,15 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 
         read_columns[index] = true;
 
-        header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr);
+        try
+        {
+            header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage("(while read the value of key " + name_ref.toString() + ")");
+            throw;
+        }
     }
 
     /// Fill non-visited columns with the default values.

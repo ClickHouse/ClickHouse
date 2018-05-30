@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_)
-    : ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_)
+CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const char delimiter_, bool with_names_, bool with_types_)
+    : ostr(ostr_), sample(sample_), delimiter(delimiter_), with_names(with_names_), with_types(with_types_)
 {
     size_t columns = sample.columns();
     data_types.resize(columns);
@@ -32,7 +32,7 @@ void CSVRowOutputStream::writePrefix()
         for (size_t i = 0; i < columns; ++i)
         {
             writeCSVString(sample.safeGetByPosition(i).name, ostr);
-            writeChar(i == columns - 1 ? '\n' : ',', ostr);
+            writeChar(i == columns - 1 ? '\n' : delimiter, ostr);
         }
     }
 
@@ -41,7 +41,7 @@ void CSVRowOutputStream::writePrefix()
         for (size_t i = 0; i < columns; ++i)
         {
             writeCSVString(sample.safeGetByPosition(i).type->getName(), ostr);
-            writeChar(i == columns - 1 ? '\n' : ',', ostr);
+            writeChar(i == columns - 1 ? '\n' : delimiter, ostr);
         }
     }
 }
@@ -55,7 +55,7 @@ void CSVRowOutputStream::writeField(const IColumn & column, const IDataType & ty
 
 void CSVRowOutputStream::writeFieldDelimiter()
 {
-    writeChar(',', ostr);
+    writeChar(delimiter, ostr);
 }
 
 
