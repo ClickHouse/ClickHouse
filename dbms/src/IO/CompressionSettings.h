@@ -51,11 +51,14 @@ struct CompressionSettings
     {
     }
 
-    CompressionSettings(CompressionMethod method_, ColumnCodecs codecs_, const String & name)
+    CompressionSettings(CompressionMethod method_, ColumnCodecs& codecs_, const String & name)
         : method(method_)
-        , codecs(codecs_)
-        , codec (codecs[name])
     {
+        const auto ct = codecs_.find(name);
+        if (ct != std::end(codecs_))
+        {
+            codec = ct->second;
+        }
     }
 
     CompressionSettings(const Settings & settings);
@@ -70,7 +73,12 @@ struct CompressionSettings
 
     CompressionSettings getNamedSettings(const String & name)
     {
-        return CompressionSettings(method, codecs[name]);
+        const auto ct = codecs.find(name);
+        if (ct != std::end(codecs))
+        {
+            return CompressionSettings(method, codecs[name]);
+        }
+        return *this;
     }
 
     static int getDefaultLevel(CompressionMethod method);

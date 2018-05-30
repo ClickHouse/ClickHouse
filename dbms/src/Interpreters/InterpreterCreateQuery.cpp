@@ -214,9 +214,6 @@ static ColumnsAndDefaults parseColumns(const ASTExpressionList & column_list_ast
             column_pipe->setDataType(columns.back().type);
             codecs.emplace(col_decl.name, column_pipe);
         }
-        else
-            /// by default use config specified
-            codecs.emplace(col_decl.name, nullptr);
     }
 
     /// set missing types and wrap default_expression's in a conversion-function if necessary
@@ -340,8 +337,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto ct = columns.codecs.find(column.name);
         if (ct != std::end(columns.codecs))
         {
-            if (ct->second && ct->second->codec_ptr)
-                column_declaration->codec = ct->second->codec_ptr->clone();
+            column_declaration->codec = ct->second->codec_ptr->clone();
         }
 
         columns_list->children.push_back(column_declaration_ptr);
