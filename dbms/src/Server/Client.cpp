@@ -58,8 +58,8 @@
 #include <ext/scope_guard.h>
 
 static Completion::HashTable ht;
-char ** commands_completion(const char *, int, int);
-char * commands_generator(const char *, int);
+char ** query_parts_completion(const char *, int, int);
+char * query_parts_generator(const char *, int);
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -348,7 +348,7 @@ private:
             Completion::hash_add_word(ht, qP->name);
             qP++;
         }
-        rl_attempted_completion_function = commands_completion;
+        rl_attempted_completion_function = query_parts_completion;
     }
 
 
@@ -461,7 +461,9 @@ private:
                 throw Exception("query_id could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
+#if USE_READLINE
             init_suggestions(&ht);
+#endif
 
             /// Turn tab completion off.
 //            rl_bind_key('\t', rl_insert);
@@ -487,6 +489,9 @@ private:
             }
 
             loop();
+#if USE_READLINE
+            Completion::hash_free(&ht);
+#endif
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
 
@@ -1566,13 +1571,13 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     return client.run();
 }
 
-char ** commands_completion(const char *text, int start, int end)
+char ** query_parts_completion(const char *text, int start, int end)
 {
     rl_attempted_completion_over = start + end + 1;
-    return rl_completion_matches(text, commands_generator);
+    return rl_completion_matches(text, query_parts_generator);
 }
 
-char * commands_generator(const char * text, int state)
+char * query_parts_generator(const char *text, int state)
 {
     static int text_length;
     static Completion::Bucket *bucket;
