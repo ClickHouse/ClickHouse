@@ -1,4 +1,4 @@
-FROM ubuntu:17.10
+FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
 ARG version=\*
@@ -9,7 +9,7 @@ RUN apt-get update && \
     apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-client=$version locales tzdata && \
+    env DEBIAN_FRONTEND=noninteractive apt-get install --allow-unauthenticated -y clickhouse-client=$version locales tzdata && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
