@@ -12,6 +12,7 @@ df -h
 date
 
 env TEST_RUN=${TEST_RUN=1} \
+    TEST_PORT_RANDOM= \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00416 requires patched poco from contrib/` \
