@@ -40,9 +40,10 @@ static String generateActiveNodeIdentifier()
 }
 
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
-    : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, RestartingThread)")),
-    active_node_identifier(generateActiveNodeIdentifier())
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeRestartingThread)")
+    , log(&Logger::get(log_name))
+    , active_node_identifier(generateActiveNodeIdentifier())
 {
     check_period_ms = storage.data.settings.zookeeper_session_expiration_check_period.totalSeconds() * 1000;
 
@@ -50,20 +51,13 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
     if (check_period_ms > static_cast<Int64>(storage.data.settings.check_delay_period) * 1000)
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
-    storage.queue_updating_task_handle = storage.context.getSchedulePool().addTask("StorageReplicatedMergeTree::queueUpdatingThread", [this]{ storage.queueUpdatingThread(); });
-    storage.queue_updating_task_handle->deactivate();
-
-    storage.mutations_updating_task_handle = storage.context.getSchedulePool().addTask("StorageReplicatedMergeTree::mutationsUpdatingThread", [this]{ storage.mutationsUpdatingThread(); });
-
-    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeRestartingThread", [this]{ run(); });
-    task_handle->schedule();
+    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task->schedule();
 }
 
 ReplicatedMergeTreeRestartingThread::~ReplicatedMergeTreeRestartingThread()
 {
-    storage.context.getSchedulePool().removeTask(task_handle);
     completeShutdown();
-    storage.context.getSchedulePool().removeTask(storage.queue_updating_task_handle);
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -105,7 +99,7 @@ void ReplicatedMergeTreeRestartingThread::run()
 
                     if (first_time)
                         storage.startup_event.set();
-                    task_handle->scheduleAfter(retry_period_ms);
+                    task->scheduleAfter(retry_period_ms);
                     return;
                 }
 
@@ -113,7 +107,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     if (first_time)
                         storage.startup_event.set();
-                    task_handle->scheduleAfter(retry_period_ms);
+                    task->scheduleAfter(retry_period_ms);
                     return;
                 }
 
@@ -170,7 +164,7 @@ void ReplicatedMergeTreeRestartingThread::run()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    task_handle->scheduleAfter(check_period_ms);
+    task->scheduleAfter(check_period_ms);
 }
 
 void ReplicatedMergeTreeRestartingThread::completeShutdown()
@@ -214,10 +208,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.shutdown_called = false;
         storage.shutdown_event.reset();
 
-        storage.queue_updating_task_handle->activate();
-        storage.queue_updating_task_handle->schedule();
-        storage.mutations_updating_task_handle->activate();
-        storage.mutations_updating_task_handle->schedule();
+        storage.queue_updating_task->activate();
+        storage.queue_updating_task->schedule();
+        storage.mutations_updating_task->activate();
+        storage.mutations_updating_task->schedule();
         storage.part_check_thread.start();
         storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
         storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
@@ -365,8 +359,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     storage.exitLeaderElection();
 
-    storage.queue_updating_task_handle->deactivate();
-    storage.mutations_updating_task_handle->deactivate();
+    storage.queue_updating_task->deactivate();
+    storage.mutations_updating_task->deactivate();
 
     storage.cleanup_thread.reset();
     storage.alter_thread.reset();

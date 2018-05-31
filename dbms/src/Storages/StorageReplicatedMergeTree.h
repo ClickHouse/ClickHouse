@@ -198,7 +198,6 @@ private:
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
     friend class ReplicatedMergeTreeQueue;
-    friend class ReplicatedMergeTreeMergeSelectingThread;
     friend class MergeTreeData;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -269,15 +268,15 @@ private:
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
-    BackgroundSchedulePool::TaskHandle queue_updating_task_handle;
+    BackgroundSchedulePool::TaskHolder queue_updating_task;
 
-    BackgroundSchedulePool::TaskHandle mutations_updating_task_handle;
+    BackgroundSchedulePool::TaskHolder mutations_updating_task;
 
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
     /// A task that selects parts to merge.
-    BackgroundSchedulePool::TaskHandle merge_selecting_task_handle;
+    BackgroundSchedulePool::TaskHolder merge_selecting_task;
 
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
@@ -385,9 +384,9 @@ private:
 
     /** Updates the queue.
       */
-    void queueUpdatingThread();
+    void queueUpdatingTask();
 
-    void mutationsUpdatingThread();
+    void mutationsUpdatingTask();
 
     /** Performs actions from the queue.
       */
@@ -405,7 +404,7 @@ private:
 
     /** Selects the parts to merge and writes to the log.
       */
-    void mergeSelectingThread();
+    void mergeSelectingTask();
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
