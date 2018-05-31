@@ -10,6 +10,7 @@
 #include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <IO/CompressionSettings.h>
@@ -397,6 +398,10 @@ public:
 
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
+
+    using getSampleBlockCacheType = std::unordered_map<std::string, Block>;
+    mutable Context::getSampleBlockCacheType get_sample_block_cache;
+    getSampleBlockCacheType & getSampleBlockCache() const;
 
 private:
     /** Check if the current client has access to the specified database.
