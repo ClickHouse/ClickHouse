@@ -161,6 +161,15 @@ public:
 
     static void createAbandonedIfNotExists(const String & path, zkutil::ZooKeeper & zookeeper)
     {
+        /// Create partition dir if not exists
+        size_t index = path.find_last_of('/');
+        if (index != std::string::npos)
+        {
+            String dir = path.substr(0, index);
+            zookeeper.createIfNotExists(dir, "");
+        }
+
+        /// Create the node
         zookeeper.createIfNotExists(path, "");
     }
 
