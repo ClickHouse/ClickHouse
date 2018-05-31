@@ -14,17 +14,13 @@ namespace DB
 static const auto ALTER_ERROR_SLEEP_MS = 10 * 1000;
 
 
-ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_) :
-    storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, AlterThread)"))
-    {
-        task_handle = storage_.context.getSchedulePool().addTask("ReplicatedMergeTreeAlterThread", [this]{run();});
-        task_handle->schedule();
-    }
-
-ReplicatedMergeTreeAlterThread::~ReplicatedMergeTreeAlterThread()
+ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_)
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeAlterThread)")
+    , log(&Logger::get(log_name))
 {
-    storage.context.getSchedulePool().removeTask(task_handle);
+    task = storage_.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task->schedule();
 }
 
 void ReplicatedMergeTreeAlterThread::run()
@@ -59,7 +55,7 @@ void ReplicatedMergeTreeAlterThread::run()
         auto zookeeper = storage.getZooKeeper();
 
         zkutil::Stat stat;
-        const String columns_str = zookeeper->getWatch(storage.zookeeper_path + "/columns", &stat, task_handle->getWatchCallback());
+        const String columns_str = zookeeper->getWatch(storage.zookeeper_path + "/columns", &stat, task->getWatchCallback());
         auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
         bool changed_version = (stat.version != storage.columns_version);
@@ -197,14 +193,14 @@ void ReplicatedMergeTreeAlterThread::run()
             return;
 
         force_recheck_parts = true;
-        task_handle->scheduleAfter(ALTER_ERROR_SLEEP_MS);
+        task->scheduleAfter(ALTER_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         force_recheck_parts = true;
-        task_handle->scheduleAfter(ALTER_ERROR_SLEEP_MS);
+        task->scheduleAfter(ALTER_ERROR_SLEEP_MS);
     }
 }
 

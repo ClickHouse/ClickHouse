@@ -227,10 +227,16 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         zookeeper_path = "/" + zookeeper_path;
     replica_path = zookeeper_path + "/replicas/" + replica_name;
 
+    queue_updating_task = context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::queueUpdatingTask)", [this]{ queueUpdatingTask(); });
+
+    mutations_updating_task = context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::mutationsUpdatingTask)", [this]{ mutationsUpdatingTask(); });
+
+    merge_selecting_task = context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::mergeSelectingTask)", [this] { mergeSelectingTask(); });
+    /// Will be activated if we win leader election.
+    merge_selecting_task->deactivate();
+
     if (context.hasZooKeeper())
         current_zookeeper = context.getZooKeeper();
-
-    merge_selecting_task_handle = context_.getSchedulePool().addTask("StorageReplicatedMergeTree::mergeSelectingThread", [this] { mergeSelectingThread(); });
 
     bool skip_sanity_checks = false;
 
@@ -1298,7 +1304,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTre
         /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the merge will remain in the queue, and we will try again.
           */
-        merge_selecting_task_handle->schedule();
+        merge_selecting_task->schedule();
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMerges);
 
         write_part_log({});
@@ -1406,7 +1412,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
         /** With `ZSESSIONEXPIRED` or `ZOPERATIONTIMEOUT`, we can inadvertently roll back local changes to the parts.
           * This is not a problem, because in this case the entry will remain in the queue, and we will try again.
           */
-        merge_selecting_task_handle->schedule();
+        merge_selecting_task->schedule();
         ProfileEvents::increment(ProfileEvents::ReplicatedPartMutations);
         write_part_log({});
 
@@ -2026,7 +2032,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMerg
 }
 
 
-void StorageReplicatedMergeTree::queueUpdatingThread()
+void StorageReplicatedMergeTree::queueUpdatingTask()
 {
     //most probably this check is not relevant
     if (shutdown_called)
@@ -2039,7 +2045,7 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
     }
     try
     {
-        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task_handle);
+        queue.pullLogsToQueue(getZooKeeper(), queue_updating_task->getWatchCallback());
         last_queue_update_finish_time.store(time(nullptr));
         queue_update_in_progress = false;
     }
@@ -2050,21 +2056,21 @@ void StorageReplicatedMergeTree::queueUpdatingThread()
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
             return;
 
-        queue_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
+        queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        queue_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
+        queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
 }
 
 
-void StorageReplicatedMergeTree::mutationsUpdatingThread()
+void StorageReplicatedMergeTree::mutationsUpdatingTask()
 {
     try
     {
-        queue.updateMutations(getZooKeeper(), mutations_updating_task_handle);
+        queue.updateMutations(getZooKeeper(), mutations_updating_task->getWatchCallback());
     }
     catch (const zkutil::KeeperException & e)
     {
@@ -2073,12 +2079,12 @@ void StorageReplicatedMergeTree::mutationsUpdatingThread()
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
             return;
 
-        mutations_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
+        mutations_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        mutations_updating_task_handle->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
+        mutations_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
 }
 
@@ -2158,7 +2164,7 @@ bool StorageReplicatedMergeTree::queueTask()
 }
 
 
-void StorageReplicatedMergeTree::mergeSelectingThread()
+void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
         return;
@@ -2232,9 +2238,9 @@ void StorageReplicatedMergeTree::mergeSelectingThread()
         return;
 
     if (!success)
-        merge_selecting_task_handle->scheduleAfter(MERGE_SELECTING_SLEEP_MS);
+        merge_selecting_task->scheduleAfter(MERGE_SELECTING_SLEEP_MS);
     else
-        merge_selecting_task_handle->schedule();
+        merge_selecting_task->schedule();
 
 }
 
@@ -2378,8 +2384,8 @@ void StorageReplicatedMergeTree::enterLeaderElection()
         LOG_INFO(log, "Became leader");
 
         is_leader = true;
-        merge_selecting_task_handle->activate();
-        merge_selecting_task_handle->schedule();
+        merge_selecting_task->activate();
+        merge_selecting_task->schedule();
     };
 
     try
@@ -2414,7 +2420,7 @@ void StorageReplicatedMergeTree::exitLeaderElection()
         LOG_INFO(log, "Stopped being leader");
 
         is_leader = false;
-        merge_selecting_task_handle->deactivate();
+        merge_selecting_task->deactivate();
     }
 
     /// Delete the node in ZK only after we have stopped the merge_selecting_thread - so that only one
@@ -2697,7 +2703,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             if (quorum)
                 updateQuorum(part_name);
 
-            merge_selecting_task_handle->schedule();
+            merge_selecting_task->schedule();
 
             for (const auto & replaced_part : replaced_parts)
             {
@@ -2737,7 +2743,7 @@ void StorageReplicatedMergeTree::startup()
         database_name + "." + table_name + " (ReplicatedMergeTreeQueue)",
         data.getDataParts(), current_zookeeper);
 
-    queue.pullLogsToQueue(current_zookeeper, nullptr);
+    queue.pullLogsToQueue(current_zookeeper);
     last_queue_update_finish_time.store(time(nullptr));
     /// NOTE: not updating last_queue_update_start_time because it must contain the time when
     /// the notification of queue change was received. In the beginning it is effectively infinite.
@@ -2783,8 +2789,6 @@ StorageReplicatedMergeTree::~StorageReplicatedMergeTree()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
-
-    context.getSchedulePool().removeTask(merge_selecting_task_handle);
 }
 
 
@@ -3759,7 +3763,7 @@ void StorageReplicatedMergeTree::getReplicaDelays(time_t & out_absolute_delay, t
               * The conclusion that the replica does not lag may be incorrect,
               *  because the information about `min_unprocessed_insert_time` is taken
               *  only from that part of the log that has been moved to the queue.
-              * If the replica for some reason has stalled `queueUpdatingThread`,
+              * If the replica for some reason has stalled `queueUpdatingTask`,
               *  then `min_unprocessed_insert_time` will be incorrect.
               */
 
@@ -4503,7 +4507,7 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
     /// Let's fetch new log entries firstly
-    queue.pullLogsToQueue(getZooKeeper(), nullptr);
+    queue.pullLogsToQueue(getZooKeeper());
 
     Stopwatch watch;
     Poco::Event event;

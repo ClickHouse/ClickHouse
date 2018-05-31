@@ -214,15 +214,15 @@ public:
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
-      * If update_task_handle != nullptr, will schedule this task when new entries appear in the log.
+      * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       */
-    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle update_task_handle);
+    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback = {});
 
-    /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task_handle.
-    /// If update_task_handle != nullptr, will schedule this task when new mutations appear in ZK.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle update_task_handle);
+    /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
+    /// If watch_callback is not empty, will call it when new mutations appear in ZK.
+    void updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback = {});
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

@@ -288,23 +288,20 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
 }
 
 
-void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle update_task_handle)
+void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
-    zkutil::WatchCallback watch_callback;
-    if (update_task_handle)
-        watch_callback = update_task_handle->getWatchCallback();
     Strings log_entries = zookeeper->getChildrenWatch(zookeeper_path + "/log", nullptr, watch_callback);
 
     /// We update mutations after we have loaded the list of log entries, but before we insert them
     /// in the queue.
     /// With this we ensure that if you read the log state L1 and then the state of mutations M1,
     /// then L1 "happened-before" M1.
-    updateMutations(zookeeper, nullptr);
+    updateMutations(zookeeper);
 
     if (index_str.empty())
     {
@@ -434,13 +431,10 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, B
     }
 }
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, BackgroundSchedulePool::TaskHandle update_task_handle)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
-    zkutil::WatchCallback watch_callback;
-    if (update_task_handle)
-        watch_callback = update_task_handle->getWatchCallback();
     Strings entries_in_zk = zookeeper->getChildrenWatch(zookeeper_path + "/mutations", nullptr, watch_callback);
     StringSet entries_in_zk_set(entries_in_zk.begin(), entries_in_zk.end());
 
@@ -506,7 +500,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, B
             }
         }
 
-        storage.merge_selecting_task_handle->schedule();
+        storage.merge_selecting_task->schedule();
     }
 }
 
@@ -1099,7 +1093,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         }
     }
 
-    queue_.pullLogsToQueue(zookeeper, nullptr);
+    queue_.pullLogsToQueue(zookeeper);
 
     /// Load current quorum status.
     zookeeper->tryGet(queue.zookeeper_path + "/quorum/last_part", last_quorum_part);

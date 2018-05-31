@@ -304,7 +304,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     if (multi_code == ZooKeeperImpl::ZooKeeper::ZOK)
     {
         transaction.commit();
-        storage.merge_selecting_task_handle->schedule();
+        storage.merge_selecting_task->schedule();
 
         /// Lock nodes have been already deleted, do not delete them in destructor
         block_number_lock->assumeUnlocked();
