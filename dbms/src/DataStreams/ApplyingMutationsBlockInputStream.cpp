@@ -9,15 +9,11 @@ namespace DB
 ApplyingMutationsBlockInputStream::ApplyingMutationsBlockInputStream(
     const BlockInputStreamPtr & input, const std::vector<MutationCommand> & commands, const Context & context)
 {
-    if (commands.empty())
-        throw Exception("Empty mutation commands list. This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
     children.push_back(input);
 
+    impl = input;
     for (const MutationCommand & cmd : commands)
     {
-        const BlockInputStreamPtr & cur_input = impl ? impl : input;
-
         switch (cmd.type)
         {
         case MutationCommand::DELETE:
@@ -29,10 +25,10 @@ ApplyingMutationsBlockInputStream::ApplyingMutationsBlockInputStream(
             predicate->children.push_back(predicate->arguments);
 
             auto predicate_expr = ExpressionAnalyzer(
-                predicate, context, nullptr, cur_input->getHeader().getNamesAndTypesList()).getActions(false);
+                predicate, context, nullptr, impl->getHeader().getNamesAndTypesList()).getActions(false);
             String col_name = predicate->getColumnName();
 
-            impl = std::make_shared<FilterBlockInputStream>(cur_input, predicate_expr, col_name);
+            impl = std::make_shared<FilterBlockInputStream>(impl, predicate_expr, col_name);
             break;
         }
         default:
@@ -49,7 +45,10 @@ Block ApplyingMutationsBlockInputStream::getHeader() const
 
 Block ApplyingMutationsBlockInputStream::getTotals()
 {
-    return impl->getTotals();
+    if (IProfilingBlockInputStream * profiling = dynamic_cast<IProfilingBlockInputStream *>(impl.get()))
+        return profiling->getTotals();
+
+    return IProfilingBlockInputStream::getTotals();
 }
 
 Block ApplyingMutationsBlockInputStream::readImpl()
