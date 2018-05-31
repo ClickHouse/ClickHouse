@@ -21,7 +21,7 @@ public:
 private:
     Block readImpl() override;
 
-    ProfilingBlockInputStreamPtr impl;
+    BlockInputStreamPtr impl;
 };
 
 }
