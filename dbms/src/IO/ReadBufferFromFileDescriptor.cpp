@@ -48,10 +48,7 @@ bool ReadBufferFromFileDescriptor::nextImpl()
     {
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorRead);
 
-        StopWatchRusage watch_ru;
-        std::optional<Stopwatch> watch;
-        if (profile_callback)
-            watch.emplace(clock_type);
+        Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         ssize_t res = 0;
         {
@@ -70,15 +67,17 @@ bool ReadBufferFromFileDescriptor::nextImpl()
         if (res > 0)
             bytes_read += res;
 
-        watch_ru.stop();
-        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch_ru.elapsedMicroseconds());
+        /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one and we will count cpu time of other thread
+        /// It is better to use taskstats::blkio_delay_total, but it is quite expensive to get it (TaskStatsInfoGetter has about 500K RPS)
+        watch.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
         if (profile_callback)
         {
             ProfileInfo info;
             info.bytes_requested = internal_buffer.size();
             info.bytes_read = res;
-            info.nanoseconds = watch->elapsed();
+            info.nanoseconds = watch.elapsed();
             profile_callback(info);
         }
     }

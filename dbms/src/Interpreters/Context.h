@@ -52,6 +52,7 @@ class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class QueryThreadLog;
 class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
@@ -351,6 +352,7 @@ public:
 
     /// Nullptr if the query log is not ready for this moment.
     QueryLog * getQueryLog();
+    QueryThreadLog * getQueryThreadLog();
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.

@@ -31,16 +31,17 @@ namespace ProfileEvents
         Thread
     };
 
-    struct Counters
+    class Counters
     {
         Counter * counters = nullptr;
         Counters * parent = nullptr;
-        Level level = Level::Thread;
         std::unique_ptr<Counter[]> counters_holder;
 
-        Counters() = default;
+    public:
 
-        Counters(Level level, Counters * parent = nullptr);
+        Level level = Level::Thread;
+
+        Counters(Level level = Level::Thread, Counters * parent = nullptr);
 
         /// Global level static initializer
         Counters(Counter * allocated_counters)
@@ -65,6 +66,12 @@ namespace ProfileEvents
 
         /// Reset metrics and parent
         void reset();
+
+        /// Get parent (thread unsafe)
+        Counters * getParent()
+        {
+            return parent;
+        }
 
         /// Set parent (thread unsafe)
         void setParent(Counters * parent_)

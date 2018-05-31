@@ -256,8 +256,9 @@ struct Settings
     M(SettingUInt64, max_network_bandwidth_for_all_users, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running queries. Zero means unlimited.") \
     M(SettingChar, format_csv_delimiter, ',', "The character to be considered as a delimiter in CSV data. If setting with a string, a string has to have a length of 1.") \
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
-    M(SettingBool, log_profile_events, true, "Log query settings into the query_log.") \
-    M(SettingBool, log_query_settings, true, "Log query performance statistics into the query_log.")
+    M(SettingBool, log_profile_events, true, "Log query settings into the query_log and query_thread_log.") \
+    M(SettingBool, log_query_settings, true, "Log query performance statistics into the query_log.") \
+    M(SettingBool, log_query_threads, true, "Log query threads into system.query_log table.")
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};

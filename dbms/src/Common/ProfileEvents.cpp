@@ -1,5 +1,5 @@
 #include <Common/ProfileEvents.h>
-#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnArray.h>
 
@@ -151,16 +151,18 @@
     M(NetworkErrors) \
     \
     M(RealTimeMicroseconds) \
-    M(RusageUserTimeMicroseconds) \
-    M(RusageSystemTimeMicroseconds) \
-    M(RusagePageReclaims) \
-    M(RusagePageVoluntaryContextSwitches) \
-    M(RusagePageInvoluntaryContextSwitches) \
+    M(UserTimeMicroseconds) \
+    M(SystemTimeMicroseconds) \
+    M(SoftPageFaults) \
+    M(HardPageFaults) \
+    M(VoluntaryContextSwitches) \
+    M(InvoluntaryContextSwitches) \
     \
+    M(OSIOWaitMicroseconds) \
     M(OSReadBytes) \
     M(OSWriteBytes) \
     M(OSReadChars) \
-    M(OSWriteChars)
+    M(OSWriteChars) \
 
 
 namespace ProfileEvents
@@ -180,8 +182,9 @@ const Event Counters::num_counters = END;
 
 
 Counters::Counters(Level level, Counters * parent)
-    : parent(parent), level(level),
-      counters_holder(new Counter[num_counters] {})
+    : parent(parent),
+      counters_holder(new Counter[num_counters] {}),
+      level(level)
 {
     counters = counters_holder.get();
 }
@@ -204,7 +207,7 @@ void Counters::reset()
 void Counters::getPartiallyAtomicSnapshot(Counters & res) const
 {
     for (Event i = 0; i < num_counters; ++i)
-        res.counters[i].store(counters[i], std::memory_order_relaxed);
+        res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
 }
 
 const char * getDescription(Event event)
@@ -225,10 +228,7 @@ Event end() { return END; }
 
 void increment(Event event, Count amount)
 {
-    if (DB::current_thread)
-        DB::current_thread->performance_counters.increment(event, amount);
-    else
-        global_counters.increment(event, amount);
+    DB::CurrentThread::getProfileEvents().increment(event, amount);
 }
 
 void Counters::dumpToArrayColumns(DB::IColumn * column_names_, DB::IColumn * column_values_, bool nonzero_only)

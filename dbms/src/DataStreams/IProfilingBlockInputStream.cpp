@@ -1,7 +1,7 @@
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 
 
 namespace ProfileEvents
@@ -301,11 +301,8 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
             if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
             {
                 /// Do not count sleeps in throttlers
-                if (current_thread)
-                {
-                    UInt64 throttler_sleeps_ms = current_thread->performance_counters[ProfileEvents::ThrottlerSleepMicroseconds];
-                    total_elapsed -= static_cast<double>(throttler_sleeps_ms) / 1000000.0;
-                }
+                double throttler_sleeps_seconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds] / 1000000.0;
+                total_elapsed = std::max(0.0, total_elapsed - throttler_sleeps_seconds);
 
                 if (limits.min_execution_speed && progress.rows / total_elapsed < limits.min_execution_speed)
                     throw Exception("Query is executing too slow: " + toString(progress.rows / total_elapsed)

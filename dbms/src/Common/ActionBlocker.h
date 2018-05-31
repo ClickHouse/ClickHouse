@@ -1,21 +1,22 @@
 #pragma once
-
 #include <atomic>
 #include <memory>
 #include <Common/ActionLock.h>
 
+
 namespace DB
 {
 
-/// An atomic variable that is used to block and interrupt certain actions
-/// If it is not zero then actions related with it should be considered as interrupted
+/// An atomic variable that is used to block and interrupt certain actions.
+/// If it is not zero then actions related with it should be considered as interrupted.
+/// Uses shared_ptr and the lock uses weak_ptr to be able to "hold" a lock when an object with blocker has already died.
 class ActionBlocker
 {
 private:
     using Counter = std::atomic<int>;
     using CounterPtr = std::shared_ptr<Counter>;
 
-    mutable CounterPtr counter;
+    CounterPtr counter;
 
 public:
     ActionBlocker() : counter(std::make_shared<Counter>(0)) {}
@@ -30,7 +31,10 @@ public:
     void cancelForever() const { ++(*counter); }
 
     /// Returns reference to counter to allow to watch on it directly.
-    auto & getCounter() { return *counter; }
+    Counter & getCounter() { return *counter; }
 };
+
+
+
 
 }

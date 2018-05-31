@@ -40,7 +40,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
     if (!offset())
         return;
 
-    StopWatchRusage watch_ru;
+    Stopwatch watch;
 
     size_t bytes_written = 0;
     while (bytes_written != offset())
@@ -63,7 +63,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
             bytes_written += res;
     }
 
-    ProfileEvents::increment(ProfileEvents::DiskWriteElapsedMicroseconds, watch_ru.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::DiskWriteElapsedMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteBytes, bytes_written);
 }
 

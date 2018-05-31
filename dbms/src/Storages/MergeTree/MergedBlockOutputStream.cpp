@@ -438,7 +438,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
           * And otherwise it will look like excessively growing memory consumption in context of query.
           *  (observed in long INSERT SELECTs)
           */
-        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerBlocker();
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (size_t i = index_offset; i < rows; i += storage.index_granularity)

@@ -4,7 +4,7 @@
 
 namespace ProfileEvents
 {
-    struct Counters;
+class Counters;
 }
 
 class MemoryTracker;
@@ -15,6 +15,7 @@ namespace DB
 
 class QueryStatus;
 class ThreadStatus;
+struct Progress;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 
 
@@ -37,12 +38,14 @@ public:
     static bool isAttachedToQuery();
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker & getMemoryTracker();
+    static void updateProgressIn(const Progress & value);
+    static void updateProgressOut(const Progress & value);
 
-    /// Non-master threads call these method in destructor automatically
+    /// Non-master threads call this method in destructor automatically
     static void detachQuery();
 
 private:
-    static void attachQueryFromSiblingThreadImpl(const ThreadStatusPtr & sibling_thread, bool check_detached = true);
+    static void attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thread, bool check_detached = true);
 };
 
 }

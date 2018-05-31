@@ -62,10 +62,10 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
 
     virtual_columns = ColumnsWithTypeAndName{
         { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values" }
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents_Names" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents_Values" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings_Names" },
+        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings_Values" }
     };
 }
 

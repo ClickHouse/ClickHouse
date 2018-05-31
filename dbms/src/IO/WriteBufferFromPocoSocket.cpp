@@ -29,7 +29,7 @@ void WriteBufferFromPocoSocket::nextImpl()
     if (!offset())
         return;
 
-    StopWatchRusage watch_ru;
+    Stopwatch watch;
 
     size_t bytes_written = 0;
     while (bytes_written < offset())
@@ -58,9 +58,9 @@ void WriteBufferFromPocoSocket::nextImpl()
             throw NetException("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
 
         bytes_written += res;
-
-        ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch_ru.elapsedMicroseconds());
     }
+
+    ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)

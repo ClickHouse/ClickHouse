@@ -168,8 +168,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Attach master thread
             CurrentThread::attachQuery(&*process_it);
-            current_thread->memory_tracker.setOrRaiseLimit(settings.max_memory_usage);
-            current_thread->memory_tracker.setDescription("(for thread)");
+            CurrentThread::getMemoryTracker().setOrRaiseLimit(settings.max_memory_usage);
+            CurrentThread::getMemoryTracker().setDescription("(for thread)");
 
             if (!user_process_list.user_throttler)
             {
@@ -199,8 +199,7 @@ ProcessListEntry::~ProcessListEntry()
     {
         CurrentThread::detachQuery();
 
-        std::lock_guard lock(it->threads_mutex);
-
+        std::shared_lock lock(it->threads_mutex);
         for (auto & elem : it->thread_statuses)
         {
             auto & thread_status = elem.second;
@@ -286,6 +285,10 @@ QueryStatus::QueryStatus(
         memory_tracker.setFaultProbability(memory_tracker_fault_probability);
 }
 
+QueryStatus::~QueryStatus()
+{
+    LOG_DEBUG(&Poco::Logger::get("QueryStatus"), __PRETTY_FUNCTION__ << ":" << __LINE__);
+}
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
@@ -335,7 +338,7 @@ bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStream
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
     user_process_list = user_process_list_;
-    performance_counters.parent = &user_process_list->user_performance_counters;
+    performance_counters.setParent(&user_process_list->user_performance_counters);
     memory_tracker.setParent(&user_process_list->user_memory_tracker);
 }
 
@@ -413,7 +416,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
 
     if (get_thread_list)
     {
-        std::lock_guard lock(threads_mutex);
+        std::shared_lock lock(threads_mutex);
         res.thread_numbers.reserve(thread_statuses.size());
 
         for (auto & thread_status_elem : thread_statuses)
