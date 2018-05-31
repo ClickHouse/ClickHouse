@@ -108,6 +108,15 @@ public:
       * const char * getHeaderFilePath() const override { return __FILE__; }
       */
     virtual const char * getHeaderFilePath() const = 0;
+
+    /** Returns true if agg_func([const_args]) returns a constant that does not depend on number of aggregated rows
+     *  For example, avg(), quantile(), any(), groupUniqArray() are suitable,
+     *   whereas count(), sum(), groupArray() are not.
+     */
+    virtual bool suitableForConstantFolding() const
+    {
+        return false;
+    }
 };
 
 

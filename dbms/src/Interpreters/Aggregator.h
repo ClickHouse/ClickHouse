@@ -1133,6 +1133,12 @@ protected:
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
+    /// Contains computed result for aggregates with const args
+    Columns aggregates_const_result_columns;
+    Columns aggregates_const_result_columns_final;
+    /// Data type of state columns
+    DataTypes aggregates_data_types;
+
     /** This array serves two purposes.
       *
       * 1. Function arguments are collected side by side, and they do not need to be collected from different places. Also the array is made zero-terminated.
