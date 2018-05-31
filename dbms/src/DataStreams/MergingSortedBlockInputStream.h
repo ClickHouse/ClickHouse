@@ -70,7 +70,6 @@ public:
 
     String getName() const override { return "MergingSorted"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
