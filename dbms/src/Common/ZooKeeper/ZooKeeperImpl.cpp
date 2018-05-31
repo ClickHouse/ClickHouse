@@ -997,7 +997,7 @@ void ZooKeeper::receiveEvent()
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
     {
-        std::unique_lock lock(push_request_mutex);
+        std::lock_guard lock(push_request_mutex);
 
         if (expired)
             return;
