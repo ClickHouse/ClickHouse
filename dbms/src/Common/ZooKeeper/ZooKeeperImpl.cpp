@@ -997,8 +997,7 @@ void ZooKeeper::receiveEvent()
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
     {
-        /// Will wait for pushRequest method.
-        std::unique_lock lock(expired_mutex);
+        std::unique_lock lock(push_request_mutex);
 
         if (expired)
             return;
@@ -1350,7 +1349,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         ///  to avoid forgotten operations in the queue when session is expired.
         /// Invariant: when expired, no new operations will be pushed to the queue in 'pushRequest'
         ///  and the queue will be drained in 'finalize'.
-        std::lock_guard lock(expired_mutex);
+        std::lock_guard lock(push_request_mutex);
 
         if (expired)
             throw Exception("Session expired", ZSESSIONEXPIRED);
