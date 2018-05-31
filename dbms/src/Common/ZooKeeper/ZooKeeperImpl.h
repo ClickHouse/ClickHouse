@@ -573,7 +573,7 @@ private:
 
     std::atomic<XID> xid {1};
     std::atomic<bool> expired {false};
-    std::mutex finalize_mutex;
+    std::mutex expired_mutex;
 
     using clock = std::chrono::steady_clock;
 
