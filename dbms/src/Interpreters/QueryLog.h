@@ -61,6 +61,8 @@ struct QueryLogElement
 
     static Block createBlock();
     void appendToBlock(Block & block) const;
+
+    static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };
 
 

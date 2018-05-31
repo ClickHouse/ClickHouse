@@ -99,8 +99,7 @@ protected:
         /// If there were no calculations yet, calculate the first block synchronously
         if (!started)
         {
-            auto main_thread = CurrentThread::get();
-            calculate(main_thread);
+            calculate();
             started = true;
         }
         else    /// If the calculations are already in progress - wait for the result
@@ -124,15 +123,17 @@ protected:
     void next()
     {
         ready.reset();
-        pool.schedule([this, main_thread=CurrentThread::get()] () { calculate(main_thread); });
+        pool.schedule([this, main_thread=CurrentThread::get()] (){
+            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+            calculate();
+        });
     }
 
 
     /// Calculations that can be performed in a separate thread
-    void calculate(ThreadStatusPtr main_thread)
+    void calculate()
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
-        CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
 
         try
         {

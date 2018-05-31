@@ -35,9 +35,11 @@ public:
     void stop()                         { stop_ns = nanoseconds(); is_running = false; }
     void reset()                        { start_ns = 0; stop_ns = 0; is_running = false; }
     void restart()                      { start(); }
-    UInt64 elapsed() const              { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
-    UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }
-    double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
+    UInt64 elapsed() const              { return elapsedNanoseconds(); }
+    UInt64 elapsedNanoseconds() const   { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
+    UInt64 elapsedMicroseconds() const  { return elapsedNanoseconds() / 1000U; }
+    UInt64 elapsedMilliseconds() const  { return elapsedNanoseconds() / 1000000UL; }
+    double elapsedSeconds() const       { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
 private:
     UInt64 start_ns = 0;

@@ -3,7 +3,7 @@
 #include <atomic>
 #include <common/Types.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ActionBlocker.h>
+#include <Common/SimpleActionBlocker.h>
 
 
 namespace CurrentMetrics
@@ -110,8 +110,7 @@ public:
     void logPeakMemoryUsage() const;
 
     /// To be able to temporarily stop memory tracker
-    /// TODO: Use more lightweight implementation
-    DB::ActionBlocker blocker;
+    DB::SimpleActionBlocker blocker;
 };
 
 
@@ -124,4 +123,4 @@ namespace CurrentMemoryTracker
 }
 
 
-DB::ActionLock getCurrentMemoryTrackerBlocker();
+DB::SimpleActionLock getCurrentMemoryTrackerActionLock();

@@ -1,9 +1,10 @@
+#include "MemoryTracker.h"
 #include <common/likely.h>
 #include <common/logger_useful.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <Common/ThreadStatus.h>
 
 
 namespace DB
@@ -158,24 +159,21 @@ namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        if (DB::current_thread)
-            DB::current_thread->memory_tracker.alloc(size);
+        DB::CurrentThread::getMemoryTracker().alloc(size);
     }
 
     void realloc(Int64 old_size, Int64 new_size)
     {
-        if (DB::current_thread)
-            DB::current_thread->memory_tracker.alloc(new_size - old_size);
+        DB::CurrentThread::getMemoryTracker().alloc(new_size - old_size);
     }
 
     void free(Int64 size)
     {
-        if (DB::current_thread)
-            DB::current_thread->memory_tracker.free(size);
+        DB::CurrentThread::getMemoryTracker().free(size);
     }
 }
 
-DB::ActionLock getCurrentMemoryTrackerBlocker()
+DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
 {
-    return (DB::current_thread) ? DB::current_thread->memory_tracker.blocker.cancel() : DB::ActionLock();
+    return DB::CurrentThread::getMemoryTracker().blocker.cancel();
 }

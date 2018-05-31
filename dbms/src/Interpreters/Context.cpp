@@ -39,6 +39,7 @@
 #include <Interpreters/Compiler.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
@@ -1513,19 +1514,33 @@ QueryLog * Context::getQueryLog()
         if (!global_context)
             throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
 
-        auto & config = getConfigRef();
-
-        String database     = config.getString("query_log.database",     "system");
-        String table        = config.getString("query_log.table",        "query_log");
-        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-
-        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
-
-        system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
+        system_logs->query_log = createDefaultSystemLog<QueryLog>(*global_context, "system", "query_log", getConfigRef(), "query_log");
     }
 
     return system_logs->query_log.get();
+}
+
+
+QueryThreadLog * Context::getQueryThreadLog()
+{
+    auto lock = getLock();
+
+    if (!system_logs)
+        return nullptr;
+
+    if (!system_logs->query_thread_log)
+    {
+        if (shared->shutdown_called)
+            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
+
+        if (!global_context)
+            throw Exception("Logical error: no global context for query thread log", ErrorCodes::LOGICAL_ERROR);
+
+        system_logs->query_thread_log = createDefaultSystemLog<QueryThreadLog>(
+                *global_context, "system", "query_thread_log", getConfigRef(), "query_thread_log");
+    }
+
+    return system_logs->query_thread_log.get();
 }
 
 
@@ -1557,13 +1572,7 @@ PartLog * Context::getPartLog(const String & part_database)
         if (!global_context)
             throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-        String table = config.getString("part_log.table", "part_log");
-        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-
-        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
-
-        system_logs->part_log = std::make_unique<PartLog>(*global_context, database, table, engine, flush_interval_milliseconds);
+        system_logs->part_log = createDefaultSystemLog<PartLog>(*global_context, "system", "part_log", getConfigRef(), "part_log");
     }
 
     return system_logs->part_log.get();
@@ -1741,7 +1750,6 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 
     return shared->action_locks_manager;
 }
-
 
 SessionCleaner::~SessionCleaner()
 {

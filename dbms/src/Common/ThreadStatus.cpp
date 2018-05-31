@@ -1,9 +1,11 @@
 #include "ThreadStatus.h"
 #include <Poco/Ext/ThreadNumber.h>
 #include <common/logger_useful.h>
-#include <Interpreters/ProcessList.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/ProcessList.h>
 
 
 #include <sys/time.h>
@@ -15,12 +17,14 @@
 namespace ProfileEvents
 {
     extern const Event RealTimeMicroseconds;
-    extern const Event RusageUserTimeMicroseconds;
-    extern const Event RusageSystemTimeMicroseconds;
-    extern const Event RusagePageReclaims;
-    extern const Event RusagePageVoluntaryContextSwitches;
-    extern const Event RusagePageInvoluntaryContextSwitches;
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
+    extern const Event SoftPageFaults;
+    extern const Event HardPageFaults;
+    extern const Event VoluntaryContextSwitches;
+    extern const Event InvoluntaryContextSwitches;
 
+    extern const Event OSIOWaitMicroseconds;
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
     extern const Event OSReadChars;
@@ -39,7 +43,8 @@ namespace ErrorCodes
 }
 
 
-class CurrentThreadScope
+/// Implicitly finalizes current thread in the destructor
+class ThreadStatus::CurrentThreadScope
 {
 public:
 
@@ -81,75 +86,83 @@ public:
 thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
 
 /// Order of current_thread and current_thread_scope matters
-static thread_local CurrentThreadScope current_thread_scope;
+static thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
 
 
+/// Handles overflow
+template <typename TUInt>
+inline TUInt safeDiff(TUInt prev, TUInt curr)
+{
+    return curr >= prev ? curr - prev : 0;
+}
 
-static UInt64 getCurrentTimeMicroseconds(clockid_t clock_type = CLOCK_MONOTONIC)
+
+static UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
 {
     struct timespec ts;
     clock_gettime(clock_type, &ts);
     return ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000UL;
 }
 
+
 struct RusageCounters
 {
-    /// In microseconds
+    /// In nanoseconds
     UInt64 real_time = 0;
     UInt64 user_time = 0;
     UInt64 sys_time = 0;
 
-    UInt64 page_reclaims = 0;
+    UInt64 soft_page_faults = 0;
+    UInt64 hard_page_faults = 0;
     UInt64 voluntary_context_switches = 0;
     UInt64 involuntary_context_switches = 0;
 
     RusageCounters() = default;
-    RusageCounters(const ::rusage & rusage, UInt64 real_time_)
+    RusageCounters(const ::rusage & rusage_, UInt64 real_time_)
     {
-        set(rusage, real_time_);
-    }
-
-    static RusageCounters zeros(UInt64 real_time = getCurrentTimeMicroseconds())
-    {
-        RusageCounters res;
-        res.real_time = real_time;
-        return res;
-    }
-
-    static RusageCounters current()
-    {
-        RusageCounters res;
-        ::rusage rusage;
-        ::getrusage(RUSAGE_THREAD, &rusage);
-        res.set(rusage, getCurrentTimeMicroseconds());
-        return res;
+        set(rusage_, real_time_);
     }
 
     void set(const ::rusage & rusage, UInt64 real_time_)
     {
         real_time = real_time_;
-        user_time = rusage.ru_utime.tv_sec * 1000000UL + rusage.ru_utime.tv_usec / 1000UL;
-        sys_time = rusage.ru_stime.tv_sec * 1000000UL + rusage.ru_stime.tv_usec  / 1000UL;
+        user_time = rusage.ru_utime.tv_sec * 1000000000UL + rusage.ru_utime.tv_usec;
+        sys_time = rusage.ru_stime.tv_sec * 1000000000UL + rusage.ru_stime.tv_usec;
 
-        page_reclaims = static_cast<UInt64>(rusage.ru_minflt);
+        soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
+        hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
         voluntary_context_switches = static_cast<UInt64>(rusage.ru_nvcsw);
         involuntary_context_switches = static_cast<UInt64>(rusage.ru_nivcsw);
     }
 
-    static void incrementProfileEvents(const RusageCounters & cur, const RusageCounters & prev)
+    static RusageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
-        ProfileEvents::increment(ProfileEvents::RealTimeMicroseconds, cur.real_time - prev.real_time);
-        ProfileEvents::increment(ProfileEvents::RusageUserTimeMicroseconds, cur.user_time - prev.user_time);
-        ProfileEvents::increment(ProfileEvents::RusageSystemTimeMicroseconds, cur.sys_time - prev.sys_time);
-        ProfileEvents::increment(ProfileEvents::RusagePageReclaims, cur.page_reclaims - prev.page_reclaims);
-        ProfileEvents::increment(ProfileEvents::RusagePageVoluntaryContextSwitches, cur.voluntary_context_switches - prev.voluntary_context_switches);
-        ProfileEvents::increment(ProfileEvents::RusagePageInvoluntaryContextSwitches, cur.involuntary_context_switches - prev.involuntary_context_switches);
+        RusageCounters res;
+        res.real_time = real_time_;
+        return res;
     }
 
-    static void updateProfileEvents(RusageCounters & last_counters)
+    static RusageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
+    {
+        ::rusage rusage;
+        ::getrusage(RUSAGE_THREAD, &rusage);
+        return RusageCounters(rusage, real_time_);
+    }
+
+    static void incrementProfileEvents(const RusageCounters & prev, const RusageCounters & curr, ProfileEvents::Counters & profile_events)
+    {
+        profile_events.increment(ProfileEvents::RealTimeMicroseconds,   (curr.real_time - prev.real_time) / 1000U);
+        profile_events.increment(ProfileEvents::UserTimeMicroseconds,   (curr.user_time - prev.user_time) / 1000U);
+        profile_events.increment(ProfileEvents::SystemTimeMicroseconds, (curr.sys_time - prev.sys_time) / 1000U);
+
+        profile_events.increment(ProfileEvents::SoftPageFaults, curr.soft_page_faults - prev.soft_page_faults);
+        profile_events.increment(ProfileEvents::HardPageFaults, curr.hard_page_faults - prev.hard_page_faults);
+    }
+
+    static void updateProfileEvents(RusageCounters & last_counters, ProfileEvents::Counters & profile_events)
     {
         auto current_counters = current();
-        incrementProfileEvents(current_counters, last_counters);
+        incrementProfileEvents(last_counters, current_counters, profile_events);
         last_counters = current_counters;
     }
 };
@@ -169,18 +182,20 @@ struct TasksStatsCounters
 
     static TasksStatsCounters current();
 
-    static void incrementProfileEvents(const TasksStatsCounters & curr, const TasksStatsCounters & prev)
+    static void incrementProfileEvents(const TasksStatsCounters & prev, const TasksStatsCounters & curr, ProfileEvents::Counters & profile_events)
     {
-        ProfileEvents::increment(ProfileEvents::OSReadBytes,  curr.stat.read_bytes  - prev.stat.read_bytes);
-        ProfileEvents::increment(ProfileEvents::OSWriteBytes, curr.stat.write_bytes - prev.stat.write_bytes);
-        ProfileEvents::increment(ProfileEvents::OSReadChars,  curr.stat.read_char   - prev.stat.read_char);
-        ProfileEvents::increment(ProfileEvents::OSWriteChars, curr.stat.write_char  - prev.stat.write_char);
+        profile_events.increment(ProfileEvents::OSIOWaitMicroseconds,
+                                 safeDiff(prev.stat.blkio_delay_total, curr.stat.blkio_delay_total) / 1000U);
+        profile_events.increment(ProfileEvents::OSReadBytes,  safeDiff(prev.stat.read_bytes, curr.stat.read_bytes));
+        profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.stat.write_bytes, curr.stat.write_bytes));
+        profile_events.increment(ProfileEvents::OSReadChars,  safeDiff(prev.stat.read_char, curr.stat.read_char));
+        profile_events.increment(ProfileEvents::OSWriteChars, safeDiff(prev.stat.write_char, curr.stat.write_char));
     }
 
-    static void updateProfileEvents(TasksStatsCounters & last_counters)
+    static void updateProfileEvents(TasksStatsCounters & last_counters, ProfileEvents::Counters & profile_events)
     {
         auto current_counters = current();
-        incrementProfileEvents(current_counters, last_counters);
+        incrementProfileEvents(last_counters, current_counters, profile_events);
         last_counters = current_counters;
     }
 };
@@ -224,49 +239,66 @@ ThreadStatus::~ThreadStatus()
 }
 
 void ThreadStatus::attachQuery(
-        QueryStatus *parent_query_,
-        ProfileEvents::Counters *parent_counters,
-        MemoryTracker *parent_memory_tracker,
+        QueryStatus * parent_query_,
+        ProfileEvents::Counters * parent_counters,
+        MemoryTracker * parent_memory_tracker,
         bool check_detached)
 {
     std::lock_guard lock(mutex);
 
-    if (check_detached && is_active_query)
-        throw Exception("Query is already active", ErrorCodes::LOGICAL_ERROR);
-
-    if (auto counters_parent = performance_counters.parent)
-        if (counters_parent != parent_counters)
-            LOG_WARNING(log, "Parent performance counters are already set, overwrite");
-
-    if (auto tracker_parent = memory_tracker.getParent())
-        if (tracker_parent != parent_memory_tracker)
-            LOG_WARNING(log, "Parent memory tracker is already set, overwrite");
+    if (is_active_query)
+    {
+        if (check_detached)
+            throw Exception("Can't attach query to the thread, it is already attached", ErrorCodes::LOGICAL_ERROR);
+        return;
+    }
 
     parent_query = parent_query_;
-    performance_counters.parent = parent_counters;
+    performance_counters.setParent(parent_counters);
     memory_tracker.setParent(parent_memory_tracker);
     memory_tracker.setDescription("(for thread)");
 
-    /// Attach current thread to list of query threads
-    if (parent_query)
+    /// Try extract as many information as possible from ProcessList
+    if (auto query = getParentQuery())
     {
-        std::lock_guard lock(parent_query->threads_mutex);
-        auto res = parent_query->thread_statuses.emplace(current_thread->poco_thread_number, current_thread);
+        /// Attach current thread to list of query threads
+        {
+            LOG_DEBUG(log, __PRETTY_FUNCTION__ << ":" << __LINE__ << " " << query);
+            std::unique_lock lock(query->threads_mutex);
 
-        if (!res.second && res.first->second.get() != current_thread.get())
-            throw Exception("Thread " + std::to_string(current_thread->poco_thread_number) + " is set twice", ErrorCodes::LOGICAL_ERROR);
+            if (query->thread_statuses.empty())
+                query->master_thread = shared_from_this();
+
+            if (!query->thread_statuses.emplace(poco_thread_number, shared_from_this()).second)
+                throw Exception("Thread " + std::to_string(poco_thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
+
+            LOG_DEBUG(log, __PRETTY_FUNCTION__ << ":" << __LINE__ << " " << query);
+        }
+
+        query_context = query->tryGetQueryContext();
+
+        if (auto current_query_context = getQueryContext())
+        {
+            log_to_query_thread_log = current_query_context->getSettingsRef().log_query_threads.value != 0;
+
+            if (!getGlobalContext())
+                global_context = &current_query_context->getGlobalContext();
+        }
     }
+
+    query_start_time_nanoseconds = getCurrentTimeNanoseconds();
+    query_start_time = time(nullptr);
 
     /// First init of thread rusage counters, set real time to zero, other metrics remain as is
     if (is_first_query_of_the_thread)
     {
-        impl->last_rusage = RusageCounters::zeros();
+        impl->last_rusage = RusageCounters::zeros(query_start_time_nanoseconds);
         impl->last_taskstats = TasksStatsCounters::zeros();
         updatePerfomanceCountersImpl();
     }
     else
     {
-        impl->last_rusage = RusageCounters::current();
+        impl->last_rusage = RusageCounters::current(query_start_time_nanoseconds);
         impl->last_taskstats = TasksStatsCounters::current();
     }
 
@@ -277,8 +309,8 @@ void ThreadStatus::updatePerfomanceCountersImpl()
 {
     try
     {
-        RusageCounters::incrementProfileEvents(RusageCounters::current(), impl->last_rusage);
-        TasksStatsCounters::incrementProfileEvents(TasksStatsCounters::current(), impl->last_taskstats);
+        RusageCounters::updateProfileEvents(impl->last_rusage, performance_counters);
+        TasksStatsCounters::updateProfileEvents(impl->last_taskstats, performance_counters);
     }
     catch (...)
     {
@@ -286,34 +318,89 @@ void ThreadStatus::updatePerfomanceCountersImpl()
     }
 }
 
-void ThreadStatus::detachQuery()
+void ThreadStatus::detachQuery(bool thread_exits)
 {
-    std::lock_guard lock(mutex);
     if (!is_active_query)
         return;
 
     updatePerfomanceCountersImpl();
 
-    is_first_query_of_the_thread = false;
-    is_active_query = false;
+    try
+    {
+        if (log_to_query_thread_log)
+            if (auto global_context = getGlobalContext())
+                if (auto thread_log = global_context->getQueryThreadLog())
+                    logToQueryThreadLog(*thread_log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 
-    /// Detach from parent
-    performance_counters.setParent(nullptr);
-    memory_tracker.setParent(nullptr);
+    {
+        std::lock_guard lock(mutex);
+
+        /// Detach from parent
+        performance_counters.setParent(nullptr);
+        memory_tracker.setParent(nullptr);
+        query_context = nullptr;
+
+        is_active_query = false;
+        is_first_query_of_the_thread = false;
+        is_active_thread = !thread_exits;
+    }
+}
+
+void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
+{
+    QueryThreadLogElement elem;
+
+    elem.event_time = time(nullptr);
+    elem.query_start_time = query_start_time;
+    elem.query_duration_ms = (getCurrentTimeNanoseconds() - query_start_time_nanoseconds) / 1000000U;
+
+    elem.read_rows = progress_in.rows.load(std::memory_order_relaxed);
+    elem.read_bytes = progress_in.bytes.load(std::memory_order_relaxed);
+    elem.written_rows = progress_out.rows.load(std::memory_order_relaxed);
+    elem.written_bytes = progress_out.bytes.load(std::memory_order_relaxed);
+    elem.memory_usage = std::max(0, memory_tracker.getPeak());
+
+    elem.thread_number = poco_thread_number;
+    elem.os_thread_id = os_thread_id;
+
+    if (auto query = getParentQuery())
+    {
+        if (query->master_thread)
+        {
+            elem.master_thread_number = query->master_thread->poco_thread_number;
+            elem.master_os_thread_id = query->master_thread->os_thread_id;
+        }
+
+        elem.query = query->query;
+        elem.client_info = query->getClientInfo();
+    }
+
+    if (auto current_context = getQueryContext())
+    {
+        if (current_context->getSettingsRef().log_profile_events)
+        {
+            /// NOTE: Here we are in the same thread, so we can make memcpy()
+            elem.profile_counters = std::make_shared<ProfileEvents::Counters>();
+            performance_counters.getPartiallyAtomicSnapshot(*elem.profile_counters);
+        }
+    }
+
+    thread_log.add(elem);
 }
 
 void ThreadStatus::reset()
 {
     std::lock_guard lock(mutex);
 
+    parent_query = nullptr;
+
     if (is_active_query)
         throw Exception("Query is still active", ErrorCodes::LOGICAL_ERROR);
-
-    performance_counters.reset();
-    memory_tracker.reset();
-
-    performance_counters.setParent(nullptr);
-    memory_tracker.setParent(nullptr);
 }
 
 }

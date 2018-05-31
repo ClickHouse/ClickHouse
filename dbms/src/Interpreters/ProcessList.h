@@ -16,11 +16,11 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Throttler.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/ClientInfo.h>
 #include <Common/ThreadStatus.h>
 #include <DataStreams/BlockIO.h>
-#include "ThreadPerformanceProfile.h"
 
 
 namespace CurrentMetrics
@@ -83,6 +83,8 @@ protected:
 
     String query;
     ClientInfo client_info;
+
+    /// Is set once when init
     Context * query_context = nullptr;
 
     Stopwatch watch;
@@ -99,8 +101,9 @@ protected:
 
     mutable std::shared_mutex threads_mutex;
     /// Key is Poco's thread_id
-    using QueryThreadStatuses = std::map<int, ThreadStatusPtr>;
+    using QueryThreadStatuses = std::map<UInt32, ThreadStatusPtr>;
     QueryThreadStatuses thread_statuses;
+    ThreadStatusPtr master_thread;
 
     CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
 
@@ -138,10 +141,7 @@ public:
         double memory_tracker_fault_probability,
         QueryPriorities::Handle && priority_handle_);
 
-    ~QueryStatus()
-    {
-        // TODO: master thread should be reset
-    }
+    ~QueryStatus();
 
     const ClientInfo & getClientInfo() const
     {
@@ -162,6 +162,7 @@ public:
 
     bool updateProgressIn(const Progress & value)
     {
+        CurrentThread::updateProgressIn(value);
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle)
@@ -172,12 +173,15 @@ public:
 
     bool updateProgressOut(const Progress & value)
     {
+        CurrentThread::updateProgressOut(value);
         progress_out.incrementPiecewiseAtomically(value);
+
         return !is_killed.load(std::memory_order_relaxed);
     }
 
     QueryStatusInfo getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
 
+    Context * tryGetQueryContext() { return query_context; }
     const Context * tryGetQueryContext() const { return query_context; }
 
     /// Copies pointers to in/out streams
