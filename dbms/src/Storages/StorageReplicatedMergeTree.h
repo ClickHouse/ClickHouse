@@ -360,7 +360,7 @@ private:
     /** Execute the action from the queue. Throws an exception if something is wrong.
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.
       */
-    bool executeLogEntry(const LogEntry & entry);
+    bool executeLogEntry(LogEntry & entry);
 
     void writePartLog(
         PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
@@ -376,7 +376,7 @@ private:
 
     bool tryExecutePartMutation(const LogEntry & entry);
 
-    bool executeFetch(const LogEntry & entry);
+    bool executeFetch(LogEntry & entry);
 
     void executeClearColumnInPartition(const LogEntry & entry);
 
@@ -430,7 +430,7 @@ private:
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(const LogEntry & entry, bool active);
+    String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
 
     /** Download the specified part from the specified replica.
