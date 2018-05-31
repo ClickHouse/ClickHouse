@@ -27,12 +27,12 @@ private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
 
-    using StringSet = std::set<String>;
-
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
     using Queue = std::list<LogEntryPtr>;
+
+    using StringSet = std::set<String>;
 
     struct ByTime
     {
@@ -71,7 +71,8 @@ private:
 
     /// parts that will appear as a result of actions performed right now by background threads (these actions are not in the queue).
     /// Used to not perform other actions at the same time with these parts.
-    StringSet future_parts;
+    using FuturePartsSet = std::map<String, LogEntryPtr>;
+    FuturePartsSet future_parts;
 
 
     /// Protects virtual_parts, log_pointer, mutations.
@@ -168,9 +169,9 @@ private:
         std::optional<time_t> min_unprocessed_insert_time_changed,
         std::optional<time_t> max_processed_insert_time_changed) const;
 
-    /// Returns list of currently executing entries blocking execution a command modifying specified range
+    /// Returns list of currently executing parts blocking execution a command modifying specified range
     size_t getConflictsCountForRange(
-        const MergeTreePartInfo & range, const String & range_znode, String * out_conflicts_description,
+        const MergeTreePartInfo & range, const LogEntry & entry, String * out_description,
         std::lock_guard<std::mutex> & queue_lock) const;
 
     /// Marks the element of the queue as running.
@@ -183,10 +184,10 @@ private:
         friend class ReplicatedMergeTreeQueue;
 
         /// Created only in the selectEntryToProcess function. It is called under mutex.
-        CurrentlyExecuting(ReplicatedMergeTreeQueue::LogEntryPtr & entry, ReplicatedMergeTreeQueue & queue);
+        CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue);
 
         /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under queue_mutex.
-        static void setActualPartName(const ReplicatedMergeTreeLogEntry & entry, const String & actual_part_name,
+        static void setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry, const String & actual_part_name,
             ReplicatedMergeTreeQueue & queue);
     public:
         ~CurrentlyExecuting();
@@ -231,7 +232,7 @@ public:
 
     /** Throws and exception if there are currently executing entries in the range .
      */
-    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const String & range_znode_name);
+    void checkThereAreNoConflictsInRange(const MergeTreePartInfo & range, const LogEntry & entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -269,7 +270,7 @@ public:
     /** Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
       * Locks queue's mutex.
       */
-    bool addFuturePartIfNotCoveredByThem(const String & part_name, const LogEntry & entry, String & reject_reason);
+    bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
 
     /// A blocker that stops selects from the queue
     ActionBlocker actions_blocker;

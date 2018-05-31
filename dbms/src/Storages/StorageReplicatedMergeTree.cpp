@@ -1034,7 +1034,7 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
 }
 
 
-bool StorageReplicatedMergeTree::executeLogEntry(const LogEntry & entry)
+bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
 {
     if (entry.type == LogEntry::DROP_RANGE)
     {
@@ -1168,7 +1168,7 @@ void StorageReplicatedMergeTree::writePartLog(
 }
 
 
-bool StorageReplicatedMergeTree::tryExecuteMerge(const StorageReplicatedMergeTree::LogEntry & entry)
+bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 {
     // Log source part names just in case
     {
@@ -1426,7 +1426,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 }
 
 
-bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::LogEntry & entry)
+bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 {
     String replica = findReplicaHavingCoveringPart(entry, true);
 
@@ -1613,7 +1613,7 @@ bool StorageReplicatedMergeTree::executeFetch(const StorageReplicatedMergeTree::
 }
 
 
-void StorageReplicatedMergeTree::executeDropRange(const StorageReplicatedMergeTree::LogEntry & entry)
+void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info);
@@ -1660,10 +1660,6 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 
     auto entry_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
 
-    /// Assume optimistic scenario, i.e. conflicts are very rare
-    /// So, if conflicts are found, throw an exception and will retry execution later
-    queue.checkThereAreNoConflictsInRange(entry_part_info, entry.znode_name);
-
     /// We don't change table structure, only data in some parts
     /// To disable reading from these parts, we will sequentially acquire write lock for each part inside alterDataPart()
     /// If we will lock the whole table here, a deadlock can occur. For example, if use use Buffer table (CLICKHOUSE-3238)
@@ -1681,6 +1677,14 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
     size_t modified_parts = 0;
     auto parts = data.getDataParts();
     auto columns_for_parts = new_columns.getAllPhysical();
+
+    /// Check there are no merges in range again
+    /// TODO: Currently, there are no guarantees that a merge covering entry_part_info will happen during the execution.
+    /// To solve this problem we could add read/write flags for each part in future_parts
+    ///  and make more sophisticated checks for merges in shouldExecuteLogEntry().
+    /// But this feature will be useless when the mutation feature is implemented.
+    queue.checkThereAreNoConflictsInRange(entry_part_info, entry);
+
     for (const auto & part : parts)
     {
         if (!entry_part_info.contains(part->info))
@@ -1712,7 +1716,7 @@ void StorageReplicatedMergeTree::executeClearColumnInPartition(const LogEntry & 
 }
 
 
-bool StorageReplicatedMergeTree::executeReplaceRange(const StorageReplicatedMergeTree::LogEntry & entry)
+bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 {
     Stopwatch watch;
     auto & entry_replace = *entry.replace_range_entry;
@@ -2454,7 +2458,7 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
 }
 
 
-String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(const LogEntry & entry, bool active)
+String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entry, bool active)
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(zookeeper_path + "/replicas");
