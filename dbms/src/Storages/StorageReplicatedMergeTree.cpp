@@ -3126,8 +3126,8 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     {
         auto zookeeper = getZooKeeper();
         auto block_number_lock = allocateBlockNumber(partition_id, zookeeper);
-        block_number_lock->unlock();
         right = block_number_lock->getNumber();
+        block_number_lock->unlock();
         mutation_version = queue.getCurrentMutationVersion(partition_id, right);
     }
 
