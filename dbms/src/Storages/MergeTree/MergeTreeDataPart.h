@@ -62,11 +62,15 @@ struct MergeTreeDataPart
     /// Returns part->name with prefixes like 'tmp_<name>'
     String getNameWithPrefix() const;
 
+    String getNewName(const MergeTreePartInfo & new_part_info) const;
+
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
 
     /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
     DayNum getMinDate() const;
     DayNum getMaxDate() const;
+
+    bool isEmpty() const { return rows_count == 0; }
 
     MergeTreeData & storage;
 

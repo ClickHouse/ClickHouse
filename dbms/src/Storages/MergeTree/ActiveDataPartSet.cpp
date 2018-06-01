@@ -8,22 +8,15 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
     : format_version(format_version_)
 {
     for (const auto & name : names)
-        addUnlocked(name);
+        add(name);
 }
 
 
 void ActiveDataPartSet::add(const String & name)
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    addUnlocked(name);
-}
-
-
-void ActiveDataPartSet::addUnlocked(const String & name)
-{
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
 
-    if (!getContainingPartUnlocked(part_info).empty())
+    if (getContainingPartImpl(part_info) != part_info_to_name.end())
         return;
 
     /// Parts contained in `part` are located contiguously in `part_info_to_name`, overlapping with the place where the part itself would be inserted.
@@ -51,14 +44,26 @@ void ActiveDataPartSet::addUnlocked(const String & name)
 }
 
 
-String ActiveDataPartSet::getContainingPart(const String & part_name) const
+String ActiveDataPartSet::getContainingPart(const MergeTreePartInfo & part_info) const
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    return getContainingPartUnlocked(MergeTreePartInfo::fromPartName(part_name, format_version));
+    auto it = getContainingPartImpl(part_info);
+    if (it != part_info_to_name.end())
+        return it->second;
+    return {};
 }
 
 
-String ActiveDataPartSet::getContainingPartUnlocked(const MergeTreePartInfo & part_info) const
+String ActiveDataPartSet::getContainingPart(const String & name) const
+{
+    auto it = getContainingPartImpl(MergeTreePartInfo::fromPartName(name, format_version));
+    if (it != part_info_to_name.end())
+        return it->second;
+    return {};
+}
+
+
+std::map<MergeTreePartInfo, String>::const_iterator
+ActiveDataPartSet::getContainingPartImpl(const MergeTreePartInfo & part_info) const
 {
     /// A part can only be covered/overlapped by the previous or next one in `part_info_to_name`.
     auto it = part_info_to_name.lower_bound(part_info);
@@ -66,20 +71,58 @@ String ActiveDataPartSet::getContainingPartUnlocked(const MergeTreePartInfo & pa
     if (it != part_info_to_name.end())
     {
         if (it->first.contains(part_info))
-            return it->second;
+            return it;
     }
 
     if (it != part_info_to_name.begin())
     {
         --it;
         if (it->first.contains(part_info))
-            return it->second;
+            return it;
     }
 
-    return String();
+    return part_info_to_name.end();
 }
 
-Strings ActiveDataPartSet::getPartsUnlocked() const
+Strings ActiveDataPartSet::getPartsCoveredBy(const MergeTreePartInfo & part_info) const
+{
+    auto it_middle = part_info_to_name.lower_bound(part_info);
+    auto begin = it_middle;
+    while (begin != part_info_to_name.begin())
+    {
+        auto prev = std::prev(begin);
+        if (!part_info.contains(prev->first))
+        {
+            if (prev->first.contains(part_info))
+                return {};
+
+            break;
+        }
+
+        begin = prev;
+    }
+
+    auto end = it_middle;
+    while (end != part_info_to_name.end())
+    {
+        if (!part_info.contains(end->first))
+        {
+            if (end->first.contains(part_info))
+                return {};
+            break;
+        }
+
+        ++end;
+    }
+
+    Strings covered;
+    for (auto it = begin; it != end; ++it)
+        covered.push_back(it->second);
+
+    return covered;
+}
+
+Strings ActiveDataPartSet::getParts() const
 {
     Strings res;
     res.reserve(part_info_to_name.size());
@@ -89,18 +132,9 @@ Strings ActiveDataPartSet::getPartsUnlocked() const
     return res;
 }
 
-Strings ActiveDataPartSet::getParts() const
-{
-    std::lock_guard<std::mutex> lock(mutex);
-    return getPartsUnlocked();
-}
-
-
 size_t ActiveDataPartSet::size() const
 {
-    std::lock_guard<std::mutex> lock(mutex);
     return part_info_to_name.size();
 }
-
 
 }
