@@ -18,25 +18,25 @@ static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
 
 
 ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_)
-    : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, PartCheckThread)"))
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreePartCheckThread)")
+    , log(&Logger::get(log_name))
 {
-    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreePartCheckThread", [this] { run(); });
-    task_handle->schedule();
+    task = storage.context.getSchedulePool().createTask(log_name, [this] { run(); });
+    task->schedule();
 }
 
 ReplicatedMergeTreePartCheckThread::~ReplicatedMergeTreePartCheckThread()
 {
     stop();
-    storage.context.getSchedulePool().removeTask(task_handle);
 }
 
 void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
     need_stop = false;
-    task_handle->activate();
-    task_handle->schedule();
+    task->activate();
+    task->schedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
@@ -46,7 +46,7 @@ void ReplicatedMergeTreePartCheckThread::stop()
 
     std::lock_guard<std::mutex> lock(start_stop_mutex);
     need_stop = true;
-    task_handle->deactivate();
+    task->deactivate();
 }
 
 void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t delay_to_check_seconds)
@@ -58,7 +58,7 @@ void ReplicatedMergeTreePartCheckThread::enqueuePart(const String & name, time_t
 
     parts_queue.emplace_back(name, time(nullptr) + delay_to_check_seconds);
     parts_set.insert(name);
-    task_handle->schedule();
+    task->schedule();
 }
 
 
@@ -174,34 +174,6 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
         */
     LOG_ERROR(log, "Part " << part_name << " is lost forever.");
     ProfileEvents::increment(ProfileEvents::ReplicatedDataLoss);
-
-    /** You need to add the missing part to `block_numbers` so that it does not interfere with merges.
-      * But we can't just add it to `block_numbers` - if so,
-      *  ZooKeeper for some reason will skip one number for autoincrement,
-      *  and there will still be a hole in the block numbers.
-      * Especially because of this, you have to separately have `nonincrement_block_numbers`.
-      *
-      * By the way, if we die here, the mergers will not be made through these missing parts.
-      *
-      * And, we will not add if:
-      * - would need to create too many (more than 1000) nodes;
-      * - the part is the first in partition or was ATTACHed.
-      * NOTE It is possible to also add a condition if the entry in the queue is very old.
-      */
-
-    size_t part_length_in_blocks = part_info.max_block + 1 - part_info.min_block;
-    if (part_length_in_blocks > 1000)
-    {
-        LOG_ERROR(log, "Won't add nonincrement_block_numbers because part spans too many blocks (" << part_length_in_blocks << ")");
-        return;
-    }
-
-    const String & partition_id = part_info.partition_id;
-    for (auto i = part_info.min_block; i <= part_info.max_block; ++i)
-    {
-        AbandonableLockInZooKeeper::createAbandonedIfNotExists(
-                storage.zookeeper_path + "/nonincrement_block_numbers/" + partition_id + "/block-" + padIndex(i), *zookeeper);
-    }
 }
 
 
@@ -368,7 +340,7 @@ void ReplicatedMergeTreePartCheckThread::run()
             }
         }
 
-        task_handle->schedule();
+        task->schedule();
     }
     catch (const zkutil::KeeperException & e)
     {
@@ -377,12 +349,12 @@ void ReplicatedMergeTreePartCheckThread::run()
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
             return;
 
-        task_handle->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        task_handle->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
+        task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);
     }
 }
 

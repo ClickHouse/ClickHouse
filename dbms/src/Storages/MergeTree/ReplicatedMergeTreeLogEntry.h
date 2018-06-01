@@ -35,6 +35,7 @@ struct ReplicatedMergeTreeLogEntryData
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
         CLEAR_COLUMN,   /// Drop specific column from specified partition.
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
+        MUTATE_PART,    /// Apply one or several mutations to the part.
     };
 
     static String typeToString(Type type)
@@ -46,6 +47,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
             case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
+            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -71,7 +73,7 @@ struct ReplicatedMergeTreeLogEntryData
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
 
-    Strings parts_to_merge;
+    Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     String column_name;
 
