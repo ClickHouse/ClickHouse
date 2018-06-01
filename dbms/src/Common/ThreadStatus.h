@@ -92,7 +92,8 @@ protected:
     /// Is set once
     std::atomic<Context *> global_context{nullptr};
 
-    bool log_to_query_thread_log = false;
+    bool log_to_query_thread_log = true;
+    bool log_profile_events = true;
 
     Poco::Logger * log = nullptr;
 

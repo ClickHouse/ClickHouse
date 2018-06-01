@@ -280,6 +280,7 @@ void ThreadStatus::attachQuery(
         if (auto current_query_context = getQueryContext())
         {
             log_to_query_thread_log = current_query_context->getSettingsRef().log_query_threads.value != 0;
+            log_profile_events = current_query_context->getSettingsRef().log_profile_events.value != 0;
 
             if (!getGlobalContext())
                 global_context = &current_query_context->getGlobalContext();
@@ -365,6 +366,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.written_bytes = progress_out.bytes.load(std::memory_order_relaxed);
     elem.memory_usage = std::max(0, memory_tracker.getPeak());
 
+    elem.thread_name = getThreadName();
     elem.thread_number = poco_thread_number;
     elem.os_thread_id = os_thread_id;
 
@@ -380,14 +382,11 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
         elem.client_info = query->getClientInfo();
     }
 
-    if (auto current_context = getQueryContext())
+    if (log_profile_events)
     {
-        if (current_context->getSettingsRef().log_profile_events)
-        {
-            /// NOTE: Here we are in the same thread, so we can make memcpy()
-            elem.profile_counters = std::make_shared<ProfileEvents::Counters>();
-            performance_counters.getPartiallyAtomicSnapshot(*elem.profile_counters);
-        }
+        /// NOTE: Here we are in the same thread, so we can make memcpy()
+        elem.profile_counters = std::make_shared<ProfileEvents::Counters>();
+        performance_counters.getPartiallyAtomicSnapshot(*elem.profile_counters);
     }
 
     thread_log.add(elem);

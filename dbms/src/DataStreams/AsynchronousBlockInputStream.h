@@ -7,7 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <common/ThreadPool.h>
 #include <Common/MemoryTracker.h>
-#include <Common/CurrentThread.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 
@@ -93,66 +92,12 @@ protected:
     Block block;
     std::exception_ptr exception;
 
+    Block readImpl() override;
 
-    Block readImpl() override
-    {
-        /// If there were no calculations yet, calculate the first block synchronously
-        if (!started)
-        {
-            calculate();
-            started = true;
-        }
-        else    /// If the calculations are already in progress - wait for the result
-            pool.wait();
-
-        if (exception)
-            std::rethrow_exception(exception);
-
-        Block res = block;
-        if (!res)
-            return res;
-
-        /// Start the next block calculation
-        block.clear();
-        next();
-
-        return res;
-    }
-
-
-    void next()
-    {
-        ready.reset();
-        pool.schedule([this, main_thread=CurrentThread::get()] (){
-            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
-            calculate();
-        });
-    }
-
+    void next();
 
     /// Calculations that can be performed in a separate thread
-    void calculate()
-    {
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
-
-        try
-        {
-            if (first)
-            {
-                first = false;
-                setThreadName("AsyncBlockInput");
-                children.back()->readPrefix();
-            }
-
-            block = children.back()->read();
-        }
-        catch (...)
-        {
-            exception = std::current_exception();
-        }
-
-        ready.set();
-    }
+    void calculate();
 };
 
 }
