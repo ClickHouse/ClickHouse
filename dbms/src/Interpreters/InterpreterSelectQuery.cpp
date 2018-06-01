@@ -12,7 +12,6 @@
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/ParallelAggregatingBlockInputStream.h>
 #include <DataStreams/DistinctBlockInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -1014,11 +1013,7 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
         pipeline.transform([&](auto & stream)
         {
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
-
-            if (stream->isGroupedOutput())
-                stream = std::make_shared<DistinctSortedBlockInputStream>(stream, limits, limit_for_distinct, columns);
-            else
-                stream = std::make_shared<DistinctBlockInputStream>(stream, limits, limit_for_distinct, columns);
+            stream = std::make_shared<DistinctBlockInputStream>(stream, limits, limit_for_distinct, columns);
         });
     }
 }

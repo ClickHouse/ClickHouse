@@ -658,7 +658,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             throw Exception("Unknown mode of operation for MergeTreeData: " + toString<int>(data.merging_params.mode), ErrorCodes::LOGICAL_ERROR);
     }
 
-    if (deduplicate && merged_stream->isGroupedOutput())
+    if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     auto compression_settings = data.context.chooseCompressionSettings(
