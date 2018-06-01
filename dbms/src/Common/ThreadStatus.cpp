@@ -101,7 +101,7 @@ static UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
 {
     struct timespec ts;
     clock_gettime(clock_type, &ts);
-    return ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000UL;
+    return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
 
@@ -254,7 +254,7 @@ void ThreadStatus::attachQuery(
     }
 
     parent_query = parent_query_;
-    performance_counters.setParent(parent_counters);
+    performance_counters.setParent(parent_counters ? parent_counters : &ProfileEvents::global_counters);
     memory_tracker.setParent(parent_memory_tracker);
     memory_tracker.setDescription("(for thread)");
 
@@ -263,7 +263,6 @@ void ThreadStatus::attachQuery(
     {
         /// Attach current thread to list of query threads
         {
-            LOG_DEBUG(log, __PRETTY_FUNCTION__ << ":" << __LINE__ << " " << query);
             std::unique_lock lock(query->threads_mutex);
 
             if (query->thread_statuses.empty())
@@ -271,8 +270,6 @@ void ThreadStatus::attachQuery(
 
             if (!query->thread_statuses.emplace(poco_thread_number, shared_from_this()).second)
                 throw Exception("Thread " + std::to_string(poco_thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
-
-            LOG_DEBUG(log, __PRETTY_FUNCTION__ << ":" << __LINE__ << " " << query);
         }
 
         query_context = query->tryGetQueryContext();

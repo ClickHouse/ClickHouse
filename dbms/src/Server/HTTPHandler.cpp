@@ -421,22 +421,40 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
+    static const NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"
+    };
+
+    Names reserved_param_suffixes;
+
+    auto param_could_be_skipped = [&] (const String & name)
+    {
+        if (reserved_param_names.count(name))
+            return true;
+
+        for (const String & suffix : reserved_param_suffixes)
+        {
+            if (endsWith(name, suffix))
+                return true;
+        }
+
+        return false;
+    };
+
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
         in = std::move(in_param);
-        ExternalTablesHandler handler(context, params);
 
-        params.load(request, istr, handler);
+        context.setExternalTablesInitializer([&params, &request, &istr] (Context & context_query) {
+            ExternalTablesHandler handler(context_query, params);
+            params.load(request, istr, handler);
+        });
 
-        /// Erase unneeded parameters to avoid confusing them later with context settings or query
-        /// parameters.
-        for (const auto & it : handler.names)
-        {
-            params.erase(it + "_format");
-            params.erase(it + "_types");
-            params.erase(it + "_structure");
-        }
+        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+        reserved_param_suffixes.emplace_back("_format");
+        reserved_param_suffixes.emplace_back("_types");
+        reserved_param_suffixes.emplace_back("_structure");
     }
     else
         in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
@@ -463,11 +481,6 @@ void HTTPHandler::processQuery(
 
     auto readonly_before_query = settings.readonly;
 
-    NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query",
-        "session_id", "session_timeout", "session_check"
-    };
-
     for (auto it = params.begin(); it != params.end(); ++it)
     {
         if (it->first == "database")
@@ -478,7 +491,7 @@ void HTTPHandler::processQuery(
         {
             context.setDefaultFormat(it->second);
         }
-        else if (reserved_param_names.find(it->first) != reserved_param_names.end())
+        else if (param_could_be_skipped(it->first))
         {
         }
         else

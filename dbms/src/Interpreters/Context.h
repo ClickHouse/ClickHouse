@@ -33,6 +33,7 @@ namespace DB
 {
 
 struct ContextShared;
+class Context;
 class IRuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
@@ -85,6 +86,9 @@ using Dependencies = std::vector<DatabaseAndTableName>;
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
+/// Callback for external tables initializer
+using ExternalTablesInitializer = std::function<void(Context &)>;
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -100,6 +104,7 @@ private:
     std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     ClientInfo client_info;
+    ExternalTablesInitializer external_tables_initializer_callback;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
@@ -160,6 +165,11 @@ public:
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
+
+    /// We have to copy external tables in executeQuery(). Therefore, set callback for it. Must set once.
+    void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
+    /// This method is called in executeQuery() and will call the external tables initializer.
+    void initializeExternalTablesIfSet();
 
     ClientInfo & getClientInfo() { return client_info; };
     const ClientInfo & getClientInfo() const { return client_info; };
