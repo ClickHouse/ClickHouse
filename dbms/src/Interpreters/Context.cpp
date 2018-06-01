@@ -1751,6 +1751,24 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     return shared->action_locks_manager;
 }
 
+void Context::setExternalTablesInitializer(ExternalTablesInitializer && initializer)
+{
+    if (external_tables_initializer_callback)
+        throw Exception("External tables initializer is already set", ErrorCodes::LOGICAL_ERROR);
+
+    external_tables_initializer_callback = std::move(initializer);
+}
+
+void Context::initializeExternalTablesIfSet()
+{
+    if (external_tables_initializer_callback)
+    {
+        external_tables_initializer_callback(*this);
+        /// Reset callback
+        external_tables_initializer_callback = {};
+    }
+}
+
 SessionCleaner::~SessionCleaner()
 {
     try
