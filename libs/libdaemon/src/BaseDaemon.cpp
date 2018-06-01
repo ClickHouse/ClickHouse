@@ -763,7 +763,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
 
-        const std::string &cmdName = commandName();
+        const std::string & cmd_name = commandName();
 
         if (config.has("logger.syslog.address"))
         {
@@ -780,7 +780,7 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         else
         {
             syslog_channel = new Poco::SyslogChannel();
-            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmdName);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
             syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
         }
