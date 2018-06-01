@@ -13,6 +13,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/CurrentThread.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -208,6 +209,8 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
+    CurrentThread::initializeQuery();
+
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
     std::istream & istr = request.stream();

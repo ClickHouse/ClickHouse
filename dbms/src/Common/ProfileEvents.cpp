@@ -182,8 +182,8 @@ const Event Counters::num_counters = END;
 
 
 Counters::Counters(Level level, Counters * parent)
-    : parent(parent),
-      counters_holder(new Counter[num_counters] {}),
+    : counters_holder(new Counter[num_counters] {}),
+      parent(parent),
       level(level)
 {
     counters = counters_holder.get();
@@ -204,10 +204,12 @@ void Counters::reset()
     resetCounters();
 }
 
-void Counters::getPartiallyAtomicSnapshot(Counters & res) const
+Counters Counters::getPartiallyAtomicSnapshot() const
 {
+    Counters res(Level::Snapshot, nullptr);
     for (Event i = 0; i < num_counters; ++i)
         res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return res;
 }
 
 const char * getDescription(Event event)

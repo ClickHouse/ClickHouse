@@ -22,12 +22,18 @@ static ThreadStatusPtr assertCurrentThread()
     if (!thread)
         throw Exception("Thread #" + std::to_string(Poco::ThreadNumber::get()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    if (Poco::ThreadNumber::get() != thread->poco_thread_number)
+    if (Poco::ThreadNumber::get() != thread->thread_number)
         throw Exception("Current thread has different thread number", ErrorCodes::LOGICAL_ERROR);
 
     return thread;
 }
 
+
+void CurrentThread::initializeQuery()
+{
+    assertCurrentThread();
+    current_thread->initializeQuery();
+}
 
 void CurrentThread::attachQuery(QueryStatus * parent_process)
 {
@@ -68,11 +74,6 @@ void CurrentThread::detachQuery()
     current_thread->detachQuery();
 }
 
-bool CurrentThread::isAttachedToQuery()
-{
-    return current_thread->is_active_query;
-}
-
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
     return current_thread->performance_counters;
@@ -95,26 +96,38 @@ void CurrentThread::updateProgressOut(const Progress & value)
 
 void CurrentThread::attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thread, bool check_detached)
 {
-    LOG_DEBUG(&Poco::Logger::get("CurrentThread"), __PRETTY_FUNCTION__ << ":" << __LINE__ << " " << "?" << " " << sibling_thread.get());
-
     if (sibling_thread == nullptr)
         throw Exception("Sibling thread was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     assertCurrentThread();
+
+    if (sibling_thread->getCurrentState() == ThreadStatus::ThreadState::QueryInitializing)
+    {
+        LOG_WARNING(current_thread->log, "An attempt to use initializing sibling thread detected."
+                                         << " Performance statistics for this thread will be inaccurate");
+    }
 
     QueryStatus * parent_query;
     ProfileEvents::Counters * parent_counters;
     MemoryTracker * parent_memory_tracker;
     {
         /// NOTE: It is almost the only place where ThreadStatus::mutex is required
-        /// In other cases ThreadStatus must be accessed from the current_thread
+        /// In other cases ThreadStatus must be accessed only from the current_thread
         std::lock_guard lock(sibling_thread->mutex);
-        parent_query = sibling_thread->getParentQuery();
-        parent_counters = sibling_thread->performance_counters.getParent();
-        parent_memory_tracker = sibling_thread->memory_tracker.getParent();
-    }
 
-    LOG_DEBUG(&Poco::Logger::get("CurrentThread"), __PRETTY_FUNCTION__ << ":" << __LINE__ << " " << parent_query << " " << sibling_thread.get());
+        parent_query = sibling_thread->parent_query;
+        if (parent_query)
+        {
+            parent_counters = &parent_query->performance_counters;
+            parent_memory_tracker = &parent_query->memory_tracker;
+        }
+        else
+        {
+            /// Fallback
+            parent_counters = sibling_thread->performance_counters.getParent();
+            parent_memory_tracker = sibling_thread->memory_tracker.getParent();
+        }
+    }
 
     current_thread->attachQuery(parent_query, parent_counters, parent_memory_tracker, check_detached);
 }
