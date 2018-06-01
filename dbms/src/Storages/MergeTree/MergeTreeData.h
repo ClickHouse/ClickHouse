@@ -86,7 +86,7 @@ namespace ErrorCodes
 /// To read and modify the data use other classes:
 /// - MergeTreeDataSelectExecutor
 /// - MergeTreeDataWriter
-/// - MergeTreeDataMerger
+/// - MergeTreeDataMergerMutator
 
 class MergeTreeData : public ITableDeclaration
 {
@@ -184,10 +184,8 @@ public:
 
         void rollback();
 
-        bool isEmpty() const
-        {
-            return precommitted_parts.empty();
-        }
+        size_t size() const { return precommitted_parts.size(); }
+        bool isEmpty() const { return precommitted_parts.empty(); }
 
         ~Transaction()
         {
@@ -328,7 +326,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
 
-    Int64 getMaxDataPartIndex();
+    Int64 getMaxBlockNumber();
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -569,7 +567,7 @@ private:
     friend struct MergeTreeDataPart;
     friend class StorageMergeTree;
     friend class ReplicatedMergeTreeAlterThread;
-    friend class MergeTreeDataMerger;
+    friend class MergeTreeDataMergerMutator;
     friend class StorageMergeTree;
     friend class StorageReplicatedMergeTree;
 
