@@ -22,26 +22,33 @@ namespace ProfileEvents
     using Event = size_t;
     using Count = size_t;
     using Counter = std::atomic<Count>;
+    class Counters;
+
+    /// Counters - how many times each event happened
+    extern Counters global_counters;
 
     enum class Level
     {
         Global = 0,
         User,
         Process,
-        Thread
+        Thread,
+        Snapshot
     };
 
     class Counters
     {
         Counter * counters = nullptr;
-        Counters * parent = nullptr;
         std::unique_ptr<Counter[]> counters_holder;
+        /// Used to propagate increments
+        Counters * parent = nullptr;
 
     public:
 
         Level level = Level::Thread;
 
-        Counters(Level level = Level::Thread, Counters * parent = nullptr);
+        /// By default, any instance have to increment global counters
+        Counters(Level level = Level::Thread, Counters * parent = &global_counters);
 
         /// Global level static initializer
         Counters(Counter * allocated_counters)
@@ -62,7 +69,7 @@ namespace ProfileEvents
             } while (current != nullptr);
         }
 
-        void getPartiallyAtomicSnapshot(Counters & res) const;
+        Counters getPartiallyAtomicSnapshot() const;
 
         /// Reset metrics and parent
         void reset();
@@ -87,11 +94,6 @@ namespace ProfileEvents
 
         static const Event num_counters;
     };
-
-
-    /// Counters - how many times each event happened.
-    extern Counters global_counters;
-
 
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);

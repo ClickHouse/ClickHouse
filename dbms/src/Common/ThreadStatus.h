@@ -18,7 +18,6 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
-class ScopeCurrentThread;
 class QueryThreadLog;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 
@@ -30,11 +29,13 @@ class ThreadStatus : public std::enable_shared_from_this<ThreadStatus>
 {
 public:
 
-    UInt32 poco_thread_number = 0;
+    /// Poco's thread number (the same number is used in logs)
+    UInt32 thread_number = 0;
     ProfileEvents::Counters performance_counters;
     MemoryTracker memory_tracker;
     Int32 os_thread_id = -1;
 
+    /// Statistics of read and write rows/bytes
     Progress progress_in;
     Progress progress_out;
 
@@ -43,21 +44,24 @@ public:
     static ThreadStatusPtr create();
 
     /// Called by master thread when the query finishes
-    void reset();
+    void clean();
 
-    QueryStatus * getParentQuery()
+    enum ThreadState
     {
-        return parent_query.load(std::memory_order_relaxed);
+        DetachedFromQuery = 0,  /// We just created thread or it is background thread
+        QueryInitializing,      /// We accepted a connection, but haven't enqueued a query to ProcessList
+        AttachedToQuery,        /// Thread executes enqueued query
+        Died,                   /// Thread does not exist
+    };
+
+    int getCurrentState() const
+    {
+        return thread_state.load(std::memory_order_relaxed);
     }
 
     Context * getGlobalContext()
     {
         return global_context.load(std::memory_order_relaxed);
-    }
-
-    Context * getQueryContext()
-    {
-        return query_context.load(std::memory_order_relaxed);
     }
 
     ~ThreadStatus();
@@ -66,10 +70,12 @@ protected:
 
     ThreadStatus();
 
+    void initializeQuery();
+
     void attachQuery(
             QueryStatus * parent_query_,
             ProfileEvents::Counters * parent_counters,
-            MemoryTracker *parent_memory_tracker,
+            MemoryTracker * parent_memory_tracker,
             bool check_detached = true);
 
     void detachQuery(bool thread_exits = false);
@@ -78,19 +84,18 @@ protected:
 
     void updatePerfomanceCountersImpl();
 
+    std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
+
     std::mutex mutex;
-    std::atomic<bool> is_active_query{false};
-    bool is_active_thread{false};
-    bool is_first_query_of_the_thread{true};
+    QueryStatus * parent_query = nullptr;
 
-    UInt64 query_start_time_nanoseconds{0};
-    time_t query_start_time{0};
-
-    std::atomic<QueryStatus *> parent_query{nullptr};
-    /// Use it only from current thread
-    std::atomic<Context *> query_context{nullptr};
     /// Is set once
     std::atomic<Context *> global_context{nullptr};
+    /// Use it only from current thread
+    Context * query_context = nullptr;
+
+    UInt64 query_start_time_nanoseconds = 0;
+    time_t query_start_time = 0;
 
     bool log_to_query_thread_log = true;
     bool log_profile_events = true;

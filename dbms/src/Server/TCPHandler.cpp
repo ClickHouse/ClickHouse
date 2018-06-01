@@ -3,7 +3,7 @@
 #include <Poco/Net/NetException.h>
 
 #include <Common/ClickHouseRevision.h>
-
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
 
 #include <IO/Progress.h>
@@ -149,6 +149,8 @@ void TCPHandler::runImpl()
              */
             if (!receivePacket())
                 continue;
+
+            CurrentThread::initializeQuery();
 
             query_context.setExternalTablesInitializer([&global_settings, this] (Context & context) {
                 if (&context != &query_context)

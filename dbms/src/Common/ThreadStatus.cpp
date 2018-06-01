@@ -52,11 +52,7 @@ public:
     {
         try
         {
-            {
-                std::lock_guard lock(current_thread->mutex);
-                current_thread->is_active_thread = true;
-            }
-            LOG_DEBUG(current_thread->log, "Thread " << current_thread->poco_thread_number << " is started");
+            LOG_DEBUG(current_thread->log, "Thread " << current_thread->thread_number << " is started");
         }
         catch (...)
         {
@@ -68,12 +64,8 @@ public:
     {
         try
         {
-            CurrentThread::detachQuery();
-            LOG_DEBUG(current_thread->log, "Thread " << current_thread->poco_thread_number << " is exited");
-            {
-                std::lock_guard lock(current_thread->mutex);
-                current_thread->is_active_thread = false;
-            }
+            current_thread->detachQuery(true);
+            LOG_DEBUG(current_thread->log, "Thread " << current_thread->thread_number << " is exited");
         }
         catch (...)
         {
@@ -218,14 +210,14 @@ TasksStatsCounters TasksStatsCounters::current()
 
 
 ThreadStatus::ThreadStatus()
-    : poco_thread_number(Poco::ThreadNumber::get()),
+    : thread_number(Poco::ThreadNumber::get()),
       performance_counters(ProfileEvents::Level::Thread),
       os_thread_id(TaskStatsInfoGetter::getCurrentTID()),
       log(&Poco::Logger::get("ThreadStatus"))
 {
     impl = std::make_unique<Impl>();
 
-    LOG_DEBUG(log, "Thread " << poco_thread_number << " created");
+    LOG_DEBUG(log, "Thread " << thread_number << " created");
 }
 
 ThreadStatusPtr ThreadStatus::create()
@@ -235,7 +227,15 @@ ThreadStatusPtr ThreadStatus::create()
 
 ThreadStatus::~ThreadStatus()
 {
-    LOG_DEBUG(log, "Thread " << poco_thread_number << " destroyed in " << Poco::ThreadNumber::get());
+    LOG_DEBUG(log, "Thread " << thread_number << " destroyed");
+}
+
+void ThreadStatus::initializeQuery()
+{
+    if (thread_state != ThreadState::QueryInitializing && thread_state != ThreadState::DetachedFromQuery)
+        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
+
+    thread_state = ThreadState::QueryInitializing;
 }
 
 void ThreadStatus::attachQuery(
@@ -244,82 +244,65 @@ void ThreadStatus::attachQuery(
         MemoryTracker * parent_memory_tracker,
         bool check_detached)
 {
-    std::lock_guard lock(mutex);
-
-    if (is_active_query)
+    if (thread_state == ThreadState::AttachedToQuery)
     {
         if (check_detached)
             throw Exception("Can't attach query to the thread, it is already attached", ErrorCodes::LOGICAL_ERROR);
         return;
     }
 
-    parent_query = parent_query_;
-    performance_counters.setParent(parent_counters ? parent_counters : &ProfileEvents::global_counters);
-    memory_tracker.setParent(parent_memory_tracker);
-    memory_tracker.setDescription("(for thread)");
+    if (thread_state != ThreadState::DetachedFromQuery && thread_state != ThreadState::QueryInitializing)
+        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
+
+    {
+        std::lock_guard lock(mutex);
+        parent_query = parent_query_;
+        performance_counters.setParent(parent_counters);
+        memory_tracker.setParent(parent_memory_tracker);
+        memory_tracker.setDescription("(for thread)");
+    }
 
     /// Try extract as many information as possible from ProcessList
-    if (auto query = getParentQuery())
+    if (parent_query)
     {
         /// Attach current thread to list of query threads
         {
-            std::unique_lock lock(query->threads_mutex);
+            std::unique_lock lock(parent_query->threads_mutex);
 
-            if (query->thread_statuses.empty())
-                query->master_thread = shared_from_this();
+            if (parent_query->thread_statuses.empty())
+                parent_query->master_thread = shared_from_this();
 
-            if (!query->thread_statuses.emplace(poco_thread_number, shared_from_this()).second)
-                throw Exception("Thread " + std::to_string(poco_thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
+            if (!parent_query->thread_statuses.emplace(thread_number, shared_from_this()).second)
+                throw Exception("Thread " + std::to_string(thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
         }
 
-        query_context = query->tryGetQueryContext();
-
-        if (auto current_query_context = getQueryContext())
+        query_context = parent_query->tryGetQueryContext();
+        if (query_context)
         {
-            log_to_query_thread_log = current_query_context->getSettingsRef().log_query_threads.value != 0;
-            log_profile_events = current_query_context->getSettingsRef().log_profile_events.value != 0;
+            log_to_query_thread_log = query_context->getSettingsRef().log_query_threads.value != 0;
+            log_profile_events = query_context->getSettingsRef().log_profile_events.value != 0;
 
             if (!getGlobalContext())
-                global_context = &current_query_context->getGlobalContext();
+                global_context = &query_context->getGlobalContext();
         }
     }
+
+    thread_state = ThreadState::AttachedToQuery;
 
     query_start_time_nanoseconds = getCurrentTimeNanoseconds();
     query_start_time = time(nullptr);
 
-    /// First init of thread rusage counters, set real time to zero, other metrics remain as is
-    if (is_first_query_of_the_thread)
-    {
-        impl->last_rusage = RusageCounters::zeros(query_start_time_nanoseconds);
-        impl->last_taskstats = TasksStatsCounters::zeros();
-        updatePerfomanceCountersImpl();
-    }
-    else
-    {
-        impl->last_rusage = RusageCounters::current(query_start_time_nanoseconds);
-        impl->last_taskstats = TasksStatsCounters::current();
-    }
-
-    is_active_query = true;
-}
-
-void ThreadStatus::updatePerfomanceCountersImpl()
-{
-    try
-    {
-        RusageCounters::updateProfileEvents(impl->last_rusage, performance_counters);
-        TasksStatsCounters::updateProfileEvents(impl->last_taskstats, performance_counters);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
+    impl->last_rusage = RusageCounters::current(query_start_time_nanoseconds);
+    impl->last_taskstats = TasksStatsCounters::current();
 }
 
 void ThreadStatus::detachQuery(bool thread_exits)
 {
-    if (!is_active_query)
+    if (thread_state == ThreadStatus::DetachedFromQuery)
         return;
+
+    if (thread_state != ThreadState::AttachedToQuery && thread_state != ThreadState::QueryInitializing)
+        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
 
     updatePerfomanceCountersImpl();
 
@@ -339,13 +322,27 @@ void ThreadStatus::detachQuery(bool thread_exits)
         std::lock_guard lock(mutex);
 
         /// Detach from parent
-        performance_counters.setParent(nullptr);
+        performance_counters.setParent(&ProfileEvents::global_counters);
         memory_tracker.setParent(nullptr);
         query_context = nullptr;
+    }
 
-        is_active_query = false;
-        is_first_query_of_the_thread = false;
-        is_active_thread = !thread_exits;
+    thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
+
+    log_to_query_thread_log = true;
+    log_profile_events = true;
+}
+
+void ThreadStatus::updatePerfomanceCountersImpl()
+{
+    try
+    {
+        RusageCounters::updateProfileEvents(impl->last_rusage, performance_counters);
+        TasksStatsCounters::updateProfileEvents(impl->last_taskstats, performance_counters);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 }
 
@@ -364,39 +361,43 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.memory_usage = std::max(0, memory_tracker.getPeak());
 
     elem.thread_name = getThreadName();
-    elem.thread_number = poco_thread_number;
+    elem.thread_number = thread_number;
     elem.os_thread_id = os_thread_id;
 
-    if (auto query = getParentQuery())
+    if (parent_query)
     {
-        if (query->master_thread)
         {
-            elem.master_thread_number = query->master_thread->poco_thread_number;
-            elem.master_os_thread_id = query->master_thread->os_thread_id;
+            std::shared_lock threads_mutex(parent_query->threads_mutex);
+
+            if (parent_query->master_thread)
+            {
+                elem.master_thread_number = parent_query->master_thread->thread_number;
+                elem.master_os_thread_id = parent_query->master_thread->os_thread_id;
+            }
         }
 
-        elem.query = query->query;
-        elem.client_info = query->getClientInfo();
+        elem.query = parent_query->query;
+        elem.client_info = parent_query->getClientInfo();
     }
 
     if (log_profile_events)
     {
         /// NOTE: Here we are in the same thread, so we can make memcpy()
-        elem.profile_counters = std::make_shared<ProfileEvents::Counters>();
-        performance_counters.getPartiallyAtomicSnapshot(*elem.profile_counters);
+        elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
     }
 
     thread_log.add(elem);
 }
 
-void ThreadStatus::reset()
+void ThreadStatus::clean()
 {
-    std::lock_guard lock(mutex);
+    {
+        std::lock_guard lock(mutex);
+        parent_query = nullptr;
+    }
 
-    parent_query = nullptr;
-
-    if (is_active_query)
-        throw Exception("Query is still active", ErrorCodes::LOGICAL_ERROR);
+    if (thread_state != ThreadState::DetachedFromQuery && thread_state != ThreadState::Died)
+        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
 }
 
 }

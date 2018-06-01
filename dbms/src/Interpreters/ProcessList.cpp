@@ -201,10 +201,7 @@ ProcessListEntry::~ProcessListEntry()
 
         std::shared_lock lock(it->threads_mutex);
         for (auto & elem : it->thread_statuses)
-        {
-            auto & thread_status = elem.second;
-            thread_status->reset();
-        };
+            elem.second->clean();
     }
 
     std::lock_guard<std::mutex> lock(parent.mutex);
@@ -420,14 +417,11 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         res.thread_numbers.reserve(thread_statuses.size());
 
         for (auto & thread_status_elem : thread_statuses)
-            res.thread_numbers.emplace_back(thread_status_elem.second->poco_thread_number);
+            res.thread_numbers.emplace_back(thread_status_elem.second->thread_number);
     }
 
     if (get_profile_events)
-    {
-        res.profile_counters = std::make_shared<ProfileEvents::Counters>(ProfileEvents::Level::Process);
-        performance_counters.getPartiallyAtomicSnapshot(*res.profile_counters);
-    }
+        res.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
 
     if (get_settings && query_context)
         res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
