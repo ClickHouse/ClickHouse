@@ -24,6 +24,7 @@ struct QueryThreadLogElement
 
     UInt64 memory_usage{};
 
+    String thread_name;
     UInt32 thread_number{};
     Int32 os_thread_id{};
     UInt32 master_thread_number{};
