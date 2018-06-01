@@ -120,7 +120,7 @@ void BackgroundSchedulePool::TaskInfo::execute()
 		/// on the queue. We don't call the function again here because this way all tasks
 		/// will have their chance to execute
 
-        if(scheduled)
+        if (scheduled)
             pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     }
 
@@ -273,7 +273,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
             }
         }
 
-        if(found)
+        if (found)
             task->schedule();
     }
 }
