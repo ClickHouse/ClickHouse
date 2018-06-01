@@ -65,7 +65,7 @@ The `default` user is chosen in cases when the username is not passed. The `defa
 
 The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 
-The password is specified in open format (not recommended) or in SHA-256. The hash isn't salted. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from employees.
+The password is specified in cleartext (not recommended) or in SHA-256. The hash isn't salted. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from employees.
 
 A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (/etc/metrika.xml) containing the 'networks' substitution. Here is a fragment of it:
 
