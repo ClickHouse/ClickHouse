@@ -422,15 +422,15 @@ String MergeTreeData::MergingParams::getModeName() const
 }
 
 
-Int64 MergeTreeData::getMaxDataPartIndex()
+Int64 MergeTreeData::getMaxBlockNumber()
 {
     std::lock_guard<std::mutex> lock_all(data_parts_mutex);
 
-    Int64 max_block_id = 0;
+    Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
-        max_block_id = std::max(max_block_id, part->info.max_block);
+        max_block_num = std::max(max_block_num, part->info.max_block);
 
-    return max_block_id;
+    return max_block_num;
 }
 
 
@@ -1460,12 +1460,12 @@ void MergeTreeData::renameTempPartAndReplace(
       * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
       */
     if (increment)
+    {
         part_info.min_block = part_info.max_block = increment->get();
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        part_name = part_info.getPartNameV0(part->getMinDate(), part->getMaxDate());
+        part_name = part->getNewName(part_info);
+    }
     else
-        part_name = part_info.getPartName();
+        part_name = part->name;
 
     LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << part_name << ".");
 

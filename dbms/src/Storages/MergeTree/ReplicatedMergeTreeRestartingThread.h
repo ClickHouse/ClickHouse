@@ -28,7 +28,7 @@ public:
     void wakeup()
     {
         wakeup_event.set();
-        task_handle->schedule();
+        task->schedule();
     }
 
     Poco::Event & getWakeupEvent()
@@ -44,6 +44,7 @@ public:
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
     Poco::Event wakeup_event;
     std::atomic<bool> need_stop {false};
@@ -51,7 +52,7 @@ private:
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
-    BackgroundSchedulePool::TaskHandle task_handle;
+    BackgroundSchedulePool::TaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     bool first_time = true;                 /// Activate replica for the first time.
     time_t prev_time_of_check_delay = 0;

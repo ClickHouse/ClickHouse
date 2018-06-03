@@ -5,7 +5,7 @@
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
@@ -19,6 +19,7 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/PartLog.h>
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
@@ -27,8 +28,6 @@
 
 namespace DB
 {
-
-class ReplicatedMergeTreeMergeSelectingThread;
 
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
@@ -40,7 +39,6 @@ class ReplicatedMergeTreeMergeSelectingThread;
   * - a set of parts of data on each replica (/replicas/replica_name/parts);
   * - list of the last N blocks of data with checksum, for deduplication (/blocks);
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
-  *   or that were unused (/nonincrement_block_numbers)
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
   * - coordinates writes with quorum (/quorum).
   */
@@ -123,6 +121,8 @@ public:
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
+    void mutate(const MutationCommands & commands, const Context & context) override;
+
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
@@ -134,7 +134,7 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
-    ActionLock getActionLock(StorageActionBlockType action_type) const override;
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// Wait when replication queue size becomes less or equal than queue_size
     /// If timeout is exceeded returns false
@@ -197,7 +197,7 @@ private:
     friend class ReplicatedMergeTreeRestartingThread;
     friend struct ReplicatedMergeTreeLogEntry;
     friend class ScopedPartitionMergeLock;
-    friend class ReplicatedMergeTreeMergeSelectingThread;
+    friend class ReplicatedMergeTreeQueue;
     friend class MergeTreeData;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -242,7 +242,7 @@ private:
     MergeTreeData data;
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
-    MergeTreeDataMerger merger;
+    MergeTreeDataMergerMutator merger_mutator;
 
     /** The queue of what needs to be done on this replica to catch up with everyone. It is taken from ZooKeeper (/replicas/me/queue/).
      * In ZK entries in chronological order. Here it is not necessary.
@@ -268,22 +268,18 @@ private:
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
-    BackgroundSchedulePool::TaskHandle queue_updating_task_handle;
+    BackgroundSchedulePool::TaskHolder queue_updating_task;
+
+    BackgroundSchedulePool::TaskHolder mutations_updating_task;
 
     /// A task that performs actions from the queue.
     BackgroundProcessingPool::TaskHandle queue_task_handle;
 
     /// A task that selects parts to merge.
-    BackgroundSchedulePool::TaskHandle merge_selecting_task_handle;
-
-    /// State for merge selecting thread
-    std::unique_ptr<ReplicatedMergeTreeMergeSelectingThread> merge_sel_state;
+    BackgroundSchedulePool::TaskHolder merge_selecting_task;
 
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
-    /// If true then new entries might added to the queue, so we must pull logs before selecting parts for merge.
-    /// Is used only to avoid superfluous pullLogsToQueue() calls
-    bool merge_selecting_logs_pulling_is_required = true;
 
     /// A thread that removes old parts, log entries, and blocks.
     std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
@@ -361,22 +357,26 @@ private:
 
     /// Running jobs from the queue.
 
-    /** Copies the new entries from the logs of all replicas to the queue of this replica.
-      * If next_update_task_handle != nullptr, schedules this task when new entries appear in the log.
-      */
-    void pullLogsToQueue(BackgroundSchedulePool::TaskHandle next_update_task_handle = nullptr);
-
     /** Execute the action from the queue. Throws an exception if something is wrong.
       * Returns whether or not it succeeds. If it did not work, write it to the end of the queue.
       */
-    bool executeLogEntry(const LogEntry & entry);
+    bool executeLogEntry(LogEntry & entry);
+
+    void writePartLog(
+        PartLogElement::Type type, const ExecutionStatus & execution_status, UInt64 elapsed_ns,
+        const String & new_part_name,
+        const MergeTreeData::DataPartPtr & result_part,
+        const MergeTreeData::DataPartsVector & source_parts,
+        const MergeListEntry * merge_entry) const;
 
     void executeDropRange(const LogEntry & entry);
 
     /// Do the merge or recommend to make the fetch instead of the merge
-    void tryExecuteMerge(const LogEntry & entry, bool & do_fetch);
+    bool tryExecuteMerge(const LogEntry & entry);
 
-    bool executeFetch(const LogEntry & entry);
+    bool tryExecutePartMutation(const LogEntry & entry);
+
+    bool executeFetch(LogEntry & entry);
 
     void executeClearColumnInPartition(const LogEntry & entry);
 
@@ -384,7 +384,9 @@ private:
 
     /** Updates the queue.
       */
-    void queueUpdatingThread();
+    void queueUpdatingTask();
+
+    void mutationsUpdatingTask();
 
     /** Performs actions from the queue.
       */
@@ -402,17 +404,20 @@ private:
 
     /** Selects the parts to merge and writes to the log.
       */
-    void mergeSelectingThread();
+    void mergeSelectingTask();
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
       */
     bool createLogEntryToMergeParts(
+        zkutil::ZooKeeperPtr & zookeeper,
         const MergeTreeData::DataPartsVector & parts,
         const String & merged_name,
         bool deduplicate,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
+
+    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
 
     /// Exchange parts.
 
@@ -425,7 +430,7 @@ private:
       * If found, returns replica name and set 'entry->actual_new_part_name' to name of found largest covering part.
       * If not found, returns empty string.
       */
-    String findReplicaHavingCoveringPart(const LogEntry & entry, bool active);
+    String findReplicaHavingCoveringPart(LogEntry & entry, bool active);
     String findReplicaHavingCoveringPart(const String & part_name, bool active, String & found_part_name);
 
     /** Download the specified part from the specified replica.

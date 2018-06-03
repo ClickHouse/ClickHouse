@@ -24,14 +24,13 @@ class ReplicatedMergeTreeCleanupThread
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    ~ReplicatedMergeTreeCleanupThread();
-
-    void schedule() { task_handle->schedule(); }
+    void schedule() { task->schedule(); }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    BackgroundSchedulePool::TaskHandle task_handle;
+    BackgroundSchedulePool::TaskHolder task;
     pcg64 rng;
 
     void run();
@@ -51,7 +50,6 @@ private:
     void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
 
     /// TODO Removing old quorum/failed_parts
-    /// TODO Removing old nonincrement_block_numbers
 };
 
 

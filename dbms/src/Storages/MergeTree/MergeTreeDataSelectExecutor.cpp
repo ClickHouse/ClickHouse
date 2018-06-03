@@ -248,6 +248,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             if (part_values.find(part->name) == part_values.end())
                 continue;
 
+            if (part->isEmpty())
+                continue;
+
             if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInRange(
                     data.minmax_idx_columns.size(),
                     &part->minmax_idx.min_values[0], &part->minmax_idx.max_values[0],
@@ -845,12 +848,11 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const MergeTreeData::DataPart::Index & index, const KeyCondition & key_condition, const Settings & settings) const
 {
-    size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
-
     MarkRanges res;
 
-    size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
     size_t marks_count = index.at(0)->size();
+    if (marks_count == 0)
+        return res;
 
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
@@ -859,6 +861,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
+        size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+        size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
             * At each step, take the left segment and check if it fits.
             * If fits, split it into smaller ones and put them on the stack. If not, discard it.
