@@ -435,8 +435,8 @@ bool tryReadJSONStringInto(Vector & s, ReadBuffer & buf)
 /// This could be used as template parameter for functions above, if you want to just skip data.
 struct NullSink
 {
-    void append(const char *, size_t) {};
-    void push_back(char) {};
+    void append(const char *, size_t) {}
+    void push_back(char) {}
 };
 
 void parseUUID(const UInt8 * src36, UInt8 * dst16);
