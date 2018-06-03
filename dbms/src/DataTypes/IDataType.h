@@ -40,7 +40,7 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual String getName() const { return getFamilyName(); };
+    virtual String getName() const { return getFamilyName(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -319,7 +319,7 @@ public:
     virtual bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const
     {
         return isValueRepresentedByNumber() || isFixedString();
-    };
+    }
 
     virtual bool isString() const { return false; }
     virtual bool isFixedString() const { return false; }

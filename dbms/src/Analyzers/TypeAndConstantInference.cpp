@@ -113,16 +113,16 @@ void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndCo
     else
     {
         /// Alias
-        auto it = aliases.aliases.find(column_name);
-        if (it != aliases.aliases.end())
+        auto jt = aliases.aliases.find(column_name);
+        if (jt != aliases.aliases.end())
         {
             /// TODO Cyclic aliases.
 
-            if (it->second.kind != CollectAliases::Kind::Expression)
+            if (jt->second.kind != CollectAliases::Kind::Expression)
                 throw Exception("Logical error: unexpected kind of alias", ErrorCodes::LOGICAL_ERROR);
 
-            processImpl(it->second.node, context, aliases, columns, info, lambdas, table_functions);
-            info[column_name] = info[it->second.node->getColumnName()];
+            processImpl(jt->second.node, context, aliases, columns, info, lambdas, table_functions);
+            info[column_name] = info[jt->second.node->getColumnName()];
         }
     }
 }

@@ -4,13 +4,11 @@
 
 #if USE_ICU
     #pragma GCC diagnostic push
-    #ifdef __APPLE__
     #pragma GCC diagnostic ignored "-Wold-style-cast"
-    #endif
     #include <unicode/ucol.h>
     #pragma GCC diagnostic pop
 #else
-    #if __clang__
+    #ifdef __clang__
         #pragma clang diagnostic push
         #pragma clang diagnostic ignored "-Wunused-private-field"
     #endif
