@@ -29,8 +29,8 @@ public:
 
     size_t getMaxCompressedSize(size_t uncompressed_size) const override;
 
-    size_t compress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) override;
-    size_t decompress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) override;
+    size_t compress(char * source, char * dest, size_t input_size, size_t max_output_size) override;
+    size_t decompress(char * source, char * dest, size_t input_size, size_t max_output_size) override;
 
     ~CompressionCodecNone() {}
 };

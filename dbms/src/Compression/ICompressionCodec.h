@@ -38,7 +38,7 @@ public:
     virtual String getName() const { return getFamilyName(); };
 
     /// Name of codec family (example: LZ4, ZSTD).
-    virtual const char *getFamilyName() const = 0;
+    virtual const char * getFamilyName() const = 0;
 
     /// Header size of internal header (arguments, excluding bytecode), size parsed by parseHeader
     virtual size_t getHeaderSize() const { return 0; };
@@ -59,8 +59,8 @@ public:
     {
         throw Exception("Cannot compress into PODArray from Codec " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
-    virtual size_t compress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) = 0;
-    virtual size_t decompress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) = 0;
+    virtual size_t compress(char *source, char *dest, size_t input_size, size_t max_output_size) = 0;
+    virtual size_t decompress(char *source, char *dest, size_t input_size, size_t max_output_size) = 0;
 
     /// Data type information provider
     virtual void setDataType(DataTypePtr _data_type)

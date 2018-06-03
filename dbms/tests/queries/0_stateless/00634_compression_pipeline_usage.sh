@@ -7,7 +7,7 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.pipe_tiny"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.pipe_float"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test.pipe_log (d UInt8 CODEC(Delta, LZ4)) ENGINE = Log"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO test.pipe_log VALUES (1), (2), (4), (7), (4), (16), (22)"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test.pipe_log VALUES (1), (2), (4), (7), (11), (16), (22)"
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test.pipe_tree (d Int32 CODEC(Delta, ZSTD(4))) ENGINE = MergeTree order by d"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test.pipe_tree VALUES (1), (12), (3), (3), (4), (3), (5)"

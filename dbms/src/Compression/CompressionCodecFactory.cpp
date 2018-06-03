@@ -21,7 +21,7 @@ namespace ErrorCodes
     extern const int CODEC_CANNOT_HAVE_ARGUMENTS;
 }
 
-CompressionCodecPtr CompressionCodecFactory::get(char& bytecode) const
+CompressionCodecPtr CompressionCodecFactory::get(char & bytecode) const
 {
 
     {
@@ -104,7 +104,7 @@ void CompressionCodecFactory::registerSimpleCodec(const String & name, SimpleCre
     });
 }
 
-void CompressionCodecFactory::registerCodecBytecode(const char& bytecode, SimpleCreator creator)
+void CompressionCodecFactory::registerCodecBytecode(const char & bytecode, SimpleCreator creator)
 {
     if (creator == nullptr)
         throw Exception("CompressionCodecFactory: the codec has been provided a null constructor",

@@ -31,7 +31,7 @@ public:
     CompressionCodecPtr get(const String & full_name) const;
     CompressionCodecPtr get(const String & family_name, const ASTPtr & parameters) const;
     CompressionCodecPtr get(const ASTPtr & ast) const;
-    CompressionCodecPtr get(char& bytecode) const;
+    CompressionCodecPtr get(char & bytecode) const;
 
     /// Register a codec family by its name.
     void registerCodec(const String & family_name, Creator creator);
@@ -40,7 +40,7 @@ public:
     void registerSimpleCodec(const String & name, SimpleCreator creator);
 
     /// Register a codec by its bytecode, it could not have parameters.
-    void registerCodecBytecode(const char& bytecode, SimpleCreator creator);
+    void registerCodecBytecode(const char & bytecode, SimpleCreator creator);
 
     CompressionCodecFactory();
 private:

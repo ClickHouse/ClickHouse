@@ -22,7 +22,7 @@ using CompressionCodecPtr = std::shared_ptr<ICompressionCodec>;
 using Codecs = std::vector<CompressionCodecPtr>;
 
 class CompressionPipeline;
-using CompressionPipePtr = std::shared_ptr<CompressionPipeline>;
+using CompressionPipelinePtr = std::shared_ptr<CompressionPipeline>;
 
 class CompressionPipeline final : public ICompressionCodec
 {
@@ -30,26 +30,28 @@ private:
     Codecs codecs;
     /// Sizes of data mutations, from original to later compressions
     std::vector<UInt32> data_sizes;
+    DataTypePtr data_type = nullptr;
     size_t header_size = 0;
-    DataTypePtr data_type;
-    PODArray<char> buffer1;
-    PODArray<char> buffer2;
 public:
-    ASTPtr codec_ptr;
-    CompressionPipeline(ReadBuffer* header);
-    CompressionPipeline(Codecs& _codecs)
-        : codecs (_codecs)
+    ASTPtr codec_ptr = nullptr;
+    CompressionPipeline(ReadBuffer * header);
+    CompressionPipeline(Codecs & codecs_)
+        : codecs (codecs_)
     {}
 
-    static CompressionPipePtr get_pipe(ReadBuffer* header);
-    static CompressionPipePtr get_pipe(const String & codecs);
-    static CompressionPipePtr get_pipe(ASTPtr &);
+    static CompressionPipelinePtr createPipelineFromBuffer(ReadBuffer *);
+    static CompressionPipelinePtr createPipelineFromString(const String &);
+    static CompressionPipelinePtr createPipelineFromASTPtr(ASTPtr &);
 
     String getName() const;
 
     const char *getFamilyName() const override;
     /// Header for serialization, containing bytecode and parameters
-    size_t writeHeader(char* out);
+    size_t writeHeader(char * out, std::vector<uint32_t> & ds);
+    size_t writeHeader(char *) override
+    {
+        throw Exception("Not provided data sizes for compression pipeline header", ErrorCodes::LOGICAL_ERROR);
+    }
     size_t getHeaderSize() const;
 
     size_t getCompressedSize() const;
@@ -64,12 +66,12 @@ public:
     size_t getMaxDecompressedSize(size_t) const;
 
     /// Block compression and decompression methods
-    size_t compress(char *source, PODArray<char> &dest, size_t inputSize, size_t maxOutputSize);
+    size_t compress(char * source, PODArray<char> & dest, size_t input_size, size_t max_output_size);
     size_t compress(char *, char *, size_t, size_t)
     {
         throw Exception("Could not compress into `char*` from Pipeline", ErrorCodes::NOT_IMPLEMENTED);
     }
-    size_t decompress(char *source, char *dest, size_t inputSize, size_t) override;
+    size_t decompress(char *source, char *dest, size_t input_size, size_t) override;
 
     std::vector<UInt32> getDataSizes() const;
 

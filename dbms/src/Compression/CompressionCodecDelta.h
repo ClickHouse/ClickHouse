@@ -29,8 +29,8 @@ public:
         return "Delta";
     }
 
-    size_t writeHeader(char* header) override;
-    size_t parseHeader(const char* header);
+    size_t writeHeader(char * header) override;
+    size_t parseHeader(const char * header);
 
     size_t getHeaderSize() const { return sizeof(delta_type) + sizeof(element_size); };
 
@@ -41,14 +41,14 @@ public:
     size_t getMaxCompressedSize(size_t uncompressed_size) const { return uncompressed_size; };
 
     template <typename T>
-    void compress_num(char* source, char* dest, size_t size) const;
+    void compress_num(char * source, char * dest, size_t size) const;
     template <typename T>
-    void decompress_num(char* source, char* dest, size_t size) const;
+    void decompress_num(char * source, char * dest, size_t size) const;
 
-    void compress_bytes(char* source, char* dest, size_t size) const;
-    void decompress_bytes(char* source, char* dest, size_t size) const;
+    void compress_bytes(char * source, char * dest, size_t size) const;
+    void decompress_bytes(char * source, char * dest, size_t size) const;
 
-    size_t compress(char *source, char *dest, size_t inputSize, size_t maxOutputSize) override;
+    size_t compress(char * source, char * dest, size_t input_size, size_t max_output_size) override;
     size_t decompress(char *, char *, size_t, size_t) override;
 
     void setDataType(DataTypePtr data_type);

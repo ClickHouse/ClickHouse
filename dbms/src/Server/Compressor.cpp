@@ -33,7 +33,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
     {
         in.ignore(16);    /// checksum
 
-        auto pipe = DB::CompressionPipeline::get_pipe(&in);
+        auto pipe = DB::CompressionPipeline::createPipelineFromBuffer(&in);
         UInt32 size_compressed = pipe->getCompressedSize();
 
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
@@ -95,7 +95,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
 
         DB::CompressionMethod method = DB::CompressionMethod::LZ4;
 
-        DB::CompressionPipePtr compression_pipe;
+        DB::CompressionPipelinePtr compression_pipe;
         if (use_lz4hc)
             method = DB::CompressionMethod::LZ4HC;
         else if (use_zstd)
@@ -103,7 +103,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
         else if (use_none)
             method = DB::CompressionMethod::NONE;
         else if (use_custom)
-            compression_pipe = DB::CompressionPipeline::get_pipe(options["custom"].as<DB::String>());
+            compression_pipe = DB::CompressionPipeline::createPipelineFromString(options["custom"].as<DB::String>());
 
         DB::CompressionSettings settings(method, options.count("level") > 0 ? options["level"].as<int>() : DB::CompressionSettings::getDefaultLevel(method),
                                          compression_pipe);

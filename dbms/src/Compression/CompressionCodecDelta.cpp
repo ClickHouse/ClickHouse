@@ -3,6 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <iostream>
 
 namespace DB
 {
@@ -13,9 +14,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void CompressionCodecDelta::setDataType(DataTypePtr _data_type)
+void CompressionCodecDelta::setDataType(DataTypePtr data_type_)
 {
-    data_type = _data_type;
+    data_type = data_type_;
     element_size = data_type->getSizeOfValueInMemory();
     if (delta_type == 100)
     {
@@ -30,11 +31,11 @@ void CompressionCodecDelta::setDataType(DataTypePtr _data_type)
     }
 };
 
-size_t CompressionCodecDelta::writeHeader(char* header)
+size_t CompressionCodecDelta::writeHeader(char * header)
 {
     *header = bytecode;
-    unalignedStore(header + 1, delta_type);
-    unalignedStore(header + 2, element_size);
+    unalignedStore(&header[1], delta_type);
+    unalignedStore(&header[2], element_size);
     return 1 + sizeof(delta_type) + sizeof(element_size);
 }
 
@@ -47,23 +48,19 @@ size_t CompressionCodecDelta::parseHeader(const char* header)
 }
 
 
-void CompressionCodecDelta::compress_bytes(char* source, char* dest, size_t size) const
+void CompressionCodecDelta::compress_bytes(char * source, char * dest, size_t size) const
 {
-    char* tmp_arr = source;
     memcpy(dest, source, element_size);
     for (size_t i = 1; i < size / element_size; ++i)
-    {
         for (size_t j = 0; j < element_size; ++j)
-            dest[i * element_size + j] = source[i * element_size + j] - tmp_arr[j];
-        tmp_arr += element_size;
-    }
+            dest[i * element_size + j] = source[i * element_size + j] - source[(i - 1) * element_size + j];
 }
 
 template <typename T>
-void CompressionCodecDelta::compress_num(char* source, char* dest, size_t size) const
+void CompressionCodecDelta::compress_num(char * source, char * dest, size_t size) const
 {
-    T* arr = reinterpret_cast<T*>(source), *dest_arr = reinterpret_cast<T*>(dest);
-    T* elem = arr;
+    T * arr = reinterpret_cast<T*>(source), * dest_arr = reinterpret_cast<T*>(dest);
+    T * elem = arr;
     memcpy(dest, source, element_size);
     for (size_t i = 1; i < size / element_size; ++i)
     {
@@ -72,68 +69,64 @@ void CompressionCodecDelta::compress_num(char* source, char* dest, size_t size) 
     }
 }
 
-size_t CompressionCodecDelta::compress(char *source, char *dest, size_t inputSize, size_t)
+size_t CompressionCodecDelta::compress(char * source, char * dest, size_t input_size, size_t)
 {
-    if (inputSize % element_size)
+    if (input_size % element_size)
         throw Exception("Data type does not fit input size.", ErrorCodes::LOGICAL_ERROR);
 
     switch (delta_type)
     {
         case 0:
-            compress_bytes(source, dest, inputSize);
+            compress_bytes(source, dest, input_size);
             break;
         case 1:
             switch (element_size)
             {
-                case 1: compress_num<int8_t>(source, dest, inputSize); break;
-                case 2: compress_num<int16_t>(source, dest, inputSize); break;
-                case 4: compress_num<int32_t>(source, dest, inputSize); break;
-                case 8: compress_num<int64_t>(source, dest, inputSize); break;
-                default: compress_num<int8_t>(source, dest, inputSize); break;
+                case 1: compress_num<int8_t>(source, dest, input_size); break;
+                case 2: compress_num<int16_t>(source, dest, input_size); break;
+                case 4: compress_num<int32_t>(source, dest, input_size); break;
+                case 8: compress_num<int64_t>(source, dest, input_size); break;
+                default: compress_num<int8_t>(source, dest, input_size); break;
             }
             break;
         case 2:
             switch (element_size)
             {
-                case 1: compress_num<uint8_t>(source, dest, inputSize); break;
-                case 2: compress_num<uint16_t>(source, dest, inputSize); break;
-                case 4: compress_num<uint32_t>(source, dest, inputSize); break;
-                case 8: compress_num<uint64_t>(source, dest, inputSize); break;
-                default: compress_num<uint8_t>(source, dest, inputSize); break;
+                case 1: compress_num<uint8_t>(source, dest, input_size); break;
+                case 2: compress_num<uint16_t>(source, dest, input_size); break;
+                case 4: compress_num<uint32_t>(source, dest, input_size); break;
+                case 8: compress_num<uint64_t>(source, dest, input_size); break;
+                default: compress_num<uint8_t>(source, dest, input_size); break;
             }
             break;
         case 3:
             switch (element_size)
             {
-                case 4: compress_num<Float32>(source, dest, inputSize); break;
-                case 8: compress_num<Float64>(source, dest, inputSize); break;
-                default: compress_num<Float32>(source, dest, inputSize); break;
+                case 4: compress_num<uint32_t>(source, dest, input_size); break;
+                case 8: compress_num<uint64_t>(source, dest, input_size); break;
+                default: compress_num<uint32_t>(source, dest, input_size); break;
             }
             break;
         default:
-            memcpy(dest, source, inputSize);
+            memcpy(dest, source, input_size);
             break;
     }
-    return inputSize;
+    return input_size;
 }
 
-void CompressionCodecDelta::decompress_bytes(char* source, char* dest, size_t size) const
+void CompressionCodecDelta::decompress_bytes(char * source, char * dest, size_t size) const
 {
-    char* tmp_arr = dest;
     memcpy(dest, source, element_size);
     for (size_t i = 1; i < size / element_size; ++i)
-    {
         for (size_t j = 0; j < element_size; ++j)
-            dest[i * element_size + j] = source[i * element_size + j] + tmp_arr[j];
-        tmp_arr += element_size;
-    }
+            dest[i * element_size + j] = source[i * element_size + j] + dest[(i - 1) * element_size + j];
 }
 
 template <typename T>
-void CompressionCodecDelta::decompress_num(char* source, char* dest, size_t size) const
+void CompressionCodecDelta::decompress_num(char * source, char * dest, size_t size) const
 {
-    T* arr = reinterpret_cast<T*>(source), *dest_arr = reinterpret_cast<T*>(dest);
-    T* elem = dest_arr;
+    T * arr = reinterpret_cast<T*>(source), * dest_arr = reinterpret_cast<T*>(dest);
+    T * elem = dest_arr;
     memcpy(dest, source, element_size);
     for (size_t i =1; i < size / element_size; ++i)
     {
@@ -142,55 +135,55 @@ void CompressionCodecDelta::decompress_num(char* source, char* dest, size_t size
     }
 }
 
-size_t CompressionCodecDelta::decompress(char *source, char *dest, size_t inputSize, size_t)
+size_t CompressionCodecDelta::decompress(char * source, char * dest, size_t input_size, size_t)
 {
-    if (inputSize % element_size)
+    if (input_size % element_size)
         throw Exception("Data type (size " + std::to_string(element_size) + ") "
-                        "does not fit input size (" + std::to_string(inputSize) + ").",
+                        "does not fit input size (" + std::to_string(input_size) + ").",
                         ErrorCodes::LOGICAL_ERROR);
 
     switch (delta_type)
     {
         case 0:
-            decompress_bytes(source, dest, inputSize);
+            decompress_bytes(source, dest, input_size);
             break;
         case 1:
             switch (element_size)
             {
-                case 1: decompress_num<int8_t>(source, dest, inputSize); break;
-                case 2: decompress_num<int16_t>(source, dest, inputSize); break;
-                case 4: decompress_num<int32_t>(source, dest, inputSize); break;
-                case 8: decompress_num<int64_t>(source, dest, inputSize); break;
-                default: decompress_num<int8_t>(source, dest, inputSize); break;
+                case 1: decompress_num<int8_t>(source, dest, input_size); break;
+                case 2: decompress_num<int16_t>(source, dest, input_size); break;
+                case 4: decompress_num<int32_t>(source, dest, input_size); break;
+                case 8: decompress_num<int64_t>(source, dest, input_size); break;
+                default: decompress_num<int8_t>(source, dest, input_size); break;
             }
             break;
         case 2:
             switch (element_size)
             {
-                case 1: decompress_num<uint8_t>(source, dest, inputSize); break;
-                case 2: decompress_num<uint16_t>(source, dest, inputSize); break;
-                case 4: decompress_num<uint32_t>(source, dest, inputSize); break;
-                case 8: decompress_num<uint64_t>(source, dest, inputSize); break;
-                default: decompress_num<uint8_t>(source, dest, inputSize); break;
+                case 1: decompress_num<uint8_t>(source, dest, input_size); break;
+                case 2: decompress_num<uint16_t>(source, dest, input_size); break;
+                case 4: decompress_num<uint32_t>(source, dest, input_size); break;
+                case 8: decompress_num<uint64_t>(source, dest, input_size); break;
+                default: decompress_num<uint8_t>(source, dest, input_size); break;
             }
             break;
         case 3:
             switch (element_size)
             {
-                case 4: decompress_num<float>(source, dest, inputSize); break;
-                case 8: decompress_num<double>(source, dest, inputSize); break;
-                default: decompress_num<float>(source, dest, inputSize); break;
+                case 4: decompress_num<uint32_t>(source, dest, input_size); break;
+                case 8: decompress_num<uint64_t>(source, dest, input_size); break;
+                default: decompress_num<uint32_t>(source, dest, input_size); break;
             }
             break;
         default:
-            memcpy(dest, source, inputSize);
+            memcpy(dest, source, input_size);
             break;
     }
-    return inputSize;
+    return input_size;
 }
 
 
-static CompressionCodecPtr create(const ASTPtr &arguments) {
+static CompressionCodecPtr create(const ASTPtr & arguments) {
     if (!arguments)
         return std::make_shared<CompressionCodecDelta>();
 

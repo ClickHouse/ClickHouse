@@ -48,7 +48,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     CityHash_v1_0_2::uint128 checksum;
     compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
-    compression_pipe = CompressionPipeline::get_pipe(compressed_in);
+    compression_pipe = CompressionPipeline::createPipelineFromBuffer(compressed_in);
 
     size_t size_compressed_without_header = compression_pipe->getCompressedSize();
     size_compressed_without_checksum = size_compressed_without_header + compression_pipe->getHeaderSize();
