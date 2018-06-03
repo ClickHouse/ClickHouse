@@ -24,7 +24,17 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
+#endif
+
 #include <double-conversion/double-conversion.h>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
 
 #define DEFAULT_MAX_STRING_SIZE 0x00FFFFFFULL
 
