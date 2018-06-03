@@ -161,8 +161,8 @@ public:
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
-    ClientInfo & getClientInfo() { return client_info; };
-    const ClientInfo & getClientInfo() const { return client_info; };
+    ClientInfo & getClientInfo() { return client_info; }
+    const ClientInfo & getClientInfo() const { return client_info; }
 
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();
@@ -285,8 +285,8 @@ public:
     void setSessionContext(Context & context_) { session_context = &context_; }
     void setGlobalContext(Context & context_) { global_context = &context_; }
 
-    const Settings & getSettingsRef() const { return settings; };
-    Settings & getSettingsRef() { return settings; };
+    const Settings & getSettingsRef() const { return settings; }
+    Settings & getSettingsRef() { return settings; }
 
 
     void setProgressCallback(ProgressCallback callback);
