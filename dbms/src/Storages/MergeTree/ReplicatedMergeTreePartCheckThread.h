@@ -75,6 +75,7 @@ private:
     void searchForMissingPart(const String & part_name);
 
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
 
     using StringSet = std::set<String>;
@@ -92,7 +93,7 @@ private:
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-    BackgroundSchedulePool::TaskHandle task_handle;
+    BackgroundSchedulePool::TaskHolder task;
 };
 
 }

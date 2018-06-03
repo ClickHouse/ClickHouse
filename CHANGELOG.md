@@ -1,3 +1,8 @@
+# ClickHouse release 1.1.54385, 2018-06-01
+
+## Bug fixes:
+* Fixed an error that in some cases caused ZooKeeper operations to block.
+
 # ClickHouse release 1.1.54383, 2018-05-22
 
 ## Bug fixes:

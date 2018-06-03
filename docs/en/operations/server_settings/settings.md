@@ -328,6 +328,28 @@ Keys:
 </logger>
 ```
 
+Also, logging to syslog is possible. Configuration example:
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname> 
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+Keys:
+- user_syslog - activation key, turning on syslog logging.
+- address - host[:port] of syslogd. If not specified, local one would be used.
+- hostname - optional, source host of logs
+- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility), 
+in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.). 
+Default values: when ``address`` is specified, then ``LOG_USER``, otherwise - ``LOG_DAEMON``
+- format - message format. Possible values are - ``bsd`` and ``syslog``
+
 <a name="server_settings-macros"></a>
 
 ## macros

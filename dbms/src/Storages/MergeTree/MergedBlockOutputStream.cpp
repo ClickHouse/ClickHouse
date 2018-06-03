@@ -309,17 +309,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     column_streams.clear();
 
-    if (rows_count == 0)
-    {
-        /// A part is empty - all records are deleted.
-        Poco::File(part_path).remove(true);
-        return;
-    }
-
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         new_part->partition.store(storage, part_path, checksums);
-        new_part->minmax_idx.store(storage, part_path, checksums);
+        if (new_part->minmax_idx.initialized)
+            new_part->minmax_idx.store(storage, part_path, checksums);
 
         WriteBufferFromFile count_out(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(count_out);

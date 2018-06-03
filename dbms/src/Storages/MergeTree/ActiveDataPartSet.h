@@ -20,26 +20,57 @@ public:
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
+    ActiveDataPartSet(const ActiveDataPartSet & other)
+        : format_version(other.format_version)
+        , part_info_to_name(other.part_info_to_name)
+    {}
+
+    ActiveDataPartSet(ActiveDataPartSet && other) noexcept { swap(other); }
+
+    void swap(ActiveDataPartSet & other) noexcept
+    {
+        std::swap(format_version, other.format_version);
+        std::swap(part_info_to_name, other.part_info_to_name);
+    }
+
+    ActiveDataPartSet & operator=(const ActiveDataPartSet & other)
+    {
+        if (&other != this)
+        {
+            ActiveDataPartSet tmp(other);
+            swap(tmp);
+        }
+        return *this;
+    }
+
     void add(const String & name);
 
-    /// If not found, returns an empty string.
+    bool remove(const MergeTreePartInfo & part_info)
+    {
+        return part_info_to_name.erase(part_info) > 0;
+    }
+
+    bool remove(const String & part_name)
+    {
+        return remove(MergeTreePartInfo::fromPartName(part_name, format_version));
+    }
+
+    /// If not found, return an empty string.
+    String getContainingPart(const MergeTreePartInfo & part_info) const;
     String getContainingPart(const String & name) const;
+
+    Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
 
     /// Returns parts in ascending order of the partition_id and block number.
     Strings getParts() const;
 
     size_t size() const;
 
-    /// Do not block mutex.
-    void addUnlocked(const String & name);
-    String getContainingPartUnlocked(const MergeTreePartInfo & part_info) const;
-    Strings getPartsUnlocked() const;
-
 private:
     MergeTreeDataFormatVersion format_version;
-
-    mutable std::mutex mutex;
     std::map<MergeTreePartInfo, String> part_info_to_name;
+
+    std::map<MergeTreePartInfo, String>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }

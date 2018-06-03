@@ -329,6 +329,29 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </logger>
 ```
 
+Также, существует поддержка записи в syslog. Пример конфига:
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname> 
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+Ключи:
+- user_syslog - обязательная настройка, если требуется запись в syslog
+- address - хост[:порт] демона syslogd. Если не указан, используется локальный
+- hostname - опционально, имя хоста, с которого отсылаются логи
+- facility - [категория syslog](https://en.wikipedia.org/wiki/Syslog#Facility), 
+записанная в верхнем регистре, с префиксом "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` и прочие). 
+Значения по-умолчанию: при указанном ``address`` - ``LOG_USER``, иначе - ``LOG_DAEMON``
+- format - формат сообщений. Возможные значения - ``bsd`` и ``syslog``
+
+ 
 <a name="server_settings-macros"></a>
 
 ## macros
