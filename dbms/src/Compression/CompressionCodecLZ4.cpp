@@ -69,11 +69,11 @@ static CompressionCodecPtr create(const ASTPtr & arguments)
     if (arguments->children.size() != 1)
         throw Exception("LZ4 codec can optionally have only one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral *arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
     if (!arg || arg->value.getType() != Field::Types::UInt64)
         throw Exception("Parameter for LZ4 codec must be UInt8 literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<T>(static_cast<uint8_t>(arg->value.get<UInt8>()));
+    return std::make_shared<T>(arg->value.get<UInt8>());
 }
 
 template<typename T>

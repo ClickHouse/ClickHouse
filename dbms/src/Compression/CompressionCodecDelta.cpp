@@ -191,12 +191,12 @@ static CompressionCodecPtr create(const ASTPtr & arguments) {
         throw Exception("Delta codec can optionally have only two arguments",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    const ASTLiteral *arg_size = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const ASTLiteral * arg_size = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
     if (!arg_size || arg_size->value.getType() != Field::Types::UInt64)
         throw Exception("Element size for Delta codec must be UInt16 literal",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    const ASTLiteral *arg_type = typeid_cast<const ASTLiteral *>(arguments->children[1].get());
+    const ASTLiteral * arg_type = typeid_cast<const ASTLiteral *>(arguments->children[1].get());
     if (!arg_type || arg_type->value.getType() != Field::Types::UInt64)
         throw Exception("Delta type (bytes, int, uint, float) parameter for Delta codec must be UInt8 literal",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

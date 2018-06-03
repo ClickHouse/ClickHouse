@@ -70,9 +70,9 @@ static CompressionCodecPtr create(const ASTPtr & arguments)
 
     const ASTLiteral * arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
     if (!arg || arg->value.getType() != Field::Types::UInt64)
-        throw Exception("Parameter for ZSTD codec must be UInt64 literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        throw Exception("Parameter for ZSTD codec must be UInt8 literal", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    return std::make_shared<CompressionCodecZSTD>(static_cast<uint8_t>(arg->value.get<UInt64>()));
+    return std::make_shared<CompressionCodecZSTD>(arg->value.get<UInt8>());
 }
 
 static CompressionCodecPtr simpleCreate()
