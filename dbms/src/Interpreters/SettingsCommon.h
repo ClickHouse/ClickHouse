@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Field.h>
-#include <IO/WriteHelpers.h>
 #include <Poco/Timespan.h>
 
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -11,6 +10,7 @@
 
 #include <IO/CompressedStream.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

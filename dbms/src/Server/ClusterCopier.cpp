@@ -794,7 +794,7 @@ public:
         }
 
         std::rethrow_exception(exception);
-    };
+    }
 
 
     void discoverShardPartitions(const TaskShardPtr & task_shard)

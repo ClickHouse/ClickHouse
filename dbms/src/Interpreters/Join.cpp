@@ -1008,7 +1008,7 @@ public:
 
     String getName() const override { return "NonJoined"; }
 
-    Block getHeader() const override { return result_sample_block; };
+    Block getHeader() const override { return result_sample_block; }
 
 
 protected:

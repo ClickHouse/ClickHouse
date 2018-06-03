@@ -981,7 +981,7 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context & context);
-    FunctionMultiIf(const Context & context) : context(context) {};
+    FunctionMultiIf(const Context & context) : context(context) {}
 
 public:
     String getName() const override;

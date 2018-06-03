@@ -20,7 +20,7 @@ public:
     String table;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
+    String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; }
 
     ASTPtr clone() const override
     {
