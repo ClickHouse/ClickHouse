@@ -11,6 +11,7 @@
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
 #endif
 
 #include <boost/noncopyable.hpp>
