@@ -131,6 +131,7 @@ public:
     static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
+    Context(const Context &) = default;
     ~Context();
 
     String getPath() const;
