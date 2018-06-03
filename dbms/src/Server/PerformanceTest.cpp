@@ -63,7 +63,7 @@ private:
     size_t padding;
 
 public:
-    explicit JSONString(size_t padding_ = 1) : padding(padding_){};
+    explicit JSONString(size_t padding_ = 1) : padding(padding_) {}
 
     void set(const String key, String value, bool wrap = true)
     {
@@ -231,13 +231,13 @@ public:
         conditions_any_of.report(value, conditions_any_of.CONDITION); \
     }
 
-    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms);
-    DEFINE_REPORT_FUNC(reportRowsRead, rows_read);
-    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed);
-    DEFINE_REPORT_FUNC(reportIterations, iterations);
-    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms);
-    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms);
-    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms);
+    DEFINE_REPORT_FUNC(reportTotalTime, total_time_ms)
+    DEFINE_REPORT_FUNC(reportRowsRead, rows_read)
+    DEFINE_REPORT_FUNC(reportBytesReadUncompressed, bytes_read_uncompressed)
+    DEFINE_REPORT_FUNC(reportIterations, iterations)
+    DEFINE_REPORT_FUNC(reportMinTimeNotChangingFor, min_time_not_changing_for_ms)
+    DEFINE_REPORT_FUNC(reportMaxSpeedNotChangingFor, max_speed_not_changing_for_ms)
+    DEFINE_REPORT_FUNC(reportAverageSpeedNotChangingFor, average_speed_not_changing_for_ms)
 
 #undef REPORT
 

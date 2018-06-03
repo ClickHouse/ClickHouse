@@ -54,7 +54,7 @@ public:
         reader->readSuffix();
     }
 
-    Block getHeader() const override { return sample_block; };
+    Block getHeader() const override { return sample_block; }
 
 private:
     Block sample_block;

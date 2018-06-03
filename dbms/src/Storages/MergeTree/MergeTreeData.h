@@ -118,7 +118,7 @@ public:
         String partition_id;
     };
 
-    STRONG_TYPEDEF(String, PartitionID);
+    STRONG_TYPEDEF(String, PartitionID)
 
     struct LessDataPart
     {
@@ -608,7 +608,7 @@ private:
     static DataPartStateAndInfo dataPartPtrToStateAndInfo(const DataPartPtr & part)
     {
         return {part->state, part->info};
-    };
+    }
 
     using DataPartsIndexes = boost::multi_index_container<DataPartPtr,
         boost::multi_index::indexed_by<
