@@ -35,7 +35,7 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr getReturnType() const { return function->getReturnType(); };
+    DataTypePtr getReturnType() const { return function->getReturnType(); }
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
