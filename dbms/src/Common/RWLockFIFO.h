@@ -21,18 +21,13 @@ using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
 class RWLockFIFO : public std::enable_shared_from_this<RWLockFIFO>
 {
 public:
-
-    static RWLockFIFOPtr create()
-    {
-        return RWLockFIFOPtr(new RWLockFIFO);
-    }
-
     enum Type
     {
         Read,
         Write
     };
 
+private:
     /// Client is that who wants to acquire the lock.
     struct Client
     {
@@ -47,6 +42,12 @@ public:
         std::time_t start_time = 0;
         Type type;
     };
+
+public:
+    static RWLockFIFOPtr create()
+    {
+        return RWLockFIFOPtr(new RWLockFIFO);
+    }
 
 
     /// Just use LockHandler::reset() to release the lock
@@ -69,7 +70,6 @@ public:
     Clients getClientsInTheQueue() const;
 
 private:
-
     RWLockFIFO() = default;
 
     struct Group;
