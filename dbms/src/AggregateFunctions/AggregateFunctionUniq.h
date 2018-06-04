@@ -218,8 +218,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float32>
 {
     static UInt32 hash(Float32 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+        UInt64 res = ext::bit_cast<UInt64>(x);
         return static_cast<UInt32>(intHash64(res));
     }
 };
@@ -228,8 +227,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float64>
 {
     static UInt32 hash(Float64 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+        UInt64 res = ext::bit_cast<UInt64>(x);
         return static_cast<UInt32>(intHash64(res));
     }
 };
