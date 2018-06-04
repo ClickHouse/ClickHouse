@@ -57,7 +57,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <ext/scope_guard.h>
 
-static Completion::HashTable ht;
+static Completion::TSTNode completionNode;
 char ** query_parts_completion(const char *, int, int);
 char * query_parts_generator(const char *, int);
 
@@ -340,12 +340,11 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    void init_suggestions(Completion::HashTable *ht)
+    void init_suggestions()
     {
-        Completion::init_hash_table(ht, 128);
         QUERYPART *qP = queryParts;
         while (qP->name) {
-            Completion::hash_add_word(ht, qP->name);
+            completionNode.add_word(qP->name);
             qP++;
         }
         rl_attempted_completion_function = query_parts_completion;
@@ -462,7 +461,7 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 #if USE_READLINE
-            init_suggestions(&ht);
+            init_suggestions();
 #endif
 
             /// Turn tab completion off.
@@ -489,9 +488,6 @@ private:
             }
 
             loop();
-#if USE_READLINE
-            Completion::hash_free(&ht);
-#endif
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
 
@@ -1580,19 +1576,15 @@ char ** query_parts_completion(const char *text, int start, int end)
 char * query_parts_generator(const char *text, int state)
 {
     static int text_length;
-    static Completion::Bucket *bucket;
-    static Completion::HashEntry *entry;
+    static Completion::Entry *entry;
     char * found;
 
     if (!state) text_length = (uint) strlen(text);
 
     if (text_length > 0) {
         if (!state) {
-            uint length;
-
-            bucket = Completion::hash_find_all_matches(&ht, text, (uint)strlen(text), &length);
-            if (!bucket) return (char *) nullptr;
-            entry = bucket->entry;
+            entry = completionNode.find_all(text);
+            if (!entry) return (char *) nullptr;
         }
         if (entry) {
             found = strdup(entry->text);
