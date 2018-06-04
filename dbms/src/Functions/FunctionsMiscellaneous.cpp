@@ -755,7 +755,9 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        if (tuple && type_tuple->getElements().size() != 1)
+        auto set = column_set->getData();
+        auto set_types = set->getDataTypes();
+        if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
         {
             const Columns & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
@@ -766,7 +768,7 @@ public:
         else
             block_of_key_columns.insert(left_arg);
 
-        block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
+        block.getByPosition(result).column = set->execute(block_of_key_columns, negative);
     }
 };
 
