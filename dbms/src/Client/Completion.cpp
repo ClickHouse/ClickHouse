@@ -1,126 +1,105 @@
-#include <readline/readline.h>
-#include <cstdlib>
 #include "Completion.h"
 
 namespace Completion
 {
-    static uint hashpjw(const char *arKey, uint nKeyLength)
+    void TSTNode::add_word(char *word)
     {
-        uint h = 0;
-        uint g;
-        uint i;
-        for (i = 0; i < nKeyLength; i++) {
-            h = (h << 4) + arKey[i];
-            if ((g = (h & 0xF0000000))) {
-                h = h ^ (g >> 24);
-                h = h ^ g;
+        insert(word, word);
+    }
+
+    void TSTNode::insert(char *word, char *remainder)
+    {
+        if (!*remainder) {
+            return;
+        }
+
+        if (!token) {
+            token = *remainder;
+        }
+
+        if (token > *remainder) {
+            if (!left) {
+                left = (TSTNode *) calloc(1, sizeof(TSTNode));
             }
+            return left->insert(word, remainder);
         }
-        return h;
-    }
 
-    int init_hash_table(HashTable *ht, size_t size)
-    {
-        ht->hashFunction = hashpjw;
-        ht->tableSize = size;
-        ht->buckets = (Bucket **)calloc(size, sizeof(Bucket));
-        if (!ht->buckets) {
-            ht->initialized = false;
-            return HASH_FAILURE;
-        }
-        ht->initialized = true;
-        return HASH_SUCCESS;
-    }
-
-    void hash_add_word(HashTable *ht, char *word)
-    {
-        uint i;
-        char *pos = word;
-        for (i = 1; *pos; i++, pos++) {
-            hash_insert_key(ht, word, i, word);
-        };
-    }
-
-    int hash_insert_key(HashTable *ht, char *key, uint keyLength, char* word)
-    {
-        uint hash;
-        size_t bucketIndex;
-        Bucket *bucket;
-
-        if (keyLength <= 0) {
-            return HASH_FAILURE;
-        }
-        hash = ht->hashFunction(key, keyLength);
-        bucketIndex = hash % ht->tableSize;
-        bucket = ht->buckets[bucketIndex];
-        while (bucket) {
-            if ( (bucket->hash == hash) && (bucket->keyLength == keyLength)) {
-                if (!memcmp(bucket->key, key, keyLength)) {
-                    auto *entry = (HashEntry *) calloc(1, sizeof(HashEntry));
-                    if (entry == nullptr) {
-                        return HASH_FAILURE;
-                    }
-                    entry->text = word;
-                    entry->next = bucket->entry;
-                    bucket->entry = entry;
-
-                    return HASH_SUCCESS;
-                }
+        if (token < *remainder) {
+            if (!right) {
+                right = (TSTNode *) calloc(1, sizeof(TSTNode));
             }
-            bucket = bucket->next;
-        }
-        bucket = (Bucket *) calloc(1, sizeof(Bucket));
-        if (bucket == nullptr) {
-            return HASH_FAILURE;
-        }
-        bucket->key = key;
-        bucket->keyLength = keyLength;
-        bucket->hash = hash;
-
-        bucket->entry = (HashEntry *) calloc(1, sizeof(HashEntry));
-        if (bucket->entry == nullptr) {
-            return HASH_FAILURE;
+            return right->insert(word, remainder);
         }
 
-        bucket->entry->text = word;
-        bucket->entry->next = nullptr;
+        auto newEntry = (Entry *) calloc(1, sizeof(Entry));
+        newEntry->text = word;
+        newEntry->next = entry;
+        entry = newEntry;
 
-        bucket->next = ht->buckets[bucketIndex];
+        if (!middle) {
+            middle = (TSTNode *) calloc(1, sizeof(TSTNode));
+        }
 
-        ht->buckets[bucketIndex] = bucket;
-
-        return HASH_SUCCESS;
+        return middle->insert(word, ++remainder);
     }
 
-    Bucket * hash_find_all_matches(HashTable *ht, const char *word, uint length, uint *res_length)
+    Entry * TSTNode::find_all(const char *word)
     {
-        Bucket *bucket;
-        uint hash;
-        size_t bucketIndex;
-        hash = ht->hashFunction(word, length);
-        bucketIndex = hash % ht->tableSize;
-        bucket = ht->buckets[bucketIndex];
+        if (!word) {
+            return (Entry *) nullptr;
+        }
 
-        while (bucket) {
-            if (
-                    (bucket->hash == hash)
-                    && (bucket->keyLength == length)
-                    && (!memcmp(bucket->key, word, length))
-                    ) {
-                *res_length = length;
-                return bucket;
+        return find(word, word);
+    }
+
+    Entry * TSTNode::find(const char *word, const char *remainder)
+    {
+        if (token > *remainder) {
+            if (!left) {
+                return (Entry *) nullptr;
             }
-            bucket = bucket->next;
+            return left->find(word, remainder);
         }
 
-        *res_length = 0;
+        if (token < *remainder) {
+            if (!right) {
+                return (Entry *) nullptr;
+            }
+            return right->find(word, remainder);
+        }
 
-        return (Bucket *) nullptr;
+        if (!middle) {
+            return (Entry *) nullptr;
+        }
+
+        if (strlen(remainder) == 1) {
+            return entry;
+        }
+
+        return middle->find(word, ++remainder);
     }
 
-    void hash_free(HashTable *ht)
+    void TSTNode::free()
     {
-        free(ht->buckets);
+        if (left) {
+            left->free();
+            std::free(left);
+        }
+
+        if (right) {
+            right->free();
+            std::free(right);
+        }
+
+        if (middle) {
+            middle->free();
+            std::free(middle);
+        }
+
+        if (entry) {
+            entry->free();
+            std::free(entry);
+        }
     }
 }
 
