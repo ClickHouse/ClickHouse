@@ -3138,8 +3138,7 @@ bool StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(const St
     --right;
 
     /// Artificial high level is choosen, to make this part "covering" all parts inside.
-    static constexpr UInt32 level = 999999999;
-    part_info = MergeTreePartInfo(partition_id, left, right, level, mutation_version);
+    part_info = MergeTreePartInfo(partition_id, left, right, MergeTreePartInfo::MAX_LEVEL, mutation_version);
     return true;
 }
 

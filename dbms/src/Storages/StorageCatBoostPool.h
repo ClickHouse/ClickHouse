@@ -53,7 +53,7 @@ private:
                 {"Weight", DatasetColumnType::Weight},
                 {"Baseline", DatasetColumnType::Baseline},
         };
-    };
+    }
 
     std::string getColumnTypesString(const ColumnTypesMap & columnTypesMap);
 

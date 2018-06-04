@@ -478,7 +478,7 @@ public:
         merge_entry->bytes_read_uncompressed += value.bytes;
         merge_entry->rows_read += value.rows;
         merge_entry->progress.store(average_elem_progress * merge_entry->rows_read, std::memory_order_relaxed);
-    };
+    }
 };
 
 /** Progress callback for gathering step of Vertical merge.
@@ -509,7 +509,7 @@ public:
 
         /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
         merge_entry->progress.store(initial_progress + local_progress, std::memory_order_relaxed);
-    };
+    }
 };
 
 

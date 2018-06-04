@@ -1,3 +1,6 @@
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Core/Field.h>
+
 #include <Interpreters/Settings.h>
 
 

@@ -56,8 +56,8 @@ class ColumnGathererStream : public IProfilingBlockInputStream
 {
 public:
     ColumnGathererStream(
-            const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
-            size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
+        const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
+        size_t block_preferred_size_ = DEFAULT_BLOCK_SIZE);
 
     String getName() const override { return "ColumnGatherer"; }
 
@@ -96,7 +96,7 @@ private:
     void init();
     void fetchNewBlock(Source & source, size_t source_num);
 
-    String name;
+    String column_name;
     ColumnWithTypeAndName column;
 
     std::vector<Source> sources;
@@ -115,7 +115,7 @@ void ColumnGathererStream::gather(Column & column_res)
 {
     if (source_to_fully_copy) /// Was set on a previous iteration
     {
-        output_block.getByPosition(0).column = source_to_fully_copy->block.getByName(name).column;
+        output_block.getByPosition(0).column = source_to_fully_copy->block.getByName(column_name).column;
         source_to_fully_copy->pos = source_to_fully_copy->size;
         source_to_fully_copy = nullptr;
         return;
@@ -167,7 +167,7 @@ void ColumnGathererStream::gather(Column & column_res)
                     return;
                 }
 
-                output_block.getByPosition(0).column = source.block.getByName(name).column;
+                output_block.getByPosition(0).column = source.block.getByName(column_name).column;
                 source.pos += len;
                 return;
             }

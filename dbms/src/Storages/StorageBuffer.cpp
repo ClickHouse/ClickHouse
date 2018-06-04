@@ -72,7 +72,7 @@ public:
 
     String getName() const override { return "Buffer"; }
 
-    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); };
+    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); }
 
 protected:
     Block readImpl() override

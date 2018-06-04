@@ -1,7 +1,17 @@
 #pragma once
 
 #include <queue>
-#include <boost/intrusive_ptr.hpp>
+
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
 
 #include <common/logger_useful.h>
 

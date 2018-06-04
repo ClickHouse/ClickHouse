@@ -1,14 +1,21 @@
 #pragma once
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
-#include <Core/Field.h>
-
 #include <Interpreters/SettingsCommon.h>
 
 
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
+
 namespace DB
 {
+
+class Field;
 
 /** Settings of query execution.
   */
