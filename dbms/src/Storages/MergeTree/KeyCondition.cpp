@@ -535,7 +535,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const Context & context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
-    RPNElement::MonotonicFunctionsChain & out_functions_chain)
+    MonotonicFunctionsChain & out_functions_chain)
 {
     std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
@@ -637,7 +637,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num;        /// Number of a key column (inside sort_descr array)
-        RPNElement::MonotonicFunctionsChain chain;
+        MonotonicFunctionsChain chain;
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
@@ -934,7 +934,7 @@ bool KeyCondition::mayBeTrueInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    RPNElement::MonotonicFunctionsChain & functions,
+    MonotonicFunctionsChain & functions,
     DataTypePtr current_type
 )
 {
