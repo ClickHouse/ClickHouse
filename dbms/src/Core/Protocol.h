@@ -69,6 +69,7 @@ namespace Protocol
             Totals = 7,               /// A block with totals (compressed or not).
             Extremes = 8,             /// A block with minimums and maximums (compressed or not).
             TablesStatusResponse = 9, /// A response to TablesStatus request.
+            Log = 10                  /// System logs of the query execution
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -97,6 +98,7 @@ namespace Protocol
             Cancel = 3,              /// Cancel the query execution.
             Ping = 4,                /// Check that connection to the server is alive.
             TablesStatusRequest = 5, /// Check status of tables on the server.
+            KeepAlive = 6            /// Keep the connection alive
         };
 
         inline const char * toString(UInt64 packet)

@@ -86,7 +86,7 @@ namespace ProfileEvents
             parent = parent_;
         }
 
-        /// Reset metrics
+        /// Set all counters to zero
         void resetCounters();
 
         /// Dumps profile events to two column Array(String) and Array(UInt64)

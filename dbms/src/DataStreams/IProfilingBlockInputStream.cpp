@@ -294,18 +294,27 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
         size_t total_rows = progress.total_rows;
 
-        if (limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
+        constexpr UInt64  profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
+        UInt64 total_elapsed_microseconds = info.total_stopwatch.elapsedMicroseconds();
+
+        if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
         {
-            double total_elapsed = info.total_stopwatch.elapsedSeconds();
+            CurrentThread::updatePerformanceCounters();
+            last_profile_events_update_time = total_elapsed_microseconds;
+        }
 
-            if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
+        if ((limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
+             && (static_cast<Int64>(total_elapsed_microseconds) > limits.timeout_before_checking_execution_speed.totalMicroseconds()))
+        {
+            /// Do not count sleeps in throttlers
+            UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
+            double elapsed_seconds = (throttler_sleep_microseconds > total_elapsed_microseconds)
+                                     ? 0.0 : (total_elapsed_microseconds - throttler_sleep_microseconds) / 1000000.0;
+
+            if (elapsed_seconds > 0)
             {
-                /// Do not count sleeps in throttlers
-                double throttler_sleeps_seconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds] / 1000000.0;
-                total_elapsed = std::max(0.0, total_elapsed - throttler_sleeps_seconds);
-
-                if (limits.min_execution_speed && progress.rows / total_elapsed < limits.min_execution_speed)
-                    throw Exception("Query is executing too slow: " + toString(progress.rows / total_elapsed)
+                if (limits.min_execution_speed && progress.rows / elapsed_seconds < limits.min_execution_speed)
+                    throw Exception("Query is executing too slow: " + toString(progress.rows / elapsed_seconds)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
 
@@ -314,7 +323,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                 /// If the predicted execution time is longer than `max_execution_time`.
                 if (limits.max_execution_time != 0 && total_rows)
                 {
-                    double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / progress.rows);
+                    double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows) / progress.rows);
 
                     if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
                         throw Exception("Estimated query execution time (" + toString(estimated_execution_time_seconds) + " seconds)"
