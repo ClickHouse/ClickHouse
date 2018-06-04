@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -e
+set -x
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
 TABLE_HASH="cityHash64(groupArray(cityHash64(*)))"
+
+CLICKHOUSE_CLIENT="timeout 2s ${CLICKHOUSE_CLIENT}"
+CLICKHOUSE_LOCAL="timeout 2s ${CLICKHOUSE_LOCAL}"
 
 function pack_unpack_compare()
 {

@@ -395,13 +395,18 @@ void LocalServer::init(int argc, char ** argv)
 
     unsigned line_length = po::options_description::m_default_line_length;
     unsigned min_description_length = line_length / 2;
+    std::cerr << __FILE__ << ":" << __LINE__ << "\n";
     if (isatty(STDIN_FILENO))
     {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\n";
         winsize terminal_size{};
         ioctl(0, TIOCGWINSZ, &terminal_size);
         line_length = std::max(3U, static_cast<unsigned>(terminal_size.ws_col));
         min_description_length = std::min(min_description_length, line_length - 2);
+        std::cerr << line_length << " " << min_description_length << "\n";
     }
+
+    std::cerr << __FILE__ << ":" << __LINE__ << "\n";
 
 #define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
     po::options_description description("Main options", line_length, min_description_length);
@@ -428,10 +433,13 @@ void LocalServer::init(int argc, char ** argv)
         APPLY_FOR_SETTINGS(DECLARE_SETTING);
 #undef DECLARE_SETTING
 
+    std::cerr << __FILE__ << ":" << __LINE__ << "\n";
     /// Parse main commandline options.
     po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
     po::variables_map options;
+    std::cerr << __FILE__ << ":" << __LINE__ << "\n";
     po::store(parsed, options);
+    std::cerr << __FILE__ << ":" << __LINE__ << "\n";
 
     if (options.count("version") || options.count("V"))
     {
@@ -439,8 +447,10 @@ void LocalServer::init(int argc, char ** argv)
         exit(0);
     }
 
+    std::cerr << __FILE__ << ":" << __LINE__ << "\n";
     if (options.count("help"))
     {
+        std::cerr << __FILE__ << ":" << __LINE__ << "\n";
         std::cout << getHelpHeader() << "\n";
         std::cout << description << "\n";
         std::cout << getHelpFooter() << "\n";
