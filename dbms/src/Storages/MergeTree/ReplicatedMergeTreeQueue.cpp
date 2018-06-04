@@ -1226,7 +1226,8 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     if (left_max_block + 1 < right_min_block)
     {
         MergeTreePartInfo gap_part_info(
-            left->info.partition_id, left_max_block + 1, right_min_block - 1, 999999999, 999999999);
+            left->info.partition_id, left_max_block + 1, right_min_block - 1,
+            MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
         Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
