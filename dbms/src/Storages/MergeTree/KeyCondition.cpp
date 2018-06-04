@@ -921,7 +921,7 @@ bool KeyCondition::mayBeTrueInRange(
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges)
     {
-        auto res = mayBeTrueInRangeImpl(key_ranges, data_types);
+        auto res = mayBeTrueInParallelogram(key_ranges, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -969,7 +969,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -982,7 +982,7 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
-            const Range * key_range = &key_ranges[element.key_column];
+            const Range * key_range = &parallelogram[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range transformed_range;
@@ -1019,7 +1019,7 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
             PreparedSets::const_iterator it = prepared_sets.find(args[1]->range);
             if (in_func && it != prepared_sets.end())
             {
-                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
+                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                     rpn_stack.back() = !rpn_stack.back();
             }
