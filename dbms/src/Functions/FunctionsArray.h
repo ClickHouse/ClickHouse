@@ -1038,7 +1038,6 @@ public:
         return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
     }
 
-    /// Perform function on the given block.
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// If one or both arguments passed to this function are nullable,
@@ -1056,8 +1055,7 @@ public:
         /// values.
         bool is_nullable;
 
-        const ColumnArray * col_array = nullptr;
-        col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_array)
             is_nullable = col_array->getData().isColumnNullable();
         else
