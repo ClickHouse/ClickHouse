@@ -219,17 +219,17 @@ void Compiler::compile(
     auto compiler_executable_root =  Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
     auto compiler_headers =  Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
     auto compiler_headers_root =  Poco::Util::Application::instance().config().getString("compiler_headers_root", INTERNAL_COMPILER_HEADERS_ROOT);
-    LOG_DEBUG(log, "Using internal compiler: compiler_executable_root=" << compiler_executable_root<< "; compiler_headers_root=" << compiler_headers_root << "; compiler_headers=" << compiler_headers);
+    LOG_DEBUG(log, "Using internal compiler: compiler_executable_root=" << compiler_executable_root << "; compiler_headers_root=" << compiler_headers_root << "; compiler_headers=" << compiler_headers);
 
     /// Slightly unconvenient.
     command <<
         "("
             INTERNAL_COMPILER_ENV
-            " " + compiler_executable_root + INTERNAL_COMPILER_EXECUTABLE
+            " " << compiler_executable_root << INTERNAL_COMPILER_EXECUTABLE
             " " INTERNAL_COMPILER_FLAGS
             /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
             /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
-            " -fuse-ld=" + compiler_executable_root + INTERNAL_LINKER_EXECUTABLE
+            " -fuse-ld=" << compiler_executable_root << INTERNAL_LINKER_EXECUTABLE
 
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
@@ -237,25 +237,25 @@ void Compiler::compile(
             /// echo | clang -x c++ -E -Wp,-v -
             /// echo | g++ -x c++ -E -Wp,-v -
 
-            " -isystem " + compiler_headers_root + "/usr/include/c++/*"
-            " -isystem " + compiler_headers_root + "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE "/c++/*"
-            " -isystem " + compiler_headers_root + "/usr/include/c++/*/backward"
-            " -isystem " + compiler_headers_root + "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
-            " -isystem " + compiler_headers_root + "/usr/local/lib/clang/*/include"                /// if clang installed manually
-            " -isystem " + compiler_headers_root + "/usr/lib/clang/*/include"                      /// if clang build from submodules
-            " -isystem " + compiler_headers_root + "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include-fixed"
-            " -isystem " + compiler_headers_root + "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include"
-            " -isystem " + compiler_headers_root + "/usr/local/include"                            /// if something installed manually
-            " -isystem " + compiler_headers_root + "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE
-            " -isystem " + compiler_headers_root + "/usr/include"
+            " -isystem " << compiler_headers_root << "/usr/include/c++/*"
+            " -isystem " << compiler_headers_root << "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE "/c++/*"
+            " -isystem " << compiler_headers_root << "/usr/include/c++/*/backward"
+            " -isystem " << compiler_headers_root << "/usr/include/clang/*/include"                  /// if compiler is clang (from package)
+            " -isystem " << compiler_headers_root << "/usr/local/lib/clang/*/include"                /// if clang installed manually
+            " -isystem " << compiler_headers_root << "/usr/lib/clang/*/include"                      /// if clang build from submodules
+            " -isystem " << compiler_headers_root << "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include-fixed"
+            " -isystem " << compiler_headers_root << "/usr/lib/gcc/" CMAKE_LIBRARY_ARCHITECTURE "/*/include"
+            " -isystem " << compiler_headers_root << "/usr/local/include"                            /// if something installed manually
+            " -isystem " << compiler_headers_root << "/usr/include/" CMAKE_LIBRARY_ARCHITECTURE
+            " -isystem " << compiler_headers_root << "/usr/include"
     #endif
-            " -I " + compiler_headers + "/dbms/src/"
-            " -I " + compiler_headers + "/contrib/libcityhash/include/"
-            " -I " + compiler_headers + "/contrib/libpcg-random/include/"
-            " -I " + compiler_headers + INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
-            " -I " + compiler_headers + INTERNAL_Poco_Foundation_INCLUDE_DIR
-            " -I " + compiler_headers + INTERNAL_Boost_INCLUDE_DIRS
-            " -I " + compiler_headers + "/libs/libcommon/include/"
+            " -I " << compiler_headers << "/dbms/src/"
+            " -I " << compiler_headers << "/contrib/libcityhash/include/"
+            " -I " << compiler_headers << "/contrib/libpcg-random/include/"
+            " -I " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
+            " -I " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR
+            " -I " << compiler_headers << INTERNAL_Boost_INCLUDE_DIRS
+            " -I " << compiler_headers << "/libs/libcommon/include/"
             " " << additional_compiler_flags <<
             " -shared -o " << so_tmp_file_path << " " << cpp_file_path
             << " 2>&1"
