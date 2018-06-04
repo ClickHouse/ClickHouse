@@ -108,7 +108,7 @@ struct MergeTreeBlockSizePredictor
     inline void updateFilteredRowsRation(size_t rows_was_read, size_t rows_was_filtered, double decay = DECAY())
     {
         double alpha = std::pow(1. - decay, rows_was_read);
-        double current_ration = rows_was_filtered / std::max<double>(1, rows_was_read);
+        double current_ration = rows_was_filtered / std::max(1.0, static_cast<double>(rows_was_read));
         filtered_rows_ratio = current_ration < filtered_rows_ratio
             ? current_ration
             : alpha * filtered_rows_ratio + (1.0 - alpha) * current_ration;

@@ -467,7 +467,7 @@ void MergeTreeDataPart::loadIndex()
         String index_path = getFullPath() + "primary.idx";
         ReadBufferFromFile index_file = openForReading(index_path);
 
-        for (size_t i = 0; i < marks_count; ++i)
+        for (size_t i = 0; i < marks_count; ++i)    //-V756
             for (size_t j = 0; j < key_size; ++j)
                 storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j].get(), index_file);
 

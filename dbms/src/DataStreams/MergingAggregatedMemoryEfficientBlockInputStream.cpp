@@ -359,7 +359,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
                       * Main thread knows, that there will be result for 'output_order' place.
                       * Main thread must return results exactly in 'output_order', so that is important.
                       */
-                    parallel_merge_data->merged_blocks[output_order];
+                    parallel_merge_data->merged_blocks[output_order];   //-V607
                 }
             }
 
