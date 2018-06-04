@@ -31,7 +31,7 @@ public:
 
         Block res = std::move(blocks.front());
         blocks.pop();
-        return std::move(res);
+        return res;
     }
 };
 
