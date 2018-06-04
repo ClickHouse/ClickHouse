@@ -1,6 +1,15 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 
+if (USE_LIBSIMD)
+    add_definitions(-DUSE_LIBSIMD=1)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ignored-attributes")
+    if (SIMD_AVX)
+        add_definitions(-DSIMD_AVX=1)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
+    endif ()
+endif ()
+
 generate_function_register(Arithmetic
     FunctionPlus
     FunctionMinus
@@ -91,6 +100,8 @@ target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-has
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+target_include_directories (clickhouse_functions BEFORE PRIVATE ${LIBSIMD_INCLUDE_DIR})
+
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
