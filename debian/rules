@@ -101,8 +101,8 @@ override_dh_install:
 
 	#TODO: use from cmake:
 	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
-	CLANG=$(DESTDIR)/usr/bin/clickhouse-clang DESTDIR=$(DESTDIR) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
+	#mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
+	#CLANG=$(DESTDIR)/usr/bin/clickhouse-clang DESTDIR=$(DESTDIR) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 	# fake metrika files when private dir is empty
 	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika
