@@ -837,6 +837,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
 
+    if (data.hasPrimaryKey())
+        in = std::make_shared<MaterializingBlockInputStream>(
+            std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
+
     auto compression_settings = context.chooseCompressionSettings(
         source_part->bytes_on_disk,
         static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
