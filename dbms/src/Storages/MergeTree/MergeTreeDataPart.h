@@ -62,6 +62,8 @@ struct MergeTreeDataPart
     /// Returns part->name with prefixes like 'tmp_<name>'
     String getNameWithPrefix() const;
 
+    /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
+    /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
     String getNewName(const MergeTreePartInfo & new_part_info) const;
 
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
