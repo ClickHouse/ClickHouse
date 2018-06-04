@@ -1238,7 +1238,7 @@ struct IsNaNImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return t != t;
+        return t != t;  //-V501
     }
 };
 
