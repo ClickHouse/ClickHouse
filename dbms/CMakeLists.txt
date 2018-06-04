@@ -32,7 +32,7 @@ find_package (Threads)
 add_subdirectory (src)
 
 set(dbms_headers)
-set(dbms_sources src/Client/Completion.h src/Client/Completion.cpp src/Client/QueryParts.h)
+set(dbms_sources)
 
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 
