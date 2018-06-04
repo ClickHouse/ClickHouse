@@ -52,7 +52,8 @@ public:
     {
         try
         {
-            LOG_DEBUG(current_thread->log, "Thread " << current_thread->thread_number << " is started");
+            ThreadStatus & thread = *CurrentThread::get();
+            LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " started");
         }
         catch (...)
         {
@@ -64,8 +65,14 @@ public:
     {
         try
         {
-            current_thread->detachQuery(true);
-            LOG_DEBUG(current_thread->log, "Thread " << current_thread->thread_number << " is exited");
+            ThreadStatus & thread = *CurrentThread::get();
+
+            if (thread.getCurrentState() != ThreadStatus::ThreadState::DetachedFromQuery)
+                thread.detachQuery(true);
+            else
+                thread.thread_state = ThreadStatus::ThreadState::Died;
+
+            LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " exited");
         }
         catch (...)
         {
@@ -192,30 +199,24 @@ struct TasksStatsCounters
     }
 };
 
-struct ThreadStatus::Impl
-{
-    RusageCounters last_rusage;
-    TasksStatsCounters last_taskstats;
-    TaskStatsInfoGetter info_getter;
-};
-
-
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    current_thread->impl->info_getter.getStat(res.stat, current_thread->os_thread_id);
+    current_thread->taskstats_getter->getStat(res.stat);
     return res;
 }
 
 
-
 ThreadStatus::ThreadStatus()
-    : thread_number(Poco::ThreadNumber::get()),
-      performance_counters(ProfileEvents::Level::Thread),
-      os_thread_id(TaskStatsInfoGetter::getCurrentTID()),
+    : performance_counters(ProfileEvents::Level::Thread),
       log(&Poco::Logger::get("ThreadStatus"))
 {
-    impl = std::make_unique<Impl>();
+    thread_number = Poco::ThreadNumber::get();
+    os_thread_id = TaskStatsInfoGetter::getCurrentTID();
+
+    last_rusage = std::make_unique<RusageCounters>();
+    last_taskstats = std::make_unique<TasksStatsCounters>();
+    taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
 
     LOG_DEBUG(log, "Thread " << thread_number << " created");
 }
@@ -291,16 +292,19 @@ void ThreadStatus::attachQuery(
 
     query_start_time_nanoseconds = getCurrentTimeNanoseconds();
     query_start_time = time(nullptr);
+    ++queries_started;
 
-    impl->last_rusage = RusageCounters::current(query_start_time_nanoseconds);
-    impl->last_taskstats = TasksStatsCounters::current();
+    /// Clear stats from previous query if a new query is started
+    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
+    if (queries_started != 1)
+        performance_counters.resetCounters();
+
+    *last_rusage = RusageCounters::current(query_start_time_nanoseconds);
+    *last_taskstats = TasksStatsCounters::current();
 }
 
 void ThreadStatus::detachQuery(bool thread_exits)
 {
-    if (thread_state == ThreadStatus::DetachedFromQuery)
-        return;
-
     if (thread_state != ThreadState::AttachedToQuery && thread_state != ThreadState::QueryInitializing)
         throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
 
@@ -337,8 +341,8 @@ void ThreadStatus::updatePerfomanceCountersImpl()
 {
     try
     {
-        RusageCounters::updateProfileEvents(impl->last_rusage, performance_counters);
-        TasksStatsCounters::updateProfileEvents(impl->last_taskstats, performance_counters);
+        RusageCounters::updateProfileEvents(*last_rusage, performance_counters);
+        TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
     }
     catch (...)
     {

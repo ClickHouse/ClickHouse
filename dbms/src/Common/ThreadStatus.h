@@ -19,6 +19,9 @@ class Context;
 class QueryStatus;
 class ThreadStatus;
 class QueryThreadLog;
+struct TasksStatsCounters;
+struct RusageCounters;
+class TaskStatsInfoGetter;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 
 
@@ -31,9 +34,11 @@ public:
 
     /// Poco's thread number (the same number is used in logs)
     UInt32 thread_number = 0;
+    /// Linux's PID (or TGID) (the same id is shown by ps util)
+    Int32 os_thread_id = -1;
+
     ProfileEvents::Counters performance_counters;
     MemoryTracker memory_tracker;
-    Int32 os_thread_id = -1;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -99,14 +104,17 @@ protected:
 
     bool log_to_query_thread_log = true;
     bool log_profile_events = true;
+    size_t queries_started = 0;
 
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
     friend struct TasksStatsCounters;
 
-    struct Impl;
-    std::unique_ptr<Impl> impl;
+    /// Use ptr to not add extra dependencies in header
+    std::unique_ptr<RusageCounters> last_rusage;
+    std::unique_ptr<TasksStatsCounters> last_taskstats;
+    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
 
 public:
     class CurrentThreadScope;
