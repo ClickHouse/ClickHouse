@@ -1796,7 +1796,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         return true;
     }
 
-    if (!parts_to_add.empty() && parts_to_add.size() < all_parts.size())
+    if (parts_to_add.size() < all_parts.size())
     {
         LOG_WARNING(log, "Some (but not all) parts from REPLACE PARTITION command already exist. REPLACE PARTITION will not be atomic.");
     }
