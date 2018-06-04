@@ -1748,7 +1748,7 @@ protected:
 
                 // Just in case
                 if (future_is_dirty_checker != nullptr)
-                    future_is_dirty_checker.get();
+                    future_is_dirty_checker->get();
 
                 if (inject_fault)
                     throw Exception("Copy fault injection is activated", ErrorCodes::UNFINISHED);
