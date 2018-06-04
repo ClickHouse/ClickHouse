@@ -966,7 +966,7 @@ public:
         return "DDLQueryStatusInputSream";
     }
 
-    Block getHeader() const override { return sample; };
+    Block getHeader() const override { return sample; }
 
     Block readImpl() override
     {

@@ -82,6 +82,9 @@ struct MergeTreePartInfo
     static void parseMinMaxDatesFromPartName(const String & part_name, DayNum & min_date, DayNum & max_date);
 
     static bool contains(const String & outer_part_name, const String & inner_part_name, MergeTreeDataFormatVersion format_version);
+
+    static constexpr UInt32 MAX_LEVEL = 999999999;
+    static constexpr UInt32 MAX_BLOCK_NUMBER = 999999999;
 };
 
 }
