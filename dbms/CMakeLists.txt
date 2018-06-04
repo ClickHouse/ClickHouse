@@ -253,7 +253,7 @@ if (USE_EMBEDDED_COMPILER)
         add_dependencies(copy-headers copy-headers-clang)
     endif ()
 
-    add_dependencies(clickhouse-bundle copy-headers)
+    add_dependencies(clickhouse-server copy-headers)
 endif ()
 
 add_subdirectory (tests)
