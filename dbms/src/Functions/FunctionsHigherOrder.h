@@ -911,7 +911,7 @@ public:
                 }
 
                 if (!array_type)
-                    throw Exception("Expected array type, found " + array_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception("Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (!offsets_column)
                 {
