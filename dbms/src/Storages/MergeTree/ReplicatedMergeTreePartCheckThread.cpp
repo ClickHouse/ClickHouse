@@ -150,7 +150,7 @@ void ReplicatedMergeTreePartCheckThread::searchForMissingPart(const String & par
 
     /// No one has such a part and the merge is impossible.
     String not_found_msg;
-    if (found_part_with_the_same_min_block)
+    if (found_part_with_the_same_max_block)
         not_found_msg = "a smaller part with the same max block.";
     else if (found_part_with_the_same_min_block)
         not_found_msg = "a smaller part with the same min block.";

@@ -2340,7 +2340,7 @@ MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(secondary_sort_expr_ast) != query_to_string(secondary_sort_expr_ast))
+    if (query_to_string(secondary_sort_expr_ast) != query_to_string(src_data->secondary_sort_expr_ast))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
     if (query_to_string(partition_expr_ast) != query_to_string(src_data->partition_expr_ast))
