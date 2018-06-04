@@ -489,6 +489,9 @@ private:
 
             loop();
 
+#if USE_READLINE
+            completionNode.free();
+#endif
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
 
             return 0;
