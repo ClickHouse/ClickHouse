@@ -14,6 +14,8 @@
 
 using namespace DB;
 
+/// This test is useful for assessing the performance of acquiring block numbers in all partitions (and there
+/// can be ~1000 of them). This is needed when creating a mutation entry for a ReplicatedMergeTree table.
 int main(int argc, char ** argv)
 try
 {

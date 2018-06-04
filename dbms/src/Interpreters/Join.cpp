@@ -1008,7 +1008,7 @@ public:
 
     String getName() const override { return "NonJoined"; }
 
-    Block getHeader() const override { return result_sample_block; };
+    Block getHeader() const override { return result_sample_block; }
 
 
 protected:
@@ -1098,7 +1098,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
+                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());

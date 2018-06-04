@@ -2051,8 +2051,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         };
 
         std::unique_ptr<ThreadPool> thread_pool;
-        if (max_threads > 1 && total_input_rows > 100000    /// TODO Make a custom threshold.
-            && has_two_level)
+        if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
             thread_pool = std::make_unique<ThreadPool>(max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)

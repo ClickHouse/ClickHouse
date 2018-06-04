@@ -16,7 +16,7 @@ class ASTSelectQuery : public IAST
 {
 public:
     /** Get the text that identifies this element. */
-    String getID() const override { return "SelectQuery"; };
+    String getID() const override { return "SelectQuery"; }
 
     ASTPtr clone() const override;
 
