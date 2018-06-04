@@ -240,6 +240,9 @@ public:
     /// data_types - the types of the key columns.
     bool mayBeTrueInRange(size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const;
 
+    /// Whether the condition is feasible in the direct product of single column ranges specified by `parallelogram`.
+    bool mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const;
+
     /// Is the condition valid in a semi-infinite (not limited to the right) key range.
     /// left_key must contain all the fields in the sort_descr in the appropriate order.
     bool mayBeTrueAfter(size_t used_key_size, const Field * left_key, const DataTypes & data_types) const;
@@ -324,8 +327,6 @@ private:
         const Field * right_key,
         const DataTypes & data_types,
         bool right_bounded) const;
-
-    bool mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
     bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
