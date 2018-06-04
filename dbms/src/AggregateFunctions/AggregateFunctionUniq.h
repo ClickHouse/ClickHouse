@@ -3,6 +3,8 @@
 #include <city.h>
 #include <type_traits>
 
+#include <ext/bit_cast.h>
+
 #include <AggregateFunctions/UniquesHashSet.h>
 
 #include <IO/WriteHelpers.h>
@@ -185,9 +187,7 @@ template <> struct AggregateFunctionUniqTraits<Float32>
 {
     static UInt64 hash(Float32 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-        return res;
+        return ext::bit_cast<UInt64>(x);
     }
 };
 
@@ -195,9 +195,7 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 {
     static UInt64 hash(Float64 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-        return res;
+        return ext::bit_cast<UInt64>(x);
     }
 };
 
