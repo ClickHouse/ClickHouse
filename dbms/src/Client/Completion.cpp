@@ -32,7 +32,7 @@ namespace Completion
         }
 
         auto newEntry = (Entry *) calloc(1, sizeof(Entry));
-        newEntry->text = word;
+        newEntry->text = strdup(word);
         newEntry->next = entry;
         entry = newEntry;
 
