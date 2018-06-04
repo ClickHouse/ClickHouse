@@ -17,8 +17,8 @@ else ()
     message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 5+ and GCC 7+.")
 endif ()
 
-# Check that submodules are present
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+# Check that submodules are present only if source was downloaded with git
+if (EXISTS "${ClickHouse_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
