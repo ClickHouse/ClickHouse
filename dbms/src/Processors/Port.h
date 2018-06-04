@@ -16,9 +16,10 @@ class IProcessor;
 
 class Port
 {
-protected:
+    friend void connect(OutputPort &, InputPort &);
     friend class IProcessor;
 
+protected:
     /// Shared state of two connected ports.
     struct State
     {
