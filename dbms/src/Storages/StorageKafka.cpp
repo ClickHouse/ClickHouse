@@ -410,6 +410,15 @@ void StorageKafka::streamThread()
                 auto dependencies = context.getDependencies(database_name, table_name);
                 if (dependencies.size() == 0)
                     break;
+                // Check the dependencies are ready?
+                bool ready = true;
+                for (const auto & db_tab : dependencies)
+                {
+                    if (!context.tryGetTable(db_tab.first, db_tab.second))
+                        ready = false;
+                }
+                if (!ready)
+                    break;
 
                 LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
                 streamToViews();
