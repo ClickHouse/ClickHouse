@@ -79,7 +79,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() {};
+    virtual ~Connection() {}
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)

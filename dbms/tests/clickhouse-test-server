@@ -6,6 +6,7 @@ set -o pipefail
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
+#TODO: DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
 DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
@@ -63,12 +64,16 @@ fi
 #    --remote_servers.test_shard_localhost_secure.shard.replica.port=$CLICKHOUSE_PORT_TCP_SECURE \
 #    --remote_servers.test_shard_localhost.shard.replica.port=$CLICKHOUSE_PORT_TCP \
 
+# If run from compile dir - use in-place compile binary and headers
+[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=$BUILD_DIR/dbms/src/Server/ --compiler_headers=$BUILD_DIR/dbms/headers/ --compiler_headers_root=$BUILD_DIR/dbms/headers/"
+
 $GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
     --http_port=$CLICKHOUSE_PORT_HTTP \
     --tcp_port=$CLICKHOUSE_PORT_TCP \
     --https_port=$CLICKHOUSE_PORT_HTTPS \
     --tcp_port_secure=$CLICKHOUSE_PORT_TCP_SECURE \
     --interserver_http_port=$CLICKHOUSE_PORT_INTERSERVER \
+    $INTERNAL_COMPILER_PARAMS \
     > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3

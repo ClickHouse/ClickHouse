@@ -608,12 +608,12 @@ void CacheDictionary::getItemsNumberImpl(
     {
         const auto attribute_value = attribute_array[cell_idx];
 
-        for (const auto row : outdated_ids[id])
+        for (const size_t row : outdated_ids[id])
             out[row] = static_cast<OutputType>(attribute_value);
     },
     [&] (const auto id, const auto)
     {
-        for (const auto row : outdated_ids[id])
+        for (const size_t row : outdated_ids[id])
             out[row] = get_default(row);
     });
 }
@@ -836,7 +836,7 @@ void CacheDictionary::update(
 
     const auto now = std::chrono::system_clock::now();
     /// Check which ids have not been found and require setting null_value
-    for (const auto id_found_pair : remaining_ids)
+    for (const auto & id_found_pair : remaining_ids)
     {
         if (id_found_pair.second)
         {

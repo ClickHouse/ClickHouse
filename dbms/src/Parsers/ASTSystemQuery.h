@@ -46,7 +46,7 @@ public:
     String target_database;
     String target_table;
 
-    String getID() const override { return "SYSTEM query"; };
+    String getID() const override { return "SYSTEM query"; }
 
     ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
 
