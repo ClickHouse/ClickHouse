@@ -29,7 +29,7 @@ env TEST_RUN=${TEST_RUN=1} \
     `# psmisc - killall` \
     EXTRAPACKAGES="psmisc clang-6.0 lld-6.0 liblld-6.0-dev libclang-6.0-dev liblld-6.0 libc++abi-dev libc++-dev libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libsparsehash-dev librdkafka-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libzstd-dev libre2-dev $EXTRAPACKAGES" \
     `# Travis trusty cant unpack bionic: E: debootstrap failed, TODO: check again, can be fixed` \
-    DIST=${DIST=artful} \
+    DIST=${DIST=bionic} \
     $CUR_DIR/../../release $RELEASE_OPT
 
 date

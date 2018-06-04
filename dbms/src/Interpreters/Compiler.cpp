@@ -213,6 +213,7 @@ void Compiler::compile(
         addCodeToAssertHeadersMatch(out);
         out << get_code();
     }
+
     std::stringstream command;
 
     auto compiler_executable_root =  Poco::Util::Application::instance().config().getString("compiler_executable_root", INTERNAL_COMPILER_BIN_ROOT);
