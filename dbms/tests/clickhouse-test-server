@@ -12,7 +12,7 @@ LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 [ -x "$CUR_DIR/clickhouse-server" ] && [ -x "${CUR_DIR}/${CLICKHOUSE_BINARY}-client" ] && BIN_DIR= # Allow run in /usr/bin
-[ -x "$BUILD_DIR/dbms/src/Server/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/src/Server/}
+[ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/programs/}
 [ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
 CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=$CONFIG_DIR}
 CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
@@ -65,7 +65,7 @@ fi
 #    --remote_servers.test_shard_localhost.shard.replica.port=$CLICKHOUSE_PORT_TCP \
 
 # If run from compile dir - use in-place compile binary and headers
-[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=$BUILD_DIR/dbms/src/Server/ --compiler_headers=$BUILD_DIR/dbms/headers/ --compiler_headers_root=$BUILD_DIR/dbms/headers/"
+[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=$BUILD_DIR/dbms/programs/ --compiler_headers=$BUILD_DIR/dbms/headers/ --compiler_headers_root=$BUILD_DIR/dbms/headers/"
 
 $GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
     --http_port=$CLICKHOUSE_PORT_HTTP \
