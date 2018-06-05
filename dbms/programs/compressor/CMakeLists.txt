@@ -1,4 +1,3 @@
-
 add_library (clickhouse-compressor-lib ${SPLIT_SHARED} Compressor.cpp)
 target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 

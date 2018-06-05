@@ -1,4 +1,3 @@
-
 add_library (clickhouse-server-lib
     HTTPHandler.cpp
     InterserverIOHTTPHandler.cpp
