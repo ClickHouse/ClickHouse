@@ -17,12 +17,20 @@
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <ext/range.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 
 MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,

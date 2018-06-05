@@ -19,6 +19,8 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 

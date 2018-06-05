@@ -31,6 +31,7 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>

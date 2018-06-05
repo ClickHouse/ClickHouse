@@ -4,6 +4,7 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <vector>
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <IO/ReadBuffer.h>
 #include <Common/PODArray.h>
 
 
