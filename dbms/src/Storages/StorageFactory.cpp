@@ -4,6 +4,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB

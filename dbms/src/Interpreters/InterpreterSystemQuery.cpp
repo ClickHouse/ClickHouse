@@ -2,7 +2,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
 #include <Common/typeid_cast.h>
-#include <Common/DNSResolver.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <common/ThreadPool.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>

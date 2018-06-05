@@ -31,6 +31,7 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -64,7 +65,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
-#include <Server/StatusFile.h>
+#include <Common/StatusFile.h>
 #include <daemon/OwnPatternFormatter.h>
 
 

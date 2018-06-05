@@ -50,7 +50,7 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
-#include "InterruptListener.h"
+#include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <ext/scope_guard.h>
