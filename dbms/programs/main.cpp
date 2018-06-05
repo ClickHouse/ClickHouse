@@ -11,10 +11,10 @@
 #endif
 
 #if ENABLE_CLICKHOUSE_SERVER
-#include "Server.h"
+#include "server/Server.h"
 #endif
 #if ENABLE_CLICKHOUSE_LOCAL
-#include "LocalServer.h"
+#include "local/LocalServer.h"
 #endif
 #include <Common/StringUtils/StringUtils.h>
 

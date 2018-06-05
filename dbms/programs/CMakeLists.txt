@@ -13,12 +13,12 @@ option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_ALL})
 
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
-
 add_subdirectory (server)
 add_subdirectory (client)
 add_subdirectory (local)
 add_subdirectory (compressor)
 add_subdirectory (clang)
+
 
 
 if (CLICKHOUSE_SPLIT_BINARY)
@@ -32,6 +32,10 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
     add_custom_target (clickhouse ALL DEPENDS clickhouse-bundle)
 else ()
+    if (USE_EMBEDDED_COMPILER)
+        # before add_executable !
+        link_directories (${LLVM_LIBRARY_DIRS})
+    endif ()
     add_executable (clickhouse main.cpp)
     target_link_libraries (clickhouse clickhouse_common_io)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
@@ -56,11 +60,11 @@ else ()
         target_link_libraries (clickhouse clickhouse-performance-test-lib)
     endif ()
     if (ENABLE_CLICKHOUSE_TOOLS)
-    target_link_libraries (clickhouse
-        clickhouse-extract-from-config-lib
-        clickhouse-compressor-lib
-        clickhouse-format-lib
-    )
+        target_link_libraries (clickhouse
+            clickhouse-extract-from-config-lib
+            clickhouse-compressor-lib
+            clickhouse-format-lib
+        )
     endif ()
     if (ENABLE_CLICKHOUSE_COPIER)
         target_link_libraries (clickhouse clickhouse-copier-lib)
@@ -125,7 +129,7 @@ else ()
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    add_custom_target(copy-headers ALL env CLANG=${CMAKE_CURRENT_BINARY_DIR}/src/Server/clickhouse-clang BUILD_PATH=${ClickHouse_BINARY_DIR} DESTDIR=${ClickHouse_SOURCE_DIR} ${ClickHouse_SOURCE_DIR}/copy_headers.sh ${ClickHouse_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/headers DEPENDS clickhouse-clang WORKING_DIRECTORY ${ClickHouse_SOURCE_DIR} SOURCES ${ClickHouse_SOURCE_DIR}/copy_headers.sh)
+    add_custom_target(copy-headers ALL env CLANG=${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang BUILD_PATH=${ClickHouse_BINARY_DIR} DESTDIR=${ClickHouse_SOURCE_DIR} ${ClickHouse_SOURCE_DIR}/copy_headers.sh ${ClickHouse_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/headers DEPENDS clickhouse-clang WORKING_DIRECTORY ${ClickHouse_SOURCE_DIR} SOURCES ${ClickHouse_SOURCE_DIR}/copy_headers.sh)
     install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/headers DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse COMPONENT clickhouse)
 
     if (USE_INTERNAL_LLVM_LIBRARY)

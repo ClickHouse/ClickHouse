@@ -29,7 +29,7 @@
 #include <Poco/SAX/InputSource.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
-#include "InterruptListener.h"
+#include <Common/InterruptListener.h>
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with

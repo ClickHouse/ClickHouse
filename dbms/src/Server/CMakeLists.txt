@@ -36,4 +36,3 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-copier clickhouse-copier.cpp)
     target_link_libraries (clickhouse-copier clickhouse-copier-lib)
 endif ()
-
