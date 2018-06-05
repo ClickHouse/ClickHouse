@@ -41,6 +41,8 @@ namespace DB
   * - the list of incremental block numbers (/block_numbers) that we are about to insert,
   *   to ensure the linear order of data insertion and data merge only on the intervals in this sequence;
   * - coordinates writes with quorum (/quorum).
+  * - Storage of mutation entries (ALTER DELETE, ALTER UPDATE etc.) to execute (/mutations).
+  *   See comments in StorageReplicatedMergeTree::mutate() for details.
   */
 
 /** The replicated tables have a common log (/log/log-...).
@@ -50,7 +52,7 @@ namespace DB
   * - merge (MERGE),
   * - delete the partition (DROP).
   *
-  * Each replica copies (queueUpdatingThread, pullLogsToQueue) entries from the log to its queue (/replicas/replica_name/queue/queue-...)
+  * Each replica copies (queueUpdatingTask, pullLogsToQueue) entries from the log to its queue (/replicas/replica_name/queue/queue-...)
   *  and then executes them (queueTask).
   * Despite the name of the "queue", execution can be reordered, if necessary (shouldExecuteLogEntry, executeLogEntry).
   * In addition, the records in the queue can be generated independently (not from the log), in the following cases:

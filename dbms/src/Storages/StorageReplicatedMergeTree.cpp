@@ -3952,6 +3952,60 @@ void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const
 
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
+    /// Overview of the mutation algorithm.
+    ///
+    /// When the client executes a mutation, this method is called. It acquires block numbers in all
+    /// partitions, saves them in the mutation entry and writes the mutation entry to a new ZK node in
+    /// the /mutations folder. This block numbers are needed to determine which parts should be mutated and
+    /// which shouldn't (parts inserted after the mutation will have the block number higher than the
+    /// block number acquired by the mutation in that partition and so will not be mutatied).
+    /// This block number is called "mutation version" in that partition.
+    ///
+    /// Mutation versions are acquired atomically in all partitions, so the case when an insert in some
+    /// partition has the block number higher than the mutation version but the following insert into another
+    /// partition acquires the block number lower than the mutation version in that partition is impossible.
+    /// Another important invariant: mutation entries appear in /mutations in the order of their mutation
+    /// versions (in any partition). This means that mutations form a sequence and we can execute them in
+    /// the order of their mutation versions and not worry that some mutation with the smaller version
+    /// will suddenly appear.
+    ///
+    /// During mutations individual parts are immutable - when we want to change the contents of a part
+    /// we prepare the new part and add it to MergeTreeData (the original part gets replaced). The fact that
+    /// we have mutated the part is recorded in the part->info.mutation field of MergeTreePartInfo.
+    /// The relation with the original part is preserved because the new part covers the same block range
+    /// as the original one.
+    ///
+    /// We then can for each part determine its "mutation version": the version of the last mutation in
+    /// the mutation sequence that we regard as already applied to that part. All mutations with the greater
+    /// version number will still need to be applied to that part.
+    ///
+    /// Execution of mutations is done asynchronously. All replicas watch the /mutations directory and
+    /// load new mutation entries as they appear (see mutationsUpdatingTask()). Next we need to determine
+    /// how to mutate individual parts consistently with part merges. This is done by the leader replica
+    /// (see mergeSelectingTask() and class ReplicatedMergeTreeMergePredicate for details). Important
+    /// invariants here are that a) all source parts for a single merge must have the same mutation version
+    /// and b) any part can be mutated only once or merged only once (e.g. once we have decided to mutate
+    /// a part then we need to execute that mutation and can assign merges only to the new part and not to the
+    /// original part). Multiple consecutive mutations can be executed at once (without writing the
+    /// intermediate result to a part).
+    ///
+    /// Leader replica records its decisions to the replication log (/log directory in ZK) in the form of
+    /// MUTATE_PART entries and all replicas then execute them in the background pool
+    /// (see tryExecutePartMutation() function). When a replica encounters a MUTATE_PART command, it is
+    /// guaranteed that the corresponding mutation entry is already loaded (when we pull entries from
+    /// replication log into the replica queue, we also load mutation entries). Note that just as with merges
+    /// the replica can decide not to do the mutation locally and fetch the mutated part from another replica
+    /// instead.
+    ///
+    /// Mutations of individual parts are in fact pretty similar to merges, e.g. their assignment and execution
+    /// is governed by the same settings. TODO: support a single "merge-mutation" operation when the data
+    /// read from the the source parts is first mutated on the fly to some uniform mutation version and then
+    /// merged to a resulting part.
+    ///
+    /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
+    /// the version of this mutation), the mutation is considered done and can be deleted.
+    /// TODO: add a way to track the progress of mutations and a process to clean old mutations.
+
     ReplicatedMergeTreeMutationEntry entry;
     entry.source_replica = replica_name;
     entry.commands = commands;
