@@ -3,6 +3,8 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockInputStream.h>
 
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {

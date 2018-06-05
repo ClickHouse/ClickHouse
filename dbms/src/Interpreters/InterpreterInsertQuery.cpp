@@ -1,6 +1,7 @@
 #include <IO/ConcatReadBuffer.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
