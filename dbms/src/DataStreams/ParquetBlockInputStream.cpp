@@ -172,7 +172,7 @@ void ParquetBlockInputStream::fillByteMapFromArrowColumn(std::shared_ptr<arrow::
 
 using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::Column>>;
 
-std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> arrow_type_to_internal_type = {
+const std::unordered_map<arrow::Type::type, std::shared_ptr<IDataType>> ParquetBlockInputStream::arrow_type_to_internal_type = {
     {arrow::Type::UINT8,  std::make_shared<DataTypeUInt8>()},
     {arrow::Type::INT8,   std::make_shared<DataTypeInt8>()},
     {arrow::Type::UINT16, std::make_shared<DataTypeUInt16>()},
@@ -259,7 +259,7 @@ Block ParquetBlockInputStream::readImpl()
 
         const bool target_column_is_nullable = header_column.type->isNullable() || arrow_column->null_count();
 
-        const DataTypePtr internal_nested_type = arrow_type_to_internal_type[arrow_type];
+        const DataTypePtr internal_nested_type = arrow_type_to_internal_type.at(arrow_type);
         const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type) : internal_nested_type;
         const std::string internal_nested_type_name = internal_nested_type->getName();
 

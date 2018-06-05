@@ -105,6 +105,25 @@ void ParquetBlockOutputStream::fillArrowArrayWithDateColumnData(ColumnPtr write_
         M(Float32, arrow::FloatBuilder) \
         M(Float64, arrow::DoubleBuilder)
 
+const std::unordered_map<String, std::shared_ptr<arrow::DataType>> ParquetBlockOutputStream::internal_type_to_arrow_type = {
+    {"UInt8",   arrow::uint8()},
+    {"Int8",    arrow::int8()},
+    {"UInt16",  arrow::uint16()},
+    {"Int16",   arrow::int16()},
+    {"UInt32",  arrow::uint32()},
+    {"Int32",   arrow::int32()},
+    {"UInt64",  arrow::uint64()},
+    {"Int64",   arrow::int64()},
+    {"Float32", arrow::float32()},
+    {"Float64", arrow::float64()},
+
+    {"Date",  arrow::date32()},
+
+    {"String", arrow::utf8()}//,
+    // TODO: add other types:
+    // 1. FixedString
+    // 2. DateTime
+};
 
 void ParquetBlockOutputStream::write(const Block & block)
 {
@@ -123,7 +142,7 @@ void ParquetBlockOutputStream::write(const Block & block)
         const ColumnWithTypeAndName & column = block.safeGetByPosition(column_i);
 
         // TODO: support NULLs
-        arrow_fields.emplace_back(new arrow::Field(column.name, internal_type_to_arrow_type[column.type->getName()], /*nullable = */false));
+        arrow_fields.emplace_back(new arrow::Field(column.name, internal_type_to_arrow_type.at(column.type->getName()), /*nullable = */false));
         std::shared_ptr<arrow::Array> arrow_array;
 
         String internal_type_name = column.type->getName();
