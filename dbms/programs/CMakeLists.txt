@@ -13,12 +13,16 @@ option (ENABLE_CLICKHOUSE_COPIER "Enable copier" ${ENABLE_CLICKHOUSE_ALL})
 
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
+add_subdirectory (clang)
 add_subdirectory (server)
 add_subdirectory (client)
 add_subdirectory (local)
+add_subdirectory (benchmark)
+add_subdirectory (performance-test)
+add_subdirectory (extract-from-config)
 add_subdirectory (compressor)
-add_subdirectory (clang)
-
+add_subdirectory (format)
+add_subdirectory (copier)
 
 
 if (CLICKHOUSE_SPLIT_BINARY)
