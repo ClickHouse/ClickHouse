@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
 
 #echo "Args: $*"; env | sort
 #set -x
