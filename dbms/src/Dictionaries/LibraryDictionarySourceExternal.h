@@ -61,5 +61,4 @@ struct CLogger
 };
 
 void initDictLogger(CLogger * logger);
-
 }
