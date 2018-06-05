@@ -920,6 +920,10 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
 {
+    /// NOTE: If the corresponding mutation is not found, the error is logged (and not thrown as an exception)
+    /// to allow recovering from a mutation that cannot be executed. This way you can delete the mutation entry
+    /// from /mutations in ZK and the replicas will simply skip the mutation.
+
     if (part->info.getDataVersion() > desired_mutation_version)
     {
         LOG_WARNING(log, "Data version of part " << part->name << " is already greater than "
