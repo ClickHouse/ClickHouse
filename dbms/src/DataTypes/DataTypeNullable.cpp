@@ -135,7 +135,7 @@ void DataTypeNullable::deserializeBinary(IColumn & column, ReadBuffer & istr) co
 }
 
 
-void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
@@ -146,7 +146,7 @@ void DataTypeNullable::serializeTextEscaped(const IColumn & column, size_t row_n
 }
 
 
-void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     /// Little tricky, because we cannot discriminate null from first character.
 
@@ -203,7 +203,7 @@ void DataTypeNullable::deserializeTextEscaped(IColumn & column, ReadBuffer & ist
     }
 }
 
-void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
@@ -214,14 +214,14 @@ void DataTypeNullable::serializeTextQuoted(const IColumn & column, size_t row_nu
 }
 
 
-void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeNullable::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr); },
         [this, &istr] (IColumn & nested) { nested_data_type->deserializeTextQuoted(nested, istr); } );
 }
 
-void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
@@ -231,14 +231,14 @@ void DataTypeNullable::serializeTextCSV(const IColumn & column, size_t row_num, 
         nested_data_type->serializeTextCSV(col.getNestedColumn(), row_num, ostr);
 }
 
-void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeNullable::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("\\N", istr); },
         [this, delimiter, &istr] (IColumn & nested) { nested_data_type->deserializeTextCSV(nested, istr, delimiter); } );
 }
 
-void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
@@ -248,7 +248,7 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
         nested_data_type->serializeText(col.getNestedColumn(), row_num, ostr);
 }
 
-void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
+void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
@@ -258,7 +258,7 @@ void DataTypeNullable::serializeTextJSON(const IColumn & column, size_t row_num,
         nested_data_type->serializeTextJSON(col.getNestedColumn(), row_num, ostr, settings);
 }
 
-void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     safeDeserialize(column,
         [&istr] { return checkStringByFirstCharacterAndAssertTheRest("null", istr); },

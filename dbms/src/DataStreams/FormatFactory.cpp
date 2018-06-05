@@ -29,7 +29,7 @@
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/SquashingBlockOutputStream.h>
-#include <DataTypes/FormatSettingsJSON.h>
+#include <DataTypes/FormatSettings.h>
 #if USE_CAPNP
 #include <DataStreams/CapnProtoRowInputStream.h>
 #endif
@@ -50,6 +50,9 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     const Block & sample, const Context & context, size_t max_block_size) const
 {
     const Settings & settings = context.getSettingsRef();
+
+    FormatSettings format_settings;
+    format_settings.csv.delimiter = settings.format_csv_delimiter;
 
     auto wrap_row_stream = [&](auto && row_stream)
     {
@@ -83,10 +86,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     }
     else if (name == "CSV" || name == "CSVWithNames")
     {
-        char csv_delimiter = settings.format_csv_delimiter;
         bool with_names = name == "CSVWithNames";
-
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, csv_delimiter, with_names));
+        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, with_names));
     }
     else if (name == "TSKV")
     {
@@ -137,7 +138,11 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     const Block & sample, const Context & context)
 {
     const Settings & settings = context.getSettingsRef();
-    FormatSettingsJSON json_settings(settings.output_format_json_quote_64bit_integers, settings.output_format_json_quote_denormals);
+
+    FormatSettings format_settings;
+    format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
+    format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
+    format_settings.csv.delimiter = settings.format_csv_delimiter;
 
     if (name == "Native")
         return std::make_shared<NativeBlockOutputStream>(buf, 0, sample);
@@ -153,10 +158,8 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample), sample);
     else if (name == "CSV" || name == "CSVWithNames")
     {
-        char csv_delimiter = settings.format_csv_delimiter;
         bool with_names = name == "CSVWithNames";
-
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, csv_delimiter, with_names), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, with_names), sample);
     }
     else if (name == "Pretty")
         return std::make_shared<PrettyBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
@@ -187,13 +190,13 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf), sample);
     else if (name == "JSON")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(
-            buf, sample, settings.output_format_write_statistics, json_settings), sample);
+            buf, sample, settings.output_format_write_statistics), sample);
     else if (name == "JSONCompact")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(
-            buf, sample, settings.output_format_write_statistics, json_settings), sample);
+            buf, sample, settings.output_format_write_statistics), sample);
     else if (name == "JSONEachRow")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(
-            buf, sample, json_settings), sample);
+            buf, sample), sample);
     else if (name == "XML")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
             settings.output_format_write_statistics), sample);

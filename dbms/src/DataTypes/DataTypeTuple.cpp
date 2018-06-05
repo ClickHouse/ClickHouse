@@ -152,7 +152,7 @@ void DataTypeTuple::deserializeBinary(IColumn & column, ReadBuffer & istr) const
     });
 }
 
-void DataTypeTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeTuple::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeChar('(', ostr);
     for (const auto i : ext::range(0, ext::size(elems)))
@@ -187,27 +187,27 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr) const
     assertChar(')', istr);
 }
 
-void DataTypeTuple::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeTuple::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     serializeText(column, row_num, ostr);
 }
 
-void DataTypeTuple::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeTuple::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     deserializeText(column, istr);
 }
 
-void DataTypeTuple::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeTuple::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     serializeText(column, row_num, ostr);
 }
 
-void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     deserializeText(column, istr);
 }
 
-void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
+void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('[', ostr);
     for (const auto i : ext::range(0, ext::size(elems)))
@@ -219,7 +219,7 @@ void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, Wr
     writeChar(']', ostr);
 }
 
-void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeTuple::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     const size_t size = elems.size();
     assertChar('[', istr);
@@ -254,7 +254,7 @@ void DataTypeTuple::serializeTextXML(const IColumn & column, size_t row_num, Wri
     writeCString("</tuple>", ostr);
 }
 
-void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     for (const auto i : ext::range(0, ext::size(elems)))
     {
@@ -264,7 +264,7 @@ void DataTypeTuple::serializeTextCSV(const IColumn & column, size_t row_num, Wri
     }
 }
 
-void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     addElementSafe(elems, column, [&]
     {
