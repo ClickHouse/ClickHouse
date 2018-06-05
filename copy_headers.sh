@@ -73,21 +73,25 @@ do
     cp "$src_file" "$DST/$dst_file";
 done
 
-# Even more platform-specific headers
-for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
-do
-    dst_file=$src_file;
-    [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed -E -e "s!^$BUILD_PATH!!")
-    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
-    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$dst_file";
-done
+if [ -d "$SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail" ]; then
+    # Even more platform-specific headers
+    for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
+    do
+        dst_file=$src_file;
+        [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed -E -e "s!^$BUILD_PATH!!")
+        [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
+        mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+        cp "$src_file" "$DST/$dst_file";
+    done
+fi
 
-for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
-do
-    dst_file=$src_file;
-    [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed -E -e "s!^$BUILD_PATH!!")
-    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
-    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$dst_file";
-done
+if [ -d "$SOURCE_PATH/contrib/boost/boost/smart_ptr/detail" ]; then
+    for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
+    do
+        dst_file=$src_file;
+        [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed -E -e "s!^$BUILD_PATH!!")
+        [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
+        mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+        cp "$src_file" "$DST/$dst_file";
+    done
+fi
