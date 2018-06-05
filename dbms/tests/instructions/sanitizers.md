@@ -18,7 +18,7 @@ make -j24
 ## Copy binary to your server
 
 ```
-scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-asan
+scp ./dbms/programs/clickhouse yourserver:~/clickhouse-asan
 ```
 
 ## Start ClickHouse and run tests
@@ -44,7 +44,7 @@ make -j24
 ## Copy binary to your server
 
 ```
-scp ./dbms/src/Server/clickhouse yourserver:~/clickhouse-tsan
+scp ./dbms/programs/clickhouse yourserver:~/clickhouse-tsan
 ```
 
 ## Start ClickHouse and run tests
