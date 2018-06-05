@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
-#echo "Args: $*"; env | sort
+set -e
 #set -x
+#echo "Args: $*"; env | sort
 
 # Этот скрипт собирает все заголовочные файлы, нужные для компиляции некоторого translation unit-а
 #  и копирует их с сохранением путей в директорию DST.
