@@ -64,7 +64,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
-#include <Server/StatusFile.h>
+#include <Common/StatusFile.h>
 #include <daemon/OwnPatternFormatter.h>
 
 
