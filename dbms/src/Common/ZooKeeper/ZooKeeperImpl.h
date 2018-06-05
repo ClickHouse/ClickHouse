@@ -175,7 +175,7 @@ public:
         XID xid = 0;
         bool has_watch = false;
 
-        virtual ~Request() {};
+        virtual ~Request() {}
         virtual OpNum getOpNum() const = 0;
 
         /// Writes length, xid, op_num, then the rest.
@@ -184,7 +184,7 @@ public:
 
         virtual ResponsePtr makeResponse() const = 0;
 
-        virtual void addRootPath(const String & /* root_path */) {};
+        virtual void addRootPath(const String & /* root_path */) {}
         virtual String getPath() const = 0;
     };
 
@@ -230,7 +230,7 @@ public:
 
     struct AuthResponse final : Response
     {
-        void readImpl(ReadBuffer &) override {};
+        void readImpl(ReadBuffer &) override {}
     };
 
     struct CloseRequest final : Request
@@ -376,7 +376,7 @@ public:
 
     struct CheckResponse final : Response
     {
-        void readImpl(ReadBuffer &) override {};
+        void readImpl(ReadBuffer &) override {}
     };
 
     struct MultiRequest final : Request
@@ -573,7 +573,7 @@ private:
 
     std::atomic<XID> xid {1};
     std::atomic<bool> expired {false};
-    std::mutex finalize_mutex;
+    std::mutex push_request_mutex;
 
     using clock = std::chrono::steady_clock;
 

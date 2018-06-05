@@ -22,7 +22,7 @@
 sudo pkg install devel/git devel/cmake shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
 
 #  install testing only stuff if you want:
-sudo pkg install lang/python devel/py-lxml devel/py-termcolor ftp/curl perl5
+sudo pkg install lang/python devel/py-lxml devel/py-termcolor www/py-requests ftp/curl perl5
 
 #  If you want ODBC support: Check UNIXODBC option:
 # make -C /usr/ports/devel/poco config reinstall

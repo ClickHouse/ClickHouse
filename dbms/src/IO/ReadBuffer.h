@@ -159,7 +159,7 @@ private:
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */
-    virtual bool nextImpl() { return false; };
+    virtual bool nextImpl() { return false; }
 };
 
 

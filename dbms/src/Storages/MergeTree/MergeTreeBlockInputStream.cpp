@@ -46,10 +46,10 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     path(data_part->getFullPath())
 {
     /// Let's estimate total number of rows for progress bar.
-    size_t total_rows = 0;
     for (const auto & range : all_mark_ranges)
-        total_rows += range.end - range.begin;
-    total_rows *= storage.index_granularity;
+        total_marks_count += range.end - range.begin;
+
+    size_t total_rows = total_marks_count * storage.index_granularity;
 
     if (!quiet)
         LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << data_part->name
@@ -91,8 +91,8 @@ Block MergeTreeBlockInputStream::getHeader() const
 bool MergeTreeBlockInputStream::getNewTask()
 try
 {
-    /// Produce only one task
-    if (!is_first_task)
+    /// Produce no more than one task
+    if (!is_first_task || total_marks_count == 0)
     {
         finish();
         return false;

@@ -12,6 +12,7 @@ edit_uri: 'edit/master/docs/en'
 extra_css:
   - assets/stylesheets/custom.css
 
+
 markdown_extensions:
   - codehilite
 
@@ -222,8 +223,8 @@ pages:
     - 'Dictionary key and fields': 'dicts/external_dicts_dict_structure.md'
   - 'Internal dictionaries': 'dicts/internal_dicts.md'
 
-- 'Operation':
-#  - 'Operation': 'operations/index.md'
+- 'Operations':
+  - 'Operations': 'operations/index.md'
   - 'Access rights': 'operations/access_rights.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
@@ -237,7 +238,7 @@ pages:
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
 
-- 'Utilites':
+- 'Utilities':
   - 'Introduction': 'utils/index.md'
   - 'clickhouse-copier': 'utils/clickhouse-copier.md'
   - 'clickhouse-local': 'utils/clickhouse-local.md'

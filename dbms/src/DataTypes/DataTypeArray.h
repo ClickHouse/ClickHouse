@@ -89,7 +89,7 @@ public:
     bool haveSubtypes() const override { return true; }
     bool cannotBeStoredInTables() const override { return nested->cannotBeStoredInTables(); }
     bool textCanContainOnlyValidUTF8() const override { return nested->textCanContainOnlyValidUTF8(); }
-    bool isComparable() const override { return nested->isComparable(); };
+    bool isComparable() const override { return nested->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested->canBeComparedWithCollation(); }
 
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override

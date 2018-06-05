@@ -449,7 +449,7 @@ struct BitTestImpl
     static inline Result apply(A a, B b)
     {
         return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
-    };
+    }
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// TODO
@@ -1561,13 +1561,13 @@ private:
 struct BitTestAnyImpl
 {
     template <typename A, typename B>
-    static inline UInt8 apply(A a, B b) { return (a & b) != 0; };
+    static inline UInt8 apply(A a, B b) { return (a & b) != 0; }
 };
 
 struct BitTestAllImpl
 {
     template <typename A, typename B>
-    static inline UInt8 apply(A a, B b) { return (a & b) == b; };
+    static inline UInt8 apply(A a, B b) { return (a & b) == b; }
 };
 
 

@@ -86,7 +86,7 @@ namespace ErrorCodes
 /// To read and modify the data use other classes:
 /// - MergeTreeDataSelectExecutor
 /// - MergeTreeDataWriter
-/// - MergeTreeDataMerger
+/// - MergeTreeDataMergerMutator
 
 class MergeTreeData : public ITableDeclaration
 {
@@ -118,7 +118,7 @@ public:
         String partition_id;
     };
 
-    STRONG_TYPEDEF(String, PartitionID);
+    STRONG_TYPEDEF(String, PartitionID)
 
     struct LessDataPart
     {
@@ -184,10 +184,8 @@ public:
 
         void rollback();
 
-        bool isEmpty() const
-        {
-            return precommitted_parts.empty();
-        }
+        size_t size() const { return precommitted_parts.size(); }
+        bool isEmpty() const { return precommitted_parts.empty(); }
 
         ~Transaction()
         {
@@ -328,7 +326,7 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const;
 
-    Int64 getMaxDataPartIndex();
+    Int64 getMaxBlockNumber();
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -569,7 +567,7 @@ private:
     friend struct MergeTreeDataPart;
     friend class StorageMergeTree;
     friend class ReplicatedMergeTreeAlterThread;
-    friend class MergeTreeDataMerger;
+    friend class MergeTreeDataMergerMutator;
     friend class StorageMergeTree;
     friend class StorageReplicatedMergeTree;
 
@@ -610,7 +608,7 @@ private:
     static DataPartStateAndInfo dataPartPtrToStateAndInfo(const DataPartPtr & part)
     {
         return {part->state, part->info};
-    };
+    }
 
     using DataPartsIndexes = boost::multi_index_container<DataPartPtr,
         boost::multi_index::indexed_by<
