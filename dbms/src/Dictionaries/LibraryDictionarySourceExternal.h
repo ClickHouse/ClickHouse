@@ -47,4 +47,19 @@ struct Table
     uint64_t error_code = 0; // 0 = ok; !0 = error, with message in error_string
     const char * error_string = nullptr;
 };
+
+struct CLogger
+{
+    void (*trace)(CString msg);
+    void (*debug)(CString msg);
+    void (*information)(CString msg);
+    void (*notice)(CString msg);
+    void (*warning)(CString msg);
+    void (*error)(CString msg);
+    void (*critical)(CString msg);
+    void (*fatal)(CString msg);
+};
+
+void initDictLogger(CLogger * logger);
+
 }

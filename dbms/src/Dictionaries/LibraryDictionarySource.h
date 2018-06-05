@@ -3,6 +3,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ExternalResultDescription.h>
 #include <Dictionaries/IDictionarySource.h>
+#include <Dictionaries/LibraryDictionarySourceExternal.h>
 #include <Common/SharedLibrary.h>
 #include <common/LocalDateTime.h>
 
@@ -65,6 +66,7 @@ public:
 
 private:
     Poco::Logger * log;
+    std::shared_ptr<ClickHouseLibrary::CLogger> clogger;
 
     LocalDateTime getLastModification() const;
 
