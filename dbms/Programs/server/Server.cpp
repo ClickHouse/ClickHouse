@@ -36,7 +36,7 @@
 #include <Common/Config/ConfigReloader.h>
 #include "HTTPHandlerFactory.h"
 #include "MetricsTransmitter.h"
-#include "StatusFile.h"
+#include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
 
 #if USE_POCO_NETSSL
