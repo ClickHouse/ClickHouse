@@ -176,19 +176,19 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
     readEscapedString(s, istr);
@@ -196,13 +196,13 @@ void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuf
 }
 
 
-void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeQuotedString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
     readQuotedStringWithSQLStyle(s, istr);
@@ -210,13 +210,13 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeJSONString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
     readJSONString(s, istr);
@@ -230,13 +230,13 @@ void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t 
 }
 
 
-void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeCSV(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
     readCSV(s, istr, delimiter);

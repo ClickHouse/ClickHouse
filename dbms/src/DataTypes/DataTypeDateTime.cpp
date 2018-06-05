@@ -32,31 +32,31 @@ std::string DataTypeDateTime::getName() const
     return out.str();
 }
 
-void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeDateTime::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeDateTimeText(static_cast<const ColumnUInt32 &>(column).getData()[row_num], ostr, time_zone);
 }
 
-void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeDateTime::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     serializeText(column, row_num, ostr);
 }
 
-void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeDateTime::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     time_t x;
     readDateTimeText(x, istr, time_zone);
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
-void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeDateTime::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeChar('\'', ostr);
     serializeText(column, row_num, ostr);
     writeChar('\'', ostr);
 }
 
-void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     time_t x;
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
@@ -71,14 +71,14 @@ void DataTypeDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer & istr
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
-void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeDateTime::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr);
     writeChar('"', ostr);
 }
 
-void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     time_t x;
     if (checkChar('"', istr))
@@ -93,14 +93,14 @@ void DataTypeDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & istr) 
     static_cast<ColumnUInt32 &>(column).getData().push_back(x);
 }
 
-void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeDateTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeChar('"', ostr);
     serializeText(column, row_num, ostr);
     writeChar('"', ostr);
 }
 
-void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
+void DataTypeDateTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     time_t x;
     readDateTimeCSV(x, istr, time_zone);
