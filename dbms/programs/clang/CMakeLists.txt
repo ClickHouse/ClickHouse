@@ -26,6 +26,4 @@ if (USE_EMBEDDED_COMPILER)
         add_custom_target(copy-headers-clang ALL ${CMAKE_COMMAND} -E make_directory ${CLANG_HEADERS_DEST} && ${CMAKE_COMMAND} -E copy_if_different ${CLANG_HEADERS_DIR}/* ${CLANG_HEADERS_DEST} )
         add_dependencies(copy-headers copy-headers-clang)
     endif ()
-
-    add_dependencies(clickhouse-compiler-lib copy-headers)
 endif ()
