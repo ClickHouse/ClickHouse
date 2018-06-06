@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <atomic>
 
 #include <common/MultiVersion.h>
 #include <Core/Types.h>
