@@ -136,10 +136,22 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         column_with_dictionary.getIndexes()->insertRangeFrom(*index->index(std::move(index_col), 0), 0, num_rows);
     };
 
+    using CachedStreams = std::unordered_map<std::string, ReadBuffer *>;
+    CachedStreams cached_streams;
+
+    IDataType::InputStreamGetter cached_stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+    {
+        std::string stream_name = IDataType::getFileNameForStream("", path);
+        auto iter = cached_streams.find(stream_name);
+        if (iter == cached_streams.end())
+            iter = cached_streams.insert({stream_name, getter(path)}).first;
+        return iter.second;
+    };
+
     auto readDict = [&](UInt64 num_keys)
     {
         auto dict_column = dictionary_type->createColumn();
-        dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, getter, num_keys, 0,
+        dictionary_type->deserializeBinaryBulkWithMultipleStreams(*dict_column, cached_stream_getter, num_keys, 0,
                                                                   position_independent_encoding, path, dict_state->state);
         return column_with_dictionary.getUnique()->uniqueInsertRangeFrom(*dict_column, 0, num_keys);
     };
