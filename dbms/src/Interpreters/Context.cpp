@@ -1732,6 +1732,11 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
+Context::getSampleBlockCacheType & Context::getSampleBlockCache() const
+{
+    return getQueryContext().get_sample_block_cache;
+}
+
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {
     auto lock = getLock();
@@ -1741,7 +1746,6 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 
     return shared->action_locks_manager;
 }
-
 
 SessionCleaner::~SessionCleaner()
 {

@@ -31,6 +31,7 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -64,7 +65,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
-#include <Server/StatusFile.h>
+#include <Common/StatusFile.h>
 #include <daemon/OwnPatternFormatter.h>
 
 
@@ -794,7 +795,7 @@ public:
         }
 
         std::rethrow_exception(exception);
-    };
+    }
 
 
     void discoverShardPartitions(const TaskShardPtr & task_shard)
@@ -1695,8 +1696,7 @@ protected:
                     output = io_insert.out;
                 }
 
-                using ExistsFuture = std::future<zkutil::ExistsResponse>;
-                std::unique_ptr<ExistsFuture> future_is_dirty_checker;
+                std::future<zkutil::ExistsResponse> future_is_dirty_checker;
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
                 constexpr size_t check_period_milliseconds = 500;
@@ -1707,25 +1707,14 @@ protected:
                     if (zookeeper->expired())
                         throw Exception("ZooKeeper session is expired, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
 
-                    if (!future_is_dirty_checker)
-                        future_is_dirty_checker = std::make_unique<ExistsFuture>(zookeeper->asyncExists(is_dirty_flag_path));
+                    if (!future_is_dirty_checker.valid())
+                        future_is_dirty_checker = zookeeper->asyncExists(is_dirty_flag_path);
 
                     /// check_period_milliseconds should less than average insert time of single block
                     /// Otherwise, the insertion will slow a little bit
                     if (watch.elapsedMilliseconds() >= check_period_milliseconds)
                     {
-                        zkutil::ExistsResponse status;
-
-                        try
-                        {
-                            status = future_is_dirty_checker->get();
-                            future_is_dirty_checker.reset();
-                        }
-                        catch (const zkutil::KeeperException & e)
-                        {
-                            future_is_dirty_checker.reset();
-                            throw;
-                        }
+                        zkutil::ExistsResponse status = future_is_dirty_checker.get();
 
                         if (status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
                             throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
@@ -1747,7 +1736,7 @@ protected:
                 copyData(*input, *output, cancel_check, update_stats);
 
                 // Just in case
-                if (future_is_dirty_checker != nullptr)
+                if (future_is_dirty_checker.valid())
                     future_is_dirty_checker.get();
 
                 if (inject_fault)

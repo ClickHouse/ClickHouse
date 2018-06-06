@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test.root"

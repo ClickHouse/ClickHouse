@@ -38,5 +38,7 @@ There are libraries for working with ClickHouse for:
     - [clickhouse_ecto](https://github.com/appodeal/clickhouse_ecto)
 - Java
     - [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
+- Nim
+    - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
 We have not tested these libraries. They are listed in random order.

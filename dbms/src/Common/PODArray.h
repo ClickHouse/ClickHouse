@@ -5,8 +5,23 @@
 #include <algorithm>
 #include <memory>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#pragma clang diagnostic ignored "-Wreserved-id-macro"
+#endif
+
 #include <boost/noncopyable.hpp>
 #include <boost/iterator_adaptors.hpp>
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+
+#pragma GCC diagnostic pop
 
 #include <common/likely.h>
 #include <common/strong_typedef.h>

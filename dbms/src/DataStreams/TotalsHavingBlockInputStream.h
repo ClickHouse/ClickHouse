@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <Common/Arena.h>
 
 
 namespace DB

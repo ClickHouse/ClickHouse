@@ -37,7 +37,7 @@ public:
 
     LibraryDictionarySource(const LibraryDictionarySource & other);
 
-    ~LibraryDictionarySource();
+    ~LibraryDictionarySource() override;
 
     BlockInputStreamPtr loadAll() override;
 

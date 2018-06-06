@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #set -e
 
 [[ -n "$1" ]] && host="$1" || host="localhost"
