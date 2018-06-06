@@ -1832,11 +1832,35 @@ public:
 };
 
 
+template <typename IndexType>
+struct FunctionMakeDictionaryName;
+template <>
+struct FunctionMakeDictionaryName<UInt8>
+{
+    static constexpr auto name = "makeDictionaryUInt8";
+};
+template <>
+struct FunctionMakeDictionaryName<UInt16>
+{
+    static constexpr auto name = "makeDictionaryUInt16";
+};
+template <>
+struct FunctionMakeDictionaryName<UInt32>
+{
+    static constexpr auto name = "makeDictionaryUInt32";
+};
+template <>
+struct FunctionMakeDictionaryName<UInt64>
+{
+    static constexpr auto name = "makeDictionaryUInt64";
+};
+
+template <typename IndexType>
 class FunctionMakeDictionary: public IFunction
 {
 public:
-    static constexpr auto name = "makeDictionary";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMakeDictionary>(); }
+    static constexpr auto name = FunctionMakeDictionaryName<IndexType>::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMakeDictionary<IndexType>>(); }
 
     String getName() const override { return name; }
 
@@ -1847,7 +1871,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return std::make_shared<DataTypeWithDictionary>(arguments[0], std::make_shared<DataTypeUInt16>());
+        return std::make_shared<DataTypeWithDictionary>(arguments[0], std::make_shared<DataTypeNumber<IndexType>>());
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -1981,7 +2005,10 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
 
-    factory.registerFunction<FunctionMakeDictionary>();
+    factory.registerFunction<FunctionMakeDictionary<UInt8>>();
+    factory.registerFunction<FunctionMakeDictionary<UInt16>>();
+    factory.registerFunction<FunctionMakeDictionary<UInt32>>();
+    factory.registerFunction<FunctionMakeDictionary<UInt64>>();
     factory.registerFunction<FunctionDictionaryIndexes>();
     factory.registerFunction<FunctionDictionaryValues>();
 }
