@@ -1,6 +1,7 @@
 #include <daemon/BaseDaemon.h>
 
 #include <Common/Config/ConfigProcessor.h>
+#include <Interpreters/ClickHouseLogChannel.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -62,6 +63,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
+#include <Common/CurrentThread.h>
 
 
 using Poco::Logger;
@@ -778,6 +780,11 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         split->addChannel(log);
     }
 
+    {
+        Poco::AutoPtr<DB::ClickHouseLogChannel> internal_logger = new DB::ClickHouseLogChannel;
+        split->addChannel(internal_logger);
+    }
+
     split->open();
     logger().close();
     logger().setChannel(split);
@@ -1047,6 +1054,7 @@ void BaseDaemon::initialize(Application & self)
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
+    DB::CurrentThread::get();
     logRevision();
 
     signal_listener.reset(new SignalListener(*this));

@@ -24,8 +24,7 @@ add_library (clickhouse-server-lib
     RootRequestHandler.cpp
     Server.cpp
     StatusFile.cpp
-    TCPHandler.cpp
-    )
+    TCPHandler.cpp)
 
 target_link_libraries (clickhouse-server-lib clickhouse_common_io daemon clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
 target_include_directories (clickhouse-server-lib PUBLIC ${ClickHouse_SOURCE_DIR}/libs/libdaemon/include)
@@ -101,7 +100,7 @@ if (CLICKHOUSE_SPLIT_BINARY)
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
     add_custom_target (clickhouse ALL DEPENDS clickhouse-bundle)
 else ()
-    add_executable (clickhouse main.cpp)
+    add_executable (clickhouse main.cpp ../Interpreters/ClickHouseLogChannel.cpp)
     target_link_libraries (clickhouse clickhouse_common_io)
     target_include_directories (clickhouse BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
     target_include_directories (clickhouse PRIVATE ${CMAKE_CURRENT_BINARY_DIR})

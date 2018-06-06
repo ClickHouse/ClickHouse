@@ -37,12 +37,17 @@ struct BlockIO
             exception_callback();
     }
 
+    /// We provide the correct order of destruction.
+    void reset()
+    {
+        out.reset();
+        in.reset();
+        process_list_entry.reset();
+    }
+
     BlockIO & operator= (const BlockIO & rhs)
     {
-        /// We provide the correct order of destruction.
-        out                     = nullptr;
-        in                      = nullptr;
-        process_list_entry      = nullptr;
+        reset();
 
         process_list_entry      = rhs.process_list_entry;
         in                      = rhs.in;

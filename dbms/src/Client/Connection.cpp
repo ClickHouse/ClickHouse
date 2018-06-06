@@ -354,6 +354,7 @@ void Connection::sendQuery(
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
     block_in.reset();
+    block_logs_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
@@ -489,12 +490,12 @@ bool Connection::hasReadBufferPendingData() const
 
 Connection::Packet Connection::receivePacket()
 {
-    //LOG_TRACE(log_wrapper.get(), "Receiving packet");
-
     try
     {
         Packet res;
         readVarUInt(res.type, *in);
+
+        // LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
         switch (res.type)
         {
@@ -524,6 +525,10 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveData();
                 return res;
 
+            case Protocol::Server::Log:
+                res.block = receiveLogData();
+                return res;
+
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -551,14 +556,26 @@ Block Connection::receiveData()
     //LOG_TRACE(log_wrapper.get(), "Receiving data");
 
     initBlockInput();
+    return receiveDataImpl(block_in);
+}
 
+
+Block Connection::receiveLogData()
+{
+    initBlockLogsInput();
+    return receiveDataImpl(block_logs_in);
+}
+
+
+Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
+{
     String external_table_name;
     readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = block_in->read();
+    Block res = stream->read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
@@ -567,16 +584,35 @@ Block Connection::receiveData()
 }
 
 
-void Connection::initBlockInput()
+void Connection::initInputBuffers()
 {
-    if (!block_in)
+    if (!maybe_compressed_in)
     {
         if (compression == Protocol::Compression::Enable)
             maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
         else
             maybe_compressed_in = in;
+    }
+}
 
+
+void Connection::initBlockInput()
+{
+    if (!block_in)
+    {
+        initInputBuffers();
         block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
+    }
+}
+
+
+void Connection::initBlockLogsInput()
+{
+    if (!block_logs_in)
+    {
+        initInputBuffers();
+        /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
+        block_logs_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
     }
 }
 

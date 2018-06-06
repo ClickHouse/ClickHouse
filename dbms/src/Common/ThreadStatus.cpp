@@ -1,5 +1,4 @@
 #include "ThreadStatus.h"
-#include <Poco/Ext/ThreadNumber.h>
 #include <common/logger_useful.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Common/CurrentThread.h>
@@ -7,6 +6,8 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/ProcessList.h>
 
+#include <Poco/Thread.h>
+#include <Poco/Ext/ThreadNumber.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -48,18 +49,7 @@ class ThreadStatus::CurrentThreadScope
 {
 public:
 
-    CurrentThreadScope()
-    {
-        try
-        {
-            ThreadStatus & thread = *CurrentThread::get();
-            LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " started");
-        }
-        catch (...)
-        {
-            std::terminate();
-        }
-    }
+    CurrentThreadScope() = default;
 
     ~CurrentThreadScope()
     {
@@ -67,12 +57,12 @@ public:
         {
             ThreadStatus & thread = *CurrentThread::get();
 
+            LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " exited");
+
             if (thread.getCurrentState() != ThreadStatus::ThreadState::DetachedFromQuery)
                 thread.detachQuery(true);
             else
                 thread.thread_state = ThreadStatus::ThreadState::Died;
-
-            LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " exited");
         }
         catch (...)
         {
@@ -218,7 +208,8 @@ ThreadStatus::ThreadStatus()
     last_taskstats = std::make_unique<TasksStatsCounters>();
     taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
 
-    LOG_DEBUG(log, "Thread " << thread_number << " created");
+    /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
+    /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
 }
 
 ThreadStatusPtr ThreadStatus::create()
@@ -226,10 +217,7 @@ ThreadStatusPtr ThreadStatus::create()
     return ThreadStatusPtr(new ThreadStatus);
 }
 
-ThreadStatus::~ThreadStatus()
-{
-    LOG_DEBUG(log, "Thread " << thread_number << " destroyed");
-}
+ThreadStatus::~ThreadStatus() = default;
 
 void ThreadStatus::initializeQuery()
 {
@@ -243,6 +231,7 @@ void ThreadStatus::attachQuery(
         QueryStatus * parent_query_,
         ProfileEvents::Counters * parent_counters,
         MemoryTracker * parent_memory_tracker,
+        const SystemLogsQueueWeakPtr & logs_queue_ptr_,
         bool check_detached)
 {
     if (thread_state == ThreadState::AttachedToQuery)
@@ -261,6 +250,7 @@ void ThreadStatus::attachQuery(
         performance_counters.setParent(parent_counters);
         memory_tracker.setParent(parent_memory_tracker);
         memory_tracker.setDescription("(for thread)");
+        logs_queue_ptr = logs_queue_ptr_;
     }
 
     /// Try extract as many information as possible from ProcessList

@@ -258,7 +258,8 @@ struct Settings
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
     M(SettingBool, log_profile_events, true, "Log query settings into the query_log and query_thread_log.") \
     M(SettingBool, log_query_settings, true, "Log query performance statistics into the query_log.") \
-    M(SettingBool, log_query_threads, true, "Log query threads into system.query_log table.")
+    M(SettingBool, log_query_threads, true, "Log query threads into system.query_log table.") \
+    M(SettingString, server_logs_level, "warning", "Send internal server logs to client.")
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
