@@ -66,7 +66,6 @@ public:
 
 private:
     Poco::Logger * log;
-    std::shared_ptr<ClickHouseLibrary::CLogger> clogger;
 
     LocalDateTime getLastModification() const;
 

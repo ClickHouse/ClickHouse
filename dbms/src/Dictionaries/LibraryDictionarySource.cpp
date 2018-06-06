@@ -123,12 +123,10 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path);
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
-    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), ClickHouseLibrary::CLogger *)>(
+    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
             "ClickHouseDictionary_v2_libNew"))
     {
-        clogger = std::make_shared<ClickHouseLibrary::CLogger>();
-        ClickHouseLibrary::initDictLogger(clogger.get());
-        lib_data = libNew(&settings->strings, clogger.get());
+        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
     }
     else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings))>("ClickHouseDictionary_v2_libNew"))
     {
@@ -138,7 +136,6 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
 
 LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource & other)
     : log(&Logger::get("LibraryDictionarySource"))
-    , clogger{other.clogger}
     , dict_struct{other.dict_struct}
     , config_prefix{other.config_prefix}
     , path{other.path}
@@ -150,9 +147,9 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
 {
     if (auto libClone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v2_libClone"))
         lib_data = libClone(other.lib_data);
-    else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), ClickHouseLibrary::CLogger *)>(
+    else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
                  "ClickHouseDictionary_v2_libNew"))
-        lib_data = libNew(&settings->strings, clogger.get());
+        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
     else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings))>("ClickHouseDictionary_v2_libNew"))
         lib_data = libNew(&settings->strings);
 }
