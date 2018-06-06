@@ -34,7 +34,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_PERFORMANCE
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_extract-from-config
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_COMPRESSOR
