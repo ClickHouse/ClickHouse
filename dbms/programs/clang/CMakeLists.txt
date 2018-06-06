@@ -14,8 +14,8 @@ if (CLICKHOUSE_SPLIT_BINARY)
     endif ()
 endif ()
 
-# Make and install empty dir for debian package if compiler disabled
 set(TMP_HEADERS_DIR "${CMAKE_CURRENT_BINARY_DIR}/headers")
+# Make and install empty dir for debian package if compiler disabled
 add_custom_target(make-headers-directory ALL COMMAND ${CMAKE_COMMAND} -E make_directory ${TMP_HEADERS_DIR})
 install(DIRECTORY ${TMP_HEADERS_DIR} DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse COMPONENT clickhouse)
 if (USE_EMBEDDED_COMPILER)
