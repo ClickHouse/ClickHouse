@@ -36,7 +36,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(
     for (size_t i = 0; i < columns; ++i)
     {
         WriteBufferFromString out(names_and_paddings[i]);
-        writeEscapedString(sample.getByPosition(i).name, out);
+        writeString(sample.getByPosition(i).name, out);
         writeCString(": ", out);
     }
 
