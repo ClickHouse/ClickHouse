@@ -1,13 +1,25 @@
 #pragma once
 
 #include <queue>
-#include <boost/intrusive_ptr.hpp>
+
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
 
 #include <common/logger_useful.h>
 
 #include <Core/Row.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
+
+#include <IO/WriteHelpers.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -70,7 +82,6 @@ public:
 
     String getName() const override { return "MergingSorted"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 

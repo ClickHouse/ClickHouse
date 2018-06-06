@@ -5,6 +5,7 @@
 #define APPLY_FOR_METRICS(M) \
     M(Query) \
     M(Merge) \
+    M(PartMutation) \
     M(ReplicatedFetch) \
     M(ReplicatedSend) \
     M(ReplicatedChecks) \

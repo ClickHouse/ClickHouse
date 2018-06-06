@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 SOURCE_RAW=/opt/ontime/ontime.csv

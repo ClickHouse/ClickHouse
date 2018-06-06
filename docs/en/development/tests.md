@@ -21,7 +21,7 @@ Run `./clickhouse-test --help` to see available options.
 To run tests without having to create a symlink or mess with `PATH`:
 
 ```bash
-./clickhouse-test -c "../../build/dbms/src/Server/clickhouse --client"
+./clickhouse-test -c "../../build/dbms/programs/clickhouse --client"
 ```
 
 To run a single test, i.e. `00395_nullable`:

@@ -422,15 +422,15 @@ String MergeTreeData::MergingParams::getModeName() const
 }
 
 
-Int64 MergeTreeData::getMaxDataPartIndex()
+Int64 MergeTreeData::getMaxBlockNumber()
 {
     std::lock_guard<std::mutex> lock_all(data_parts_mutex);
 
-    Int64 max_block_id = 0;
+    Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
-        max_block_id = std::max(max_block_id, part->info.max_block);
+        max_block_num = std::max(max_block_num, part->info.max_block);
 
-    return max_block_id;
+    return max_block_num;
 }
 
 
@@ -1460,12 +1460,12 @@ void MergeTreeData::renameTempPartAndReplace(
       * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
       */
     if (increment)
+    {
         part_info.min_block = part_info.max_block = increment->get();
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        part_name = part_info.getPartNameV0(part->getMinDate(), part->getMaxDate());
+        part_name = part->getNewName(part_info);
+    }
     else
-        part_name = part_info.getPartName();
+        part_name = part->name;
 
     LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << part_name << ".");
 
@@ -1787,7 +1787,7 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 }
 
 
-void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
+void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 {
     const size_t parts_count = getMaxPartsCountForPartition();
     if (parts_count < settings.parts_to_delay_insert)
@@ -1815,6 +1815,17 @@ void MergeTreeData::delayInsertIfNeeded(Poco::Event * until)
         until->tryWait(delay_milliseconds);
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<size_t>(delay_milliseconds)));
+}
+
+void MergeTreeData::throwInsertIfNeeded() const
+{
+    const size_t parts_count = getMaxPartsCountForPartition();
+
+    if (parts_count >= settings.parts_to_throw_insert)
+    {
+        ProfileEvents::increment(ProfileEvents::RejectedInserts);
+        throw Exception("Too many parts (" + toString(parts_count) + "). Merges are processing significantly slower than inserts.", ErrorCodes::TOO_MANY_PARTS);
+    }
 }
 
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
@@ -2329,7 +2340,7 @@ MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(secondary_sort_expr_ast) != query_to_string(secondary_sort_expr_ast))
+    if (query_to_string(secondary_sort_expr_ast) != query_to_string(src_data->secondary_sort_expr_ast))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
     if (query_to_string(partition_expr_ast) != query_to_string(src_data->partition_expr_ast))

@@ -2,6 +2,7 @@
 #include <iomanip>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadHelpers.h>
 
 #include <Storages/System/StorageSystemNumbers.h>
 

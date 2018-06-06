@@ -16,16 +16,12 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
-    : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)"))
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeCleanupThread)")
+    , log(&Logger::get(log_name))
 {
-    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeCleanupThread", [this]{ run(); });
-    task_handle->schedule();
-}
-
-ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
-{
-    storage.context.getSchedulePool().removeTask(task_handle);
+    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task->schedule();
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -49,7 +45,7 @@ void ReplicatedMergeTreeCleanupThread::run()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    task_handle->scheduleAfter(CLEANUP_SLEEP_MS);
+    task->scheduleAfter(CLEANUP_SLEEP_MS);
 
 }
 
