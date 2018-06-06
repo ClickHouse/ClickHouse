@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <IO/WriteHelpers.h>
 #include <DataStreams/BlockInputStreamFromRowInputStream.h>
 
 

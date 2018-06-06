@@ -55,7 +55,6 @@ add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
-add_headers_only(dbms src/Server)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -100,11 +99,7 @@ else ()
 endif ()
 
 if (USE_EMBEDDED_COMPILER)
-    llvm_map_components_to_libnames(REQUIRED_LLVM_LIBRARIES all)
-    if (TERMCAP_LIBRARY)
-        list(APPEND REQUIRED_LLVM_LIBRARIES ${TERMCAP_LIBRARY})
-    endif ()
-    list(APPEND REQUIRED_LLVM_LIBRARIES ${CMAKE_DL_LIBS})
+    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
@@ -244,6 +239,8 @@ target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSI
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
+
+add_subdirectory (programs)
 
 add_subdirectory (tests)
 

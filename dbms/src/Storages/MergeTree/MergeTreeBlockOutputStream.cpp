@@ -14,7 +14,7 @@ Block MergeTreeBlockOutputStream::getHeader() const
 
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
-    storage.data.delayInsertIfNeeded();
+    storage.data.delayInsertOrThrowIfNeeded();
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block);
     for (auto & current_block : part_blocks)
