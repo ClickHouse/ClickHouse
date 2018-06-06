@@ -28,6 +28,7 @@ inc="-I. \
 -I./contrib/poco/Foundation/include \
 -I./contrib/boost/libs/*/include \
 -I./contrib/boost \
+-I./contrib/llvm/llvm/include \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./libs/libmysqlxx/include \
