@@ -76,9 +76,13 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_PERFORMANCE
     {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
-#if ENABLE_CLICKHOUSE_TOOLS
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
+#endif
+#if ENABLE_CLICKHOUSE_COMPRESSOR
     {"compressor", mainEntryClickHouseCompressor},
+#endif
+#if ENABLE_CLICKHOUSE_FORMAT
     {"format", mainEntryClickHouseFormat},
 #endif
 #if ENABLE_CLICKHOUSE_COPIER
