@@ -48,17 +48,17 @@ struct Table
     const char * error_string = nullptr;
 };
 
-struct CLogger
+enum LogLevel
 {
-    void (*trace)(CString msg);
-    void (*debug)(CString msg);
-    void (*information)(CString msg);
-    void (*notice)(CString msg);
-    void (*warning)(CString msg);
-    void (*error)(CString msg);
-    void (*critical)(CString msg);
-    void (*fatal)(CString msg);
+    FATAL = 1,
+    CRITICAL,
+    ERROR,
+    WARNING,
+    NOTICE,
+    INFORMATION,
+    DEBUG,
+    TRACE,
 };
 
-void initDictLogger(CLogger * logger);
+void log(LogLevel level, CString msg);
 }

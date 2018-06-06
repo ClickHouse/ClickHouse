@@ -4,88 +4,48 @@
 namespace
 {
 const char DICT_LOGGER_NAME[] = "LibraryDictionarySourceExternal";
-void trace(ClickHouseLibrary::CString msg)
+}
+
+void ClickHouseLibrary::log(ClickHouseLibrary::LogLevel level, ClickHouseLibrary::CString msg)
 {
+    using ClickHouseLibrary::LogLevel;
+
     auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.trace())
+    switch (level)
     {
-        logger.trace(msg);
+        case LogLevel::TRACE:
+            if (logger.trace())
+                logger.trace(msg);
+            break;
+        case LogLevel::DEBUG:
+            if (logger.debug())
+                logger.debug(msg);
+            break;
+        case LogLevel::INFORMATION:
+            if (logger.information())
+                logger.information(msg);
+            break;
+        case LogLevel::NOTICE:
+            if (logger.notice())
+                logger.notice(msg);
+            break;
+        case LogLevel::WARNING:
+            if (logger.warning())
+                logger.warning(msg);
+            break;
+        case LogLevel::ERROR:
+            if (logger.error())
+                logger.error(msg);
+            break;
+        case LogLevel::CRITICAL:
+            if (logger.critical())
+                logger.critical(msg);
+            break;
+        case LogLevel::FATAL:
+            if (logger.fatal())
+                logger.fatal(msg);
+            break;
+        default:
+            break;
     }
-}
-
-void debug(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.debug())
-    {
-        logger.debug(msg);
-    }
-}
-
-void information(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.information())
-    {
-        logger.information(msg);
-    }
-}
-
-void notice(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.notice())
-    {
-        logger.notice(msg);
-    }
-}
-
-void warning(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.warning())
-    {
-        logger.warning(msg);
-    }
-}
-
-void error(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.error())
-    {
-        logger.error(msg);
-    }
-}
-
-void critical(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.critical())
-    {
-        logger.critical(msg);
-    }
-}
-
-void fatal(ClickHouseLibrary::CString msg)
-{
-    auto & logger = Logger::get(DICT_LOGGER_NAME);
-    if (logger.fatal())
-    {
-        logger.fatal(msg);
-    }
-}
-}
-
-
-void ClickHouseLibrary::initDictLogger(CLogger * logger)
-{
-    logger->trace = trace;
-    logger->debug = debug;
-    logger->information = information;
-    logger->notice = notice;
-    logger->warning = warning;
-    logger->error = error;
-    logger->critical = critical;
-    logger->fatal = fatal;
 }
