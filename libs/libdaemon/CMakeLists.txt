@@ -1,4 +1,4 @@
-add_library (daemon
+add_library (daemon ${SPLIT_SHARED}
     src/BaseDaemon.cpp
     src/GraphiteWriter.cpp
     src/OwnPatternFormatter.cpp
@@ -17,4 +17,4 @@ endif ()
 target_include_directories (daemon PUBLIC include)
 target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
 
-target_link_libraries (daemon clickhouse_common_io ${EXECINFO_LIBRARY})
+target_link_libraries (daemon clickhouse_common_io clickhouse_common_config ${EXECINFO_LIBRARY} ${ELF_LIBRARY})

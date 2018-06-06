@@ -21,10 +21,10 @@ public:
 
     String getName() const override
     {
-        return "FilterColumnsBlockInputStream";
+        return "FilterColumns";
     }
 
-    String getID() const override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

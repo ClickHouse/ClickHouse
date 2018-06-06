@@ -1,7 +1,6 @@
 #include <Common/config.h>
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Poco/MD5Engine.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -9,6 +8,7 @@
     #include <Poco/MongoDB/Database.h>
     #include <Poco/MongoDB/Cursor.h>
     #include <Poco/MongoDB/Array.h>
+    #include <Poco/MongoDB/ObjectId.h>
 #pragma GCC diagnostic pop
 
 #include <Poco/Version.h>
@@ -20,6 +20,7 @@
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
 #include <ext/enumerate.h>
 
 
@@ -234,6 +235,7 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
     auto cursor = createCursor(db, collection, sample_block);
 
     Poco::MongoDB::Array::Ptr keys_array(new Poco::MongoDB::Array);
+
     for (const auto row_idx : requested_rows)
     {
         auto & key = keys_array->addNewDocument(DB::toString(row_idx));
@@ -260,12 +262,23 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(
                     break;
 
                 case AttributeUnderlyingType::String:
-                    key.add(attr.second.name, get<String>((*key_columns[attr.first])[row_idx]));
+                    String _str(get<String>((*key_columns[attr.first])[row_idx]));
+                    /// Convert string to ObjectID
+                    if (attr.second.is_object_id)
+                    {
+                        Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
+                        key.add(attr.second.name, _id);
+                    }
+                    else
+                    {
+                        key.add(attr.second.name, _str);
+                    }
                     break;
             }
         }
     }
 
+    /// If more than one key we should use $or
     cursor->query().selector().add("$or", keys_array);
 
     return std::make_shared<MongoDBBlockInputStream>(

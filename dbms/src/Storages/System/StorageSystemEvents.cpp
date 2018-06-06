@@ -11,13 +11,13 @@ namespace DB
 
 
 StorageSystemEvents::StorageSystemEvents(const std::string & name_)
-    : name(name_),
-    columns
+    : name(name_)
+{
+    setColumns(ColumnsDescription(
     {
         {"event", std::make_shared<DataTypeString>()},
-        {"value", std::make_shared<DataTypeUInt64>()}
-    }
-{
+        {"value", std::make_shared<DataTypeUInt64>()},
+    }));
 }
 
 

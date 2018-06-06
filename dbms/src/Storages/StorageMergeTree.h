@@ -2,10 +2,11 @@
 
 #include <ext/shared_ptr_helper.h>
 
+#include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -18,8 +19,6 @@ namespace DB
   */
 class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public IStorage
 {
-friend class MergeTreeBlockOutputStream;
-
 public:
     void startup() override;
     void shutdown() override;
@@ -31,12 +30,15 @@ public:
     }
 
     std::string getTableName() const override { return table_name; }
-    bool supportsSampling() const override { return data.supportsSampling(); }
-    bool supportsFinal() const override { return data.supportsFinal(); }
-    bool supportsPrewhere() const override { return data.supportsPrewhere(); }
-    bool supportsParallelReplicas() const override { return true; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return data.getColumnsListNonMaterialized(); }
+    bool supportsSampling() const override { return data.supportsSampling(); }
+    bool supportsPrewhere() const override { return data.supportsPrewhere(); }
+    bool supportsFinal() const override { return data.supportsFinal(); }
+    bool supportsIndexForIn() const override { return true; }
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
+
+    const ColumnsDescription & getColumns() const override { return data.getColumns(); }
+    void setColumns(ColumnsDescription columns_) override { return data.setColumns(std::move(columns_)); }
 
     NameAndTypePair getColumn(const String & column_name) const override
     {
@@ -65,6 +67,7 @@ public:
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
+    void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void drop() override;
@@ -73,12 +76,14 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    bool supportsIndexForIn() const override { return true; }
-
     bool checkTableCanBeDropped() const override;
+
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
+
+    String getDataPath() const override { return full_path; }
 
 private:
     String path;
@@ -92,13 +97,13 @@ private:
     MergeTreeData data;
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
-    MergeTreeDataMerger merger;
+    MergeTreeDataMergerMutator merger;
 
     /// For block numbers.
     SimpleIncrement increment{0};
 
     /// For clearOldParts, clearOldTemporaryDirectories.
-    StopwatchWithLock time_after_previous_cleanup;
+    AtomicStopwatch time_after_previous_cleanup;
 
     MergeTreeData::DataParts currently_merging;
     std::mutex currently_merging_mutex;
@@ -109,15 +114,18 @@ private:
 
     BackgroundProcessingPool::TaskHandle merge_task_handle;
 
-    friend struct CurrentlyMergingPartsTagger;
-
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate);
+    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate,
+               String * out_disable_reason = nullptr);
 
     bool mergeTask();
+
+    friend class MergeTreeBlockOutputStream;
+    friend class MergeTreeData;
+    friend struct CurrentlyMergingPartsTagger;
 
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with  / at the end),
@@ -132,13 +140,11 @@ protected:
         const String & path_,
         const String & database_name_,
         const String & table_name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         bool attach,
         Context & context_,
         const ASTPtr & primary_expr_ast_,
+        const ASTPtr & secondary_sorting_expr_list_,
         const String & date_column_name,
         const ASTPtr & partition_expr_ast_,
         const ASTPtr & sampling_expression_, /// nullptr, if sampling is not supported.

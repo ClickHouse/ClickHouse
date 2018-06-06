@@ -49,7 +49,7 @@ bool EmbeddedDictionaries::reloadDictionary(
         {
             auto new_dictionary = reload_dictionary(config);
             if (new_dictionary)
-                dictionary.set(new_dictionary.release());
+                dictionary.set(std::move(new_dictionary));
         }
         catch (...)
         {

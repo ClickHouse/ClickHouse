@@ -1,11 +1,342 @@
+# ClickHouse release 1.1.54385, 2018-06-01
+
+## Bug fixes:
+* Fixed an error that in some cases caused ZooKeeper operations to block.
+
+# ClickHouse release 1.1.54383, 2018-05-22
+
+## Bug fixes:
+* Fixed a slowdown of replication queue if a table has many replicas.
+
+# ClickHouse release 1.1.54381, 2018-05-14
+
+## Bug fixes:
+* Fixed a nodes leak in ZooKeeper when ClickHouse loses connection to ZooKeeper server.
+
+# ClickHouse release 1.1.54380, 2018-04-21
+
+## New features:
+* Added table function `file(path, format, structure)`. An example reading bytes from `/dev/urandom`: `ln -s /dev/urandom /var/lib/clickhouse/user_files/random` `clickhouse-client -q "SELECT * FROM file('random', 'RowBinary', 'd UInt8') LIMIT 10"`.
+
+## Improvements:
+* Subqueries could be wrapped by `()` braces (to enhance queries readability). For example, `(SELECT 1) UNION ALL (SELECT 1)`.
+* Simple `SELECT` queries  from table `system.processes` are not counted in `max_concurrent_queries` limit.
+
+## Bug fixes:
+* Fixed incorrect behaviour of `IN` operator when select from `MATERIALIZED VIEW`.
+* Fixed incorrect filtering by partition index in expressions like `WHERE partition_key_column IN (...)`
+* Fixed inability to execute `OPTIMIZE` query on non-leader replica if the table was `REANAME`d.
+* Fixed authorization error when execute `OPTIMIZE` or `ALTER` queries on a non-leader replica.
+* Fixed freezing of `KILL QUERY` queries.
+* Fixed an error in ZooKeeper client library which led to watches loses, freezing of distributed DDL queue and slowing replication queue if non-empty `chroot` prefix is used in ZooKeeper configuration.
+
+## Backward incompatible changes:
+* Removed support of expressions like `(a, b) IN (SELECT (a, b))` (instead of them you can use their equivalent `(a, b) IN (SELECT a, b)`). In previous releases, these expressions led to undetermined data filtering or caused errors.
+
+# ClickHouse release 1.1.54378, 2018-04-16
+## New features:
+
+* Logging level can be changed without restarting the server.
+* Added the `SHOW CREATE DATABASE` query.
+* The `query_id` can be passed to `clickhouse-client` (elBroom).
+* New setting: `max_network_bandwidth_for_all_users`.
+* Added support for `ALTER TABLE ... PARTITION ... ` for `MATERIALIZED VIEW`.
+* Added information about the size of data parts in uncompressed form in the system table.
+* Server-to-server encryption support for distributed tables (`<secure>1</secure>` in the replica config in `<remote_servers>`).
+* Configuration of the table level for the `ReplicatedMergeTree` family in order to minimize the amount of data stored in zookeeper: `use_minimalistic_checksums_in_zookeeper = 1`
+* Configuration of the `clickhouse-client` prompt. By default, server names are now output to the prompt. The server's display name can be changed; it's also sent in the `X-ClickHouse-Display-Name` HTTP header (Kirill Shvakov).
+* Multiple comma-separated `topics` can be specified for the `Kafka` engine (Tobias Adamson).
+* When a query is stopped by `KILL QUERY` or `replace_running_query`, the client receives the `Query was cancelled` exception instead of an incomplete response.
+
+## Improvements:
+
+* `ALTER TABLE ... DROP/DETACH PARTITION` queries are run at the front of the replication queue.
+* `SELECT ... FINAL` and `OPTIMIZE ... FINAL` can be used even when the table has a single data part.
+* A `query_log` table is recreated on the fly if it was deleted manually (Kirill Shvakov).
+* The `lengthUTF8` function runs faster (zhang2014).
+* Improved performance of synchronous inserts in `Distributed` tables (`insert_distributed_sync = 1`) when there is a very large number of shards.
+* The server accepts the `send_timeout` and `receive_timeout` settings from the client and applies them when connecting to the client (they are applied in reverse order: the server socket's `send_timeout` is set to the `receive_timeout` value received from the client, and vice versa).
+* More robust crash recovery for asynchronous insertion into `Distributed` tables.
+* The return type of the `countEqual` function changed from `UInt32` to `UInt64` (谢磊).
+
+## Bug fixes:
+
+* Fixed an error with `IN` when the left side of the expression is `Nullable`.
+* Correct results are now returned when using tuples with `IN` when some of the tuple components are in the table index.
+* The `max_execution_time` limit now works correctly with distributed queries.
+* Fixed errors when calculating the size of composite columns in the `system.columns` table.
+* Fixed an error when creating a temporary table `CREATE TEMPORARY TABLE IF NOT EXISTS`.
+* Fixed errors in `StorageKafka` (#2075)
+* Fixed server crashes from invalid arguments of certain aggregate functions.
+* Fixed the error that prevented the `DETACH DATABASE` query from stopping background tasks for `ReplicatedMergeTree` tables.
+* `Too many parts` state is less likely to happen when inserting into aggregated materialized views (#2084).
+* Corrected recursive handling of substitutions in the config if a substitution must be followed by another substitution on the same level.
+* Corrected the syntax in the metadata file when creating a `VIEW` that uses a query with `UNION ALL`.
+* `SummingMergeTree` now works correctly for summation of nested data structures with a composite key.
+* Fixed the possibility of a race condition when choosing the leader for `ReplicatedMergeTree` tables.
+
+## Build changes:
+
+* The build supports `ninja` instead of `make` and uses it by default for building releases.
+* Renamed packages: `clickhouse-server-base` is now `clickhouse-common-static`; `clickhouse-server-common` is now `clickhouse-server`; `clickhouse-common-dbg` is now `clickhouse-common-static-dbg`. To install, use `clickhouse-server clickhouse-client`. Packages with the old names will still load in the repositories for backward compatibility.
+
+## Backward-incompatible changes:
+
+* Removed the special interpretation of an IN expression if an array is specified on the left side. Previously, the expression `arr IN (set)` was interpreted as "at least one `arr` element belongs to the `set`". To get the same behavior in the new version, write `arrayExists(x -> x IN (set), arr)`.
+* Disabled the incorrect use of the socket option `SO_REUSEPORT`, which was incorrectly enabled by default in the Poco library. Note that on Linux there is no longer any reason to simultaneously specify the addresses `::` and `0.0.0.0` for listen – use just `::`, which allows listening to the connection both over IPv4 and IPv6 (with the default kernel config settings). You can also revert to the behavior from previous versions by specifying `<listen_reuse_port>1</listen_reuse_port>` in the config.
+
+
+# ClickHouse release 1.1.54370, 2018-03-16
+
+## New features:
+
+* Added the `system.macros` table and auto updating of macros when the config file is changed.
+* Added the `SYSTEM RELOAD CONFIG` query.
+* Added the `maxIntersections(left_col, right_col)` aggregate function, which returns the maximum number of simultaneously intersecting intervals `[left; right]`. The `maxIntersectionsPosition(left, right)` function returns the beginning of the "maximum" interval. ([Michael Furmur](https://github.com/yandex/ClickHouse/pull/2012)).
+
+## Improvements:
+
+* When inserting data in a `Replicated` table, fewer requests are made to `ZooKeeper` (and most of the user-level errors have disappeared from the `ZooKeeper` log).
+* Added the ability to create aliases for sets. Example: `WITH (1, 2, 3) AS set SELECT number IN set FROM system.numbers LIMIT 10`.
+
+## Bug fixes:
+
+* Fixed the `Illegal PREWHERE` error when reading from `Merge` tables over `Distributed` tables.
+* Added fixes that allow you to run `clickhouse-server` in IPv4-only Docker containers.
+* Fixed a race condition when reading from system `system.parts_columns` tables.
+* Removed double buffering during a synchronous insert to a `Distributed` table, which could have caused the connection to timeout.
+* Fixed a bug that caused excessively long waits for an unavailable replica before beginning a `SELECT` query.
+* Fixed incorrect dates in the `system.parts` table.
+* Fixed a bug that made it impossible to insert data in a `Replicated` table if `chroot` was non-empty in the configuration of the `ZooKeeper` cluster.
+* Fixed the vertical merging algorithm for an empty `ORDER BY` table.
+* Restored the ability to use dictionaries in queries to remote tables, even if these dictionaries are not present on the requestor server. This functionality was lost in release 1.1.54362.
+* Restored the behavior for queries like `SELECT * FROM remote('server2', default.table) WHERE col IN (SELECT col2 FROM default.table)` when the right side argument of the `IN` should use a remote `default.table` instead of a local one. This behavior was broken in version 1.1.54358.
+* Removed extraneous error-level logging of `Not found column ... in block`.
+
+# ClickHouse release 1.1.54356, 2018-03-06
+
+## New features:
+
+* Aggregation without `GROUP BY` for an empty set (such as `SELECT count(*) FROM table WHERE 0`) now returns a result with one row with null values for aggregate functions, in compliance with the SQL standard. To restore the old behavior (return an empty result), set `empty_result_for_aggregation_by_empty_set` to 1.
+* Added type conversion for `UNION ALL`. Different alias names are allowed in `SELECT` positions in `UNION ALL`, in compliance with the SQL standard.
+* Arbitrary expressions are supported in `LIMIT BY` sections. Previously, it was only possible to use columns resulting from `SELECT`.
+* An index of `MergeTree` tables is used when `IN` is applied to a tuple of expressions from the columns of the primary key. Example: `WHERE (UserID, EventDate) IN ((123, '2000-01-01'), ...)` (Anastasiya Tsarkova).
+* Added the `clickhouse-copier` tool for copying between clusters and resharding data (beta).
+* Added consistent hashing functions: `yandexConsistentHash`, `jumpConsistentHash`, `sumburConsistentHash`. They can be used as a sharding key in order to reduce the amount of network traffic during subsequent reshardings.
+* Added functions: `arrayAny`, `arrayAll`, `hasAny`, `hasAll`, `arrayIntersect`, `arrayResize`.
+* Added the `arrayCumSum` function (Javi Santana).
+* Added the `parseDateTimeBestEffort`, `parseDateTimeBestEffortOrZero`, and `parseDateTimeBestEffortOrNull`functions to read the DateTime from a string containing text in a wide variety of possible formats.
+* It is now possible to change the logging settings without restarting the server.
+* Added the `cluster` table function. Example: `cluster(cluster_name, db, table)`. The `remote` table function can accept the cluster name as the first argument, if it is specified as an identifier.
+* Added the `create_table_query` and `engine_full` virtual columns to the `system.tables`table . The `metadata_modification_time` column is virtual.
+* Added the `data_path` and `metadata_path` columns to `system.tables` and` system.databases` tables, and added the `path` column to the `system.parts` and `system.parts_columns` tables.
+* Added additional information about merges in the `system.part_log` table.
+* An arbitrary partitioning key can be used for the `system.query_log` table (Kirill Shvakov).
+* The `SHOW TABLES` query now also shows temporary tables. Added temporary tables and the `is_temporary` column to `system.tables` (zhang2014).
+* Added the `DROP TEMPORARY TABLE` query (zhang2014).
+* Support for `SHOW CREATE TABLE` for temporary tables (zhang2014).
+* Added the `system_profile` configuration parameter for the settings used by internal processes.
+* Support for loading `object_id` as an attribute in `MongoDB` dictionaries (Pavel Litvinenko).
+* Reading `null` as the default value when loading data for an external dictionary with the `MongoDB` source (Pavel Litvinenko).
+* Reading `DateTime` values in the `Values` format from a Unix timestamp without single quotes.
+* Failover is supported in `remote` table functions for cases when some of the replicas are missing the requested table.
+* Configuration settings can be overridden in the command line when you run `clickhouse-server`. Example: `clickhouse-server -- --logger.level=information`.
+* Implemented the `empty` function from a `FixedString` argument: the function returns 1 if the string consists entirely of null bytes (zhang2014).
+* Added the `listen_try`configuration parameter for listening to at least one of the listen addresses without quitting, if some of the addresses can't be listened to (useful for systems with disabled support for IPv4 or IPv6).
+* Added the `VersionedCollapsingMergeTree` table engine.
+* Support for rows and arbitrary numeric types for the `library` dictionary source.
+* `MergeTree` tables can be used without a primary key (you need to specify `ORDER BY tuple()`).
+* A `Nullable` type can be `CAST` to a non-`Nullable` type if the argument is not `NULL`.
+* `RENAME TABLE` can be performed for `VIEW`.
+* Added the `odbc_default_field_size` option, which allows you to extend the maximum size of the value loaded from an ODBC source (by default, it is 1024).
+
+## Improvements:
+
+* Limits and quotas on the result are no longer applied to intermediate data for `INSERT SELECT` queries or for `SELECT` subqueries.
+* Fewer false triggers of `force_restore_data` when checking the status of `Replicated` tables when the server starts.
+* Added the `allow_distributed_ddl` option.
+* Nondeterministic functions are not allowed in expressions for `MergeTree` table keys.
+* Files with substitutions from `config.d` directories are loaded in alphabetical order.
+* Improved performance of the `arrayElement` function in the case of a constant multidimensional array with an empty array as one of the elements. Example: `[[1], []][x]`.
+* The server starts faster now when using configuration files with very large substitutions (for instance, very large lists of IP networks).
+* When running a query, table valued functions run once. Previously, `remote` and `mysql`  table valued functions performed the same query twice to retrieve the table structure from a remote server.
+* The `MkDocs` documentation generator is used.
+* When you try to delete a table column that `DEFAULT`/`MATERIALIZED` expressions of other columns depend on, an exception is thrown (zhang2014).
+* Added the ability to parse an empty line in text formats as the number 0 for `Float` data types. This feature was previously available but was lost in release 1.1.54342.
+* `Enum` values can be used in `min`, `max`, `sum` and some other functions. In these cases, it uses the corresponding numeric values. This feature was previously available but was lost in the release 1.1.54337.
+* Added `max_expanded_ast_elements` to restrict the size of the AST after recursively expanding aliases.
+
+## Bug fixes:
+
+* Fixed cases when unnecessary columns were removed from subqueries in error, or not removed from subqueries containing `UNION ALL`.
+* Fixed a bug in merges for `ReplacingMergeTree` tables.
+* Fixed synchronous insertions in `Distributed` tables (`insert_distributed_sync = 1`).
+* Fixed segfault for certain uses of `FULL` and `RIGHT JOIN` with duplicate columns in subqueries.
+* Fixed the order of the `source` and `last_exception` columns in the `system.dictionaries` table.
+* Fixed a bug when the `DROP DATABASE` query did not delete the file with metadata.
+* Fixed the `DROP DATABASE` query for `Dictionary` databases.
+* Fixed the low precision of `uniqHLL12` and `uniqCombined` functions for cardinalities greater than 100 million items (Alex Bocharov).
+* Fixed the calculation of implicit default values when necessary to simultaneously calculate default explicit expressions in `INSERT` queries (zhang2014).
+* Fixed a rare case when a query to a `MergeTree` table couldn't finish (chenxing-xc).
+* Fixed a crash that occurred when running a `CHECK` query for `Distributed` tables if all shards are local (chenxing.xc).
+* Fixed a slight performance regression with functions that use regular expressions.
+* Fixed a performance regression when creating multidimensional arrays from complex expressions.
+* Fixed a bug that could cause an extra `FORMAT` section to appear in an `.sql` file with metadata.
+* Fixed a bug that caused the `max_table_size_to_drop` limit to apply when trying to delete a `MATERIALIZED VIEW` looking at an explicitly specified table.
+* Fixed incompatibility with old clients (old clients were sometimes sent data with the `DateTime('timezone')` type, which they do not understand).
+* Fixed a bug when reading `Nested` column elements of structures that were added using `ALTER` but that are empty for the old partitions, when the conditions for these columns moved to `PREWHERE`.
+* Fixed a bug when filtering tables by virtual `_table` columns in queries to `Merge` tables.
+* Fixed a bug when using `ALIAS` columns in `Distributed` tables.
+* Fixed a bug that made dynamic compilation impossible for queries with aggregate functions from the `quantile` family.
+* Fixed a race condition in the query execution pipeline that occurred in very rare cases when using `Merge` tables with a large number of tables, and when using `GLOBAL` subqueries.
+* Fixed a crash when passing arrays of different sizes to an `arrayReduce` function when using aggregate functions from multiple arguments.
+* Prohibited the use of queries with `UNION ALL` in a `MATERIALIZED VIEW`.
+
+## Backward incompatible changes:
+
+* Removed the `distributed_ddl_allow_replicated_alter` option. This behavior is enabled by default.
+* Removed the `UnsortedMergeTree` engine.
+
+# ClickHouse release 1.1.54343, 2018-02-05
+
+* Added macros support for defining cluster names in distributed DDL queries and constructors of Distributed tables: `CREATE TABLE distr ON CLUSTER '{cluster}' (...) ENGINE = Distributed('{cluster}', 'db', 'table')`.
+* Now the table index is used for conditions like `expr IN (subquery)`.
+* Improved processing of duplicates when inserting to Replicated tables, so they no longer slow down execution of the replication queue.
+
+# ClickHouse release 1.1.54342, 2018-01-22
+
+This release contains bug fixes for the previous release 1.1.54337:
+* Fixed a regression in 1.1.54337: if the default user has readonly access, then the server refuses to start up with the message `Cannot create database in readonly mode`.
+* Fixed a regression in 1.1.54337: on systems with `systemd`, logs are always written to syslog regardless of the configuration; the watchdog script still uses `init.d`.
+* Fixed a regression in 1.1.54337: wrong default configuration in the Docker image.
+* Fixed nondeterministic behaviour of GraphiteMergeTree (you can notice it in log messages `Data after merge is not byte-identical to data on another replicas`).
+* Fixed a bug that may lead to inconsistent merges after OPTIMIZE query to Replicated tables (you may notice it in log messages `Part ... intersects previous part`).
+* Buffer tables now work correctly when MATERIALIZED columns are present in the destination table (by zhang2014).
+* Fixed a bug in implementation of NULL.
+
+# ClickHouse release 1.1.54337, 2018-01-18
+
+## New features:
+
+* Added support for storage of multidimensional arrays and tuples (`Tuple` data type) in tables.
+* Added support for table functions in `DESCRIBE` and `INSERT` queries. Added support for subqueries in `DESCRIBE`. Examples: `DESC TABLE remote('host', default.hits)`; `DESC TABLE (SELECT 1)`; `INSERT INTO TABLE FUNCTION remote('host', default.hits)`. Support for `INSERT INTO TABLE` syntax in addition to `INSERT INTO`.
+* Improved support for timezones. The `DateTime` data type can be annotated with the timezone that is used for parsing and formatting in text formats. Example: `DateTime('Europe/Moscow')`. When timezones are specified in functions for DateTime arguments, the return type will track the timezone, and the value will be displayed as expected.
+* Added the functions `toTimeZone`, `timeDiff`, `toQuarter`, `toRelativeQuarterNum`. The `toRelativeHour`/`Minute`/`Second` functions can take a value of type `Date` as an argument. The name of the `now` function has been made case-insensitive.
+* Added the `toStartOfFifteenMinutes` function (Kirill Shvakov).
+* Added the `clickhouse format` tool for formatting queries.
+* Added the `format_schema_path` configuration parameter (Marek Vavruša). It is used for specifying a schema in `Cap'n'Proto` format. Schema files can be located only in the specified directory.
+* Added support for config substitutions (`incl` and `conf.d`) for configuration of external dictionaries and models (Pavel Yakunin).
+* Added a column with documentation for the `system.settings` table (Kirill Shvakov).
+* Added the `system.parts_columns` table with information about column sizes in each data part of `MergeTree` tables.
+* Added the `system.models` table with information about loaded `CatBoost` machine learning models.
+* Added the `mysql` and `odbc` table functions along with the corresponding `MySQL` and `ODBC` table engines for working with foreign databases. This feature is in the beta stage.
+* Added the possibility to pass an argument of type `AggregateFunction` for the `groupArray` aggregate function (so you can create an array of states of some aggregate function).
+* Removed restrictions on various combinations of aggregate function combinators. For example, you can use `avgForEachIf` as well as `avgIfForEach` aggregate functions, which have different behaviors.
+* The `-ForEach` aggregate function combinator is extended for the case of aggregate functions of multiple arguments.
+* Added support for aggregate functions of `Nullable` arguments even for cases when the function returns a non-`Nullable` result (added with the contribution of Silviu Caragea). Examples: `groupArray`, `groupUniqArray`, `topK`.
+* Added the `max_client_network_bandwidth` command line parameter for `clickhouse-client` (Kirill Shvakov).
+* Users with the `readonly = 2` setting are allowed to work with TEMPORARY tables (CREATE, DROP, INSERT...) (Kirill Shvakov).
+* Added support for using multiple consumers with the `Kafka` engine. Extended configuration options for `Kafka` (Marek Vavruša).
+* Added the `intExp2` and `intExp10` functions.
+* Added the `sumKahan` aggregate function (computationally stable summation of floating point numbers).
+* Added to*Number*OrNull functions, where *Number* is a numeric type.
+* Added support for the `WITH` clause for an `INSERT SELECT` query (by zhang2014).
+* Added the settings `http_connection_timeout`, `http_send_timeout`, and `http_receive_timeout`. In particular, these settings are used for downloading data parts for replication. Changing these settings allows for faster failover if the network is overloaded.
+* Added support for the `ALTER` query for tables of type `Null` (Anastasiya Tsarkova). Tables of type `Null` are often used with materialized views.
+* The `reinterpretAsString` function is extended for all data types that are stored contiguously in memory.
+* Added the `--silent` option for the `clickhouse-local` tool. It suppresses printing query execution info in stderr.
+* Added support for reading values of type `Date` from text in a format where the month and/or day of the month is specified using a single digit instead of two digits (Amos Bird).
+
+## Performance optimizations:
+
+* Improved performance of `min`, `max`, `any`, `anyLast`, `anyHeavy`, `argMin`, `argMax` aggregate functions for String arguments.
+* Improved performance of `isInfinite`, `isFinite`, `isNaN`, `roundToExp2` functions.
+* Improved performance of parsing and formatting values of type `Date` and `DateTime` in text formats.
+* Improved performance and precision of parsing floating point numbers.
+* Lowered memory usage for `JOIN` in the case when the left and right parts have columns with identical names that are not contained in `USING`.
+* Improved performance of `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr` aggregate functions by reducing computational stability. The old functions are available under the names: `varSampStable`, `varPopStable`, `stddevSampStable`, `stddevPopStable`, `covarSampStable`, `covarPopStable`, `corrStable`.
+
+## Bug fixes:
+
+* Fixed data deduplication after running a `DROP PARTITION` query. In the previous version, dropping a partition and INSERTing the same data again was not working because INSERTed blocks were considered duplicates.
+* Fixed a bug that could lead to incorrect interpretation of the `WHERE` clause for `CREATE MATERIALIZED VIEW` queries with `POPULATE`.
+* Fixed a bug in using the `root_path` parameter in the `zookeeper_servers` configuration.
+* Fixed unexpected results of passing the `Date` argument to `toStartOfDay`.
+* Fixed the `addMonths` and `subtractMonths` functions and the arithmetic for `INTERVAL n MONTH` in cases when the result has the previous year.
+* Added missing support for the `UUID` data type for `DISTINCT`, `JOIN`, and `uniq` aggregate functions and external dictionaries (Evgeniy Ivanov). Support for `UUID` is still incomplete.
+* Fixed `SummingMergeTree` behavior in cases when the rows summed to zero.
+* Various fixes for the `Kafka` engine (Marek Vavruša).
+* Fixed incorrect behavior of the `Join` table engine (Amos Bird).
+* Fixed incorrect allocator behavior under FreeBSD and OS X.
+* The `extractAll` function now supports empty matches.
+* Fixed an error that blocked usage of `libressl` instead of `openssl`.
+* Fixed the `CREATE TABLE AS SELECT` query from temporary tables.
+* Fixed non-atomicity of updating the replication queue. This could lead to replicas being out of sync until the server restarts.
+* Fixed possible overflow in `gcd`, `lcm` and `modulo` (`%` operator) (Maks Skorokhod).
+* `-preprocessed` files are now created after changing `umask` (`umask` can be changed in the config).
+* Fixed a bug in the background check of parts (`MergeTreePartChecker`) when using a custom partition key.
+* Fixed parsing of tuples (values of the `Tuple` data type) in text formats.
+* Improved error messages about incompatible types passed to `multiIf`, `array` and some other functions.
+* Support for `Nullable` types is completely reworked. Fixed bugs that may lead to a server crash. Fixed almost all other bugs related to NULL support: incorrect type conversions in INSERT SELECT, insufficient support for Nullable in HAVING and PREWHERE, `join_use_nulls` mode, Nullable types as arguments of OR operator, etc.
+* Fixed various bugs related to internal semantics of data types. Examples: unnecessary summing of `Enum` type fields in `SummingMergeTree`; alignment of `Enum` types in Pretty formats, etc.
+* Stricter checks for allowed combinations of composite columns. Fixed several bugs that could lead to a server crash.
+* Fixed the overflow when specifying a very large parameter for the `FixedString` data type.
+* Fixed a bug in the `topK` aggregate function in a generic case.
+* Added the missing check for equality of array sizes in arguments of n-ary variants of aggregate functions with an `-Array` combinator.
+* Fixed the `--pager` option for `clickhouse-client` (by ks1322).
+* Fixed the precision of the `exp10` function.
+* Fixed the behavior of the `visitParamExtract` function for better compliance with documentation.
+* Fixed the crash when incorrect data types are specified.
+* Fixed the behavior of `DISTINCT` in the case when all columns are constants.
+* Fixed query formatting in the case of using the `tupleElement` function with a complex constant expression as the tuple element index.
+* Fixed the `Dictionary` table engine for dictionaries of type `range_hashed`.
+* Fixed a bug that leads to excessive rows in the result of `FULL` and `RIGHT JOIN` (Amos Bird).
+* Fixed a server crash when creating and removing temporary files in `config.d` directories during config reload.
+* Fixed the `SYSTEM DROP DNS CACHE` query: the cache was flushed but addresses of cluster nodes were not updated.
+* Fixed the behavior of `MATERIALIZED VIEW` after executing `DETACH TABLE` for the table under the view (Marek Vavruša).
+
+## Build improvements:
+
+* Builds use `pbuilder`. The build process is almost completely independent of the build host environment.
+* A single build is used for different OS versions. Packages and binaries have been made compatible with a wide range of Linux systems.
+* Added the `clickhouse-test` package. It can be used to run functional tests.
+* The source tarball can now be published to the repository. It can be used to reproduce the build without using GitHub.
+* Added limited integration with Travis CI. Due to limits on build time in Travis, only the debug build is tested and a limited subset of tests are run.
+* Added support for `Cap'n'Proto` in the default build.
+* Changed the format of documentation sources from `Restructured Text` to `Markdown`.
+* Added support for `systemd` (Vladimir Smirnov). It is disabled by default due to incompatibility with some OS images and can be enabled manually.
+* For dynamic code generation, `clang` and `lld` are embedded into the `clickhouse` binary. They can also be invoked as `clickhouse clang` and `clickhouse lld`.
+* Removed usage of GNU extensions from the code. Enabled the `-Wextra` option. When building with `clang`, `libc++` is used instead of `libstdc++`.
+* Extracted `clickhouse_parsers` and `clickhouse_common_io` libraries to speed up builds of various tools.
+
+## Backward incompatible changes:
+
+* The format for marks in `Log` type tables that contain `Nullable` columns was changed in a backward incompatible way. If you have these tables, you should convert them to the `TinyLog` type before starting up the new server version. To do this, replace `ENGINE = Log` with `ENGINE = TinyLog` in the corresponding `.sql` file in the `metadata` directory. If your table doesn't have `Nullable` columns or if the type of your table is not `Log`, then you don't need to do anything.
+* Removed the `experimental_allow_extended_storage_definition_syntax` setting. Now this feature is enabled by default.
+* To avoid confusion, the `runningIncome` function has been renamed to `runningDifferenceStartingWithFirstValue`.
+* Removed the `FROM ARRAY JOIN arr` syntax when ARRAY JOIN is specified directly after FROM with no table (Amos Bird).
+* Removed the `BlockTabSeparated` format that was used solely for demonstration purposes.
+* Changed the serialization format of intermediate states of the aggregate functions `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr`. If you have stored states of these aggregate functions in tables (using the AggregateFunction data type or materialized views with corresponding states), please write to clickhouse-feedback@yandex-team.com.
+* In previous server versions there was an undocumented feature: if an aggregate function depends on parameters, you can still specify it without parameters in the AggregateFunction data type. Example: `AggregateFunction(quantiles, UInt64)` instead of `AggregateFunction(quantiles(0.5, 0.9), UInt64)`. This feature was lost. Although it was undocumented, we plan to support it again in future releases.
+* Enum data types cannot be used in min/max aggregate functions. The possibility will be returned back in future release.
+
+## Please note when upgrading:
+* When doing a rolling update on a cluster, at the point when some of the replicas are running the old version of ClickHouse and some are running the new version, replication is temporarily stopped and the message `unknown parameter 'shard'` appears in the log. Replication will continue after all replicas of the cluster are updated.
+* If you have different ClickHouse versions on the cluster, you can get incorrect results for distributed queries with the aggregate functions `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, and `corr`. You should update all cluster nodes.
+
+# ClickHouse release 1.1.54327, 2017-12-21
+
+This release contains bug fixes for the previous release 1.1.54318:
+* Fixed bug with possible race condition in replication that could lead to data loss. This issue affects versions 1.1.54310 and 1.1.54318. If you use one of these versions with Replicated tables, the update is strongly recommended. This issue shows in logs in Warning messages like `Part ... from own log doesn't exist.` The issue is relevant even if you don't see these messages in logs.
+
 # ClickHouse release 1.1.54318, 2017-11-30
 
 This release contains bug fixes for the previous release 1.1.54310:
-  * Fixed incorrect row deletions during merges in the SummingMergeTree engine
-  * Fixed a memory leak in unreplicated MergeTree engines
-  * Fixed performance degradation with frequent inserts in MergeTree engines
-  * Fixed an issue that was causing the replication queue to stop running
-  * Fixed rotation and archiving of server logs
+* Fixed incorrect row deletions during merges in the SummingMergeTree engine
+* Fixed a memory leak in unreplicated MergeTree engines
+* Fixed performance degradation with frequent inserts in MergeTree engines
+* Fixed an issue that was causing the replication queue to stop running
+* Fixed rotation and archiving of server logs
 
 # ClickHouse release 1.1.54310, 2017-11-01
 
@@ -25,7 +356,7 @@ This release contains bug fixes for the previous release 1.1.54310:
 * Added support for the Cap'n Proto input format.
 * You can now customize compression level when using the zstd algorithm.
 
-## Backwards incompatible changes:
+## Backward incompatible changes:
 * Creation of temporary tables with an engine other than Memory is forbidden.
 * Explicit creation of tables with the View or MaterializedView engine is forbidden.
 * During table creation, a new check verifies that the sampling key expression is included in the primary key.

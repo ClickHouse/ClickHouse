@@ -1,5 +1,5 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
-#include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
@@ -23,8 +23,8 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace DataPartsExchange
@@ -69,6 +69,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
+    StoragePtr owned_storage = storage.lock();
+    if (!owned_storage)
+        throw Exception("The table was already dropped", ErrorCodes::UNKNOWN_TABLE);
 
     LOG_TRACE(log, "Sending part " << part_name);
 
@@ -123,27 +126,28 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
     catch (const NetException & e)
     {
-        /// Network error or error on remote side. No need to enquue part for check.
+        /// Network error or error on remote side. No need to enqueue part for check.
         throw;
     }
     catch (const Exception & e)
     {
         if (e.code() != ErrorCodes::ABORTED && e.code() != ErrorCodes::CANNOT_WRITE_TO_OSTREAM)
-            dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+            data.reportBrokenPart(part_name);
         throw;
     }
     catch (...)
     {
-        dynamic_cast<StorageReplicatedMergeTree &>(*owned_storage).enqueuePartForCheck(part_name);
+        data.reportBrokenPart(part_name);
         throw;
     }
 }
 
 MergeTreeData::DataPartPtr Service::findPart(const String & name)
 {
-    /// It is important to include PreCommitted parts here
-    /// Because part could be actually committed into ZooKeeper, but response from ZooKeeper to the server could be delayed
-    auto part = data.getPartIfExists(name, {MergeTreeDataPart::State::PreCommitted, MergeTreeDataPart::State::Committed});
+    /// It is important to include PreCommitted and Outdated parts here because remote replicas cannot reliably
+    /// determine the local state of the part, so queries for the parts in these states are completely normal.
+    auto part = data.getPartIfExists(
+        name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
     if (part)
         return part;
 
@@ -155,7 +159,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & replica_path,
     const String & host,
     int port,
-    bool to_detached)
+    const ConnectionTimeouts & timeouts,
+    bool to_detached,
+    const String & tmp_prefix_)
 {
     Poco::URI uri;
     uri.setScheme("http");
@@ -168,10 +174,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress", "false"}
     });
 
-    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST};
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts};
 
     static const String TMP_PREFIX = "tmp_fetch_";
-    String relative_part_path = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;
+    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+
+    String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
     String absolute_part_path = data.getFullPath() + relative_part_path + "/";
     Poco::File part_file(absolute_part_path);
 

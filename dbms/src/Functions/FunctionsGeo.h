@@ -11,6 +11,8 @@
 #include <array>
 
 #define DEGREES_IN_RADIANS (M_PI / 180.0)
+#define EARTH_RADIUS_IN_METERS 6372797.560856
+
 
 namespace DB
 {
@@ -19,9 +21,8 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
-
-const Float64 EARTH_RADIUS_IN_METERS = 6372797.560856;
 
 static inline Float64 degToRad(Float64 angle) { return angle * DEGREES_IN_RADIANS; }
 static inline Float64 radToDeg(Float64 angle) { return angle / DEGREES_IN_RADIANS; }
@@ -116,9 +117,9 @@ private:
     }
 
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto size = block.rows();
+        const auto size = input_rows_count;
 
         bool result_is_const{};
         auto instrs = getInstructions(block, arguments, result_is_const);
@@ -148,7 +149,7 @@ private:
                     else if (instr_type::get_const_float_64 == instrs[idx].first)
                         vals[idx] = static_cast<const ColumnConst *>(instrs[idx].second)->getValue<Float64>();
                     else
-                        throw std::logic_error{"unknown instr_type"};
+                        throw Exception{"Unknown instruction type in implementation of greatCircleDistance function", ErrorCodes::LOGICAL_ERROR};
                 }
                 dst_data[row] = greatCircleDistance(vals[0], vals[1], vals[2], vals[3]);
             }
@@ -180,7 +181,8 @@ public:
 
 private:
 
-    struct Ellipse {
+    struct Ellipse
+    {
         Float64 x;
         Float64 y;
         Float64 a;
@@ -222,9 +224,9 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto size = block.rows();
+        const auto size = input_rows_count;
 
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;

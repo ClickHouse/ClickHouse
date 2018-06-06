@@ -77,11 +77,11 @@ void BlockStreamProfileInfo::collectInfosForStreamsWithName(const char * name, B
         return;
     }
 
-    for (const auto & child_stream : parent->getChildren())
+    parent->forEachProfilingChild([&] (IProfilingBlockInputStream & child)
     {
-        if (const auto * profiling_child = dynamic_cast<const IProfilingBlockInputStream *>(child_stream.get()))
-            profiling_child->getProfileInfo().collectInfosForStreamsWithName(name, res);
-    }
+        child.getProfileInfo().collectInfosForStreamsWithName(name, res);
+        return false;
+    });
 }
 
 
@@ -107,11 +107,11 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
 
         for (const BlockStreamProfileInfo * info_limit_or_sort : limits_or_sortings)
         {
-            for (const auto & child_stream : info_limit_or_sort->parent->getChildren())
+            info_limit_or_sort->parent->forEachProfilingChild([&] (IProfilingBlockInputStream & child)
             {
-                if (const auto * profiling_child = dynamic_cast<const IProfilingBlockInputStream *>(child_stream.get()))
-                    rows_before_limit += profiling_child->getProfileInfo().rows;
-            }
+                rows_before_limit += child.getProfileInfo().rows;
+                return false;
+            });
         }
     }
     else

@@ -35,8 +35,6 @@ elseif (EDIT_LIB AND TERMCAP_LIB)
 endif ()
 
 if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
-    include_directories (SYSTEM ${READLINE_INCLUDE_DIR})
-
     include (CheckCXXSourceRuns)
 
     set (CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${LINE_EDITING_LIBS})
@@ -46,8 +44,8 @@ if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
         #include <readline/readline.h>
         #include <readline/history.h>
         int main() {
-            add_history(nullptr);
-            append_history(1,nullptr);
+            add_history(NULL);
+            append_history(1,NULL);
             return 0;
         }
     " HAVE_READLINE_HISTORY)

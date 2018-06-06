@@ -7,17 +7,12 @@
 namespace DB
 {
 
-class StorageCatBoostPool : private ext::shared_ptr_helper<StorageCatBoostPool>, public IStorage
+class StorageCatBoostPool : public ext::shared_ptr_helper<StorageCatBoostPool>, public IStorage
 {
 public:
-    static StoragePtr create(const Context & context,
-                             const String & column_description_file_name, const String & data_description_file_name);
-
     std::string getName() const override { return "CatBoostPool"; }
 
     std::string getTableName() const override { return table_name; }
-
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(const Names & column_names,
                            const SelectQueryInfo & query_info,
@@ -28,7 +23,7 @@ public:
 
 private:
     String table_name;
-    NamesAndTypesList columns;
+
     String column_description_file_name;
     String data_description_file_name;
     Block sample_block;
@@ -48,7 +43,8 @@ private:
 
     ColumnTypesMap getColumnTypesMap() const
     {
-        return {
+        return
+        {
                 {"Target", DatasetColumnType::Target},
                 {"Num", DatasetColumnType::Num},
                 {"Categ", DatasetColumnType::Categ},
@@ -57,7 +53,7 @@ private:
                 {"Weight", DatasetColumnType::Weight},
                 {"Baseline", DatasetColumnType::Baseline},
         };
-    };
+    }
 
     std::string getColumnTypesString(const ColumnTypesMap & columnTypesMap);
 

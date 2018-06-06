@@ -28,8 +28,6 @@ public:
     std::string getName() const override { return "StripeLog"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -51,12 +49,13 @@ public:
     };
     using Files_t = std::map<String, ColumnData>;
 
-    std::string full_path() { return path + escapeForFileName(name) + '/';}
+    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+
+    String getDataPath() const override { return full_path(); }
 
 private:
     String path;
     String name;
-    NamesAndTypesListPtr columns;
 
     size_t max_compress_block_size;
 
@@ -69,12 +68,9 @@ protected:
     StorageStripeLog(
         const std::string & path_,
         const std::string & name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         bool attach,
-        size_t max_compress_block_size_ = DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        size_t max_compress_block_size_);
 };
 
 }

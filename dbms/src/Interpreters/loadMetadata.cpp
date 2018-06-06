@@ -18,6 +18,7 @@
 #include <Databases/DatabaseOrdinary.h>
 
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>
@@ -35,13 +36,14 @@ static void executeCreateQuery(
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.attach = true;
     ast_create_query.database = database;
 
     InterpreterCreateQuery interpreter(ast, context);
+    interpreter.setInternal(true);
     if (pool)
         interpreter.setDatabaseLoadingThreadpool(*pool);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
@@ -135,7 +137,7 @@ void loadMetadataSystem(Context & context)
         Poco::File(global_path + "data/" SYSTEM_DATABASE).createDirectories();
         Poco::File(global_path + "metadata/" SYSTEM_DATABASE).createDirectories();
 
-        auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE);
+        auto system_database = std::make_shared<DatabaseOrdinary>(SYSTEM_DATABASE, global_path + "metadata/" SYSTEM_DATABASE, context);
         context.addDatabase(SYSTEM_DATABASE, system_database);
     }
 

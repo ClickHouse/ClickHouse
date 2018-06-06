@@ -17,8 +17,9 @@ class PrettyBlockOutputStream : public IBlockOutputStream
 {
 public:
     /// no_escapes - do not use ANSI escape sequences - to display in the browser, not in the console.
-    PrettyBlockOutputStream(WriteBuffer & ostr_, bool no_escapes_, size_t max_rows_, const Context & context_);
+    PrettyBlockOutputStream(WriteBuffer & ostr_, const Block & header_, bool no_escapes_, size_t max_rows_, const Context & context_);
 
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -32,6 +33,7 @@ protected:
     void writeExtremes();
 
     WriteBuffer & ostr;
+    const Block header;
     size_t max_rows;
     size_t total_rows = 0;
     size_t terminal_width = 0;

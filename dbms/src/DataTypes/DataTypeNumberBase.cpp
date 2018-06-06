@@ -30,7 +30,7 @@ static void deserializeText(IColumn & column, ReadBuffer & istr)
 {
     T x;
 
-    if constexpr (std::is_integral<T>::value && std::is_arithmetic<T>::value)
+    if constexpr (std::is_integral_v<T> && std::is_arithmetic_v<T>)
         readIntTextUnsafe(x, istr);
     else
         readText(x, istr);
@@ -61,7 +61,7 @@ void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer &
 template <typename T>
 static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
 {
-    if constexpr (std::is_floating_point<T>::value)
+    if constexpr (std::is_floating_point_v<T>)
     {
         if (std::signbit(x))
         {
@@ -92,7 +92,7 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (std::is_integral<T>::value && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
+    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
         || (settings.output_format_json_quote_denormals && !is_finite);
 
     if (need_quote)
@@ -131,8 +131,8 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else
     {
-        static constexpr bool is_uint8 = std::is_same<T, UInt8>::value;
-        static constexpr bool is_int8 = std::is_same<T, Int8>::value;
+        static constexpr bool is_uint8 = std::is_same_v<T, UInt8>;
+        static constexpr bool is_int8 = std::is_same_v<T, Int8>;
 
         if (is_uint8 || is_int8)
         {

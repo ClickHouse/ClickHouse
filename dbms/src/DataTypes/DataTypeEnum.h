@@ -32,6 +32,7 @@ public:
     bool isCategorial() const override { return true; }
     bool isEnum() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
+    bool isComparable() const override { return true; }
 };
 
 
@@ -58,8 +59,7 @@ private:
     void fillMaps();
 
 public:
-    DataTypeEnum(const Values & values_);
-    DataTypeEnum(const DataTypeEnum & other);
+    explicit DataTypeEnum(const Values & values_);
 
     const Values & getValues() const { return values; }
     std::string getName() const override { return name; }
@@ -69,9 +69,7 @@ public:
     {
         const auto it = value_to_name_map.find(value);
         if (it == std::end(value_to_name_map))
-            throw Exception{
-                "Unexpected value " + toString(value) + " for type " + getName(),
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unexpected value " + toString(value) + " for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }
@@ -80,9 +78,7 @@ public:
     {
         const auto it = name_to_value_map.find(name);
         if (it == std::end(name_to_value_map))
-            throw Exception{
-                "Unknown element '" + name.toString() + "' for type " + getName(),
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Unknown element '" + name.toString() + "' for type " + getName(), ErrorCodes::LOGICAL_ERROR};
 
         return it->second;
     }
@@ -113,8 +109,10 @@ public:
     Field getDefault() const override;
     void insertDefaultInto(IColumn & column) const override;
 
+    bool equals(const IDataType & rhs) const override;
+
     bool textCanContainOnlyValidUTF8() const override;
-    size_t getSizeOfValueInMemory() const override { return sizeof(Field); }
+    size_t getSizeOfValueInMemory() const override { return sizeof(FieldType); }
 };
 
 

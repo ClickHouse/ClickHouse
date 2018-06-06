@@ -1,4 +1,5 @@
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -8,10 +9,11 @@
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageFactory.h>
+
 #include <Storages/VirtualColumnFactory.h>
 
 #include <Common/typeid_cast.h>
-#include "StorageReplicatedMergeTree.h"
 
 
 namespace DB
@@ -21,10 +23,11 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW;
 }
 
 
-static void extractDependentTable(const ASTSelectQuery & query, String & select_database_name, String & select_table_name)
+static void extractDependentTable(ASTSelectQuery & query, String & select_database_name, String & select_table_name)
 {
     auto query_table = query.table();
 
@@ -36,16 +39,20 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
         auto query_database = query.database();
 
         if (!query_database)
-            throw Exception("Logical error while creating StorageMaterializedView."
-                " Could not retrieve database name from select query.",
-                DB::ErrorCodes::LOGICAL_ERROR);
+            query.setDatabaseIfNeeded(select_database_name);
 
-        select_database_name = typeid_cast<const ASTIdentifier &>(*query_database).name;
         select_table_name = ast_id->name;
+        select_database_name = query_database ? typeid_cast<const ASTIdentifier &>(*query_database).name : select_database_name;
+
     }
-    else if (auto ast_select = typeid_cast<const ASTSelectQuery *>(query_table.get()))
+    else if (auto ast_select = typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
     {
-        extractDependentTable(*ast_select, select_database_name, select_table_name);
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        extractDependentTable(typeid_cast<ASTSelectQuery &>(*inner_query), select_database_name, select_table_name);
     }
     else
         throw Exception("Logical error while creating StorageMaterializedView."
@@ -54,18 +61,37 @@ static void extractDependentTable(const ASTSelectQuery & query, String & select_
 }
 
 
+static void checkAllowedQueries(const ASTSelectQuery & query)
+{
+    if (query.prewhere_expression || query.final() || query.sample_size())
+        throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    auto query_table = query.table();
+
+    if (!query_table)
+        return;
+
+    if (auto ast_select = typeid_cast<const ASTSelectWithUnionQuery *>(query_table.get()))
+    {
+        if (ast_select->list_of_selects->children.size() != 1)
+            throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+        const auto & inner_query = ast_select->list_of_selects->children.at(0);
+
+        checkAllowedQueries(typeid_cast<const ASTSelectQuery &>(*inner_query));
+    }
+}
+
+
 StorageMaterializedView::StorageMaterializedView(
     const String & table_name_,
     const String & database_name_,
     Context & local_context,
     const ASTCreateQuery & query,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     bool attach_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_), global_context(local_context.getGlobalContext()), columns(columns_)
+    : IStorage{columns_}, table_name(table_name_),
+    database_name(database_name_), global_context(local_context.getGlobalContext())
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -75,7 +101,16 @@ StorageMaterializedView::StorageMaterializedView(
             "You must specify where to save results of a MaterializedView query: either ENGINE or an existing table in a TO clause",
             ErrorCodes::INCORRECT_QUERY);
 
-    extractDependentTable(*query.select, select_database_name, select_table_name);
+    /// Default value, if only table name exist in the query
+    select_database_name = local_context.getCurrentDatabase();
+    if (query.select->list_of_selects->children.size() != 1)
+        throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
+
+    inner_query = query.select->list_of_selects->children.at(0);
+
+    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*inner_query);
+    extractDependentTable(select_query, select_database_name, select_table_name);
+    checkAllowedQueries(select_query);
 
     if (!select_table_name.empty())
         global_context.addDependency(
@@ -95,8 +130,6 @@ StorageMaterializedView::StorageMaterializedView(
         has_inner_table = true;
     }
 
-    inner_query = query.select->ptr();
-
     /// If there is an ATTACH request, then the internal table must already be connected.
     if (!attach_ && has_inner_table)
     {
@@ -111,6 +144,7 @@ StorageMaterializedView::StorageMaterializedView(
         try
         {
             InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
+            create_interpreter.setInternal(true);
             create_interpreter.execute();
         }
         catch (...)
@@ -170,14 +204,73 @@ void StorageMaterializedView::drop()
     }
 }
 
+void StorageMaterializedView::checkStatementCanBeForwarded() const
+{
+    if (!has_inner_table)
+        throw Exception(
+            "MATERIALIZED VIEW targets existing table " + target_database_name + "." + target_table_name + ". "
+            + "Execute the statement directly on it.", ErrorCodes::INCORRECT_QUERY);
+}
+
 bool StorageMaterializedView::optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context)
 {
+    checkStatementCanBeForwarded();
     return getTargetTable()->optimize(query, partition, final, deduplicate, context);
+}
+
+void StorageMaterializedView::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->dropPartition(query, partition, detach, context);
+}
+
+void StorageMaterializedView::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->clearColumnInPartition(partition, column_name, context);
+}
+
+void StorageMaterializedView::attachPartition(const ASTPtr & partition, bool part, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->attachPartition(partition, part, context);
+}
+
+void StorageMaterializedView::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->freezePartition(partition, with_name, context);
+}
+
+void StorageMaterializedView::shutdown()
+{
+    /// Make sure the dependency is removed after DETACH TABLE
+    global_context.removeDependency(
+        DatabaseAndTableName(select_database_name, select_table_name),
+        DatabaseAndTableName(database_name, table_name));
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
     return global_context.getTable(target_database_name, target_table_name);
+}
+
+bool StorageMaterializedView::checkTableCanBeDropped() const
+{
+    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
+    return has_inner_table ? getTargetTable()->checkTableCanBeDropped() : true;
+}
+
+
+void registerStorageMaterializedView(StorageFactory & factory)
+{
+    factory.registerStorage("MaterializedView", [](const StorageFactory::Arguments & args)
+    {
+        /// Pass local_context here to convey setting for inner table
+        return StorageMaterializedView::create(
+            args.table_name, args.database_name, args.local_context, args.query,
+            args.columns, args.attach);
+    });
 }
 
 }

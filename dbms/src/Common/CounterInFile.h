@@ -9,7 +9,6 @@
 #include <Poco/File.h>
 #include <Poco/Exception.h>
 #include <mutex>
-#include <Poco/ScopedLock.h>
 
 #include <Common/Exception.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

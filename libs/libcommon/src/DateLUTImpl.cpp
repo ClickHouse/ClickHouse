@@ -1,5 +1,14 @@
-#include <civil_time.h>
+#if __has_include(<cctz/civil_time.h>)
+#include <cctz/civil_time.h> // bundled, debian
+#else
+#include <civil_time.h> // freebsd
+#endif
+
+#if __has_include(<cctz/time_zone.h>)
+#include <cctz/time_zone.h>
+#else
 #include <time_zone.h>
+#endif
 
 #include <common/DateLUTImpl.h>
 #include <Poco/Exception.h>
@@ -55,7 +64,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     {
         cctz::time_zone::civil_lookup lookup = cctz_time_zone.lookup(date);
 
-        start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);    /// Ambiguouty is possible.
+        start_of_day = std::chrono::system_clock::to_time_t(lookup.pre);    /// Ambiguity is possible.
 
         Values & values = lut[i];
         values.year = date.year();

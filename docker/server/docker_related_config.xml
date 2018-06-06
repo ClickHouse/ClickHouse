@@ -1,0 +1,12 @@
+<yandex>
+     <!-- Listen wildcard address to allow accepting connections from other containers and host network. -->
+    <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+    <listen_try>1</listen_try>
+
+    <!--
+    <logger>
+        <console>1</console>
+    </logger>
+    -->
+</yandex>

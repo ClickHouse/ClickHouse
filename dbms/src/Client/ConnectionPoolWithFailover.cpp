@@ -4,6 +4,7 @@
 #include <Poco/Net/DNS.h>
 
 #include <Common/getFQDNOrHostName.h>
+#include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/Settings.h>
 
@@ -39,14 +40,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
     for (size_t i = 0; i < nested_pools.size(); ++i)
     {
         ConnectionPool & connection_pool = dynamic_cast<ConnectionPool &>(*nested_pools[i]);
-        const std::string & host = connection_pool.getHost();
-
-        size_t hostname_difference = 0;
-        for (size_t i = 0; i < std::min(local_hostname.length(), host.length()); ++i)
-            if (local_hostname[i] != host[i])
-                ++hostname_difference;
-
-        hostname_differences[i] = hostname_difference;
+        hostname_differences[i] = getHostNameDifference(local_hostname, connection_pool.getHost());
     }
 }
 

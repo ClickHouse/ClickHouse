@@ -1,10 +1,11 @@
 #pragma once
 
 #include <shared_mutex>
-#include <Columns/ColumnArray.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <Interpreters/Limits.h>
+#include <Core/Block.h>
+#include <DataStreams/SizeLimits.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/SetVariants.h>
+#include <Interpreters/Context.h>
 #include <Parsers/IAST.h>
 #include <Storages/MergeTree/BoolMask.h>
 
@@ -15,47 +16,60 @@ namespace DB
 {
 
 struct Range;
+class FieldWithInfinity;
 
+using SetElements = std::vector<std::vector<Field>>;
+using SetElementsPtr = std::unique_ptr<SetElements>;
+
+class IFunctionBase;
+using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 /** Data structure for implementation of IN expression.
   */
 class Set
 {
 public:
-    Set(const Limits & limits) :
+    Set(const SizeLimits & limits) :
         log(&Logger::get("Set")),
-        max_rows(limits.max_rows_in_set),
-        max_bytes(limits.max_bytes_in_set),
-        overflow_mode(limits.set_overflow_mode)
+        limits(limits),
+        set_elements(std::make_unique<SetElements>())
     {
     }
 
     bool empty() const { return data.empty(); }
 
+    /** Set can be created either from AST or from a stream of data (subquery result).
+      */
+
     /** Create a Set from expression (specified literally in the query).
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
-      * 'create_ordered_set' - if true, create ordered vector of elements. For primary key to work.
+      * 'fill_set_elements' - if true, fill vector of elements. For primary key to work.
       */
-    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool create_ordered_set);
+    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool fill_set_elements);
 
-    // Returns false, if some limit was exceeded and no need to insert more data.
-    bool insertFromBlock(const Block & block, bool create_ordered_set = false);
+    /** Create a Set from stream.
+      * Call setHeader, then call insertFromBlock for each block.
+      */
+    void setHeader(const Block & header);
+
+    /// Returns false, if some limit was exceeded and no need to insert more data.
+    bool insertFromBlock(const Block & block, bool fill_set_elements);
 
     /** For columns of 'block', check belonging of corresponding rows to the set.
       * Return UInt8 column with the result.
       */
     ColumnPtr execute(const Block & block, bool negative) const;
 
-    std::string describe() const;
-
-    /// Check, if the Set could possibly contain elements for specified range.
-    BoolMask mayBeTrueInRange(const Range & range) const;
-
     size_t getTotalRowCount() const { return data.getTotalRowCount(); }
     size_t getTotalByteCount() const { return data.getTotalByteCount(); }
 
+    const DataTypes & getDataTypes() const { return data_types; }
+
+    SetElements & getSetElements() { return *set_elements.get(); }
+
 private:
+    size_t keys_size = 0;
     Sizes key_sizes;
 
     SetVariants data;
@@ -83,12 +97,7 @@ private:
     Logger * log;
 
     /// Limitations on the maximum size of the set
-    size_t max_rows;
-    size_t max_bytes;
-    OverflowMode overflow_mode;
-
-    /// If there is an array on the left side of IN. We check that at least one element of the array presents in the set.
-    void executeArray(const ColumnArray * key_column, ColumnUInt8::Container & vec_res, bool negative) const;
+    SizeLimits limits;
 
     /// If in the left part columns contains the same types as the elements of the set.
     void executeOrdinary(
@@ -97,14 +106,9 @@ private:
         bool negative,
         const PaddedPODArray<UInt8> * null_map) const;
 
-    /// Check whether the permissible sizes of keys set reached
-    bool checkSetSizeLimits() const;
-
-    /// Vector of ordered elements of `Set`.
+    /// Vector of elements of `Set`.
     /// It is necessary for the index to work on the primary key in the IN statement.
-    using OrderedSetElements = std::vector<Field>;
-    using OrderedSetElementsPtr = std::unique_ptr<OrderedSetElements>;
-    OrderedSetElementsPtr ordered_set_elements;
+    SetElementsPtr set_elements;
 
     /** Protects work with the set in the functions `insertFromBlock` and `execute`.
       * These functions can be called simultaneously from different threads only when using StorageSet,
@@ -112,7 +116,6 @@ private:
       * Therefore, the rest of the functions for working with set are not protected.
       */
     mutable std::shared_mutex rwlock;
-
 
     template <typename Method>
     void insertFromBlockImpl(
@@ -147,19 +150,41 @@ private:
         bool negative,
         size_t rows,
         ConstNullMapPtr null_map) const;
-
-    template <typename Method>
-    void executeArrayImpl(
-        Method & method,
-        const ColumnRawPtrs & key_columns,
-        const ColumnArray::Offsets & offsets,
-        ColumnUInt8::Container & vec_res,
-        bool negative,
-        size_t rows) const;
 };
 
 using SetPtr = std::shared_ptr<Set>;
 using ConstSetPtr = std::shared_ptr<const Set>;
 using Sets = std::vector<SetPtr>;
 
-}
+class IFunction;
+using FunctionPtr = std::shared_ptr<IFunction>;
+
+/// Class for mayBeTrueInRange function.
+class MergeTreeSetIndex
+{
+public:
+    /** Mapping for tuple positions from Set::set_elements to
+      * position of pk index and data type of this pk column
+      * and functions chain applied to this column.
+      */
+    struct KeyTuplePositionMapping
+    {
+        size_t tuple_index;
+        size_t key_index;
+        std::vector<FunctionBasePtr> functions;
+    };
+
+    MergeTreeSetIndex(const SetElements & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_);
+
+    size_t size() const { return ordered_set.size(); }
+
+    BoolMask mayBeTrueInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
+
+private:
+    using OrderedTuples = std::vector<std::vector<FieldWithInfinity>>;
+    OrderedTuples ordered_set;
+
+    std::vector<KeyTuplePositionMapping> indexes_mapping;
+};
+
+ }

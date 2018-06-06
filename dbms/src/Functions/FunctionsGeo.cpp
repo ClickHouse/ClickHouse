@@ -14,6 +14,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Common/ProfileEvents.h>
+#include <string>
+#include <memory>
+
 
 namespace ProfileEvents
 {
@@ -141,7 +144,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
 
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
@@ -247,27 +250,8 @@ template <typename Type>
 using Point = boost::geometry::model::d2::point_xy<Type>;
 
 template <typename Type>
-using PointInPolygonCrossingStrategy = boost::geometry::strategy::within::crossings_multiply<Point<Type>>;
-template <typename Type>
-using PointInPolygonWindingStrategy = boost::geometry::strategy::within::winding<Point<Type>>;
-template <typename Type>
-using PointInPolygonFranklinStrategy = boost::geometry::strategy::within::franklin<Point<Type>>;
-
-template <typename Type>
-using PointInPolygonCrossing = GeoUtils::PointInPolygon<PointInPolygonCrossingStrategy<Type>, Type>;
-template <typename Type>
-using PointInPolygonWinding = GeoUtils::PointInPolygon<PointInPolygonWindingStrategy<Type>, Type>;
-template <typename Type>
-using PointInPolygonFranklin = GeoUtils::PointInPolygon<PointInPolygonFranklinStrategy<Type>, Type>;
-template <typename Type>
 using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
 
-template <>
-const char * FunctionPointInPolygon<PointInPolygonCrossing>::name = "pointInPolygonCrossing";
-template <>
-const char * FunctionPointInPolygon<PointInPolygonWinding>::name = "pointInPolygonWinding";
-template <>
-const char * FunctionPointInPolygon<PointInPolygonFranklin>::name = "pointInPolygonFranklin";
 template <>
 const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
 
@@ -276,9 +260,6 @@ void registerFunctionsGeo(FunctionFactory & factory)
     factory.registerFunction<FunctionGreatCircleDistance>();
     factory.registerFunction<FunctionPointInEllipses>();
 
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonFranklin>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWinding>>();
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonCrossing>>();
     factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
 }
 }

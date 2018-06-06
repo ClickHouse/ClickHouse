@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Common/COWPtr.h>
+#include <boost/noncopyable.hpp>
 #include <Core/Field.h>
 
 
@@ -29,7 +30,7 @@ using DataTypes = std::vector<DataTypePtr>;
   *
   * DataType is totally immutable object. You can always share them.
   */
-class IDataType
+class IDataType : private boost::noncopyable
 {
 public:
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -39,7 +40,7 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual String getName() const { return getFamilyName(); };
+    virtual String getName() const { return getFamilyName(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -82,7 +83,7 @@ public:
         Type type;
 
         /// Index of tuple element, starting at 1.
-        size_t tuple_element = 0;
+        String tuple_element_name;
 
         Substream(Type type) : type(type) {}
     };
@@ -219,10 +220,7 @@ public:
     virtual void insertDefaultInto(IColumn & column) const;
 
     /// Checks that two instances belong to the same type
-    inline bool equals(const IDataType & rhs) const
-    {
-        return getName() == rhs.getName();
-    }
+    virtual bool equals(const IDataType & rhs) const = 0;
 
     virtual ~IDataType() {}
 
@@ -243,63 +241,71 @@ public:
     /** Can appear in table definition.
       * Counterexamples: Interval, Nothing.
       */
-    virtual bool cannotBeStoredInTables() const { return false; };
+    virtual bool cannotBeStoredInTables() const { return false; }
 
     /** In text formats that render "pretty" tables,
       *  is it better to align value right in table cell.
       * Examples: numbers, even nullable.
       */
-    virtual bool shouldAlignRightInPrettyFormats() const { return false; };
+    virtual bool shouldAlignRightInPrettyFormats() const { return false; }
 
     /** Does formatted value in any text format can contain anything but valid UTF8 sequences.
       * Example: String (because it can contain arbitary bytes).
       * Counterexamples: numbers, Date, DateTime.
       * For Enum, it depends.
       */
-    virtual bool textCanContainOnlyValidUTF8() const { return false; };
+    virtual bool textCanContainOnlyValidUTF8() const { return false; }
+
+    /** Is it possible to compare for less/greater, to calculate min/max?
+      * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
+      * The same for nullable of comparable types: they are comparable (but not totally-comparable).
+      */
+    virtual bool isComparable() const { return false; }
 
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */
-    virtual bool canBeComparedWithCollation() const { return false; };
+    virtual bool canBeComparedWithCollation() const { return false; }
 
     /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
-    virtual bool canBeUsedAsVersion() const { return false; };
+    virtual bool canBeUsedAsVersion() const { return false; }
 
-    /** Values of data type can be summed. Example: numbers, even nullable. Not Date/DateTime.
+    /** Values of data type can be summed (possibly with overflow, within the same data type).
+      * Example: numbers, even nullable. Not Date/DateTime. Not Enum.
+      * Enums can be passed to aggregate function 'sum', but the result is Int64, not Enum, so they are not summable.
       */
-    virtual bool isSummable() const { return false; };
+    virtual bool isSummable() const { return false; }
 
     /** Can be used in operations like bit and, bit shift, bit not, etc.
       */
-    virtual bool canBeUsedInBitOperations() const { return false; };
+    virtual bool canBeUsedInBitOperations() const { return false; }
 
     /** Can be used in boolean context (WHERE, HAVING).
       * UInt8, maybe nullable.
       */
-    virtual bool canBeUsedInBooleanContext() const { return false; };
+    virtual bool canBeUsedInBooleanContext() const { return false; }
 
     /** Integers, floats, not Nullable. Not Enums. Not Date/DateTime.
       */
-    virtual bool isNumber() const { return false; };
+    virtual bool isNumber() const { return false; }
 
     /** Integers. Not Nullable. Not Enums. Not Date/DateTime.
       */
-    virtual bool isInteger() const { return false; };
-    virtual bool isUnsignedInteger() const { return false; };
+    virtual bool isInteger() const { return false; }
+    virtual bool isUnsignedInteger() const { return false; }
 
-    virtual bool isDateOrDateTime() const { return false; };
+    virtual bool isDateOrDateTime() const { return false; }
 
     /** Numbers, Enums, Date, DateTime. Not nullable.
       */
-    virtual bool isValueRepresentedByNumber() const { return false; };
+    virtual bool isValueRepresentedByNumber() const { return false; }
 
     /** Integers, Enums, Date, DateTime. Not nullable.
       */
-    virtual bool isValueRepresentedByInteger() const { return false; };
+    virtual bool isValueRepresentedByInteger() const { return false; }
 
     /** Values are unambiguously identified by contents of contiguous memory region,
       *  that can be obtained by IColumn::getDataAt method.
@@ -308,22 +314,22 @@ public:
       *  (because Array(String) values became ambiguous if you concatenate Strings).
       * Counterexamples: Nullable, Tuple.
       */
-    virtual bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const { return false; };
+    virtual bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const { return false; }
 
     virtual bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const
     {
         return isValueRepresentedByNumber() || isFixedString();
-    };
+    }
 
-    virtual bool isString() const { return false; };
-    virtual bool isFixedString() const { return false; };
-    virtual bool isStringOrFixedString() const { return isString() || isFixedString(); };
+    virtual bool isString() const { return false; }
+    virtual bool isFixedString() const { return false; }
+    virtual bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
     /** Example: numbers, Date, DateTime, FixedString, Enum... Nullable and Tuple of such types.
       * Counterexamples: String, Array.
       * It's Ok to return false for AggregateFunction despite the fact that some of them have fixed size state.
       */
-    virtual bool haveMaximumSizeOfValue() const { return false; };
+    virtual bool haveMaximumSizeOfValue() const { return false; }
 
     /** Size in amount of bytes in memory. Throws an exception if not haveMaximumSizeOfValue.
       */
@@ -335,9 +341,9 @@ public:
 
     /** Integers (not floats), Enum, String, FixedString.
       */
-    virtual bool isCategorial() const { return false; };
+    virtual bool isCategorial() const { return false; }
 
-    virtual bool isEnum() const { return false; };
+    virtual bool isEnum() const { return false; }
 
     virtual bool isNullable() const { return false; }
 
@@ -347,7 +353,7 @@ public:
 
     /** If this data type cannot be wrapped in Nullable data type.
       */
-    virtual bool canBeInsideNullable() const { return false; };
+    virtual bool canBeInsideNullable() const { return false; }
 
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.

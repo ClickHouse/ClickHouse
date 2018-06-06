@@ -18,8 +18,6 @@ public:
     std::string getName() const override { return "SystemReplicationQueue"; }
     std::string getTableName() const override { return name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
@@ -30,7 +28,6 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
 
 protected:
     StorageSystemReplicationQueue(const std::string & name_);

@@ -1,5 +1,5 @@
 #include <Interpreters/ExternalLoader.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
@@ -14,6 +14,7 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int BAD_ARGUMENTS;
+extern const int EXTERNAL_LOADABLE_ALREADY_EXISTS;
 }
 
 
@@ -291,8 +292,11 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         object_it = loadable_objects.find(name);
                     }
 
+                    /// Object with the same name was declared in other config file.
                     if (object_it != std::end(loadable_objects) && object_it->second.origin != config_path)
-                        throw std::runtime_error{"Overriding " + object_name + " from file " + object_it->second.origin};
+                        throw Exception(object_name + " '" + name + "' from file " + config_path
+                                        + " already declared in file " + object_it->second.origin,
+                                        ErrorCodes::EXTERNAL_LOADABLE_ALREADY_EXISTS);
 
                     auto object_ptr = create(name, *config, key);
 
@@ -381,19 +385,33 @@ void ExternalLoader::reload(const std::string & name)
         throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
 }
 
-ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name) const
+ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & name, bool throw_on_error) const
 {
     const std::lock_guard<std::mutex> lock{map_mutex};
 
     const auto it = loadable_objects.find(name);
     if (it == std::end(loadable_objects))
-        throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+    {
+        if (throw_on_error)
+            throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+        return nullptr;
+    }
 
-    if (!it->second.loadable)
-        it->second.exception ? std::rethrow_exception(it->second.exception) :
-        throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
+    if (!it->second.loadable && throw_on_error)
+        it->second.exception ? std::rethrow_exception(it->second.exception)
+                             : throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
 
     return it->second.loadable;
+}
+
+ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name) const
+{
+    return getLoadableImpl(name, true);
+}
+
+ExternalLoader::LoadablePtr ExternalLoader::tryGetLoadable(const std::string & name) const
+{
+    return getLoadableImpl(name, false);
 }
 
 ExternalLoader::LockedObjectsMap ExternalLoader::getObjectsMap() const

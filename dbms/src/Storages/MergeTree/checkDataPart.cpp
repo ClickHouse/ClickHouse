@@ -69,8 +69,8 @@ public:
         readIntBinary(mrk_mark.offset_in_decompressed_block, mrk_hashing_buf);
 
         bool has_alternative_mark = false;
-        MarkInCompressedFile alternative_data_mark;
-        MarkInCompressedFile data_mark;
+        MarkInCompressedFile alternative_data_mark = {};
+        MarkInCompressedFile data_mark = {};
 
         /// If the mark should be exactly at the border of blocks, we can also use a mark pointing to the end of previous block,
         ///  and the beginning of next.

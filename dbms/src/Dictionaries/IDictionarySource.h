@@ -19,6 +19,9 @@ public:
     /// Returns an input stream with all the data available from this source.
     virtual BlockInputStreamPtr loadAll() = 0;
 
+    /// Returns an input stream with updated data available from this source.
+    virtual BlockInputStreamPtr loadUpdatedAll() = 0;
+
     /** Indicates whether this source supports "random access" loading of data
       *  loadId and loadIds can only be used if this function returns true.
       */
@@ -38,6 +41,9 @@ public:
 
     /// indicates whether the source has been modified since last load* operation
     virtual bool isModified() const = 0;
+
+    /// Returns true if update field is defined
+    virtual bool hasUpdateField() const = 0;
 
     virtual DictionarySourcePtr clone() const = 0;
 

@@ -23,12 +23,11 @@ try
         " FORMAT TabSeparated";
 
     ParserQueryWithOutput parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     std::cout << "Success." << std::endl;
     formatAST(*ast, std::cerr);
     std::cout << std::endl;
-    std::cout << std::endl << ast->getTreeID() << std::endl;
 
     return 0;
 }

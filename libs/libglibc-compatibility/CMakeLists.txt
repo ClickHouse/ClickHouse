@@ -10,6 +10,8 @@ musl/posix_spawn.c
 musl/futimens.c
 musl/syscall.s
 musl/syscall_ret.c
-musl/sched_cpucount.c)
+musl/sched_cpucount.c
+musl/glob.c
+musl/exp2f.c)
 
 add_subdirectory (tests)

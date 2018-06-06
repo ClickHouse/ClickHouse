@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Common/ZooKeeper/ZooKeeper.h>
+#include "ZooKeeper.h"
+#include "KeeperException.h"
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
@@ -34,87 +35,63 @@ public:
       *
       * identifier - if not empty, must uniquely (within same path) identify participant of leader election.
       * It means that different participants of leader election have different identifiers
-      *  and existence of more than one ephemeral node with same identifier indicates an error
-      *  (see cleanOldEphemeralNodes).
+      *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
     LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
         : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+        , log_name("LeaderElection (" + path + ")")
+        , log(&Logger::get(log_name))
     {
-        task_handle = pool.addTask("LeaderElection", [this] { threadFunction(); });
+        task = pool.createTask(log_name, [this] { threadFunction(); });
         createNode();
     }
 
-    void yield()
+    void shutdown()
     {
-        releaseNode();
-        createNode();
+        if (shutdown_called)
+            return;
+
+        shutdown_called = true;
+        task->deactivate();
     }
 
     ~LeaderElection()
     {
         releaseNode();
-        pool.removeTask(task_handle);
     }
 
 private:
     DB::BackgroundSchedulePool & pool;
-    DB::BackgroundSchedulePool::TaskHandle task_handle;
+    DB::BackgroundSchedulePool::TaskHolder task;
     std::string path;
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
     std::string identifier;
+    std::string log_name;
+    Logger * log;
 
     EphemeralNodeHolderPtr node;
     std::string node_name;
+
+    std::atomic<bool> shutdown_called {false};
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
 
     void createNode()
     {
+        shutdown_called = false;
         node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-        cleanOldEphemeralNodes();
-
-        task_handle->activate();
-        task_handle->schedule();
-    }
-
-    void cleanOldEphemeralNodes()
-    {
-        if (identifier.empty())
-            return;
-
-        /** If there are nodes with same identifier, remove them.
-          * Such nodes could still be alive after failed attempt of removal,
-          *  if it was temporary communication failure, that was continued for more than session timeout,
-          *  but ZK session is still alive for unknown reason, and someone still holds that ZK session.
-          * See comments in destructor of EphemeralNodeHolder.
-          */
-        Strings brothers = zookeeper.getChildren(path);
-        for (const auto & brother : brothers)
-        {
-            if (brother == node_name)
-                continue;
-
-            std::string brother_path = path + "/" + brother;
-            std::string brother_identifier = zookeeper.get(brother_path);
-
-            if (brother_identifier == identifier)
-            {
-                ProfileEvents::increment(ProfileEvents::ObsoleteEphemeralNode);
-                LOG_WARNING(&Logger::get("LeaderElection"), "Found obsolete ephemeral node for identifier "
-                    + identifier + ", removing: " + brother_path);
-                zookeeper.tryRemoveWithRetries(brother_path);
-            }
-        }
+        task->activate();
+        task->schedule();
     }
 
     void releaseNode()
     {
-        task_handle->deactivate();
+        shutdown();
         node = nullptr;
     }
 
@@ -137,18 +114,25 @@ private:
                 return;
             }
 
-            if (!zookeeper.exists(path + "/" + *(it - 1), nullptr, task_handle))
-                task_handle->schedule();
+            if (!zookeeper.existsWatch(path + "/" + *(it - 1), nullptr, task->getWatchCallback()))
+                task->schedule();
 
             success = true;
         }
+        catch (const KeeperException & e)
+        {
+            DB::tryLogCurrentException(log);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                return;
+        }
         catch (...)
         {
-            DB::tryLogCurrentException("LeaderElection");
+            DB::tryLogCurrentException(log);
         }
 
         if (!success)
-            task_handle->scheduleAfter(10 * 1000);
+            task->scheduleAfter(10 * 1000);
     }
 };
 

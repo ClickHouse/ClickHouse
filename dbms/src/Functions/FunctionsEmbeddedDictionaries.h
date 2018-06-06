@@ -19,6 +19,8 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 
@@ -218,7 +220,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -312,7 +316,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -446,7 +452,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -720,7 +728,9 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    bool isDeterministic() override { return false; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         RegionsNames::Language language = RegionsNames::Language::RU;
 

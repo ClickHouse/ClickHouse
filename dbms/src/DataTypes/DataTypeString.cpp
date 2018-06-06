@@ -285,15 +285,21 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 }
 
 
-void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
+void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
 {
-    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr, delimiter); });
 }
 
 
 MutableColumnPtr DataTypeString::createColumn() const
 {
     return ColumnString::create();
+}
+
+
+bool DataTypeString::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this);
 }
 
 

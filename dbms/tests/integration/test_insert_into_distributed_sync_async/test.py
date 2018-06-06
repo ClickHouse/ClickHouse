@@ -1,9 +1,12 @@
+#!/usr/bin/env python2
+import sys
+import os
 from contextlib import contextmanager
-from helpers.network import PartitionManager
-from helpers.test_tools import TSV
-
 import pytest
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from helpers.network import PartitionManager
+from helpers.test_tools import TSV
 from helpers.cluster import ClickHouseCluster
 from helpers.client import QueryRuntimeException, QueryTimeoutExceedException
 

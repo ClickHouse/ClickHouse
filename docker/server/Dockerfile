@@ -1,19 +1,19 @@
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 
-ARG repository="deb https://repo.yandex.ru/clickhouse/xenial/ dists/stable/main/binary-amd64/"
+ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
 ARG version=\*
 
 RUN apt-get update && \
-    apt-get install -y apt-transport-https tzdata && \
+    apt-get install -y apt-transport-https dirmngr && \
     mkdir -p /etc/apt/sources.list.d && \
+    apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    apt-get install --allow-unauthenticated -y clickhouse-server-common=$version clickhouse-server-base=$version && \
+    env DEBIAN_FRONTEND=noninteractive apt-get install --allow-unauthenticated -y clickhouse-server=$version clickhouse-common-static=$version libgcc-7-dev && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 
-RUN sed -i 's,<listen_host>127.0.0.1</listen_host>,<listen_host>0.0.0.0</listen_host>,' /etc/clickhouse-server/config.xml && \
-    sed -i 's,<listen_host>::1</listen_host>,,' /etc/clickhouse-server/config.xml
+COPY docker_related_config.xml /etc/clickhouse-server/config.d/
 RUN chown -R clickhouse /etc/clickhouse-server/
 
 USER clickhouse

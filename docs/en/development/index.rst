@@ -1,7 +1,0 @@
-ClickHouse Development
-======================
-
-.. toctree::
-    :glob:
-
-    *

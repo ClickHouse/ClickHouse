@@ -3,7 +3,7 @@
 #include <common/logger_useful.h>
 
 #include <Common/SipHash.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Quota.h>
 

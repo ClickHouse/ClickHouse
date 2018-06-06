@@ -5,10 +5,11 @@
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/IDataType.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
+#include <common/StringRef.h>
 
-#include <AggregateFunctions/IUnaryAggregateFunction.h>
+#include <AggregateFunctions/IAggregateFunction.h>
 
 
 namespace DB
@@ -23,12 +24,13 @@ namespace DB
 template <typename T>
 struct SingleValueDataFixed
 {
+private:
     using Self = SingleValueDataFixed<T>;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
 
-
+public:
     bool has() const
     {
         return has_value;
@@ -49,7 +51,7 @@ struct SingleValueDataFixed
             writeBinary(value, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & /*data_type*/)
+    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena *)
     {
         readBinary(has_value, buf);
         if (has())
@@ -57,96 +59,96 @@ struct SingleValueDataFixed
     }
 
 
-    void change(const IColumn & column, size_t row_num)
+    void change(const IColumn & column, size_t row_num, Arena *)
     {
         has_value = true;
         value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     }
 
     /// Assuming to.has()
-    void change(const Self & to)
+    void change(const Self & to, Arena *)
     {
         has_value = true;
         value = to.value;
     }
 
-    bool changeFirstTime(const IColumn & column, size_t row_num)
+    bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeFirstTime(const Self & to)
+    bool changeFirstTime(const Self & to, Arena * arena)
     {
         if (!has() && to.has())
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeEveryTime(const IColumn & column, size_t row_num)
+    bool changeEveryTime(const IColumn & column, size_t row_num, Arena * arena)
     {
-        change(column, row_num);
+        change(column, row_num, arena);
         return true;
     }
 
-    bool changeEveryTime(const Self & to)
+    bool changeEveryTime(const Self & to, Arena * arena)
     {
         if (to.has())
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfLess(const IColumn & column, size_t row_num)
+    bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] < value)
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfLess(const Self & to)
+    bool changeIfLess(const Self & to, Arena * arena)
     {
         if (to.has() && (!has() || to.value < value))
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfGreater(const IColumn & column, size_t row_num)
+    bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has() || static_cast<const ColumnVector<T> &>(column).getData()[row_num] > value)
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfGreater(const Self & to)
+    bool changeIfGreater(const Self & to, Arena * arena)
     {
         if (to.has() && (!has() || to.value > value))
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
@@ -168,27 +170,23 @@ struct SingleValueDataFixed
 /** For strings. Short strings are stored in the object itself, and long strings are allocated separately.
   * NOTE It could also be suitable for arrays of numbers.
   */
-struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
+struct SingleValueDataString
 {
+private:
     using Self = SingleValueDataString;
 
     Int32 size = -1;    /// -1 indicates that there is no value.
+    Int32 capacity = 0;    /// power of two or zero
+    char * large_data;
 
+public:
     static constexpr Int32 AUTOMATIC_STORAGE_SIZE = 64;
-    static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size);
+    static constexpr Int32 MAX_SMALL_STRING_SIZE = AUTOMATIC_STORAGE_SIZE - sizeof(size) - sizeof(capacity) - sizeof(large_data);
 
-    union __attribute__((__packed__, __aligned__(1)))
-    {
-        char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
-        char * __attribute__((__packed__, __aligned__(1))) large_data;
-    };
+private:
+    char small_data[MAX_SMALL_STRING_SIZE]; /// Including the terminating zero.
 
-    ~SingleValueDataString()
-    {
-        if (size > MAX_SMALL_STRING_SIZE)
-            free(large_data);
-    }
-
+public:
     bool has() const
     {
         return size >= 0;
@@ -219,7 +217,7 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
             buf.write(getData(), size);
     }
 
-    void read(ReadBuffer & buf, const IDataType & /*data_type*/)
+    void read(ReadBuffer & buf, const IDataType & /*data_type*/, Arena * arena)
     {
         Int32 rhs_size;
         readBinary(rhs_size, buf);
@@ -228,8 +226,7 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
         {
             if (rhs_size <= MAX_SMALL_STRING_SIZE)
             {
-                if (size > MAX_SMALL_STRING_SIZE)
-                    free(large_data);
+                /// Don't free large_data here.
 
                 size = rhs_size;
 
@@ -238,12 +235,11 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
             }
             else
             {
-                if (size < rhs_size)
+                if (capacity < rhs_size)
                 {
-                    if (size > MAX_SMALL_STRING_SIZE)
-                        free(large_data);
-
-                    large_data = reinterpret_cast<char *>(malloc(rhs_size));
+                    capacity = static_cast<UInt32>(roundUpToPowerOfTwoOrZero(rhs_size));
+                    /// Don't free large_data here.
+                    large_data = arena->alloc(capacity);
                 }
 
                 size = rhs_size;
@@ -252,22 +248,19 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
         }
         else
         {
-            if (size > MAX_SMALL_STRING_SIZE)
-                free(large_data);
+            /// Don't free large_data here.
             size = rhs_size;
         }
     }
 
     /// Assuming to.has()
-    void changeImpl(StringRef value)
+    void changeImpl(StringRef value, Arena * arena)
     {
         Int32 value_size = value.size;
 
         if (value_size <= MAX_SMALL_STRING_SIZE)
         {
-            if (size > MAX_SMALL_STRING_SIZE)
-                free(large_data);
-
+            /// Don't free large_data here.
             size = value_size;
 
             if (size > 0)
@@ -275,12 +268,11 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
         }
         else
         {
-            if (size < value_size)
+            if (capacity < value_size)
             {
-                if (size > MAX_SMALL_STRING_SIZE)
-                    free(large_data);
-
-                large_data = reinterpret_cast<char *>(malloc(value.size));
+                /// Don't free large_data here.
+                capacity = roundUpToPowerOfTwoOrZero(value_size);
+                large_data = arena->alloc(capacity);
             }
 
             size = value_size;
@@ -288,93 +280,93 @@ struct __attribute__((__packed__, __aligned__(1))) SingleValueDataString
         }
     }
 
-    void change(const IColumn & column, size_t row_num)
+    void change(const IColumn & column, size_t row_num, Arena * arena)
     {
-        changeImpl(static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num));
+        changeImpl(static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num), arena);
     }
 
-    void change(const Self & to)
+    void change(const Self & to, Arena * arena)
     {
-        changeImpl(to.getStringRef());
+        changeImpl(to.getStringRef(), arena);
     }
 
-    bool changeFirstTime(const IColumn & column, size_t row_num)
+    bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeFirstTime(const Self & to)
+    bool changeFirstTime(const Self & to, Arena * arena)
     {
         if (!has() && to.has())
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeEveryTime(const IColumn & column, size_t row_num)
+    bool changeEveryTime(const IColumn & column, size_t row_num, Arena * arena)
     {
-        change(column, row_num);
+        change(column, row_num, arena);
         return true;
     }
 
-    bool changeEveryTime(const Self & to)
+    bool changeEveryTime(const Self & to, Arena * arena)
     {
         if (to.has())
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfLess(const IColumn & column, size_t row_num)
+    bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) < getStringRef())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfLess(const Self & to)
+    bool changeIfLess(const Self & to, Arena * arena)
     {
         if (to.has() && (!has() || to.getStringRef() < getStringRef()))
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfGreater(const IColumn & column, size_t row_num)
+    bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has() || static_cast<const ColumnString &>(column).getDataAtWithTerminatingZero(row_num) > getStringRef())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfGreater(const Self & to)
+    bool changeIfGreater(const Self & to, Arena * arena)
     {
         if (to.has() && (!has() || to.getStringRef() > getStringRef()))
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
@@ -400,10 +392,12 @@ static_assert(
 /// For any other value types.
 struct SingleValueDataGeneric
 {
+private:
     using Self = SingleValueDataGeneric;
 
     Field value;
 
+public:
     bool has() const
     {
         return !value.isNull();
@@ -428,7 +422,7 @@ struct SingleValueDataGeneric
             writeBinary(false, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type)
+    void read(ReadBuffer & buf, const IDataType & data_type, Arena *)
     {
         bool is_not_null;
         readBinary(is_not_null, buf);
@@ -437,60 +431,60 @@ struct SingleValueDataGeneric
             data_type.deserializeBinary(value, buf);
     }
 
-    void change(const IColumn & column, size_t row_num)
+    void change(const IColumn & column, size_t row_num, Arena *)
     {
         column.get(row_num, value);
     }
 
-    void change(const Self & to)
+    void change(const Self & to, Arena *)
     {
         value = to.value;
     }
 
-    bool changeFirstTime(const IColumn & column, size_t row_num)
+    bool changeFirstTime(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeFirstTime(const Self & to)
+    bool changeFirstTime(const Self & to, Arena * arena)
     {
         if (!has() && to.has())
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeEveryTime(const IColumn & column, size_t row_num)
+    bool changeEveryTime(const IColumn & column, size_t row_num, Arena * arena)
     {
-        change(column, row_num);
+        change(column, row_num, arena);
         return true;
     }
 
-    bool changeEveryTime(const Self & to)
+    bool changeEveryTime(const Self & to, Arena * arena)
     {
         if (to.has())
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfLess(const IColumn & column, size_t row_num)
+    bool changeIfLess(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
@@ -507,22 +501,22 @@ struct SingleValueDataGeneric
         }
     }
 
-    bool changeIfLess(const Self & to)
+    bool changeIfLess(const Self & to, Arena * arena)
     {
         if (to.has() && (!has() || to.value < value))
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
             return false;
     }
 
-    bool changeIfGreater(const IColumn & column, size_t row_num)
+    bool changeIfGreater(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (!has())
         {
-            change(column, row_num);
+            change(column, row_num, arena);
             return true;
         }
         else
@@ -539,11 +533,11 @@ struct SingleValueDataGeneric
         }
     }
 
-    bool changeIfGreater(const Self & to)
+    bool changeIfGreater(const Self & to, Arena * arena)
     {
         if (to.has() && (!has() || to.value > value))
         {
-            change(to);
+            change(to, arena);
             return true;
         }
         else
@@ -572,8 +566,8 @@ struct AggregateFunctionMinData : Data
 {
     using Self = AggregateFunctionMinData<Data>;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfLess(column, row_num); }
-    bool changeIfBetter(const Self & to)                        { return this->changeIfLess(to); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeIfLess(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
 
     static const char * name() { return "min"; }
 };
@@ -583,8 +577,8 @@ struct AggregateFunctionMaxData : Data
 {
     using Self = AggregateFunctionMaxData<Data>;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeIfGreater(column, row_num); }
-    bool changeIfBetter(const Self & to)                        { return this->changeIfGreater(to); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeIfGreater(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
 
     static const char * name() { return "max"; }
 };
@@ -594,8 +588,8 @@ struct AggregateFunctionAnyData : Data
 {
     using Self = AggregateFunctionAnyData<Data>;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeFirstTime(column, row_num); }
-    bool changeIfBetter(const Self & to)                        { return this->changeFirstTime(to); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeFirstTime(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
 
     static const char * name() { return "any"; }
 };
@@ -605,8 +599,8 @@ struct AggregateFunctionAnyLastData : Data
 {
     using Self = AggregateFunctionAnyLastData<Data>;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num) { return this->changeEveryTime(column, row_num); }
-    bool changeIfBetter(const Self & to)                        { return this->changeEveryTime(to); }
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeEveryTime(column, row_num, arena); }
+    bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
 
     static const char * name() { return "anyLast"; }
 };
@@ -624,7 +618,7 @@ struct AggregateFunctionAnyHeavyData : Data
 
     using Self = AggregateFunctionAnyHeavyData<Data>;
 
-    bool changeIfBetter(const IColumn & column, size_t row_num)
+    bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
         if (this->isEqualTo(column, row_num))
         {
@@ -634,7 +628,7 @@ struct AggregateFunctionAnyHeavyData : Data
         {
             if (counter == 0)
             {
-                this->change(column, row_num);
+                this->change(column, row_num, arena);
                 ++counter;
                 return true;
             }
@@ -644,7 +638,7 @@ struct AggregateFunctionAnyHeavyData : Data
         return false;
     }
 
-    bool changeIfBetter(const Self & to)
+    bool changeIfBetter(const Self & to, Arena * arena)
     {
         if (this->isEqualTo(to))
         {
@@ -654,7 +648,7 @@ struct AggregateFunctionAnyHeavyData : Data
         {
             if (counter < to.counter)
             {
-                this->change(to);
+                this->change(to, arena);
                 return true;
             }
             else
@@ -669,9 +663,9 @@ struct AggregateFunctionAnyHeavyData : Data
         writeBinary(counter, buf);
     }
 
-    void read(ReadBuffer & buf, const IDataType & data_type)
+    void read(ReadBuffer & buf, const IDataType & data_type, Arena * arena)
     {
-        Data::read(buf, data_type);
+        Data::read(buf, data_type, arena);
         readBinary(counter, buf);
     }
 
@@ -680,12 +674,23 @@ struct AggregateFunctionAnyHeavyData : Data
 
 
 template <typename Data>
-class AggregateFunctionsSingleValue final : public IUnaryAggregateFunction<Data, AggregateFunctionsSingleValue<Data>>
+class AggregateFunctionsSingleValue final : public IAggregateFunctionDataHelper<Data, AggregateFunctionsSingleValue<Data>>
 {
 private:
     DataTypePtr type;
 
 public:
+    AggregateFunctionsSingleValue(const DataTypePtr & type) : type(type)
+    {
+        if (StringRef(Data::name()) == StringRef("min")
+            || StringRef(Data::name()) == StringRef("max"))
+        {
+            if (!type->isComparable())
+                throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName()
+                    + " because the values of that data type are not comparable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+    }
+
     String getName() const override { return Data::name(); }
 
     DataTypePtr getReturnType() const override
@@ -693,23 +698,14 @@ public:
         return type;
     }
 
-    void setArgument(const DataTypePtr & argument)
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
-        type = argument;
-
-        if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-            throw Exception("Illegal type " + type->getName() + " of argument of aggregate function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        this->data(place).changeIfBetter(*columns[0], row_num, arena);
     }
 
-
-    void addImpl(AggregateDataPtr place, const IColumn & column, size_t row_num, Arena *) const
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
-        this->data(place).changeIfBetter(column, row_num);
-    }
-
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
-    {
-        this->data(place).changeIfBetter(this->data(rhs));
+        this->data(place).changeIfBetter(this->data(rhs), arena);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -717,9 +713,9 @@ public:
         this->data(place).write(buf, *type.get());
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
     {
-        this->data(place).read(buf, *type.get());
+        this->data(place).read(buf, *type.get(), arena);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

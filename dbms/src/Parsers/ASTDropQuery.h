@@ -15,14 +15,12 @@ class ASTDropQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 public:
     bool detach{false};    /// DETACH query, not DROP.
     bool if_exists{false};
+    bool temporary{false};
     String database;
     String table;
 
-    ASTDropQuery() = default;
-    explicit ASTDropQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
-
     /** Get the text that identifies this element. */
-    String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; };
+    String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; }
 
     ASTPtr clone() const override
     {

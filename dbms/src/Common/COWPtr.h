@@ -1,7 +1,17 @@
 #pragma once
 
+#ifdef __clang__
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 #include <boost/smart_ptr/intrusive_ref_counter.hpp>
+
+#ifdef __clang__
+    #pragma clang diagnostic pop
+#endif
+
 #include <initializer_list>
 
 
@@ -66,6 +76,11 @@
   * In contrast, COWPtr is intended for the cases when you need to share states of large objects,
   * (when you usually will use std::shared_ptr) but you also want precise control over modification
   * of this shared state.
+  *
+  * Caveats:
+  * - after a call to 'mutate' method, you can still have a reference to immutable ptr somewhere.
+  * - as 'mutable_ptr' should be unique, it's refcount is redundant - probably it would be better
+  *   to use std::unique_ptr for it somehow.
   */
 template <typename Derived>
 class COWPtr : public boost::intrusive_ref_counter<Derived>
@@ -74,10 +89,28 @@ private:
     Derived * derived() { return static_cast<Derived *>(this); }
     const Derived * derived() const { return static_cast<const Derived *>(this); }
 
+    template <typename T>
+    class IntrusivePtr : public boost::intrusive_ptr<T>
+    {
+    public:
+        using boost::intrusive_ptr<T>::intrusive_ptr;
+
+        T & operator*() const & { return boost::intrusive_ptr<T>::operator*(); }
+        T && operator*() const && { return const_cast<typename std::remove_const<T>::type &&>(*boost::intrusive_ptr<T>::get()); }
+    };
+
 protected:
     template <typename T>
-    class mutable_ptr : public boost::intrusive_ptr<T>
+    class mutable_ptr : public IntrusivePtr<T>
     {
+    private:
+        using Base = IntrusivePtr<T>;
+
+        template <typename> friend class COWPtr;
+        template <typename, typename> friend class COWPtrHelper;
+
+        explicit mutable_ptr(T * ptr) : Base(ptr) {}
+
     public:
         /// Copy: not possible.
         mutable_ptr(const mutable_ptr &) = delete;
@@ -88,10 +121,11 @@ protected:
 
         /// Initializing from temporary of compatible type.
         template <typename U>
-        mutable_ptr(boost::intrusive_ptr<U> && other) : boost::intrusive_ptr<T>(std::move(other)) {}
+        mutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {}
 
         mutable_ptr() = default;
-        mutable_ptr(T * ptr) : boost::intrusive_ptr<T>(ptr) {}
+
+        mutable_ptr(const std::nullptr_t *) {}
     };
 
 public:
@@ -99,30 +133,50 @@ public:
 
 protected:
     template <typename T>
-    class immutable_ptr : public boost::intrusive_ptr<const T>
+    class immutable_ptr : public IntrusivePtr<const T>
     {
+    private:
+        using Base = IntrusivePtr<const T>;
+
+        template <typename> friend class COWPtr;
+        template <typename, typename> friend class COWPtrHelper;
+
+        explicit immutable_ptr(const T * ptr) : Base(ptr) {}
+
     public:
         /// Copy from immutable ptr: ok.
+        immutable_ptr(const immutable_ptr &) = default;
+        immutable_ptr & operator=(const immutable_ptr &) = default;
+
         template <typename U>
-        immutable_ptr(const boost::intrusive_ptr<const U> & other) : boost::intrusive_ptr<const T>(other) {}
+        immutable_ptr(const immutable_ptr<U> & other) : Base(other) {}
+
+        /// Move: ok.
+        immutable_ptr(immutable_ptr &&) = default;
+        immutable_ptr & operator=(immutable_ptr &&) = default;
+
+        /// Initializing from temporary of compatible type.
+        template <typename U>
+        immutable_ptr(immutable_ptr<U> && other) : Base(std::move(other)) {}
 
         /// Move from mutable ptr: ok.
         template <typename U>
-        immutable_ptr(boost::intrusive_ptr<U> && other) : boost::intrusive_ptr<const T>(std::move(other)) {}
+        immutable_ptr(mutable_ptr<U> && other) : Base(std::move(other)) {}
 
         /// Copy from mutable ptr: not possible.
         template <typename U>
-        immutable_ptr(const boost::intrusive_ptr<U> &) = delete;
+        immutable_ptr(const mutable_ptr<U> &) = delete;
 
         immutable_ptr() = default;
-        immutable_ptr(const T * ptr) : boost::intrusive_ptr<const T>(ptr) {}
+
+        immutable_ptr(const std::nullptr_t *) {}
     };
 
 public:
     using Ptr = immutable_ptr<Derived>;
 
     template <typename... Args>
-    static MutablePtr create(Args &&... args) { return new Derived(std::forward<Args>(args)...); }
+    static MutablePtr create(Args &&... args) { return MutablePtr(new Derived(std::forward<Args>(args)...)); }
 
     template <typename T>
     static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
@@ -142,6 +196,11 @@ public:
     MutablePtr assumeMutable() const
     {
         return const_cast<COWPtr*>(this)->getPtr();
+    }
+
+    Derived & assumeMutableRef() const
+    {
+        return const_cast<Derived &>(*derived());
     }
 };
 
@@ -181,12 +240,12 @@ public:
     using MutablePtr = typename Base::template mutable_ptr<Derived>;
 
     template <typename... Args>
-    static MutablePtr create(Args &&... args) { return new Derived(std::forward<Args>(args)...); }
+    static MutablePtr create(Args &&... args) { return MutablePtr(new Derived(std::forward<Args>(args)...)); }
 
     template <typename T>
     static MutablePtr create(std::initializer_list<T> && arg) { return create(std::forward<std::initializer_list<T>>(arg)); }
 
-    typename Base::MutablePtr clone() const override { return new Derived(*derived()); }
+    typename Base::MutablePtr clone() const override { return typename Base::MutablePtr(new Derived(*derived())); }
 };
 
 
@@ -206,6 +265,6 @@ public:
   * 3. Store subobjects as immutable ptrs. Implement copy-constructor to do shallow copy.
   * But reimplement 'mutate' method, so it will call 'mutate' of all subobjects (do deep mutate).
   * It will guarantee, that mutable object have all subobjects unshared.
-  * From non-const method, you can modify subobjects with 'assumeMutable' method.
+  * From non-const method, you can modify subobjects with 'assumeMutableRef' method.
   * Drawback: it's more complex than other solutions.
   */

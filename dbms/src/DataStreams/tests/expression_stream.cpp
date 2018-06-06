@@ -2,6 +2,7 @@
 #include <iomanip>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadHelpers.h>
 
 #include <Storages/System/StorageSystemNumbers.h>
 
@@ -31,7 +32,7 @@ try
     std::string input = "SELECT number, number / 3, number * number";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     Context context = Context::createGlobal();
 
@@ -56,7 +57,7 @@ try
 
     WriteBufferFromOStream out1(std::cout);
     RowOutputStreamPtr out2 = std::make_shared<TabSeparatedRowOutputStream>(out1, expression->getSampleBlock());
-    BlockOutputStreamFromRowOutputStream out(out2);
+    BlockOutputStreamFromRowOutputStream out(out2, expression->getSampleBlock());
 
     {
         Stopwatch stopwatch;

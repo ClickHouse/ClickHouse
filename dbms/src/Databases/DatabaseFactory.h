@@ -13,7 +13,7 @@ public:
     static DatabasePtr get(
         const String & engine_name,
         const String & database_name,
-        const String & path,
+        const String & metadata_path,
         Context & context);
 };
 

@@ -4,6 +4,8 @@
 #include <Core/Defines.h>
 #include <common/MultiVersion.h>
 #include <ext/shared_ptr_helper.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 
 namespace Poco
@@ -17,28 +19,11 @@ struct DictionaryStructure;
 struct IDictionaryBase;
 class ExternalDictionaries;
 
-class StorageDictionary : private ext::shared_ptr_helper<StorageDictionary>, public IStorage
+class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
 public:
-    static StoragePtr create(const String & table_name_,
-        Context & context_,
-        const ASTCreateQuery & query,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_);
-
-    static StoragePtr create(const String & table_name,
-        NamesAndTypesListPtr columns,
-        const NamesAndTypesList & materialized_columns,
-        const NamesAndTypesList & alias_columns,
-        const ColumnDefaults & column_defaults,
-        const DictionaryStructure & dictionary_structure,
-        const String & dictionary_name);
-
     std::string getName() const override { return "Dictionary"; }
     std::string getTableName() const override { return table_name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     BlockInputStreams read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -47,42 +32,40 @@ public:
         unsigned threads = 1) override;
 
     void drop() override {}
-    static NamesAndTypesListPtr getNamesAndTypes(const DictionaryStructure & dictionaryStructure);
+    static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
+
+    template <typename ForwardIterator>
+    static std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end)
+    {
+        std::string description;
+        {
+            WriteBufferFromString buffer(description);
+            bool first = true;
+            for (; begin != end; ++begin)
+            {
+                if (!first)
+                    buffer << ", ";
+                first = false;
+
+                buffer << begin->name << ' ' << begin->type->getName();
+            }
+        }
+
+        return description;
+    }
 
 private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 
     String table_name;
-    NamesAndTypesListPtr columns;
     String dictionary_name;
     Poco::Logger * logger;
 
-    void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionaryStructure) const;
-
-    template <typename ForwardIterator>
-    std::string generateNamesAndTypesDescription(ForwardIterator begin, ForwardIterator end) const
-    {
-        if (begin == end)
-        {
-            return "";
-        }
-        std::string description;
-        for (; begin != end; ++begin)
-        {
-            description += ", ";
-            description += begin->name;
-            description += ' ';
-            description += begin->type->getName();
-        }
-        return description.substr(2, description.size());
-    }
+    void checkNamesAndTypesCompatibleWithDictionary(const DictionaryStructure & dictionary_structure) const;
 
 protected:
     StorageDictionary(const String & table_name_,
-        NamesAndTypesListPtr columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         const DictionaryStructure & dictionary_structure_,
         const String & dictionary_name_);
 };

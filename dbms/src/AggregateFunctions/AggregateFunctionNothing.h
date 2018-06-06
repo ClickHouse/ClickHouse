@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <Columns/IColumn.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -11,7 +12,7 @@ namespace DB
 
 /** Aggregate function that takes arbitary number of arbitary arguments and does nothing.
   */
-class AggregateFunctionNothing final : public IAggregateFunction
+class AggregateFunctionNothing final : public IAggregateFunctionHelper<AggregateFunctionNothing>
 {
 public:
     String getName() const override
@@ -21,15 +22,7 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeNothing>();
-    }
-
-    void setArguments(const DataTypes &) override
-    {
-    }
-
-    void setParameters(const Array &) override
-    {
+        return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>());
     }
 
     void create(AggregateDataPtr) const override
@@ -75,12 +68,6 @@ public:
     {
         to.insertDefault();
     }
-
-    static void addFree(const IAggregateFunction *, AggregateDataPtr, const IColumn **, size_t, Arena *)
-    {
-    }
-
-    IAggregateFunction::AddFunc getAddressOfAddFunction() const override final { return &addFree; }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
 };

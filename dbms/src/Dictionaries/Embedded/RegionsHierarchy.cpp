@@ -42,7 +42,7 @@ void RegionsHierarchy::reload()
     RegionID max_region_id = 0;
 
 
-    auto regions_reader = data_source->createReader(); 
+    auto regions_reader = data_source->createReader();
 
     RegionEntry region_entry;
     while (regions_reader->readNext(region_entry))

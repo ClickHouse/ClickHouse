@@ -4,23 +4,32 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionSequenceCount(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionSequenceCount(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    if (!AggregateFunctionSequenceCount::sufficientArgs(argument_types.size()))
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (params.size() != 1)
+        throw Exception{"Aggregate function " + name + " requires exactly one parameter.",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    return std::make_shared<AggregateFunctionSequenceCount>();
+    String pattern = params.front().safeGet<std::string>();
+    return std::make_shared<AggregateFunctionSequenceCount>(argument_types, pattern);
 }
 
-AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & name, const DataTypes & argument_types, const Array & /*parameters*/)
+AggregateFunctionPtr createAggregateFunctionSequenceMatch(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
-    if (!AggregateFunctionSequenceMatch::sufficientArgs(argument_types.size()))
-        throw Exception("Incorrect number of arguments for aggregate function " + name, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    if (params.size() != 1)
+        throw Exception{"Aggregate function " + name + " requires exactly one parameter.",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-    return std::make_shared<AggregateFunctionSequenceMatch>();
+    String pattern = params.front().safeGet<std::string>();
+    return std::make_shared<AggregateFunctionSequenceMatch>(argument_types, pattern);
 }
 
 }

@@ -1,8 +1,7 @@
+#pragma once
+#include <Core/Types.h>
 #include <IO/ReadBuffer.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -18,44 +17,19 @@ struct ReplicatedMergeTreeAddress
     String database;
     String table;
 
-    ReplicatedMergeTreeAddress() {}
-    ReplicatedMergeTreeAddress(const String & str)
+    ReplicatedMergeTreeAddress() = default;
+    explicit ReplicatedMergeTreeAddress(const String & str)
     {
         fromString(str);
     }
 
-    void writeText(WriteBuffer & out) const
-    {
-        out
-            << "host: " << escape << host << '\n'
-            << "port: " << replication_port << '\n'
-            << "tcp_port: " << queries_port << '\n'
-            << "database: " << escape << database << '\n'
-            << "table: " << escape << table << '\n';
-    }
+    void writeText(WriteBuffer & out) const;
 
-    void readText(ReadBuffer & in)
-    {
-        in
-            >> "host: " >> escape >> host >> "\n"
-            >> "port: " >> replication_port >> "\n"
-            >> "tcp_port: " >> queries_port >> "\n"
-            >> "database: " >> escape >> database >> "\n"
-            >> "table: " >> escape >> table >> "\n";
-    }
+    void readText(ReadBuffer & in);
 
-    String toString() const
-    {
-        WriteBufferFromOwnString out;
-        writeText(out);
-        return out.str();
-    }
+    String toString() const;
 
-    void fromString(const String & str)
-    {
-        ReadBufferFromString in(str);
-        readText(in);
-    }
+    void fromString(const String & str);
 };
 
 }

@@ -4,6 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/castColumn.h>
+#include <vector>
 
 
 namespace DB
@@ -21,9 +22,9 @@ void registerFunctionsConditional(FunctionFactory & factory)
     factory.registerFunction<FunctionCaseWithExpression>();
 
     /// These are obsolete function names.
-    factory.registerFunction("caseWithExpr", FunctionCaseWithExpression::create);
-    factory.registerFunction("caseWithoutExpr", FunctionMultiIf::create);
-    factory.registerFunction("caseWithoutExpression", FunctionMultiIf::create);
+    factory.registerFunction<FunctionCaseWithExpression>("caseWithExpr");
+    factory.registerFunction<FunctionMultiIf>("caseWithoutExpr");
+    factory.registerFunction<FunctionMultiIf>("caseWithoutExpression");
 }
 
 
@@ -40,7 +41,7 @@ String FunctionMultiIf::getName() const
 }
 
 
-void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     /** We will gather values from columns in branches to result column,
       *  depending on values of conditions.
@@ -123,7 +124,7 @@ void FunctionMultiIf::executeImpl(Block & block, const ColumnNumbers & args, siz
             break;
     }
 
-    size_t rows = block.rows();
+    size_t rows = input_rows_count;
     MutableColumnPtr res = return_type->createColumn();
 
     for (size_t i = 0; i < rows; ++i)
@@ -218,7 +219,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
         types_of_branches.emplace_back(arg);
     });
 
-    DataTypePtr common_type_of_branches = getLeastCommonType(types_of_branches);
+    DataTypePtr common_type_of_branches = getLeastSupertype(types_of_branches);
 
     return have_nullable_condition
         ? makeNullable(common_type_of_branches)
@@ -251,15 +252,15 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
     /// get the return type of a transform function.
 
     /// Get the return types of the arrays that we pass to the transform function.
-    DataTypes src_array_types;
-    DataTypes dst_array_types;
+    ColumnsWithTypeAndName src_array_types;
+    ColumnsWithTypeAndName dst_array_types;
 
     for (size_t i = 1; i < (args.size() - 1); ++i)
     {
         if ((i % 2) != 0)
-            src_array_types.push_back(args[i]);
+            src_array_types.push_back({nullptr, args[i], {}});
         else
-            dst_array_types.push_back(args[i]);
+            dst_array_types.push_back({nullptr, args[i], {}});
     }
 
     FunctionArray fun_array{context};
@@ -269,10 +270,12 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
 
     /// Finally get the return type of the transform function.
     FunctionTransform fun_transform;
-    return fun_transform.getReturnType({args.front(), src_array_type, dst_array_type, args.back()});
+    ColumnsWithTypeAndName transform_args = {{nullptr, args.front(), {}}, {nullptr, src_array_type, {}},
+                                             {nullptr, dst_array_type, {}}, {nullptr, args.back(), {}}};
+    return fun_transform.getReturnType(transform_args);
 }
 
-void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result)
+void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     if (!args.size())
         throw Exception{"Function " + getName() + " expects at least 1 arguments",
@@ -288,22 +291,22 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
 
     /// Create the arrays required by the transform function.
     ColumnNumbers src_array_args;
-    DataTypes src_array_types;
+    ColumnsWithTypeAndName src_array_types;
 
     ColumnNumbers dst_array_args;
-    DataTypes dst_array_types;
+    ColumnsWithTypeAndName dst_array_types;
 
     for (size_t i = 1; i < (args.size() - 1); ++i)
     {
         if ((i % 2) != 0)
         {
             src_array_args.push_back(args[i]);
-            src_array_types.push_back(block.getByPosition(args[i]).type);
+            src_array_types.push_back(block.getByPosition(args[i]));
         }
         else
         {
             dst_array_args.push_back(args[i]);
-            dst_array_types.push_back(block.getByPosition(args[i]).type);
+            dst_array_types.push_back(block.getByPosition(args[i]));
         }
     }
 
@@ -320,14 +323,14 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
     size_t dst_array_pos = temp_block.columns();
     temp_block.insert({nullptr, dst_array_type, ""});
 
-    fun_array.execute(temp_block, src_array_args, src_array_pos);
-    fun_array.execute(temp_block, dst_array_args, dst_array_pos);
+    fun_array.execute(temp_block, src_array_args, src_array_pos, input_rows_count);
+    fun_array.execute(temp_block, dst_array_args, dst_array_pos, input_rows_count);
 
     /// Execute transform.
     FunctionTransform fun_transform;
 
     ColumnNumbers transform_args{args.front(), src_array_pos, dst_array_pos, args.back()};
-    fun_transform.execute(temp_block, transform_args, result);
+    fun_transform.execute(temp_block, transform_args, result, input_rows_count);
 
     /// Put the result into the original block.
     block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);

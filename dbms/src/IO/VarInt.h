@@ -104,7 +104,7 @@ inline void readVarInt(Int16 & x, ReadBuffer & istr)
 }
 
 template <typename T>
-inline typename std::enable_if<!std::is_same<T, UInt64>::value, void>::type
+inline std::enable_if_t<!std::is_same_v<T, UInt64>, void>
 readVarUInt(T & x, ReadBuffer & istr)
 {
     UInt64 tmp;

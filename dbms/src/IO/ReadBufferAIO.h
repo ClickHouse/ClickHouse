@@ -1,12 +1,13 @@
 #pragma once
 
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Core/Defines.h>
 #include <Common/AIO.h>
 #include <Common/CurrentMetrics.h>
-
 #include <string>
 #include <limits>
 #include <unistd.h>
@@ -107,3 +108,5 @@ private:
 };
 
 }
+
+#endif

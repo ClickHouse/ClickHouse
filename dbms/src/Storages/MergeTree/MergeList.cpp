@@ -35,7 +35,7 @@ MergeInfo MergeListElement::getInfo() const
     res.table = table;
     res.result_part_name = result_part_name;
     res.elapsed = watch.elapsedSeconds();
-    res.progress = progress;
+    res.progress = progress.load(std::memory_order_relaxed);
     res.num_parts = num_parts;
     res.total_size_bytes_compressed = total_size_bytes_compressed;
     res.total_size_marks = total_size_marks;

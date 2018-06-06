@@ -3,6 +3,8 @@
 #include <Common/setThreadName.h>
 #include <Poco/Timestamp.h>
 
+#include <random>
+
 
 namespace DB
 {
@@ -14,33 +16,39 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
-    : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)"))
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeCleanupThread)")
+    , log(&Logger::get(log_name))
 {
-    task_handle = storage.context.getSchedulePool().addTask("ReplicatedMergeTreeCleanupThread", [this]{ run(); });
-    task_handle->schedule();
-}
-
-ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
-{
-    storage.context.getSchedulePool().removeTask(task_handle);
+    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task->schedule();
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000;
+    const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000
+        + std::uniform_int_distribution<UInt64>(0, storage.data.settings.cleanup_delay_period_random_add * 1000)(rng);
 
     try
     {
         iterate();
     }
+    catch (const zkutil::KeeperException & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            return;
+    }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    task_handle->scheduleAfter(CLEANUP_SLEEP_MS);
+    task->scheduleAfter(CLEANUP_SLEEP_MS);
+
 }
+
 
 void ReplicatedMergeTreeCleanupThread::iterate()
 {
@@ -49,7 +57,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 
     /// This is loose condition: no problem if we actually had lost leadership at this moment
     ///  and two replicas will try to do cleanup simultaneously.
-    if (storage.is_leader_node)
+    if (storage.is_leader)
     {
         clearOldLogs();
         clearOldBlocks();
@@ -92,15 +100,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    zkutil::Ops ops;
+    zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
     {
-        ops.emplace_back(std::make_unique<zkutil::Op::Remove>(storage.zookeeper_path + "/log/" + entries[i], -1));
+        ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/log/" + entries[i], -1));
 
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
-            ops.emplace_back(std::make_unique<zkutil::Op::Check>(storage.zookeeper_path + "/replicas", stat.version));
+            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
             zookeeper->multi(ops);
             ops.clear();
         }
@@ -145,7 +153,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
-    std::vector<std::pair<String, zkutil::ZooKeeper::TryRemoveFuture>> try_remove_futures;
+    std::vector<std::pair<String, std::future<zkutil::RemoveResponse>>> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
@@ -155,13 +163,13 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     for (auto & pair : try_remove_futures)
     {
         const String & path = pair.first;
-        int32_t rc = pair.second.get();
-        if (rc == ZNOTEMPTY)
+        int32_t rc = pair.second.get().error;
+        if (rc == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY)
         {
-             /// Can happen if there are leftover block nodes with children created by previous server versions.
+            /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);
         }
-        else if (rc != ZOK)
+        else if (rc)
             LOG_WARNING(log,
                 "Error while deleting ZooKeeper path `" << path << "`: " + zkutil::ZooKeeper::error2string(rc) << ", ignoring.");
     }
@@ -178,7 +186,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
 
     Strings blocks;
     zkutil::Stat stat;
-    if (ZOK != zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
+    if (zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     /// Clear already deleted blocks from the cache, cached_block_ctime should be subset of blocks
@@ -200,7 +208,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
                                    << " to clear old ones from ZooKeeper.");
     }
 
-    std::vector<std::pair<String, zkutil::ZooKeeper::ExistsFuture>> exists_futures;
+    std::vector<std::pair<String, std::future<zkutil::ExistsResponse>>> exists_futures;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);
@@ -219,8 +227,8 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     /// Put fetched stats into the cache
     for (auto & elem : exists_futures)
     {
-        zkutil::ZooKeeper::StatAndExists status = elem.second.get();
-        if (status.exists)
+        auto status = elem.second.get();
+        if (status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
         {
             cached_block_stats.emplace(elem.first, status.stat.ctime);
             timed_blocks.emplace_back(elem.first, status.stat.ctime);

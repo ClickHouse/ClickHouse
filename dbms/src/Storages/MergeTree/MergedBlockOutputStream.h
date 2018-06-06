@@ -105,6 +105,8 @@ public:
 
     std::string getPartPath() const;
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     /// If the data is pre-sorted.
     void write(const Block & block) override;
 
@@ -119,9 +121,6 @@ public:
             MergeTreeData::MutableDataPartPtr & new_part,
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
-
-    /// How many rows are already written.
-    size_t getRowsCount() const { return rows_count; }
 
 private:
     void init();
@@ -148,14 +147,17 @@ private:
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
+    /// skip_offsets: used when ALTERing columns if we know that array offsets are not altered.
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
+        MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
 
+    Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writeSuffix() override;
     MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
 
 private:
+    Block header;
     String part_path;
 
     bool initialized = false;

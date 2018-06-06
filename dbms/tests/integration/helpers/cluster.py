@@ -10,6 +10,8 @@ import time
 import errno
 from dicttoxml import dicttoxml
 import xml.dom.minidom
+from kazoo.client import KazooClient
+from kazoo.exceptions import KazooException
 
 import docker
 from docker.errors import ContainerError
@@ -46,15 +48,17 @@ class ClickHouseCluster:
 
         self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
-        self.pre_zookkeeper_commands = []
+        self.base_mysql_cmd = []
+        self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
-
+        self.with_mysql = False
+        
         self.docker_client = None
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False,
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False, with_mysql=False,
         clickhouse_path_dir=None, hostname=None):
         """Add an instance to the cluster.
 
@@ -73,7 +77,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper,
-            self.zookeeper_config_path, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
+            self.zookeeper_config_path, with_mysql, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -82,6 +86,12 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+        
+        if with_mysql and not self.with_mysql:
+            self.with_mysql = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+            self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
 
         return instance
 
@@ -89,6 +99,12 @@ class ClickHouseCluster:
     def get_instance_docker_id(self, instance_name):
         # According to how docker-compose names containers.
         return self.project_name + '_' + instance_name + '_1'
+
+
+    def get_instance_ip(self, instance_name):
+        docker_id = self.get_instance_docker_id(instance_name)
+        handle = self.docker_client.containers.get(docker_id)
+        return handle.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
 
 
     def start(self, destroy_dirs=True):
@@ -113,21 +129,26 @@ class ClickHouseCluster:
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
             subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
-            for command in self.pre_zookkeeper_commands:
-                self.run_zookeeper_client_command(command, repeats=5)
+            for command in self.pre_zookeeper_commands:
+                self.run_kazoo_commands_with_retries(command, repeats=5)
+
+        if self.with_mysql and self.base_mysql_cmd:
+            subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
+
+        # Uncomment for debugging
+        #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
 
         subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
             instance.docker_client = self.docker_client
-
-            container = self.docker_client.containers.get(instance.docker_id)
-            instance.ip_address = container.attrs['NetworkSettings']['Networks'].values()[0]['IPAddress']
+            instance.ip_address = self.get_instance_ip(instance.name)
 
             instance.wait_for_start(start_deadline)
 
             instance.client = Client(instance.ip_address, command=self.client_bin_path)
+
 
         self.is_up = True
 
@@ -146,20 +167,26 @@ class ClickHouseCluster:
             instance.client = None
 
 
-    def run_zookeeper_client_command(self, command, zoo_node = 'zoo1', repeats=1, sleep_for=1):
-        cli_cmd = 'zkCli.sh  ' + command
-        zoo_name = self.get_instance_docker_id(zoo_node)
-        network_mode = 'container:' + zoo_name
-        for i in range(0, repeats - 1):
+    def get_kazoo_client(self, zoo_instance_name):
+        zk = KazooClient(hosts=self.get_instance_ip(zoo_instance_name))
+        zk.start()
+        return zk
+
+
+    def run_kazoo_commands_with_retries(self, kazoo_callback, zoo_instance_name = 'zoo1', repeats=1, sleep_for=1):
+        for i in range(repeats - 1):
             try:
-                return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
-            except ContainerError:
+                kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+                return
+            except KazooException as e:
+                print repr(e)
                 time.sleep(sleep_for)
 
-        return self.docker_client.containers.run('zookeeper', cli_cmd, remove=True, network_mode=network_mode)
+        kazoo_callback(self.get_kazoo_client(zoo_instance_name))
+
 
     def add_zookeeper_startup_command(self, command):
-        self.pre_zookkeeper_commands.append(command)
+        self.pre_zookeeper_commands.append(command)
 
 
 DOCKER_COMPOSE_TEMPLATE = '''
@@ -186,7 +213,7 @@ services:
 class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
-            with_zookeeper, zookeeper_config_path, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
+            with_zookeeper, zookeeper_config_path, with_mysql, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -204,6 +231,8 @@ class ClickHouseInstance:
 
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
+
+        self.with_mysql = with_mysql
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
@@ -224,11 +253,13 @@ class ClickHouseInstance:
 
     def exec_in_container(self, cmd, **kwargs):
         container = self.get_docker_handle()
-        handle = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
-        output = self.docker_client.api.exec_start(handle).decode('utf8')
-        exit_code = self.docker_client.api.exec_inspect(handle)['ExitCode']
+        exec_id = self.docker_client.api.exec_create(container.id, cmd, **kwargs)
+        output = self.docker_client.api.exec_start(exec_id, detach=False)
+
+        output = output.decode('utf8')
+        exit_code = self.docker_client.api.exec_inspect(exec_id)['ExitCode']
         if exit_code:
-            raise Exception('Cmd {} failed! Return code {}. Output {}'.format(' '.join(cmd), exit_code, output))
+            raise Exception('Cmd "{}" failed! Return code {}. Output: {}'.format(' '.join(cmd), exit_code, output))
         return output
 
 
@@ -252,7 +283,6 @@ class ClickHouseInstance:
 
         while True:
             status = self.get_docker_handle().status
-
             if status == 'exited':
                 raise Exception("Instance `{}' failed to start. Container status: {}".format(self.name, status))
 
@@ -339,9 +369,15 @@ class ClickHouseInstance:
         logs_dir = p.abspath(p.join(self.path, 'logs'))
         os.mkdir(logs_dir)
 
-        depends_on = '[]'
+        depends_on = []
+
+        if self.with_mysql:
+            depends_on.append("mysql1")
+
         if self.with_zookeeper:
-            depends_on = '["zoo1", "zoo2", "zoo3"]'
+            depends_on.append("zoo1")
+            depends_on.append("zoo2")
+            depends_on.append("zoo3")
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -353,7 +389,7 @@ class ClickHouseInstance:
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
                 logs_dir=logs_dir,
-                depends_on=depends_on))
+                depends_on=str(depends_on)))
 
 
     def destroy_dir(self):

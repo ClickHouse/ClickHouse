@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/StringSearcher.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Types.h>
 #include <Poco/UTF8Encoding.h>
 #include <Poco/Unicode.h>

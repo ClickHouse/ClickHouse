@@ -1,10 +1,8 @@
 #!/bin/bash
 
-NPROC=8
-
-mkdir -p /server/build
-cd /server/build
-
-CXX=g++-5 CC=gcc-5 cmake /server
-
-make -j $(NPROC)
+#ccache -s
+mkdir -p /server/build_docker
+cd /server/build_docker
+cmake -G Ninja /server -DENABLE_TESTS=1
+cmake --build .
+env TEST_OPT="--skip long compile $TEST_OPT" ctest -V -j $(nproc || grep -c ^processor /proc/cpuinfo)

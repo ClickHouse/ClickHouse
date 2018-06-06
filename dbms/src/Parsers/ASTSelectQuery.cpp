@@ -14,173 +14,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNION_ALL_COLUMN_ALIAS_MISMATCH;
-    extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
-    extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
-
-ASTSelectQuery::ASTSelectQuery(const StringRange range_) : ASTQueryWithOutput(range_)
-{
-}
-
-bool ASTSelectQuery::hasArrayJoin(const ASTPtr & ast)
-{
-    if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*ast))
-        if (function->kind == ASTFunction::ARRAY_JOIN)
-            return true;
-
-    for (const auto & child : ast->children)
-        if (hasArrayJoin(child))
-            return true;
-
-    return false;
-}
-
-bool ASTSelectQuery::hasAsterisk() const
-{
-    for (const auto & ast : select_expression_list->children)
-        if (typeid_cast<const ASTAsterisk *>(&*ast) != nullptr)
-            return true;
-
-    return false;
-}
-
-void ASTSelectQuery::renameColumns(const ASTSelectQuery & source)
-{
-    const ASTs & from = source.select_expression_list->children;
-    ASTs & to = select_expression_list->children;
-
-    if (from.size() != to.size())
-        throw Exception("Size mismatch in UNION ALL chain",
-                        DB::ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
-
-    for (size_t i = 0; i < from.size(); ++i)
-    {
-        /// If the column has an alias, it must match the name of the original column.
-        /// Otherwise, we assign it an alias, if required.
-        if (!to[i]->tryGetAlias().empty())
-        {
-            if (to[i]->tryGetAlias() != from[i]->getAliasOrColumnName())
-                throw Exception("Column alias mismatch in UNION ALL chain",
-                                DB::ErrorCodes::UNION_ALL_COLUMN_ALIAS_MISMATCH);
-        }
-        else if (to[i]->getColumnName() != from[i]->getAliasOrColumnName())
-            to[i]->setAlias(from[i]->getAliasOrColumnName());
-    }
-}
-
-void ASTSelectQuery::rewriteSelectExpressionList(const Names & required_column_names)
-{
-    ASTPtr result = std::make_shared<ASTExpressionList>();
-    ASTs asts = select_expression_list->children;
-
-    /// Create a mapping.
-
-    /// The element of mapping.
-    struct Arrow
-    {
-        Arrow() = default;
-        explicit Arrow(size_t to_position_) :
-            to_position(to_position_), is_selected(true)
-        {
-        }
-        size_t to_position = 0;
-        bool is_selected = false;
-    };
-
-    /// Mapping of one SELECT expression to another.
-    using Mapping = std::vector<Arrow>;
-
-    Mapping mapping(asts.size());
-
-    /// On which position in the SELECT expression is the corresponding column from `column_names`.
-    std::vector<size_t> positions_of_required_columns(required_column_names.size());
-
-    /// We will not throw out expressions that contain the `arrayJoin` function.
-    for (size_t i = 0; i < asts.size(); ++i)
-    {
-        if (hasArrayJoin(asts[i]))
-            mapping[i] = Arrow(i);
-    }
-
-    for (size_t i = 0; i < required_column_names.size(); ++i)
-    {
-        size_t j = 0;
-        for (; j < asts.size(); ++j)
-        {
-            if (asts[j]->getAliasOrColumnName() == required_column_names[i])
-            {
-                positions_of_required_columns[i] = j;
-                break;
-            }
-        }
-        if (j == asts.size())
-            throw Exception("Error while rewriting expression list for select query."
-                " Could not find alias: " + required_column_names[i],
-                DB::ErrorCodes::UNKNOWN_IDENTIFIER);
-    }
-
-    std::vector<size_t> positions_of_required_columns_in_subquery_order = positions_of_required_columns;
-    std::sort(positions_of_required_columns_in_subquery_order.begin(), positions_of_required_columns_in_subquery_order.end());
-
-    for (size_t i = 0; i < required_column_names.size(); ++i)
-        mapping[positions_of_required_columns_in_subquery_order[i]] = Arrow(positions_of_required_columns[i]);
-
-
-    /// Construct a new expression.
-    for (const auto & arrow : mapping)
-    {
-        if (arrow.is_selected)
-            result->children.push_back(asts[arrow.to_position]->clone());
-    }
-
-    for (auto & child : children)
-    {
-        if (child == select_expression_list)
-        {
-            child = result;
-            break;
-        }
-    }
-    select_expression_list = result;
-
-    /** NOTE: It might seem that we could spoil the query by throwing an expression with an alias that is used somewhere else.
-        *       This can not happen, because this method is always called for a query, for which ExpressionAnalyzer was created at least once,
-        *       which ensures that all aliases in it are already set. Not quite obvious logic.
-        */
-}
 
 ASTPtr ASTSelectQuery::clone() const
-{
-    auto ptr = cloneImpl(true);
-
-    /// Set pointers to previous SELECT queries.
-    ASTPtr current = ptr;
-    static_cast<ASTSelectQuery *>(current.get())->prev_union_all = nullptr;
-    ASTPtr next = static_cast<ASTSelectQuery *>(current.get())->next_union_all;
-    while (next != nullptr)
-    {
-        ASTSelectQuery * next_select_query = static_cast<ASTSelectQuery *>(next.get());
-        next_select_query->prev_union_all = current.get();
-        current = next;
-        next = next_select_query->next_union_all;
-    }
-
-    cloneOutputOptions(*ptr);
-
-    return ptr;
-}
-
-std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneFirstSelect() const
-{
-    auto res = cloneImpl(false);
-    res->prev_union_all = nullptr;
-    return res;
-}
-
-std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_all) const
 {
     auto res = std::make_shared<ASTSelectQuery>(*this);
     res->children.clear();
@@ -189,7 +28,7 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
 
     /** NOTE Members must clone exactly in the same order,
         *  in which they were inserted into `children` in ParserSelectQuery.
-        * This is important because of the children's names the identifier (getTreeID) is compiled,
+        * This is important because of the children's names the identifier (getTreeHash) is compiled,
         *  which can be used for column identifiers in the case of subqueries in the IN statement.
         * For distributed query processing, in case one of the servers is localhost and the other one is not,
         *  localhost query is executed within the process and is cloned,
@@ -213,21 +52,11 @@ std::shared_ptr<ASTSelectQuery> ASTSelectQuery::cloneImpl(bool traverse_union_al
 
 #undef CLONE
 
-    if (traverse_union_all)
-    {
-        if (next_union_all)
-        {
-            res->next_union_all = static_cast<const ASTSelectQuery *>(&*next_union_all)->cloneImpl(true);
-            res->children.push_back(res->next_union_all);
-        }
-    }
-    else
-        res->next_union_all = nullptr;
-
     return res;
 }
 
-void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+
+void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
     frame.need_parens = false;
@@ -316,17 +145,6 @@ void ASTSelectQuery::formatQueryImpl(const FormatSettings & s, FormatState & sta
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
-    }
-
-    if (next_union_all)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "UNION ALL " << s.nl_or_ws << (s.hilite ? hilite_none : "");
-
-        // NOTE We can safely apply `static_cast` instead of `typeid_cast` because we know that in the `UNION ALL` chain
-        // there are only trees of type SELECT.
-        const ASTSelectQuery & next_ast = static_cast<const ASTSelectQuery &>(*next_union_all);
-
-        next_ast.formatImpl(s, state, frame);
     }
 }
 
@@ -524,11 +342,11 @@ void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
 
     if (table_expression->database_and_table_name->children.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
         ASTPtr table = table_expression->database_and_table_name;
 
         const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(StringRange(), database_name + "." + old_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + old_name, ASTIdentifier::Table);
         table_expression->database_and_table_name->children = {database, table};
     }
     else if (table_expression->database_and_table_name->children.size() != 2)
@@ -555,20 +373,18 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    ASTPtr table = std::make_shared<ASTIdentifier>(StringRange(), table_name, ASTIdentifier::Table);
+    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
 
     if (!database_name.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(StringRange(), database_name, ASTIdentifier::Database);
+        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
 
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
-            StringRange(), database_name + "." + table_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
         table_expression->database_and_table_name->children = {database, table};
     }
     else
     {
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(
-            StringRange(), table_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
     }
 }
 

@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionShardByHash::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
@@ -75,7 +75,7 @@ StoragePtr TableFunctionShardByHash::execute(const ASTPtr & ast_function, const 
 
     auto res = StorageDistributed::createWithOwnCluster(
         getName(),
-        std::make_shared<NamesAndTypesList>(getStructureOfRemoteTable(*shard, remote_database, remote_table, context)),
+        getStructureOfRemoteTable(*shard, remote_database, remote_table, context),
         remote_database,
         remote_table,
         shard,

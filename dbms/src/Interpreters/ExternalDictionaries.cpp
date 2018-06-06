@@ -14,10 +14,10 @@ namespace
         static ExternalLoaderConfigSettings settings;
         static std::once_flag flag;
 
-        std::call_once(flag, [] {
+        std::call_once(flag, []
+        {
             settings.external_config = "dictionary";
             settings.external_name = "name";
-
             settings.path_setting_name = "dictionaries_config";
         });
 

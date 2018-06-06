@@ -16,9 +16,6 @@ public:
     String default_specifier;
     ASTPtr default_expression;
 
-    ASTColumnDeclaration() = default;
-    ASTColumnDeclaration(const StringRange range) : IAST{range} {}
-
     String getID() const override { return "ColumnDeclaration_" + name; }
 
     ASTPtr clone() const override
@@ -34,7 +31,8 @@ public:
             res->children.push_back(res->type);
         }
 
-        if (default_expression) {
+        if (default_expression)
+        {
             res->default_expression = default_expression->clone();
             res->children.push_back(res->default_expression);
         }

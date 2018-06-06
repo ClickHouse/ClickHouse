@@ -9,6 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/PODArray.h>
+#include <Common/NaNUtils.h>
 #include <Poco/Exception.h>
 #include <pcg_random.hpp>
 
@@ -67,6 +68,9 @@ public:
 
     void insert(const T & v)
     {
+        if (isNaN(v))
+            return;
+
         sorted = false;
         ++total_values;
         if (samples.size() < sample_count)
@@ -232,6 +236,6 @@ private:
         if (OnEmpty == ReservoirSamplerOnEmpty::THROW)
             throw Poco::Exception("Quantile of empty ReservoirSampler");
         else
-            return NanLikeValueConstructor<ResultType, std::is_floating_point<ResultType>::value>::getValue();
+            return NanLikeValueConstructor<ResultType, std::is_floating_point_v<ResultType>>::getValue();
     }
 };

@@ -48,7 +48,7 @@ const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    hash.update(reinterpret_cast<const char *>(&data[n]), sizeof(T));
+    hash.update(data[n]);
 }
 
 template <typename T>
@@ -116,7 +116,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
 
         if (size > count)
-            memset(&new_col.data[count], static_cast<int>(value_type()), size - count);
+            memset(&new_col.data[count], static_cast<int>(value_type()), (size - count) * sizeof(value_type));
     }
 
     return std::move(res);
@@ -146,7 +146,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
     if (size != filt.size())
@@ -210,7 +210,7 @@ MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t r
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = data.size();
 
@@ -231,7 +231,7 @@ MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, siz
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
+ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())

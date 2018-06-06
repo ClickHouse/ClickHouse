@@ -15,6 +15,8 @@ class DataTypeUUID final : public DataTypeNumberBase<UInt128>
 public:
     const char * getFamilyName() const override { return "UUID"; }
 
+    bool equals(const IDataType & rhs) const override;
+
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;

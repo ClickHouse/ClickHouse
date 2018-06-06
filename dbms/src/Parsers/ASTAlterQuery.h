@@ -28,8 +28,11 @@ public:
 
         DROP_PARTITION,
         ATTACH_PARTITION,
+        REPLACE_PARTITION,
         FETCH_PARTITION,
         FREEZE_PARTITION,
+
+        DELETE,
 
         NO_TYPE,
     };
@@ -55,9 +58,13 @@ public:
           */
         ASTPtr primary_key;
 
-        /** In DROP PARTITION and RESHARD PARTITION queries, the value or ID of the partition is stored here.
+        /** Used in DROP PARTITION, RESHARD PARTITION and ATTACH PARTITION FROM queries.
+         *  The value or ID of the partition is stored here.
           */
         ASTPtr partition;
+
+        /// For DELETE WHERE: the predicate that filters the rows to delete.
+        ASTPtr predicate;
 
         bool detach = false;        /// true for DETACH PARTITION
 
@@ -75,6 +82,12 @@ public:
           */
         String with_name;
 
+        /// REPLACE(ATTACH) PARTITION partition FROM db.table
+        String from_database;
+        String from_table;
+        /// To distinguish REPLACE and ATTACH PARTITION partition FROM db.table
+        bool replace = true;
+
         /// deep copy
         void clone(Parameters & p) const;
     };
@@ -86,8 +99,6 @@ public:
 
 
     void addParameters(const Parameters & params);
-
-    explicit ASTAlterQuery(StringRange range_ = StringRange());
 
     /** Get the text that identifies this element. */
     String getID() const override;

@@ -5,8 +5,14 @@
 #include <Interpreters/PartLog.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <IO/Operators.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event DuplicatedInsertedBlocks;
+}
 
 namespace DB
 {
@@ -20,6 +26,8 @@ namespace ErrorCodes
     extern const int NO_ZOOKEEPER;
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_INSERT;
+    extern const int INSERT_WAS_DEDUPLICATED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 
@@ -31,6 +39,12 @@ ReplicatedMergeTreeBlockOutputStream::ReplicatedMergeTreeBlockOutputStream(
     /// The quorum value `1` has the same meaning as if it is disabled.
     if (quorum == 1)
         quorum = 0;
+}
+
+
+Block ReplicatedMergeTreeBlockOutputStream::getHeader() const
+{
+    return storage.getSampleBlock();
 }
 
 
@@ -49,9 +63,9 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
 {
     quorum_info.status_path = storage.zookeeper_path + "/quorum/status";
 
-    zkutil::ZooKeeper::TryGetFuture quorum_status_future = zookeeper->asyncTryGet(quorum_info.status_path);
-    zkutil::ZooKeeper::TryGetFuture is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
-    zkutil::ZooKeeper::TryGetFuture host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
+    std::future<zkutil::GetResponse> quorum_status_future = zookeeper->asyncTryGet(quorum_info.status_path);
+    std::future<zkutil::GetResponse> is_active_future = zookeeper->asyncTryGet(storage.replica_path + "/is_active");
+    std::future<zkutil::GetResponse> host_future = zookeeper->asyncTryGet(storage.replica_path + "/host");
 
     /// List of live replicas. All of them register an ephemeral node for leader_election.
 
@@ -72,18 +86,18 @@ void ReplicatedMergeTreeBlockOutputStream::checkQuorumPrecondition(zkutil::ZooKe
         */
 
     auto quorum_status = quorum_status_future.get();
-    if (quorum_status.exists)
-        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.value, ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
+    if (quorum_status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
+        throw Exception("Quorum for previous write has not been satisfied yet. Status: " + quorum_status.data, ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
 
     /// Both checks are implicitly made also later (otherwise there would be a race condition).
 
     auto is_active = is_active_future.get();
     auto host = host_future.get();
 
-    if (!is_active.exists || !host.exists)
+    if (is_active.error == ZooKeeperImpl::ZooKeeper::ZNONODE || host.error == ZooKeeperImpl::ZooKeeper::ZNONODE)
         throw Exception("Replica is not active right now", ErrorCodes::READONLY);
 
-    quorum_info.is_active_node_value = is_active.value;
+    quorum_info.is_active_node_value = is_active.data;
     quorum_info.is_active_node_version = is_active.stat.version;
     quorum_info.host_node_version = host.stat.version;
 }
@@ -94,7 +108,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     last_block_is_duplicate = false;
 
     /// TODO Is it possible to not lock the table structure here?
-    storage.data.delayInsertIfNeeded(&storage.restarting_thread->getWakeupEvent());
+    storage.data.delayInsertOrThrowIfNeeded(&storage.restarting_thread->getWakeupEvent());
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -122,7 +136,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
         if (deduplicate)
         {
             SipHash hash;
-            part->checksums.summaryDataChecksum(hash);
+            part->checksums.computeTotalChecksumDataOnly(hash);
             union
             {
                 char bytes[16];
@@ -141,10 +155,19 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
         }
 
-        commitPart(zookeeper, part, block_id);
+        try
+        {
+            commitPart(zookeeper, part, block_id);
 
-        if (auto part_log = storage.context.getPartLog(part->storage.getDatabaseName(), part->storage.getTableName()))
-            part_log->addNewPart(*part, watch.elapsed());
+            /// Set a special error code if the block is duplicate
+            int error = (deduplicate && last_block_is_duplicate) ? ErrorCodes::INSERT_WAS_DEDUPLICATED : 0;
+            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus(error));
+        }
+        catch (...)
+        {
+            PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+            throw;
+        }
     }
 }
 
@@ -153,7 +176,7 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 {
     last_block_is_duplicate = false;
 
-    /// NOTE No delay in this case. That's Ok.
+    /// NOTE: No delay in this case. That's Ok.
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);
@@ -163,10 +186,16 @@ void ReplicatedMergeTreeBlockOutputStream::writeExistingPart(MergeTreeData::Muta
 
     Stopwatch watch;
 
-    commitPart(zookeeper, part, "");
-
-    if (auto part_log = storage.context.getPartLog(part->storage.getDatabaseName(), part->storage.getTableName()))
-        part_log->addNewPart(*part, watch.elapsed());
+    try
+    {
+        commitPart(zookeeper, part, "");
+        PartLog::addNewPart(storage.context, part, watch.elapsed());
+    }
+    catch (...)
+    {
+        PartLog::addNewPart(storage.context, part, watch.elapsed(), ExecutionStatus::fromCurrentException(__PRETTY_FUNCTION__));
+        throw;
+    }
 }
 
 
@@ -177,9 +206,22 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
     /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
     /// We remove the lock just after renaming the part. In case of exception, block number will be marked as abandoned.
+    /// Also, make deduplication check. If a duplicate is detected, no nodes are created.
 
-    AbandonableLockInZooKeeper block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper);    /// 2 RTT
-    Int64 block_number = block_number_lock.getNumber();
+    /// Allocate new block number and check for duplicates
+    bool deduplicate_block = !block_id.empty();
+    String block_id_path = deduplicate_block ? storage.zookeeper_path + "/blocks/" + block_id : "";
+    auto block_number_lock = storage.allocateBlockNumber(part->info.partition_id, zookeeper, block_id_path);
+
+    if (!block_number_lock)
+    {
+        part->is_duplicate = true;
+        last_block_is_duplicate = true;
+        ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
+        return;
+    }
+
+    Int64 block_number = block_number_lock->getNumber();
 
     /// Set part attributes according to part_number. Prepare an entry for log.
 
@@ -187,12 +229,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     part->info.max_block = block_number;
     part->info.level = 0;
 
-    String part_name;
-    if (storage.data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        part_name = part->info.getPartNameV0(part->getMinDate(), part->getMaxDate());
-    else
-        part_name = part->info.getPartName();
-
+    String part_name = part->getNewName(part->info);
     part->name = part_name;
 
     StorageReplicatedMergeTree::LogEntry log_entry;
@@ -206,47 +243,18 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     /// Simultaneously add information about the part to all the necessary places in ZooKeeper and remove block_number_lock.
 
     /// Information about the part.
-    zkutil::Ops ops;
-    auto acl = zookeeper->getDefaultACL();
+    zkutil::Requests ops;
 
-    if (!block_id.empty())
-        ops.emplace_back(
-            std::make_unique<zkutil::Op::Create>(
-                storage.zookeeper_path + "/blocks/" + block_id,
-                toString(block_number),  /// We will able to know original part number for duplicate blocks, if we want.
-                acl,
-                zkutil::CreateMode::Persistent));
-
-    /// Information about the part, in the replica data.
-
-    ops.emplace_back(std::make_unique<zkutil::Op::Check>(
-        storage.zookeeper_path + "/columns",
-        storage.columns_version));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-        storage.replica_path + "/parts/" + part->name,
-        "",
-        acl,
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-        storage.replica_path + "/parts/" + part->name + "/columns",
-        part->columns.toString(),
-        acl,
-        zkutil::CreateMode::Persistent));
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
-        storage.replica_path + "/parts/" + part->name + "/checksums",
-        part->checksums.toString(),
-        acl,
-        zkutil::CreateMode::Persistent));
+    storage.getCommitPartOps(ops, part, block_id_path);
 
     /// Replication log.
-    ops.emplace_back(std::make_unique<zkutil::Op::Create>(
+    ops.emplace_back(zkutil::makeCreateRequest(
         storage.zookeeper_path + "/log/log-",
         log_entry.toString(),
-        acl,
         zkutil::CreateMode::PersistentSequential));
 
     /// Deletes the information that the block number is used for writing.
-    block_number_lock.getUnlockOps(ops);
+    block_number_lock->getUnlockOps(ops);
 
     /** If you need a quorum - create a node in which the quorum is monitored.
         * (If such a node already exists, then someone has managed to make another quorum record at the same time, but for it the quorum has not yet been reached.
@@ -267,15 +275,14 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
             */
 
         ops.emplace_back(
-            std::make_unique<zkutil::Op::Create>(
+            zkutil::makeCreateRequest(
                 quorum_info.status_path,
                 quorum_entry.toString(),
-                acl,
                 zkutil::CreateMode::Persistent));
 
         /// Make sure that during the insertion time, the replica was not reinitialized or disabled (when the server is finished).
         ops.emplace_back(
-            std::make_unique<zkutil::Op::Check>(
+            zkutil::makeCheckRequest(
                 storage.replica_path + "/is_active",
                 quorum_info.is_active_node_version));
 
@@ -283,7 +290,7 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         /// But then the `host` value will change. We will check this.
         /// It's great that these two nodes change in the same transaction (see MergeTreeRestartingThread).
         ops.emplace_back(
-            std::make_unique<zkutil::Op::Check>(
+            zkutil::makeCheckRequest(
                 storage.replica_path + "/host",
                 quorum_info.host_node_version));
     }
@@ -291,61 +298,57 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
     MergeTreeData::Transaction transaction; /// If you can not add a part to ZK, we'll remove it back from the working set.
     storage.data.renameTempPartAndAdd(part, nullptr, &transaction);
 
-    try
+    zkutil::Responses responses;
+    int32_t multi_code = zookeeper->tryMultiNoThrow(ops, responses); /// 1 RTT
+
+    if (multi_code == ZooKeeperImpl::ZooKeeper::ZOK)
     {
-        auto code = zookeeper->tryMulti(ops);   /// 1 RTT
-        if (code == ZOK)
+        transaction.commit();
+        storage.merge_selecting_task->schedule();
+
+        /// Lock nodes have been already deleted, do not delete them in destructor
+        block_number_lock->assumeUnlocked();
+    }
+    else if (zkutil::isUserError(multi_code))
+    {
+        String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
+
+        if (multi_code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && deduplicate_block && failed_op_path == block_id_path)
         {
-            transaction.commit();
-            storage.merge_selecting_handle->schedule();
+            /// Block with the same id have just appeared in table (or other replica), rollback thee insertion.
+            LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+
+            part->is_duplicate = true;
+            transaction.rollback();
+            last_block_is_duplicate = true;
+            ProfileEvents::increment(ProfileEvents::DuplicatedInsertedBlocks);
         }
-        else if (code == ZNODEEXISTS)
+        else if (multi_code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS && failed_op_path == quorum_info.status_path)
         {
-            /// If the block with such ID already exists in the table, rollback its insertion.
-            if (!block_id.empty() && zookeeper->exists(storage.zookeeper_path + "/blocks/" + block_id))
-            {
-                LOG_INFO(log, "Block with ID " << block_id << " already exists; ignoring it (removing part " << part->name << ")");
+            transaction.rollback();
 
-                part->is_duplicate = true;
-                transaction.rollback();
-                last_block_is_duplicate = true;
-            }
-            else if (zookeeper->exists(quorum_info.status_path))
-            {
-                transaction.rollback();
-
-                throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
-            }
-            else
-            {
-                /// if the node with the quorum existed, but was quickly removed.
-
-                throw Exception("Unexpected ZNODEEXISTS while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                    + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
-            }
+            throw Exception("Another quorum insert has been already started", ErrorCodes::UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE);
         }
         else
         {
-            throw Exception("Unexpected error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
-                + zkutil::ZooKeeper::error2string(code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+            /// NOTE: We could be here if the node with the quorum existed, but was quickly removed.
+            transaction.rollback();
+            throw Exception("Unexpected logical error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
+                            + zkutil::ZooKeeper::error2string(multi_code) + ", path " + failed_op_path,
+                            ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
         }
     }
-    catch (const zkutil::KeeperException & e)
+    else if (zkutil::isHardwareError(multi_code))
     {
-        /** If the connection is lost, and we do not know if the changes were applied, you can not delete the local part
-            *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-            */
-        if (e.code == ZOPERATIONTIMEOUT ||
-            e.code == ZCONNECTIONLOSS)
-        {
-            transaction.commit();
-            storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
-
-            /// We do not know whether or not data has been inserted.
-            throw Exception("Unknown status, client must retry. Reason: " + e.displayText(), ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
-        }
-
-        throw;
+        transaction.rollback();
+        throw Exception("Unrecoverable network error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
+                        + zkutil::ZooKeeper::error2string(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
+    }
+    else
+    {
+        transaction.rollback();
+        throw Exception("Unexpected ZooKeeper error while adding block " + toString(block_number) + " with ID '" + block_id + "': "
+                        + zkutil::ZooKeeper::error2string(multi_code), ErrorCodes::UNEXPECTED_ZOOKEEPER_ERROR);
     }
 
     if (quorum)
@@ -392,6 +395,11 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
 
         LOG_TRACE(log, "Quorum satisfied");
     }
+}
+
+void ReplicatedMergeTreeBlockOutputStream::writePrefix()
+{
+    storage.data.throwInsertIfNeeded();
 }
 
 

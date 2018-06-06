@@ -20,13 +20,13 @@ $ docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 yand
 $ docker run -it --rm --link some-clickhouse-server:clickhouse-server yandex/clickhouse-client --host clickhouse-server
 ```
 
-More information about [ClickHouse client](https://clickhouse.yandex/reference_en.html#Command-line%20client).
+More information about [ClickHouse client](https://clickhouse.yandex/docs/en/interfaces/cli/).
 
 ## Configuration
 
-Container exposes 8123 port for [HTTP interface](https://clickhouse.yandex/reference_en.html#HTTP%20interface) and 9000 port for [native client](https://clickhouse.yandex/reference_en.html#Native%20interface%20(TCP)).
+Container exposes 8123 port for [HTTP interface](https://clickhouse.yandex/docs/en/interfaces/http_interface/) and 9000 port for [native client](https://clickhouse.yandex/docs/en/interfaces/tcp/).
 
-ClickHouse configuration represented with a file "config.xml" ([documentation](https://clickhouse.yandex/reference_en.html#Configuration%20files))
+ClickHouse configuration represented with a file "config.xml" ([documentation](https://clickhouse.yandex/docs/en/operations/configuration_files/))
 
 ### start server instance with custom configuration
 ```bash

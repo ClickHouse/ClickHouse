@@ -38,7 +38,7 @@ try
     RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
 
     BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
-    BlockOutputStreamFromRowOutputStream block_output(row_output);
+    BlockOutputStreamFromRowOutputStream block_output(row_output, sample);
 
     copyData(block_input, block_output);
     return 0;

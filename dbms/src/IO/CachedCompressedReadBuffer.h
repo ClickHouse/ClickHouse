@@ -38,7 +38,7 @@ private:
 
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;
-    clockid_t clock_type;
+    clockid_t clock_type {};
 
 public:
     CachedCompressedReadBuffer(

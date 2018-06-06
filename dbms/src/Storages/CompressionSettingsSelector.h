@@ -2,7 +2,7 @@
 #include <IO/CompressionSettings.h>
 #include <IO/ReadHelpers.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB

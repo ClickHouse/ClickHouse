@@ -1,17 +1,27 @@
 #include <Storages/StorageFile.h>
+#include <Storages/StorageFactory.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+
 #include <DataStreams/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Common/escapeForFileName.h>
+#include <Common/typeid_cast.h>
 
 #include <fcntl.h>
 
+#include <Poco/Path.h>
+#include <Poco/File.h>
 
 namespace DB
 {
@@ -21,6 +31,11 @@ namespace ErrorCodes
     extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int DATABASE_ACCESS_DENIED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_IDENTIFIER;
+    extern const int INCORRECT_FILE_NAME;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 };
 
 
@@ -29,10 +44,22 @@ static std::string getTablePath(const std::string & db_dir_path, const std::stri
     return db_dir_path + escapeForFileName(table_name) + "/data." + escapeForFileName(format_name);
 }
 
-static void checkCreationIsAllowed(Context & context_global)
+/// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
+static void checkCreationIsAllowed(Context & context_global, const std::string & db_dir_path, const std::string & table_path, int table_fd)
 {
-    if (context_global.getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception("Using file descriptor or user specified path as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
+        return;
+
+    if (table_fd >= 0)
+        throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
+    else if (!startsWith(table_path, db_dir_path))
+        throw Exception("Part path " + table_path + " is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+
+    Poco::File table_path_poco_file = Poco::File(table_path);
+    if (!table_path_poco_file.exists())
+        throw Exception("File " + table_path + " is not exist", ErrorCodes::FILE_DOESNT_EXIST);
+    else if (table_path_poco_file.isDirectory())
+        throw Exception("File " + table_path + " must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
 
 
@@ -42,13 +69,10 @@ StorageFile::StorageFile(
         const std::string & db_dir_path,
         const std::string & table_name_,
         const std::string & format_name_,
-        const NamesAndTypesListPtr & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         Context & context_)
-    : IStorage(materialized_columns_, alias_columns_, column_defaults_),
-    table_name(table_name_), format_name(format_name_), columns(columns_), context_global(context_), table_fd(table_fd_)
+    : IStorage(columns_),
+    table_name(table_name_), format_name(format_name_), context_global(context_), table_fd(table_fd_)
 {
     if (table_fd < 0) /// Will use file
     {
@@ -56,12 +80,19 @@ StorageFile::StorageFile(
 
         if (!table_path_.empty()) /// Is user's file
         {
-            checkCreationIsAllowed(context_global);
-            path = Poco::Path(table_path_).absolute().toString();
+            Poco::Path poco_path = Poco::Path(table_path_);
+            if (poco_path.isRelative())
+                poco_path = Poco::Path(db_dir_path, poco_path);
+
+            path = poco_path.absolute().toString();
+            checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
             is_db_table = false;
         }
         else /// Is DB's file
         {
+            if (db_dir_path.empty())
+                throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
             path = getTablePath(db_dir_path, table_name, format_name);
             is_db_table = true;
             Poco::File(Poco::Path(path).parent()).createDirectories();
@@ -69,7 +100,8 @@ StorageFile::StorageFile(
     }
     else /// Will use FD
     {
-        checkCreationIsAllowed(context_global);
+        checkCreationIsAllowed(context_global, db_dir_path, path, table_fd);
+
         is_db_table = false;
         use_table_fd = true;
 
@@ -83,7 +115,6 @@ StorageFile::StorageFile(
 class StorageFileBlockInputStream : public IProfilingBlockInputStream
 {
 public:
-
     StorageFileBlockInputStream(StorageFile & storage_, const Context & context, size_t max_block_size)
         : storage(storage_)
     {
@@ -130,22 +161,12 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "File(" << storage.format_name << ", ";
-        if (!storage.path.empty())
-            res_stream << storage.path;
-        else
-            res_stream << storage.table_fd;
-        res_stream << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
         return reader->read();
     }
+
+    Block getHeader() const override { return reader->getHeader(); }
 
     void readPrefixImpl() override
     {
@@ -180,7 +201,6 @@ BlockInputStreams StorageFile::read(
 class StorageFileBlockOutputStream : public IBlockOutputStream
 {
 public:
-
     explicit StorageFileBlockOutputStream(StorageFile & storage_)
         : storage(storage_), lock(storage.rwlock)
     {
@@ -200,6 +220,8 @@ public:
 
         writer = FormatFactory().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
     }
+
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -254,6 +276,59 @@ void StorageFile::rename(const String & new_path_to_db, const String & /*new_dat
     Poco::File(path).renameTo(path_new);
 
     path = std::move(path_new);
+}
+
+
+void registerStorageFile(StorageFactory & factory)
+{
+    factory.registerStorage("File", [](const StorageFactory::Arguments & args)
+    {
+        ASTs & engine_args = args.engine_args;
+
+        if (!(engine_args.size() == 1 || engine_args.size() == 2))
+            throw Exception(
+                "Storage File requires 1 or 2 arguments: name of used format and source.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
+        String format_name = static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>();
+
+        int source_fd = -1;
+        String source_path;
+        if (engine_args.size() >= 2)
+        {
+            /// Will use FD if engine_args[1] is int literal or identifier with std* name
+
+            if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(engine_args[1].get()))
+            {
+                if (identifier->name == "stdin")
+                    source_fd = STDIN_FILENO;
+                else if (identifier->name == "stdout")
+                    source_fd = STDOUT_FILENO;
+                else if (identifier->name == "stderr")
+                    source_fd = STDERR_FILENO;
+                else
+                    throw Exception("Unknown identifier '" + identifier->name + "' in second arg of File storage constructor",
+                                    ErrorCodes::UNKNOWN_IDENTIFIER);
+            }
+            else if (const ASTLiteral * literal = typeid_cast<const ASTLiteral *>(engine_args[1].get()))
+            {
+                auto type = literal->value.getType();
+                if (type == Field::Types::Int64)
+                    source_fd = static_cast<int>(literal->value.get<Int64>());
+                else if (type == Field::Types::UInt64)
+                    source_fd = static_cast<int>(literal->value.get<UInt64>());
+                else if (type == Field::Types::String)
+                    source_path = literal->value.get<String>();
+            }
+        }
+
+        return StorageFile::create(
+            source_path, source_fd,
+            args.data_path,
+            args.table_name, format_name, args.columns,
+            args.context);
+    });
 }
 
 }

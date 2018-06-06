@@ -21,33 +21,12 @@ namespace DB
 class AggregatingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-    AggregatingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
-    {
-    }
+    AggregatingSortedBlockInputStream(
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_);
 
     String getName() const override { return "AggregatingSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "AggregatingSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
-    const SortDescription & getSortDescription() const override { return description; }
 
 protected:
     /// Can return 1 more records than max_block_size.

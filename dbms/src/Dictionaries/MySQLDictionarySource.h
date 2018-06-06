@@ -35,6 +35,8 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override;
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
     BlockInputStreamPtr loadKeys(
@@ -44,11 +46,15 @@ public:
 
     bool supportsSelectiveLoad() const override;
 
+    bool hasUpdateField() const override;
+
     DictionarySourcePtr clone() const override;
 
     std::string toString() const override;
 
 private:
+    std::string getUpdateFieldAndDate();
+
     static std::string quoteForLike(const std::string s);
 
     LocalDateTime getLastModification() const;
@@ -57,10 +63,13 @@ private:
     std::string doInvalidateQuery(const std::string & request) const;
 
     Poco::Logger * log;
+
+    std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string db;
     const std::string table;
     const std::string where;
+    const std::string update_field;
     const bool dont_check_update_time;
     Block sample_block;
     mutable mysqlxx::PoolWithFailover pool;

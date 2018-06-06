@@ -18,7 +18,6 @@ class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemCluster
 public:
     std::string getName() const override { return "SystemClusters"; }
     std::string getTableName() const override { return name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return columns; }
 
     BlockInputStreams read(
         const Names & column_names,
@@ -30,7 +29,6 @@ public:
 
 private:
     const std::string name;
-    NamesAndTypesList columns;
 
 protected:
     StorageSystemClusters(const std::string & name_);

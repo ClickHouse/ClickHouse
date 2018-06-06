@@ -97,16 +97,15 @@ int main(int, char **)
 
         std::string input = "SELECT UniqID, URL, CounterID, IsLink WHERE URL = 'http://mail.yandex.ru/neo2/#inbox'";
         ParserSelectQuery parser;
-        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+        ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
-        std::cerr << ast->getTreeID() << std::endl;
 
         /// create an object of an existing hit log table
 
-        StoragePtr table = StorageLog::create("./", "HitLog", std::make_shared<NamesAndTypesList>(names_and_types_list),
-            NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+        StoragePtr table = StorageLog::create(
+            "./", "HitLog", ColumnsDescription{names_and_types_list}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
         table->startup();
 
         /// read from it, apply the expression, filter, and write in tsv form to the console
@@ -129,12 +128,12 @@ int main(int, char **)
         QueryProcessingStage::Enum stage;
 
         BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
-        in = std::make_shared<FilterBlockInputStream>(in, expression, 4);
+        in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(URL, 'http://mail.yandex.ru/neo2/#inbox')");
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
         WriteBufferFromOStream ob(std::cout);
         RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
-        BlockOutputStreamFromRowOutputStream out(out_);
+        BlockOutputStreamFromRowOutputStream out(out_, in->getHeader());
 
         copyData(*in, out);
     }

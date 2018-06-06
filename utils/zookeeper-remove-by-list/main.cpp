@@ -1,3 +1,4 @@
+#include <list>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -28,7 +29,7 @@ try
     zkutil::ZooKeeper zookeeper(options.at("address").as<std::string>());
 
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
-    std::list<zkutil::ZooKeeper::RemoveFuture> futures;
+    std::list<std::future<zkutil::RemoveResponse>> futures;
 
     std::cerr << "Requested: ";
     while (!in.eof())
@@ -36,7 +37,7 @@ try
         std::string path;
         DB::readEscapedString(path, in);
         DB::assertString("\n", in);
-        futures.push_back(zookeeper.asyncRemove(path));
+        futures.emplace_back(zookeeper.asyncRemove(path));
         std::cerr << ".";
     }
     std::cerr << "\n";

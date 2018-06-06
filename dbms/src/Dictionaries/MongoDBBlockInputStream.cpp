@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
 
 #include <vector>
 #include <string>
@@ -10,25 +10,34 @@
     #include <Poco/MongoDB/Connection.h>
     #include <Poco/MongoDB/Cursor.h>
     #include <Poco/MongoDB/Element.h>
+    #include <Poco/MongoDB/ObjectId.h>
 #pragma GCC diagnostic pop
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <ext/range.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 
 MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
     std::unique_ptr<Poco::MongoDB::Cursor> cursor_,
     const Block & sample_block,
     const size_t max_block_size)
-    :  connection(connection_), cursor{std::move(cursor_)}, max_block_size{max_block_size}
+    : connection(connection_), cursor{std::move(cursor_)}, max_block_size{max_block_size}
 {
     description.init(sample_block);
 }
@@ -37,17 +46,10 @@ MongoDBBlockInputStream::MongoDBBlockInputStream(
 MongoDBBlockInputStream::~MongoDBBlockInputStream() = default;
 
 
-String MongoDBBlockInputStream::getID() const
-{
-    std::ostringstream stream;
-    stream << cursor.get();
-    return "MongoDB(@" + stream.str() + ")";
-}
-
-
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
+    using ObjectId = Poco::MongoDB::ObjectId;
 
     template <typename T>
     void insertNumber(IColumn & column, const Poco::MongoDB::Element & value, const std::string & name)
@@ -97,22 +99,28 @@ namespace
 
             case ValueType::String:
             {
-                if (value.type() != Poco::MongoDB::ElementTraits<String>::TypeId)
-                    throw Exception{
-                        "Type mismatch, expected String, got type id = " + toString(value.type()) +
-                            " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                if (value.type() == Poco::MongoDB::ElementTraits<ObjectId::Ptr>::TypeId)
+                {
+                    std::string string_id = value.toString();
+                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string_id.data(), string_id.size() + 1);
+                    break;
+                }
+                else if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                {
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
+                    break;
+                }
 
-                String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
-                static_cast<ColumnString &>(column).insertDataWithTerminatingZero(string.data(), string.size() + 1);
-                break;
+                throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) +
+                    " for column " + name, ErrorCodes::TYPE_MISMATCH};
             }
 
             case ValueType::Date:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{
-                        "Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
-                            " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
+                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
                 static_cast<ColumnUInt16 &>(column).getData().push_back(
                     UInt16{DateLUT::instance().toDayNum(
@@ -123,9 +131,8 @@ namespace
             case ValueType::DateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{
-                        "Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
-                            " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
+                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
                 static_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
@@ -166,7 +173,7 @@ Block MongoDBBlockInputStream::readImpl()
                 const auto & name = description.names[idx];
                 const Poco::MongoDB::Element::Ptr value = document->get(name);
 
-                if (value.isNull())
+                if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
                     insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
                 else
                     insertValue(*columns[idx], description.types[idx], *value, name);

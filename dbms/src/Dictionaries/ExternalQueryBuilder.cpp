@@ -138,6 +138,20 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 }
 
 
+std::string ExternalQueryBuilder::composeUpdateQuery(const std::string &update_field, const std::string &time_point) const
+{
+    std::string out = composeLoadAllQuery();
+    std::string update_query;
+
+    if (!where.empty())
+        update_query = " AND " + update_field + " >= '" + time_point + "'";
+    else
+        update_query = " WHERE " + update_field + " >= '" + time_point + "'";
+
+    return out.insert(out.size()-1, update_query); ///This is done to insert "update_query" before "out"'s semicolon
+}
+
+
 std::string ExternalQueryBuilder::composeLoadIdsQuery(const std::vector<UInt64> & ids)
 {
     if (!dict_struct.id)

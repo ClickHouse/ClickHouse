@@ -1,0 +1,5 @@
+#!/bin/sh
+
+# https://github.com/llvm-mirror/libcxx/commit/6e02e89f65ca1ca1d6ce30fbc557563164dd327e
+
+touch /usr/include/xlocale.h

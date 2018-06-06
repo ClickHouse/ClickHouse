@@ -201,7 +201,7 @@ namespace Hashes
         size_t operator()(Key x) const
         {
             ::SipHash hash;
-            hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+            hash.update(x);
             return hash.get64();
         }
     };
@@ -286,7 +286,7 @@ namespace Hashes
 
 
 template <template <typename...> class Map, typename Hash>
-void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash>&)> init = {})
+void NO_INLINE test(const Key * data, size_t size, std::function<void(Map<Key, Value, Hash> &)> init = {})
 {
     Stopwatch watch;
 

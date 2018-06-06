@@ -48,9 +48,13 @@
 
 Позволяет построить unicode-art диаграмму.
 
-`bar(x, min, max, width)` - рисует полосу ширины пропорциональной (x - min) и равной width символов при x == max.
-`min, max` - целочисленные константы, значение должно помещаться в Int64.
-`width` - константа, положительное число, может быть дробным.
+`bar(x, min, max, width)` рисует полосу ширины пропорциональной `(x - min)` и равной `width` символов при `x = max`.
+
+Параметры:
+
+- `x` — Величина для отображения.
+- `min, max` — Целочисленные константы, значение должно помещаться в `Int64`.
+- `width` — Константа, положительное число, может быть дробным.
 
 Полоса рисуется с точностью до одной восьмой символа.
 
@@ -127,7 +131,7 @@ ORDER BY h ASC
 
 ```sql
 SELECT
-    transform(SearchEngineID, [2, 3], ['Яндекс', 'Google'], 'Остальные') AS title,
+    transform(SearchEngineID, [2, 3], ['Yandex', 'Google'], 'Other') AS title,
     count() AS c
 FROM test.hits
 WHERE SearchEngineID != 0
@@ -137,9 +141,9 @@ ORDER BY c DESC
 
 ```text
 ┌─title─────┬──────c─┐
-│ Яндекс    │ 498635 │
+│ Yandex    │ 498635 │
 │ Google    │ 229872 │
-│ Остальные │ 104472 │
+│ Other     │ 104472 │
 └───────────┴────────┘
 ```
 
@@ -156,7 +160,7 @@ ORDER BY c DESC
 
 ```sql
 SELECT
-    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'ввв.яндекс.рф', 'example.com']) AS s,
+    transform(domain(Referer), ['yandex.ru', 'google.ru', 'vk.com'], ['www.yandex', 'example.com']) AS s,
     count() AS c
 FROM test.hits
 GROUP BY domain(Referer)
@@ -170,7 +174,6 @@ LIMIT 10
 │ www.yandex     │  867767 │
 │ ███████.ru     │  313599 │
 │ mail.yandex.ru │  107147 │
-│ ввв.яндекс.рф  │  105668 │
 │ ██████.ru      │  100355 │
 │ █████████.ru   │   65040 │
 │ news.yandex.ru │   64515 │

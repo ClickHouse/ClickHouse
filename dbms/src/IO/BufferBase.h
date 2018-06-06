@@ -38,7 +38,7 @@ public:
 
         inline Position begin() const { return begin_pos; }
         inline Position end() const { return end_pos; }
-        inline size_t size() const { return end_pos - begin_pos; }
+        inline size_t size() const { return size_t(end_pos - begin_pos); }
         inline void resize(size_t size) { end_pos = begin_pos + size; }
 
         inline void swap(Buffer & other)
@@ -56,7 +56,7 @@ public:
       * offset - the starting point of the cursor. ReadBuffer must set it to the end of the range, and WriteBuffer - to the beginning.
       */
     BufferBase(Position ptr, size_t size, size_t offset)
-        : internal_buffer(ptr, ptr + size), working_buffer(ptr, ptr + size), pos(ptr + offset) {}
+        : pos(ptr + offset), working_buffer(ptr, ptr + size), internal_buffer(ptr, ptr + size) {}
 
     void set(Position ptr, size_t size, size_t offset)
     {
@@ -72,10 +72,10 @@ public:
     inline Buffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
-    inline Position & position() { return pos; };
+    inline Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    inline size_t offset() const { return pos - working_buffer.begin(); }
+    inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
     size_t count() const
@@ -90,8 +90,13 @@ public:
     }
 
 protected:
-    /// A reference to a piece of memory for the buffer.
-    Buffer internal_buffer;
+    /// Read/write position.
+    Position pos;
+
+    /** How many bytes have been read/written, not counting those that are now in the buffer.
+      * (counting those that were already used and "removed" from the buffer)
+      */
+    size_t bytes = 0;
 
     /** A piece of memory that you can use.
       * For example, if internal_buffer is 1MB, and from a file for reading it was loaded into the buffer
@@ -100,13 +105,8 @@ protected:
       */
     Buffer working_buffer;
 
-    /// Read/write position.
-    Position pos;
-
-    /** How many bytes have been read/written, not counting those that are now in the buffer.
-      * (counting those that were already used and "removed" from the buffer)
-      */
-    size_t bytes = 0;
+    /// A reference to a piece of memory for the buffer.
+    Buffer internal_buffer;
 };
 
 

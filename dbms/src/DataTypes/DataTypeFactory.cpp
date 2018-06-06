@@ -24,7 +24,7 @@ namespace ErrorCodes
 DataTypePtr DataTypeFactory::get(const String & full_name) const
 {
     ParserIdentifierWithOptionalParameters parser;
-    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type");
+    ASTPtr ast = parseQuery(parser, full_name.data(), full_name.data() + full_name.size(), "data type", 0);
     return get(ast);
 }
 

@@ -28,9 +28,3 @@ target_link_libraries (union_stream2 dbms)
 
 add_executable (collapsing_sorted_stream collapsing_sorted_stream.cpp ${SRCS})
 target_link_libraries (collapsing_sorted_stream dbms)
-
-add_executable (fork_streams fork_streams.cpp ${SRCS})
-target_link_libraries (fork_streams dbms clickhouse_storages_system)
-
-add_executable (glue_streams glue_streams.cpp ${SRCS})
-target_link_libraries (glue_streams dbms)

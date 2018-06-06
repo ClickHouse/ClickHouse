@@ -30,6 +30,12 @@ void DataTypeNothing::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr,
     typeid_cast<ColumnNothing &>(column).addSize(istr.tryIgnore(limit));
 }
 
+bool DataTypeNothing::equals(const IDataType & rhs) const
+{
+    return typeid(rhs) == typeid(*this);
+}
+
+
 void registerDataTypeNothing(DataTypeFactory & factory)
 {
     factory.registerSimpleDataType("Nothing", [] { return DataTypePtr(std::make_shared<DataTypeNothing>()); });

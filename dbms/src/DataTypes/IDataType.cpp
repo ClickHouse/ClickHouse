@@ -9,7 +9,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNested.h>
+#include <DataTypes/NestedUtils.h>
 
 
 namespace DB
@@ -70,8 +70,13 @@ size_t IDataType::getSizeOfValueInMemory() const
 
 String IDataType::getFileNameForStream(const String & column_name, const IDataType::SubstreamPath & path)
 {
-    String nested_table_name = DataTypeNested::extractNestedTableName(column_name);
-    bool is_sizes_of_nested_type = !path.empty() && path.back().type == IDataType::Substream::ArraySizes
+    /// Sizes of arrays (elements of Nested type) are shared (all reside in single file).
+    String nested_table_name = Nested::extractTableName(column_name);
+
+    bool is_sizes_of_nested_type =
+        path.size() == 1    /// Nested structure may have arrays as nested elements (so effectively we have multidimensional arrays).
+                            /// Sizes of arrays are shared only at first level.
+        && path[0].type == IDataType::Substream::ArraySizes
         && nested_table_name != column_name;
 
     size_t array_level = 0;
@@ -85,7 +90,13 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
         else if (elem.type == Substream::ArrayElements)
             ++array_level;
         else if (elem.type == Substream::TupleElement)
-            stream_name += "." + toString(elem.tuple_element);
+        {
+            /// For compatibility reasons, we use %2E instead of dot.
+            /// Because nested data may be represented not by Array of Tuple,
+            ///  but by separate Array columns with names in a form of a.b,
+            ///  and name is encoded as a whole.
+            stream_name += "%2E" + escapeForFileName(elem.tuple_element_name);
+        }
     }
     return stream_name;
 }

@@ -623,8 +623,8 @@ struct ReplaceRegexpImpl
     {
         re2_st::StringPiece matches[max_captures];
 
-        int start_pos = 0;
-        while (start_pos < input.length())
+        size_t start_pos = 0;
+        while (start_pos < static_cast<size_t>(input.length()))
         {
             /// If no more replacements possible for current string
             bool can_finish_current_string = false;
@@ -962,7 +962,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;

@@ -51,6 +51,7 @@
 
 set(Poco_HINTS
     /usr/local
+    /usr/local/include/Poco
     C:/AppliedInformatics
     ${Poco_DIR}
     $ENV{Poco_DIR}
@@ -191,6 +192,16 @@ foreach( component ${components} )
     endif()
 endforeach()
 
+if(Poco_DataODBC_LIBRARY)
+    list(APPEND Poco_DataODBC_LIBRARY ${ODBC_LIBRARIES} ${LTDL_LIBRARY})
+    list(APPEND Poco_INCLUDE_DIRS ${ODBC_INCLUDE_DIRECTORIES})
+endif()
+
+if(Poco_NetSSL_LIBRARY)
+    list(APPEND Poco_NetSSL_LIBRARY ${OPENSSL_LIBRARIES})
+    list(APPEND Poco_INCLUDE_DIRS ${OPENSSL_INCLUDE_DIR})
+endif()
+
 if(DEFINED Poco_LIBRARIES)
     set(Poco_FOUND true)
 endif()
@@ -220,5 +231,3 @@ if(${Poco_OSP_FOUND})
 endif()
 
 message(STATUS "Found Poco: ${Poco_LIBRARIES}")
-
-

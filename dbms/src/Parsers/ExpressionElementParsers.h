@@ -99,6 +99,15 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
+class ParserExtractExpression : public IParserBase
+{
+    static constexpr auto name = "EXTRACT";
+
+protected:
+    const char * getName() const override { return name; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
 
 /** NULL literal.
   */
@@ -236,15 +245,6 @@ class ParserOrderByElement : public IParserBase
 {
 protected:
     const char * getName() const { return "element of ORDER BY expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
-/** The path of the shard in ZooKeeper along with the weight.
-  */
-class ParserWeightedZooKeeperPath : public IParserBase
-{
-protected:
-    const char * getName() const { return "weighted ZooKeeper path"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 

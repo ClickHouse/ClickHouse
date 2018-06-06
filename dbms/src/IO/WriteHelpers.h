@@ -14,7 +14,7 @@
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/UInt128.h>
 #include <common/StringRef.h>
 
@@ -99,29 +99,26 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 }
 
 
-inline void writeFloatText(double x, WriteBuffer & buf)
+template <typename T>
+inline void writeFloatText(T x, WriteBuffer & buf)
 {
-    DoubleConverter<false>::BufferType buffer;
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
+
+    using Converter = DoubleConverter<false>;
+
+    Converter::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
 
-    const auto result = DoubleConverter<false>::instance().ToShortest(x, &builder);
+    bool result = false;
+    if constexpr (std::is_same_v<T, double>)
+        result = Converter::instance().ToShortest(x, &builder);
+    else
+        result = Converter::instance().ToShortestSingle(x, &builder);
 
     if (!result)
-        throw Exception("Cannot print double number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-    buf.write(buffer, builder.position());
-}
-
-inline void writeFloatText(float x, WriteBuffer & buf)
-{
-    DoubleConverter<false>::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-
-    const auto result = DoubleConverter<false>::instance().ToShortestSingle(x, &builder);
-
-    if (!result)
-        throw Exception("Cannot print float number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
+    /// TODO Excessive copy. Use optimistic path if buffer have enough bytes.
     buf.write(buffer, builder.position());
 }
 
@@ -540,7 +537,7 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(DayNum_t date, WriteBuffer & buf)
+inline void writeDateText(DayNum date, WriteBuffer & buf)
 {
     if (unlikely(!date))
     {
@@ -638,7 +635,7 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
 
 /// Methods for output in binary format.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
@@ -651,11 +648,11 @@ inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBi
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline typename std::enable_if<std::is_integral<T>::value, void>::type
+inline std::enable_if_t<std::is_integral_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
-inline typename std::enable_if<std::is_floating_point<T>::value, void>::type
+inline std::enable_if_t<std::is_floating_point_v<T>, void>
 writeText(const T & x, WriteBuffer & buf) { writeFloatText(x, buf); }
 
 inline void writeText(const String & x, WriteBuffer & buf) { writeEscapedString(x, buf); }
@@ -681,7 +678,7 @@ inline void writeText(const UInt128 &, WriteBuffer &)
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeQuoted(const String & x, WriteBuffer & buf) { writeQuotedString(x, buf); }
@@ -703,7 +700,7 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeDoubleQuoted(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeDoubleQuoted(const String & x, WriteBuffer & buf) { writeDoubleQuotedString(x, buf); }
@@ -732,7 +729,7 @@ inline void writeDoubleQuoted(const UUID & x, WriteBuffer & buf)
 
 /// String - in double quotes and with CSV-escaping; date, datetime - in double quotes. Numbers - without.
 template <typename T>
-inline typename std::enable_if<std::is_arithmetic<T>::value, void>::type
+inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 writeCSV(const T & x, WriteBuffer & buf) { writeText(x, buf); }
 
 inline void writeCSV(const String & x, WriteBuffer & buf) { writeCSVString<>(x, buf); }

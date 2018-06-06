@@ -76,12 +76,12 @@ try
         ") ENGINE = Log";
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     Context context = Context::createGlobal();
 
     context.setPath("./");
-    auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/");
+    auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/", context);
     context.addDatabase("test", database);
     database->loadTables(context, nullptr, false);
     context.setCurrentDatabase("test");

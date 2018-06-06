@@ -38,7 +38,7 @@ public:
 
     String getName() const override { return "MergeTree"; }
 
-    String getID() const override;
+    Block getHeader() const override;
 
     /// Closes readers and unlock part locks
     void finish();
@@ -48,6 +48,7 @@ protected:
     bool getNewTask() override;
 
 private:
+    Block header;
 
     /// Used by Task
     Names ordered_names;
@@ -62,6 +63,8 @@ private:
 
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;
+    /// Total number of marks we should read
+    size_t total_marks_count = 0;
     /// Value of _part_index virtual column (used only in SelectExecutor)
     size_t part_index_in_query = 0;
 

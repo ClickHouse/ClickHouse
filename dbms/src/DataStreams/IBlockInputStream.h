@@ -2,6 +2,8 @@
 
 #include <vector>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
@@ -48,6 +50,12 @@ class IBlockInputStream : private boost::noncopyable
 public:
     IBlockInputStream() {}
 
+    /** Get data structure of the stream in a form of "header" block (it is also called "sample block").
+      * Header block contains column names, data types, columns of size 0. Constant columns must have corresponding values.
+      * It is guaranteed that method "read" returns blocks of exactly that structure.
+      */
+    virtual Block getHeader() const = 0;
+
     /** Read next block.
       * If there are no more blocks, return an empty block (for which operator `bool` returns false).
       * NOTE: Only one thread can read from one instance of IBlockInputStream simultaneously.
@@ -76,33 +84,18 @@ public:
       */
     virtual String getName() const = 0;
 
-    /** The unique identifier of the pipeline part of the query execution.
-      * Sources with the same identifier are considered identical
-      *  (producing the same data), and can be replaced by one source
-      *  if several queries are executed simultaneously.
-      * If the source can not be glued together with any other - return the object's address as an identifier.
-      */
-    virtual String getID() const;
-
-    /// If this stream generates data in grouped by some keys, return true.
-    virtual bool isGroupedOutput() const { return false; }
     /// If this stream generates data in order by some keys, return true.
     virtual bool isSortedOutput() const { return false; }
-    /// In case of isGroupedOutput or isSortedOutput, return corresponding SortDescription
+    /// In case of isSortedOutput, return corresponding SortDescription
     virtual const SortDescription & getSortDescription() const { throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED); }
 
-    BlockInputStreams & getChildren() { return children; }
-
+    /** Must be called before read, readPrefix.
+      */
     void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
-
-    /// Get leaf sources (not including this one).
-    BlockInputStreams getLeaves();
-
-    /// Get the number of rows and bytes read in the leaf sources.
-    void getLeafRowsBytes(size_t & rows, size_t & bytes);
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.
+      * Must be called before read, readPrefix.
       */
     size_t checkDepth(size_t max_depth) const;
 
@@ -110,19 +103,28 @@ public:
       */
     void addTableLock(const TableStructureReadLockPtr & lock) { table_locks.push_back(lock); }
 
-protected:
-    TableStructureReadLocks table_locks;
 
+    template <typename F>
+    void forEachChild(F && f)
+    {
+        /// NOTE: Acquire a read lock, therefore f() should be thread safe
+        std::shared_lock lock(children_mutex);
+
+        for (auto & child : children)
+            if (f(*child))
+                return;
+    }
+
+protected:
     BlockInputStreams children;
+    std::shared_mutex children_mutex;
 
 private:
-    void getLeavesImpl(BlockInputStreams & res, const BlockInputStreamPtr & this_shared_ptr);
+    TableStructureReadLocks table_locks;
 
     size_t checkDepthImpl(size_t max_depth, size_t level) const;
 
-    /** Get text that identifies this source and the entire subtree.
-      * Unlike getID - without taking into account the parameters.
-      */
+    /// Get text with names of this source and the entire subtree.
     String getTreeID() const;
 };
 

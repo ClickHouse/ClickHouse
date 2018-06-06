@@ -2,7 +2,10 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseDatabaseAndTableName.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
 
@@ -18,8 +21,6 @@ namespace DB
 
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto begin = pos;
-
     if (!ParserKeyword{"SYSTEM"}.ignore(pos))
         return false;
 
@@ -41,17 +42,35 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     if (!found)
         return false;
 
-    if (res->type == Type::RELOAD_DICTIONARY)
+    switch (res->type)
     {
-        if (!parseIdentifierOrStringLiteral(pos, expected, res->target_dictionary))
-            return false;
-    }
-    else if (res->type == Type::SYNC_REPLICA)
-    {
-        throw Exception("SYNC REPLICA is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
+        case Type::RELOAD_DICTIONARY:
+            if (!parseIdentifierOrStringLiteral(pos, expected, res->target_dictionary))
+                return false;
+            break;
+
+        case Type::RESTART_REPLICA:
+        case Type::SYNC_REPLICA:
+            if (!parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table))
+                return false;
+            break;
+
+        case Type::STOP_MERGES:
+        case Type::START_MERGES:
+        case Type::STOP_FETCHES:
+        case Type::START_FETCHES:
+        case Type::STOP_REPLICATED_SENDS:
+        case Type::START_REPLICATEDS_SENDS:
+        case Type::STOP_REPLICATION_QUEUES:
+        case Type::START_REPLICATION_QUEUES:
+            parseDatabaseAndTableName(pos, expected, res->target_database, res->target_table);
+            break;
+
+        default:
+            /// There are no [db.table] after COMMAND NAME
+            break;
     }
 
-    res->range = {begin, pos};
     node = std::move(res);
     return true;
 }

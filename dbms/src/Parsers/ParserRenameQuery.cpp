@@ -40,8 +40,6 @@ static bool parseDatabaseAndTable(
 
 bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_rename_table("RENAME TABLE");
     ParserKeyword s_to("TO");
     ParserToken s_comma(TokenType::Comma);
@@ -71,7 +69,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = std::make_shared<ASTRenameQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTRenameQuery>();
     query->cluster = cluster_str;
     node = query;
 

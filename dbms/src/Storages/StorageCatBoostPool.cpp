@@ -1,14 +1,17 @@
+#include <fstream>
+#include <sstream>
+#include <boost/filesystem.hpp>
+
 #include <Storages/StorageCatBoostPool.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/FormatFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <fstream>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <boost/filesystem.hpp>
 #include <Parsers/ASTIdentifier.h>
+
 
 namespace DB
 {
@@ -36,12 +39,7 @@ public:
 
     String getName() const override
     {
-        return "CatBoostDatasetBlockInputStream";
-    }
-
-    String getID() const override
-    {
-        return "CatBoostDataset(" + format_name + ", " + file_name + ")";
+        return "CatBoostDataset";
     }
 
     Block readImpl() override
@@ -58,6 +56,8 @@ public:
     {
         reader->readSuffix();
     }
+
+    Block getHeader() const override { return sample_block; }
 
 private:
     Block sample_block;
@@ -88,14 +88,6 @@ static void checkCreationIsAllowed(const String & base_path, const String & path
         throw Exception(
             "Using file descriptor or user specified path as source of storage isn't allowed for server daemons",
             ErrorCodes::DATABASE_ACCESS_DENIED);
-}
-
-StoragePtr StorageCatBoostPool::create(const Context & context,
-                                       const String & column_description_file_name,
-                                       const String & data_description_file_name)
-{
-    return ext::shared_ptr_helper<StorageCatBoostPool>::create(
-        context, column_description_file_name, data_description_file_name);
 }
 
 
@@ -231,7 +223,7 @@ void StorageCatBoostPool::parseColumnDescription()
 
 void StorageCatBoostPool::createSampleBlockAndColumns()
 {
-    columns.clear();
+    ColumnsDescription columns;
     NamesAndTypesList cat_columns;
     NamesAndTypesList num_columns;
     sample_block.clear();
@@ -250,20 +242,21 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
         else if (desc.column_type == DatasetColumnType::Num)
             num_columns.emplace_back(desc.column_name, type);
         else
-            materialized_columns.emplace_back(desc.column_name, type);
+            columns.materialized.emplace_back(desc.column_name, type);
 
         if (!desc.alias.empty())
         {
-            auto alias = std::make_shared<ASTIdentifier>();
-            alias->name = desc.column_name;
-            column_defaults[desc.alias] = {ColumnDefaultType::Alias, alias};
-            alias_columns.emplace_back(desc.alias, type);
+            auto alias = std::make_shared<ASTIdentifier>(desc.column_name);
+            columns.defaults[desc.alias] = {ColumnDefaultKind::Alias, alias};
+            columns.aliases.emplace_back(desc.alias, type);
         }
 
-        sample_block.insert(ColumnWithTypeAndName(type->createColumn(), type, desc.column_name));
+        sample_block.insert(ColumnWithTypeAndName(type, desc.column_name));
     }
-    columns.insert(columns.end(), num_columns.begin(), num_columns.end());
-    columns.insert(columns.end(), cat_columns.begin(), cat_columns.end());
+    columns.ordinary.insert(columns.ordinary.end(), num_columns.begin(), num_columns.end());
+    columns.ordinary.insert(columns.ordinary.end(), cat_columns.begin(), cat_columns.end());
+
+    setColumns(columns);
 }
 
 BlockInputStreams StorageCatBoostPool::read(const Names & column_names,

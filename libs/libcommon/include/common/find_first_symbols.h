@@ -10,19 +10,20 @@
 #endif
 
 
-/** Позволяет найти в куске памяти следующий символ содержащийся в symbols...
-  * Функция похожа на strpbrk, но со следующими отличиями:
-  * - работает с любыми кусками памяти, в том числе, с нулевыми байтами;
-  * - не требует нулевого байта в конце - в функцию передаётся конец данных;
-  * - в случае, если не найдено, возвращает указатель на конец, а не NULL;
-  * - максимальное количество символов для поиска - 16.
+/** Allow to search for next character from the set of 'symbols...' in a string.
+  * It is similar to 'strpbrk', 'strcspn' (and 'strchr', 'memchr' in the case of one symbol and '\0'),
+  * but with the following differencies:
+  * - works with any memory ranges, including containing zero bytes;
+  * - doesn't require terminating zero byte: end of memory range is passed explicitly;
+  * - if not found, returns pointer to end instead of NULL;
+  * - maximum number of symbols to search is 16.
   *
-  * Использует SSE 2 в случае маленького количества символов для поиска и SSE 4.2 в случае большого,
-  *  что даёт прирост скорости более чем в 2 раза по сравнению с тривиальным циклом
-  *  при парсинге типичного tab-separated файла со строками.
-  * При парсинге файла с короткими строками, падения производительности нет.
+  * Uses SSE 2 in case of small number of symbols for search and SSE 4.2 in the case of large number of symbols,
+  *  that have more than 2x performance advantage over trivial loop
+  *  in the case of parsing tab-separated dump with (probably escaped) string fields.
+  * In the case of parsing tab separated dump with short strings, there is no performance degradation over trivial loop.
   *
-  * Замечание: оптимальный порог использования SSE 4.2 зависит от модели процессора.
+  * Note: the optimal threshold to choose between SSE 2 and SSE 4.2 may depend on CPU model.
   */
 
 namespace detail

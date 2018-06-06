@@ -214,3 +214,28 @@ SELECT * FROM test.graphite;
 ''')
 
     assert TSV(result) == TSV(expected)
+
+def test_path_dangling_pointer(graphite_table):
+    instance.query('''
+DROP TABLE IF EXISTS test.graphite2;
+CREATE TABLE test.graphite2
+  (metric String, value Float64, timestamp UInt32, date Date, updated UInt32)
+  ENGINE = GraphiteMergeTree(date, (metric, timestamp), 1, 'graphite_rollup');
+  ''')
+
+    path = 'abcd' * 4000000 # 16MB
+    instance.query('INSERT INTO test.graphite2 FORMAT TSV', "{}\t0.0\t0\t2018-01-01\t100\n".format(path))
+    instance.query('INSERT INTO test.graphite2 FORMAT TSV', "{}\t0.0\t0\t2018-01-01\t101\n".format(path))
+    for version in range(10):
+        instance.query('INSERT INTO test.graphite2 FORMAT TSV', "{}\t0.0\t0\t2018-01-01\t{}\n".format(path, version))
+
+    while True:
+      instance.query('OPTIMIZE TABLE test.graphite2 PARTITION 201801 FINAL')
+      parts = int(instance.query("SELECT count() FROM system.parts WHERE active AND database='test' AND table='graphite2'"))
+      if parts == 1:
+        break
+      print "Parts", parts
+
+    assert TSV(instance.query("SELECT value, timestamp, date, updated FROM test.graphite2")) == TSV("0\t0\t2018-01-01\t101\n")
+
+    instance.query('DROP TABLE test.graphite2')

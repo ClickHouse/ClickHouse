@@ -1,16 +1,15 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 
-#include <Common/SimpleCache.h>
 #include <Common/config.h>
 #include <Core/Types.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <Common/DNSCache.h>
+#include <Common/DNSResolver.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Version.h>
 #include <common/logger_useful.h>
 
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/HTTPSClientSession.h>
 #endif
 
@@ -27,8 +26,8 @@ namespace ErrorCodes
 ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
     const std::string & method_,
     OutStreamCallback out_stream_callback,
-    size_t buffer_size_,
-    const HTTPTimeouts & timeouts)
+    const ConnectionTimeouts & timeouts,
+    size_t buffer_size_)
     : ReadBuffer(nullptr, 0),
       uri{uri},
       method{!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
@@ -37,13 +36,13 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
       session
 {
     std::unique_ptr<Poco::Net::HTTPClientSession>(
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
         is_ssl ? new Poco::Net::HTTPSClientSession :
 #endif
                new Poco::Net::HTTPClientSession)
 }
 {
-    session->setHost(DNSCache::instance().resolveHost(uri.getHost()).toString());
+    session->setHost(DNSResolver::instance().resolveHost(uri.getHost()).toString());
     session->setPort(uri.getPort());
 
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000

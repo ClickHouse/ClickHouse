@@ -38,7 +38,6 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
 
     std::string getTableName() const override { return ""; }
-    const DB::NamesAndTypesList & getColumnsListImpl() const override { return names_and_types; }
 
 protected:
     StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
@@ -50,7 +49,6 @@ private:
     const std::string remote_database;
     const std::string remote_table;
     size_t shard_count;
-    DB::NamesAndTypesList names_and_types;
 };
 
 
@@ -1163,16 +1161,18 @@ bool run()
     return performTests(entries);
 }
 
+
 TestResult check(const TestEntry & entry)
 {
+    static DB::Context context = DB::Context::createGlobal();
+
     try
     {
-        DB::Context context = DB::Context::createGlobal();
 
         auto storage_distributed_visits = StorageDistributedFake::create("remote_db", "remote_visits", entry.shard_count);
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
 
-        DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/");
+        DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/", context);
         context.addDatabase("test", database);
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);
@@ -1218,10 +1218,12 @@ TestResult check(const TestEntry & entry)
         bool res = equals(ast_input, ast_expected);
         std::string output = DB::queryToString(ast_input);
 
+        context.detachDatabase("test");
         return TestResult(res, output);
     }
     catch (DB::Exception & e)
     {
+        context.detachDatabase("test");
         return TestResult(false, e.displayText());
     }
 }
@@ -1232,7 +1234,7 @@ bool parse(DB::ASTPtr & ast, const std::string & query)
     std::string message;
     auto begin = query.data();
     auto end = begin + query.size();
-    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false);
+    ast = DB::tryParseQuery(parser, begin, end, message, false, "", false, 0);
     return ast != nullptr;
 }
 

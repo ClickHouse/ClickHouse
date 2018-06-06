@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include <map>
 #include <optional>
@@ -21,11 +22,14 @@
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 
+#include <DataTypes/DataTypeFactory.h>
+
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>
 
 #include <Storages/StorageStripeLog.h>
+#include <Storages/StorageFactory.h>
 
 
 namespace DB
@@ -37,6 +41,8 @@ namespace ErrorCodes
 {
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int CANNOT_CREATE_DIRECTORY;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int INCORRECT_FILE_NAME;
 }
 
 
@@ -50,32 +56,28 @@ public:
         : storage(storage_), max_read_buffer_size(max_read_buffer_size_),
         index(index_), index_begin(index_begin_), index_end(index_end_)
     {
+        if (index_begin != index_end)
+        {
+            for (const auto & column : index_begin->columns)
+            {
+                auto type = DataTypeFactory::instance().get(column.type);
+                header.insert(ColumnWithTypeAndName{ type, column.name });
+            }
+        }
     }
 
     String getName() const override { return "StripeLog"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream s;
-        s << this;
-        return s.str();
-    }
+        return header;
+    };
 
 protected:
     Block readImpl() override
     {
         Block res;
-
-        if (!started)
-        {
-            started = true;
-
-            data_in.emplace(
-                storage.full_path() + "data.bin", 0, 0,
-                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
-
-            block_in.emplace(*data_in, 0, true, index_begin, index_end);
-        }
+        start();
 
         if (block_in)
         {
@@ -100,6 +102,7 @@ private:
     std::shared_ptr<const IndexForNativeFormat> index;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    Block header;
 
     /** optional - to create objects only on first reading
       *  and delete objects (release buffers) after the source is exhausted
@@ -108,6 +111,20 @@ private:
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
     std::optional<NativeBlockInputStream> block_in;
+
+    void start()
+    {
+        if (!started)
+        {
+            started = true;
+
+            data_in.emplace(
+                storage.full_path() + "data.bin", 0, 0,
+                std::min(static_cast<Poco::File::FileSize>(max_read_buffer_size), Poco::File(storage.full_path() + "data.bin").getSize()));
+
+            block_in.emplace(*data_in, 0, index_begin, index_end);
+        }
+    }
 };
 
 
@@ -120,7 +137,7 @@ public:
         data_out(data_out_compressed, CompressionSettings(CompressionMethod::LZ4), storage.max_compress_block_size),
         index_out_compressed(storage.full_path() + "index.mrk", INDEX_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT),
         index_out(index_out_compressed),
-        block_out(data_out, 0, &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
+        block_out(data_out, 0, storage.getSampleBlock(), &index_out, Poco::File(storage.full_path() + "data.bin").getSize())
     {
     }
 
@@ -135,6 +152,8 @@ public:
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void write(const Block & block) override
     {
@@ -175,20 +194,17 @@ private:
 StorageStripeLog::StorageStripeLog(
     const std::string & path_,
     const std::string & name_,
-    NamesAndTypesListPtr columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{materialized_columns_, alias_columns_, column_defaults_},
-    path(path_), name(name_), columns(columns_),
+    : IStorage{columns_},
+    path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
     log(&Logger::get("StorageStripeLog"))
 {
-    if (columns->empty())
-        throw Exception("Empty list of columns passed to StorageStripeLog constructor", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (path.empty())
+        throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
 
     String full_path = path + escapeForFileName(name) + '/';
     if (!attach)
@@ -229,7 +245,7 @@ BlockInputStreams StorageStripeLog::read(
     NameSet column_names_set(column_names.begin(), column_names.end());
 
     if (!Poco::File(full_path() + "index.mrk").exists())
-        return { std::make_shared<NullBlockInputStream>() };
+        return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
 
     CompressedReadBufferFromFile index_in(full_path() + "index.mrk", 0, 0, INDEX_BUFFER_SIZE);
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
@@ -269,6 +285,22 @@ bool StorageStripeLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+
+void registerStorageStripeLog(StorageFactory & factory)
+{
+    factory.registerStorage("StripeLog", [](const StorageFactory::Arguments & args)
+    {
+        if (!args.engine_args.empty())
+            throw Exception(
+                "Engine " + args.engine_name + " doesn't support any arguments (" + toString(args.engine_args.size()) + " given)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        return StorageStripeLog::create(
+            args.data_path, args.table_name, args.columns,
+            args.attach, args.context.getSettings().max_compress_block_size);
+    });
 }
 
 }

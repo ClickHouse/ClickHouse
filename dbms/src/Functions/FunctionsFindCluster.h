@@ -47,7 +47,7 @@ enum ClusterOperation
 /// functions (eg. Hamming distance) using Clickhouse lambdas.
 
 // Centroids array has the same size as number of clusters.
-size_t find_centroid(Float64 x, std::vector<Float64>& centroids)
+size_t find_centroid(Float64 x, std::vector<Float64> & centroids)
 {
     // Centroids array has to have at least one element, and if it has only one element,
     // it is also the result of this Function.
@@ -128,7 +128,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto in_untyped = block.getByPosition(arguments[0]).column.get();
         const auto centroids_array_untyped = block.getByPosition(arguments[1]).column.get();

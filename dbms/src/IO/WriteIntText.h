@@ -116,7 +116,7 @@ namespace detail
 
         while (x >= 100)
         {
-            const UInt32 i = (x % 100) * 2;
+            const auto i = (x % 100) * 2;
             x /= 100;
             dst[next] = digits[i + 1];
             dst[next - 1] = digits[i];
@@ -129,7 +129,7 @@ namespace detail
         }
         else
         {
-            const UInt32 i = x * 2;
+            const auto i = x * 2;
             dst[next] = digits[i + 1];
             dst[next - 1] = digits[i];
         }
@@ -177,20 +177,20 @@ namespace detail
             ++buf.position();
         }
 
-        writeUIntText(static_cast<typename std::make_unsigned<T>::type>(x), buf);
+        writeUIntText(static_cast<std::make_unsigned_t<T>>(x), buf);
     }
 
 }
 
 
 template <typename T>
-typename std::enable_if<std::is_signed<T>::value, void>::type writeIntText(T x, WriteBuffer & buf)
+std::enable_if_t<std::is_signed_v<T>, void> writeIntText(T x, WriteBuffer & buf)
 {
     detail::writeSIntText(x, buf);
 }
 
 template <typename T>
-typename std::enable_if<std::is_unsigned<T>::value, void>::type writeIntText(T x, WriteBuffer & buf)
+std::enable_if_t<std::is_unsigned_v<T>, void> writeIntText(T x, WriteBuffer & buf)
 {
     detail::writeUIntText(x, buf);
 }

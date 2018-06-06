@@ -8,22 +8,14 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns)
+DistinctSortedBlockInputStream::DistinctSortedBlockInputStream(
+    const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns)
     : description(input->getSortDescription())
     , columns_names(columns)
     , limit_hint(limit_hint_)
-    , max_rows(limits.max_rows_in_distinct)
-    , max_bytes(limits.max_bytes_in_distinct)
-    , overflow_mode(limits.distinct_overflow_mode)
+    , set_size_limits(set_size_limits)
 {
     children.push_back(input);
-}
-
-String DistinctSortedBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "DistinctSorted(" << children.back()->getID() << ")";
-    return res.str();
 }
 
 Block DistinctSortedBlockInputStream::readImpl()
@@ -69,25 +61,8 @@ Block DistinctSortedBlockInputStream::readImpl()
         if (!has_new_data)
             continue;
 
-        if (!checkLimits())
-        {
-            switch (overflow_mode)
-            {
-                case OverflowMode::THROW:
-                    throw Exception("DISTINCT-Set size limit exceeded."
-                        " Rows: " + toString(data.getTotalRowCount()) +
-                        ", limit: " + toString(max_rows) +
-                        ". Bytes: " + toString(data.getTotalByteCount()) +
-                        ", limit: " + toString(max_bytes) + ".",
-                        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-                case OverflowMode::BREAK:
-                    return Block();
-
-                default:
-                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-            }
-        }
+        if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+            return {};
 
         prev_block.block = block;
         prev_block.clearing_hint_columns = std::move(clearing_hint_columns);
@@ -100,14 +75,6 @@ Block DistinctSortedBlockInputStream::readImpl()
     }
 }
 
-bool DistinctSortedBlockInputStream::checkLimits() const
-{
-    if (max_rows && data.getTotalRowCount() > max_rows)
-        return false;
-    if (max_bytes && data.getTotalByteCount() > max_bytes)
-        return false;
-    return true;
-}
 
 template <typename Method>
 bool DistinctSortedBlockInputStream::buildFilter(
