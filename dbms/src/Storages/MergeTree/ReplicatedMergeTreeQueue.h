@@ -139,7 +139,7 @@ private:
         std::lock_guard<std::mutex> & target_state_lock,
         std::lock_guard<std::mutex> & queue_lock);
 
-    void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
+    void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
       * Called under the queue_mutex.

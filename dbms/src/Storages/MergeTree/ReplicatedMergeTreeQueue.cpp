@@ -195,7 +195,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 }
 
 
-void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
+void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
 {
     auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
@@ -891,7 +891,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
     try
     {
         if (func(entry))
-            remove(get_zookeeper(), entry);
+            removeProcessedEntry(get_zookeeper(), entry);
     }
     catch (...)
     {
