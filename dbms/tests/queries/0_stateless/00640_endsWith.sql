@@ -13,4 +13,3 @@ SELECT COUNT() FROM endsWith_test WHERE endsWith(S1, S1);
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S1, S2);
 SELECT COUNT() FROM endsWith_test WHERE endsWith(S2, S3);
 DROP TABLE endsWith_test;
-
