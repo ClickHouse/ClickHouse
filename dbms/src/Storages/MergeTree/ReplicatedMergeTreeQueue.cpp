@@ -977,11 +977,11 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
-    res.mutations_in_queue = 0;
+    res.part_mutations_in_queue = 0;
     res.queue_oldest_time = 0;
     res.inserts_oldest_time = 0;
     res.merges_oldest_time = 0;
-    res.mutations_oldest_time = 0;
+    res.part_mutations_oldest_time = 0;
 
     for (const LogEntryPtr & entry : queue)
     {
@@ -1012,11 +1012,11 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
         if (entry->type == LogEntry::MUTATE_PART)
         {
-            ++res.mutations_in_queue;
+            ++res.part_mutations_in_queue;
 
-            if (entry->create_time && (!res.mutations_oldest_time || entry->create_time < res.mutations_oldest_time))
+            if (entry->create_time && (!res.part_mutations_oldest_time || entry->create_time < res.part_mutations_oldest_time))
             {
-                res.mutations_oldest_time = entry->create_time;
+                res.part_mutations_oldest_time = entry->create_time;
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
         }

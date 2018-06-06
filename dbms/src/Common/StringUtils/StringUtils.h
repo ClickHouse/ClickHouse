@@ -107,6 +107,11 @@ inline bool isWhitespaceASCII(char c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
+inline bool isControlASCII(char c)
+{
+    return c >= 0 && c <= 31;
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {
