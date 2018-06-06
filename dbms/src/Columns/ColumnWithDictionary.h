@@ -42,6 +42,8 @@ public:
         return getUnique()->getNestedColumn()->index(indexes, 0);
     }
 
+    ColumnPtr convertToFullColumnIfWithDictionary() const override { return convertToFullColumn(); }
+
     MutableColumnPtr cloneResized(size_t size) const override
     {
         auto unique_ptr = column_unique;

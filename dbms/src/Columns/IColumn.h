@@ -47,6 +47,10 @@ public:
       */
     virtual Ptr convertToFullColumnIfConst() const { return {}; }
 
+    /// If column isn't ColumnWithDictionary, return itself.
+    /// If column is ColumnWithDictionary, transforms is to full column.
+    virtual Ptr convertToFullColumnIfWithDictionary() const { return getPtr(); }
+
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
