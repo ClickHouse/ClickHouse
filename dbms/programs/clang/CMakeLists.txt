@@ -18,7 +18,7 @@ endif ()
 add_custom_target(make-headers-directory ALL COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/headers)
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/headers DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/clickhouse COMPONENT clickhouse)
 if (USE_EMBEDDED_COMPILER)
-    add_custom_target(copy-headers ALL env CLANG=${CMAKE_CURRENT_BINARY_DIR}/clickhouse-clang BUILD_PATH=${ClickHouse_BINARY_DIR} DESTDIR=${ClickHouse_SOURCE_DIR} ${ClickHouse_SOURCE_DIR}/copy_headers.sh ${ClickHouse_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/headers DEPENDS clickhouse-clang WORKING_DIRECTORY ${ClickHouse_SOURCE_DIR} SOURCES ${ClickHouse_SOURCE_DIR}/copy_headers.sh)
+    add_custom_target(copy-headers ALL env CLANG=${CMAKE_CURRENT_BINARY_DIR}/../clickhouse-clang BUILD_PATH=${ClickHouse_BINARY_DIR} DESTDIR=${ClickHouse_SOURCE_DIR} ${ClickHouse_SOURCE_DIR}/copy_headers.sh ${ClickHouse_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/headers DEPENDS clickhouse-clang WORKING_DIRECTORY ${ClickHouse_SOURCE_DIR} SOURCES ${ClickHouse_SOURCE_DIR}/copy_headers.sh)
 
     if (USE_INTERNAL_LLVM_LIBRARY)
         set(CLANG_HEADERS_DIR "${ClickHouse_SOURCE_DIR}/contrib/llvm/clang/lib/Headers")
