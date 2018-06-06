@@ -1,5 +1,3 @@
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
 set(SRCS )
 
 add_executable (tab_separated_streams tab_separated_streams.cpp ${SRCS})
