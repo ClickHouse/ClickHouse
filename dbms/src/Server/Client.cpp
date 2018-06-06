@@ -9,6 +9,7 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
+#include <thread>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/File.h>
@@ -91,11 +92,78 @@ namespace ErrorCodes
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
 }
 
-
 class Client : public Poco::Util::Application
 {
 public:
     Client() {}
+
+    void init_suggestions(Completion::TSTNode &node)
+    {
+        QUERYPART *qP = queryParts;
+        while (qP->name) {
+            node.add_word(qP->name);
+            qP++;
+        }
+
+        std::vector<Block> blocks;
+
+        //preload all functions
+        sendQuery("SELECT name FROM system.functions", blocks);
+        for (const auto &block : blocks) {
+            size_t size = block.rows();
+            for (size_t i = size; i--;) {
+                node.add_word(strdup(block.getByName("name").column->getDataAt(i).toString().c_str()));
+            }
+        }
+        blocks.clear();
+
+        int limit = config().getInt("suggestion_limit", suggestion_limit);
+
+        //preload limited amount of dbs
+        auto *query = new char[128];
+        sprintf(query, "SELECT name FROM system.databases ORDER BY name LIMIT %d", limit);
+        sendQuery(query, blocks);
+        for (const auto &block : blocks) {
+                size_t size = block.rows();
+                for (size_t i = size; i--;) {
+                    node.add_word(strdup(block.getByName("name").column->getDataAt(i).toString().c_str()));
+                }
+        }
+        blocks.clear();
+        delete query;
+
+        //preload limited amount of tables and their columns
+        query = new char[128];
+        sprintf(
+                query,
+                "SELECT table,name FROM system.columns WHERE table IN (SELECT name FROM system.tables ORDER BY name"
+                " LIMIT %d)",
+                limit
+        );
+        sendQuery(query, blocks);
+        for (const auto &block : blocks) {
+            ColumnWithTypeAndName tableNameColumn = block.getByName("table");
+            ColumnWithTypeAndName columnNameColumn = block.getByName("name");
+                size_t size = block.rows();
+                for (size_t i = size; i--;) {
+                    const char *tableName = strdup(tableNameColumn.column->getDataAt(i).toString().c_str());
+                    const char *columnName = strdup(columnNameColumn.column->getDataAt(i).toString().c_str());
+                    auto *implodedName = new char[strlen(tableName)+strlen(columnName)+2];
+                    sprintf(implodedName, "%s.%s", tableName, columnName);
+                    if (!node.has(tableName))  {
+                        node.add_word(tableName);
+                    }
+                    if (!node.has(columnName)) {
+                        node.add_word(columnName);
+                    }
+                    if (!node.has(implodedName)) {
+                        node.add_word(implodedName);
+                    }
+                    delete implodedName;
+            }
+        }
+        delete query;
+    }
 
 private:
     using StringSet = std::unordered_set<String>;
@@ -174,6 +242,9 @@ private:
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
+
+    /// Suggestion limit for how many databases and tables to fetch
+    int suggestion_limit = 100;
 
 
     struct ConnectionParameters
@@ -340,17 +411,6 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    void init_suggestions()
-    {
-        QUERYPART *qP = queryParts;
-        while (qP->name) {
-            completionNode.add_word(qP->name);
-            qP++;
-        }
-        rl_attempted_completion_function = query_parts_completion;
-    }
-
-
     int mainImpl()
     {
         registerFunctions();
@@ -461,7 +521,9 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 #if USE_READLINE
-            init_suggestions();
+            rl_attempted_completion_function = query_parts_completion;
+            init_suggestions(completionNode);
+//            std::thread tSuggestionInit(&DB::Client::init_suggestions, this, &completionNode);
 #endif
 
             /// Turn tab completion off.
@@ -1421,6 +1483,7 @@ public:
             ("query_id", boost::program_options::value<std::string>(), "query_id")
             ("query,q", boost::program_options::value<std::string>(), "query")
             ("database,d", boost::program_options::value<std::string>(), "database")
+            ("suggestion_limit", boost::program_options::value<int>()->default_value(suggestion_limit), "Limit number of tables for suggestion")
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
@@ -1548,6 +1611,39 @@ public:
             max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
+        if (options.count("suggestion_limit"))
+            config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+
+
+    }
+
+    void sendQuery(const String &query_, std::vector<Block> &blockVector)
+    {
+        connection->sendQuery(
+                query_,
+                query_id,
+                QueryProcessingStage::Complete,
+                &context.getSettingsRef(),
+                nullptr,
+                true
+        );
+
+        bool continueReceiving = true;
+        connection->forceConnected();
+        do {
+            try {
+                Connection::Packet packet = connection->receivePacket();
+                continueReceiving = packet.type != Protocol::Server::EndOfStream
+                                    && packet.type != Protocol::Server::Exception;
+                if (!packet.block || !packet.block.rows()) {
+                    continue;
+                }
+
+                blockVector.emplace_back(packet.block);
+            } catch (...) {
+                continueReceiving = false;
+            }
+        } while (continueReceiving);
     }
 };
 
