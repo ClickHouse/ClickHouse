@@ -86,8 +86,8 @@ namespace
         for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
         {
             if (columns.size() != columns_received->data[col_n].size)
-                throw Exception("LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size)
-                        + ", must be " + std::to_string(columns.size()),
+                throw Exception("LibraryDictionarySource: Returned unexpected number of columns: "
+                        + std::to_string(columns_received->data[col_n].size) + ", must be " + std::to_string(columns.size()),
                     ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
             for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
@@ -124,11 +124,15 @@ LibraryDictionarySource::LibraryDictionarySource(const DictionaryStructure & dic
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path);
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
-    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), ClickHouseLibrary::CLogger*)>("ClickHouseDictionary_v2_libNew")) {
+    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), ClickHouseLibrary::CLogger *)>(
+            "ClickHouseDictionary_v2_libNew"))
+    {
         clogger = std::make_shared<ClickHouseLibrary::CLogger>();
         ClickHouseLibrary::initDictLogger(clogger.get());
         lib_data = libNew(&settings->strings, clogger.get());
-    } else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings))>("ClickHouseDictionary_v2_libNew")) {
+    }
+    else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings))>("ClickHouseDictionary_v2_libNew"))
+    {
         lib_data = libNew(&settings->strings);
     }
 }
@@ -147,7 +151,8 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
 {
     if (auto libClone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v2_libClone"))
         lib_data = libClone(other.lib_data);
-    else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), ClickHouseLibrary::CLogger*)>("ClickHouseDictionary_v2_libNew"))
+    else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), ClickHouseLibrary::CLogger *)>(
+                 "ClickHouseDictionary_v2_libNew"))
         lib_data = libNew(&settings->strings, clogger.get());
     else if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings))>("ClickHouseDictionary_v2_libNew"))
         lib_data = libNew(&settings->strings);
