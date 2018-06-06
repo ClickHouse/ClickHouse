@@ -137,11 +137,19 @@ public:
                         Stat * stat = nullptr,
                         const EventPtr & watch = nullptr);
 
+    Strings getChildrenWatch(const std::string & path,
+                             Stat * stat,
+                             WatchCallback watch_callback);
+
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
     int32_t tryGetChildren(const std::string & path, Strings & res,
                         Stat * stat = nullptr,
                         const EventPtr & watch = nullptr);
+
+    int32_t tryGetChildrenWatch(const std::string & path, Strings & res,
+                        Stat * stat,
+                        WatchCallback watch_callback);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
@@ -182,16 +190,22 @@ public:
     ///
     /// Future should not be destroyed before the result is gotten.
 
+    using FutureCreate = std::future<ZooKeeperImpl::ZooKeeper::CreateResponse>;
+    FutureCreate asyncCreate(const std::string & path, const std::string & data, int32_t mode);
+
     using FutureGet = std::future<ZooKeeperImpl::ZooKeeper::GetResponse>;
     FutureGet asyncGet(const std::string & path);
 
     FutureGet asyncTryGet(const std::string & path);
 
-    using FutureExists = std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ;
+    using FutureExists = std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse>;
     FutureExists asyncExists(const std::string & path);
 
     using FutureGetChildren = std::future<ZooKeeperImpl::ZooKeeper::ListResponse>;
     FutureGetChildren asyncGetChildren(const std::string & path);
+
+    using FutureSet = std::future<ZooKeeperImpl::ZooKeeper::SetResponse>;
+    FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
 
     using FutureRemove = std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse>;
     FutureRemove asyncRemove(const std::string & path, int32_t version = -1);

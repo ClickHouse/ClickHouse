@@ -20,6 +20,7 @@
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
 #include <ext/enumerate.h>
 
 

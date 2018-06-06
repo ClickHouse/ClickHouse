@@ -34,6 +34,8 @@
 
 #include <Core/Field.h>
 
+#include <IO/ReadHelpers.h>
+
 #include <Poco/DirectoryIterator.h>
 
 #include <memory>
@@ -53,6 +55,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -69,10 +72,15 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 }
 
 /// insert query has database and table names as bare strings
-/// Creates a copy of query, changes the database and table names.
+/// If the query is null, it creates a insert query with the database and tables
+/// Or it creates a copy of query, changes the database and table names.
 ASTPtr rewriteInsertQuery(const ASTPtr & query, const std::string & database, const std::string & table)
 {
-    auto modified_query_ast = query->clone();
+    ASTPtr modified_query_ast = nullptr;
+    if (query == nullptr)
+        modified_query_ast = std::make_shared<ASTInsertQuery>();
+    else
+        modified_query_ast = query->clone();
 
     auto & actual_query = typeid_cast<ASTInsertQuery &>(*modified_query_ast);
     actual_query.database = database;

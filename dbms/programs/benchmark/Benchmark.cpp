@@ -29,7 +29,7 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
-#include "InterruptListener.h"
+#include <Common/InterruptListener.h>
 
 
 /** A tool for evaluating ClickHouse performance.

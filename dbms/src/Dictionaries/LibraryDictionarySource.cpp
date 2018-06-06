@@ -47,7 +47,7 @@ private:
 
 namespace
 {
-    const std::string lib_config_settings = ".settings";
+    constexpr auto lib_config_settings = ".settings";
 
 
     CStringsHolder getLibSettings(const Poco::Util::AbstractConfiguration & config, const std::string & config_root)
@@ -96,8 +96,7 @@ namespace
                 if (!field.data)
                     continue;
                 const auto & size = field.size;
-                const auto & data = static_cast<const char *>(field.data);
-                columns[row_n]->insertData(data, size);
+                columns[row_n]->insertData(static_cast<const char *>(field.data), size);
             }
         }
 

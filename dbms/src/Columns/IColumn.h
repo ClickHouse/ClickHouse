@@ -37,7 +37,7 @@ private:
 
 public:
     /// Name of a Column. It is used in info messages.
-    virtual std::string getName() const { return getFamilyName(); };
+    virtual std::string getName() const { return getFamilyName(); }
 
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -241,7 +241,7 @@ public:
 
     /// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
     /// It affects performance only (not correctness).
-    virtual void reserve(size_t /*n*/) {};
+    virtual void reserve(size_t /*n*/) {}
 
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;

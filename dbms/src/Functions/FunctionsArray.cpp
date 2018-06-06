@@ -2585,7 +2585,7 @@ String FunctionArraySlice::getName() const
 
 DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    size_t number_of_arguments = arguments.size();
+    const size_t number_of_arguments = arguments.size();
 
     if (number_of_arguments < 2 || number_of_arguments > 3)
         throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -3320,7 +3320,7 @@ String FunctionArrayResize::getName() const
 
 DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    size_t number_of_arguments = arguments.size();
+    const size_t number_of_arguments = arguments.size();
 
     if (number_of_arguments < 2 || number_of_arguments > 3)
         throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -3343,9 +3343,9 @@ DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) 
                 "Argument " + toString(1) + " for function " + getName() + " must be integer but it has type "
                 + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (number_of_arguments)
+    if (number_of_arguments == 2)
         return arguments[0];
-    else
+    else /* if (number_of_arguments == 3) */
         return std::make_shared<DataTypeArray>(getLeastSupertype({array_type->getNestedType(), arguments[2]}));
 }
 

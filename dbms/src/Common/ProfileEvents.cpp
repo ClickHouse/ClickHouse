@@ -43,6 +43,7 @@
     M(ObsoleteReplicatedParts) \
     M(ReplicatedPartMerges) \
     M(ReplicatedPartFetchesOfMerged) \
+    M(ReplicatedPartMutations) \
     M(ReplicatedPartChecks) \
     M(ReplicatedPartChecksFailed) \
     M(ReplicatedDataLoss) \
@@ -135,6 +136,7 @@
     \
     M(DistributedSyncInsertionTimeoutExceeded) \
     M(DataAfterMergeDiffersFromReplica) \
+    M(DataAfterMutationDiffersFromReplica) \
     M(PolygonsAddedToPool) \
     M(PolygonsInPoolAllocatedBytes) \
     M(RWLockAcquiredReadLocks) \

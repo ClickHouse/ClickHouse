@@ -10,6 +10,7 @@
 #include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <IO/CompressionSettings.h>
@@ -130,6 +131,7 @@ public:
     static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
+    Context(const Context &) = default;
     ~Context();
 
     String getPath() const;
@@ -160,8 +162,8 @@ public:
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
-    ClientInfo & getClientInfo() { return client_info; };
-    const ClientInfo & getClientInfo() const { return client_info; };
+    ClientInfo & getClientInfo() { return client_info; }
+    const ClientInfo & getClientInfo() const { return client_info; }
 
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();
@@ -284,8 +286,8 @@ public:
     void setSessionContext(Context & context_) { session_context = &context_; }
     void setGlobalContext(Context & context_) { global_context = &context_; }
 
-    const Settings & getSettingsRef() const { return settings; };
-    Settings & getSettingsRef() { return settings; };
+    const Settings & getSettingsRef() const { return settings; }
+    Settings & getSettingsRef() { return settings; }
 
 
     void setProgressCallback(ProgressCallback callback);
@@ -397,6 +399,10 @@ public:
 
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
+
+    using getSampleBlockCacheType = std::unordered_map<std::string, Block>;
+    mutable Context::getSampleBlockCacheType get_sample_block_cache;
+    getSampleBlockCacheType & getSampleBlockCache() const;
 
 private:
     /** Check if the current client has access to the specified database.

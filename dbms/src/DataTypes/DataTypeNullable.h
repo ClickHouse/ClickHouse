@@ -71,7 +71,7 @@ public:
     bool cannotBeStoredInTables() const override { return nested_data_type->cannotBeStoredInTables(); }
     bool shouldAlignRightInPrettyFormats() const override { return nested_data_type->shouldAlignRightInPrettyFormats(); }
     bool textCanContainOnlyValidUTF8() const override { return nested_data_type->textCanContainOnlyValidUTF8(); }
-    bool isComparable() const override { return nested_data_type->isComparable(); };
+    bool isComparable() const override { return nested_data_type->isComparable(); }
     bool canBeComparedWithCollation() const override { return nested_data_type->canBeComparedWithCollation(); }
     bool canBeUsedAsVersion() const override { return false; }
     bool isSummable() const override { return nested_data_type->isSummable(); }
