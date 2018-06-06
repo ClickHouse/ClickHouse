@@ -1,13 +1,15 @@
 #include "Completion.h"
 
+#include <cstring>
+
 namespace Completion
 {
-    void TSTNode::add_word(char *word)
+    void TSTNode::add_word(const char *word)
     {
         insert(word, word);
     }
 
-    void TSTNode::insert(char *word, char *remainder)
+    void TSTNode::insert(const char *word, const char *remainder)
     {
         if (!*remainder) {
             return;
@@ -77,6 +79,33 @@ namespace Completion
         }
 
         return middle->find(word, ++remainder);
+    }
+
+    bool TSTNode::has(const char *word)
+    {
+        if (!word) {
+            return true;
+        }
+
+        if (token > *word) {
+            if (!left) {
+                return false;
+            }
+            return left->has(word);
+        }
+
+        if (token < *word) {
+            if (!right) {
+                return false;
+            }
+            return right->has(word);
+        }
+
+        if (!middle) {
+            return false;
+        }
+
+        return middle->has(++word);
     }
 
     void TSTNode::free()
