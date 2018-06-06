@@ -37,7 +37,6 @@ public:
 //
 //    virtual bool has(const char * pos, size_t length) const { return getInsertionPoint(pos, length) != size(); }
 
-
     const char * getFamilyName() const override { return "ColumnUnique"; }
 
     void insert(const Field &) override
@@ -78,6 +77,36 @@ public:
     ColumnPtr index(const ColumnPtr &, size_t) const override
     {
         throw Exception("Method index is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    ColumnPtr cut(size_t, size_t) const override
+    {
+        throw Exception("Method cut is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    ColumnPtr filter(const IColumn::Filter &, ssize_t) const override
+    {
+        throw Exception("Method filter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    ColumnPtr permute(const IColumn::Permutation &, size_t) const override
+    {
+        throw Exception("Method permute is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    ColumnPtr replicate(const IColumn::Offsets &) const override
+    {
+        throw Exception("Method replicate is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void getPermutation(bool, size_t, int, IColumn::Permutation &) const override
+    {
+        throw Exception("Method getPermutation is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
+    {
+        throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 
