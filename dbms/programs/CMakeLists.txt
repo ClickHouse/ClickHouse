@@ -26,9 +26,6 @@ add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (clang)
 
-if (USE_EMBEDDED_COMPILER AND ENABLE_CLICKHOUSE_SERVER)
-    add_dependencies(clickhouse-server copy-headers)
-endif ()
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
@@ -141,4 +138,8 @@ else ()
 
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
+endif ()
+
+if (USE_EMBEDDED_COMPILER AND ENABLE_CLICKHOUSE_SERVER)
+    add_dependencies(clickhouse-server copy-headers)
 endif ()
