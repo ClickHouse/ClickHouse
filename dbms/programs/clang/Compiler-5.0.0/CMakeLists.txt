@@ -12,7 +12,7 @@ llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
-target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
+target_include_directories(clickhouse-compiler-lib SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 
 # This is extracted almost directly from CMakeFiles/.../link.txt in LLVM build directory.
 

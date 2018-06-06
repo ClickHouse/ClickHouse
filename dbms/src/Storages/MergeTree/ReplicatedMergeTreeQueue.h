@@ -284,11 +284,11 @@ public:
         UInt32 queue_size;
         UInt32 inserts_in_queue;
         UInt32 merges_in_queue;
-        UInt32 mutations_in_queue;
+        UInt32 part_mutations_in_queue;
         UInt32 queue_oldest_time;
         UInt32 inserts_oldest_time;
         UInt32 merges_oldest_time;
-        UInt32 mutations_oldest_time;
+        UInt32 part_mutations_oldest_time;
         String oldest_part_to_get;
         String oldest_part_to_merge_to;
         String oldest_part_to_mutate_to;
