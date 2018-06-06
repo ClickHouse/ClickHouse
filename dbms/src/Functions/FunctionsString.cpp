@@ -1084,6 +1084,15 @@ private:
 };
 
 
+struct NameStartsWith
+{
+    static constexpr auto name = "startsWith";
+};
+struct NameEndsWith
+{
+    static constexpr auto name = "endsWith";
+};
+
 template <typename Name>
 class FunctionStartsEndsWith : public IFunction
 {
@@ -1112,131 +1121,83 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isStringOrFixedString())
-            throw Exception(
-                            "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (!arguments[1]->isStringOrFixedString())
-            throw Exception(
-                            "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<UInt8>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const IColumn * string_columns = block.getByPosition(arguments[0]).column.get();
-        const IColumn * template_columns = block.getByPosition(arguments[1]).column.get();
-
-        const ColumnString * strings = checkAndGetColumn<ColumnString>(string_columns);
-        const ColumnString * templates = checkAndGetColumn<ColumnString>(template_columns);
-        const ColumnFixedString * fixed_strings = checkAndGetColumn<ColumnFixedString>(string_columns);
-        const ColumnFixedString * fixed_templates = checkAndGetColumn<ColumnFixedString>(template_columns);
-        const ColumnConst * const_templates = checkAndGetColumn<ColumnConst>(template_columns);
+        const IColumn * haystack_column = block.getByPosition(arguments[0]).column.get();
+        const IColumn * needle_column = block.getByPosition(arguments[1]).column.get();
 
         auto col_res = ColumnVector<UInt8>::create();
         typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
 
-        FunctionName functionName;
-        if (name == static_cast<std::string>("startsWith"))
-        {
-            functionName = FunctionName::StartsWith;
-        }
-        else
-        {
-            functionName = FunctionName::EndsWith;
-        }
+        vec_res.resize(input_rows_count);
 
-        if (strings && templates)
-        {
-            vec_res.resize(strings->size());
-            execute<StringSource, StringSource>(StringSource(*strings), StringSource(*templates), vec_res, functionName);
-        }
-        else if (strings && fixed_templates)
-        {
-            vec_res.resize(strings->size());
-            execute<StringSource, FixedStringSource>(StringSource(*strings), FixedStringSource(*fixed_templates), vec_res, functionName);
-        }
-        else if (fixed_strings && templates)
-        {
-            vec_res.resize(fixed_strings->size());
-            execute<FixedStringSource, StringSource>(FixedStringSource(*fixed_strings), StringSource(*templates), vec_res, functionName);
-        }
-        else if (fixed_strings && fixed_templates)
-        {
-            vec_res.resize(fixed_strings->size());
-            execute<FixedStringSource, FixedStringSource>(
-                                                          FixedStringSource(*fixed_strings), FixedStringSource(*fixed_templates), vec_res, functionName);
-        }
-        else if (strings)
-        {
-            vec_res.resize(strings->size());
-            execute<StringSource, ConstSource<StringSource>>(
-                                                             StringSource(*strings), ConstSource<StringSource>(*const_templates), vec_res, functionName);
-        }
-        else if (fixed_strings)
-        {
-            vec_res.resize(fixed_strings->size());
-            execute<FixedStringSource, ConstSource<StringSource>>(
-                                                                  FixedStringSource(*fixed_strings), ConstSource<StringSource>(*const_templates), vec_res, functionName);
-        }
+        if (const ColumnString * haystack = checkAndGetColumn<ColumnString>(haystack_column))
+            dispatch<StringSource>(StringSource(*haystack), needle_column, vec_res);
+        else if (const ColumnFixedString * haystack = checkAndGetColumn<ColumnFixedString>(haystack_column))
+            dispatch<FixedStringSource>(FixedStringSource(*haystack), needle_column, vec_res);
+        else if (const ColumnConst * haystack = checkAndGetColumnConst<ColumnString>(haystack_column))
+            dispatch<ConstSource<StringSource>>(ConstSource<StringSource>(*haystack), needle_column, vec_res);
+        else if (const ColumnConst * haystack = checkAndGetColumnConst<ColumnFixedString>(haystack_column))
+            dispatch<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*haystack), needle_column, vec_res);
+        else
+            throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         block.getByPosition(result).column = std::move(col_res);
     }
 
 private:
-    enum FunctionName
+    template <typename HaystackSource>
+    void dispatch(HaystackSource haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data) const
     {
-        StartsWith,
-        EndsWith
-    };
+        if (const ColumnString * needle = checkAndGetColumn<ColumnString>(needle_column))
+            execute<HaystackSource, StringSource>(haystack_source, StringSource(*needle), res_data);
+        else if (const ColumnFixedString * needle = checkAndGetColumn<ColumnFixedString>(needle_column))
+            execute<HaystackSource, FixedStringSource>(haystack_source, FixedStringSource(*needle), res_data);
+        else if (const ColumnConst * needle = checkAndGetColumnConst<ColumnString>(needle_column))
+            execute<HaystackSource, ConstSource<StringSource>>(haystack_source, ConstSource<StringSource>(*needle), res_data);
+        else if (const ColumnConst * needle = checkAndGetColumnConst<ColumnFixedString>(needle_column))
+            execute<HaystackSource, ConstSource<FixedStringSource>>(haystack_source, ConstSource<FixedStringSource>(*needle), res_data);
+        else
+            throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+    }
 
-    template <typename StringType, typename TemplateType>
-    static void execute(StringType str, TemplateType str_template, PaddedPODArray<UInt8> & res_data, FunctionName functionName)
+    template <typename HaystackSource, typename NeedleSource>
+    static void execute(HaystackSource haystack_source, NeedleSource needle_source, PaddedPODArray<UInt8> & res_data)
     {
-        size_t ind = 0;
-        size_t start_pos;
+        size_t row_num = 0;
 
-        while (!str.isEnd())
+        while (!haystack_source.isEnd())
         {
-            if (str_template.getElementSize() == 1)
+            auto haystack = haystack_source.getWhole();
+            auto needle = needle_source.getWhole();
+
+            if (needle.size > haystack.size)
             {
-                res_data[ind] = true;
+                res_data[row_num] = false;
             }
             else
             {
-                if (str.getElementSize() < str_template.getElementSize())
+                if constexpr (std::is_same_v<Name, NameStartsWith>)
                 {
-                    res_data[ind] = false;
+                    res_data[row_num] = StringRef(haystack.data, needle.size) == StringRef(needle.data, needle.size);
                 }
-                else
+                else    /// endsWith
                 {
-                    if (functionName == FunctionName::StartsWith)
-                    {
-                        start_pos = 0;
-                    }
-                    else
-                    {
-                        start_pos = str.getElementSize() - str_template.getElementSize();
-                    }
+                    res_data[row_num] = StringRef(haystack.data + haystack.size - needle.size, needle.size) == StringRef(needle.data, needle.size);
+                }
+            }
 
-                    StringRef str_ref(str.getWhole().data + start_pos, str_template.getElementSize() - 1);
-                    StringRef template_ref(str_template.getWhole().data, str_template.getElementSize() - 1);
-                    if (str_ref == template_ref)
-                    {
-                        res_data[ind] = true;
-                    }
-                    else
-                    {
-                        res_data[ind] = false;
-                    }
-                }
-            }
-            str.next();
-            ind++;
-            if (str_template.getSizeForReserve() > 1)
-            {
-                str_template.next();
-            }
+            haystack_source.next();
+            needle_source.next();
+            ++row_num;
         }
     }
 };
@@ -1277,14 +1238,6 @@ struct NameConcat
 struct NameConcatAssumeInjective
 {
     static constexpr auto name = "concatAssumeInjective";
-};
-struct NameStartsWith
-{
-    static constexpr auto name = "startsWith";
-};
-struct NameEndsWith
-{
-    static constexpr auto name = "endsWith";
 };
 
 
