@@ -521,59 +521,6 @@ struct SubstringUTF8Impl
 };
 
 
-/** Defines the occurrence of a pattern at the beginning and end of a string
- * Expands the string in bytes.
- */
-struct StartsEndsWithImpl
-{
-    static void vector(StringSource str, const String & str_template, PaddedPODArray<UInt8> & res_data, std::string foo_name)
-    {
-        size_t ind = 0;
-        size_t start_pos;
-        
-        while (!str.isEnd())
-        {
-            if (str_template.size() == 0)
-            {
-                res_data[ind] = true;
-            }
-            else
-            {
-                if (str.getElementSize() <= str_template.size())
-                {
-                    res_data[ind] = false;
-                }
-                else
-                {
-                    if (foo_name == "startsWith")
-                    {
-                        start_pos = 0;
-                    }
-                    else
-                    {
-                        start_pos = str.getElementSize() - str_template.size() - 1;
-                    }
-                    
-                    StringRef str_ref(str.getWhole().data + start_pos, str_template.size());
-                    StringRef template_ref(str_template);
-                    
-                    if (str_ref == template_ref)
-                    {
-                        res_data[ind] = true;
-                    }
-                    else
-                    {
-                        res_data[ind] = false;
-                    }
-                }
-            }
-            str.next();
-            ind++;
-        }
-    }
-};
-
-
 template <typename Impl, typename Name, typename ResultType>
 class FunctionStringOrArrayToT : public IFunction
 {
@@ -1159,16 +1106,16 @@ public:
     
     bool useDefaultImplementationForConstants() const override
     {
-        return 0;
+        return true;
     }
     
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!arguments[0]->isStringOrFixedString())
             throw Exception(
                             "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         
-        if (!arguments[1]->isString())
+        if (!arguments[1]->isStringOrFixedString())
             throw Exception(
                             "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         
@@ -1177,22 +1124,119 @@ public:
     
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const ColumnPtr column_ptr = block.getByPosition(arguments[0]).column;
+        const IColumn * string_columns = block.getByPosition(arguments[0]).column.get();
+        const IColumn * template_columns = block.getByPosition(arguments[1]).column.get();
         
-        Field field_template = (*block.getByPosition(arguments[1]).column)[0];
+        const ColumnString * strings = checkAndGetColumn<ColumnString>(string_columns);
+        const ColumnString * templates = checkAndGetColumn<ColumnString>(template_columns);
+        const ColumnFixedString * fixed_strings = checkAndGetColumn<ColumnFixedString>(string_columns);
+        const ColumnFixedString * fixed_templates = checkAndGetColumn<ColumnFixedString>(template_columns);
+        const ColumnConst * const_templates = checkAndGetColumn<ColumnConst>(template_columns);
         
-        const String string_template = field_template.get<String>();
+        auto col_res = ColumnVector<UInt8>::create();
+        typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
         
-        if (const ColumnString * column = checkAndGetColumn<ColumnString>(column_ptr.get()))
+        FunctionName functionName;
+        if (name == static_cast<std::string>("startsWith"))
         {
-            auto col_res = ColumnVector<UInt8>::create();
-            typename ColumnVector<UInt8>::Container & vec_res = col_res->getData();
-            vec_res.resize(column->size());
-            
-            StartsEndsWithImpl::vector(StringSource(*column), string_template, vec_res, Name::name);
-            
-            auto res = ColumnString::create();
-            block.getByPosition(result).column = std::move(col_res);
+            functionName = FunctionName::StartsWith;
+        }
+        else
+        {
+            functionName = FunctionName::EndsWith;
+        }
+        
+        if (strings && templates)
+        {
+            vec_res.resize(strings->size());
+            execute<StringSource, StringSource>(StringSource(*strings), StringSource(*templates), vec_res, functionName);
+        }
+        else if (strings && fixed_templates)
+        {
+            vec_res.resize(strings->size());
+            execute<StringSource, FixedStringSource>(StringSource(*strings), FixedStringSource(*fixed_templates), vec_res, functionName);
+        }
+        else if (fixed_strings && templates)
+        {
+            vec_res.resize(fixed_strings->size());
+            execute<FixedStringSource, StringSource>(FixedStringSource(*fixed_strings), StringSource(*templates), vec_res, functionName);
+        }
+        else if (fixed_strings && fixed_templates)
+        {
+            vec_res.resize(fixed_strings->size());
+            execute<FixedStringSource, FixedStringSource>(
+                                                          FixedStringSource(*fixed_strings), FixedStringSource(*fixed_templates), vec_res, functionName);
+        }
+        else if (strings)
+        {
+            vec_res.resize(strings->size());
+            execute<StringSource, ConstSource<StringSource>>(
+                                                             StringSource(*strings), ConstSource<StringSource>(*const_templates), vec_res, functionName);
+        }
+        else if (fixed_strings)
+        {
+            vec_res.resize(fixed_strings->size());
+            execute<FixedStringSource, ConstSource<StringSource>>(
+                                                                  FixedStringSource(*fixed_strings), ConstSource<StringSource>(*const_templates), vec_res, functionName);
+        }
+        
+        block.getByPosition(result).column = std::move(col_res);
+    }
+    
+private:
+    enum FunctionName
+    {
+        StartsWith,
+        EndsWith
+    };
+    
+    template <typename StringType, typename TemplateType>
+    static void execute(StringType str, TemplateType str_template, PaddedPODArray<UInt8> & res_data, FunctionName functionName)
+    {
+        size_t ind = 0;
+        size_t start_pos;
+        
+        while (!str.isEnd())
+        {
+            if (str_template.getElementSize() == 1)
+            {
+                res_data[ind] = true;
+            }
+            else
+            {
+                if (str.getElementSize() < str_template.getElementSize())
+                {
+                    res_data[ind] = false;
+                }
+                else
+                {
+                    if (functionName == FunctionName::StartsWith)
+                    {
+                        start_pos = 0;
+                    }
+                    else
+                    {
+                        start_pos = str.getElementSize() - str_template.getElementSize();
+                    }
+                    
+                    StringRef str_ref(str.getWhole().data + start_pos, str_template.getElementSize() - 1);
+                    StringRef template_ref(str_template.getWhole().data, str_template.getElementSize() - 1);
+                    if (str_ref == template_ref)
+                    {
+                        res_data[ind] = true;
+                    }
+                    else
+                    {
+                        res_data[ind] = false;
+                    }
+                }
+            }
+            str.next();
+            ind++;
+            if (str_template.getSizeForReserve() > 1)
+            {
+                str_template.next();
+            }
         }
     }
 };
