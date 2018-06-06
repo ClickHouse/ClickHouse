@@ -56,7 +56,9 @@ class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<Colum
 private:
     explicit ColumnUnique(MutableColumnPtr && holder);
     explicit ColumnUnique(const DataTypePtr & type);
-    ColumnUnique(const ColumnUnique & other) : column_holder(other.column_holder), is_nullable(other.is_nullable) {}
+    ColumnUnique(const ColumnUnique & other)
+            : column_holder(other.column_holder), nullable_column(other.nullable_column)
+            , nullable_column_map(other.nullable_column_map), is_nullable(other.is_nullable) {}
 
 public:
     const ColumnPtr & getNestedColumn() const override;
@@ -71,47 +73,32 @@ public:
     size_t getNullValueIndex() const override;
     bool canContainNulls() const override { return is_nullable; }
 
-    Field operator[](size_t n) const override { return (*column_holder)[n]; }
-    void get(size_t n, Field & res) const override { column_holder->get(n, res); }
-    StringRef getDataAt(size_t n) const override { return column_holder->getDataAt(n); }
+    Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
+    void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
+    StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
-        return column_holder->getDataAtWithTerminatingZero(n);
+        return getNestedColumn()->getDataAtWithTerminatingZero(n);
     }
-    UInt64 get64(size_t n) const override { return column_holder->get64(n); }
-    UInt64 getUInt(size_t n) const override { return column_holder->getUInt(n); }
-    Int64 getInt(size_t n) const override { return column_holder->getInt(n); }
-    bool isNullAt(size_t n) const override { return column_holder->isNullAt(n); }
-    ColumnPtr cut(size_t start, size_t length) const override { return column_holder->cut(start, length); }
+    UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
+    UInt64 getUInt(size_t n) const override { return getNestedColumn()->getUInt(n); }
+    Int64 getInt(size_t n) const override { return getNestedColumn()->getInt(n); }
+    bool isNullAt(size_t n) const override { return getNestedColumn()->isNullAt(n); }
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
     {
         return column_holder->serializeValueIntoArena(n, arena, begin);
     }
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
-        return column_holder->updateHashWithValue(n, hash);
+        return getNestedColumn()->updateHashWithValue(n, hash);
     }
-    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override
-    {
-        return column_holder->filter(filt, result_size_hint);
-    }
-    ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override
-    {
-        return column_holder->permute(perm, limit);
-    }
+
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
     {
-        return column_holder->compareAt(n, m, rhs, nan_direction_hint);
+        auto & column_unique = static_cast<const IColumnUnique&>(rhs);
+        return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
     }
-    void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override
-    {
-        column_holder->getPermutation(reverse, limit, nan_direction_hint, res);
-    }
-    ColumnPtr replicate(const IColumn::Offsets & offsets) const override { return column_holder->replicate(offsets); }
-    std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override
-    {
-        return column_holder->scatter(num_columns, selector);
-    }
+
     void getExtremes(Field & min, Field & max) const override { column_holder->getExtremes(min, max); }
     bool valuesHaveFixedSize() const override { return column_holder->valuesHaveFixedSize(); }
     bool isFixedAndContiguous() const override { return column_holder->isFixedAndContiguous(); }
@@ -121,9 +108,21 @@ public:
     size_t byteSize() const override { return column_holder->byteSize(); }
     size_t allocatedBytes() const override
     {
-        return column_holder->allocatedBytes() + (index ? index->getBufferSizeInBytes() : 0);
+        return column_holder->allocatedBytes()
+               + (index ? index->getBufferSizeInBytes() : 0)
+               + (nullable_column ? nullable_column->allocatedBytes() : 0);
     }
-    void forEachSubcolumn(IColumn::ColumnCallback callback) override { callback(column_holder); }
+    void forEachSubcolumn(IColumn::ColumnCallback callback) override
+    {
+        callback(is_nullable ? nullable_column : column_holder);
+        /// If column was mutated, we need to restore ptrs.
+        if (is_nullable)
+        {
+            auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
+            column_holder = column_nullable.getNestedColumnPtr();
+            nullable_column_map = &column_nullable.getNullMapData();
+        }
+    }
 
 private:
 

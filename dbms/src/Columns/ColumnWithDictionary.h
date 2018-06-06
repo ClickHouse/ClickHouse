@@ -165,7 +165,7 @@ public:
     {
         size_t unique_limit = std::min(limit, getUnique()->size());
         Permutation unique_perm;
-        getUnique()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
+        getUnique()->getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
 
         /// TODO: optimize with sse.
 
