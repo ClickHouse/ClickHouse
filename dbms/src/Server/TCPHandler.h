@@ -8,12 +8,17 @@
 #include <IO/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/SystemLogsQueue.h>
 #include <DataStreams/BlockIO.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
+#include "../Common/ZooKeeper/Increment.h"
+#include "../Core/Block.h"
+#include "../Common/Exception.h"
+
 
 namespace CurrentMetrics
 {
@@ -63,6 +68,9 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
+    /// A queue with internal logs that will be passed to client
+    SystemLogsQueuePtr logs_queue;
+    BlockOutputStreamPtr logs_block_out;
 
     void reset()
     {
@@ -139,8 +147,10 @@ private:
 
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
+    void sendLogData(const Block & block);
     void sendException(const Exception & e);
     void sendProgress();
+    void sendLogs();
     void sendEndOfStream();
     void sendProfileInfo();
     void sendTotals();
@@ -149,6 +159,8 @@ private:
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
     void initBlockOutput(const Block & block);
+    void initLogsBlockOutput(const Block & block);
+    void initOutputBuffers();
 
     bool isQueryCancelled();
 

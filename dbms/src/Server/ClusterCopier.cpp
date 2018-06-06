@@ -65,7 +65,6 @@
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
 #include <Server/StatusFile.h>
-#include <daemon/OwnPatternFormatter.h>
 
 
 namespace DB

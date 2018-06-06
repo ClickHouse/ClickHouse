@@ -15,34 +15,34 @@ namespace ErrorCodes
 }
 
 
-static ThreadStatusPtr assertCurrentThread()
+static ThreadStatusPtr getCurrentThreadImpl()
 {
-    ThreadStatusPtr thread = current_thread;
-
-    if (!thread)
+    if (!current_thread || current_thread.use_count() <= 0)
         throw Exception("Thread #" + std::to_string(Poco::ThreadNumber::get()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    if (Poco::ThreadNumber::get() != thread->thread_number)
+    if (Poco::ThreadNumber::get() != current_thread->thread_number)
         throw Exception("Current thread has different thread number", ErrorCodes::LOGICAL_ERROR);
 
-    return thread;
+    return current_thread;
 }
 
 
 void CurrentThread::initializeQuery()
 {
-    assertCurrentThread();
-    current_thread->initializeQuery();
+    getCurrentThreadImpl()->initializeQuery();
 }
 
 void CurrentThread::attachQuery(QueryStatus * parent_process)
 {
-    assertCurrentThread();
+    ThreadStatusPtr thread = getCurrentThreadImpl();
 
     if (!parent_process)
-        current_thread->attachQuery(nullptr, nullptr, nullptr);
+        thread->attachQuery(nullptr, nullptr, nullptr, CurrentThread::getSystemLogsQueue());
     else
-        current_thread->attachQuery(parent_process, &parent_process->performance_counters, &parent_process->memory_tracker);
+    {
+        thread->attachQuery(
+                parent_process, &parent_process->performance_counters, &parent_process->memory_tracker, CurrentThread::getSystemLogsQueue());
+    }
 }
 
 
@@ -58,20 +58,17 @@ void CurrentThread::attachQueryFromSiblingThreadIfDetached(const ThreadStatusPtr
 
 void CurrentThread::updatePerformanceCounters()
 {
-    assertCurrentThread();
-    current_thread->updatePerfomanceCountersImpl();
+    getCurrentThreadImpl()->updatePerfomanceCountersImpl();
 }
 
 ThreadStatusPtr CurrentThread::get()
 {
-    assertCurrentThread();
-    return current_thread;
+    return getCurrentThreadImpl();
 }
 
 void CurrentThread::detachQuery()
 {
-    assertCurrentThread();
-    current_thread->detachQuery();
+    getCurrentThreadImpl()->detachQuery();
 }
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
@@ -99,17 +96,18 @@ void CurrentThread::attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thr
     if (sibling_thread == nullptr)
         throw Exception("Sibling thread was not initialized", ErrorCodes::LOGICAL_ERROR);
 
-    assertCurrentThread();
+    ThreadStatusPtr thread = getCurrentThreadImpl();
 
     if (sibling_thread->getCurrentState() == ThreadStatus::ThreadState::QueryInitializing)
     {
-        LOG_WARNING(current_thread->log, "An attempt to use initializing sibling thread detected."
-                                         << " Performance statistics for this thread will be inaccurate");
+        LOG_WARNING(thread->log, "An attempt to \'fork\' from initializing thread detected."
+                                 << " Performance statistics for this thread will be inaccurate");
     }
 
     QueryStatus * parent_query;
     ProfileEvents::Counters * parent_counters;
     MemoryTracker * parent_memory_tracker;
+    SystemLogsQueueWeakPtr logs_queue_ptr;
     {
         /// NOTE: It is almost the only place where ThreadStatus::mutex is required
         /// In other cases ThreadStatus must be accessed only from the current_thread
@@ -127,9 +125,29 @@ void CurrentThread::attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thr
             parent_counters = sibling_thread->performance_counters.getParent();
             parent_memory_tracker = sibling_thread->memory_tracker.getParent();
         }
+        logs_queue_ptr = sibling_thread->logs_queue_ptr;
     }
 
-    current_thread->attachQuery(parent_query, parent_counters, parent_memory_tracker, check_detached);
+    thread->attachQuery(parent_query, parent_counters, parent_memory_tracker, logs_queue_ptr, check_detached);
+}
+
+void CurrentThread::attachSystemLogsQueue(const std::shared_ptr<SystemLogsQueue> & logs_queue)
+{
+    getCurrentThreadImpl()->attachSystemLogsQueue(logs_queue);
+}
+
+std::shared_ptr<SystemLogsQueue> CurrentThread::getSystemLogsQueue()
+{
+    /// NOTE: this method could be called at early server startup stage
+    /// NOTE: this method could be called in ThreadStatus destructor, therefore we make use_count() check
+
+    if (!current_thread || current_thread.use_count() <= 0)
+        return nullptr;
+
+    if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
+        return nullptr;
+
+    return current_thread->getSystemLogsQueue();
 }
 
 }

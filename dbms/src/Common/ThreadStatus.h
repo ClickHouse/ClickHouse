@@ -22,9 +22,12 @@ class QueryThreadLog;
 struct TasksStatsCounters;
 struct RusageCounters;
 class TaskStatsInfoGetter;
+class SystemLogsQueue;
+using SystemLogsQueuePtr = std::shared_ptr<SystemLogsQueue>;
+using SystemLogsQueueWeakPtr = std::weak_ptr<SystemLogsQueue>;
+
+
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
-
-
 extern thread_local ThreadStatusPtr current_thread;
 
 
@@ -69,6 +72,18 @@ public:
         return global_context.load(std::memory_order_relaxed);
     }
 
+    SystemLogsQueuePtr getSystemLogsQueue() const
+    {
+        std::lock_guard lock(mutex);
+        return thread_state == Died ? nullptr : logs_queue_ptr.lock();
+    }
+
+    void attachSystemLogsQueue(const SystemLogsQueuePtr & logs_queue)
+    {
+        std::lock_guard lock(mutex);
+        logs_queue_ptr = logs_queue;
+    }
+
     ~ThreadStatus();
 
 protected:
@@ -81,6 +96,7 @@ protected:
             QueryStatus * parent_query_,
             ProfileEvents::Counters * parent_counters,
             MemoryTracker * parent_memory_tracker,
+            const SystemLogsQueueWeakPtr & logs_queue_ptr_,
             bool check_detached = true);
 
     void detachQuery(bool thread_exits = false);
@@ -91,13 +107,16 @@ protected:
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
     QueryStatus * parent_query = nullptr;
 
     /// Is set once
     std::atomic<Context *> global_context{nullptr};
     /// Use it only from current thread
     Context * query_context = nullptr;
+
+    /// A logs queue used by TCPHandler to pass logs to a client
+    SystemLogsQueueWeakPtr logs_queue_ptr;
 
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
@@ -111,7 +130,7 @@ protected:
     friend class CurrentThread;
     friend struct TasksStatsCounters;
 
-    /// Use ptr to not add extra dependencies in header
+    /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RusageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
     std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;

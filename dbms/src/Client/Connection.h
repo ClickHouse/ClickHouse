@@ -213,6 +213,7 @@ private:
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     BlockInputStreamPtr block_in;
+    BlockInputStreamPtr block_logs_in;
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
@@ -248,11 +249,16 @@ private:
     bool ping();
 
     Block receiveData();
+    Block receiveLogData();
+    Block receiveDataImpl(BlockInputStreamPtr & stream);
+
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
     BlockStreamProfileInfo receiveProfileInfo();
 
+    void initInputBuffers();
     void initBlockInput();
+    void initBlockLogsInput();
 
     void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };

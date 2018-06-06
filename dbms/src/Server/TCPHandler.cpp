@@ -29,6 +29,8 @@
 #include <Common/ExternalTable.h>
 
 #include "TCPHandler.h"
+#include <Interpreters/ClickHouseLogChannel.h>
+#include <Core/SystemLogsQueue.h>
 
 #include <Common/NetException.h>
 #include <ext/scope_guard.h>
@@ -152,6 +154,15 @@ void TCPHandler::runImpl()
 
             CurrentThread::initializeQuery();
 
+            /// Should we send internal logs to client?
+            if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
+                && !query_context.getSettingsRef().server_logs_level.value.empty())
+            {
+                state.logs_queue = std::make_shared<SystemLogsQueue>();
+                state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().server_logs_level.value);
+                CurrentThread::attachSystemLogsQueue(state.logs_queue);
+            }
+
             query_context.setExternalTablesInitializer([&global_settings, this] (Context & context) {
                 if (&context != &query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
@@ -180,8 +191,11 @@ void TCPHandler::runImpl()
             else
                 processOrdinaryQuery();
 
-            sendEndOfStream();
+            /// Reset BlockIO in advance to log destruction actions
+            state.io.reset();
+            sendLogs();
 
+            sendEndOfStream();
             state.reset();
         }
         catch (const Exception & e)
@@ -226,7 +240,10 @@ void TCPHandler::runImpl()
         try
         {
             if (exception)
+            {
+                sendLogs();
                 sendException(*exception);
+            }
         }
         catch (...)
         {
@@ -269,12 +286,14 @@ void TCPHandler::readData(const Settings & global_settings)
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
 
-    while (1)
+    while (true)
     {
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
 
+        sendLogs();
+
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (1)
+        while (true)
         {
             if (static_cast<ReadBufferFromPocoSocket &>(*in).poll(poll_interval))
                 break;
@@ -363,6 +382,8 @@ void TCPHandler::processOrdinaryQuery()
                         sendProgress();
                     }
 
+                    sendLogs();
+
                     if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
                     {
                         /// There is the following result block.
@@ -385,6 +406,7 @@ void TCPHandler::processOrdinaryQuery()
                 sendExtremes();
                 sendProfileInfo();
                 sendProgress();
+                sendLogs();
             }
 
             sendData(block);
@@ -708,16 +730,38 @@ void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
-        if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                *out, CompressionSettings(query_context.getSettingsRef()));
-        else
-            state.maybe_compressed_out = out;
+        initOutputBuffers();
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_revision,
             block.cloneEmpty());
+    }
+}
+
+void TCPHandler::initLogsBlockOutput(const Block & block)
+{
+    if (!state.logs_block_out)
+    {
+        initOutputBuffers();
+
+        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
+            *state.maybe_compressed_out,
+            client_revision,
+            block.cloneEmpty());
+    }
+}
+
+
+void TCPHandler::initOutputBuffers()
+{
+    if (!state.maybe_compressed_out)
+    {
+        if (state.compression == Protocol::Compression::Enable)
+            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                *out, CompressionSettings(query_context.getSettingsRef()));
+        else
+            state.maybe_compressed_out = out;
     }
 }
 
@@ -761,9 +805,24 @@ void TCPHandler::sendData(const Block & block)
     initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
+    /// Send external table name (empty name is the main table)
     writeStringBinary("", *out);
 
     state.block_out->write(block);
+    state.maybe_compressed_out->next();
+    out->next();
+}
+
+
+void TCPHandler::sendLogData(const Block & block)
+{
+    initLogsBlockOutput(block);
+
+    writeVarUInt(Protocol::Server::Log, *out);
+    /// Send log tag (empty tag is the default tag)
+    writeStringBinary("", *out);
+
+    state.logs_block_out->write(block);
     state.maybe_compressed_out->next();
     out->next();
 }
@@ -797,6 +856,41 @@ void TCPHandler::sendProgress()
     auto increment = state.progress.fetchAndResetPiecewiseAtomically();
     increment.write(*out, client_revision);
     out->next();
+}
+
+
+void TCPHandler::sendLogs()
+{
+    if (!state.logs_queue)
+        return;
+
+    MutableColumns logs_columns;
+    MutableColumns curr_logs_columns;
+    size_t rows = 0;
+
+    for (; state.logs_queue->tryPop(curr_logs_columns); ++rows)
+    {
+        if (rows == 0)
+        {
+            logs_columns = std::move(curr_logs_columns);
+        }
+        else
+        {
+            for (size_t j = 0; j < logs_columns.size(); ++j)
+                logs_columns[j]->insertRangeFrom(*curr_logs_columns[j], 0, curr_logs_columns[j]->size());
+        }
+    }
+
+    if (rows > 0)
+    {
+        Block block = SystemLogsQueue::getSampleBlock();
+        block.setColumns(std::move(logs_columns));
+        block.checkNumberOfRows();
+
+        std::cerr << "sendLogs: " << block.rows() << " " << block.columns() << "\n";
+
+        sendLogData(block);
+    }
 }
 
 

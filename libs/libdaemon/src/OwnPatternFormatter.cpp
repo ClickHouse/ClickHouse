@@ -1,8 +1,11 @@
 #include <daemon/OwnPatternFormatter.h>
 
-#include <functional>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
+#include <Core/SystemLogsQueue.h>
+
+#include <functional>
 #include <optional>
 #include <sys/time.h>
 #include <Poco/Ext/ThreadNumber.h>
@@ -26,7 +29,7 @@ void OwnPatternFormatter::format(const Poco::Message & msg, std::string & text)
     }
 
     /// Output time with microsecond resolution.
-    timeval tv;
+    ::timeval tv;
     if (0 != gettimeofday(&tv, nullptr))
         DB::throwFromErrno("Cannot gettimeofday");
 
