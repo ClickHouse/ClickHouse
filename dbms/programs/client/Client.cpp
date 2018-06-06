@@ -9,7 +9,6 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <thread>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/File.h>
@@ -522,8 +521,7 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 #if USE_READLINE
             rl_attempted_completion_function = query_parts_completion;
-            init_suggestions(completionNode);
-//            std::thread tSuggestionInit(&DB::Client::init_suggestions, this, &completionNode);
+            std::thread tS([=] {init_suggestions(completionNode);});
 #endif
 
             /// Turn tab completion off.
@@ -1702,3 +1700,4 @@ char * query_parts_generator(const char *text, int state)
 
     return (char *) nullptr;
 }
+
