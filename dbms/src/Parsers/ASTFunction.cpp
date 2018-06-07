@@ -65,27 +65,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     bool written = false;
     if (arguments && !parameters)
     {
-        if (0 == strcmp(name.data(), "CAST"))
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << name;
-
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-
-            arguments->children.front()->formatImpl(settings, state, nested_need_parens);
-
-            settings.ostr <<  (settings.hilite ? hilite_keyword : "") << " AS "
-                << (settings.hilite ? hilite_none : "");
-
-            settings.ostr << (settings.hilite ? hilite_function : "")
-                << typeid_cast<const ASTLiteral &>(*arguments->children.back()).value.safeGet<String>()
-                << (settings.hilite ? hilite_none : "");
-
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << ')'
-                << (settings.hilite ? hilite_none : "");
-
-            written = true;
-        }
-
         if (arguments->children.size() == 1)
         {
             const char * operators[] =
