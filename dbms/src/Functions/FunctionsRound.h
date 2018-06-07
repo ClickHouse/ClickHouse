@@ -220,7 +220,7 @@ struct IntegerRoundingComputation
                 return x;
             }
             default:
-                return x; // Impossible. For avoiding compiler warning.
+                __builtin_unreachable();
         }
     }
 
@@ -235,7 +235,7 @@ struct IntegerRoundingComputation
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
             default:
-                return x; // Impossible. For avoiding compiler warning.
+                __builtin_unreachable();
         }
     }
 
