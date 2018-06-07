@@ -353,7 +353,8 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
     };
 
-    type.enumerateStreams(callback, {});
+    IDataType::SubstreamPath path;
+    type.enumerateStreams(callback, path);
 }
 
 
@@ -362,36 +363,42 @@ void MergeTreeReader::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
-    IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+    auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
-        /// If offsets for arrays have already been read.
-        if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
-            return nullptr;
+        return [&](const IDataType::SubstreamPath & path) -> ReadBuffer *
+        {
+            /// If offsets for arrays have already been read.
+            if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
+                return nullptr;
 
-        String stream_name = IDataType::getFileNameForStream(name, path);
+            String stream_name = IDataType::getFileNameForStream(name, path);
 
-        auto it = streams.find(stream_name);
-        if (it == streams.end())
-            return nullptr;
+            auto it = streams.find(stream_name);
+            if (it == streams.end())
+                return nullptr;
 
-        Stream & stream = *it->second;
+            Stream & stream = *it->second;
 
-        if (!continue_reading)
-            stream.seekToMark(from_mark);
+            if (!continue_reading && !stream_for_prefix)
+                stream.seekToMark(from_mark);
 
-        return stream.data_buffer;
+            return stream.data_buffer;
+        };
     };
 
-    if (!continue_reading)
-        deserialize_binary_bulk_state_map[name] = type.createDeserializeBinaryBulkState();
+    double & avg_value_size_hint = avg_value_size_hints[name];
+    IDataType::DeserializeBinaryBulkSettings settings;
+    settings.avg_value_size_hint = avg_value_size_hint;
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
-        throw Exception("DeserializeBinaryBulkState wasn't created for column " + name, ErrorCodes::LOGICAL_ERROR);
+    {
+        settings.getter = get_stream_getter(true);
+        type.deserializeBinaryBulkStatePrefix(settings, deserialize_binary_bulk_state_map[name]);
+    }
 
-    double & avg_value_size_hint = avg_value_size_hints[name];
+    settings.getter = get_stream_getter(false);
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
-    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read,
-                                                  avg_value_size_hint, true, {}, deserialize_state);
+    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 

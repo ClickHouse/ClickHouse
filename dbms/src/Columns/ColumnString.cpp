@@ -162,7 +162,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 }
 
 
-ColumnPtr ColumnString::index(const ColumnPtr & indexes, size_t limit) const
+ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

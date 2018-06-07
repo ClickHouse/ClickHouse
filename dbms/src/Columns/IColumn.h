@@ -194,7 +194,7 @@ public:
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
     /// Indexes must be one of the ColumnUInt. For default implementation, see selectIndexImpl from ColumnsCommon.h
-    virtual Ptr index(const Ptr & indexes, size_t limit) const = 0;
+    virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
 
     /** Compares (*this)[n] and rhs[m].
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.

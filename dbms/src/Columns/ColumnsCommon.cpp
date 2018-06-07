@@ -315,65 +315,19 @@ INSTANTIATE(Float64)
 namespace detail
 {
     template <typename T>
-    const PaddedPODArray<T> * getIndexesData(const ColumnPtr & indexes)
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes)
     {
-        auto * column = typeid_cast<const ColumnVector<T> *>(indexes.get());
+        auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
         if (column)
             return &column->getData();
 
         return nullptr;
     }
 
-    template <typename T>
-    PaddedPODArray<T> * getIndexesData(IColumn & indexes)
-    {
-        auto * column = typeid_cast<ColumnVector<T> *>(&indexes);
-        if (column)
-            return &column->getData();
-
-        return nullptr;
-    }
-
-    template const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const DB::ColumnPtr & indexes);
-    template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const DB::ColumnPtr & indexes);
-    template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const DB::ColumnPtr & indexes);
-    template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const DB::ColumnPtr & indexes);
-
-    template <typename T>
-    MutableColumnPtr getUniqueIndexImpl(PaddedPODArray<T> & index)
-    {
-        HashMap<T, T> hash_map;
-        for (auto val : index)
-            hash_map.insert({val, hash_map.size()});
-
-        auto res_col = ColumnVector<T>::create();
-        auto & data = res_col->getData();
-
-        data.resize(hash_map.size());
-        for (auto val : hash_map)
-            data[val.second] = val.first;
-
-        for (auto & ind : index)
-            ind = hash_map[ind];
-
-        return std::move(res_col);
-    }
-}
-
-/// Returns unique values of column. Write new index to column.
-MutableColumnPtr makeSubIndex(IColumn & column)
-{
-    if (auto * data_uint8 = detail::getIndexesData<UInt8>(column))
-        return detail::getUniqueIndexImpl(*data_uint8);
-    else if (auto * data_uint16 = detail::getIndexesData<UInt16>(column))
-        return detail::getUniqueIndexImpl(*data_uint16);
-    else if (auto * data_uint32 = detail::getIndexesData<UInt32>(column))
-        return detail::getUniqueIndexImpl(*data_uint32);
-    else if (auto * data_uint64 = detail::getIndexesData<UInt64>(column))
-        return detail::getUniqueIndexImpl(*data_uint64);
-    else
-        throw Exception("Indexes column for makeSubindex must be ColumnUInt, got" + column.getName(),
-                        ErrorCodes::LOGICAL_ERROR);
+    template const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const IColumn & indexes);
+    template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const IColumn & indexes);
+    template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
+    template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
 }
 
 }

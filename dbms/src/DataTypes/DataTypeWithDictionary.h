@@ -1,5 +1,6 @@
 #pragma once
 #include <DataTypes/IDataType.h>
+#include <Columns/IColumnUnique.h>
 
 namespace DB
 {
@@ -22,26 +23,32 @@ public:
     }
     const char * getFamilyName() const override { return "WithDictionary"; }
 
-    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+
+    void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
             const IColumn & column,
-            OutputStreamGetter getter,
             size_t offset,
             size_t limit,
-            bool position_independent_encoding,
-            SubstreamPath path) const override;
-
-    DeserializeBinaryBulkStatePtr createDeserializeBinaryBulkState() const override;
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
             IColumn & column,
-            InputStreamGetter getter,
             size_t limit,
-            double avg_value_size_hint,
-            bool position_independent_encoding,
-            SubstreamPath path,
-            const DeserializeBinaryBulkStatePtr & state) const override;
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
@@ -139,6 +146,8 @@ public:
     bool onlyNull() const override { return false; }
     bool withDictionary() const override { return true; }
 
+    static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, const IDataType & indexes_type);
+
 private:
 
     template <typename ... Args>
@@ -156,10 +165,11 @@ private:
                          DeserealizeFunctionPtr<Args ...> func, Args ... args) const;
 
     template <typename ColumnType, typename IndexType>
-    MutableColumnPtr createColumnImpl() const;
+    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type);
 
     template <typename ColumnType>
-    MutableColumnPtr createColumnImpl() const;
+    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const IDataType & indexes_type);
+
 
     friend struct CreateColumnVector;
 };

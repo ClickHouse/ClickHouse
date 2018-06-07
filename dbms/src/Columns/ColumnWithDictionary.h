@@ -39,7 +39,7 @@ public:
 
     ColumnPtr convertToFullColumn() const
     {
-        return getUnique()->getNestedColumn()->index(indexes, 0);
+        return getUnique()->getNestedColumn()->index(*indexes, 0);
     }
 
     ColumnPtr convertToFullColumnIfWithDictionary() const override { return convertToFullColumn(); }
@@ -102,7 +102,7 @@ public:
         auto & src_with_dict = static_cast<const ColumnWithDictionary &>(src);
         auto & src_nested = src_with_dict.getUnique()->getNestedColumn();
         auto inserted_idx = getUnique()->uniqueInsertRangeFrom(*src_nested, 0, src_nested->size());
-        auto idx = inserted_idx->index(src_with_dict.getIndexes()->cut(start, length), 0);
+        auto idx = inserted_idx->index(*src_with_dict.getIndexes()->cut(start, length), 0);
         getIndexes()->insertRangeFrom(*idx, 0, length);
     }
 
@@ -150,7 +150,7 @@ public:
         return ColumnWithDictionary::create(column_unique, indexes->permute(perm, limit));
     }
 
-    ColumnPtr index(const ColumnPtr & indexes_, size_t limit) const override
+    ColumnPtr index(const IColumn & indexes_, size_t limit) const override
     {
         return ColumnWithDictionary::create(column_unique, indexes->index(indexes_, limit));
     }
@@ -233,13 +233,14 @@ public:
 
     IColumnUnique * getUnique() { return static_cast<IColumnUnique *>(column_unique->assumeMutable().get()); }
     const IColumnUnique * getUnique() const { return static_cast<const IColumnUnique *>(column_unique->assumeMutable().get()); }
-    const ColumnPtr & getUniquePtr() const { return column_unique; }
+    ColumnPtr getUniquePtr() const { return column_unique; }
 
     IColumn * getIndexes() { return indexes->assumeMutable().get(); }
     const IColumn * getIndexes() const { return indexes.get(); }
     const ColumnPtr & getIndexesPtr() const { return indexes; }
 
     void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
+    void setUnique(const ColumnPtr & unique) { column_unique = unique; }
 
     bool withDictionary() const override { return true; }
 

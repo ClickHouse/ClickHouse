@@ -63,13 +63,13 @@ ColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
     return ColumnConst::create(data, limit);
 }
 
-ColumnPtr ColumnConst::index(const ColumnPtr & indexes, size_t limit) const
+ColumnPtr ColumnConst::index(const IColumn & indexes, size_t limit) const
 {
     if (limit == 0)
-        limit = indexes->size();
+        limit = indexes.size();
 
-    if (indexes->size() < limit)
-        throw Exception("Size of indexes (" + toString(indexes->size()) + ") is less than required (" + toString(limit) + ")",
+    if (indexes.size() < limit)
+        throw Exception("Size of indexes (" + toString(indexes.size()) + ") is less than required (" + toString(limit) + ")",
                         ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     return ColumnConst::create(data, limit);

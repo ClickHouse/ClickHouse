@@ -329,7 +329,8 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
                                 ErrorCodes::LOGICAL_ERROR);
 
             col_with_dict->insertRangeFromFullColumn(*temp_res_col, 0, temp_res_col->size());
-            res_col.column = indexes ? col_with_dict->index(indexes, 0) : std::move(col_wit_dict_ptr);
+            res_col.column = indexes ? col_with_dict->index(*indexes, 0)
+                                     : std::move(col_wit_dict_ptr);
             return;
         }
     }
