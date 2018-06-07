@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/BackgroundSchedulePool.h>
@@ -304,6 +305,8 @@ public:
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
+
+    std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 };
 
 class ReplicatedMergeTreeMergePredicate
