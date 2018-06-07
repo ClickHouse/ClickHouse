@@ -138,3 +138,7 @@ else ()
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_BUNDLE})
 
 endif ()
+
+if (USE_EMBEDDED_COMPILER AND ENABLE_CLICKHOUSE_SERVER)
+    add_dependencies(clickhouse-server copy-headers)
+endif ()
