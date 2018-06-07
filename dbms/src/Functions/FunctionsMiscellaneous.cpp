@@ -1688,7 +1688,7 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     {
         {
             WriteBufferFromString out(tmp);
-            src.type->serializeTextEscaped(*src.column, i, out);
+            src.type->serializeText(*src.column, i, out);
         }
 
         res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());

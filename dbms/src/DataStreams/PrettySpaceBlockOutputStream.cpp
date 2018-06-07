@@ -44,7 +44,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
 
             if (!no_escapes)
                 writeCString("\033[1m", ostr);
-            writeEscapedString(col.name, ostr);
+            writeString(col.name, ostr);
             if (!no_escapes)
                 writeCString("\033[0m", ostr);
         }
@@ -52,7 +52,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
         {
             if (!no_escapes)
                 writeCString("\033[1m", ostr);
-            writeEscapedString(col.name, ostr);
+            writeString(col.name, ostr);
             if (!no_escapes)
                 writeCString("\033[0m", ostr);
 

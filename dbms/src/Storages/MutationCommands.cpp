@@ -36,7 +36,7 @@ void MutationCommand::writeText(WriteBuffer & out) const
         {
             std::stringstream ss;
             formatAST(*predicate, ss, /* hilite = */ false, /* one_line = */ true);
-            out << "predicate: " << ss.str() << "\n";
+            out << "predicate: " << escape << ss.str() << "\n";
             break;
         }
         default:
@@ -54,7 +54,7 @@ void MutationCommand::readText(ReadBuffer & in)
         type = DELETE;
 
         String predicate_str;
-        in >> "predicate: " >> predicate_str >> "\n";
+        in >> "predicate: " >> escape >> predicate_str >> "\n";
         ParserExpressionWithOptionalAlias p_expr(false);
         predicate = parseQuery(
             p_expr, predicate_str.data(), predicate_str.data() + predicate_str.length(), "mutation predicate", 0);
