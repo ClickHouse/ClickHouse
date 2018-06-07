@@ -78,18 +78,6 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     return false;
 }
 
-bool ParserTypeInCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
-{
-    if (ParserIdentifierWithOptionalParameters().parse(pos, node, expected))
-    {
-        const auto & id_with_params = typeid_cast<const ASTFunction &>(*node);
-        node = std::make_shared<ASTIdentifier>(String{ id_with_params.range.first, id_with_params.range.second });
-        return true;
-    }
-
-    return false;
-}
-
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserToken>(TokenType::Comma), false)

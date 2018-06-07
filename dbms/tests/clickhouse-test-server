@@ -42,9 +42,8 @@ export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=`$CLICKHOUSE_E
 export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port_secure`}
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=`$CLICKHOUSE_EXTRACT_CONFIG --key=https_port`}
 
-
-rm -rf $DATA_DIR
-mkdir -p $LOG_DIR
+rm -rf $DATA_DIR || true
+mkdir -p $LOG_DIR || true
 
 DHPARAM=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile`
 PRIVATEKEY=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile`
@@ -77,8 +76,6 @@ $GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
     > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
 sleep 3
-
-
 
 if [ "$GDB" ]; then
     # Long symbols read
