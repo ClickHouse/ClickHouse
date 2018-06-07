@@ -29,4 +29,6 @@ struct ReplicatedMergeTreeMutationEntry
     MutationCommands commands;
 };
 
+using ReplicatedMergeTreeMutationEntryPtr = std::shared_ptr<const ReplicatedMergeTreeMutationEntry>;
+
 }
