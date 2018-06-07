@@ -260,7 +260,7 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
 }
 
 
-ColumnPtr ColumnFixedString::index(const ColumnPtr & indexes, size_t limit) const
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 {
     return selectIndexImpl(*this, indexes, limit);
 }

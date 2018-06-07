@@ -87,9 +87,9 @@ public:
         return cloneDummy(limit ? std::min(s, limit) : s);
     }
 
-    ColumnPtr index(const ColumnPtr & indexes, size_t limit) const override
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override
     {
-        if (indexes->size() < limit)
+        if (indexes.size() < limit)
             throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         return cloneDummy(limit ? limit : s);

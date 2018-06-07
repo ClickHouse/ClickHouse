@@ -7,9 +7,13 @@ namespace DB
 class IColumnUnique : public IColumn
 {
 public:
+    using ColumnUniquePtr = IColumn::template immutable_ptr<IColumnUnique>;
+    using MutableColumnUniquePtr = IColumn::template mutable_ptr<IColumnUnique>;
+
     /// Column always contains Null if it's Nullable and empty string if it's String or Nullable(String).
     /// So, size may be greater than the number of inserted unique values.
     virtual const ColumnPtr & getNestedColumn() const = 0;
+
     size_t size() const override { return getNestedColumn()->size(); }
 
     /// Appends new value at the end of column (column's size is increased by 1).
@@ -19,7 +23,18 @@ public:
     virtual size_t uniqueInsertFrom(const IColumn & src, size_t n) = 0;
     /// Appends range of elements from other column.
     /// Could be used to concatenate columns.
-    virtual ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+    virtual MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
+
+    struct IndexesWithOverflow
+    {
+        MutableColumnPtr indexes;
+        MutableColumnPtr overflowed_keys;
+    };
+    /// Like uniqueInsertRangeFrom, but doesn't insert keys if inner dictionary has more than max_dictionary_size keys.
+    /// Keys that won't be inserted into dictionary will be into overflowed_keys, indexes will be calculated for
+    /// concatenation of nested column (which can be got from getNestedColumn() function) and overflowed_keys.
+    virtual IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start,
+                                                              size_t length, size_t max_dictionary_size) = 0;
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
     /// Is used to optimize some computations (in aggregation, for example).
@@ -33,7 +48,18 @@ public:
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
 
-//    virtual size_t getInsertionPoint(const char * pos, size_t length) const = 0;
+    /// Column which contains the set of necessary for serialization keys. Such that empty column after
+    /// uniqueInsertRangeFrom(column->cut(offset, limit), 0, limit) call will contain the same set of keys.
+    struct SerializableState
+    {
+        ColumnPtr column;
+        size_t offset;
+        size_t limit;
+    };
+
+    virtual SerializableState getSerializableState() const = 0;
+
+//    virtual MutableColumnPtr getInsertionPoints(const ColumnPtr & keys) const = 0;
 //
 //    virtual bool has(const char * pos, size_t length) const { return getInsertionPoint(pos, length) != size(); }
 
@@ -74,7 +100,7 @@ public:
         throw Exception("Method deserializeAndInsertFromArena is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    ColumnPtr index(const ColumnPtr &, size_t) const override
+    ColumnPtr index(const IColumn &, size_t) const override
     {
         throw Exception("Method index is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -109,5 +135,8 @@ public:
         throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
+
+using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;
+using MutableColumnUniquePtr = IColumnUnique::MutableColumnUniquePtr;
 
 }

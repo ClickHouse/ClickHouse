@@ -55,7 +55,7 @@ class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<Colum
 
 private:
     explicit ColumnUnique(MutableColumnPtr && holder);
-    explicit ColumnUnique(const DataTypePtr & type);
+    explicit ColumnUnique(const IDataType & type);
     ColumnUnique(const ColumnUnique & other)
             : column_holder(other.column_holder), nullable_column(other.nullable_column)
             , nullable_column_map(other.nullable_column_map), is_nullable(other.is_nullable) {}
@@ -64,10 +64,13 @@ public:
     const ColumnPtr & getNestedColumn() const override;
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
-    ColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
+    IColumnUnique::IndexesWithOverflow uniqueInsertRangeWithOverflow(const IColumn & src, size_t start, size_t length,
+                                                                     size_t max_dictionary_size) override;
     size_t uniqueInsertData(const char * pos, size_t length) override;
     size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
+    IColumnUnique::SerializableState getSerializableState() const override;
 
     size_t getDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
     size_t getNullValueIndex() const override;
@@ -146,21 +149,28 @@ private:
     const ColumnType * getRawColumnPtr() const { return static_cast<ColumnType *>(column_holder.get()); }
     IndexType insertIntoMap(const StringRefWrapper<ColumnType> & ref, IndexType value);
 
+    void uniqueInsertRangeImpl(
+        const IColumn & src,
+        size_t start,
+        size_t length,
+        typename ColumnVector<IndexType>::Container & positions,
+        ColumnType * overflowed_keys,
+        size_t max_dictionary_size);
 };
 
 template <typename ColumnType, typename IndexType>
-ColumnUnique<ColumnType, IndexType>::ColumnUnique(const DataTypePtr & type) : is_nullable(type->isNullable())
+ColumnUnique<ColumnType, IndexType>::ColumnUnique(const IDataType & type) : is_nullable(type.isNullable())
 {
     if (is_nullable)
     {
-        nullable_column = type->createColumn()->cloneResized(numSpecialValues());
+        nullable_column = type.createColumn()->cloneResized(numSpecialValues());
         auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
         column_holder = column_nullable.getNestedColumnPtr();
         nullable_column_map = &column_nullable.getNullMapData();
         (*nullable_column_map)[getDefaultValueIndex()] = 0;
     }
     else
-        column_holder = type->createColumn()->cloneResized(numSpecialValues());
+        column_holder = type.createColumn()->cloneResized(numSpecialValues());
 }
 
 template <typename ColumnType, typename IndexType>
@@ -330,7 +340,13 @@ size_t ColumnUnique<ColumnType, IndexType>::uniqueDeserializeAndInsertFromArena(
 }
 
 template <typename ColumnType, typename IndexType>
-ColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeImpl(
+    const IColumn & src,
+    size_t start,
+    size_t length,
+    typename ColumnVector<IndexType>::Container & positions,
+    ColumnType * overflowed_keys,
+    size_t max_dictionary_size)
 {
     if (!index)
         buildIndex();
@@ -347,9 +363,11 @@ ColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColu
     else
         src_column = static_cast<const ColumnType *>(&src);
 
+    std::unique_ptr<IndexMapType> secondary_index;
+    if (overflowed_keys)
+        secondary_index = std::make_unique<IndexMapType>();
+
     auto column = getRawColumnPtr();
-    auto positions_column = ColumnVector<IndexType>::create(length);
-    auto & positions = positions_column->getData();
 
     size_t next_position = column->size();
     for (auto i : ext::range(0, length))
@@ -365,18 +383,80 @@ ColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColu
             auto it = index->find(StringRefWrapper<ColumnType>(src_column, row));
             if (it == index->end())
             {
-                positions[i] = next_position;
-                auto ref = src_column->getDataAt(row);
-                column->insertData(ref.data, ref.size);
-                (*index)[StringRefWrapper<ColumnType>(column, next_position)] = next_position;
-                ++next_position;
+
+                if (overflowed_keys && next_position >= max_dictionary_size + numSpecialValues())
+                {
+                    auto jt = secondary_index->find(StringRefWrapper<ColumnType>(src_column, row));
+                    if (jt == secondary_index->end())
+                    {
+                        positions[i] = next_position;
+                        auto ref = src_column->getDataAt(row);
+                        overflowed_keys->insertData(ref.data, ref.size);
+                        (*secondary_index)[StringRefWrapper<ColumnType>(src_column, row)] = next_position;
+                        ++next_position;
+                    }
+                    else
+                        positions[i] = jt->second;
+                }
+                else
+                {
+                    positions[i] = next_position;
+                    auto ref = src_column->getDataAt(row);
+                    column->insertData(ref.data, ref.size);
+                    (*index)[StringRefWrapper<ColumnType>(column, next_position)] = next_position;
+                    ++next_position;
+                }
             }
             else
                 positions[i] = it->second;
         }
     }
+}
+
+template <typename ColumnType, typename IndexType>
+MutableColumnPtr ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
+{
+    auto positions_column = ColumnVector<IndexType>::create(length);
+    auto & positions = positions_column->getData();
+
+    uniqueInsertRangeImpl(src, start, length, positions, nullptr, 0);
 
     return positions_column;
 }
 
+template <typename ColumnType, typename IndexType>
+IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType, IndexType>::uniqueInsertRangeWithOverflow(
+    const IColumn & src,
+    size_t start,
+    size_t length,
+    size_t max_dictionary_size)
+{
+
+    auto positions_column = ColumnVector<IndexType>::create(length);
+    auto overflowed_keys = column_holder->cloneEmpty();
+    auto & positions = positions_column->getData();
+
+    auto overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
+    if (!overflowed_keys_ptr)
+        throw Exception("Invalid keys type for ColumnUnique.", ErrorCodes::LOGICAL_ERROR);
+
+    uniqueInsertRangeImpl(src, start, length, positions, overflowed_keys_ptr, max_dictionary_size);
+
+    IColumnUnique::IndexesWithOverflow indexes_with_overflow;
+    indexes_with_overflow.indexes = std::move(positions_column);
+    indexes_with_overflow.overflowed_keys = std::move(overflowed_keys);
+    return indexes_with_overflow;
 }
+
+template <typename ColumnType, typename IndexType>
+IColumnUnique::SerializableState ColumnUnique<ColumnType, IndexType>::getSerializableState() const
+{
+    IColumnUnique::SerializableState state;
+    state.column = column_holder;
+    state.offset = numSpecialValues();
+    state.limit = column_holder->size() - state.offset;
+
+    return state;
+}
+
+};
