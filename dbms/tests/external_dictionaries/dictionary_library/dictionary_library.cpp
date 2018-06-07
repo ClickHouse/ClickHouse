@@ -64,7 +64,7 @@ void MakeColumnsFromVector(DataHolder * ptr)
 
 extern "C" {
 
-void * ClickHouseDictionary_v2_loadIds(void * data_ptr,
+void * ClickHouseDictionary_v3_loadIds(void * data_ptr,
     ClickHouseLibrary::CStrings * settings,
     ClickHouseLibrary::CStrings * columns,
     const struct ClickHouseLibrary::VectorUInt64 * ids)
@@ -109,7 +109,7 @@ void * ClickHouseDictionary_v2_loadIds(void * data_ptr,
     return static_cast<void *>(&ptr->ctable);
 }
 
-void * ClickHouseDictionary_v2_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
+void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     LOG(ptr->lib->log, "loadAll lib call ptr=" << data_ptr << " => " << ptr);
@@ -136,7 +136,7 @@ void * ClickHouseDictionary_v2_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     return static_cast<void *>(&ptr->ctable);
 }
 
-void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
+void * ClickHouseDictionary_v3_loadKeys(void * data_ptr,
     ClickHouseLibrary::CStrings * settings,
     ClickHouseLibrary::CStrings * columns,
     const ClickHouseLibrary::VectorUInt64 * requested_rows)
@@ -173,7 +173,7 @@ void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
     return nullptr;
 }
 
-void * ClickHouseDictionary_v2_libNew(
+void * ClickHouseDictionary_v3_libNew(
     ClickHouseLibrary::CStrings * /*settings*/, void (*logFunc)(ClickHouseLibrary::LogLevel, ClickHouseLibrary::CString))
 {
     auto lib_ptr = new LibHolder;
@@ -181,21 +181,21 @@ void * ClickHouseDictionary_v2_libNew(
     return lib_ptr;
 }
 
-void ClickHouseDictionary_v2_libDelete(void * lib_ptr)
+void ClickHouseDictionary_v3_libDelete(void * lib_ptr)
 {
     auto ptr = static_cast<LibHolder *>(lib_ptr);
     delete ptr;
     return;
 }
 
-void * ClickHouseDictionary_v2_dataNew(void * lib_ptr)
+void * ClickHouseDictionary_v3_dataNew(void * lib_ptr)
 {
     auto data_ptr = new DataHolder;
     data_ptr->lib = static_cast<decltype(data_ptr->lib)>(lib_ptr);
     return data_ptr;
 }
 
-void ClickHouseDictionary_v2_dataDelete(void * /*lib_ptr*/, void * data_ptr)
+void ClickHouseDictionary_v3_dataDelete(void * /*lib_ptr*/, void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     delete ptr;
