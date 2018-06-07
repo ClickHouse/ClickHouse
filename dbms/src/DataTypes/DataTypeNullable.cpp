@@ -242,8 +242,14 @@ void DataTypeNullable::serializeText(const IColumn & column, size_t row_num, Wri
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
 
+    /// In simple text format (like 'Pretty' format) (these formats are suitable only for output and cannot be parsed back),
+    ///  data is printed without escaping.
+    /// It makes theoretically impossible to distinguish between NULL and some string value, regardless on how do we print NULL.
+    /// For this reason, we output NULL in a bit strange way.
+    /// This assumes UTF-8 and proper font support. This is Ok, because Pretty formats are "presentational", not for data exchange.
+
     if (col.isNullAt(row_num))
-        writeCString("NULL", ostr);
+        writeCString("ᴺᵁᴸᴸ", ostr);
     else
         nested_data_type->serializeText(col.getNestedColumn(), row_num, ostr);
 }

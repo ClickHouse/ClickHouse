@@ -1,5 +1,3 @@
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
 add_executable (system_numbers system_numbers.cpp)
 target_link_libraries (system_numbers dbms clickhouse_storages_system)
 
