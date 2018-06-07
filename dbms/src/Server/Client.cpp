@@ -132,11 +132,14 @@ private:
 
     /// Console output.
     WriteBufferFromFileDescriptor std_out {STDOUT_FILENO};
-    WriteBufferFromFileDescriptor std_err {STDERR_FILENO};
     std::unique_ptr<ShellCommand> pager_cmd;
     /// The user can specify to redirect query output to a file.
     std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
+
+    /// The user could specify special file for server logs (stderr by default)
+    std::unique_ptr<WriteBuffer> out_logs_buf;
+    String server_logs_file;
     BlockOutputStreamPtr logs_out_stream;
 
     String home_path;
@@ -965,8 +968,8 @@ private:
     /// Flush all buffers.
     void resetOutput()
     {
-        block_out_stream = nullptr;
-        logs_out_stream = nullptr;
+        block_out_stream.reset();
+        logs_out_stream.reset();
 
         if (pager_cmd)
         {
@@ -981,8 +984,13 @@ private:
             out_file_buf.reset();
         }
 
+        if (out_logs_buf)
+        {
+            out_logs_buf->next();
+            out_logs_buf.reset();
+        }
+
         std_out.next();
-        std_err.next();
     }
 
 
@@ -1148,7 +1156,29 @@ private:
     {
         if (!logs_out_stream)
         {
-            logs_out_stream = SystemLogsRowOutputStream::create(std_err);
+            WriteBuffer * wb = out_logs_buf.get();
+
+            if (!out_logs_buf)
+            {
+                if (server_logs_file.empty())
+                {
+                    /// Use stderr by default
+                    out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
+                    wb = out_logs_buf.get();
+                }
+                else if (server_logs_file == "-")
+                {
+                    /// Use stdout if --server_logs_file=- specified
+                    wb = &std_out;
+                }
+                else
+                {
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    wb = out_logs_buf.get();
+                }
+            }
+
+            logs_out_stream = SystemLogsRowOutputStream::create(*wb);
             logs_out_stream->writePrefix();
         }
     }
@@ -1458,6 +1488,7 @@ public:
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
             ("log-level", po::value<std::string>(), "log level")
+            ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;
 #undef DECLARE_SETTING
@@ -1575,6 +1606,8 @@ public:
             max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
+        if (options.count("server_logs_file"))
+            server_logs_file = options["server_logs_file"].as<std::string>();
     }
 };
 
