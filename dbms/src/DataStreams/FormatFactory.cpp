@@ -120,7 +120,6 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         || name == "PrettyCompactNoEscapes"
         || name == "PrettySpaceNoEscapes"
         || name == "Vertical"
-        || name == "VerticalRaw"
         || name == "Null"
         || name == "JSON"
         || name == "JSONCompact"
@@ -182,9 +181,6 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
         return std::make_shared<PrettySpaceBlockOutputStream>(buf, sample, true, settings.output_format_pretty_max_rows, context);
     else if (name == "Vertical")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(
-            buf, sample, settings.output_format_pretty_max_rows), sample);
-    else if (name == "VerticalRaw")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRawRowOutputStream>(
             buf, sample, settings.output_format_pretty_max_rows), sample);
     else if (name == "Values")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf), sample);
