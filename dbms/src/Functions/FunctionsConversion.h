@@ -35,6 +35,8 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionsDateTime.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeWithDictionary.h>
+#include <Columns/ColumnWithDictionary.h>
 
 
 namespace DB
@@ -1239,7 +1241,8 @@ public:
 
     PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
     {
-        return std::make_shared<PreparedFunctionCast>(prepare(getArgumentTypes()[0], getReturnType()), name);
+        return std::make_shared<PreparedFunctionCast>(
+                prepareUnpackDictionaries(getArgumentTypes()[0], getReturnType()), name);
     }
 
     String getName() const override { return name; }
@@ -1322,7 +1325,7 @@ private:
             throw Exception{"CAST AS Array can only be performed between same-dimensional array types or from String", ErrorCodes::TYPE_MISMATCH};
 
         /// Prepare nested type conversion
-        const auto nested_function = prepare(from_nested_type, to_nested_type);
+        const auto nested_function = prepareUnpackDictionaries(from_nested_type, to_nested_type);
 
         return [nested_function, from_nested_type, to_nested_type](
             Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
@@ -1376,7 +1379,7 @@ private:
 
         /// Create conversion wrapper for each element in tuple
         for (const auto & idx_type : ext::enumerate(from_type->getElements()))
-            element_wrappers.push_back(prepare(idx_type.second, to_element_types[idx_type.first]));
+            element_wrappers.push_back(prepareUnpackDictionaries(idx_type.second, to_element_types[idx_type.first]));
 
         return [element_wrappers, from_element_types, to_element_types]
             (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
@@ -1527,17 +1530,11 @@ private:
         bool result_is_nullable = false;
     };
 
-    WrapperType prepare(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+    WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
-        /// Determine whether pre-processing and/or post-processing must take place during conversion.
-
-        NullableConversion nullable_conversion;
-        nullable_conversion.source_is_nullable = from_type->isNullable();
-        nullable_conversion.result_is_nullable = to_type->isNullable();
-
         if (from_type->onlyNull())
         {
-            if (!nullable_conversion.result_is_nullable)
+            if (!to_type->isNullable())
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
@@ -1546,6 +1543,83 @@ private:
                 res.column = res.type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
             };
         }
+
+        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
+        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
+        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
+        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
+
+        auto wrapper = prepareRemoveNullable(from_nested, to_nested);
+        if (!from_with_dict && !to_with_dict)
+            return wrapper;
+
+        return [wrapper, from_with_dict, to_with_dict]
+                (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        {
+            auto & arg = block.getByPosition(arguments[0]);
+            auto & res = block.getByPosition(result);
+
+            ColumnPtr res_indexes;
+
+            {
+                /// Replace argument and result columns (and types) to dictionary key columns (and types).
+                /// Call nested wrapper in order to cast dictionary keys. Then restore block.
+                auto prev_arg_col = arg.column;
+                auto prev_arg_type = arg.type;
+                auto prev_res_type = res.type;
+
+                auto tmp_rows_count = input_rows_count;
+
+                if (from_with_dict)
+                {
+                    auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(prev_arg_col.get());
+                    arg.column = col_with_dict->getUnique()->getNestedColumn();
+                    arg.type = from_with_dict->getDictionaryType();
+
+                    tmp_rows_count = arg.column->size();
+                    res_indexes = col_with_dict->getIndexesPtr();
+                }
+
+                if (to_with_dict)
+                    res.type = to_with_dict->getDictionaryType();
+
+                /// Perform the requested conversion.
+                wrapper(block, arguments, result, tmp_rows_count);
+
+                arg.column = prev_arg_col;
+                arg.type = prev_arg_type;
+                res.type = prev_res_type;
+            }
+
+            if (to_with_dict)
+            {
+                auto res_column = to_with_dict->createColumn();
+                auto * col_with_dict = typeid_cast<ColumnWithDictionary *>(res_column.get());
+
+                if (from_with_dict)
+                {
+                    auto res_keys = std::move(res.column);
+
+                    auto idx = col_with_dict->getUnique()->uniqueInsertRangeFrom(*res_keys, 0, res_keys->size());
+                    col_with_dict->getIndexes()->insertRangeFrom(*idx->index(res_indexes, 0), 0, res_indexes->size());
+                }
+                else
+                    col_with_dict->insertRangeFromFullColumn(*res.column, 0, res.column->size());
+
+                res.column = std::move(res_column);
+            }
+            else
+                res.column = res.column->index(res_indexes, 0);
+        };
+    }
+
+    WrapperType prepareRemoveNullable(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+    {
+        /// Determine whether pre-processing and/or post-processing must take place during conversion.
+
+        NullableConversion nullable_conversion;
+        nullable_conversion.source_is_nullable = from_type->isNullable();
+        nullable_conversion.result_is_nullable = to_type->isNullable();
 
         DataTypePtr from_inner_type = removeNullable(from_type);
         DataTypePtr to_inner_type = removeNullable(to_type);

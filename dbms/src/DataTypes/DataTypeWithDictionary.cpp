@@ -145,7 +145,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         auto iter = cached_streams.find(stream_name);
         if (iter == cached_streams.end())
             iter = cached_streams.insert({stream_name, getter(path)}).first;
-        return iter.second;
+        return iter->second;
     };
 
     auto readDict = [&](UInt64 num_keys)
