@@ -39,7 +39,7 @@ typedef struct
     } while (0)
 
 
-void * ClickHouseDictionary_v2_loadIds(
+void * ClickHouseDictionary_v3_loadIds(
     void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUInt64 * ids)
 {
     LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
@@ -47,14 +47,14 @@ void * ClickHouseDictionary_v2_loadIds(
     return 0;
 }
 
-void * ClickHouseDictionary_v2_loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
+void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
 {
     LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
     LOG(lib->log, "loadAll c lib call ptr=%p", data_ptr);
     return 0;
 }
 
-void * ClickHouseDictionary_v2_loadKeys(
+void * ClickHouseDictionary_v3_loadKeys(
     void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, const ClickHouseLibVectorUInt64 * requested_rows)
 {
     LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
@@ -62,7 +62,7 @@ void * ClickHouseDictionary_v2_loadKeys(
     return 0;
 }
 
-void * ClickHouseDictionary_v2_libNew(ClickHouseLibCStrings * settings, void (*logFunc)(int, CString))
+void * ClickHouseDictionary_v3_libNew(ClickHouseLibCStrings * settings, void (*logFunc)(int, CString))
 {
     LibHolder * lib_ptr = (LibHolder *)malloc(sizeof(LibHolder));
     lib_ptr->log = logFunc;
@@ -70,7 +70,7 @@ void * ClickHouseDictionary_v2_libNew(ClickHouseLibCStrings * settings, void (*l
     return lib_ptr;
 }
 
-void ClickHouseDictionary_v2_libDelete(void * lib_ptr)
+void ClickHouseDictionary_v3_libDelete(void * lib_ptr)
 {
     LibHolder * lib = (LibHolder *)(lib_ptr);
     LOG(lib->log, "libDelete c lib call lib_ptr=%p", lib_ptr);
@@ -79,7 +79,7 @@ void ClickHouseDictionary_v2_libDelete(void * lib_ptr)
 }
 
 
-void * ClickHouseDictionary_v2_dataNew(void * lib_ptr)
+void * ClickHouseDictionary_v3_dataNew(void * lib_ptr)
 {
     DataHolder * data_ptr = (DataHolder *)malloc(sizeof(DataHolder));
     data_ptr->lib = (LibHolder *)lib_ptr;
@@ -88,7 +88,7 @@ void * ClickHouseDictionary_v2_dataNew(void * lib_ptr)
     return data_ptr;
 }
 
-void ClickHouseDictionary_v2_dataDelete(void * lib_ptr, void * data_ptr)
+void ClickHouseDictionary_v3_dataDelete(void * lib_ptr, void * data_ptr)
 {
     LibHolder * lib = (LibHolder *)(lib_ptr);
     LOG(lib->log, "dataDelete c lib call lib_ptr=%p data_ptr=%p", lib_ptr, data_ptr);
