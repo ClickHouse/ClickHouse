@@ -445,7 +445,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
 
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end(); )
         {
-            const ReplicatedMergeTreeMutationEntry & entry = it->second;
+            const ReplicatedMergeTreeMutationEntry & entry = *it->second;
             if (!entries_in_zk_set.count(entry.znode_name))
             {
                 LOG_DEBUG(log, "Removing obsolete mutation " + entry.znode_name + " from local state.");
@@ -478,25 +478,23 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
         for (const String & entry : entries_to_load)
             futures.emplace_back(zookeeper->asyncGet(zookeeper_path + "/mutations/" + entry));
 
-        std::vector<ReplicatedMergeTreeMutationEntry> new_mutations;
+        std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
-            new_mutations.push_back(
-                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i]));
+            new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
+                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i])));
         }
 
         {
             std::lock_guard lock(target_state_mutex);
 
-            for (ReplicatedMergeTreeMutationEntry & entry : new_mutations)
+            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
-                String znode = entry.znode_name;
-                const ReplicatedMergeTreeMutationEntry & inserted_entry =
-                    mutations_by_znode.emplace(znode, std::move(entry)).first->second;
+                mutations_by_znode.emplace(entry->znode_name, entry);
 
-                for (const auto & partition_and_block_num : inserted_entry.block_numbers)
+                for (const auto & partition_and_block_num : entry->block_numbers)
                     mutations_by_partition[partition_and_block_num.first].emplace(
-                        partition_and_block_num.second, &inserted_entry);
+                        partition_and_block_num.second, entry);
             }
         }
 

@@ -91,8 +91,8 @@ private:
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this list.
     /// Note that mutations are updated in such a way that they are always more recent than
     /// log_pointer (see pullLogsToQueue()).
-    std::map<String, ReplicatedMergeTreeMutationEntry> mutations_by_znode;
-    std::unordered_map<String, std::map<Int64, const ReplicatedMergeTreeMutationEntry *>> mutations_by_partition;
+    std::map<String, ReplicatedMergeTreeMutationEntryPtr> mutations_by_znode;
+    std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>> mutations_by_partition;
 
 
     /// Provides only one simultaneous call to pullLogsToQueue.
