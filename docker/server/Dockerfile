@@ -9,7 +9,7 @@ RUN apt-get update && \
     apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4 && \
     echo $repository | tee /etc/apt/sources.list.d/clickhouse.list && \
     apt-get update && \
-    env DEBIAN_FRONTEND=noninteractive apt-get install --allow-unauthenticated -y "clickhouse-server=$version" libgcc-7-dev && \
+    env DEBIAN_FRONTEND=noninteractive apt-get install --allow-unauthenticated -y clickhouse-server=$version clickhouse-common-static=$version libgcc-7-dev && \
     rm -rf /var/lib/apt/lists/* /var/cache/debconf && \
     apt-get clean
 

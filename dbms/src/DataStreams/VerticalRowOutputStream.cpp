@@ -26,13 +26,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        {
-            /// We need to obtain length in escaped form.
-            WriteBufferFromString out(serialized_value);
-            writeEscapedString(name, out);
-        }
-
-        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
         if (name_widths[i] > max_name_width)
             max_name_width = name_widths[i];
@@ -42,7 +36,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(
     for (size_t i = 0; i < columns; ++i)
     {
         WriteBufferFromString out(names_and_paddings[i]);
-        writeEscapedString(sample.getByPosition(i).name, out);
+        writeString(sample.getByPosition(i).name, out);
         writeCString(": ", out);
     }
 
@@ -71,11 +65,6 @@ void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType
 
 
 void VerticalRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
-{
-    type.serializeTextEscaped(column, row_num, ostr);
-}
-
-void VerticalRawRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
 {
     type.serializeText(column, row_num, ostr);
 }
