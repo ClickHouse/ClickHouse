@@ -10,7 +10,7 @@
 #include <Common/typeid_cast.h>
 
 #include <iomanip>
-
+#include <sstream>
 
 namespace DB
 {
