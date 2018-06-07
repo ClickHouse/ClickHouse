@@ -51,17 +51,5 @@ protected:
     Block extremes;
 };
 
-
-/** Same but values are printed without escaping.
-  */
-class VerticalRawRowOutputStream final : public VerticalRowOutputStream
-{
-public:
-    using VerticalRowOutputStream::VerticalRowOutputStream;
-
-protected:
-    void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const override;
-};
-
 }
 
