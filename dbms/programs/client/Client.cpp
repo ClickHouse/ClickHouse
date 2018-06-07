@@ -522,11 +522,10 @@ private:
 #if USE_READLINE
             rl_attempted_completion_function = query_parts_completion;
             std::thread tS([=] {init_suggestions(completionNode);});
-#endif
-
+#else
             /// Turn tab completion off.
-//            rl_bind_key('\t', rl_insert);
-
+            rl_bind_key('\t', rl_insert);
+#endif
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
