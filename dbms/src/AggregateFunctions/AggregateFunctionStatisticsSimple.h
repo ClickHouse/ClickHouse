@@ -204,7 +204,7 @@ public:
             case StatisticsFunctionKind::covarSamp: return "covarSamp";
             case StatisticsFunctionKind::corr: return "corr";
         }
-        return ""; // Impossible. For avoiding compiler warning.
+        __builtin_unreachable();
     }
 
     DataTypePtr getReturnType() const override
