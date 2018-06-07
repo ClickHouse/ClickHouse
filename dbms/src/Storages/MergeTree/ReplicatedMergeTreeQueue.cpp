@@ -1043,6 +1043,33 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
 }
 
 
+std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
+{
+    std::lock_guard lock(target_state_mutex);
+
+    std::vector<MergeTreeMutationStatus> result;
+    for (const auto & pair : mutations_by_znode)
+    {
+        const ReplicatedMergeTreeMutationEntry & entry = *pair.second;
+
+        for (const MutationCommand & command : entry.commands)
+        {
+            std::stringstream ss;
+            formatAST(*command.ast, ss, false, true);
+            result.push_back(MergeTreeMutationStatus
+            {
+                entry.znode_name,
+                ss.str(),
+                entry.create_time,
+                entry.block_numbers,
+            });
+        }
+    }
+
+    return result;
+}
+
+
 ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper)
     : queue(queue_)
@@ -1346,4 +1373,5 @@ String padIndex(Int64 index)
     String index_str = toString(index);
     return std::string(10 - index_str.size(), '0') + index_str;
 }
+
 }

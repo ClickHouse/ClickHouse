@@ -4050,6 +4050,11 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     }
 }
 
+std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
+{
+    return queue.getMutationsStatus();
+}
+
 
 void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 {
