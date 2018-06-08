@@ -319,7 +319,7 @@ struct FarmHash64
 {
     size_t operator() (StringRef x) const
     {
-        return farmhash::Hash64(x.data, x.size);
+        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data, x.size);
     }
 };
 
