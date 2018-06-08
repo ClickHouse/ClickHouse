@@ -9,6 +9,8 @@ namespace DB
 
 void PrettySpaceBlockOutputStream::write(const Block & block)
 {
+    UInt64 max_rows = format_settings.pretty.max_rows;
+
     if (total_rows >= max_rows)
     {
         total_rows += block.rows();
@@ -81,10 +83,10 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
 
 void PrettySpaceBlockOutputStream::writeSuffix()
 {
-    if (total_rows >= max_rows)
+    if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("\nShowed first ", ostr);
-        writeIntText(max_rows, ostr);
+        writeIntText(format_settings.pretty.max_rows, ostr);
         writeCString(".\n", ostr);
     }
 
