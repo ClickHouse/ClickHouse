@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettingsJSON & settings_)
-    : ostr(ostr_), settings(settings_)
+JSONEachRowRowOutputStream::JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings)
+    : ostr(ostr_), settings(settings)
 {
     size_t columns = sample.columns();
     fields.resize(columns);
