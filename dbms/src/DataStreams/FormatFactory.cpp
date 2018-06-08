@@ -55,6 +55,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
+    format_settings.date_time_input_format = settings.date_time_input_format;
 
     auto wrap_row_stream = [&](auto && row_stream)
     {
