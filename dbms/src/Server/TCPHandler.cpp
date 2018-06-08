@@ -156,7 +156,7 @@ void TCPHandler::runImpl()
 
             /// Should we send internal logs to client?
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
-                && !query_context.getSettingsRef().server_logs_level.value.empty())
+                && query_context.getSettingsRef().server_logs_level.value != "none")
             {
                 state.logs_queue = std::make_shared<SystemLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().server_logs_level.value);
@@ -885,10 +885,6 @@ void TCPHandler::sendLogs()
     {
         Block block = SystemLogsQueue::getSampleBlock();
         block.setColumns(std::move(logs_columns));
-        block.checkNumberOfRows();
-
-        std::cerr << "sendLogs: " << block.rows() << " " << block.columns() << "\n";
-
         sendLogData(block);
     }
 }

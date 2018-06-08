@@ -875,7 +875,7 @@ private:
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
             sendData(sample);
-            receivePacket();
+            receiveEndOfQuery();
         }
     }
 
@@ -959,6 +959,11 @@ private:
 
             if (!block)
                 break;
+
+            /// Check if server send Log packet
+            auto packet_type = connection->checkPacket();
+            if (packet_type && *packet_type == Protocol::Server::Log)
+                connection->receivePacket();
         }
 
         async_block_input->readSuffix();
@@ -1022,7 +1027,7 @@ private:
                     continue;    /// If there is no new data, continue checking whether the query was cancelled after a timeout.
             }
 
-            if (!receivePacket())
+            if (!receiveAndProcessPacket())
                 break;
         }
 
@@ -1033,7 +1038,7 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    bool receivePacket()
+    bool receiveAndProcessPacket()
     {
         Connection::Packet packet = connection->receivePacket();
 
@@ -1081,22 +1086,59 @@ private:
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
     bool receiveSampleBlock(Block & out)
     {
-        Connection::Packet packet = connection->receivePacket();
-
-        switch (packet.type)
+        while (true)
         {
-            case Protocol::Server::Data:
-                out = packet.block;
-                return true;
+            Connection::Packet packet = connection->receivePacket();
 
-            case Protocol::Server::Exception:
-                onException(*packet.exception);
-                last_exception = std::move(packet.exception);
-                return false;
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    out = packet.block;
+                    return true;
 
-            default:
-                throw NetException("Unexpected packet from server (expected Data, got "
-                    + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                case Protocol::Server::Exception:
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
+                    return false;
+
+                case Protocol::Server::Log:
+                    onLogData(packet.block);
+                    break;
+
+                default:
+                    throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            }
+        }
+    }
+
+
+    /// Process Log packets, exit when recieve Exception or EndOfStream
+    bool receiveEndOfQuery()
+    {
+        while (true)
+        {
+            Connection::Packet packet = connection->receivePacket();
+
+            switch (packet.type)
+            {
+                case Protocol::Server::EndOfStream:
+                    onEndOfStream();
+                    return true;
+
+                case Protocol::Server::Exception:
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
+                    return false;
+
+                case Protocol::Server::Log:
+                    onLogData(packet.block);
+                    break;
+
+                default:
+                    throw NetException("Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            }
         }
     }
 

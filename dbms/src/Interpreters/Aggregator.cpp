@@ -1726,12 +1726,12 @@ private:
 
     void thread(Int32 bucket_num, ThreadStatusPtr main_thread)
     {
-        setThreadName("MergingAggregtd");
-        CurrentThread::attachQueryFromSiblingThread(main_thread);
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
-
         try
         {
+            setThreadName("MergingAggregtd");
+            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
+
             /// TODO: add no_more_keys support maybe
 
             auto & merged_data = *data[0];

@@ -23,6 +23,7 @@
 #include <Interpreters/TablesStatus.h>
 
 #include <atomic>
+#include <optional>
 
 
 namespace DB
@@ -140,6 +141,9 @@ public:
     /// Check, if has data in read buffer.
     bool hasReadBufferPendingData() const;
 
+    /// Checks if there is input data in connection and reads packet ID.
+    std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
+
     /// Receive packet from server.
     Packet receivePacket();
 
@@ -194,6 +198,7 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
+    std::optional<UInt64> last_input_packet_type;
 
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.

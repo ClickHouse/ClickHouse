@@ -247,6 +247,7 @@ Connection::Packet MultiplexedConnections::receivePacketUnlocked()
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
+        case Protocol::Server::Log:
             break;
 
         case Protocol::Server::EndOfStream:
