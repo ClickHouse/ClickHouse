@@ -1,4 +1,3 @@
-#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
 
@@ -25,11 +24,6 @@
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
-
-namespace ProfileEvents
-{
-    extern const Event Query;
-}
 
 namespace DB
 {
@@ -137,7 +131,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage)
 {
-    ProfileEvents::increment(ProfileEvents::Query);
     time_t current_time = time(nullptr);
 
     context.setQueryContext(context);
