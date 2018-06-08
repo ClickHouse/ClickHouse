@@ -131,8 +131,10 @@ int main(int, char **)
         in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(URL, 'http://mail.yandex.ru/neo2/#inbox')");
         //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
+        FormatSettings format_settings;
+
         WriteBufferFromOStream ob(std::cout);
-        RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
+        RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock(), false, false, format_settings);
         BlockOutputStreamFromRowOutputStream out(out_, in->getHeader());
 
         copyData(*in, out);
