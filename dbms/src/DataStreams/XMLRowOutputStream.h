@@ -4,6 +4,7 @@
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/IRowOutputStream.h>
 
 
@@ -15,8 +16,7 @@ namespace DB
 class XMLRowOutputStream : public IRowOutputStream
 {
 public:
-    XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_,
-        bool write_statistics_);
+    XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeRowStartDelimiter() override;
@@ -67,7 +67,7 @@ protected:
 
     Progress progress;
     Stopwatch watch;
-    bool write_statistics;
+    const FormatSettings format_settings;
 };
 
 }

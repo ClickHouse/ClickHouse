@@ -5,17 +5,18 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataStreams/JSONRowOutputStream.h>
 
+
 namespace DB
 {
 
-struct FormatSettingsJSON;
+struct FormatSettings;
 
 /** The stream for outputting data in the JSONCompact format.
   */
 class JSONCompactRowOutputStream : public JSONRowOutputStream
 {
 public:
-    JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, const FormatSettingsJSON & settings);
+    JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;

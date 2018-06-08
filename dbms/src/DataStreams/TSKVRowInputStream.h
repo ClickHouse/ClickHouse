@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IRowInputStream.h>
+#include <DataTypes/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
 
 
@@ -22,7 +23,7 @@ class ReadBuffer;
 class TSKVRowInputStream : public IRowInputStream
 {
 public:
-    TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, bool skip_unknown_);
+    TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings);
 
     bool read(MutableColumns & columns) override;
     bool allowSyncAfterError() const override { return true; }
@@ -31,8 +32,8 @@ public:
 private:
     ReadBuffer & istr;
     Block header;
-    /// Skip unknown fields.
-    bool skip_unknown;
+
+    const FormatSettings format_settings;
 
     /// Buffer for the read from the stream the field name. Used when you have to copy it.
     String name_buf;

@@ -13,7 +13,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataType;
-struct FormatSettingsJSON;
+struct FormatSettings;
 
 class IColumn;
 using ColumnPtr = COWPtr<IColumn>::Ptr;
@@ -163,41 +163,41 @@ public:
 
     /** Text serialization with escaping but without quoting.
       */
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization for the CSV format.
       */
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     /** delimiter - the delimiter we expect when reading a string value that is not double-quoted
       * (the delimiter is not consumed).
       */
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
+    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     /** Text serialization intended for using in JSON format.
       * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization for putting into the XML format.
       */
-    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
     {
-        serializeText(column, row_num, ostr);
+        serializeText(column, row_num, ostr, settings);
     }
 
     /** Create empty column for corresponding type.
