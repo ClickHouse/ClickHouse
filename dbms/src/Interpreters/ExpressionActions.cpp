@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TYPE_MISMATCH;
 }
 
 

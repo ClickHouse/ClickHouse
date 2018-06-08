@@ -14,7 +14,7 @@ namespace ErrorCodes
 class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "Array"; };
+    String getName() const override { return "Array"; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

@@ -48,8 +48,8 @@ ClickHouse содержит настройки ограничения досту
 Также вы можете использовать программы без установки пакетов.
 
 ```text
-Client: dbms/src/Client/
-Server: dbms/src/Server/
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 Для сервера создаёте директории с данными, например:
@@ -62,7 +62,7 @@ Server: dbms/src/Server/
 (Настраивается в конфиге сервера.)
 Сделайте chown под нужного пользователя.
 
-Обратите внимание на путь к логам в конфиге сервера (src/dbms/src/Server/config.xml).
+Обратите внимание на путь к логам в конфиге сервера (src/dbms/programs/server/config.xml).
 
 ### Другие методы установки
 

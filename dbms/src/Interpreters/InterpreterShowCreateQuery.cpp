@@ -1,3 +1,5 @@
+#include <sstream>
+
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
@@ -10,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
+
 
 namespace DB
 {
