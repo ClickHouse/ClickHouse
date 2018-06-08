@@ -35,7 +35,6 @@ protected:
 
     WriteBuffer & ostr;
     const Block header;
-    size_t max_rows;
     size_t total_rows = 0;
     size_t terminal_width = 0;
 

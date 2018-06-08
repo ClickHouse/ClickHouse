@@ -95,6 +95,8 @@ void PrettyCompactBlockOutputStream::writeRow(
 
 void PrettyCompactBlockOutputStream::write(const Block & block)
 {
+    UInt64 max_rows = format_settings.pretty.max_rows;
+
     if (total_rows >= max_rows)
     {
         total_rows += block.rows();

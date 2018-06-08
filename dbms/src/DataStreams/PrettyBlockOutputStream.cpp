@@ -74,6 +74,8 @@ void PrettyBlockOutputStream::calculateWidths(
 
 void PrettyBlockOutputStream::write(const Block & block)
 {
+    UInt64 max_rows = format_settings.pretty.max_rows;
+
     if (total_rows >= max_rows)
     {
         total_rows += block.rows();
@@ -210,10 +212,10 @@ void PrettyBlockOutputStream::writeValueWithPadding(const ColumnWithTypeAndName 
 
 void PrettyBlockOutputStream::writeSuffix()
 {
-    if (total_rows >= max_rows)
+    if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("  Showed first ", ostr);
-        writeIntText(max_rows, ostr);
+        writeIntText(format_settings.pretty.max_rows, ostr);
         writeCString(".\n", ostr);
     }
 
