@@ -15,8 +15,8 @@ namespace ErrorCodes
 }
 
 
-CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, const char delimiter_, bool with_names_, bool with_types_)
-    : istr(istr_), header(header_), delimiter(delimiter_), with_names(with_names_), with_types(with_types_)
+CSVRowInputStream::CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings)
+    : istr(istr_), header(header_), with_names(with_names_), format_settings(format_settings)
 {
     size_t num_columns = header.columns();
     data_types.resize(num_columns);
@@ -105,10 +105,7 @@ void CSVRowInputStream::readPrefix()
     String tmp;
 
     if (with_names)
-        skipRow(istr, delimiter, num_columns);
-
-    if (with_types)
-        skipRow(istr, delimiter, num_columns);
+        skipRow(istr, format_settings.csv.delimiter, num_columns);
 }
 
 
@@ -124,10 +121,10 @@ bool CSVRowInputStream::read(MutableColumns & columns)
     for (size_t i = 0; i < size; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        data_types[i]->deserializeTextCSV(*columns[i], istr, delimiter);
+        data_types[i]->deserializeTextCSV(*columns[i], istr, format_settings);
         skipWhitespacesAndTabs(istr);
 
-        skipDelimiter(istr, delimiter, i + 1 == size);
+        skipDelimiter(istr, format_settings.csv.delimiter, i + 1 == size);
     }
 
     return true;
@@ -193,6 +190,8 @@ String CSVRowInputStream::getDiagnosticInfo()
 bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
     WriteBuffer & out, size_t max_length_of_column_name, size_t max_length_of_data_type_name)
 {
+    const char delimiter = format_settings.csv.delimiter;
+
     size_t size = data_types.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -214,7 +213,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         {
             skipWhitespacesAndTabs(istr);
             prev_position = istr.position();
-            data_types[i]->deserializeTextCSV(*columns[i], istr, delimiter);
+            data_types[i]->deserializeTextCSV(*columns[i], istr, format_settings);
             curr_position = istr.position();
             skipWhitespacesAndTabs(istr);
         }

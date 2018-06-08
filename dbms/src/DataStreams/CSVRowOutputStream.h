@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IRowOutputStream.h>
+#include <DataTypes/FormatSettings.h>
 
 
 namespace DB
@@ -19,7 +20,7 @@ public:
     /** with_names - output in the first line a header with column names
       * with_types - output in the next line header with the names of the types
       */
-    CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
+    CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, const FormatSettings & format_settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
@@ -35,7 +36,7 @@ public:
     /// https://www.iana.org/assignments/media-types/text/csv
     String getContentType() const override
     {
-        return String("text/csv; charset=UTF-8; header=") + ((with_names || with_types) ? "present" : "absent");
+        return String("text/csv; charset=UTF-8; header=") + (with_names ? "present" : "absent");
     }
 
 protected:
@@ -44,9 +45,8 @@ protected:
 
     WriteBuffer & ostr;
     const Block sample;
-    const char delimiter;
     bool with_names;
-    bool with_types;
+    const FormatSettings format_settings;
     DataTypes data_types;
     Block totals;
     Block extremes;

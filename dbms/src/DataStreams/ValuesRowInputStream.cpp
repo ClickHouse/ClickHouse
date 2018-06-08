@@ -26,8 +26,8 @@ namespace ErrorCodes
 }
 
 
-ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, bool interpret_expressions_)
-    : istr(istr_), header(header_), context(context_), interpret_expressions(interpret_expressions_)
+ValuesRowInputStream::ValuesRowInputStream(ReadBuffer & istr_, const Block & header_, const Context & context_, const FormatSettings & format_settings)
+    : istr(istr_), header(header_), context(context_), format_settings(format_settings)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
@@ -61,7 +61,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
         bool rollback_on_exception = false;
         try
         {
-            header.getByPosition(i).type->deserializeTextQuoted(*columns[i], istr);
+            header.getByPosition(i).type->deserializeTextQuoted(*columns[i], istr, format_settings);
             rollback_on_exception = true;
             skipWhitespaceIfAny(istr);
 
@@ -72,7 +72,7 @@ bool ValuesRowInputStream::read(MutableColumns & columns)
         }
         catch (const Exception & e)
         {
-            if (!interpret_expressions)
+            if (!format_settings.values.interpret_expressions)
                 throw;
 
             /** The normal streaming parser could not parse the value.

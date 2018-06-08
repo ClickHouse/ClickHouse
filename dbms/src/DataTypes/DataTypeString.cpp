@@ -6,6 +6,7 @@
 
 #include <Common/typeid_cast.h>
 
+#include <DataTypes/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -273,7 +274,7 @@ void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, co
 }
 
 
-void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
@@ -287,7 +288,7 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 
 void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr, delimiter); });
+    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr, settings.csv.delimiter); });
 }
 
 

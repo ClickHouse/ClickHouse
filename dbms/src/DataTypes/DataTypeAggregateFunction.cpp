@@ -7,8 +7,10 @@
 
 #include <Common/typeid_cast.h>
 
+#include <DataTypes/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -224,7 +226,7 @@ void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer
 }
 
 
-void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(serializeToString(function, column, row_num), ostr);
 }
@@ -239,7 +241,7 @@ void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t 
 void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readCSV(s, istr, delimiter);
+    readCSV(s, istr, settings.csv.delimiter);
     deserializeFromString(function, column, s);
 }
 

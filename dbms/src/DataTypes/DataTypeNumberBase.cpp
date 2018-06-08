@@ -6,7 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/FormatSettingsJSON.h>
+#include <DataTypes/FormatSettings.h>
 
 
 namespace DB
@@ -19,9 +19,9 @@ void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 
@@ -46,9 +46,9 @@ void DataTypeNumberBase<T>::deserializeTextEscaped(IColumn & column, ReadBuffer 
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeNumberBase<T>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 template <typename T>
@@ -92,15 +92,15 @@ void DataTypeNumberBase<T>::serializeTextJSON(const IColumn & column, size_t row
     auto x = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
     bool is_finite = isFinite(x);
 
-    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.force_quoting_64bit_integers)
-        || (settings.output_format_json_quote_denormals && !is_finite);
+    const bool need_quote = (std::is_integral_v<T> && (sizeof(T) == 8) && settings.json.quote_64bit_integers)
+        || (settings.json.quote_denormals && !is_finite);
 
     if (need_quote)
         writeChar('"', ostr);
 
     if (is_finite)
         writeText(x, ostr);
-    else if (!settings.output_format_json_quote_denormals)
+    else if (!settings.json.quote_denormals)
         writeCString("null", ostr);
     else
         writeDenormalNumber(x, ostr);
@@ -161,9 +161,9 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 template <typename T>

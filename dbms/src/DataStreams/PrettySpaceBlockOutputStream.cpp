@@ -21,7 +21,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(block, widths, max_widths, name_widths);
+    calculateWidths(block, widths, max_widths, name_widths, format_settings);
 
     /// Do not align on too long values.
     if (terminal_width > 80)
@@ -42,18 +42,18 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
             for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
                 writeChar(' ', ostr);
 
-            if (!no_escapes)
+            if (format_settings.pretty.color)
                 writeCString("\033[1m", ostr);
             writeString(col.name, ostr);
-            if (!no_escapes)
+            if (format_settings.pretty.color)
                 writeCString("\033[0m", ostr);
         }
         else
         {
-            if (!no_escapes)
+            if (format_settings.pretty.color)
                 writeCString("\033[1m", ostr);
             writeString(col.name, ostr);
-            if (!no_escapes)
+            if (format_settings.pretty.color)
                 writeCString("\033[0m", ostr);
 
             for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)

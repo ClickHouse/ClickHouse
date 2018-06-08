@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromString.h>
+#include <DataTypes/FormatSettings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
@@ -170,7 +171,7 @@ void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_nu
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
@@ -193,7 +194,7 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     std::string name;
-    readCSVString(name, istr, delimiter);
+    readCSVString(name, istr, settings.csv.delimiter);
     static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 

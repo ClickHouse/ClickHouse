@@ -21,9 +21,9 @@ static void deserializeText(IColumn & column, ReadBuffer & istr)
     static_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
-void DataTypeDate::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeDate::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 void DataTypeDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
@@ -31,10 +31,10 @@ void DataTypeDate::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, c
     deserializeText(column, istr);
 }
 
-void DataTypeDate::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeDate::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('\'', ostr);
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
     writeChar('\'', ostr);
 }
 
@@ -47,10 +47,10 @@ void DataTypeDate::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, co
     static_cast<ColumnUInt16 &>(column).getData().push_back(x);    /// It's important to do this at the end - for exception safety.
 }
 
-void DataTypeDate::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeDate::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
     writeChar('"', ostr);
 }
 
@@ -63,10 +63,10 @@ void DataTypeDate::deserializeTextJSON(IColumn & column, ReadBuffer & istr, cons
     static_cast<ColumnUInt16 &>(column).getData().push_back(x);
 }
 
-void DataTypeDate::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeDate::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('"', ostr);
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
     writeChar('"', ostr);
 }
 

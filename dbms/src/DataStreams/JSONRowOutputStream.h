@@ -5,7 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <DataStreams/IRowOutputStream.h>
-#include <DataTypes/FormatSettingsJSON.h>
+#include <DataTypes/FormatSettings.h>
+
 
 namespace DB
 {
@@ -15,8 +16,7 @@ namespace DB
 class JSONRowOutputStream : public IRowOutputStream
 {
 public:
-    JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_,
-                        bool write_statistics_, const FormatSettingsJSON & settings_);
+    JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
@@ -67,8 +67,7 @@ protected:
 
     Progress progress;
     Stopwatch watch;
-    bool write_statistics;
-    FormatSettingsJSON settings;
+    FormatSettings settings;
 };
 
 }

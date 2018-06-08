@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/IRowOutputStream.h>
 
 
@@ -14,7 +15,7 @@ class WriteBuffer;
 class ValuesRowOutputStream : public IRowOutputStream
 {
 public:
-    ValuesRowOutputStream(WriteBuffer & ostr_);
+    ValuesRowOutputStream(WriteBuffer & ostr_, const FormatSettings & format_settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
@@ -25,6 +26,7 @@ public:
 
 private:
     WriteBuffer & ostr;
+    const FormatSettings format_settings;
 };
 
 }

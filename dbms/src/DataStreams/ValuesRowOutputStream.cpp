@@ -9,8 +9,8 @@ namespace DB
 {
 
 
-ValuesRowOutputStream::ValuesRowOutputStream(WriteBuffer & ostr_)
-    : ostr(ostr_)
+ValuesRowOutputStream::ValuesRowOutputStream(WriteBuffer & ostr_, const FormatSettings & format_settings)
+    : ostr(ostr_), format_settings(format_settings)
 {
 }
 
@@ -21,7 +21,7 @@ void ValuesRowOutputStream::flush()
 
 void ValuesRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeTextQuoted(column, row_num, ostr);
+    type.serializeTextQuoted(column, row_num, ostr, format_settings);
 }
 
 void ValuesRowOutputStream::writeFieldDelimiter()
