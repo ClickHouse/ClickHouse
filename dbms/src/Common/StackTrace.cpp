@@ -10,7 +10,7 @@
 #include <common/demangle.h>
 
 /// Arcadia compatibility DEVTOOLS-3976
-#if BACKTRACE_INCLUDE
+#if defined(BACKTRACE_INCLUDE)
 #include BACKTRACE_INCLUDE
 #endif
 #if !defined(BACKTRACE_FUNC)
