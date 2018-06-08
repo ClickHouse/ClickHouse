@@ -73,7 +73,7 @@ def main(args):
     base_dir = os.path.abspath(args.queries)
     tmp_dir = os.path.abspath(args.tmp)
 
-    # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
+    # Keep same default values as in queries/shell_config.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
@@ -364,5 +364,7 @@ if __name__ == '__main__':
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
         if os.getenv("CLICKHOUSE_PORT_TCP"):
             args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+        # Will print all warnings and errors
+        args.client += ' --server_logs_level=warning' 
 
     main(args)

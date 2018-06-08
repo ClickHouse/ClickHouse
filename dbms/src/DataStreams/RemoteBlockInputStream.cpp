@@ -232,6 +232,9 @@ Block RemoteBlockInputStream::readImpl()
                 extremes = packet.block;
                 break;
 
+            case Protocol::Server::Log:
+                break;
+
             default:
                 got_unknown_packet_from_replica = true;
                 throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);

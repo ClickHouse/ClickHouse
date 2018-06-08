@@ -111,6 +111,7 @@ void Connection::disconnect()
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
     in = nullptr;
+    last_input_packet_type.reset();
     out = nullptr; // can write to socket
     if (socket)
         socket->close();
@@ -484,7 +485,26 @@ bool Connection::poll(size_t timeout_microseconds)
 
 bool Connection::hasReadBufferPendingData() const
 {
-    return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+
+std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
+{
+    if (last_input_packet_type.has_value())
+        return last_input_packet_type;
+
+    if (hasReadBufferPendingData() || poll(timeout_microseconds))
+    {
+        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        UInt64 packet_type;
+        readVarUInt(packet_type, *in);
+
+        last_input_packet_type.emplace(packet_type);
+        return last_input_packet_type;
+    }
+
+    return {};
 }
 
 
@@ -493,7 +513,17 @@ Connection::Packet Connection::receivePacket()
     try
     {
         Packet res;
-        readVarUInt(res.type, *in);
+
+        if (last_input_packet_type)
+        {
+            res.type = *last_input_packet_type;
+            last_input_packet_type.reset();
+        }
+        else
+        {
+            LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+            readVarUInt(res.type, *in);
+        }
 
         // LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
