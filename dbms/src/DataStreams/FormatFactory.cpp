@@ -53,6 +53,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
+    format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
+    format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
 
     auto wrap_row_stream = [&](auto && row_stream)
     {
@@ -70,32 +72,32 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
     }
     else if (name == "TabSeparated" || name == "TSV") /// TSV is a synonym/alias for the original TabSeparated format
     {
-        return wrap_row_stream(std::make_shared<TabSeparatedRowInputStream>(buf, sample));
+        return wrap_row_stream(std::make_shared<TabSeparatedRowInputStream>(buf, sample, false, false, format_settings));
     }
     else if (name == "TabSeparatedWithNames" || name == "TSVWithNames")
     {
-        return wrap_row_stream(std::make_shared<TabSeparatedRowInputStream>(buf, sample, true));
+        return wrap_row_stream(std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, false, format_settings));
     }
     else if (name == "TabSeparatedWithNamesAndTypes" || name == "TSVWithNamesAndTypes")
     {
-        return wrap_row_stream(std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, true));
+        return wrap_row_stream(std::make_shared<TabSeparatedRowInputStream>(buf, sample, true, true, format_settings));
     }
     else if (name == "Values")
     {
-        return wrap_row_stream(std::make_shared<ValuesRowInputStream>(buf, sample, context, settings.input_format_values_interpret_expressions));
+        return wrap_row_stream(std::make_shared<ValuesRowInputStream>(buf, sample, context, format_settings));
     }
     else if (name == "CSV" || name == "CSVWithNames")
     {
         bool with_names = name == "CSVWithNames";
-        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, with_names));
+        return wrap_row_stream(std::make_shared<CSVRowInputStream>(buf, sample, with_names, format_settings));
     }
     else if (name == "TSKV")
     {
-        return wrap_row_stream(std::make_shared<TSKVRowInputStream>(buf, sample, settings.input_format_skip_unknown_fields));
+        return wrap_row_stream(std::make_shared<TSKVRowInputStream>(buf, sample, format_settings));
     }
     else if (name == "JSONEachRow")
     {
-        return wrap_row_stream(std::make_shared<JSONEachRowRowInputStream>(buf, sample, settings.input_format_skip_unknown_fields));
+        return wrap_row_stream(std::make_shared<JSONEachRowRowInputStream>(buf, sample, format_settings));
     }
 #if USE_CAPNP
     else if (name == "CapnProto")
@@ -142,64 +144,75 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
+    format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
+    format_settings.pretty.color = settings.output_format_pretty_color;
+    format_settings.write_statistics = settings.output_format_write_statistics;
 
     if (name == "Native")
         return std::make_shared<NativeBlockOutputStream>(buf, 0, sample);
     else if (name == "RowBinary")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<BinaryRowOutputStream>(buf), sample);
     else if (name == "TabSeparated" || name == "TSV")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(
+            std::make_shared<TabSeparatedRowOutputStream>(buf, sample, false, false, format_settings), sample);
     else if (name == "TabSeparatedWithNames" || name == "TSVWithNames")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(
+            std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, false, format_settings), sample);
     else if (name == "TabSeparatedWithNamesAndTypes" || name == "TSVWithNamesAndTypes")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(
+            std::make_shared<TabSeparatedRowOutputStream>(buf, sample, true, true, format_settings), sample);
     else if (name == "TabSeparatedRaw" || name == "TSVRaw")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(
+            std::make_shared<TabSeparatedRawRowOutputStream>(buf, sample, false, false, format_settings), sample);
     else if (name == "CSV" || name == "CSVWithNames")
     {
         bool with_names = name == "CSVWithNames";
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, with_names), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<CSVRowOutputStream>(buf, sample, with_names, format_settings), sample);
     }
     else if (name == "Pretty")
-        return std::make_shared<PrettyBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
+        return std::make_shared<PrettyBlockOutputStream>(buf, sample, format_settings);
     else if (name == "PrettyCompact")
-        return std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
+        return std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, format_settings);
     else if (name == "PrettyCompactMonoBlock")
     {
-        BlockOutputStreamPtr dst = std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
-        auto res = std::make_shared<SquashingBlockOutputStream>(dst, settings.output_format_pretty_max_rows, 0);
+        BlockOutputStreamPtr dst = std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, format_settings);
+        auto res = std::make_shared<SquashingBlockOutputStream>(dst, format_settings.pretty.max_rows, 0);
         res->disableFlush();
         return res;
     }
     else if (name == "PrettySpace")
-        return std::make_shared<PrettySpaceBlockOutputStream>(buf, sample, false, settings.output_format_pretty_max_rows, context);
+        return std::make_shared<PrettySpaceBlockOutputStream>(buf, sample, format_settings);
     else if (name == "PrettyNoEscapes")
-        return std::make_shared<PrettyBlockOutputStream>(buf, sample, true, settings.output_format_pretty_max_rows, context);
+    {
+        format_settings.pretty.color = false;
+        return std::make_shared<PrettyBlockOutputStream>(buf, sample, format_settings);
+    }
     else if (name == "PrettyCompactNoEscapes")
-        return std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, true, settings.output_format_pretty_max_rows, context);
+    {
+        format_settings.pretty.color = false;
+        return std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, format_settings);
+    }
     else if (name == "PrettySpaceNoEscapes")
-        return std::make_shared<PrettySpaceBlockOutputStream>(buf, sample, true, settings.output_format_pretty_max_rows, context);
+    {
+        format_settings.pretty.color = false;
+        return std::make_shared<PrettySpaceBlockOutputStream>(buf, sample, format_settings);
+    }
     else if (name == "Vertical")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(
-            buf, sample, settings.output_format_pretty_max_rows), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<VerticalRowOutputStream>(buf, sample, format_settings), sample);
     else if (name == "Values")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<ValuesRowOutputStream>(buf, format_settings), sample);
     else if (name == "JSON")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(
-            buf, sample, settings.output_format_write_statistics), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONRowOutputStream>(buf, sample, format_settings), sample);
     else if (name == "JSONCompact")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(
-            buf, sample, settings.output_format_write_statistics), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONCompactRowOutputStream>(buf, sample, format_settings), sample);
     else if (name == "JSONEachRow")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(
-            buf, sample), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(buf, sample, format_settings), sample);
     else if (name == "XML")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
-            settings.output_format_write_statistics), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample, format_settings), sample);
     else if (name == "TSKV")
-        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TSKVRowOutputStream>(buf, sample), sample);
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<TSKVRowOutputStream>(buf, sample, format_settings), sample);
     else if (name == "ODBCDriver")
-        return std::make_shared<ODBCDriverBlockOutputStream>(buf, sample);
+        return std::make_shared<ODBCDriverBlockOutputStream>(buf, sample, format_settings);
     else if (name == "Null")
         return std::make_shared<NullBlockOutputStream>(sample);
     else

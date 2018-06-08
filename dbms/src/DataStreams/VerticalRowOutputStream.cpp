@@ -10,8 +10,8 @@ namespace DB
 {
 
 VerticalRowOutputStream::VerticalRowOutputStream(
-    WriteBuffer & ostr_, const Block & sample_, size_t max_rows_)
-    : ostr(ostr_), sample(sample_), max_rows(max_rows_)
+    WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings)
+    : ostr(ostr_), sample(sample_), format_settings(format_settings)
 {
     size_t columns = sample.columns();
 
@@ -53,7 +53,7 @@ void VerticalRowOutputStream::flush()
 
 void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeString(names_and_paddings[field_number], ostr);
@@ -66,7 +66,7 @@ void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType
 
 void VerticalRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
 {
-    type.serializeText(column, row_num, ostr);
+    type.serializeText(column, row_num, ostr, format_settings);
 }
 
 
@@ -74,7 +74,7 @@ void VerticalRowOutputStream::writeRowStartDelimiter()
 {
     ++row_number;
 
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeCString("Row ", ostr);
@@ -90,7 +90,7 @@ void VerticalRowOutputStream::writeRowStartDelimiter()
 
 void VerticalRowOutputStream::writeRowBetweenDelimiter()
 {
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeCString("\n", ostr);
@@ -100,10 +100,10 @@ void VerticalRowOutputStream::writeRowBetweenDelimiter()
 
 void VerticalRowOutputStream::writeSuffix()
 {
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
     {
         writeCString("Showed first ", ostr);
-        writeIntText(max_rows, ostr);
+        writeIntText(format_settings.pretty.max_rows, ostr);
         writeCString(".\n", ostr);
     }
 

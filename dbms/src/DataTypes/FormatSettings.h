@@ -1,8 +1,16 @@
 #pragma once
 
+#include <Core/Types.h>
+
+
 namespace DB
 {
 
+/** Various tweaks for input/output formats.
+  * Text serialization/deserialization of data types also depend on some of these settings.
+  * NOTE Parameters for unrelated formats and unrelated data types
+  *  are collected in this struct - it prevents modularity, but they are difficult to separate.
+  */
 struct FormatSettings
 {
     struct JSON
@@ -19,6 +27,24 @@ struct FormatSettings
     };
 
     CSV csv;
+
+    struct Pretty
+    {
+        UInt64 max_rows = 10000;
+        bool color = true;
+    };
+
+    Pretty pretty;
+
+    struct Values
+    {
+        bool interpret_expressions = true;
+    };
+
+    Values values;
+
+    bool skip_unknown_fields = false;
+    bool write_statistics = true;
 
     enum class DateTimeInputFormat
     {

@@ -17,8 +17,8 @@ namespace ErrorCodes
 
 
 PrettyBlockOutputStream::PrettyBlockOutputStream(
-    WriteBuffer & ostr_, const Block & header_, bool no_escapes_, size_t max_rows_, const Context & context_)
-     : ostr(ostr_), header(header_), max_rows(max_rows_), no_escapes(no_escapes_), context(context_)
+    WriteBuffer & ostr_, const Block & header_, const FormatSettings & format_settings)
+     : ostr(ostr_), header(header_), format_settings(format_settings)
 {
     struct winsize w;
     if (0 == ioctl(STDOUT_FILENO, TIOCGWINSZ, &w))
@@ -34,7 +34,8 @@ void PrettyBlockOutputStream::flush()
 
 /// Evaluate the visible width of the values and column names.
 /// Note that number of code points is just a rough approximation of visible string width.
-void PrettyBlockOutputStream::calculateWidths(const Block & block, WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths)
+void PrettyBlockOutputStream::calculateWidths(
+    const Block & block, WidthsPerColumn & widths, Widths & max_widths, Widths & name_widths, const FormatSettings & format_settings)
 {
     size_t rows = block.rows();
     size_t columns = block.columns();
@@ -55,7 +56,7 @@ void PrettyBlockOutputStream::calculateWidths(const Block & block, WidthsPerColu
         {
             {
                 WriteBufferFromString out(serialized_value);
-                elem.type->serializeText(*elem.column, j, out);
+                elem.type->serializeText(*elem.column, j, out, format_settings);
             }
 
             widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
@@ -85,7 +86,7 @@ void PrettyBlockOutputStream::write(const Block & block)
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(block, widths, max_widths, name_widths);
+    calculateWidths(block, widths, max_widths, name_widths, format_settings);
 
     /// Create separators
     std::stringstream top_separator;
@@ -137,7 +138,7 @@ void PrettyBlockOutputStream::write(const Block & block)
 
         const ColumnWithTypeAndName & col = block.getByPosition(i);
 
-        if (!no_escapes)
+        if (format_settings.pretty.color)
             writeCString("\033[1m", ostr);
 
         if (col.type->shouldAlignRightInPrettyFormats())
@@ -155,7 +156,7 @@ void PrettyBlockOutputStream::write(const Block & block)
                 writeChar(' ', ostr);
         }
 
-        if (!no_escapes)
+        if (format_settings.pretty.color)
             writeCString("\033[0m", ostr);
     }
     writeCString(" ┃\n", ostr);
@@ -197,11 +198,11 @@ void PrettyBlockOutputStream::writeValueWithPadding(const ColumnWithTypeAndName 
     if (elem.type->shouldAlignRightInPrettyFormats())
     {
         writePadding();
-        elem.type->serializeText(*elem.column.get(), row_num, ostr);
+        elem.type->serializeText(*elem.column.get(), row_num, ostr, format_settings);
     }
     else
     {
-        elem.type->serializeText(*elem.column.get(), row_num, ostr);
+        elem.type->serializeText(*elem.column.get(), row_num, ostr, format_settings);
         writePadding();
     }
 }

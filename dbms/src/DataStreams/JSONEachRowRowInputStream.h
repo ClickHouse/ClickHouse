@@ -2,7 +2,9 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IRowInputStream.h>
+#include <DataTypes/FormatSettings.h>
 #include <Common/HashTable/HashMap.h>
+
 
 namespace DB
 {
@@ -18,7 +20,7 @@ class ReadBuffer;
 class JSONEachRowRowInputStream : public IRowInputStream
 {
 public:
-    JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, bool skip_unknown_);
+    JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings);
 
     bool read(MutableColumns & columns) override;
     bool allowSyncAfterError() const override { return true; }
@@ -27,7 +29,8 @@ public:
 private:
     ReadBuffer & istr;
     Block header;
-    bool skip_unknown;
+
+    const FormatSettings format_settings;
 
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     String name_buf;

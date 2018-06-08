@@ -6,9 +6,8 @@
 namespace DB
 {
 
-JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_,
-                                                       bool write_statistics_, const FormatSettingsJSON & settings_)
-    : JSONRowOutputStream(ostr_, sample_, write_statistics_, settings_)
+JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings)
+    : JSONRowOutputStream(ostr_, sample_, settings)
 {
 }
 
@@ -65,7 +64,7 @@ void JSONCompactRowOutputStream::writeTotals()
 }
 
 
-static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings)
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings)
 {
     writeCString("\t\t\"", ostr);
     writeCString(title, ostr);
