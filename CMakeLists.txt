@@ -301,4 +301,11 @@ add_subdirectory (libs)
 add_subdirectory (utils)
 add_subdirectory (dbms)
 
+# Add targets for static analyzer
+find_program(PVS_STUDIO_PATH pvs-studio-analyzer)
+if (PVS_STUDIO_PATH)
+    include(cmake/PVS-Studio.cmake)
+    pvs_studio_add_target(TARGET clickhouse.analyze ALL OUTPUT FORMAT errorfile RECURSIVE ANALYZE clickhouse LOG pvs-studio.err PREPROCESSOR ${CMAKE_CXX_COMPILER})
+endif ()
+
 include (cmake/print_include_directories.cmake)
