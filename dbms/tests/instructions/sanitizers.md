@@ -12,7 +12,7 @@ CC=clang CXX=clang++ is strongly recommended.
 
 ```
 CC=clang CXX=clang++ cmake -D CMAKE_BUILD_TYPE=ASan -D ENABLE_TCMALLOC=0 ..
-make -j24
+ninja
 ```
 
 ## Copy binary to your server
@@ -38,7 +38,7 @@ mkdir build && cd build
 
 ```
 CC=clang CXX=clang++ cmake -D CMAKE_BUILD_TYPE=TSan -D ENABLE_TCMALLOC=0 ..
-make -j24
+ninja
 ```
 
 ## Copy binary to your server
