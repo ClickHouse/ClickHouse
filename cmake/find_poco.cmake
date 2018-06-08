@@ -27,7 +27,6 @@ endif ()
 
 if (Poco_INCLUDE_DIRS AND Poco_Foundation_LIBRARY)
 elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
-
     set (USE_INTERNAL_POCO_LIBRARY 1)
 
     set (ENABLE_ZIP 0 CACHE BOOL "")

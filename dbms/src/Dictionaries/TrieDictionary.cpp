@@ -569,7 +569,7 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
 
         if (node && node->right)
         {
-            stack.push(NULL);
+            stack.push(nullptr);
             key |= getBit(stack.size());
             stack.push(node->right);
             while (stack.top()->left)

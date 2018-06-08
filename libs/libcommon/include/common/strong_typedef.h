@@ -17,12 +17,12 @@ private:
 
 public:
     template <class Enable = typename std::is_copy_constructible<T>::type>
-    explicit StrongTypedef(const T & t_) : t(t_) {};
+    explicit StrongTypedef(const T & t_) : t(t_) {}
     template <class Enable = typename std::is_move_constructible<T>::type>
-    explicit StrongTypedef(T && t_) : t(std::move(t_)) {};
+    explicit StrongTypedef(T && t_) : t(std::move(t_)) {}
 
     template <class Enable = typename std::is_default_constructible<T>::type>
-    StrongTypedef(): t() {};
+    StrongTypedef(): t() {}
 
     StrongTypedef(const Self &) = default;
     StrongTypedef(Self &&) = default;

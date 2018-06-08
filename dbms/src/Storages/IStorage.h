@@ -131,10 +131,10 @@ public:
     TableFullWriteLock lockForAlter(const std::string & who = "Alter")
     {
         /// The calculation order is important.
-        auto data_lock = lockDataForAlter(who);
-        auto structure_lock = lockStructureForAlter(who);
+        auto res_data_lock = lockDataForAlter(who);
+        auto res_structure_lock = lockStructureForAlter(who);
 
-        return {std::move(data_lock), std::move(structure_lock)};
+        return {std::move(res_data_lock), std::move(res_structure_lock)};
     }
 
     /** Does not allow changing the data in the table. (Moreover, does not give a look at the structure of the table with the intention to change the data).
@@ -298,7 +298,7 @@ public:
 
     /// Asks table to stop executing some action identified by action_type
     /// If table does not support such type of lock, and empty lock is returned
-    virtual ActionLock getActionLock(StorageActionBlockType /* action_type */) const
+    virtual ActionLock getActionLock(StorageActionBlockType /* action_type */)
     {
         return {};
     }

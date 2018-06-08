@@ -43,7 +43,7 @@ public:
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return true; }
     bool textCanContainOnlyValidUTF8() const override { return true; }
-    bool isComparable() const override { return true; };
+    bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueRepresentedByInteger() const override;
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }

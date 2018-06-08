@@ -211,7 +211,8 @@ static bool isSupportedAlterType(int type)
         ASTAlterQuery::DROP_COLUMN,
         ASTAlterQuery::MODIFY_COLUMN,
         ASTAlterQuery::MODIFY_PRIMARY_KEY,
-        ASTAlterQuery::DROP_PARTITION
+        ASTAlterQuery::DROP_PARTITION,
+        ASTAlterQuery::DELETE,
     };
 
     return supported_alter_types.count(type) != 0;
@@ -966,7 +967,7 @@ public:
         return "DDLQueryStatusInputSream";
     }
 
-    Block getHeader() const override { return sample; };
+    Block getHeader() const override { return sample; }
 
     Block readImpl() override
     {

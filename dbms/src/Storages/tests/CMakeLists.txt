@@ -1,5 +1,3 @@
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
 add_executable (system_numbers system_numbers.cpp)
 target_link_libraries (system_numbers dbms clickhouse_storages_system)
 
@@ -26,3 +24,9 @@ target_link_libraries (merge_selector dbms)
 
 add_executable (merge_selector2 merge_selector2.cpp)
 target_link_libraries (merge_selector2 dbms)
+
+add_executable (get_current_inserts_in_replicated get_current_inserts_in_replicated.cpp)
+target_link_libraries (get_current_inserts_in_replicated dbms)
+
+add_executable (get_abandonable_lock_in_all_partitions get_abandonable_lock_in_all_partitions.cpp)
+target_link_libraries (get_abandonable_lock_in_all_partitions dbms)

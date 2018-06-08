@@ -1,3 +1,5 @@
+#include <iomanip>
+
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
@@ -16,6 +18,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -153,8 +157,6 @@ void DatabaseOrdinary::loadTables(
 
     size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
-
-    String data_path = context.getPath() + "data/" + escapeForFileName(name) + "/";
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
@@ -398,7 +400,7 @@ void DatabaseOrdinary::renameTable(
             to_database_concrete->name,
             to_table_name);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
         throw;
     }

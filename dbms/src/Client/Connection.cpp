@@ -18,6 +18,7 @@
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
@@ -42,6 +43,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -121,7 +123,27 @@ void Connection::disconnect()
 
 void Connection::sendHello()
 {
-    //LOG_TRACE(log_wrapper.get(), "Sending hello");
+    /** Disallow control characters in user controlled parameters
+      *  to mitigate the possibility of SSRF.
+      * The user may do server side requests with 'remote' table function.
+      * Malicious user with full r/w access to ClickHouse
+      *  may use 'remote' table function to forge requests
+      *  to another services in the network other than ClickHouse (examples: SMTP).
+      * Limiting number of possible characters in user-controlled part of handshake
+      *  will mitigate this possibility but doesn't solve it completely.
+      */
+    auto has_control_character = [](const std::string & s)
+    {
+        for (auto c : s)
+            if (isControlASCII(c))
+                return true;
+        return false;
+    };
+
+    if (has_control_character(default_database)
+        || has_control_character(user)
+        || has_control_character(password))
+        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);

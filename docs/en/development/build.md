@@ -124,5 +124,5 @@ cd ..
 ```
 
 To create an executable, run `make clickhouse`.
-This will create the `dbms/src/Server/clickhouse` executable, which can be used with `client` or `server` arguments.
+This will create the `dbms/programs/clickhouse` executable, which can be used with `client` or `server` arguments.
 
