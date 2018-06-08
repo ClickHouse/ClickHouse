@@ -87,7 +87,7 @@ static void skipRow(ReadBuffer & istr, const char delimiter, size_t num_columns)
     for (size_t i = 0; i < num_columns; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        readCSVString(tmp, istr);
+        readCSVString(tmp, istr, delimiter);
         skipWhitespacesAndTabs(istr);
 
         skipDelimiter(istr, delimiter, i + 1 == num_columns);

@@ -57,6 +57,7 @@ public:
 private:
     bool has_explicit_time_zone;
     const DateLUTImpl & time_zone;
+    const DateLUTImpl & utc_time_zone;
 };
 
 }
