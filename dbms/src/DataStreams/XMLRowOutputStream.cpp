@@ -6,8 +6,8 @@
 namespace DB
 {
 
-XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_)
-    : dst_ostr(ostr_), write_statistics(write_statistics_)
+XMLRowOutputStream::XMLRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings)
+    : dst_ostr(ostr_), format_settings(format_settings)
 {
     NamesAndTypesList columns(sample_.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
@@ -85,7 +85,7 @@ void XMLRowOutputStream::writeField(const IColumn & column, const IDataType & ty
     writeCString("\t\t\t<", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">", *ostr);
-    type.serializeTextXML(column, row_num, *ostr);
+    type.serializeTextXML(column, row_num, *ostr, format_settings);
     writeCString("</", *ostr);
     writeString(field_tag_names[field_number], *ostr);
     writeCString(">\n", *ostr);
@@ -120,7 +120,7 @@ void XMLRowOutputStream::writeSuffix()
 
     writeRowsBeforeLimitAtLeast();
 
-    if (write_statistics)
+    if (format_settings.write_statistics)
         writeStatistics();
 
     writeCString("</result>\n", *ostr);
@@ -151,7 +151,7 @@ void XMLRowOutputStream::writeTotals()
             writeCString("\t\t<", *ostr);
             writeString(field_tag_names[i], *ostr);
             writeCString(">", *ostr);
-            column.type->serializeTextXML(*column.column.get(), 0, *ostr);
+            column.type->serializeTextXML(*column.column.get(), 0, *ostr, format_settings);
             writeCString("</", *ostr);
             writeString(field_tag_names[i], *ostr);
             writeCString(">\n", *ostr);
@@ -162,7 +162,8 @@ void XMLRowOutputStream::writeTotals()
 }
 
 
-static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, const Names & field_tag_names, WriteBuffer & ostr)
+static void writeExtremesElement(
+    const char * title, const Block & extremes, size_t row_num, const Names & field_tag_names, WriteBuffer & ostr, const FormatSettings & format_settings)
 {
     writeCString("\t\t<", ostr);
     writeCString(title, ostr);
@@ -176,7 +177,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
         writeCString("\t\t\t<", ostr);
         writeString(field_tag_names[i], ostr);
         writeCString(">", ostr);
-        column.type->serializeTextXML(*column.column.get(), row_num, ostr);
+        column.type->serializeTextXML(*column.column.get(), row_num, ostr, format_settings);
         writeCString("</", ostr);
         writeString(field_tag_names[i], ostr);
         writeCString(">\n", ostr);
@@ -192,8 +193,8 @@ void XMLRowOutputStream::writeExtremes()
     if (extremes)
     {
         writeCString("\t<extremes>\n", *ostr);
-        writeExtremesElement("min", extremes, 0, field_tag_names, *ostr);
-        writeExtremesElement("max", extremes, 1, field_tag_names, *ostr);
+        writeExtremesElement("min", extremes, 0, field_tag_names, *ostr, format_settings);
+        writeExtremesElement("max", extremes, 1, field_tag_names, *ostr, format_settings);
         writeCString("\t</extremes>\n", *ostr);
     }
 }
