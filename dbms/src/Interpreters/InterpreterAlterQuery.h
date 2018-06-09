@@ -123,7 +123,7 @@ private:
 
     const Context & context;
 
-    static void parseAlter(const ASTAlterQuery::ParameterContainer & params,
+    static void parseAlter(const std::vector<ASTAlterCommand *> & commands,
         AlterCommands & out_alter_commands,
         PartitionCommands & out_partition_commands,
         MutationCommands & out_mutation_commands);

@@ -51,7 +51,7 @@ BlockIO InterpreterAlterQuery::execute()
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
     MutationCommands mutation_commands;
-    parseAlter(alter.parameters, alter_commands, partition_commands, mutation_commands);
+    parseAlter(alter.command_list->commands, alter_commands, partition_commands, mutation_commands);
 
     if (!mutation_commands.commands.empty())
     {
@@ -104,21 +104,21 @@ BlockIO InterpreterAlterQuery::execute()
 }
 
 void InterpreterAlterQuery::parseAlter(
-    const ASTAlterQuery::ParameterContainer & params_container,
+    const std::vector<ASTAlterCommand *> & command_asts,
     AlterCommands & out_alter_commands,
     PartitionCommands & out_partition_commands,
     MutationCommands & out_mutation_commands)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    for (const auto & params : params_container)
+    for (const auto & command_ast : command_asts)
     {
-        if (params.type == ASTAlterQuery::ADD_COLUMN)
+        if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
         {
             AlterCommand command;
             command.type = AlterCommand::ADD_COLUMN;
 
-            const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
+            const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*command_ast->col_decl);
 
             command.column_name = ast_col_decl.name;
             if (ast_col_decl.type)
@@ -131,40 +131,40 @@ void InterpreterAlterQuery::parseAlter(
                 command.default_expression = ast_col_decl.default_expression;
             }
 
-            if (params.column)
-                command.after_column = typeid_cast<const ASTIdentifier &>(*params.column).name;
+            if (command_ast->column)
+                command.after_column = typeid_cast<const ASTIdentifier &>(*command_ast->column).name;
 
             out_alter_commands.emplace_back(std::move(command));
         }
-        else if (params.type == ASTAlterQuery::DROP_COLUMN)
+        else if (command_ast->type == ASTAlterCommand::DROP_COLUMN)
         {
-            if (params.partition)
+            if (command_ast->partition)
             {
-                if (!params.clear_column)
+                if (!command_ast->clear_column)
                     throw Exception("Can't DROP COLUMN from partition. It is possible only CLEAR COLUMN in partition", ErrorCodes::BAD_ARGUMENTS);
 
-                const Field & column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
+                const Field & column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
 
-                out_partition_commands.emplace_back(PartitionCommand::clearColumn(params.partition, column_name));
+                out_partition_commands.emplace_back(PartitionCommand::clearColumn(command_ast->partition, column_name));
             }
             else
             {
-                if (params.clear_column)
+                if (command_ast->clear_column)
                     throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
 
                 AlterCommand command;
                 command.type = AlterCommand::DROP_COLUMN;
-                command.column_name = typeid_cast<const ASTIdentifier &>(*(params.column)).name;
+                command.column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
 
                 out_alter_commands.emplace_back(std::move(command));
             }
         }
-        else if (params.type == ASTAlterQuery::MODIFY_COLUMN)
+        else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
         {
             AlterCommand command;
             command.type = AlterCommand::MODIFY_COLUMN;
 
-            const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*params.col_decl);
+            const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*command_ast->col_decl);
 
             command.column_name = ast_col_decl.name;
             if (ast_col_decl.type)
@@ -180,37 +180,37 @@ void InterpreterAlterQuery::parseAlter(
 
             out_alter_commands.emplace_back(std::move(command));
         }
-        else if (params.type == ASTAlterQuery::MODIFY_PRIMARY_KEY)
+        else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
         {
             AlterCommand command;
             command.type = AlterCommand::MODIFY_PRIMARY_KEY;
-            command.primary_key = params.primary_key;
+            command.primary_key = command_ast->primary_key;
             out_alter_commands.emplace_back(std::move(command));
         }
-        else if (params.type == ASTAlterQuery::DROP_PARTITION)
+        else if (command_ast->type == ASTAlterCommand::DROP_PARTITION)
         {
-            out_partition_commands.emplace_back(PartitionCommand::dropPartition(params.partition, params.detach));
+            out_partition_commands.emplace_back(PartitionCommand::dropPartition(command_ast->partition, command_ast->detach));
         }
-        else if (params.type == ASTAlterQuery::ATTACH_PARTITION)
+        else if (command_ast->type == ASTAlterCommand::ATTACH_PARTITION)
         {
-            out_partition_commands.emplace_back(PartitionCommand::attachPartition(params.partition, params.part));
+            out_partition_commands.emplace_back(PartitionCommand::attachPartition(command_ast->partition, command_ast->part));
         }
-        else if (params.type == ASTAlterQuery::REPLACE_PARTITION)
+        else if (command_ast->type == ASTAlterCommand::REPLACE_PARTITION)
         {
             out_partition_commands.emplace_back(
-                PartitionCommand::replacePartition(params.partition, params.replace, params.from_database, params.from_table));
+                PartitionCommand::replacePartition(command_ast->partition, command_ast->replace, command_ast->from_database, command_ast->from_table));
         }
-        else if (params.type == ASTAlterQuery::FETCH_PARTITION)
+        else if (command_ast->type == ASTAlterCommand::FETCH_PARTITION)
         {
-            out_partition_commands.emplace_back(PartitionCommand::fetchPartition(params.partition, params.from));
+            out_partition_commands.emplace_back(PartitionCommand::fetchPartition(command_ast->partition, command_ast->from));
         }
-        else if (params.type == ASTAlterQuery::FREEZE_PARTITION)
+        else if (command_ast->type == ASTAlterCommand::FREEZE_PARTITION)
         {
-            out_partition_commands.emplace_back(PartitionCommand::freezePartition(params.partition, params.with_name));
+            out_partition_commands.emplace_back(PartitionCommand::freezePartition(command_ast->partition, command_ast->with_name));
         }
-        else if (params.type == ASTAlterQuery::DELETE)
+        else if (command_ast->type == ASTAlterCommand::DELETE)
         {
-            out_mutation_commands.commands.emplace_back(MutationCommand::delete_(params.predicate));
+            out_mutation_commands.commands.emplace_back(MutationCommand::delete_(command_ast->predicate));
         }
         else
             throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
