@@ -114,12 +114,14 @@ try
         sample.insert(std::move(elem));
     }
 
+    FormatSettings format_settings;
+
     /// read the data from tsv file and simultaneously write to table
     if (argc == 2 && 0 == strcmp(argv[1], "write"))
     {
         ReadBufferFromFileDescriptor in_buf(STDIN_FILENO);
 
-        RowInputStreamPtr in_ = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
+        RowInputStreamPtr in_ = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, false, false, format_settings);
         BlockInputStreamFromRowInputStream in(in_, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
         BlockOutputStreamPtr out = table->write({}, {});
         copyData(in, *out);
@@ -133,7 +135,7 @@ try
         QueryProcessingStage::Enum stage;
 
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
-        RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
+        RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, format_settings);
         BlockOutputStreamFromRowOutputStream out(out_, sample);
         copyData(*in, out);
     }

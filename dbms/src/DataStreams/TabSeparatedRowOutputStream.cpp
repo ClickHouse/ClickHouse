@@ -6,8 +6,9 @@
 namespace DB
 {
 
-TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_)
-    : ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_)
+TabSeparatedRowOutputStream::TabSeparatedRowOutputStream(
+    WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_, const FormatSettings & format_settings)
+    : ostr(ostr_), sample(sample_), with_names(with_names_), with_types(with_types_), format_settings(format_settings)
 {
 }
 
@@ -44,7 +45,7 @@ void TabSeparatedRowOutputStream::writePrefix()
 
 void TabSeparatedRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeTextEscaped(column, row_num, ostr);
+    type.serializeTextEscaped(column, row_num, ostr, format_settings);
 }
 
 

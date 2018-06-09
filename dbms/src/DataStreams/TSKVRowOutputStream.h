@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/TabSeparatedRowOutputStream.h>
 
 
@@ -13,7 +14,7 @@ namespace DB
 class TSKVRowOutputStream : public TabSeparatedRowOutputStream
 {
 public:
-    TSKVRowOutputStream(WriteBuffer & ostr_, const Block & sample_);
+    TSKVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings);
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeRowEndDelimiter() override;
 

@@ -41,9 +41,11 @@ try
     ReadBufferFromFile in_buf("test_in");
     WriteBufferFromFile out_buf("test_out");
 
-    RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample);
+    FormatSettings format_settings;
+
+    RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, false, false, format_settings);
     BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
-    RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
+    RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, format_settings);
     BlockOutputStreamFromRowOutputStream block_output(row_output, sample);
 
     copyData(block_input, block_output);
