@@ -10,8 +10,8 @@ namespace DB
 {
 
 VerticalRowOutputStream::VerticalRowOutputStream(
-    WriteBuffer & ostr_, const Block & sample_, size_t max_rows_)
-    : ostr(ostr_), sample(sample_), max_rows(max_rows_)
+    WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings)
+    : ostr(ostr_), sample(sample_), format_settings(format_settings)
 {
     size_t columns = sample.columns();
 
@@ -26,13 +26,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(
         /// Note that number of code points is just a rough approximation of visible string width.
         const String & name = sample.getByPosition(i).name;
 
-        {
-            /// We need to obtain length in escaped form.
-            WriteBufferFromString out(serialized_value);
-            writeEscapedString(name, out);
-        }
-
-        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+        name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(name.data()), name.size());
 
         if (name_widths[i] > max_name_width)
             max_name_width = name_widths[i];
@@ -42,7 +36,7 @@ VerticalRowOutputStream::VerticalRowOutputStream(
     for (size_t i = 0; i < columns; ++i)
     {
         WriteBufferFromString out(names_and_paddings[i]);
-        writeEscapedString(sample.getByPosition(i).name, out);
+        writeString(sample.getByPosition(i).name, out);
         writeCString(": ", out);
     }
 
@@ -59,7 +53,7 @@ void VerticalRowOutputStream::flush()
 
 void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeString(names_and_paddings[field_number], ostr);
@@ -72,12 +66,7 @@ void VerticalRowOutputStream::writeField(const IColumn & column, const IDataType
 
 void VerticalRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
 {
-    type.serializeTextEscaped(column, row_num, ostr);
-}
-
-void VerticalRawRowOutputStream::writeValue(const IColumn & column, const IDataType & type, size_t row_num) const
-{
-    type.serializeText(column, row_num, ostr);
+    type.serializeText(column, row_num, ostr, format_settings);
 }
 
 
@@ -85,7 +74,7 @@ void VerticalRowOutputStream::writeRowStartDelimiter()
 {
     ++row_number;
 
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeCString("Row ", ostr);
@@ -101,7 +90,7 @@ void VerticalRowOutputStream::writeRowStartDelimiter()
 
 void VerticalRowOutputStream::writeRowBetweenDelimiter()
 {
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
         return;
 
     writeCString("\n", ostr);
@@ -111,10 +100,10 @@ void VerticalRowOutputStream::writeRowBetweenDelimiter()
 
 void VerticalRowOutputStream::writeSuffix()
 {
-    if (row_number > max_rows)
+    if (row_number > format_settings.pretty.max_rows)
     {
         writeCString("Showed first ", ostr);
-        writeIntText(max_rows, ostr);
+        writeIntText(format_settings.pretty.max_rows, ostr);
         writeCString(".\n", ostr);
     }
 

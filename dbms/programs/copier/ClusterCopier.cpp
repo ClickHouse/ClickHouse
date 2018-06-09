@@ -31,6 +31,7 @@
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
@@ -51,6 +52,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
@@ -64,7 +66,7 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageDistributed.h>
 #include <Databases/DatabaseMemory.h>
-#include <Server/StatusFile.h>
+#include <Common/StatusFile.h>
 #include <daemon/OwnPatternFormatter.h>
 
 
@@ -816,7 +818,7 @@ public:
 
             try
             {
-                type->deserializeTextQuoted(*column_dummy, rb);
+                type->deserializeTextQuoted(*column_dummy, rb, FormatSettings());
             }
             catch (Exception & e)
             {
@@ -1876,7 +1878,7 @@ protected:
             for (size_t i = 0; i < column.column->size(); ++i)
             {
                 WriteBufferFromOwnString wb;
-                column.type->serializeTextQuoted(*column.column, i, wb);
+                column.type->serializeTextQuoted(*column.column, i, wb, FormatSettings());
                 res.emplace(wb.str());
             }
         }

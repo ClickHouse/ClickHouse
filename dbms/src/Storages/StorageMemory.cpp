@@ -1,11 +1,11 @@
-#include <map>
-
 #include <Common/Exception.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageFactory.h>
+
+#include <IO/WriteHelpers.h>
 
 
 namespace DB

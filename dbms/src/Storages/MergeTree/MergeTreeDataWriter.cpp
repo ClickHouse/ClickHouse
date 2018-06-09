@@ -140,8 +140,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum min_date(minmax_idx.min_values[data.minmax_idx_date_column_pos].get<UInt64>());
-        DayNum max_date(minmax_idx.max_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum min_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].left.get<UInt64>());
+        DayNum max_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
         const auto & date_lut = DateLUT::instance();
 

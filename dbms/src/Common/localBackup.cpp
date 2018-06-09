@@ -22,7 +22,7 @@ namespace ErrorCodes
 static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level,
                             std::optional<size_t> max_level)
 {
-    if (max_level && level > max_level.value())
+    if (max_level && level > *max_level)
         return;
 
     if (level >= 1000)

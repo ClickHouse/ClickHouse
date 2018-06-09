@@ -7,8 +7,8 @@
 namespace DB
 {
 
-ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & header_)
-    : out(out_), header(header_)
+ODBCDriverBlockOutputStream::ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings)
+    : out(out_), header(header_), format_settings(format_settings)
 {
 }
 
@@ -32,7 +32,7 @@ void ODBCDriverBlockOutputStream::write(const Block & block)
 
             {
                 WriteBufferFromString text_out(text_value);
-                col.type->serializeText(*col.column, i, text_out);
+                col.type->serializeText(*col.column, i, text_out, format_settings);
             }
 
             writeStringBinary(text_value, out);

@@ -19,6 +19,8 @@
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 

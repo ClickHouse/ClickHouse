@@ -2,6 +2,7 @@
 
 #include <Core/Block.h>
 #include <DataStreams/IRowInputStream.h>
+#include <DataTypes/FormatSettings.h>
 
 
 namespace DB
@@ -18,7 +19,7 @@ public:
     /** with_names - in the first line the header with column names
       * with_types - on the next line header with type names
       */
-    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, const char delimiter_, bool with_names_ = false, bool with_types_ = false);
+    CSVRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, const FormatSettings & format_settings);
 
     bool read(MutableColumns & columns) override;
     void readPrefix() override;
@@ -30,10 +31,10 @@ public:
 private:
     ReadBuffer & istr;
     Block header;
-    const char delimiter;
     bool with_names;
-    bool with_types;
     DataTypes data_types;
+
+    const FormatSettings format_settings;
 
     /// For convenient diagnostics in case of an error.
 
