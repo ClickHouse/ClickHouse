@@ -7,20 +7,41 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int SYNTAX_ERROR;
+}
 
 /** DROP query
   */
 class ASTDropQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool detach{false};    /// DETACH query, not DROP.
+    enum Kind
+    {
+        Drop,
+        Detach,
+        Truncate,
+    };
+
+    Kind kind;
     bool if_exists{false};
     bool temporary{false};
     String database;
     String table;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (detach ? "DetachQuery_" : "DropQuery_") + database + "_" + table; }
+    String getID() const override
+    {
+        if (kind == ASTDropQuery::Kind::Drop)
+            return "DropQuery_" + database + "_" + table;
+        else if (kind == ASTDropQuery::Kind::Detach)
+            return "DetachQuery_" + database + "_" + table;
+        else if (kind == ASTDropQuery::Kind::Truncate)
+            return "TruncateQuery_" + database + "_" + table;
+        else
+            throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
+    }
 
     ASTPtr clone() const override
     {
@@ -46,19 +67,33 @@ protected:
     {
         if (table.empty() && !database.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "")
-                << (detach ? "DETACH DATABASE " : "DROP DATABASE ")
-                << (if_exists ? "IF EXISTS " : "")
-                << (settings.hilite ? hilite_none : "")
-                << backQuoteIfNeed(database);
+            settings.ostr << (settings.hilite ? hilite_keyword : "");
+            if (kind == ASTDropQuery::Kind::Drop)
+                settings.ostr << "DROP DATABASE ";
+            else if (kind == ASTDropQuery::Kind::Detach)
+                settings.ostr << "DETACH DATABASE ";
+            else if (kind == ASTDropQuery::Kind::Truncate)
+                settings.ostr << "TRUNCATE DATABASE ";
+            else
+                throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
+
+            settings.ostr << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(database);
             formatOnCluster(settings);
         }
         else
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "")
-                << (detach ? "DETACH TABLE " : "DROP TABLE ")
-                << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
-                << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            settings.ostr << (settings.hilite ? hilite_keyword : "");
+            if (kind == ASTDropQuery::Kind::Drop)
+                settings.ostr << "DROP TABLE ";
+            else if (kind == ASTDropQuery::Kind::Detach)
+                settings.ostr << "DETACH TABLE ";
+            else if (kind == ASTDropQuery::Kind::Truncate)
+                settings.ostr << "TRUNCATE TABLE ";
+            else
+                throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
+
+            settings.ostr << (if_exists ? "IF EXISTS " : "") << (settings.hilite ? hilite_none : "")
+                          << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
             formatOnCluster(settings);
         }
     }

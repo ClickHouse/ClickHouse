@@ -505,12 +505,6 @@ void DatabaseOrdinary::shutdown()
     tables.clear();
 }
 
-
-void DatabaseOrdinary::drop()
-{
-    /// No additional removal actions are required.
-}
-
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & name,
@@ -572,6 +566,11 @@ String DatabaseOrdinary::getDataPath() const
 String DatabaseOrdinary::getMetadataPath() const
 {
     return metadata_path;
+}
+
+String DatabaseOrdinary::getDatabaseName() const
+{
+    return name;
 }
 
 String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const

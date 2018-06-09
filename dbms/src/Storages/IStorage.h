@@ -206,6 +206,14 @@ public:
       */
     virtual void drop() {}
 
+    /** Delete the table data. Called before deleting the directory with the data.
+      * If you do not need any action other than deleting the directory with data, you can leave this method blank.
+      */
+    virtual void truncate(const ASTPtr & /*query*/)
+    {
+        throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.

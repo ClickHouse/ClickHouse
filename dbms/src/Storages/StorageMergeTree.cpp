@@ -132,6 +132,17 @@ void StorageMergeTree::drop()
 {
     shutdown();
     data.dropAllData();
+    Poco::File(full_path).remove(true);
+}
+
+void StorageMergeTree::truncate(const ASTPtr & /*query*/)
+{
+    merger.merges_blocker.cancelForever();
+    data.dropAllData();
+
+    /// reset block id
+    increment.set(0);
+    data.insert_increment.set(0);
 }
 
 void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
@@ -146,6 +157,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
     /// NOTE: Logger names are not updated.
 }
+
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
@@ -265,7 +277,6 @@ struct CurrentlyMergingPartsTagger
     }
 };
 
-
 bool StorageMergeTree::merge(
     size_t aio_threshold,
     bool aggressive,
@@ -381,6 +392,7 @@ bool StorageMergeTree::merge(
 
     return true;
 }
+
 
 bool StorageMergeTree::mergeTask()
 {
@@ -556,7 +568,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
     /// New parts with other data may appear in place of deleted parts.
     context.dropCaches();
 }
-
 
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {

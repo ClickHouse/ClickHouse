@@ -365,6 +365,21 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
+void StorageTinyLog::truncate(const ASTPtr & /*query*/)
+{
+    String table_dir = path + escapeForFileName(name);
+
+    Poco::DirectoryIterator dir_end;
+    for (auto dir_it = Poco::DirectoryIterator(table_dir); dir_it != dir_end; ++dir_it)
+        dir_it->remove(false);
+
+    this->files.clear();
+    this->file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+
+    for (const auto &column : getColumns().getAllPhysical())
+        addFiles(column.name, *column.type);
+}
+
 
 void registerStorageTinyLog(StorageFactory & factory)
 {

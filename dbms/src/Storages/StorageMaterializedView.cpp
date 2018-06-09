@@ -198,7 +198,22 @@ void StorageMaterializedView::drop()
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = target_database_name;
         drop_query->table = target_table_name;
+        drop_query->kind = ASTDropQuery::Kind::Drop;
         ASTPtr ast_drop_query = drop_query;
+        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
+        drop_interpreter.execute();
+    }
+}
+
+void StorageMaterializedView::truncate(const ASTPtr & query)
+{
+    if (has_inner_table && global_context.tryGetTable(target_database_name, target_table_name))
+    {
+        ASTPtr ast_drop_query = query->clone();
+        ASTDropQuery & drop_query = typeid_cast<ASTDropQuery &>(*ast_drop_query);
+        drop_query.database = target_database_name;
+        drop_query.table = target_table_name;
+
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
     }
