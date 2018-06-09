@@ -1,7 +1,7 @@
 #include "register@FUNCTION@.h"
 
 #include <Functions/FunctionFactory.h>
-#include "Functions@FUNCTION_AREA@.h"
+#include <Functions/Functions@FUNCTION_AREA@.h>
 
 namespace DB
 {
