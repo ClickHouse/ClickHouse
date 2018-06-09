@@ -241,7 +241,17 @@ void TCPHandler::runImpl()
         {
             if (exception)
             {
-                sendLogs();
+                try
+                {
+                    /// Try to send logs to client, but it could be risky too
+                    /// Assume that we can't break output here
+                    sendLogs();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Can't send logs to client");
+                }
+
                 sendException(*exception);
             }
         }
