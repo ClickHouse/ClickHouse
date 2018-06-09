@@ -1,6 +1,6 @@
 #pragma once
 
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/IRowOutputStream.h>
 
 

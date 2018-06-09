@@ -2,7 +2,7 @@
 
 #include <Core/Defines.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/IRowInputStream.h>
 
 

@@ -4,7 +4,7 @@
 #include <IO/Progress.h>
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/IRowOutputStream.h>
 
 

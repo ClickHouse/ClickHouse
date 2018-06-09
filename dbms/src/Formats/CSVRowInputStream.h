@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <Formats/IRowInputStream.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB

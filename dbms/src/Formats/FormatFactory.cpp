@@ -1,7 +1,7 @@
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Settings.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 
 

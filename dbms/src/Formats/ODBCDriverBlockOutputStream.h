@@ -2,7 +2,7 @@
 
 #include <string>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <Core/Block.h>
 
 

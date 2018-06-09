@@ -5,7 +5,7 @@
 #include <IO/WriteBuffer.h>
 #include <Common/Stopwatch.h>
 #include <Formats/IRowOutputStream.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB

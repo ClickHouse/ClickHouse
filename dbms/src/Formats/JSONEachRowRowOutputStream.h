@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <Formats/IRowOutputStream.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
