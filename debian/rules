@@ -69,7 +69,7 @@ override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
 
 override_dh_auto_build:
-	# Fix fir ninja. Do not add -O.
+	# Fix for ninja. Do not add -O.
 	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
 
 override_dh_auto_test:
