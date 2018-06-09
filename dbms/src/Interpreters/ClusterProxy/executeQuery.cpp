@@ -57,7 +57,7 @@ BlockInputStreams executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, throttler, new_context, res);
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, res);
 
     return res;
 }
