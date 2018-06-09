@@ -2,6 +2,7 @@
 #include <iomanip>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadHelpers.h>
 
 #include <Storages/System/StorageSystemNumbers.h>
 
@@ -54,8 +55,10 @@ try
     in = std::make_shared<ExpressionBlockInputStream>(in, expression);
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 
+    FormatSettings format_settings;
+
     WriteBufferFromOStream out1(std::cout);
-    RowOutputStreamPtr out2 = std::make_shared<TabSeparatedRowOutputStream>(out1, expression->getSampleBlock());
+    RowOutputStreamPtr out2 = std::make_shared<TabSeparatedRowOutputStream>(out1, expression->getSampleBlock(), false, false, format_settings);
     BlockOutputStreamFromRowOutputStream out(out2, expression->getSampleBlock());
 
     {

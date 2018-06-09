@@ -150,8 +150,10 @@ try
     in = std::make_shared<MergeSortingBlockInputStream>(in, sort_columns, DEFAULT_BLOCK_SIZE, 0, 0, "");
     //in = std::make_shared<LimitBlockInputStream>(in, 10, 0);
 
+    FormatSettings format_settings;
+
     WriteBufferFromOStream ob(std::cout);
-    RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, sample);
+    RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, sample, false, false, format_settings);
     BlockOutputStreamFromRowOutputStream out(out_, sample);
 
     copyData(*in, out);

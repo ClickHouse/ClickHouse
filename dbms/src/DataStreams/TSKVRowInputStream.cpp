@@ -14,8 +14,8 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, bool skip_unknown_)
-    : istr(istr_), header(header_), skip_unknown(skip_unknown_), name_map(header.columns())
+TSKVRowInputStream::TSKVRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
+    : istr(istr_), header(header_), format_settings(format_settings), name_map(header.columns())
 {
     /// In this format, we assume that column name cannot contain BOM,
     ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.
@@ -119,7 +119,7 @@ bool TSKVRowInputStream::read(MutableColumns & columns)
                 auto it = name_map.find(name_ref);
                 if (name_map.end() == it)
                 {
-                    if (!skip_unknown)
+                    if (!format_settings.skip_unknown_fields)
                         throw Exception("Unknown field found while parsing TSKV format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
                     /// If the key is not found, skip the value.
@@ -135,7 +135,7 @@ bool TSKVRowInputStream::read(MutableColumns & columns)
 
                     read_columns[index] = true;
 
-                    header.getByPosition(index).type->deserializeTextEscaped(*columns[index], istr);
+                    header.getByPosition(index).type->deserializeTextEscaped(*columns[index], istr, format_settings);
                 }
             }
             else

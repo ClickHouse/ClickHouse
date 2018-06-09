@@ -25,6 +25,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageKafka.h>
 #include <Storages/StorageFactory.h>
+#include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
 
 #if __has_include(<rdkafka.h>) // maybe bundled
@@ -32,6 +33,7 @@
 #else // system
 #include <librdkafka/rdkafka.h>
 #endif
+
 
 namespace DB
 {

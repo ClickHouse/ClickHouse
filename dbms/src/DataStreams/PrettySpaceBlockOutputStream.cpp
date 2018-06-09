@@ -9,6 +9,8 @@ namespace DB
 
 void PrettySpaceBlockOutputStream::write(const Block & block)
 {
+    UInt64 max_rows = format_settings.pretty.max_rows;
+
     if (total_rows >= max_rows)
     {
         total_rows += block.rows();
@@ -21,7 +23,7 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
-    calculateWidths(block, widths, max_widths, name_widths);
+    calculateWidths(block, widths, max_widths, name_widths, format_settings);
 
     /// Do not align on too long values.
     if (terminal_width > 80)
@@ -42,18 +44,18 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
             for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
                 writeChar(' ', ostr);
 
-            if (!no_escapes)
+            if (format_settings.pretty.color)
                 writeCString("\033[1m", ostr);
-            writeEscapedString(col.name, ostr);
-            if (!no_escapes)
+            writeString(col.name, ostr);
+            if (format_settings.pretty.color)
                 writeCString("\033[0m", ostr);
         }
         else
         {
-            if (!no_escapes)
+            if (format_settings.pretty.color)
                 writeCString("\033[1m", ostr);
-            writeEscapedString(col.name, ostr);
-            if (!no_escapes)
+            writeString(col.name, ostr);
+            if (format_settings.pretty.color)
                 writeCString("\033[0m", ostr);
 
             for (ssize_t k = 0; k < std::max(static_cast<ssize_t>(0), static_cast<ssize_t>(max_widths[i] - name_widths[i])); ++k)
@@ -81,10 +83,10 @@ void PrettySpaceBlockOutputStream::write(const Block & block)
 
 void PrettySpaceBlockOutputStream::writeSuffix()
 {
-    if (total_rows >= max_rows)
+    if (total_rows >= format_settings.pretty.max_rows)
     {
         writeCString("\nShowed first ", ostr);
-        writeIntText(max_rows, ostr);
+        writeIntText(format_settings.pretty.max_rows, ostr);
         writeCString(".\n", ostr);
     }
 

@@ -7,8 +7,8 @@ namespace DB
 {
 
 
-CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const char delimiter_, bool with_names_, bool with_types_)
-    : ostr(ostr_), sample(sample_), delimiter(delimiter_), with_names(with_names_), with_types(with_types_)
+CSVRowOutputStream::CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, const FormatSettings & format_settings)
+    : ostr(ostr_), sample(sample_), with_names(with_names_), format_settings(format_settings)
 {
     size_t columns = sample.columns();
     data_types.resize(columns);
@@ -32,16 +32,7 @@ void CSVRowOutputStream::writePrefix()
         for (size_t i = 0; i < columns; ++i)
         {
             writeCSVString(sample.safeGetByPosition(i).name, ostr);
-            writeChar(i == columns - 1 ? '\n' : delimiter, ostr);
-        }
-    }
-
-    if (with_types)
-    {
-        for (size_t i = 0; i < columns; ++i)
-        {
-            writeCSVString(sample.safeGetByPosition(i).type->getName(), ostr);
-            writeChar(i == columns - 1 ? '\n' : delimiter, ostr);
+            writeChar(i == columns - 1 ? '\n' : format_settings.csv.delimiter, ostr);
         }
     }
 }
@@ -49,13 +40,13 @@ void CSVRowOutputStream::writePrefix()
 
 void CSVRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    type.serializeTextCSV(column, row_num, ostr);
+    type.serializeTextCSV(column, row_num, ostr, format_settings);
 }
 
 
 void CSVRowOutputStream::writeFieldDelimiter()
 {
-    writeChar(delimiter, ostr);
+    writeChar(format_settings.csv.delimiter, ostr);
 }
 
 

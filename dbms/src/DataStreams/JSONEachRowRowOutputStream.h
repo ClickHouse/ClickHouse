@@ -3,7 +3,7 @@
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <DataStreams/IRowOutputStream.h>
-#include <DataTypes/FormatSettingsJSON.h>
+#include <DataTypes/FormatSettings.h>
 
 
 namespace DB
@@ -15,7 +15,7 @@ namespace DB
 class JSONEachRowRowOutputStream : public IRowOutputStream
 {
 public:
-    JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettingsJSON & settings);
+    JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
@@ -32,7 +32,7 @@ private:
     size_t field_number = 0;
     Names fields;
 
-    FormatSettingsJSON settings;
+    FormatSettings settings;
 };
 
 }

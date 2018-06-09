@@ -34,6 +34,8 @@
 
 #include <Core/Field.h>
 
+#include <IO/ReadHelpers.h>
+
 #include <Poco/DirectoryIterator.h>
 
 #include <memory>
@@ -54,6 +56,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
+    extern const int TYPE_MISMATCH;
 }
 
 

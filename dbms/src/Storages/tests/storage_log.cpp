@@ -91,8 +91,10 @@ try
 
         WriteBufferFromOStream out_buf(std::cout);
 
+        FormatSettings format_settings;
+
         LimitBlockInputStream in_limit(in, 10, 0);
-        RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
+        RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, format_settings);
         BlockOutputStreamFromRowOutputStream output(output_, sample);
 
         copyData(in_limit, output);

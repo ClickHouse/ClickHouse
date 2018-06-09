@@ -1,3 +1,5 @@
+#include <iomanip>
+
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
@@ -16,6 +18,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB

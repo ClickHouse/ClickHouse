@@ -51,6 +51,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TYPE_MISMATCH;
 }
 
 

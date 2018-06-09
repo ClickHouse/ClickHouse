@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Core/Names.h>
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/IRowOutputStream.h>
 
 
@@ -18,7 +18,7 @@ class Context;
 class VerticalRowOutputStream : public IRowOutputStream
 {
 public:
-    VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, size_t max_rows_);
+    VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings);
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeRowStartDelimiter() override;
@@ -40,7 +40,7 @@ protected:
 
     WriteBuffer & ostr;
     const Block sample;
-    size_t max_rows;
+    const FormatSettings format_settings;
     size_t field_number = 0;
     size_t row_number = 0;
 
@@ -49,18 +49,6 @@ protected:
 
     Block totals;
     Block extremes;
-};
-
-
-/** Same but values are printed without escaping.
-  */
-class VerticalRawRowOutputStream final : public VerticalRowOutputStream
-{
-public:
-    using VerticalRowOutputStream::VerticalRowOutputStream;
-
-protected:
-    void writeValue(const IColumn & column, const IDataType & type, size_t row_num) const override;
 };
 
 }

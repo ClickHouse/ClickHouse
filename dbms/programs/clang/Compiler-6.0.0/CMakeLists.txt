@@ -12,13 +12,15 @@ llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
 
-target_include_directories(clickhouse-compiler-lib PRIVATE ${LLVM_INCLUDE_DIRS})
+target_include_directories(clickhouse-compiler-lib SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 
 # This is extracted almost directly from CMakeFiles/.../link.txt in LLVM build directory.
 
 target_link_libraries(clickhouse-compiler-lib PRIVATE
 
-clangBasic clangCodeGen clangDriver clangFrontend clangFrontendTool
+clangBasic clangCodeGen clangDriver
+clangFrontend
+clangFrontendTool
 clangRewriteFrontend clangARCMigrate clangStaticAnalyzerFrontend
 clangParse clangSerialization clangSema clangEdit clangStaticAnalyzerCheckers
 clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite clangLex clangBasic
@@ -26,17 +28,15 @@ clangASTMatchers clangStaticAnalyzerCore clangAnalysis clangAST clangRewrite cla
 lldCOFF
 lldDriver
 lldELF
-#lldMinGW
+lldMinGW
 lldMachO
 lldReaderWriter
 lldYAML
-#lldCommon
+lldCommon
 lldCore
-lldConfig
+#lldWasm
 
 ${REQUIRED_LLVM_LIBRARIES}
-
-LLVMSupport
 
 #Polly
 #PollyISL

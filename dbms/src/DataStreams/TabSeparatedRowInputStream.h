@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Block.h>
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/IRowInputStream.h>
 
 
@@ -18,7 +19,8 @@ public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_ = false, bool with_types_ = false);
+    TabSeparatedRowInputStream(
+        ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings);
 
     bool read(MutableColumns & columns) override;
     void readPrefix() override;
@@ -32,6 +34,7 @@ private:
     Block header;
     bool with_names;
     bool with_types;
+    const FormatSettings format_settings;
     DataTypes data_types;
 
     /// For convenient diagnostics in case of an error.

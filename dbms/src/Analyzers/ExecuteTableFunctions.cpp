@@ -5,6 +5,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 
 #include <Analyzers/ExecuteTableFunctions.h>
