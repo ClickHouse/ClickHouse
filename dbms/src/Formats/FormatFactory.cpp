@@ -132,7 +132,6 @@ FormatFactory::FormatFactory()
     registerInputFormatJSONEachRow(*this);
     registerOutputFormatJSONEachRow(*this);
     registerInputFormatCapnProto(*this);
-    registerOutputFormatCapnProto(*this);
 
     registerOutputFormatPretty(*this);
     registerOutputFormatPrettyCompact(*this);

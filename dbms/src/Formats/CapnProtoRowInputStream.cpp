@@ -3,6 +3,7 @@
 
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBuffer.h>
+#include <Interpreters/Context.h>
 #include <Formats/CapnProtoRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
