@@ -1529,7 +1529,7 @@ public:
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", po::value<bool>(), "enable or disable compression")
-            ("log-level", po::value<std::string>(), "log level")
+            ("log-level", po::value<std::string>(), "client log level")
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;

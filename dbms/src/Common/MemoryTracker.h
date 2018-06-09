@@ -1,5 +1,6 @@
 #pragma once
 
+#include "VariableContext.h"
 #include <atomic>
 #include <common/Types.h>
 #include <Common/CurrentMetrics.h>
@@ -36,11 +37,13 @@ class MemoryTracker
     const char * description = nullptr;
 
 public:
-    MemoryTracker() {}
-    MemoryTracker(Int64 limit_) : limit(limit_) {}
-    MemoryTracker(MemoryTracker * parent_) : parent(parent_) {}
+    MemoryTracker(VariableContext level = VariableContext::Thread) : level(level) {}
+    MemoryTracker(Int64 limit_, VariableContext level = VariableContext::Thread) : limit(limit_), level(level) {}
+    MemoryTracker(MemoryTracker * parent_, VariableContext level = VariableContext::Thread) : parent(parent_), level(level) {}
 
     ~MemoryTracker();
+
+    VariableContext level;
 
     /** Call the following functions before calling of corresponding operations with memory allocators.
       */
@@ -103,7 +106,10 @@ public:
         description = description_;
     }
 
-    /// Reset the accumulated data.
+    /// Reset the accumulated data
+    void resetCounters();
+
+    /// Reset the accumulated data and the parent.
     void reset();
 
     /// Prints info about peak memory consumption into log.

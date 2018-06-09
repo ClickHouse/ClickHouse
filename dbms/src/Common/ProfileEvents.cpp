@@ -181,7 +181,7 @@ Counters global_counters(global_counters_array);
 const Event Counters::num_counters = END;
 
 
-Counters::Counters(Level level, Counters * parent)
+Counters::Counters(VariableContext level, Counters * parent)
     : counters_holder(new Counter[num_counters] {}),
       parent(parent),
       level(level)
@@ -206,7 +206,7 @@ void Counters::reset()
 
 Counters Counters::getPartiallyAtomicSnapshot() const
 {
-    Counters res(Level::Snapshot, nullptr);
+    Counters res(VariableContext::Snapshot, nullptr);
     for (Event i = 0; i < num_counters; ++i)
         res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
     return res;

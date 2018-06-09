@@ -1,5 +1,6 @@
 #pragma once
 
+#include "VariableContext.h"
 #include <stddef.h>
 #include <atomic>
 #include <memory>
@@ -27,15 +28,6 @@ namespace ProfileEvents
     /// Counters - how many times each event happened
     extern Counters global_counters;
 
-    enum class Level
-    {
-        Global = 0,
-        User,
-        Process,
-        Thread,
-        Snapshot
-    };
-
     class Counters
     {
         Counter * counters = nullptr;
@@ -45,14 +37,14 @@ namespace ProfileEvents
 
     public:
 
-        Level level = Level::Thread;
+        VariableContext level = VariableContext::Thread;
 
         /// By default, any instance have to increment global counters
-        Counters(Level level = Level::Thread, Counters * parent = &global_counters);
+        Counters(VariableContext level = VariableContext::Thread, Counters * parent = &global_counters);
 
         /// Global level static initializer
         Counters(Counter * allocated_counters)
-            :  counters(allocated_counters), parent(nullptr), level(Level::Global) {}
+            :  counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
         inline Counter & operator[] (Event event)
         {

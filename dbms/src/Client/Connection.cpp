@@ -521,7 +521,7 @@ Connection::Packet Connection::receivePacket()
         }
         else
         {
-            LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+            //LOG_TRACE(log_wrapper.get(), "Receiving packet type " << StackTrace().toString());
             readVarUInt(res.type, *in);
         }
 

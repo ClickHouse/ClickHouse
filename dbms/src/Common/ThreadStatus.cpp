@@ -58,6 +58,7 @@ public:
             ThreadStatus & thread = *CurrentThread::get();
 
             LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " exited");
+            thread.memory_tracker.logPeakMemoryUsage();
 
             if (thread.getCurrentState() != ThreadStatus::ThreadState::DetachedFromQuery)
                 thread.detachQuery(true);
@@ -192,14 +193,12 @@ struct TasksStatsCounters
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    current_thread->taskstats_getter->getStat(res.stat);
+    current_thread->taskstats_getter->getStat(res.stat, current_thread->os_thread_id);
     return res;
 }
 
 
 ThreadStatus::ThreadStatus()
-    : performance_counters(ProfileEvents::Level::Thread),
-      log(&Poco::Logger::get("ThreadStatus"))
 {
     thread_number = Poco::ThreadNumber::get();
     os_thread_id = TaskStatsInfoGetter::getCurrentTID();
@@ -207,6 +206,9 @@ ThreadStatus::ThreadStatus()
     last_rusage = std::make_unique<RusageCounters>();
     last_taskstats = std::make_unique<TasksStatsCounters>();
     taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
+
+    memory_tracker.setDescription("(for thread)");
+    log = &Poco::Logger::get("ThreadStatus");
 
     /// NOTE: It is important not to do any non-trivial actions (like updating ProfileEvents or logging) before ThreadStatus is created
     /// Otherwise it could lead to SIGSEGV due to current_thread dereferencing
@@ -287,7 +289,10 @@ void ThreadStatus::attachQuery(
     /// Clear stats from previous query if a new query is started
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
     if (queries_started != 1)
+    {
         performance_counters.resetCounters();
+        memory_tracker.resetCounters();
+    }
 
     *last_rusage = RusageCounters::current(query_start_time_nanoseconds);
     *last_taskstats = TasksStatsCounters::current();
@@ -327,6 +332,7 @@ void ThreadStatus::detachQuery(bool thread_exits)
     log_profile_events = true;
 }
 
+
 void ThreadStatus::updatePerfomanceCountersImpl()
 {
     try
@@ -352,7 +358,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.read_bytes = progress_in.bytes.load(std::memory_order_relaxed);
     elem.written_rows = progress_out.rows.load(std::memory_order_relaxed);
     elem.written_bytes = progress_out.bytes.load(std::memory_order_relaxed);
-    elem.memory_usage = std::max(0, memory_tracker.getPeak());
+    elem.memory_usage = memory_tracker.getPeak();
 
     elem.thread_name = getThreadName();
     elem.thread_number = thread_number;
