@@ -31,6 +31,8 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
     void drop() override;
 
+    void truncate(const ASTPtr &) override;
+
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context) override;
@@ -49,7 +51,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    String getDataPath() const override { return getTargetTable()->getDataPath(); }
+    String getDataPath() const override;
 
 private:
     String select_database_name;
@@ -63,6 +65,7 @@ private:
     bool has_inner_table = false;
 
     StoragePtr getTargetTable() const;
+    StoragePtr tryGetTargetTable() const;
 
     void checkStatementCanBeForwarded() const;
 

@@ -42,6 +42,7 @@
 
 #include <boost/filesystem.hpp>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTDropQuery.h>
 
 
 namespace DB
@@ -304,6 +305,16 @@ BlockInputStreams StorageDistributed::describe(const Context & context, const Se
             describe_stream_factory, cluster, describe_query, context, settings);
 }
 
+void StorageDistributed::truncate(const ASTPtr &)
+{
+    std::lock_guard lock(cluster_nodes_mutex);
+
+    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end();)
+    {
+        it->second.shutdownAndDropAllData();
+        it = cluster_nodes_data.erase(it);
+    }
+}
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
@@ -370,6 +381,11 @@ void StorageDistributed::ClusterNodeData::requireDirectoryMonitor(const std::str
     requireConnectionPool(name, storage);
     if (!directory_monitor)
         directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(storage, name, conneciton_pool);
+}
+
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
+{
+    directory_monitor->shutdownAndDropAllData();
 }
 
 
