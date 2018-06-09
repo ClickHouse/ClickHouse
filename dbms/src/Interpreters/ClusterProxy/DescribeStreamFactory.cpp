@@ -29,7 +29,7 @@ namespace ClusterProxy
 void DescribeStreamFactory::createForShard(
         const Cluster::ShardInfo & shard_info,
         const String & query, const ASTPtr & query_ast,
-        const ThrottlerPtr & throttler, Context & context,
+        const Context & context, const ThrottlerPtr & throttler,
         BlockInputStreams & res)
 {
     for (const Cluster::Address & local_address : shard_info.local_addresses)

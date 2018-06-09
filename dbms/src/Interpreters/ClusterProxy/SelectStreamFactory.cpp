@@ -59,7 +59,7 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & 
 void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const String & query, const ASTPtr & query_ast,
-    const ThrottlerPtr & throttler, Context & context,
+    const Context & context, const ThrottlerPtr & throttler,
     BlockInputStreams & res)
 {
     auto emplace_local_stream = [&]()

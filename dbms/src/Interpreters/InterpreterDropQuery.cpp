@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int READONLY;
     extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
 }
 
