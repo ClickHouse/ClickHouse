@@ -28,7 +28,8 @@ try
 
     QueryProcessingStage::Enum stage;
 
-    LimitBlockInputStream input(table->read(column_names, {}, Context::createGlobal(), stage, 10, 1)[0], 10, 96);
+    auto context = Context::createGlobal();
+    LimitBlockInputStream input(table->read(column_names, {}, context, stage, 10, 1)[0], 10, 96);
     BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
 
     copyData(input, *out);
