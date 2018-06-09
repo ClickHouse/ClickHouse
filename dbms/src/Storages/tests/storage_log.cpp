@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/LimitBlockInputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
