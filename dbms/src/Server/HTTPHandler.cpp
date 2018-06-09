@@ -421,6 +421,9 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
+    // Used in case of POST request with form-data, but it not to be expectd to be deleted after that scope
+    std::string full_query = "";
+
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
@@ -429,7 +432,6 @@ void HTTPHandler::processQuery(
         /// Params are of both form params POST and uri (GET params)
         params.load(request, istr, handler);
 
-        std::string full_query = "";
         for (const auto & it : params)
         {
             if (it.first == "query")
