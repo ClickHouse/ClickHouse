@@ -209,7 +209,7 @@ void StorageMaterializedView::drop()
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
 
-    if (has_inner_table)
+    if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
 }
 
@@ -270,10 +270,29 @@ StoragePtr StorageMaterializedView::getTargetTable() const
     return global_context.getTable(target_database_name, target_table_name);
 }
 
+StoragePtr StorageMaterializedView::tryGetTargetTable() const
+{
+    return global_context.tryGetTable(target_database_name, target_table_name);
+}
+
+String StorageMaterializedView::getDataPath() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->getDataPath();
+    return {};
+}
+
 bool StorageMaterializedView::checkTableCanBeDropped() const
 {
     /// Don't drop the target table if it was created manually via 'TO inner_table' statement
-    return has_inner_table ? getTargetTable()->checkTableCanBeDropped() : true;
+    if (!has_inner_table)
+        return true;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return true;
+
+    return target_table->checkTableCanBeDropped();
 }
 
 

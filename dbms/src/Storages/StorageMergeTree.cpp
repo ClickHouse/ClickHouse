@@ -141,8 +141,8 @@ void StorageMergeTree::truncate(const ASTPtr &)
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = merger.actions_blocker.cancel();
-        /// Waits for completion of merge and does not start new ones.
-        auto lock = lockForAlter(__PRETTY_FUNCTION__);
+
+        /// NOTE: It's assumed that this method is called under lockForAlter.
 
         auto parts_to_remove = data.getDataPartsVector();
         data.removePartsFromWorkingSet(parts_to_remove, true);

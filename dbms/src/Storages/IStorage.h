@@ -209,6 +209,7 @@ public:
     virtual void drop() {}
 
     /** Clear the table data and leave it empty.
+      * Must be called under lockForAlter.
       */
     virtual void truncate(const ASTPtr & /*query*/)
     {

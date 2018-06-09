@@ -51,7 +51,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    String getDataPath() const override { return getTargetTable()->getDataPath(); }
+    String getDataPath() const override;
 
 private:
     String select_database_name;
@@ -65,6 +65,7 @@ private:
     bool has_inner_table = false;
 
     StoragePtr getTargetTable() const;
+    StoragePtr tryGetTargetTable() const;
 
     void checkStatementCanBeForwarded() const;
 

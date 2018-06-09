@@ -45,6 +45,7 @@ void StorageJoin::truncate(const ASTPtr &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
+    Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
     join = std::make_shared<Join>(key_names, key_names, false /* use_nulls */, SizeLimits(), kind, strictness);
