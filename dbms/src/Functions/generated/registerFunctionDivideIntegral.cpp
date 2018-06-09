@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionDivideIntegral.h>
+#include "registerFunctionDivideIntegral.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArithmetic.h>
+#include "FunctionsArithmetic.h"
 
 namespace DB
 {

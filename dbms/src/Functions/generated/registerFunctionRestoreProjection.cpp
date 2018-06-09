@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionRestoreProjection.h>
+#include "registerFunctionRestoreProjection.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsProjection.h>
+#include "FunctionsProjection.h"
 
 namespace DB
 {

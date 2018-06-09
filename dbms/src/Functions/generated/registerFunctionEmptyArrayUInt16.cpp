@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionEmptyArrayUInt16.h>
+#include "registerFunctionEmptyArrayUInt16.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArray.h>
+#include "FunctionsArray.h"
 
 namespace DB
 {

@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionCountEqual.h>
+#include "registerFunctionCountEqual.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArray.h>
+#include "FunctionsArray.h"
 
 namespace DB
 {

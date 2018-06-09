@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionProject.h>
+#include "registerFunctionProject.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsProjection.h>
+#include "FunctionsProjection.h"
 
 namespace DB
 {

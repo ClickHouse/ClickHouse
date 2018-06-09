@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionIntExp2.h>
+#include "registerFunctionIntExp2.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArithmetic.h>
+#include "FunctionsArithmetic.h"
 
 namespace DB
 {

@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArithmetic.h>
+#include "FunctionsArithmetic.h"
 
 #include "registerFunctionPlus.h"
 #include "registerFunctionMinus.h"

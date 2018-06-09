@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionBitNot.h>
+#include "registerFunctionBitNot.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArithmetic.h>
+#include "FunctionsArithmetic.h"
 
 namespace DB
 {

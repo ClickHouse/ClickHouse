@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionLeast.h>
+#include "registerFunctionLeast.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArithmetic.h>
+#include "FunctionsArithmetic.h"
 
 namespace DB
 {

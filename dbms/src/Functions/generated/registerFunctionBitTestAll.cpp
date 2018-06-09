@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionBitTestAll.h>
+#include "registerFunctionBitTestAll.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArithmetic.h>
+#include "FunctionsArithmetic.h"
 
 namespace DB
 {

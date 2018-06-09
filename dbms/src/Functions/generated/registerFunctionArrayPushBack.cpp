@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionArrayPushBack.h>
+#include "registerFunctionArrayPushBack.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArray.h>
+#include "FunctionsArray.h"
 
 namespace DB
 {

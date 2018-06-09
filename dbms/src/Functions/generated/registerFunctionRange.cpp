@@ -1,7 +1,7 @@
-#include <Functions/registerFunctionRange.h>
+#include "registerFunctionRange.h"
 
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsArray.h>
+#include "FunctionsArray.h"
 
 namespace DB
 {
