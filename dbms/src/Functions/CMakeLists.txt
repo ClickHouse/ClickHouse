@@ -1,6 +1,8 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 
+set (FUNCTIONS_GENERATED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/)
+
 generate_function_register(Arithmetic
     FunctionPlus
     FunctionMinus
@@ -79,7 +81,9 @@ generate_function_register(Projection
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions ./Conditional)
-add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
+#add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
+add_headers_and_sources(clickhouse_functions ${FUNCTIONS_GENERATED_DIR})
+
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
