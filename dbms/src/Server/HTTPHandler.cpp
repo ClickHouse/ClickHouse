@@ -422,7 +422,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     // Used in case of POST request with form-data, but it not to be expectd to be deleted after that scope
-    std::string full_query = "";
+    std::string full_query;
 
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
@@ -440,7 +440,6 @@ void HTTPHandler::processQuery(
             }
         }
         in = std::make_unique<ReadBufferFromString>(full_query);
-
 
         /// Erase unneeded parameters to avoid confusing them later with context settings or query
         /// parameters.
