@@ -67,7 +67,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
       *  which only work with full columns.
       */
     return std::make_shared<MaterializingBlockOutputStream>(
-        output_getter(buf, sample, context, format_settings));
+        output_getter(buf, sample, context, format_settings), sample);
 }
 
 
