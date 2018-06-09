@@ -1,5 +1,6 @@
 #include <chrono>
 #include <iomanip>
+#include <iostream>
 
 #include <Poco/File.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
@@ -421,13 +422,32 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
+    std::cout << "params before parsing:\n";
+    for (const auto & it : params)
+    {
+        std::cout << it.first << "   " << it.second << "\n";
+    }
+
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
-        in = std::move(in_param);
         ExternalTablesHandler handler(context, params);
 
         params.load(request, istr, handler);
+        // Params are form params of POST
+        std::cout << "params after parsing:\n";
+        std::string full_query = "";
+        for (const auto & it : params)
+        {
+            std::cout << it.first << "   " << it.second << "\n";
+            if (it.first == "query")
+            {
+                full_query += it.second;
+            }
+        }
+        std::cout << "full query:\n" << full_query;
+        in = std::make_unique<ReadBufferFromString>(full_query);
+
 
         /// Erase unneeded parameters to avoid confusing them later with context settings or query
         /// parameters.
