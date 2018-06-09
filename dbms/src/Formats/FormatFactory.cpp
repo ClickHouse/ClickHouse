@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Settings.h>
+#include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFactory.h>
 
@@ -62,7 +63,11 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
 
-    return output_getter(buf, sample, context, format_settings);
+    /** Materialization is needed, because formats can use the functions `IDataType`,
+      *  which only work with full columns.
+      */
+    return std::make_shared<MaterializingBlockOutputStream>(
+        output_getter(buf, sample, context, format_settings));
 }
 
 

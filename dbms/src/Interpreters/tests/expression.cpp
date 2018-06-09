@@ -14,10 +14,9 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
-#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <DataStreams/copyData.h>
 
 #include <Interpreters/ExpressionAnalyzer.h>

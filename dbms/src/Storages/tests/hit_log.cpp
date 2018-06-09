@@ -10,10 +10,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
 
-#include <DataStreams/TabSeparatedRowInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
-#include <DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 
 #include <Storages/StorageLog.h>

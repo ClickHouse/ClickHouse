@@ -3,8 +3,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <DataStreams/LimitBlockInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
