@@ -1,5 +1,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <DataStreams/SquashingBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/PrettyCompactBlockOutputStream.h>
 
@@ -142,6 +143,18 @@ void registerOutputFormatPrettyCompact(FormatFactory & factory)
         FormatSettings changed_settings = format_settings;
         changed_settings.pretty.color = false;
         return std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, changed_settings);
+    });
+
+    factory.registerOutputFormat("PrettyCompactMonoBlock", [](
+        WriteBuffer & buf,
+        const Block & sample,
+        const Context &,
+        const FormatSettings & format_settings)
+    {
+        BlockOutputStreamPtr impl = std::make_shared<PrettyCompactBlockOutputStream>(buf, sample, format_settings);
+        BlockOutputStreamPtr res = std::make_shared<SquashingBlockOutputStream>(impl, format_settings.pretty.max_rows, 0);
+        res->disableFlush();
+        return res;
     });
 }
 
