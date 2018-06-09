@@ -5,13 +5,16 @@
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/TabSeparatedRowInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
+
+#include <Formats/TabSeparatedRowInputStream.h>
+#include <Formats/TabSeparatedRowOutputStream.h>
+#include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <Formats/BlockOutputStreamFromRowOutputStream.h>
+
 #include <DataStreams/copyData.h>
-#include <DataStreams/BlockInputStreamFromRowInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
 
 
 using namespace DB;
@@ -39,7 +42,7 @@ try
     RowInputStreamPtr row_input = std::make_shared<TabSeparatedRowInputStream>(in_buf, sample, false, false, format_settings);
     RowOutputStreamPtr row_output = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, format_settings);
 
-    BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, 0, 0);
+    BlockInputStreamFromRowInputStream block_input(row_input, sample, DEFAULT_INSERT_BLOCK_SIZE, format_settings);
     BlockOutputStreamFromRowOutputStream block_output(row_output, sample);
 
     copyData(block_input, block_output);
