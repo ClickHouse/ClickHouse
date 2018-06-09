@@ -29,10 +29,9 @@ try
     QueryProcessingStage::Enum stage;
 
     LimitBlockInputStream input(table->read(column_names, {}, Context::createGlobal(), stage, 10, 1)[0], 10, 96);
-    RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, FormatSettings());
-    BlockOutputStreamFromRowOutputStream output(output_, sample);
+    BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
 
-    copyData(input, output);
+    copyData(input, *out);
 
     return 0;
 }
