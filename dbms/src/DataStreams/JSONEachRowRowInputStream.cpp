@@ -12,8 +12,8 @@ namespace ErrorCodes
 }
 
 
-JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, bool skip_unknown_)
-    : istr(istr_), header(header_), skip_unknown(skip_unknown_), name_map(header.columns())
+JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
+    : istr(istr_), header(header_), format_settings(format_settings), name_map(header.columns())
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(istr);
@@ -113,7 +113,7 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
         auto it = name_map.find(name_ref);
         if (name_map.end() == it)
         {
-            if (!skip_unknown)
+            if (!format_settings.skip_unknown_fields)
                 throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
             skipColonDelimeter(istr);
@@ -132,7 +132,7 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 
         try
         {
-            header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr);
+            header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr, format_settings);
         }
         catch (Exception & e)
         {

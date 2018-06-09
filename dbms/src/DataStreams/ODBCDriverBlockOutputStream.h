@@ -2,7 +2,9 @@
 
 #include <string>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataTypes/FormatSettings.h>
 #include <Core/Block.h>
+
 
 namespace DB
 {
@@ -19,7 +21,7 @@ class WriteBuffer;
 class ODBCDriverBlockOutputStream : public IBlockOutputStream
 {
 public:
-    ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & header_);
+    ODBCDriverBlockOutputStream(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
@@ -31,6 +33,7 @@ public:
 private:
     WriteBuffer & out;
     const Block header;
+    const FormatSettings format_settings;
 };
 
 }

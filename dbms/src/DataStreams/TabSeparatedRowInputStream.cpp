@@ -16,8 +16,9 @@ namespace ErrorCodes
 }
 
 
-TabSeparatedRowInputStream::TabSeparatedRowInputStream(ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_)
-    : istr(istr_), header(header_), with_names(with_names_), with_types(with_types_)
+TabSeparatedRowInputStream::TabSeparatedRowInputStream(
+    ReadBuffer & istr_, const Block & header_, bool with_names_, bool with_types_, const FormatSettings & format_settings)
+    : istr(istr_), header(header_), with_names(with_names_), with_types(with_types_), format_settings(format_settings)
 {
     size_t num_columns = header.columns();
     data_types.resize(num_columns);
@@ -83,7 +84,7 @@ bool TabSeparatedRowInputStream::read(MutableColumns & columns)
 
     for (size_t i = 0; i < size; ++i)
     {
-        data_types[i]->deserializeTextEscaped(*columns[i], istr);
+        data_types[i]->deserializeTextEscaped(*columns[i], istr, format_settings);
 
         /// skip separators
         if (i + 1 == size)
@@ -180,7 +181,7 @@ bool TabSeparatedRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns &
 
         try
         {
-            data_types[i]->deserializeTextEscaped(*columns[i], istr);
+            data_types[i]->deserializeTextEscaped(*columns[i], istr, format_settings);
         }
         catch (...)
         {

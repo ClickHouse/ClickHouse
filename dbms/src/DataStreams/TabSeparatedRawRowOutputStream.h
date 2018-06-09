@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/FormatSettings.h>
 #include <DataStreams/TabSeparatedRowOutputStream.h>
 
 
@@ -12,12 +13,12 @@ namespace DB
 class TabSeparatedRawRowOutputStream : public TabSeparatedRowOutputStream
 {
 public:
-    TabSeparatedRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_ = false, bool with_types_ = false)
-        : TabSeparatedRowOutputStream(ostr_, sample_, with_names_, with_types_) {}
+    TabSeparatedRawRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, bool with_types_, const FormatSettings & format_settings)
+        : TabSeparatedRowOutputStream(ostr_, sample_, with_names_, with_types_, format_settings) {}
 
     void writeField(const IColumn & column, const IDataType & type, size_t row_num) override
     {
-        type.serializeText(column, row_num, ostr);
+        type.serializeText(column, row_num, ostr, format_settings);
     }
 };
 

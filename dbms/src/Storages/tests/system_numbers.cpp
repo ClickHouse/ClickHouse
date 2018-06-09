@@ -30,7 +30,7 @@ try
     QueryProcessingStage::Enum stage;
 
     LimitBlockInputStream input(table->read(column_names, {}, Context::createGlobal(), stage, 10, 1)[0], 10, 96);
-    RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
+    RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample, false, false, FormatSettings());
     BlockOutputStreamFromRowOutputStream output(output_, sample);
 
     copyData(input, output);

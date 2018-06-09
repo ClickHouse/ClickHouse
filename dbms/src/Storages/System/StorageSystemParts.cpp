@@ -59,7 +59,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         size_t i = 0;
         {
             WriteBufferFromOwnString out;
-            part->partition.serializeTextQuoted(*info.data, out);
+            part->partition.serializeTextQuoted(*info.data, out, format_settings);
             columns[i++]->insert(out.str());
         }
         columns[i++]->insert(part->name);

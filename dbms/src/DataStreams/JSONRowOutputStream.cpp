@@ -6,8 +6,8 @@
 namespace DB
 {
 
-JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, const FormatSettingsJSON & settings_)
-    : dst_ostr(ostr_), write_statistics(write_statistics_), settings(settings_)
+JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings)
+    : dst_ostr(ostr_), settings(settings)
 {
     NamesAndTypesList columns(sample_.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
@@ -111,7 +111,7 @@ void JSONRowOutputStream::writeSuffix()
 
     writeRowsBeforeLimitAtLeast();
 
-    if (write_statistics)
+    if (settings.write_statistics)
         writeStatistics();
 
     writeChar('\n', *ostr);
@@ -158,7 +158,7 @@ void JSONRowOutputStream::writeTotals()
 }
 
 
-static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings)
+static void writeExtremesElement(const char * title, const Block & extremes, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings)
 {
     writeCString("\t\t\"", ostr);
     writeCString(title, ostr);

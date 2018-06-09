@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
     extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
 }
 
 template <typename IntType>
@@ -576,6 +577,51 @@ void SettingChar::set(ReadBuffer & buf)
 }
 
 void SettingChar::write(WriteBuffer & buf) const
+{
+    writeBinary(toString(), buf);
+}
+
+
+SettingDateTimeInputFormat::Value SettingDateTimeInputFormat::getValue(const String & s)
+{
+    if (s == "basic")  return Value::Basic;
+    if (s == "best_effort")  return Value::BestEffort;
+
+    throw Exception("Unknown DateTime input format: '" + s + "', must be one of 'basic', 'best_effort'", ErrorCodes::BAD_ARGUMENTS);
+}
+
+String SettingDateTimeInputFormat::toString() const
+{
+    const char * strings[] = {"basic", "best_effort"};
+    if (value < Value::Basic || value > Value::BestEffort)
+        throw Exception("Unknown DateTime input format", ErrorCodes::BAD_ARGUMENTS);
+    return strings[static_cast<size_t>(value)];
+}
+
+void SettingDateTimeInputFormat::set(Value x)
+{
+    value = x;
+    changed = true;
+}
+
+void SettingDateTimeInputFormat::set(const Field & x)
+{
+    set(safeGet<const String &>(x));
+}
+
+void SettingDateTimeInputFormat::set(const String & x)
+{
+    set(getValue(x));
+}
+
+void SettingDateTimeInputFormat::set(ReadBuffer & buf)
+{
+    String x;
+    readBinary(x, buf);
+    set(x);
+}
+
+void SettingDateTimeInputFormat::write(WriteBuffer & buf) const
 {
     writeBinary(toString(), buf);
 }

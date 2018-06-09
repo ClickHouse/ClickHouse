@@ -1,6 +1,6 @@
 enable_testing()
 
-# Run tests with "make check"
+# Run tests with "ninja check" or "make check"
 if (TARGET check)
     message (STATUS "Target check already exists")
 else ()
