@@ -135,14 +135,22 @@ void StorageMergeTree::drop()
     Poco::File(full_path).remove(true);
 }
 
-void StorageMergeTree::truncate(const ASTPtr & /*query*/)
+void StorageMergeTree::truncate(const ASTPtr &)
 {
-    merger.merges_blocker.cancelForever();
-    data.dropAllData();
+    {
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = merger.actions_blocker.cancel();
+        /// Waits for completion of merge and does not start new ones.
+        auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
-    /// reset block id
-    increment.set(0);
-    data.insert_increment.set(0);
+        auto parts_to_remove = data.getDataPartsVector();
+        data.removePartsFromWorkingSet(parts_to_remove, true);
+
+        LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
+    }
+
+    data.clearOldPartsFromFilesystem();
 }
 
 void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)

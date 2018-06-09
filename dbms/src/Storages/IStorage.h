@@ -202,12 +202,13 @@ public:
     }
 
     /** Delete the table data. Called before deleting the directory with the data.
+      * The method can be called only after detaching table from Context (when no queries are performed with table).
+      * The table is not usable during and after call to this method.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
 
-    /** Delete the table data. Called before deleting the directory with the data.
-      * If you do not need any action other than deleting the directory with data, you can leave this method blank.
+    /** Clear the table data and leave it empty.
       */
     virtual void truncate(const ASTPtr & /*query*/)
     {

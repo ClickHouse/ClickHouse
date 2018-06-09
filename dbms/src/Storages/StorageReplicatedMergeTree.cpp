@@ -3196,7 +3196,7 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
     String partition_id = data.getPartitionIDFromQuery(partition, context);
 
     LogEntry entry;
-    if (dropBlocksInPartition(*zookeeper, partition_id, entry, detach))
+    if (dropPartsInPartition(*zookeeper, partition_id, entry, detach))
     {
         /// If necessary, wait until the operation is performed on itself or on all replicas.
         if (context.getSettingsRef().replication_alter_partitions_sync != 0)
@@ -3228,7 +3228,7 @@ void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
     {
         LogEntry entry;
 
-        if (dropBlocksInPartition(*zookeeper, partition_id, entry, false))
+        if (dropPartsInPartition(*zookeeper, partition_id, entry, false))
             waitForAllReplicasToProcessLogEntry(entry);
     }
 }
@@ -4506,6 +4506,7 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     return {};
 }
 
+
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
     /// Let's fetch new log entries firstly
@@ -4539,15 +4540,11 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
             throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
     }
 
-    can_merge = [&](const MergeTreeData::DataPartPtr &left, const MergeTreeData::DataPartPtr &right, String *)
-    {
-      return partsWillNotBeMergedOrDisabled(left, right, storage->queue)
-          && cached_merging_predicate->get(now, uncached_merging_predicate, merging_predicate_args_to_key, left, right);
-    };
+    return cond_reached.load(std::memory_order_relaxed);
 }
 
 
-bool StorageReplicatedMergeTree::dropBlocksInPartition(
+bool StorageReplicatedMergeTree::dropPartsInPartition(
     zkutil::ZooKeeper & zookeeper, String & partition_id, StorageReplicatedMergeTree::LogEntry & entry, bool detach)
 {
     MergeTreePartInfo drop_range_info;
@@ -4571,14 +4568,13 @@ bool StorageReplicatedMergeTree::dropBlocksInPartition(
     LOG_DEBUG(log, "Disabled merges covered by range " << drop_range_fake_part_name);
 
     /// Finally, having achieved the necessary invariants, you can put an entry in the log.
-    LogEntry entry;
     entry.type = LogEntry::DROP_RANGE;
     entry.source_replica = replica_name;
     entry.new_part_name = drop_range_fake_part_name;
     entry.detach = detach;
     entry.create_time = time(nullptr);
 
-    String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+    String log_znode_path = zookeeper.create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
     return true;

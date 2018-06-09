@@ -40,7 +40,7 @@ public:
 
     bool checkData() const override;
 
-    void truncate(const ASTPtr & query) override;
+    void truncate(const ASTPtr &) override;
 
     std::string full_path() const { return path + escapeForFileName(name) + '/';}
 

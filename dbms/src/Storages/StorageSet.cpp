@@ -118,11 +118,12 @@ StorageSet::StorageSet(
 void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
-void StorageSet::truncate(const ASTPtr & /*query*/)
+
+void StorageSet::truncate(const ASTPtr &)
 {
     Block header = getSampleBlock();
     header = header.sortColumns();
-    
+
     increment = 0;
     set = std::make_shared<Set>(SizeLimits());
     set->setHeader(header);

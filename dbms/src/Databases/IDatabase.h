@@ -147,23 +147,8 @@ public:
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;
 
-    /// Delete database metadata, if exists.
-    virtual void drop(Context & context)
-    {
-        String database_name = getDatabaseName();
-
-        if (!database_name.empty())
-        {
-            String database_name_escaped = escapeForFileName(database_name);
-
-            Poco::File(context.getPath() + "metadata/" + database_name_escaped + "/").remove(false);
-
-            /// Old ClickHouse versions did not store database.sql files
-            Poco::File database_metadata_file(context.getPath() + "metadata/" + database_name_escaped + ".sql");
-            if (database_metadata_file.exists())
-                database_metadata_file.remove(false);
-        }
-    };
+    /// Delete data and metadata stored inside the database, if exists.
+    virtual void drop() {}
 
     virtual ~IDatabase() {}
 };

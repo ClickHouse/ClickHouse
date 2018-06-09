@@ -463,15 +463,15 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
-void StorageLog::truncate(const ASTPtr & /*query*/)
+void StorageLog::truncate(const ASTPtr &)
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     String table_dir = path + escapeForFileName(name);
 
-    this->files.clear();
-    this->file_count = 0;
-    this->loaded_marks = false;
+    files.clear();
+    file_count = 0;
+    loaded_marks = false;
 
     std::vector<Poco::File> data_files;
     Poco::File(table_dir).list(data_files);
@@ -482,8 +482,8 @@ void StorageLog::truncate(const ASTPtr & /*query*/)
     for (const auto  & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
-    this->file_checker = FileChecker{table_dir + "/" + "sizes.json"};
-    this->marks_file = Poco::File(table_dir + "/" + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+    file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+    marks_file = Poco::File(table_dir + "/" + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
 
