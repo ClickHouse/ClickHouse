@@ -8,7 +8,9 @@
 
 #ifdef __APPLE__
 
-#include <common/config_common.h>
+#if __has_include("config_common.h")
+#include "config_common.h"
+#endif
 
 #if APPLE_SIERRA_OR_NEWER == 0
 /**

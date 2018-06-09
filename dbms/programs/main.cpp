@@ -1,4 +1,8 @@
+
+#if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
+#endif
+
 #include <Common/config.h>
 #include <iostream>
 #include <vector>
