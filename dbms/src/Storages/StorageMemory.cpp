@@ -128,6 +128,12 @@ void StorageMemory::drop()
     data.clear();
 }
 
+void StorageMemory::truncate(const ASTPtr &)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    data.clear();
+}
+
 
 void registerStorageMemory(StorageFactory & factory)
 {

@@ -129,6 +129,8 @@ public:
       */
     void drop() override;
 
+    void truncate(const ASTPtr &) override;
+
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool supportsIndexForIn() const override { return true; }
@@ -484,6 +486,9 @@ private:
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
 
+    bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
+        StorageReplicatedMergeTree::LogEntry & entry, bool detach);
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -502,6 +507,7 @@ protected:
         const MergeTreeData::MergingParams & merging_params_,
         const MergeTreeSettings & settings_,
         bool has_force_restore_data_flag);
+
 };
 
 
