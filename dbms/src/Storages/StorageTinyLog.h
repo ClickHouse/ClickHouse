@@ -52,6 +52,8 @@ public:
 
     String getDataPath() const override { return full_path(); }
 
+    void truncate(const ASTPtr & query) override;
+
 private:
     String path;
     String name;

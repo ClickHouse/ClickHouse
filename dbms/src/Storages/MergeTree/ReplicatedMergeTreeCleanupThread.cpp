@@ -153,7 +153,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
-    std::vector<std::pair<String, std::future<zkutil::RemoveResponse>>> try_remove_futures;
+    zkutil::AsyncResponses<zkutil::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
@@ -208,7 +208,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
                                    << " to clear old ones from ZooKeeper.");
     }
 
-    std::vector<std::pair<String, std::future<zkutil::ExistsResponse>>> exists_futures;
+    zkutil::AsyncResponses<zkutil::ExistsResponse> exists_futures;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);

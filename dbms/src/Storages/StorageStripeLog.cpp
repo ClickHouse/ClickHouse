@@ -30,6 +30,7 @@
 
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageFactory.h>
+#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -285,6 +286,19 @@ bool StorageStripeLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+void StorageStripeLog::truncate(const ASTPtr & /*query*/)
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+
+    String table_dir = path + escapeForFileName(name);
+
+    Poco::DirectoryIterator dir_end;
+    for (auto dir_it = Poco::DirectoryIterator(table_dir); dir_it != dir_end; ++dir_it)
+        dir_it->remove(false);
+
+    this->file_checker = FileChecker{table_dir + "/" + "sizes.json"};
 }
 
 

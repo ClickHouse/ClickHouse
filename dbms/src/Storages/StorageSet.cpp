@@ -116,7 +116,27 @@ StorageSet::StorageSet(
 
 
 void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
-size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
+size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
+
+void StorageSet::truncate(const ASTPtr & /*query*/)
+{
+    Block header = getSampleBlock();
+    header = header.sortColumns();
+    
+    increment = 0;
+    set = std::make_shared<Set>(SizeLimits());
+    set->setHeader(header);
+
+    static const auto file_suffix = ".bin";
+
+    Poco::DirectoryIterator dir_end;
+    for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
+    {
+        const auto & name = dir_it.name();
+        if (dir_it->isFile() && endsWith(name, file_suffix) && dir_it->getSize() > 0)
+            dir_it->remove(false);
+    }
+};
 
 
 void StorageSetOrJoinBase::restore()
