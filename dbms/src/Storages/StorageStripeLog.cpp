@@ -296,7 +296,10 @@ void StorageStripeLog::truncate(const ASTPtr &)
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    Poco::File(path + escapeForFileName(name)).remove(true);
+    auto file = Poco::File(path + escapeForFileName(name));
+    file.remove(true);
+    file.createDirectories();
+
     file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
 }
 

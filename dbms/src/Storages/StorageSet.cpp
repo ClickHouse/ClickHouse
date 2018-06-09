@@ -128,15 +128,8 @@ void StorageSet::truncate(const ASTPtr &)
     set = std::make_shared<Set>(SizeLimits());
     set->setHeader(header);
 
-    static const auto file_suffix = ".bin";
-
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(path); dir_end != dir_it; ++dir_it)
-    {
-        const auto & name = dir_it.name();
-        if (dir_it->isFile() && endsWith(name, file_suffix) && dir_it->getSize() > 0)
-            dir_it->remove(false);
-    }
+    Poco::File(path).remove(true);
+    Poco::File(path).createDirectories();
 };
 
 
