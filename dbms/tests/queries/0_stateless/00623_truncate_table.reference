@@ -6,7 +6,6 @@
 1
 2000-01-01	1
 2000-01-01	1
-1	hello
 ======After Truncate And Empty======
 0
 ======After Truncate And Insert Data======
@@ -17,4 +16,3 @@
 1
 2000-01-01	1
 2000-01-01	1
-1	hello
