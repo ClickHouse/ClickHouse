@@ -186,37 +186,37 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
     return getTargetTable()->write(query, settings);
 }
 
-void StorageMaterializedView::drop()
-{
-    global_context.removeDependency(
-        DatabaseAndTableName(select_database_name, select_table_name),
-        DatabaseAndTableName(database_name, table_name));
 
-    if (has_inner_table && global_context.tryGetTable(target_database_name, target_table_name))
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const String & target_database_name, const String & target_table_name)
+{
+    if (global_context.tryGetTable(target_database_name, target_table_name))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = target_database_name;
         drop_query->table = target_table_name;
-        drop_query->kind = ASTDropQuery::Kind::Drop;
+        drop_query->kind = kind;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
     }
 }
 
-void StorageMaterializedView::truncate(const ASTPtr & query)
-{
-    if (has_inner_table && global_context.tryGetTable(target_database_name, target_table_name))
-    {
-        ASTPtr ast_drop_query = query->clone();
-        ASTDropQuery & drop_query = typeid_cast<ASTDropQuery &>(*ast_drop_query);
-        drop_query.database = target_database_name;
-        drop_query.table = target_table_name;
 
-        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
-        drop_interpreter.execute();
-    }
+void StorageMaterializedView::drop()
+{
+    global_context.removeDependency(
+        DatabaseAndTableName(select_database_name, select_table_name),
+        DatabaseAndTableName(database_name, table_name));
+
+    if (has_inner_table)
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
+}
+
+void StorageMaterializedView::truncate(const ASTPtr &)
+{
+    if (has_inner_table)
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_database_name, target_table_name);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const

@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -288,17 +289,15 @@ bool StorageStripeLog::checkData() const
     return file_checker.check();
 }
 
-void StorageStripeLog::truncate(const ASTPtr & /*query*/)
+void StorageStripeLog::truncate(const ASTPtr &)
 {
+    if (name.empty())
+        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
+
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
-    String table_dir = path + escapeForFileName(name);
-
-    Poco::DirectoryIterator dir_end;
-    for (auto dir_it = Poco::DirectoryIterator(table_dir); dir_it != dir_end; ++dir_it)
-        dir_it->remove(false);
-
-    this->file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+    Poco::File(path + escapeForFileName(name)).remove(true);
+    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
 }
 
 

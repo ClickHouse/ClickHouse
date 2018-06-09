@@ -365,16 +365,15 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
-void StorageTinyLog::truncate(const ASTPtr & /*query*/)
+void StorageTinyLog::truncate(const ASTPtr &)
 {
-    String table_dir = path + escapeForFileName(name);
+    if (name.empty())
+        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
 
-    Poco::DirectoryIterator dir_end;
-    for (auto dir_it = Poco::DirectoryIterator(table_dir); dir_it != dir_end; ++dir_it)
-        dir_it->remove(false);
+    Poco::File(path + escapeForFileName(name)).remove(true);
 
-    this->files.clear();
-    this->file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+    files.clear();
+    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
 
     for (const auto &column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);

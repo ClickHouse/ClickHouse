@@ -74,6 +74,11 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
+            if (!database_and_table.second->checkTableCanBeDropped())
+                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
+                                " couldn't be truncated due to failed pre-drop check",
+                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
             /// Drop table data, don't touch metadata
@@ -167,13 +172,14 @@ BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQ
             context.detachDatabase(database_name);
 
             database->shutdown();
-            /// Delete the database.
-            database->drop(context);
 
-            /// Remove data directory if it is not virtual database. TODO: should IDatabase::drop() do that?
-            String database_data_path = database->getDataPath();
-            if (!database_data_path.empty())
-                Poco::File(database_data_path).remove(false);
+            /// Delete the database.
+            database->drop();
+
+            /// Old ClickHouse versions did not store database.sql files
+            Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
+            if (database_metadata_file.exists())
+                database_metadata_file.remove(false);
         }
     }
 

@@ -64,7 +64,8 @@ public:
 
     void drop() override {}
 
-    void truncate(const ASTPtr & query) override;
+    /// Removes temporary data in local filesystem.
+    void truncate(const ASTPtr &) override;
 
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns

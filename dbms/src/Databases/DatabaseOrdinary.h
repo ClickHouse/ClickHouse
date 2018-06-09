@@ -63,6 +63,8 @@ public:
     String getMetadataPath() const override;
     String getTableMetadataPath(const String & table_name) const override;
 
+    void drop() override;
+
     void shutdown() override;
 
 private:
