@@ -22,7 +22,7 @@ struct QueryThreadLogElement
     UInt64 written_rows{};
     UInt64 written_bytes{};
 
-    UInt64 memory_usage{};
+    Int64 memory_usage{};
 
     String thread_name;
     UInt32 thread_number{};

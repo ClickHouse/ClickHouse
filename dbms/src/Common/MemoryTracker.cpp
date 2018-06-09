@@ -18,7 +18,7 @@ namespace DB
 
 MemoryTracker::~MemoryTracker()
 {
-    if (peak)
+    if (level != VariableContext::Thread && peak)
     {
         try
         {
@@ -114,18 +114,26 @@ void MemoryTracker::free(Int64 size)
     if (blocker.isCancelled())
         return;
 
-    Int64 new_amount = amount.fetch_sub(size, std::memory_order_relaxed) - size;
-
-    /** Sometimes, query could free some data, that was allocated outside of query context.
-      * Example: cache eviction.
-      * To avoid negative memory usage, we "saturate" amount.
-      * Memory usage will be calculated with some error.
-      * NOTE The code is not atomic. Not worth to fix.
-      */
-    if (new_amount < 0)
+    if (level == VariableContext::Thread)
     {
-        amount.fetch_sub(new_amount);
-        size += new_amount;
+        /// Could become negative if memory allocated in this thread is freed in another one
+        amount.fetch_sub(size, std::memory_order_relaxed);
+    }
+    else
+    {
+        Int64 new_amount = amount.fetch_sub(size, std::memory_order_relaxed) - size;
+
+        /** Sometimes, query could free some data, that was allocated outside of query context.
+          * Example: cache eviction.
+          * To avoid negative memory usage, we "saturate" amount.
+          * Memory usage will be calculated with some error.
+          * NOTE: The code is not atomic. Not worth to fix.
+          */
+        if (unlikely(new_amount < 0))
+        {
+            amount.fetch_sub(new_amount);
+            size += new_amount;
+        }
     }
 
     if (auto loaded_next = parent.load(std::memory_order_relaxed))
@@ -135,14 +143,20 @@ void MemoryTracker::free(Int64 size)
 }
 
 
+void MemoryTracker::resetCounters()
+{
+    amount.store(0, std::memory_order_relaxed);
+    peak.store(0, std::memory_order_relaxed);
+    limit.store(0, std::memory_order_relaxed);
+}
+
+
 void MemoryTracker::reset()
 {
     if (!parent.load(std::memory_order_relaxed))
         CurrentMetrics::sub(metric, amount.load(std::memory_order_relaxed));
 
-    amount.store(0, std::memory_order_relaxed);
-    peak.store(0, std::memory_order_relaxed);
-    limit.store(0, std::memory_order_relaxed);
+    resetCounters();
 }
 
 

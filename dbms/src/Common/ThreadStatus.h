@@ -40,8 +40,9 @@ public:
     /// Linux's PID (or TGID) (the same id is shown by ps util)
     Int32 os_thread_id = -1;
 
-    ProfileEvents::Counters performance_counters;
-    MemoryTracker memory_tracker;
+    /// TODO: merge them into common entity
+    ProfileEvents::Counters performance_counters{VariableContext::Thread};
+    MemoryTracker memory_tracker{VariableContext::Thread};
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -67,11 +68,6 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    Context * getGlobalContext()
-    {
-        return global_context.load(std::memory_order_relaxed);
-    }
-
     SystemLogsQueuePtr getSystemLogsQueue() const
     {
         std::lock_guard lock(mutex);
@@ -82,6 +78,11 @@ public:
     {
         std::lock_guard lock(mutex);
         logs_queue_ptr = logs_queue;
+    }
+
+    Context * getGlobalContext()
+    {
+        return global_context.load(std::memory_order_relaxed);
     }
 
     ~ThreadStatus();

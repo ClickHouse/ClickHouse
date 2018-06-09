@@ -30,7 +30,7 @@ Block QueryThreadLogElement::createBlock()
         {std::make_shared<DataTypeUInt64>(),        "read_bytes"},
         {std::make_shared<DataTypeUInt64>(),        "written_rows"},
         {std::make_shared<DataTypeUInt64>(),        "written_bytes"},
-        {std::make_shared<DataTypeUInt64>(),        "memory_usage"},
+        {std::make_shared<DataTypeInt64>(),         "memory_usage"},
 
         {std::make_shared<DataTypeString>(),        "thread_name"},
         {std::make_shared<DataTypeUInt32>(),        "thread_number"},
@@ -80,7 +80,7 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(UInt64(written_rows));
     columns[i++]->insert(UInt64(written_bytes));
 
-    columns[i++]->insert(UInt64(memory_usage));
+    columns[i++]->insert(Int64(memory_usage));
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
     columns[i++]->insert(UInt64(thread_number));

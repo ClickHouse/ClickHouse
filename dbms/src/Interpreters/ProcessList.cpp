@@ -168,8 +168,8 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Attach master thread
             CurrentThread::attachQuery(&*process_it);
-            CurrentThread::getMemoryTracker().setOrRaiseLimit(settings.max_memory_usage);
-            CurrentThread::getMemoryTracker().setDescription("(for thread)");
+            /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
+            ///  since allocation and deallocation could happen in different threads
 
             if (!user_process_list.user_throttler)
             {
@@ -272,7 +272,6 @@ QueryStatus::QueryStatus(
     query(query_),
     client_info(client_info_),
     priority_handle(std::move(priority_handle_)),
-    performance_counters(ProfileEvents::Level::Process),
     num_queries_increment{CurrentMetrics::Query}
 {
     memory_tracker.setOrRaiseLimit(max_memory_usage);
@@ -282,10 +281,7 @@ QueryStatus::QueryStatus(
         memory_tracker.setFaultProbability(memory_tracker_fault_probability);
 }
 
-QueryStatus::~QueryStatus()
-{
-    LOG_DEBUG(&Poco::Logger::get("QueryStatus"), __PRETTY_FUNCTION__ << ":" << __LINE__);
-}
+QueryStatus::~QueryStatus() = default;
 
 void QueryStatus::setQueryStreams(const BlockIO & io)
 {
@@ -444,9 +440,7 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 }
 
 
-ProcessListForUser::ProcessListForUser()
-: user_performance_counters(ProfileEvents::Level::User, &ProfileEvents::global_counters)
-{}
+ProcessListForUser::ProcessListForUser() = default;
 
 
 }

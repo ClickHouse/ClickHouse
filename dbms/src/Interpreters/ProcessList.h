@@ -96,8 +96,8 @@ protected:
 
     QueryPriorities::Handle priority_handle;
 
-    ProfileEvents::Counters performance_counters;
-    MemoryTracker memory_tracker;
+    ProfileEvents::Counters performance_counters{VariableContext::Process};
+    MemoryTracker memory_tracker{VariableContext::Process};
 
     mutable std::shared_mutex threads_mutex;
     /// Key is Poco's thread_id
@@ -207,9 +207,9 @@ struct ProcessListForUser
     using QueryToElement = std::unordered_multimap<String, QueryStatus *>;
     QueryToElement queries;
 
-    ProfileEvents::Counters user_performance_counters;
+    ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
-    MemoryTracker user_memory_tracker;
+    MemoryTracker user_memory_tracker{VariableContext::User};
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
@@ -282,7 +282,7 @@ protected:
     QueryPriorities priorities;
 
     /// Limit and counter for memory of all simultaneously running queries.
-    MemoryTracker total_memory_tracker;
+    MemoryTracker total_memory_tracker{VariableContext::Global};
 
     /// Limit network bandwidth for all users
     ThrottlerPtr total_network_throttler;
