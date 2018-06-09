@@ -240,7 +240,7 @@ void registerInputFormatCapnProto(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerInputFormatRowBinary(FormatFactory &) {}
+    void registerInputFormatCapnProto(FormatFactory &) {}
 }
 
 #endif // USE_CAPNP
