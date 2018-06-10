@@ -132,7 +132,6 @@ void StorageMergeTree::drop()
 {
     shutdown();
     data.dropAllData();
-    Poco::File(full_path).remove(true);
 }
 
 void StorageMergeTree::truncate(const ASTPtr &)
