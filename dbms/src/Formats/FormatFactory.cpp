@@ -110,10 +110,12 @@ void registerOutputFormatJSONEachRow(FormatFactory & factory);
 void registerOutputFormatPretty(FormatFactory & factory);
 void registerOutputFormatPrettyCompact(FormatFactory & factory);
 void registerOutputFormatPrettySpace(FormatFactory & factory);
+void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSON(FormatFactory & factory);
 void registerOutputFormatJSONCompact(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
+void registerOutputFormatNull(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -141,10 +143,12 @@ FormatFactory::FormatFactory()
     registerOutputFormatPretty(*this);
     registerOutputFormatPrettyCompact(*this);
     registerOutputFormatPrettySpace(*this);
+    registerOutputFormatVertical(*this);
     registerOutputFormatJSON(*this);
     registerOutputFormatJSONCompact(*this);
     registerOutputFormatXML(*this);
     registerOutputFormatODBCDriver(*this);
+    registerOutputFormatNull(*this);
 }
 
 }
