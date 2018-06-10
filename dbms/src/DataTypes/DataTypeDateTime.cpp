@@ -5,7 +5,7 @@
 #include <common/DateLUT.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
 
