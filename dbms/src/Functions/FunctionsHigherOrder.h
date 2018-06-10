@@ -594,13 +594,124 @@ struct ArraySortImpl
     }
 };
 
+struct ArrayCumSumImpl
+{
+    static bool needBoolean() { return false; }
+    static bool needExpression() { return false; }
+    static bool needOneArray() { return false; }
+
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
+    {
+        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
+            checkDataType<DataTypeUInt16>(&*expression_return) ||
+            checkDataType<DataTypeUInt32>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+
+        if (checkDataType<DataTypeInt8>(&*expression_return) ||
+            checkDataType<DataTypeInt16>(&*expression_return) ||
+            checkDataType<DataTypeInt32>(&*expression_return) ||
+            checkDataType<DataTypeInt64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+
+        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
+            checkDataType<DataTypeFloat64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+
+        throw Exception("arrayCumSum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+
+    template <typename Element, typename Result>
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
+    {
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+
+        if (!column)
+        {
+            const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
+
+            if (!column_const)
+                return false;
+
+            const Element x = column_const->template getValue<Element>();
+            const IColumn::Offsets & offsets = array.getOffsets();
+
+            auto res_nested = ColumnVector<Result>::create();
+            typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+            res_values.resize(column_const->size());
+
+            size_t pos = 0;
+            for (size_t i = 0; i < offsets.size(); ++i)
+            {
+                // skip empty arrays
+                if (pos < offsets[i])
+                {
+                    res_values[pos++] = x;
+                    for (; pos < offsets[i]; ++pos)
+                    {
+                        res_values[pos] = res_values[pos - 1] + x;
+                    }
+                }
+            }
+
+            res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
+            return true;
+        }
+
+        const IColumn::Offsets & offsets = array.getOffsets();
+        const typename ColumnVector<Element>::Container & data = column->getData();
+
+        auto res_nested = ColumnVector<Result>::create();
+        typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+        res_values.resize(data.size());
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            // skip empty arrays
+            if (pos < offsets[i])
+            {
+                res_values[pos] = data[pos];
+                for (++pos; pos < offsets[i]; ++pos)
+                {
+                    res_values[pos] = res_values[pos - 1] + data[pos];
+                }
+            }
+        }
+        res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
+        return true;
+
+    }
+
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    {
+        ColumnPtr res;
+
+        if (executeType< UInt8 , UInt64>(mapped, array, res) ||
+            executeType< UInt16, UInt64>(mapped, array, res) ||
+            executeType< UInt32, UInt64>(mapped, array, res) ||
+            executeType< UInt64, UInt64>(mapped, array, res) ||
+            executeType<  Int8 ,  Int64>(mapped, array, res) ||
+            executeType<  Int16,  Int64>(mapped, array, res) ||
+            executeType<  Int32,  Int64>(mapped, array, res) ||
+            executeType<  Int64,  Int64>(mapped, array, res) ||
+            executeType<Float32,Float64>(mapped, array, res) ||
+            executeType<Float64,Float64>(mapped, array, res))
+            return res;
+        else
+            throw Exception("Unexpected column for arrayCumSum: " + mapped->getName());
+    }
+
+};
+
 
 template <typename Impl, typename Name>
 class FunctionArrayMapped : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayMapped>(); }
 
     String getName() const override
     {
@@ -744,7 +855,7 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (arguments.size() == 1)
         {
@@ -800,7 +911,7 @@ public:
                 }
 
                 if (!array_type)
-                    throw Exception("Expected array type, found " + array_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    throw Exception("Expected array type, found " + array_type_ptr->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
                 if (!offsets_column)
                 {
@@ -825,7 +936,7 @@ public:
             }
 
             /// Put all the necessary columns multiplied by the sizes of arrays into the block.
-            auto replicated_column_function_ptr = column_function->replicate(column_first_array->getOffsets());
+            auto replicated_column_function_ptr = (*column_function->replicate(column_first_array->getOffsets())).mutate();
             auto * replicated_column_function = typeid_cast<ColumnFunction *>(replicated_column_function_ptr.get());
             replicated_column_function->appendArguments(arrays);
 
@@ -846,6 +957,7 @@ struct NameArrayFirst       { static constexpr auto name = "arrayFirst"; };
 struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
 struct NameArraySort        { static constexpr auto name = "arraySort"; };
 struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; };
+struct NameArrayCumSum      { static constexpr auto name = "arrayCumSum"; };
 
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;
@@ -857,5 +969,6 @@ using FunctionArrayFirst = FunctionArrayMapped<ArrayFirstImpl, NameArrayFirst>;
 using FunctionArrayFirstIndex = FunctionArrayMapped<ArrayFirstIndexImpl, NameArrayFirstIndex>;
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false>, NameArrayReverseSort>;
+using FunctionArrayCumSum = FunctionArrayMapped<ArrayCumSumImpl, NameArrayCumSum>;
 
 }

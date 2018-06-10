@@ -110,7 +110,7 @@ public:
     }
 
     /// Ask all sources to stop earlier than they run out.
-    void cancel()
+    void cancel(bool kill)
     {
         finish = true;
 
@@ -120,7 +120,7 @@ public:
             {
                 try
                 {
-                    child->cancel();
+                    child->cancel(kill);
                 }
                 catch (...)
                 {

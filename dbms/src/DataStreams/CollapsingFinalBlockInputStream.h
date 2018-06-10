@@ -24,29 +24,14 @@ public:
         children.insert(children.end(), inputs.begin(), inputs.end());
     }
 
-    ~CollapsingFinalBlockInputStream();
+    ~CollapsingFinalBlockInputStream() override;
 
     String getName() const override { return "CollapsingFinal"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "CollapsingFinal(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ", sign_column, " << sign_column_name << ")";
-        return res.str();
-    }
-
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;
@@ -165,7 +150,7 @@ private:
                 --ptr->refcount;
                 if (!ptr->refcount)
                 {
-                    if (std::uncaught_exception())
+                    if (std::uncaught_exceptions())
                         delete ptr;
                     else
                         ptr->output_blocks->push_back(ptr);

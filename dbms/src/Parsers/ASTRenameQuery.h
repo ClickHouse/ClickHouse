@@ -28,11 +28,8 @@ public:
     using Elements = std::vector<Element>;
     Elements elements;
 
-    ASTRenameQuery() = default;
-    explicit ASTRenameQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
-
     /** Get the text that identifies this element. */
-    String getID() const override { return "Rename"; };
+    String getID() const override { return "Rename"; }
 
     ASTPtr clone() const override
     {

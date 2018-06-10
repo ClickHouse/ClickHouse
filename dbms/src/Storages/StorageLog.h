@@ -40,6 +40,12 @@ public:
 
     bool checkData() const override;
 
+    void truncate(const ASTPtr &) override;
+
+    std::string full_path() const { return path + escapeForFileName(name) + '/';}
+
+    String getDataPath() const override { return full_path(); }
+
 protected:
     /** Attach the table with the appropriate name, along the appropriate path (with / at the end),
       *  (the correctness of names and paths is not verified)
@@ -48,10 +54,7 @@ protected:
     StorageLog(
         const std::string & path_,
         const std::string & name_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         size_t max_compress_block_size_);
 
 private:

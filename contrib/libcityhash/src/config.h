@@ -5,7 +5,11 @@
 /* #undef AC_APPLE_UNIVERSAL_BUILD */
 
 /* Define to 1 if the compiler supports __builtin_expect. */
+#if _MSC_VER
+#define HAVE_BUILTIN_EXPECT 0
+#else
 #define HAVE_BUILTIN_EXPECT 1
+#endif
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #define HAVE_DLFCN_H 1
@@ -112,3 +116,10 @@
 /* Define to the type of an unsigned integer type of width exactly 8 bits if
    such a type exists and the standard includes do not define it. */
 /* #undef uint8_t */
+
+#ifdef _MSC_VER
+    #include <basetsd.h>
+    typedef SSIZE_T ssize_t;
+#else
+    #include <sys/types.h>
+#endif

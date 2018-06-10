@@ -16,9 +16,6 @@ public:
     /// type
     ASTPtr type;
 
-    ASTNameTypePair() = default;
-    ASTNameTypePair(const StringRange range_) : IAST(range_) {}
-
     /** Get the text that identifies this element. */
     String getID() const override { return "NameTypePair_" + name; }
 

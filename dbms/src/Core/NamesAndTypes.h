@@ -69,6 +69,8 @@ public:
 
     /// Unlike `filter`, returns columns in the order in which they go in `names`.
     NamesAndTypesList addTypes(const Names & names) const;
+
+    bool contains(const String & name) const;
 };
 
 }

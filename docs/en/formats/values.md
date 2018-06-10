@@ -4,5 +4,5 @@ Prints every row in brackets. Rows are separated by commas. There is no comma af
 
 The minimum set of characters that you need to escape when passing data in Values ​​format: single quotes and backslashes.
 
-This is the format that is used in `INSERT INTO t VALUES ...` but you can also use it for query result.
+This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
 

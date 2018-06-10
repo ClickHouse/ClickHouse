@@ -4,7 +4,7 @@
 
 echo "CCACHEDIR=$CCACHEDIR CCACHE_DIR=$CCACHE_DIR SET_CCACHEDIR=$SET_CCACHEDIR"
 
-[ -z "$CCACHE_DIR" ] && export CCACHE_DIR=${CCACHEDIR:=${SET_CCACHEDIR:=/var/cache/pbuilder/ccache}}
+[ -z "$CCACHE_DIR" ] && export CCACHE_DIR=${CCACHEDIR:=${SET_CCACHEDIR=/var/cache/pbuilder/ccache}}
 
 if [ -n "$CCACHE_DIR" ]; then
     mkdir -p $CCACHE_DIR || true
@@ -12,5 +12,6 @@ if [ -n "$CCACHE_DIR" ]; then
     chmod -R a+rwx $CCACHE_DIR || true
 fi
 
+df -h
 ccache --show-stats
 ccache -M ${CCACHE_SIZE:=32G}

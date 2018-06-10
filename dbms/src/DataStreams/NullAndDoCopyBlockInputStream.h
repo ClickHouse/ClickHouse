@@ -28,12 +28,7 @@ public:
 
     String getName() const override { return "NullAndDoCopy"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "copy from " << input->getID();
-        return res.str();
-    }
+    Block getHeader() const override { return {}; }
 
 protected:
     Block readImpl() override

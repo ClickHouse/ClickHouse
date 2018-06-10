@@ -37,7 +37,11 @@ AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, con
         values_types.push_back(array_type->getNestedType());
     }
 
-    return AggregateFunctionPtr(createWithNumericType<AggregateFunctionSumMap>(*keys_type, keys_type, std::move(values_types)));
+    AggregateFunctionPtr res(createWithNumericType<AggregateFunctionSumMap>(*keys_type, keys_type, std::move(values_types)));
+    if (!res)
+        throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    return res;
 }
 
 }

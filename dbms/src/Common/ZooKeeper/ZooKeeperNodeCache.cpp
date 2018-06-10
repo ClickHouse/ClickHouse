@@ -41,20 +41,18 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
     if (nonexistent_nodes.count(path))
         return std::nullopt;
 
-    auto watch_callback = [context=context](zkutil::ZooKeeper & zookeeper, int type, int state, const char * path)
+    auto watch_callback = [context=context](const ZooKeeperImpl::ZooKeeper::WatchResponse & response)
     {
-        if (!(type != ZOO_SESSION_EVENT || state == ZOO_EXPIRED_SESSION_STATE))
+        if (!(response.type != ZooKeeperImpl::ZooKeeper::SESSION || response.state == ZooKeeperImpl::ZooKeeper::EXPIRED_SESSION))
             return;
 
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock(context->mutex);
-            if (&zookeeper != context->zookeeper.get())
-                return;
 
-            if (type != ZOO_SESSION_EVENT)
-                changed = context->invalidated_paths.emplace(path).second;
-            else if (state == ZOO_EXPIRED_SESSION_STATE)
+            if (response.type != ZooKeeperImpl::ZooKeeper::SESSION)
+                changed = context->invalidated_paths.emplace(response.path).second;
+            else if (response.state == ZooKeeperImpl::ZooKeeper::EXPIRED_SESSION)
             {
                 context->zookeeper = nullptr;
                 context->invalidated_paths.clear();

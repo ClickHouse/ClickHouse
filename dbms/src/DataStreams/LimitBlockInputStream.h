@@ -21,12 +21,7 @@ public:
 
     String getName() const override { return "Limit"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Limit(" << children.back()->getID() << ", " << limit << ", " << offset << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;

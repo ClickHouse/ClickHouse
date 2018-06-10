@@ -65,14 +65,14 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const auto args_size = arguments.size();
         if (args_size != 3 && args_size != 4)
-            throw Exception{
-                "Number of arguments for function " + getName() + " doesn't match: passed " +
-                    toString(args_size) + ", should be 3 or 4",
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed " + toString(args_size) + ", should be 3 or 4",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const DataTypePtr & type_x = arguments[0];
@@ -141,7 +141,7 @@ public:
         }
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnConst * array_from = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[1]).column.get());
         const ColumnConst * array_to = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[2]).column.get());
@@ -155,7 +155,7 @@ public:
 
         if (in->isColumnConst())
         {
-            executeConst(block, arguments, result);
+            executeConst(block, arguments, result, input_rows_count);
             return;
         }
 
@@ -178,24 +178,22 @@ public:
             && !executeNum<Float64>(in, out, default_column)
             && !executeString(in, out, default_column))
         {
-            throw Exception{
-                "Illegal column " + in->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + in->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
         block.getByPosition(result).column = std::move(column_result);
     }
 
 private:
-    void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result)
+    void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
-        /// Construct a block of full-size columns of size 1 and compute the function as usual.
+        /// Materialize the input column and compute the function as usual.
 
         Block tmp_block;
         ColumnNumbers tmp_arguments;
 
         tmp_block.insert(block.getByPosition(arguments[0]));
-        tmp_block.getByPosition(0).column = static_cast<const ColumnConst *>(tmp_block.getByPosition(0).column.get())->getDataColumnPtr();
+        tmp_block.getByPosition(0).column = tmp_block.getByPosition(0).column->cloneResized(input_rows_count)->convertToFullColumnIfConst();
         tmp_arguments.push_back(0);
 
         for (size_t i = 1; i < arguments.size(); ++i)
@@ -207,11 +205,9 @@ private:
         tmp_block.insert(block.getByPosition(result));
         size_t tmp_result = arguments.size();
 
-        execute(tmp_block, tmp_arguments, tmp_result);
+        execute(tmp_block, tmp_arguments, tmp_result, input_rows_count);
 
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-            block.rows(),
-            (*tmp_block.getByPosition(tmp_result).column)[0]);
+        block.getByPosition(result).column = tmp_block.getByPosition(tmp_result).column;
     }
 
     template <typename T>
@@ -224,10 +220,8 @@ private:
                 auto out = typeid_cast<ColumnVector<T> *>(out_untyped);
                 if (!out)
                 {
-                    throw Exception{
-                        "Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
-                        + ", must be " + in->getName(),
-                        ErrorCodes::ILLEGAL_COLUMN};
+                    throw Exception{"Illegal column " + out_untyped->getName() + " of elements of array of third argument of function " + getName()
+                        + ", must be " + in->getName(), ErrorCodes::ILLEGAL_COLUMN};
                 }
 
                 executeImplNumToNum<T>(in->getData(), out->getData());
@@ -246,8 +240,7 @@ private:
                     && !executeNumToNumWithConstDefault<T, Float64>(in, out_untyped)
                     && !executeNumToStringWithConstDefault<T>(in, out_untyped))
                 {
-                    throw Exception{
-                        "Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
@@ -265,8 +258,7 @@ private:
                     && !executeNumToNumWithNonConstDefault<T, Float64>(in, out_untyped, default_untyped)
                     && !executeNumToStringWithNonConstDefault<T>(in, out_untyped, default_untyped))
                 {
-                    throw Exception{
-                        "Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
@@ -284,11 +276,8 @@ private:
             if (!default_untyped)
             {
                 if (!executeStringToString(in, out_untyped))
-                {
-                    throw Exception{
-                        "Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
-                }
             }
             else if (default_untyped->isColumnConst())
             {
@@ -304,8 +293,7 @@ private:
                     && !executeStringToNumWithConstDefault<Float64>(in, out_untyped)
                     && !executeStringToStringWithConstDefault(in, out_untyped))
                 {
-                    throw Exception{
-                        "Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
@@ -323,8 +311,7 @@ private:
                     && !executeStringToNumWithNonConstDefault<Float64>(in, out_untyped, default_untyped)
                     && !executeStringToStringWithNonConstDefault(in, out_untyped, default_untyped))
                 {
-                    throw Exception{
-                        "Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
+                    throw Exception{"Illegal column " + in->getName() + " of elements of array of second argument of function " + getName(),
                         ErrorCodes::ILLEGAL_COLUMN};
                 }
             }
@@ -727,7 +714,7 @@ private:
     /// Different versions of the hash tables to implement the mapping.
 
     using NumToNum = HashMap<UInt64, UInt64, HashCRC32<UInt64>>;
-    using NumToString = HashMap <UInt64, StringRef, HashCRC32 <UInt64 >>;     /// Everywhere StringRef's with trailing zero.
+    using NumToString = HashMap <UInt64, StringRef, HashCRC32<UInt64>>;     /// Everywhere StringRef's with trailing zero.
     using StringToNum = HashMap<StringRef, UInt64, StringRefHash>;
     using StringToString = HashMap<StringRef, StringRef, StringRefHash>;
 
@@ -740,7 +727,7 @@ private:
 
     Field const_default_value;    /// Null, if not specified.
 
-    bool initialized = false;
+    std::atomic<bool> initialized {false};
     std::mutex mutex;
 
     /// Can be called from different threads. It works only on the first call.

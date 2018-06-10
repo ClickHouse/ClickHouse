@@ -1,6 +1,6 @@
 enable_testing()
 
-# Run tests with "make check"
+# Run tests with "ninja check" or "make check"
 if (TARGET check)
     message (STATUS "Target check already exists")
 else ()
@@ -26,5 +26,6 @@ if (ENABLE_TESTS)
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/CTestCustom.cmake ${CMAKE_BINARY_DIR})
 
     # maybe add --no-long ?
-    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} TEST_OPT='--skip 00281' ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
+    # if you want disable some tests: env TEST_OPT0='--skip compile'
+    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
 endif ()

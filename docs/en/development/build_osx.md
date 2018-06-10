@@ -12,7 +12,7 @@ With appropriate changes, it should also work on any other Linux distribution.
 ## Install required compilers, tools, and libraries
 
 ```bash
-brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext homebrew/dupes/zlib readline boost --cc=gcc-7
+brew install cmake ninja gcc icu4c mysql openssl unixodbc libtool gettext readline
 ```
 
 ## Checkout ClickHouse sources
@@ -34,8 +34,8 @@ For the latest release candidate, switch to the `testing` branch.
 ```bash
 mkdir build
 cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++-7` -DCMAKE_C_COMPILER=`which gcc-7`
-make -j `sysctl -n hw.ncpu`
+cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
+ninja
 cd ..
 ```
 

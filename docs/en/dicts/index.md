@@ -5,11 +5,3 @@ You can think of this as a more convenient and efficient type of JOIN with dimen
 
 There are built-in (internal) and add-on (external) dictionaries.
 
-```eval_rst
-.. toctree::
-
-   external_dicts
-   internal_dicts
-
-```
-

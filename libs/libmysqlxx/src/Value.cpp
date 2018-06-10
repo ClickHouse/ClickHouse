@@ -127,7 +127,7 @@ double Value::readFloatText(const char * buf, size_t length) const
             {
                 ++buf;
                 Int32 exponent = readIntText(buf, end - buf);
-                x *= exp10(exponent);
+                x *= preciseExp10(exponent);
                 if (negative)
                     x = -x;
                 return x;

@@ -1,4 +1,4 @@
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <iostream>
 
 int main(int argc, char ** argv)

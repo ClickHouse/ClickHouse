@@ -18,6 +18,7 @@
 #include <Databases/DatabaseOrdinary.h>
 
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>
@@ -35,7 +36,7 @@ static void executeCreateQuery(
     bool has_force_restore_data_flag)
 {
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "in file " + file_name, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.attach = true;

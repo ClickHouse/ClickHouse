@@ -15,8 +15,7 @@ class ASTLiteral : public ASTWithAlias
 public:
     Field value;
 
-    ASTLiteral() = default;
-    ASTLiteral(const StringRange range_, const Field & value_) : ASTWithAlias(range_), value(value_) {}
+    ASTLiteral(const Field & value_) : value(value_) {}
 
     /** Get the text that identifies this element. */
     String getID() const override { return "Literal_" + applyVisitor(FieldVisitorDump(), value); }

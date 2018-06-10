@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include <map>
 
@@ -60,7 +61,15 @@ public:
 
     String getName() const override { return "TinyLog"; }
 
-    String getID() const override;
+    Block getHeader() const override
+    {
+        Block res;
+
+        for (const auto & name_type : columns)
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
+
+        return Nested::flatten(res);
+    };
 
 protected:
     Block readImpl() override;
@@ -110,6 +119,8 @@ public:
         }
     }
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
+
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -142,19 +153,6 @@ private:
 
     void writeData(const String & name, const IDataType & type, const IColumn & column, WrittenStreams & written_streams);
 };
-
-
-String TinyLogBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "TinyLog(" << storage.getTableName() << ", " << &storage;
-
-    for (const auto & name_type : columns)
-        res << ", " << name_type.name;
-
-    res << ")";
-    return res.str();
-}
 
 
 Block TinyLogBlockInputStream::readImpl()
@@ -279,13 +277,10 @@ void TinyLogBlockOutputStream::write(const Block & block)
 StorageTinyLog::StorageTinyLog(
     const std::string & path_,
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     bool attach,
     size_t max_compress_block_size_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json"),
@@ -302,7 +297,7 @@ StorageTinyLog::StorageTinyLog(
             throwFromErrno("Cannot create directory " + full_path, ErrorCodes::CANNOT_CREATE_DIRECTORY);
     }
 
-    for (const auto & col : getColumnsList())
+    for (const auto & col : getColumns().getAllPhysical())
         addFiles(col.name, *col.type);
 }
 
@@ -354,7 +349,7 @@ BlockInputStreams StorageTinyLog::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
     return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
-        max_block_size, Nested::collect(getColumnsList().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
+        max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 }
 
 
@@ -370,6 +365,22 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
+void StorageTinyLog::truncate(const ASTPtr &)
+{
+    if (name.empty())
+        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
+
+    auto file = Poco::File(path + escapeForFileName(name));
+    file.remove(true);
+    file.createDirectories();
+
+    files.clear();
+    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
+
+    for (const auto &column : getColumns().getAllPhysical())
+        addFiles(column.name, *column.type);
+}
+
 
 void registerStorageTinyLog(StorageFactory & factory)
 {
@@ -382,7 +393,6 @@ void registerStorageTinyLog(StorageFactory & factory)
 
         return StorageTinyLog::create(
             args.data_path, args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             args.attach, args.context.getSettings().max_compress_block_size);
     });
 }

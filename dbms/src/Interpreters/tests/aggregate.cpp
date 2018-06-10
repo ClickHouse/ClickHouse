@@ -70,10 +70,6 @@ int main(int argc, char ** argv)
         BlockInputStreamPtr stream = std::make_shared<OneBlockInputStream>(block);
         AggregatedDataVariants aggregated_data_variants;
 
-        Names key_column_names;
-        key_column_names.emplace_back("x");
-        key_column_names.emplace_back("s1");
-
         AggregateFunctionFactory factory;
 
         AggregateDescriptions aggregate_descriptions(1);
@@ -81,7 +77,10 @@ int main(int argc, char ** argv)
         DataTypes empty_list_of_types;
         aggregate_descriptions[0].function = factory.get("count", empty_list_of_types);
 
-        Aggregator::Params params(key_column_names, aggregate_descriptions, false);
+        Aggregator::Params params(
+            stream->getHeader(), {0, 1}, aggregate_descriptions,
+            false, 0, OverflowMode::THROW, nullptr, 0, 0, 0, 0, false, "");
+
         Aggregator aggregator(params);
 
         {

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
@@ -113,7 +114,65 @@ public:
 };
 
 
-class FunctionIf : public IFunction
+template <bool null_is_false>
+class FunctionIfBase : public IFunction
+{
+#if USE_EMBEDDED_COMPILER
+public:
+    bool isCompilableImpl(const DataTypes & types) const override
+    {
+        for (const auto & type : types)
+            if (!removeNullable(type)->isValueRepresentedByNumber())
+                return false;
+        return true;
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto type = getReturnTypeImpl(types);
+        llvm::Value * null = nullptr;
+        if (!null_is_false && type->isNullable())
+            null = b.CreateInsertValue(llvm::Constant::getNullValue(toNativeType(b, type)), b.getTrue(), {1});
+        auto * head = b.GetInsertBlock();
+        auto * join = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
+        std::vector<std::pair<llvm::BasicBlock *, llvm::Value *>> returns;
+        for (size_t i = 0; i + 1 < types.size(); i += 2)
+        {
+            auto * then = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
+            auto * next = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
+            auto * cond = values[i]();
+            if (!null_is_false && types[i]->isNullable())
+            {
+                auto * nonnull = llvm::BasicBlock::Create(head->getContext(), "", head->getParent());
+                returns.emplace_back(b.GetInsertBlock(), null);
+                b.CreateCondBr(b.CreateExtractValue(cond, {1}), join, nonnull);
+                b.SetInsertPoint(nonnull);
+                b.CreateCondBr(nativeBoolCast(b, removeNullable(types[i]), b.CreateExtractValue(cond, {0})), then, next);
+            }
+            else
+            {
+                b.CreateCondBr(nativeBoolCast(b, types[i], cond), then, next);
+            }
+            b.SetInsertPoint(then);
+            auto * value = nativeCast(b, types[i + 1], values[i + 1](), type);
+            returns.emplace_back(b.GetInsertBlock(), value);
+            b.CreateBr(join);
+            b.SetInsertPoint(next);
+        }
+        auto * value = nativeCast(b, types.back(), values.back()(), type);
+        returns.emplace_back(b.GetInsertBlock(), value);
+        b.CreateBr(join);
+        b.SetInsertPoint(join);
+        auto * phi = b.CreatePHI(toNativeType(b, type), returns.size());
+        for (const auto & r : returns)
+            phi->addIncoming(r.second, r.first);
+        return phi;
+    }
+#endif
+};
+
+class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 {
 public:
     static constexpr auto name = "if";
@@ -174,7 +233,8 @@ private:
         [[maybe_unused]] Block & block,
         [[maybe_unused]] const ColumnNumbers & arguments,
         [[maybe_unused]] size_t result,
-        [[maybe_unused]] const ColumnArray * col_left_array)
+        [[maybe_unused]] const ColumnArray * col_left_array,
+        [[maybe_unused]] size_t input_rows_count)
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
@@ -202,7 +262,7 @@ private:
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -218,7 +278,7 @@ private:
                 conditional(
                     NumericArraySource<T0>(*col_left_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -234,7 +294,8 @@ private:
         [[maybe_unused]] Block & block,
         [[maybe_unused]] const ColumnNumbers & arguments,
         [[maybe_unused]] size_t result,
-        [[maybe_unused]] const ColumnConst * col_left_const_array)
+        [[maybe_unused]] const ColumnConst * col_left_const_array,
+        [[maybe_unused]] size_t input_rows_count)
     {
         if constexpr (std::is_same_v<NumberTraits::Error, typename NumberTraits::ResultOfIf<T0, T1>::Type>)
             return false;
@@ -262,7 +323,7 @@ private:
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     NumericArraySource<T1>(*col_right_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -278,7 +339,7 @@ private:
                 conditional(
                     ConstSource<NumericArraySource<T0>>(*col_left_const_array),
                     ConstSource<NumericArraySource<T1>>(*col_right_const_array),
-                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), block.rows()),
+                    NumericArraySink<ResultType>(static_cast<ColumnArray &>(*res), input_rows_count),
                     cond_col->getData());
 
                 block.getByPosition(result).column = std::move(res);
@@ -289,7 +350,7 @@ private:
     }
 
     template <typename T0>
-    bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeLeftType(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const IColumn * col_left_untyped = block.getByPosition(arguments[1]).column.get();
 
@@ -352,16 +413,16 @@ private:
         }
         else if (col_arr_left && col_arr_left_elems)
         {
-            if (   executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left)
-                || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left))
+            if (   executeRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_arr_left, input_rows_count)
+                || executeRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_arr_left, input_rows_count))
                 return true;
             else
                 throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
@@ -370,16 +431,16 @@ private:
         }
         else if (col_const_arr_left && checkColumn<ColumnVector<T0>>(&static_cast<const ColumnArray &>(col_const_arr_left->getDataColumn()).getData()))
         {
-            if (   executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_const_arr_left)
-                || executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left))
+            if (   executeConstRightTypeArray<T0, UInt8>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, UInt16>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, UInt32>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, UInt64>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, Int8>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, Int16>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, Int32>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, Int64>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, Float32>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count)
+                || executeConstRightTypeArray<T0, Float64>(cond_col, block, arguments, result, col_const_arr_left, input_rows_count))
                 return true;
             else
                 throw Exception("Illegal column " + block.getByPosition(arguments[2]).column->getName()
@@ -509,7 +570,7 @@ private:
         return false;
     }
 
-    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Calculate function for each corresponding elements of tuples.
 
@@ -552,7 +613,7 @@ private:
             temporary_block.insert({col2_contents[i], type2.getElements()[i], {}});
 
             /// temporary_block will be: cond, res_0, ..., res_i, then_i, else_i
-            executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1);
+            executeImpl(temporary_block, {0, i + 2, i + 3}, i + 1, input_rows_count);
             temporary_block.erase(i + 3);
             temporary_block.erase(i + 2);
 
@@ -565,7 +626,7 @@ private:
         return true;
     }
 
-    bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeForNullableCondition(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         bool cond_is_null = arg_cond.column->onlyNull();
@@ -573,7 +634,7 @@ private:
 
         if (cond_is_null)
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
             return true;
         }
 
@@ -587,19 +648,19 @@ private:
                 block.getByPosition(result)
             };
 
-            executeImpl(temporary_block, {0, 1, 2}, 3);
+            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
 
             const ColumnPtr & result_column = temporary_block.getByPosition(3).column;
             if (result_column->isColumnNullable())
             {
-                MutableColumnPtr mutable_result_column = result_column->mutate();
+                MutableColumnPtr mutable_result_column = (*std::move(result_column)).mutate();
                 static_cast<ColumnNullable &>(*mutable_result_column).applyNullMap(static_cast<const ColumnNullable &>(*arg_cond.column));
                 block.getByPosition(result).column = std::move(mutable_result_column);
                 return true;
             }
             else if (result_column->onlyNull())
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
                 return true;
             }
             else
@@ -637,7 +698,7 @@ private:
         return column;
     }
 
-    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeForNullableThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
@@ -660,14 +721,14 @@ private:
                 {
                     then_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_then.column.get())->getNullMapColumnPtr()
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(block.rows()),
+                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
                 {
                     else_is_nullable
                         ? static_cast<const ColumnNullable *>(arg_else.column.get())->getNullMapColumnPtr()
-                        : DataTypeUInt8().createColumnConstWithDefaultValue(block.rows()),
+                        : DataTypeUInt8().createColumnConstWithDefaultValue(input_rows_count),
                     std::make_shared<DataTypeUInt8>(),
                     ""
                 },
@@ -678,7 +739,7 @@ private:
                 }
             });
 
-            executeImpl(temporary_block, {0, 1, 2}, 3);
+            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
 
             result_null_mask = temporary_block.getByPosition(3).column;
         }
@@ -706,7 +767,7 @@ private:
                 }
             });
 
-            executeImpl(temporary_block, {0, 1, 2}, 3);
+            executeImpl(temporary_block, {0, 1, 2}, 3, temporary_block.rows());
 
             result_nested_column = temporary_block.getByPosition(3).column;
         }
@@ -716,7 +777,7 @@ private:
         return true;
     }
 
-    bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result)
+    bool executeForNullThenElse(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
         const ColumnWithTypeAndName & arg_then = block.getByPosition(arguments[1]);
@@ -730,7 +791,7 @@ private:
 
         if (then_is_null && else_is_null)
         {
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(block.rows());
+            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConstWithDefaultValue(input_rows_count);
             return true;
         }
 
@@ -744,7 +805,8 @@ private:
             {
                 if (arg_else.column->isColumnNullable())
                 {
-                    auto result_column = arg_else.column->mutate();
+                    auto arg_else_column = arg_else.column;
+                    auto result_column = (*std::move(arg_else_column)).mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -757,7 +819,7 @@ private:
             else if (cond_const_col)
             {
                 if (cond_const_col->getValue<UInt8>())
-                    block.getByPosition(result).column = block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
+                    block.getByPosition(result).column = block.getByPosition(result).type->createColumn()->cloneResized(input_rows_count);
                 else
                     block.getByPosition(result).column = makeNullableColumnIfNot(arg_else.column);
             }
@@ -773,7 +835,7 @@ private:
         {
             if (cond_col)
             {
-                size_t size = block.rows();
+                size_t size = input_rows_count;
                 auto & null_map_data = cond_col->getData();
 
                 auto negated_null_map = ColumnUInt8::create();
@@ -785,7 +847,8 @@ private:
 
                 if (arg_then.column->isColumnNullable())
                 {
-                    auto result_column = arg_then.column->mutate();
+                    auto arg_then_column = arg_then.column;
+                    auto result_column = (*std::move(arg_then_column)).mutate();
                     static_cast<ColumnNullable &>(*result_column).applyNegatedNullMap(static_cast<const ColumnUInt8 &>(*arg_cond.column));
                     block.getByPosition(result).column = std::move(result_column);
                 }
@@ -800,7 +863,7 @@ private:
                 if (cond_const_col->getValue<UInt8>())
                     block.getByPosition(result).column = makeNullableColumnIfNot(arg_then.column);
                 else
-                    block.getByPosition(result).column = block.getByPosition(result).type->createColumn()->cloneResized(block.rows());
+                    block.getByPosition(result).column = block.getByPosition(result).type->createColumn()->cloneResized(input_rows_count);
             }
             else
                 throw Exception("Illegal column " + arg_cond.column->getName() + " of first argument of function " + getName()
@@ -839,11 +902,11 @@ public:
         return getLeastSupertype({arguments[1], arguments[2]});
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (executeForNullableCondition(block, arguments, result)
-            || executeForNullThenElse(block, arguments, result)
-            || executeForNullableThenElse(block, arguments, result))
+        if (executeForNullableCondition(block, arguments, result, input_rows_count)
+            || executeForNullThenElse(block, arguments, result, input_rows_count)
+            || executeForNullableThenElse(block, arguments, result, input_rows_count))
             return;
 
         const ColumnWithTypeAndName & arg_cond = block.getByPosition(arguments[0]);
@@ -872,19 +935,19 @@ public:
 
         if (cond_col)
         {
-            if (!( executeLeftType<UInt8>(cond_col, block, arguments, result)
-                || executeLeftType<UInt16>(cond_col, block, arguments, result)
-                || executeLeftType<UInt32>(cond_col, block, arguments, result)
-                || executeLeftType<UInt64>(cond_col, block, arguments, result)
-                || executeLeftType<Int8>(cond_col, block, arguments, result)
-                || executeLeftType<Int16>(cond_col, block, arguments, result)
-                || executeLeftType<Int32>(cond_col, block, arguments, result)
-                || executeLeftType<Int64>(cond_col, block, arguments, result)
-                || executeLeftType<Float32>(cond_col, block, arguments, result)
-                || executeLeftType<Float64>(cond_col, block, arguments, result)
+            if (!( executeLeftType<UInt8>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<UInt16>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<UInt32>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<UInt64>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<Int8>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<Int16>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<Int32>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<Int64>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<Float32>(cond_col, block, arguments, result, input_rows_count)
+                || executeLeftType<Float64>(cond_col, block, arguments, result, input_rows_count)
                 || executeString(cond_col, block, arguments, result)
                 || executeGenericArray(cond_col, block, arguments, result)
-                || executeTuple(block, arguments, result)))
+                || executeTuple(block, arguments, result, input_rows_count)))
                 throw Exception("Illegal columns " + arg_then.column->getName()
                     + " and " + arg_else.column->getName()
                     + " of second (then) and third (else) arguments of function " + getName(),
@@ -912,13 +975,13 @@ public:
 ///    - arrays of such types.
 ///
 /// Additionally the arguments, conditions or branches, support nullable types
-/// and the NULL value.
-class FunctionMultiIf final : public IFunction
+/// and the NULL value, with a NULL condition treated as false.
+class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 {
 public:
     static constexpr auto name = "multiIf";
     static FunctionPtr create(const Context & context);
-    FunctionMultiIf(const Context & context) : context(context) {};
+    FunctionMultiIf(const Context & context) : context(context) {}
 
 public:
     String getName() const override;
@@ -926,7 +989,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForNulls() const override { return false; }
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override;
 
 private:
     const Context & context;
@@ -947,7 +1010,7 @@ public:
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override;
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override;
-    void executeImpl(Block & block, const ColumnNumbers & args, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override;
 
 private:
     const Context & context;

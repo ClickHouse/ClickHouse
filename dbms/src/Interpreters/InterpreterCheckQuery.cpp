@@ -92,49 +92,6 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Co
 {
 }
 
-Block InterpreterCheckQuery::getSampleBlock() const
-{
-    Block block;
-    ColumnWithTypeAndName col;
-
-    col.name = "status";
-    col.type = std::make_shared<DataTypeUInt8>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    col.name = "host_name";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    col.name = "host_address";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    col.name = "port";
-    col.type = std::make_shared<DataTypeUInt16>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    col.name = "user";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    col.name = "structure_class";
-    col.type = std::make_shared<DataTypeUInt32>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    col.name = "structure";
-    col.type = std::make_shared<DataTypeString>();
-    col.column = col.type->createColumn();
-    block.insert(col);
-
-    return block;
-}
-
 
 BlockIO InterpreterCheckQuery::execute()
 {
@@ -169,7 +126,7 @@ BlockIO InterpreterCheckQuery::execute()
 
         while (true)
         {
-            if (stream.isCancelled())
+            if (stream.isCancelledOrThrowIfKilled())
             {
                 BlockIO res;
                 res.in = std::make_shared<OneBlockInputStream>(result);
@@ -244,7 +201,6 @@ BlockIO InterpreterCheckQuery::execute()
 
         BlockIO res;
         res.in = std::make_shared<OneBlockInputStream>(block);
-        res.in_sample = getSampleBlock();
 
         return res;
     }
@@ -256,7 +212,6 @@ BlockIO InterpreterCheckQuery::execute()
 
         BlockIO res;
         res.in = std::make_shared<OneBlockInputStream>(result);
-        res.in_sample = result.cloneEmpty();
 
         return res;
     }

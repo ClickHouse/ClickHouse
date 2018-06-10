@@ -201,7 +201,7 @@ namespace Hashes
         size_t operator()(Key x) const
         {
             ::SipHash hash;
-            hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
+            hash.update(x);
             return hash.get64();
         }
     };

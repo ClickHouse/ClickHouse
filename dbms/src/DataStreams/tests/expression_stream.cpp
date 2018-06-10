@@ -2,13 +2,13 @@
 #include <iomanip>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadHelpers.h>
 
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -31,7 +31,7 @@ try
     std::string input = "SELECT number, number / 3, number * number";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     Context context = Context::createGlobal();
 
@@ -55,14 +55,13 @@ try
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 
     WriteBufferFromOStream out1(std::cout);
-    RowOutputStreamPtr out2 = std::make_shared<TabSeparatedRowOutputStream>(out1, expression->getSampleBlock());
-    BlockOutputStreamFromRowOutputStream out(out2);
+    BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", out1, expression->getSampleBlock(), context);
 
     {
         Stopwatch stopwatch;
         stopwatch.start();
 
-        copyData(*in, out);
+        copyData(*in, *out);
 
         stopwatch.stop();
         std::cout << std::fixed << std::setprecision(2)

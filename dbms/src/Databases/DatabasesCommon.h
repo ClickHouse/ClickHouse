@@ -36,17 +36,17 @@ std::pair<String, StoragePtr> createTableFromDefinition(
 
 
 /// Copies list of tables and iterates through such snapshot.
-class DatabaseSnaphotIterator : public IDatabaseIterator
+class DatabaseSnapshotIterator final : public IDatabaseIterator
 {
 private:
     Tables tables;
     Tables::iterator it;
 
 public:
-    DatabaseSnaphotIterator(Tables & tables_)
+    DatabaseSnapshotIterator(Tables & tables_)
         : tables(tables_), it(tables.begin()) {}
 
-    DatabaseSnaphotIterator(Tables && tables_)
+    DatabaseSnapshotIterator(Tables && tables_)
         : tables(tables_), it(tables.begin()) {}
 
     void next() override
@@ -68,6 +68,40 @@ public:
     {
         return it->second;
     }
+};
+
+/// A base class for databases that manage their own list of tables.
+class DatabaseWithOwnTablesBase : public IDatabase
+{
+public:
+    bool isTableExist(
+        const Context & context,
+        const String & table_name) const override;
+
+    StoragePtr tryGetTable(
+        const Context & context,
+        const String & table_name) const override;
+
+    bool empty(const Context & context) const override;
+
+
+    void attachTable(const String & table_name, const StoragePtr & table) override;
+
+    StoragePtr detachTable(const String & table_name) override;
+
+    DatabaseIteratorPtr getIterator(const Context & context) override;
+
+    void shutdown() override;
+
+    virtual ~DatabaseWithOwnTablesBase() override;
+
+protected:
+    String name;
+
+    mutable std::mutex mutex;
+    Tables tables;
+
+    DatabaseWithOwnTablesBase(String name_) : name(std::move(name_)) { }
 };
 
 }

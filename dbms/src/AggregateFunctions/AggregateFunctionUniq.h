@@ -3,6 +3,8 @@
 #include <city.h>
 #include <type_traits>
 
+#include <ext/bit_cast.h>
+
 #include <AggregateFunctions/UniquesHashSet.h>
 
 #include <IO/WriteHelpers.h>
@@ -122,8 +124,8 @@ struct AggregateFunctionUniqExactData<String>
     static String getName() { return "uniqExact"; }
 };
 
-template <typename T, HyperLogLogMode mode>
-struct BaseUniqCombinedData
+template <typename T>
+struct AggregateFunctionUniqCombinedData
 {
     using Key = UInt32;
     using Set = CombinedCardinalityEstimator<
@@ -135,14 +137,15 @@ struct BaseUniqCombinedData
         TrivialHash,
         UInt32,
         HyperLogLogBiasEstimator<UniqCombinedBiasData>,
-        mode
-    >;
+        HyperLogLogMode::FullFeatured>;
 
     Set set;
+
+    static String getName() { return "uniqCombined"; }
 };
 
-template <HyperLogLogMode mode>
-struct BaseUniqCombinedData<String, mode>
+template <>
+struct AggregateFunctionUniqCombinedData<String>
 {
     using Key = UInt64;
     using Set = CombinedCardinalityEstimator<
@@ -154,43 +157,13 @@ struct BaseUniqCombinedData<String, mode>
         TrivialHash,
         UInt64,
         HyperLogLogBiasEstimator<UniqCombinedBiasData>,
-        mode
-    >;
+        HyperLogLogMode::FullFeatured>;
 
     Set set;
-};
 
-/// Aggregate functions uniqCombinedRaw, uniqCombinedLinearCounting, and uniqCombinedBiasCorrected
-///  are intended for development of new versions of the uniqCombined function.
-/// Users should only use uniqCombined.
-
-template <typename T>
-struct AggregateFunctionUniqCombinedRawData
-    : public BaseUniqCombinedData<T, HyperLogLogMode::Raw>
-{
-    static String getName() { return "uniqCombinedRaw"; }
-};
-
-template <typename T>
-struct AggregateFunctionUniqCombinedLinearCountingData
-    : public BaseUniqCombinedData<T, HyperLogLogMode::LinearCounting>
-{
-    static String getName() { return "uniqCombinedLinearCounting"; }
-};
-
-template <typename T>
-struct AggregateFunctionUniqCombinedBiasCorrectedData
-    : public BaseUniqCombinedData<T, HyperLogLogMode::BiasCorrected>
-{
-    static String getName() { return "uniqCombinedBiasCorrected"; }
-};
-
-template <typename T>
-struct AggregateFunctionUniqCombinedData
-    : public BaseUniqCombinedData<T, HyperLogLogMode::FullFeatured>
-{
     static String getName() { return "uniqCombined"; }
 };
+
 
 namespace detail
 {
@@ -206,9 +179,7 @@ template <> struct AggregateFunctionUniqTraits<UInt128>
 {
     static UInt64 hash(UInt128 x)
     {
-        SipHash hash;
-        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
-        return hash.get64();
+        return sipHash64(x);
     }
 };
 
@@ -216,9 +187,7 @@ template <> struct AggregateFunctionUniqTraits<Float32>
 {
     static UInt64 hash(Float32 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-        return res;
+        return ext::bit_cast<UInt64>(x);
     }
 };
 
@@ -226,9 +195,7 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 {
     static UInt64 hash(Float64 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-        return res;
+        return ext::bit_cast<UInt64>(x);
     }
 };
 
@@ -243,9 +210,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<UInt128>
 {
     static UInt32 hash(UInt128 x)
     {
-        SipHash hash;
-        hash.update(reinterpret_cast<const char *>(&x), sizeof(x));
-        return static_cast<UInt32>(hash.get64());
+        return sipHash64(x);
     }
 };
 
@@ -253,8 +218,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float32>
 {
     static UInt32 hash(Float32 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+        UInt64 res = ext::bit_cast<UInt64>(x);
         return static_cast<UInt32>(intHash64(res));
     }
 };
@@ -263,8 +227,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float64>
 {
     static UInt32 hash(Float64 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+        UInt64 res = ext::bit_cast<UInt64>(x);
         return static_cast<UInt32>(intHash64(res));
     }
 };
@@ -292,10 +255,7 @@ struct OneAdder
                 data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
         }
-        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqCombinedRawData<T>>
-            || std::is_same_v<Data, AggregateFunctionUniqCombinedLinearCountingData<T>>
-            || std::is_same_v<Data, AggregateFunctionUniqCombinedBiasCorrectedData<T>>
-            || std::is_same_v<Data, AggregateFunctionUniqCombinedData<T>>)
+        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqCombinedData<T>>)
         {
             if constexpr (!std::is_same_v<T, String>)
             {
@@ -375,7 +335,7 @@ public:
 
 /** For multiple arguments. To compute, hashes them.
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
-  * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
+  * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */
 template <typename Data, bool argument_is_tuple>
 class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, argument_is_tuple>>

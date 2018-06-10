@@ -47,7 +47,8 @@ function gen_revision_author {
             git tag -a "$tag" -m "$tag"
 
             git_describe=`git describe`
-            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+            git_hash=`git rev-parse HEAD`
+            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g;s/VERSION_GITHASH .*)/VERSION_GITHASH $git_hash)/g;" dbms/cmake/version.cmake
 
             gen_changelog "$REVISION" "" "$AUTHOR" ""
             git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake debian/changelog

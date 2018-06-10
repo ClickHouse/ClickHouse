@@ -48,13 +48,6 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
-class ParserTypeInCastExpression : public ParserIdentifierWithOptionalParameters
-{
-protected:
-    const char * getName() const { return "type in cast expression"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
-};
-
 
 template <typename NameParser>
 class IParserNameTypePair : public IParserBase
@@ -75,13 +68,11 @@ bool IParserNameTypePair<NameParser>::parseImpl(Pos & pos, ASTPtr & node, Expect
     NameParser name_parser;
     ParserIdentifierWithOptionalParameters type_parser;
 
-    Pos begin = pos;
-
     ASTPtr name, type;
     if (name_parser.parse(pos, name, expected)
         && type_parser.parse(pos, type, expected))
     {
-        auto name_type_pair = std::make_shared<ASTNameTypePair>(StringRange(begin, pos));
+        auto name_type_pair = std::make_shared<ASTNameTypePair>();
         name_type_pair->name = typeid_cast<const ASTIdentifier &>(*name).name;
         name_type_pair->type = type;
         name_type_pair->children.push_back(type);
@@ -122,8 +113,6 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_alias{"ALIAS"};
     ParserTernaryOperatorExpression expr_parser;
 
-    const auto begin = pos;
-
     /// mandatory column name
     ASTPtr name;
     if (!name_parser.parse(pos, name, expected))
@@ -160,7 +149,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (!type)
         return false; /// reject sole column name without type
 
-    const auto column_declaration = std::make_shared<ASTColumnDeclaration>(StringRange{begin, pos});
+    const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
     column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
     if (type)

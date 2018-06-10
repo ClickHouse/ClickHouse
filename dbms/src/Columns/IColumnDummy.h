@@ -36,7 +36,7 @@ public:
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
+    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     StringRef getDataAt(size_t) const override
@@ -74,12 +74,12 @@ public:
         s += length;
     }
 
-    MutableColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
+    ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
         return cloneDummy(countBytesInFilter(filt));
     }
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override
     {
         if (s != perm.size())
             throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
@@ -94,7 +94,7 @@ public:
             res[i] = i;
     }
 
-    MutableColumnPtr replicate(const Offsets & offsets) const override
+    ColumnPtr replicate(const Offsets & offsets) const override
     {
         if (s != offsets.size())
             throw Exception("Size of offsets doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);

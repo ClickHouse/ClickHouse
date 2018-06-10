@@ -12,16 +12,17 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTOrderByElement.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserSelectQuery.h>
+#include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserCase.h>
 
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
+
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -36,7 +37,6 @@ namespace ErrorCodes
 
 bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     ASTPtr contents_node;
     ParserExpressionList contents(false);
 
@@ -51,7 +51,7 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    auto function_node = std::make_shared<ASTFunction>(StringRange(begin, pos));
+    auto function_node = std::make_shared<ASTFunction>();
     function_node->name = "array";
     function_node->arguments = contents_node;
     function_node->children.push_back(contents_node);
@@ -63,7 +63,6 @@ bool ParserArray::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     ASTPtr contents_node;
     ParserExpressionList contents(false);
 
@@ -93,7 +92,7 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else
     {
-        auto function_node = std::make_shared<ASTFunction>(StringRange(begin, pos));
+        auto function_node = std::make_shared<ASTFunction>();
         function_node->name = "tuple";
         function_node->arguments = contents_node;
         function_node->children.push_back(contents_node);
@@ -106,9 +105,8 @@ bool ParserParenthesisExpression::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
 bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     ASTPtr select_node;
-    ParserSelectQuery select;
+    ParserSelectWithUnionQuery select;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
@@ -121,7 +119,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
     ++pos;
 
-    node = std::make_shared<ASTSubquery>(StringRange(begin, pos));
+    node = std::make_shared<ASTSubquery>();
     typeid_cast<ASTSubquery &>(*node).children.push_back(select_node);
     return true;
 }
@@ -129,8 +127,6 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
-    Pos begin = pos;
-
     /// Identifier in backquotes or in double quotes
     if (pos->type == TokenType::QuotedIdentifier)
     {
@@ -145,14 +141,14 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected &)
         if (s.empty())    /// Identifiers "empty string" are not allowed.
             return false;
 
+        node = std::make_shared<ASTIdentifier>(s);
         ++pos;
-        node = std::make_shared<ASTIdentifier>(StringRange(begin), s);
         return true;
     }
     else if (pos->type == TokenType::BareWord)
     {
+        node = std::make_shared<ASTIdentifier>(String(pos->begin, pos->end));
         ++pos;
-        node = std::make_shared<ASTIdentifier>(StringRange(begin), String(begin->begin, begin->end));
         return true;
     }
 
@@ -162,8 +158,6 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 
 bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ASTPtr id_list;
     if (!ParserList(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Dot), false)
         .parse(pos, id_list, expected))
@@ -178,7 +172,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         name += static_cast<const ASTIdentifier &>(*child.get()).name;
     }
 
-    node = std::make_shared<ASTIdentifier>(StringRange(begin, pos), name);
+    node = std::make_shared<ASTIdentifier>(name);
 
     /// In `children`, remember the identifiers-components, if there are more than one.
     if (list.children.size() > 1)
@@ -190,8 +184,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
 bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserIdentifier id_parser;
     ParserKeyword distinct("DISTINCT");
     ParserExpressionList contents(false);
@@ -267,7 +259,7 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ++pos;
     }
 
-    auto function_node = std::make_shared<ASTFunction>(StringRange(begin, pos));
+    auto function_node = std::make_shared<ASTFunction>();
     function_node->name = typeid_cast<ASTIdentifier &>(*identifier).name;
 
     /// func(DISTINCT ...) is equivalent to funcDistinct(...)
@@ -290,107 +282,108 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
 bool ParserCastExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    const auto begin = pos;
+    /// Either CAST(expr AS type) or CAST(expr, 'type')
+    /// The latter will be parsed normally as a function later.
 
-    ParserIdentifier id_parser;
+    ASTPtr expr_node;
+    ASTPtr type_node;
 
-    ASTPtr identifier;
-
-    if (!id_parser.parse(pos, identifier, expected))
-        return false;
-
-    const auto & id = typeid_cast<const ASTIdentifier &>(*identifier).name;
-
-    /// TODO This is ridiculous. Please get rid of this.
-    if (id.length() != strlen(name) || 0 != strcasecmp(id.c_str(), name))
+    if (ParserKeyword("CAST").ignore(pos, expected)
+        && ParserToken(TokenType::OpeningRoundBracket).ignore(pos, expected)
+        && ParserExpression().parse(pos, expr_node, expected)
+        && ParserKeyword("AS").ignore(pos, expected)
+        && ParserIdentifierWithOptionalParameters().parse(pos, type_node, expected)
+        && ParserToken(TokenType::ClosingRoundBracket).ignore(pos, expected))
     {
-        /// Parse as a CASE expression.
-        pos = begin;
-        return ParserCase{}.parse(pos, node, expected);
+        /// Convert to canonical representation in functional form: CAST(expr, 'type')
+
+        auto type_literal = std::make_shared<ASTLiteral>(queryToString(type_node));
+
+        auto expr_list_args = std::make_shared<ASTExpressionList>();
+        expr_list_args->children.push_back(expr_node);
+        expr_list_args->children.push_back(std::move(type_literal));
+
+        auto func_node = std::make_shared<ASTFunction>();
+        func_node->name = "CAST";
+        func_node->arguments = std::move(expr_list_args);
+        func_node->children.push_back(func_node->arguments);
+
+        node = std::move(func_node);
+        return true;
     }
 
-    /// Parse as CAST(expression AS type)
-    ParserExpressionInCastExpression expression_and_type(false);
+    return false;
+}
 
-    ASTPtr expr_list_args;
+
+bool ParserExtractExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    if (!ParserKeyword("EXTRACT").ignore(pos, expected))
+        return false;
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
     ++pos;
 
-    const auto contents_begin = pos;
-    ASTPtr first_argument;
-    if (!expression_and_type.parse(pos, first_argument, expected))
+    ASTPtr expr;
+    const char * function_name = nullptr;
+
+    if (ParserKeyword("SECOND").ignore(pos, expected))
+        function_name = "toSecond";
+    else if (ParserKeyword("MINUTE").ignore(pos, expected))
+        function_name = "toMinute";
+    else if (ParserKeyword("HOUR").ignore(pos, expected))
+        function_name = "toHour";
+    else if (ParserKeyword("DAY").ignore(pos, expected))
+        function_name = "toDayOfMonth";
+
+    // TODO: SELECT toRelativeWeekNum(toDate('2017-06-15')) - toRelativeWeekNum(toStartOfYear(toDate('2017-06-15')))
+    // else if (ParserKeyword("WEEK").ignore(pos, expected))
+    //    function_name = "toRelativeWeekNum";
+
+    else if (ParserKeyword("MONTH").ignore(pos, expected))
+        function_name = "toMonth";
+    else if (ParserKeyword("YEAR").ignore(pos, expected))
+        function_name = "toYear";
+    else
         return false;
 
-    /// check for subsequent comma ","
-    if (pos->type != TokenType::Comma)
-    {
-        /// CAST(expression AS type)
-        const auto type = first_argument->tryGetAlias();
-        if (type.empty())
-        {
-            /// there is only one argument and it has no alias
-            expected.add(pos, "type identifier");
-            return false;
-        }
+    ParserKeyword s_from("FROM");
+    if (!s_from.ignore(pos, expected))
+        return false;
 
-        expr_list_args = std::make_shared<ASTExpressionList>(StringRange{contents_begin, pos});
-        first_argument->setAlias({});
-        expr_list_args->children.push_back(first_argument);
-        expr_list_args->children.emplace_back(std::make_shared<ASTLiteral>(StringRange(), type));
-    }
-    else
-    {
-        pos = contents_begin;
-
-        /// CAST(expression, 'type')
-        /// Reparse argument list from scratch
-        ParserExpressionWithOptionalAlias expression{false};
-        if (!expression.parse(pos, first_argument, expected))
-            return false;
-
-        if (pos->type != TokenType::Comma)
-            return false;
-        ++pos;
-
-        ParserStringLiteral p_type;
-        ASTPtr type_as_literal;
-
-        if (!p_type.parse(pos, type_as_literal, expected))
-        {
-            expected.add(pos, "string literal depicting type");
-            return false;
-        }
-
-        expr_list_args = std::make_shared<ASTExpressionList>(StringRange{contents_begin, pos});
-        expr_list_args->children.push_back(first_argument);
-        expr_list_args->children.push_back(type_as_literal);
-    }
+    ParserExpression elem_parser;
+    if (!elem_parser.parse(pos, expr, expected))
+        return false;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
     ++pos;
 
-    const auto function_node = std::make_shared<ASTFunction>(StringRange(begin, pos));
-    ASTPtr node_holder{function_node};
-    function_node->name = name;
+    auto function = std::make_shared<ASTFunction>();
+    auto exp_list = std::make_shared<ASTExpressionList>();
+    function->range.first = begin->begin;
+    function->range.second = pos->begin;
+    function->name = function_name; //"toYear";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+    exp_list->children.push_back(expr);
+    exp_list->range.first = begin->begin;
+    exp_list->range.second = pos->begin;
+    node = function;
 
-    function_node->arguments = expr_list_args;
-    function_node->children.push_back(function_node->arguments);
-
-    node = node_holder;
     return true;
 }
 
 
 bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     ParserKeyword nested_parser("NULL");
     if (nested_parser.parse(pos, node, expected))
     {
-        node = std::make_shared<ASTLiteral>(StringRange(StringRange(begin, pos)), Null());
+        node = std::make_shared<ASTLiteral>(Null());
         return true;
     }
     else
@@ -412,7 +405,6 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     Field res;
 
-    Pos begin = pos;
     if (!pos.isValid())
         return false;
 
@@ -464,7 +456,7 @@ bool ParserNumber::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     ++pos;
-    node = std::make_shared<ASTLiteral>(StringRange(begin, pos), res);
+    node = std::make_shared<ASTLiteral>(res);
     return true;
 }
 
@@ -473,7 +465,6 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 {
     Field res;
 
-    Pos begin = pos;
     if (!pos.isValid())
         return false;
 
@@ -487,7 +478,7 @@ bool ParserUnsignedInteger::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     res = x;
     ++pos;
-    node = std::make_shared<ASTLiteral>(StringRange(begin, pos), res);
+    node = std::make_shared<ASTLiteral>(res);
     return true;
 }
 
@@ -496,8 +487,6 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 {
     if (pos->type != TokenType::StringLiteral)
         return false;
-
-    Pos begin = pos;
 
     String s;
     ReadBufferFromMemory in(pos->begin, pos->size());
@@ -519,7 +508,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     }
 
     ++pos;
-    node = std::make_shared<ASTLiteral>(StringRange(begin, pos), s);
+    node = std::make_shared<ASTLiteral>(s);
     return true;
 }
 
@@ -529,7 +518,6 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (pos->type != TokenType::OpeningSquareBracket)
         return false;
 
-    Pos begin = pos;
     Array arr;
 
     ParserLiteral literal_p;
@@ -543,7 +531,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (pos->type == TokenType::ClosingSquareBracket)
             {
                 ++pos;
-                node = std::make_shared<ASTLiteral>(StringRange(begin, pos), arr);
+                node = std::make_shared<ASTLiteral>(arr);
                 return true;
             }
             else if (pos->type == TokenType::Comma)
@@ -588,7 +576,7 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 }
 
 
-const char * ParserAliasBase::restricted_keywords[] =
+const char * ParserAlias::restricted_keywords[] =
 {
     "FROM",
     "FINAL",
@@ -619,13 +607,12 @@ const char * ParserAliasBase::restricted_keywords[] =
     nullptr
 };
 
-template <typename ParserIdentifier>
-bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_as("AS");
     ParserIdentifier id_p;
 
-    bool has_as_word = s_as.parse(pos, node, expected);
+    bool has_as_word = s_as.ignore(pos, expected);
     if (!allow_alias_without_as_keyword && !has_as_word)
         return false;
 
@@ -649,17 +636,13 @@ bool ParserAliasImpl<ParserIdentifier>::parseImpl(Pos & pos, ASTPtr & node, Expe
     return true;
 }
 
-template class ParserAliasImpl<ParserIdentifier>;
-template class ParserAliasImpl<ParserTypeInCastExpression>;
-
 
 bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 {
-    Pos begin = pos;
     if (pos->type == TokenType::Asterisk)
     {
         ++pos;
-        node = std::make_shared<ASTAsterisk>(StringRange(begin, pos));
+        node = std::make_shared<ASTAsterisk>();
         return true;
     }
     return false;
@@ -668,8 +651,6 @@ bool ParserAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected &)
 
 bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     if (!ParserCompoundIdentifier().parse(pos, node, expected))
         return false;
 
@@ -681,7 +662,7 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         return false;
     ++pos;
 
-    auto res = std::make_shared<ASTQualifiedAsterisk>(StringRange(begin, pos));
+    auto res = std::make_shared<ASTQualifiedAsterisk>();
     res->children.push_back(node);
     node = std::move(res);
     return true;
@@ -690,49 +671,22 @@ bool ParserQualifiedAsterisk::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
 
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserParenthesisExpression paren_p;
-    ParserSubquery subquery_p;
-    ParserArray array_p;
-    ParserArrayOfLiterals array_lite_p;
-    ParserLiteral lit_p;
-    ParserCastExpression fun_p;
-    ParserCompoundIdentifier id_p;
-    ParserAsterisk asterisk_p;
-    ParserQualifiedAsterisk qualified_asterisk_p;
-
-    if (subquery_p.parse(pos, node, expected))
-        return true;
-
-    if (paren_p.parse(pos, node, expected))
-        return true;
-
-    if (array_lite_p.parse(pos, node, expected))
-        return true;
-
-    if (array_p.parse(pos, node, expected))
-        return true;
-
-    if (lit_p.parse(pos, node, expected))
-        return true;
-
-    if (fun_p.parse(pos, node, expected))
-        return true;
-
-    if (qualified_asterisk_p.parse(pos, node, expected))
-        return true;
-
-    if (asterisk_p.parse(pos, node, expected))
-        return true;
-
-    if (id_p.parse(pos, node, expected))
-        return true;
-
-    return false;
+    return ParserSubquery().parse(pos, node, expected)
+        || ParserParenthesisExpression().parse(pos, node, expected)
+        || ParserArrayOfLiterals().parse(pos, node, expected)
+        || ParserArray().parse(pos, node, expected)
+        || ParserLiteral().parse(pos, node, expected)
+        || ParserExtractExpression().parse(pos, node, expected)
+        || ParserCastExpression().parse(pos, node, expected)
+        || ParserCase().parse(pos, node, expected)
+        || ParserFunction().parse(pos, node, expected)
+        || ParserQualifiedAsterisk().parse(pos, node, expected)
+        || ParserAsterisk().parse(pos, node, expected)
+        || ParserCompoundIdentifier().parse(pos, node, expected);
 }
 
 
-template <typename ParserAlias>
-bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!elem_parser->parse(pos, node, expected))
         return false;
@@ -765,7 +719,7 @@ bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, ASTPtr & nod
     ASTPtr alias_node;
     if (ParserAlias(allow_alias_without_as_keyword_now).parse(pos, alias_node, expected))
     {
-        String alias_name = typeid_cast<ASTIdentifier &>(*alias_node).name;
+        String alias_name = typeid_cast<const ASTIdentifier &>(*alias_node).name;
 
         if (ASTWithAlias * ast_with_alias = dynamic_cast<ASTWithAlias *>(node.get()))
         {
@@ -782,14 +736,9 @@ bool ParserWithOptionalAliasImpl<ParserAlias>::parseImpl(Pos & pos, ASTPtr & nod
     return true;
 }
 
-template class ParserWithOptionalAliasImpl<ParserAlias>;
-template class ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
-
 
 bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserExpressionWithOptionalAlias elem_p(false);
     ParserKeyword ascending("ASCENDING");
     ParserKeyword descending("DESCENDING");
@@ -834,7 +783,7 @@ bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
             return false;
     }
 
-    node = std::make_shared<ASTOrderByElement>(StringRange(begin, pos), direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node);
+    node = std::make_shared<ASTOrderByElement>(direction, nulls_direction, nulls_direction_was_explicitly_specified, locale_node);
     node->children.push_back(expr_elem);
     if (locale_node)
         node->children.push_back(locale_node);

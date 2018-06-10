@@ -22,8 +22,8 @@ public:
     ExpressionBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_);
 
     String getName() const override;
-    String getID() const override;
-    const Block & getTotals() override;
+    Block getTotals() override;
+    Block getHeader() const override;
 
 protected:
     Block readImpl() override;

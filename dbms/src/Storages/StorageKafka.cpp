@@ -4,10 +4,14 @@
 
 #include <thread>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -21,6 +25,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageKafka.h>
 #include <Storages/StorageFactory.h>
+#include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
 
 #if __has_include(<rdkafka.h>) // maybe bundled
@@ -28,6 +33,7 @@
 #else // system
 #include <librdkafka/rdkafka.h>
 #endif
+
 
 namespace DB
 {
@@ -108,7 +114,8 @@ public:
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
     /// Commit messages read with this consumer
-    void commit() {
+    void commit()
+    {
         LOG_TRACE(log, "Committing " << read_messages << " messages");
         if (read_messages == 0)
             return;
@@ -137,7 +144,7 @@ public:
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
-        reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     ~KafkaBlockInputStream() override
@@ -160,20 +167,15 @@ public:
         return storage.getName();
     }
 
-    String getID() const override
-    {
-        std::stringstream res_stream;
-        res_stream << "Kafka(" << storage.topics.size() << ", " << storage.format_name << ")";
-        return res_stream.str();
-    }
-
     Block readImpl() override
     {
-        if (isCancelled())
+        if (isCancelledOrThrowIfKilled())
             return {};
 
         return reader->read();
     }
+
+    Block getHeader() const override { return reader->getHeader(); };
 
     void readPrefixImpl() override
     {
@@ -222,15 +224,16 @@ StorageKafka::StorageKafka(
     const std::string & table_name_,
     const std::string & database_name_,
     Context & context_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
     const String & format_name_, const String & schema_name_, size_t num_consumers_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), context(context_),
-    topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
+    topics(context.getMacros()->expand(topics_)),
+    brokers(context.getMacros()->expand(brokers_)),
+    group(context.getMacros()->expand(group_)),
+    format_name(context.getMacros()->expand(format_name_)),
+    schema_name(context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers(), event_update()
 {
@@ -295,6 +298,7 @@ void StorageKafka::startup()
 
         // Make consumer available
         pushConsumer(consumer);
+        ++num_created_consumers;
     }
 
     // Start the reader thread
@@ -310,7 +314,7 @@ void StorageKafka::shutdown()
 
     // Unsubscribe from assignments
     LOG_TRACE(log, "Unsubscribing from assignments");
-    for (size_t i = 0; i < num_consumers; ++i)
+    for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto consumer = claimConsumer();
         consumer->unsubscribe();
@@ -407,6 +411,15 @@ void StorageKafka::streamThread()
                 // Check if all dependencies are attached
                 auto dependencies = context.getDependencies(database_name, table_name);
                 if (dependencies.size() == 0)
+                    break;
+                // Check the dependencies are ready?
+                bool ready = true;
+                for (const auto & db_tab : dependencies)
+                {
+                    if (!context.tryGetTable(db_tab.first, db_tab.second))
+                        ready = false;
+                }
+                if (!ready)
                     break;
 
                 LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
@@ -580,9 +593,14 @@ void registerStorageKafka(StorageFactory & factory)
                 throw Exception("Number of consumers must be a positive integer", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        // Parse topic list and consumer group
+        // Parse topic list
         Names topics;
-        topics.push_back(static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>());
+        String topic_arg = static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>();
+        boost::split(topics, topic_arg , [](char c){ return c == ','; });
+        for(String & topic : topics)
+            boost::trim(topic);
+
+        // Parse consumer group
         String group = static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>();
 
         // Parse format from string
@@ -595,7 +613,6 @@ void registerStorageKafka(StorageFactory & factory)
 
         return StorageKafka::create(
             args.table_name, args.database_name, args.context, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             brokers, group, topics, format, schema, num_consumers);
     });
 }

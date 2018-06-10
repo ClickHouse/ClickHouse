@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
 
 #include <vector>
 #include <string>
@@ -17,12 +17,20 @@
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <ext/range.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 
 MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,
@@ -36,14 +44,6 @@ MongoDBBlockInputStream::MongoDBBlockInputStream(
 
 
 MongoDBBlockInputStream::~MongoDBBlockInputStream() = default;
-
-
-String MongoDBBlockInputStream::getID() const
-{
-    std::ostringstream stream;
-    stream << cursor.get();
-    return "MongoDB(@" + stream.str() + ")";
-}
 
 
 namespace
@@ -112,17 +112,15 @@ namespace
                     break;
                 }
 
-                throw Exception{
-                    "Type mismatch, expected String, got type id = " + toString(value.type()) +
-                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                throw Exception{"Type mismatch, expected String, got type id = " + toString(value.type()) +
+                    " for column " + name, ErrorCodes::TYPE_MISMATCH};
             }
 
             case ValueType::Date:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{
-                        "Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
-                            " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
+                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
                 static_cast<ColumnUInt16 &>(column).getData().push_back(
                     UInt16{DateLUT::instance().toDayNum(
@@ -133,9 +131,8 @@ namespace
             case ValueType::DateTime:
             {
                 if (value.type() != Poco::MongoDB::ElementTraits<Poco::Timestamp>::TypeId)
-                    throw Exception{
-                        "Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
-                            " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                    throw Exception{"Type mismatch, expected Timestamp, got type id = " + toString(value.type()) +
+                        " for column " + name, ErrorCodes::TYPE_MISMATCH};
 
                 static_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());

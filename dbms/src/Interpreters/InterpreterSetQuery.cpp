@@ -35,7 +35,7 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
       */
 
     const Settings & settings = context.getSettingsRef();
-    auto readonly = settings.limits.readonly;
+    auto readonly = settings.readonly;
 
     for (const auto & change : ast.changes)
     {

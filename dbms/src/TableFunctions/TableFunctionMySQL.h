@@ -18,7 +18,8 @@ public:
     {
         return name;
     }
-    StoragePtr execute(const ASTPtr & ast_function, const Context & context) const override;
+private:
+    StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const override;
 };
 
 }

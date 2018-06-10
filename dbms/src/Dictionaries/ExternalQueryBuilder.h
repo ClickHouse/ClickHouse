@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 
 
@@ -24,8 +25,8 @@ struct ExternalQueryBuilder
     /// NOTE There could be differences in escaping rules inside quotes. Escaping rules may not match that required by specific external DBMS.
     enum QuotingStyle
     {
-        None,            /// Write as-is, without quotes.
-        Backticks,        /// `mysql` style
+        None,           /// Write as-is, without quotes.
+        Backticks,      /// `mysql` style
         DoubleQuotes    /// "postgres" style
     };
 
@@ -41,6 +42,9 @@ struct ExternalQueryBuilder
 
     /** Generate a query to load all data. */
     std::string composeLoadAllQuery() const;
+
+    /** Generate a query to load data after certain time point*/
+    std::string composeUpdateQuery(const std::string &update_field, const std::string &time_point) const;
 
     /** Generate a query to load data by set of UInt64 keys. */
     std::string composeLoadIdsQuery(const std::vector<UInt64> & ids);
@@ -63,6 +67,8 @@ struct ExternalQueryBuilder
 
 
 private:
+    const FormatSettings format_settings;
+
     /// Expression in form (x = c1 AND y = c2 ...)
     void composeKeyCondition(const Columns & key_columns, const size_t row, WriteBuffer & out) const;
 

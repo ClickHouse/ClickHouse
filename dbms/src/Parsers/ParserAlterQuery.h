@@ -16,6 +16,7 @@ namespace DB
   *     [DROP|DETACH|ATTACH PARTITION|PART partition, ...]
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE PARTITION]
+  *     [DELETE WHERE ...]
   */
 class ParserAlterQuery : public IParserBase
 {

@@ -6,7 +6,9 @@ To work from the command line, you can use ` clickhouse-client`:
 $ clickhouse-client
 ClickHouse client version 0.0.26176.
 Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.26176.:)
+Connected to ClickHouse server version 0.0.26176.
+
+:)
 ```
 
 The client supports command-line options and configuration files. For more information, see "[Configuring](#interfaces_cli_configuration)".
@@ -64,7 +66,7 @@ The command-line client allows passing external data (external temporary tables)
 
 <a name="interfaces_cli_configuration"></a>
 
-## Configure
+## Configuring
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 

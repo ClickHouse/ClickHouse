@@ -14,8 +14,6 @@ namespace DB
 
 bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_describe("DESCRIBE");
     ParserKeyword s_desc("DESC");
     ParserKeyword s_table("TABLE");
@@ -36,7 +34,6 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     if (!ParserTableExpression().parse(pos, table_expression, expected))
         return false;
 
-    query->range = StringRange(begin, pos);
     query->table_expression = table_expression;
 
     node = query;

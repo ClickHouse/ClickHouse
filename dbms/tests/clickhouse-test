@@ -76,14 +76,18 @@ def main(args):
     # Keep same default values as in queries/0_stateless/00000_sh_lib.sh
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
+    os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
     # TODO ! use clickhouse-extract-from-config here:
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
-        if int(out) > 0:
-            args.zookeeper = True
-        else:
+        try:
+            if int(out) > 0:
+                args.zookeeper = True
+            else:
+                args.zookeeper = False
+        except ValueError:
             args.zookeeper = False
 
     if args.shard is None:
@@ -343,7 +347,10 @@ if __name__ == '__main__':
     if args.queries is None and os.path.isdir('queries'):
         args.queries = 'queries'
     elif args.queries is None:
-        args.queries = '/usr/share/clickhouse-test/queries'
+        if (os.path.isdir('/usr/local/share/clickhouse-test/queries')):
+            args.queries = '/usr/local/share/clickhouse-test/queries'
+        if (args.queries is None and os.path.isdir('/usr/share/clickhouse-test/queries')):
+            args.queries = '/usr/share/clickhouse-test/queries'
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
     if args.tmp is None:
@@ -352,5 +359,10 @@ if __name__ == '__main__':
     if args.client is None:
         args.client = args.binary + '-client'
         if args.configclient:
-            args.client += ' -c' + args.configclient
+            args.client += ' --config-file=' + args.configclient
+        if os.getenv("CLICKHOUSE_HOST"):
+            args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
+        if os.getenv("CLICKHOUSE_PORT_TCP"):
+            args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+
     main(args)

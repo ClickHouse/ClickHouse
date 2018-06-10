@@ -1,5 +1,7 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -20,11 +22,11 @@ static const auto max_array_size = 500000;
 
 
 FlatDictionary::FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-    DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty)
+    DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty, BlockPtr saved_block)
     : name{name}, dict_struct(dict_struct),
         source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
         require_nonempty(require_nonempty),
-        loaded_ids(initial_array_size, false)
+        loaded_ids(initial_array_size, false), saved_block{std::move(saved_block)}
 {
     createAttributes();
 
@@ -42,7 +44,7 @@ FlatDictionary::FlatDictionary(const std::string & name, const DictionaryStructu
 }
 
 FlatDictionary::FlatDictionary(const FlatDictionary & other)
-    : FlatDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
+    : FlatDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
 {
 }
 
@@ -117,9 +119,7 @@ void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedP
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
@@ -144,9 +144,7 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
 {
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     const auto & null_value = std::get<StringRef>(attribute.null_values);
 
@@ -162,9 +160,7 @@ void FlatDictionary::get##TYPE(\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -189,9 +185,7 @@ void FlatDictionary::getString(
 {
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -205,9 +199,7 @@ void FlatDictionary::get##TYPE(\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -232,9 +224,7 @@ void FlatDictionary::getString(
 {
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     FlatDictionary::getItemsImpl<StringRef, StringRef>(attribute, ids,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -279,41 +269,114 @@ void FlatDictionary::createAttributes()
             hierarchical_attribute = &attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
-                throw Exception{
-                    name + ": hierarchical attribute must be UInt64.",
-                    ErrorCodes::TYPE_MISMATCH};
+                throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 }
 
+void FlatDictionary::blockToAttributes(const Block &block)
+{
+    const auto & id_column = *block.safeGetByPosition(0).column;
+    element_count += id_column.size();
+
+    for (const auto attribute_idx : ext::range(0, attributes.size()))
+    {
+        const auto &attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+        auto &attribute = attributes[attribute_idx];
+
+        for (const auto row_idx : ext::range(0, id_column.size()))
+            setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
+    }
+}
+
+void FlatDictionary::updateData()
+{
+    if (!saved_block || saved_block->rows() == 0)
+    {
+        auto stream = source_ptr->loadUpdatedAll();
+        stream->readPrefix();
+
+        while (const auto block = stream->read())
+        {
+            /// We are using this to keep saved data if input stream consists of multiple blocks
+            if (!saved_block)
+                saved_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
+            {
+                const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
+                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->assumeMutable();
+                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+            }
+        }
+        stream->readSuffix();
+    }
+    else
+    {
+        auto stream = source_ptr->loadUpdatedAll();
+        stream->readPrefix();
+
+        while (const auto block = stream->read())
+        {
+            const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
+            const auto &update_id_column = *block.safeGetByPosition(0).column;
+
+            std::unordered_map<Key, std::vector<size_t>> update_ids;
+            for (size_t row = 0; row < update_id_column.size(); ++row)
+            {
+                const auto id = update_id_column.get64(row);
+                update_ids[id].push_back(row);
+            }
+
+            const size_t saved_rows = saved_id_column.size();
+            IColumn::Filter filter(saved_rows);
+            std::unordered_map<Key, std::vector<size_t>>::iterator it;
+
+            for (size_t row = 0; row < saved_id_column.size(); ++row)
+            {
+                auto id = saved_id_column.get64(row);
+                it = update_ids.find(id);
+
+                if (it != update_ids.end())
+                    filter[row] = 0;
+                else
+                    filter[row] = 1;
+            }
+
+            auto block_columns = block.mutateColumns();
+            for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
+            {
+                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
+                const auto & filtered_column = column->filter(filter, -1);
+
+                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
+            }
+
+            saved_block->setColumns(std::move(block_columns));
+        }
+        stream->readSuffix();
+    }
+
+    if (saved_block)
+        blockToAttributes(*saved_block.get());
+}
 
 void FlatDictionary::loadData()
 {
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
-
-    while (const auto block = stream->read())
+    if (!source_ptr->hasUpdateField())
     {
-        const auto & id_column = *block.safeGetByPosition(0).column;
+        auto stream = source_ptr->loadAll();
+        stream->readPrefix();
 
-        element_count += id_column.size();
+        while (const auto block = stream->read())
+            blockToAttributes(block);
 
-        for (const auto attribute_idx : ext::range(0, attributes.size()))
-        {
-            const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-            auto & attribute = attributes[attribute_idx];
-
-            for (const auto row_idx : ext::range(0, id_column.size()))
-                setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
-        }
+        stream->readSuffix();
     }
-
-    stream->readSuffix();
+    else
+        updateData();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{
-            name + ": dictionary source is empty and 'require_nonempty' property is set.",
-            ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 
@@ -454,9 +517,7 @@ template <typename T>
 void FlatDictionary::resize(Attribute & attribute, const Key id)
 {
     if (id >= max_array_size)
-        throw Exception{
-            name + ": identifier should be less than " + toString(max_array_size),
-            ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+        throw Exception{name + ": identifier should be less than " + toString(max_array_size), ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 
     auto & array = *std::get<ContainerPtrType<T>>(attribute.arrays);
     if (id >= array.size())
@@ -510,9 +571,7 @@ const FlatDictionary::Attribute & FlatDictionary::getAttribute(const std::string
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{
-            name + ": no such attribute '" + attribute_name + "'",
-            ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }

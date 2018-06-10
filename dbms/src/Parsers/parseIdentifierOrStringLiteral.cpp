@@ -10,12 +10,10 @@ namespace DB
 
 bool parseIdentifierOrStringLiteral(IParser::Pos & pos, Expected & expected, String & result)
 {
-    IParser::Pos begin = pos;
     ASTPtr res;
 
     if (!ParserIdentifier().parse(pos, res, expected))
     {
-        pos = begin;
         if (!ParserStringLiteral().parse(pos, res, expected))
             return false;
 

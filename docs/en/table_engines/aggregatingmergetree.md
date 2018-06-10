@@ -1,10 +1,11 @@
 # AggregatingMergeTree
 
-This engine differs from MergeTree in that the merge combines the states of aggregate functions stored in the table for rows with the same primary key value.
+This engine differs from `MergeTree` in that the merge combines the states of aggregate functions stored in the table for rows with the same primary key value.
 
-In order for this to work, it uses the AggregateFunction data type and the -State and -Merge modifiers for aggregate functions. Let's examine it more closely.
+For this to work, it uses the `AggregateFunction` data type, as well as `-State` and `-Merge` modifiers for aggregate functions. Let's examine it more closely.
 
-There is an AggregateFunction data type. It is a parametric data type. As parameters, the name of the aggregate function is passed, then the types of its arguments.
+There is an `AggregateFunction` data type. It is a parametric data type. As parameters, the name of the aggregate function is passed, then the types of its arguments.
+
 Examples:
 
 ```sql
@@ -19,12 +20,16 @@ CREATE TABLE t
 This type of column stores the state of an aggregate function.
 
 To get this type of value, use aggregate functions with the `State` suffix.
-Example: `uniqState(UserID), quantilesState(0.5, 0.9)(SendTiming)` – in contrast to the corresponding 'uniq' and 'quantiles' functions, these functions return the state, rather than the prepared value. In other words, they return an AggregateFunction type value.
 
-An AggregateFunction type value can't be output in Pretty formats. In other formats, these types of values are output as implementation-specific binary data. The AggregateFunction type values are not intended for output or saving in a dump.
+Example:
+`uniqState(UserID), quantilesState(0.5, 0.9)(SendTiming)`
 
-The only useful thing you can do with AggregateFunction type values is combine the states and get a result, which essentially means to finish aggregation. Aggregate functions with the 'Merge' suffix are used for this purpose.
-Example: `uniqMerge(UserIDState), where UserIDState has the AggregateFunction type`.
+In contrast to the corresponding `uniq` and `quantiles` functions, these functions return the state, rather than the prepared value. In other words, they return an `AggregateFunction` type value.
+
+An `AggregateFunction` type value can't be output in Pretty formats. In other formats, these types of values are output as implementation-specific binary data. The `AggregateFunction` type values are not intended for output or saving in a dump.
+
+The only useful thing you can do with `AggregateFunction` type values is combine the states and get a result, which essentially means to finish aggregation. Aggregate functions with the 'Merge' suffix are used for this purpose.
+Example: `uniqMerge(UserIDState), where UserIDState has the AggregateFunction` type.
 
 In other words, an aggregate function with the 'Merge' suffix takes a set of states, combines them, and returns the result.
 As an example, these two queries return the same result:
@@ -37,15 +42,15 @@ SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP
 
 There is an ` AggregatingMergeTree` engine. Its job during a merge is to combine the states of aggregate functions from different table rows with the same primary key value.
 
-You can't use a normal INSERT to insert a row in a table containing AggregateFunction columns, because you can't explicitly define the AggregateFunction value. Instead, use INSERT SELECT with '-State' aggregate functions for inserting data.
+You can't use a normal INSERT to insert a row in a table containing `AggregateFunction` columns, because you can't explicitly define the `AggregateFunction` value. Instead, use `INSERT SELECT` with `-State` aggregate functions for inserting data.
 
-With SELECT from an AggregatingMergeTree table, use GROUP BY and aggregate functions with the '-Merge' modifier in order to complete data aggregation.
+With SELECT from an `AggregatingMergeTree` table, use GROUP BY and aggregate functions with the '-Merge' modifier in order to complete data aggregation.
 
-You can use AggregatingMergeTree tables for incremental data aggregation, including for aggregated materialized views.
+You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
 Example:
 
-Creating a materialized AggregatingMergeTree view that tracks the 'test.visits' table:
+Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table:
 
 ```sql
 CREATE MATERIALIZED VIEW test.basic
@@ -59,13 +64,13 @@ FROM test.visits
 GROUP BY CounterID, StartDate;
 ```
 
-Inserting data in the 'test.visits' table. Data will also be inserted in the view, where it will be aggregated:
+Insert data in the `test.visits` table. Data will also be inserted in the view, where it will be aggregated:
 
 ```sql
 INSERT INTO test.visits ...
 ```
 
-Performing SELECT from the view using GROUP BY to finish data aggregation:
+Perform `SELECT` from the view using `GROUP BY` in order to complete data aggregation:
 
 ```sql
 SELECT

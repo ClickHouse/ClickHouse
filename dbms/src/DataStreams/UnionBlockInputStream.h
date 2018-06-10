@@ -82,36 +82,24 @@ public:
         children = inputs;
         if (additional_input_at_end)
             children.push_back(additional_input_at_end);
+
+        size_t num_children = children.size();
+        if (num_children > 1)
+        {
+            Block header = children.at(0)->getHeader();
+            for (size_t i = 1; i < num_children; ++i)
+                assertBlocksHaveEqualStructure(children[i]->getHeader(), header, "UNION");
+        }
     }
 
     String getName() const override { return "Union"; }
-
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Union(";
-
-        Strings children_ids(children.size());
-        for (size_t i = 0; i < children.size(); ++i)
-            children_ids[i] = children[i]->getID();
-
-        /// Order does not matter.
-        std::sort(children_ids.begin(), children_ids.end());
-
-        for (size_t i = 0; i < children_ids.size(); ++i)
-            res << (i == 0 ? "" : ", ") << children_ids[i];
-
-        res << ")";
-        return res.str();
-    }
-
 
     ~UnionBlockInputStream() override
     {
         try
         {
             if (!all_read)
-                cancel();
+                cancel(false);
 
             finalize();
         }
@@ -124,20 +112,25 @@ public:
     /** Different from the default implementation by trying to stop all sources,
       * skipping failed by execution.
       */
-    void cancel() override
+    void cancel(bool kill) override
     {
+        if (kill)
+            is_killed = true;
+
         bool old_val = false;
         if (!is_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
             return;
 
         //std::cerr << "cancelling\n";
-        processor.cancel();
+        processor.cancel(kill);
     }
 
     BlockExtraInfo getBlockExtraInfo() const override
     {
         return doGetBlockExtraInfo();
     }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     void finalize()
@@ -227,7 +220,7 @@ protected:
     void readSuffix() override
     {
         //std::cerr << "readSuffix\n";
-        if (!all_read && !is_cancelled.load(std::memory_order_seq_cst))
+        if (!all_read && !isCancelled())
             throw Exception("readSuffix called before all data is read", ErrorCodes::LOGICAL_ERROR);
 
         finalize();
@@ -291,7 +284,7 @@ private:
             ///  and the exception is lost.
 
             parent.output_queue.push(exception);
-            parent.cancel();    /// Does not throw exceptions.
+            parent.cancel(false);    /// Does not throw exceptions.
         }
 
         Self & parent;

@@ -7,3 +7,4 @@ Disallow: /deprecated/reference_en.html
 Disallow: /deprecated/reference_ru.html
 Allow: /
 Host: https://clickhouse.yandex
+Sitemap: https://clickhouse.yandex/docs/sitemap.xml

@@ -51,7 +51,7 @@ public:
 
         SipHash hash;
         hash.update(path_to_file.data(), path_to_file.size() + 1);
-        hash.update(reinterpret_cast<const char *>(&offset), sizeof(offset));
+        hash.update(offset);
         hash.get128(key.low, key.high);
 
         return key;
@@ -69,11 +69,10 @@ public:
         return res;
     }
 
-    void set(const Key & key, const MappedPtr & mapped)
+private:
+    void onRemoveOverflowWeightLoss(size_t weight_loss) override
     {
-        Base::set(key, mapped);
-        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, current_weight_lost);
-        current_weight_lost = 0;
+        ProfileEvents::increment(ProfileEvents::UncompressedCacheWeightLost, weight_loss);
     }
 };
 

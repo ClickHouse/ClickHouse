@@ -20,6 +20,6 @@ INSERT INTO test.test1 SELECT id, name FROM test.test2 ANY LEFT OUTER JOIN test.
 DROP TABLE test.test1;
 DROP TABLE test.test2;
 DROP TABLE test.test3;
-" 2>&1 | grep -F "Number of columns in INSERT SELECT doesn't match" | wc -l
+" 2>&1 | grep -F "Number of columns doesn't match" | wc -l
 
 $CLICKHOUSE_CLIENT --query="SELECT 1";

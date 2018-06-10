@@ -1,0 +1,37 @@
+<test>
+    <name>consistent_hashes</name>
+    <type>once</type>
+
+    <stop_conditions>
+        <any_of>
+            <min_time_not_changing_for_ms>1000</min_time_not_changing_for_ms>
+            <total_time_ms>5000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <max_rows_per_second />
+        <avg_rows_per_second />
+    </main_metric>
+
+    <substitutions>
+       <substitution>
+           <name>hash_func</name>
+           <values>
+               <value>yandexConsistentHash</value>
+               <value>jumpConsistentHash</value>
+           </values>
+       </substitution>
+       <substitution>
+           <name>buckets</name>
+           <values>
+               <value>2</value>
+               <value>500</value>
+               <value>65535</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT {hash_func}(number, {buckets}) FROM system.numbers LIMIT 1000000000</query>
+    <query>SELECT sumburConsistentHash(toUInt32(number), {buckets}) FROM system.numbers LIMIT 10000</query>
+</test>

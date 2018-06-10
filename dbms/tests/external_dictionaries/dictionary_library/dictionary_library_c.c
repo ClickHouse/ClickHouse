@@ -19,39 +19,79 @@ typedef struct
     CString * data;
 } ClickHouseLibCStrings;
 
-void * ClickHouseDictionary_v1_loadIds(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUInt64 * ids)
+typedef struct
 {
-    printf("loadIds c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, ids->size);
+    void (*log)(int, CString);
+} LibHolder;
+
+typedef struct
+{
+    LibHolder * lib;
+    int someField;
+} DataHolder;
+
+#define LOG(logger, format, ...)                  \
+    do                                            \
+    {                                             \
+        char buffer[128];                         \
+        sprintf(buffer, (format), ##__VA_ARGS__); \
+        (logger)(6, buffer);                      \
+    } while (0)
+
+
+void * ClickHouseDictionary_v3_loadIds(
+    void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, ClickHouseLibVectorUInt64 * ids)
+{
+    LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
+    LOG(lib->log, "loadIds c lib call ptr=%p size=%" PRIu64, data_ptr, ids->size);
     return 0;
 }
 
-void * ClickHouseDictionary_v1_loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
+void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns)
 {
-    printf("loadAll c lib call ptr=%p \n", data_ptr);
+    LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
+    LOG(lib->log, "loadAll c lib call ptr=%p", data_ptr);
     return 0;
 }
 
-void * ClickHouseDictionary_v1_loadKeys(void * data_ptr,
-    ClickHouseLibCStrings * settings,
-    ClickHouseLibCStrings * columns,
-    const ClickHouseLibVectorUInt64 * requested_rows)
+void * ClickHouseDictionary_v3_loadKeys(
+    void * data_ptr, ClickHouseLibCStrings * settings, ClickHouseLibCStrings * columns, const ClickHouseLibVectorUInt64 * requested_rows)
 {
-    printf("loadKeys c lib call ptr=%p size=%" PRIu64 "\n", data_ptr, requested_rows->size);
+    LibHolder * lib = ((DataHolder *)(data_ptr))->lib;
+    LOG(lib->log, "loadKeys c lib call ptr=%p size=%" PRIu64, data_ptr, requested_rows->size);
     return 0;
 }
 
-
-void * ClickHouseDictionary_v1_dataAllocate()
+void * ClickHouseDictionary_v3_libNew(ClickHouseLibCStrings * settings, void (*logFunc)(int, CString))
 {
-    int size = 100;
-    void * data_ptr = malloc(size);
-    printf("dataAllocate c lib call ptr=%p \n", data_ptr);
+    LibHolder * lib_ptr = (LibHolder *)malloc(sizeof(LibHolder));
+    lib_ptr->log = logFunc;
+    LOG(lib_ptr->log, "libNew c lib call lib_ptr=%p", lib_ptr);
+    return lib_ptr;
+}
+
+void ClickHouseDictionary_v3_libDelete(void * lib_ptr)
+{
+    LibHolder * lib = (LibHolder *)(lib_ptr);
+    LOG(lib->log, "libDelete c lib call lib_ptr=%p", lib_ptr);
+    free(lib_ptr);
+    return;
+}
+
+
+void * ClickHouseDictionary_v3_dataNew(void * lib_ptr)
+{
+    DataHolder * data_ptr = (DataHolder *)malloc(sizeof(DataHolder));
+    data_ptr->lib = (LibHolder *)lib_ptr;
+    data_ptr->someField = 42;
+    LOG(data_ptr->lib->log, "dataNew c lib call lib_ptr=%p data_ptr=%p", lib_ptr, data_ptr);
     return data_ptr;
 }
 
-void ClickHouseDictionary_v1_dataDelete(void * data_ptr)
+void ClickHouseDictionary_v3_dataDelete(void * lib_ptr, void * data_ptr)
 {
-    printf("dataDelete c lib call ptr=%p \n", data_ptr);
+    LibHolder * lib = (LibHolder *)(lib_ptr);
+    LOG(lib->log, "dataDelete c lib call lib_ptr=%p data_ptr=%p", lib_ptr, data_ptr);
     free(data_ptr);
     return;
 }

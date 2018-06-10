@@ -20,7 +20,7 @@ namespace DB
 StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         /// Table properties.
         { "database",                std::make_shared<DataTypeString>() },
         { "table",                   std::make_shared<DataTypeString>() },
@@ -43,7 +43,7 @@ StorageSystemReplicationQueue::StorageSystemReplicationQueue(const std::string &
         { "num_postponed",           std::make_shared<DataTypeUInt32>() },
         { "postpone_reason",         std::make_shared<DataTypeString>() },
         { "last_postpone_time",      std::make_shared<DataTypeDateTime>() },
-    };
+    }));
 }
 
 
@@ -113,8 +113,8 @@ BlockInputStreams StorageSystemReplicationQueue::read(
             const auto & entry = queue[j];
 
             Array parts_to_merge;
-            parts_to_merge.reserve(entry.parts_to_merge.size());
-            for (const auto & name : entry.parts_to_merge)
+            parts_to_merge.reserve(entry.source_parts.size());
+            for (const auto & name : entry.source_parts)
                 parts_to_merge.push_back(name);
 
             size_t col_num = 0;

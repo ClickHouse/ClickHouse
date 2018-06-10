@@ -46,10 +46,10 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     path(data_part->getFullPath())
 {
     /// Let's estimate total number of rows for progress bar.
-    size_t total_rows = 0;
     for (const auto & range : all_mark_ranges)
-        total_rows += range.end - range.begin;
-    total_rows *= storage.index_granularity;
+        total_marks_count += range.end - range.begin;
+
+    size_t total_rows = total_marks_count * storage.index_granularity;
 
     if (!quiet)
         LOG_TRACE(log, "Reading " << all_mark_ranges.size() << " ranges from part " << data_part->name
@@ -59,34 +59,40 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         : "")
         << " rows starting from " << all_mark_ranges.front().begin * storage.index_granularity);
 
-    setTotalRowsApprox(total_rows);
+    addTotalRowsApprox(total_rows);
+
+    header = storage.getSampleBlockForColumns(ordered_names);
+
+    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
+    /// NOTE: We may use similar code to implement non blocking ALTERs.
+    for (const auto & name_type : data_part->columns)
+    {
+        if (header.has(name_type.name))
+        {
+            auto & elem = header.getByName(name_type.name);
+            if (!elem.type->equals(*name_type.type))
+            {
+                elem.type = name_type.type;
+                elem.column = elem.type->createColumn();
+            }
+        }
+    }
+
+    injectVirtualColumns(header);
 }
 
-String MergeTreeBlockInputStream::getID() const
+
+Block MergeTreeBlockInputStream::getHeader() const
 {
-    std::stringstream res;
-    res << "MergeTree(" << path << ", columns";
-
-    for (const NameAndTypePair & column : columns)
-        res << ", " << column.name;
-
-    if (prewhere_actions)
-        res << ", prewhere, " << prewhere_actions->getID();
-
-    res << ", marks";
-
-    for (size_t i = 0; i < all_mark_ranges.size(); ++i)
-        res << ", " << all_mark_ranges[i].begin << ", " << all_mark_ranges[i].end;
-
-    res << ")";
-    return res.str();
+    return header;
 }
+
 
 bool MergeTreeBlockInputStream::getNewTask()
 try
 {
-    /// Produce only one task
-    if (!is_first_task)
+    /// Produce no more than one task
+    if (!is_first_task || total_marks_count == 0)
     {
         finish();
         return false;
@@ -135,8 +141,9 @@ try
         if (!column_names.empty())
             storage.check(data_part->columns, column_names);
 
-        pre_columns = storage.getColumnsList().addTypes(pre_column_names);
-        columns = storage.getColumnsList().addTypes(column_names);
+        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
+        pre_columns = physical_columns.addTypes(pre_column_names);
+        columns = physical_columns.addTypes(column_names);
     }
     else
     {

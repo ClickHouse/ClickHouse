@@ -3,150 +3,16 @@
 #include <future>
 #include <memory>
 #include <vector>
-#include <zookeeper.h>
+#include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Poco/Event.h>
 
 
 namespace zkutil
 {
 
-using ACLPtr = const ACL_vector *;
-using Stat = ::Stat;
-
-struct Op
-{
-public:
-    Op() : data(new zoo_op_t) {}
-    virtual ~Op() {}
-
-    virtual std::unique_ptr<Op> clone() const = 0;
-
-    virtual std::string getPath() const = 0;
-
-    virtual std::string describe() const = 0;
-
-    std::unique_ptr<zoo_op_t> data;
-
-    struct Remove;
-    struct Create;
-    struct SetData;
-    struct Check;
-};
-
-struct Op::Remove : public Op
-{
-    Remove(const std::string & path_, int32_t version_) :
-        path(path_), version(version_)
-    {
-        zoo_delete_op_init(data.get(), path.c_str(), version);
-    }
-
-    std::unique_ptr<Op> clone() const override
-    {
-        return std::unique_ptr<zkutil::Op>(new Remove(path, version));
-    }
-
-    std::string getPath() const override { return path; }
-
-    std::string describe() const override { return "command: remove, path: " + path; }
-
-private:
-    std::string path;
-    int32_t version;
-};
-
-struct Op::Create : public Op
-{
-    Create(const std::string & path_pattern_, const std::string & value_, ACLPtr acl_, int32_t flags_);
-
-    std::unique_ptr<Op> clone() const override
-    {
-        return std::unique_ptr<zkutil::Op>(new Create(path_pattern, value, acl, flags));
-    }
-
-    std::string getPathCreated() { return created_path.data(); }
-
-    std::string getPath() const override { return path_pattern; }
-
-    std::string describe() const override
-    {
-        return     "command: create"
-                ", path: " + path_pattern +
-                ", value: " + value;
-    }
-
-private:
-    std::string path_pattern;
-    std::string value;
-    ACLPtr acl;
-    int32_t flags;
-    std::vector<char> created_path;
-};
-
-struct Op::SetData : public Op
-{
-    SetData(const std::string & path_, const std::string & value_, int32_t version_) :
-        path(path_), value(value_), version(version_)
-    {
-        zoo_set_op_init(data.get(), path.c_str(), value.c_str(), value.size(), version, &stat);
-    }
-
-    std::unique_ptr<Op> clone() const override
-    {
-        return std::unique_ptr<zkutil::Op>(new SetData(path, value, version));
-    }
-
-    std::string getPath() const override { return path; }
-
-    std::string describe() const override
-    {
-        return
-            "command: set"
-            ", path: " + path +
-            ", value: " + value +
-            ", version: " + std::to_string(data->set_op.version);
-    }
-
-private:
-    std::string path;
-    std::string value;
-    int32_t version;
-    Stat stat;
-};
-
-struct Op::Check : public Op
-{
-    Check(const std::string & path_, int32_t version_) :
-        path(path_), version(version_)
-    {
-        zoo_check_op_init(data.get(), path.c_str(), version);
-    }
-
-    std::unique_ptr<Op> clone() const override
-    {
-        return std::unique_ptr<zkutil::Op>(new Check(path, version));
-    }
-
-    std::string getPath() const override { return path; }
-
-    std::string describe() const override { return "command: check, path: " + path; }
-
-private:
-    std::string path;
-    int32_t version;
-};
-
-struct OpResult : public zoo_op_result_t
-{
-    /// Pointers in this class point to fields of class Op.
-    /// Op instances have the same (or longer lifetime), therefore destructor is not required.
-};
-
-using OpPtr = std::unique_ptr<Op>;
-using Ops = std::vector<OpPtr>;
-using OpResults = std::vector<OpResult>;
-using OpResultsPtr = std::shared_ptr<OpResults>;
+using Stat = ZooKeeperImpl::ZooKeeper::Stat;
 using Strings = std::vector<std::string>;
+
 
 namespace CreateMode
 {
@@ -158,23 +24,44 @@ namespace CreateMode
 
 using EventPtr = std::shared_ptr<Poco::Event>;
 
-class ZooKeeper;
-
 /// Callback to call when the watch fires.
 /// Because callbacks are called in the single "completion" thread internal to libzookeeper,
 /// they must execute as quickly as possible (preferably just set some notification).
-/// Parameters:
-/// zookeeper - zookeeper session to which the fired watch belongs
-/// type - event type, one of the *_EVENT constants from zookeeper.h
-/// state - session connection state, one of the *_STATE constants from zookeeper.h
-/// path - znode path to which the change happened. if event == ZOO_SESSION_EVENT it is either NULL or empty string.
-using WatchCallback = std::function<void(ZooKeeper & zookeeper, int type, int state, const char * path)>;
+using WatchCallback = ZooKeeperImpl::ZooKeeper::WatchCallback;
 
+using Request = ZooKeeperImpl::ZooKeeper::Request;
+using Response = ZooKeeperImpl::ZooKeeper::Response;
 
-/// Returns first op which code != ZOK or throws an exception
-/// ZooKeeper client sets correct OP codes if the transaction fails because of logical (user) errors like ZNODEEXISTS
-/// If it is failed because of network error, for example, OP codes is not set.
-/// Therefore you should make zkutil::isUserError() check before the function invocation.
-size_t getFailedOpIndex(const OpResultsPtr & op_results, int32_t transaction_return_code);
+using RequestPtr = ZooKeeperImpl::ZooKeeper::RequestPtr;
+using ResponsePtr = ZooKeeperImpl::ZooKeeper::ResponsePtr;
+
+using Requests = ZooKeeperImpl::ZooKeeper::Requests;
+using Responses = ZooKeeperImpl::ZooKeeper::Responses;
+
+using CreateRequest = ZooKeeperImpl::ZooKeeper::CreateRequest;
+using RemoveRequest = ZooKeeperImpl::ZooKeeper::RemoveRequest;
+using ExistsRequest = ZooKeeperImpl::ZooKeeper::ExistsRequest;
+using GetRequest = ZooKeeperImpl::ZooKeeper::GetRequest;
+using SetRequest = ZooKeeperImpl::ZooKeeper::SetRequest;
+using ListRequest = ZooKeeperImpl::ZooKeeper::ListRequest;
+using CheckRequest = ZooKeeperImpl::ZooKeeper::CheckRequest;
+
+using CreateResponse = ZooKeeperImpl::ZooKeeper::CreateResponse;
+using RemoveResponse = ZooKeeperImpl::ZooKeeper::RemoveResponse;
+using ExistsResponse = ZooKeeperImpl::ZooKeeper::ExistsResponse;
+using GetResponse = ZooKeeperImpl::ZooKeeper::GetResponse;
+using SetResponse = ZooKeeperImpl::ZooKeeper::SetResponse;
+using ListResponse = ZooKeeperImpl::ZooKeeper::ListResponse;
+using CheckResponse = ZooKeeperImpl::ZooKeeper::CheckResponse;
+
+/// Gets multiple asynchronous results
+/// Each pair, the first is path, the second is response eg. CreateResponse, RemoveResponse
+template <typename R>
+using AsyncResponses = std::vector<std::pair<std::string, std::future<R>>>;
+
+RequestPtr makeCreateRequest(const std::string & path, const std::string & data, int create_mode);
+RequestPtr makeRemoveRequest(const std::string & path, int version);
+RequestPtr makeSetRequest(const std::string & path, const std::string & data, int version);
+RequestPtr makeCheckRequest(const std::string & path, int version);
 
 }

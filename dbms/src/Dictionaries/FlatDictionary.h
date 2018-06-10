@@ -15,11 +15,13 @@
 namespace DB
 {
 
+using BlockPtr = std::shared_ptr<Block>;
+
 class FlatDictionary final : public IDictionary
 {
 public:
     FlatDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty);
+        DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty, BlockPtr saved_block = nullptr);
 
     FlatDictionary(const FlatDictionary & other);
 
@@ -153,6 +155,8 @@ private:
     };
 
     void createAttributes();
+    void blockToAttributes(const Block & block);
+    void updateData();
     void loadData();
 
     template <typename T>
@@ -219,6 +223,8 @@ private:
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 
     std::exception_ptr creation_exception;
+
+    BlockPtr saved_block;
 };
 
 }

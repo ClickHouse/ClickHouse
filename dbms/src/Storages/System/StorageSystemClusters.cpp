@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Common/DNSResolver.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -14,7 +15,7 @@ namespace DB
 StorageSystemClusters::StorageSystemClusters(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         { "cluster",      std::make_shared<DataTypeString>() },
         { "shard_num",    std::make_shared<DataTypeUInt32>() },
         { "shard_weight", std::make_shared<DataTypeUInt32>() },
@@ -24,8 +25,8 @@ StorageSystemClusters::StorageSystemClusters(const std::string & name_)
         { "port",         std::make_shared<DataTypeUInt16>() },
         { "is_local",     std::make_shared<DataTypeUInt8>() },
         { "user",         std::make_shared<DataTypeString>() },
-        { "default_database", std::make_shared<DataTypeString>() }
-    };
+        { "default_database", std::make_shared<DataTypeString>() },
+    }));
 }
 
 
@@ -51,7 +52,7 @@ BlockInputStreams StorageSystemClusters::read(
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.weight));
         res_columns[i++]->insert(static_cast<UInt64>(address.replica_num));
         res_columns[i++]->insert(address.host_name);
-        res_columns[i++]->insert(address.resolved_address.host().toString());
+        res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
         res_columns[i++]->insert(static_cast<UInt64>(address.port));
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.isLocal()));
         res_columns[i++]->insert(address.user);

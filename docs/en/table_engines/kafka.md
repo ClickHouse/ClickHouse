@@ -1,6 +1,6 @@
 # Kafka
 
-The engine works with [Apache Kafka](http://kafka.apache.org/).
+This engine works with [Apache Kafka](http://kafka.apache.org/).
 
 Kafka lets you:
 
@@ -9,7 +9,7 @@ Kafka lets you:
 - Process streams as they become available.
 
 ```
-Kafka(broker_list, topic_list, group_name, format[, schema])
+Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
 ```
 
 Parameters:
@@ -17,13 +17,14 @@ Parameters:
 - `broker_list` – A comma-separated list of brokers (`localhost:9092`).
 - `topic_list` – A list of Kafka topics (`my_topic`).
 - `group_name` – A group of Kafka consumers (`group1`). Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
-- `--format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`.
-- `schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root ` schema.capnp:Message` object.
+- `--format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section.
+- `schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
 
 Example:
 
 ```sql
-CREATE TABLE queue (
+  CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
@@ -34,9 +35,9 @@ CREATE TABLE queue (
 
 The delivered messages are tracked automatically, so each message in a group is only counted once. If you want to get the data twice, then create a copy of the table with another group name.
 
-Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. For more information, see [http://kafka.apache.org/intro](http://kafka.apache.org/intro).
+Groups are flexible and synced on the cluster. For instance, if you have 10 topics and 5 copies of a table in a cluster, then each copy gets 2 topics. If the number of copies changes, the topics are redistributed across the copies automatically. Read more about this at [http://kafka.apache.org/intro](http://kafka.apache.org/intro).
 
-`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. For this purpose, the following was done:
+`SELECT` is not particularly useful for reading messages (except for debugging), because each message can be read only once. It is more practical to create real-time threads using materialized views. To do this:
 
 1. Use the engine to create a Kafka consumer and consider it a data stream.
 2. Create a table with the desired structure.
@@ -47,7 +48,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 Example:
 
 ```sql
-CREATE TABLE queue (
+  CREATE TABLE queue (
     timestamp UInt64,
     level String,
     message String
@@ -63,17 +64,37 @@ CREATE TABLE queue (
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;
 
-SELECT level, sum(total) FROM daily GROUP BY level;
+  SELECT level, sum(total) FROM daily GROUP BY level;
 ```
 
-To improve performance, received messages are grouped into blocks the size of [max_block_size](../operations/settings/settings.md#settings-settings-max_insert_block_size). If the block wasn't formed within [ stream_flush_interval_ms](../operations/settings/settings.md#settings-settings_stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../operations/settings/settings.md#settings-settings-max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../operations/settings/settings.md#settings-settings_stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
 ```
-DETACH TABLE consumer;
-ATTACH MATERIALIZED VIEW consumer;
+  DETACH TABLE consumer;
+  ATTACH MATERIALIZED VIEW consumer;
 ```
 
 If you want to change the target table by using ` ALTER`materialized view, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+
+## Configuration
+
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_topic_*`). The global configuration is applied first, and the topic-level configuration is second (if it exists).
+
+```xml
+  <!--  Global configuration options for all tables of Kafka engine type -->
+  <kafka>
+    <debug>cgrp</debug>
+    <auto_offset_reset>smallest</auto_offset_reset>
+  </kafka>
+
+  <!-- Configuration specific for topic "logs" -->
+  <kafka_topic_logs>
+    <retry_backoff_ms>250</retry_backoff_ms>
+    <fetch_min_bytes>100000</fetch_min_bytes>
+  </kafka_topic_logs>
+```
+
+For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
 

@@ -25,12 +25,12 @@ ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s)
             ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 }
 
-MutableColumnPtr ColumnConst::convertToFullColumn() const
+ColumnPtr ColumnConst::convertToFullColumn() const
 {
     return data->replicate(Offsets(1, s));
 }
 
-MutableColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
+ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
 {
     if (s != filt.size())
         throw Exception("Size of filter (" + toString(filt.size()) + ") doesn't match size of column (" + toString(s) + ")",
@@ -39,7 +39,7 @@ MutableColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_
     return ColumnConst::create(data, countBytesInFilter(filt));
 }
 
-MutableColumnPtr ColumnConst::replicate(const Offsets & offsets) const
+ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 {
     if (s != offsets.size())
         throw Exception("Size of offsets (" + toString(offsets.size()) + ") doesn't match size of column (" + toString(s) + ")",
@@ -49,7 +49,7 @@ MutableColumnPtr ColumnConst::replicate(const Offsets & offsets) const
     return ColumnConst::create(data, replicated_size);
 }
 
-MutableColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
 {
     if (limit == 0)
         limit = s;

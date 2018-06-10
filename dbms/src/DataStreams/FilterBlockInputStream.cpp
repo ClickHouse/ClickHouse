@@ -17,31 +17,36 @@ namespace ErrorCodes
 }
 
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, ssize_t filter_column_)
-    : expression(expression_), filter_column(filter_column_)
+FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name)
+    : expression(expression_)
 {
     children.push_back(input);
-}
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name_)
-    : expression(expression_), filter_column(-1), filter_column_name(filter_column_name_)
-{
-    children.push_back(input);
+    /// Determine position of filter column.
+    header = input->getHeader();
+    expression->execute(header);
+
+    filter_column = header.getPositionByName(filter_column_name);
+    auto & column_elem = header.safeGetByPosition(filter_column);
+
+    /// Isn't the filter already constant?
+    if (column_elem.column)
+        constant_filter_description = ConstantFilterDescription(*column_elem.column);
+
+    if (!constant_filter_description.always_false
+        && !constant_filter_description.always_true)
+    {
+        /// Replace the filter column to a constant with value 1.
+        FilterDescription filter_description_check(*column_elem.column);
+        column_elem.column = column_elem.type->createColumnConst(header.rows(), UInt64(1));
+    }
 }
 
 
 String FilterBlockInputStream::getName() const { return "Filter"; }
 
 
-String FilterBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "Filter(" << children.back()->getID() << ", " << expression->getID() << ", " << filter_column << ", " << filter_column_name << ")";
-    return res.str();
-}
-
-
-const Block & FilterBlockInputStream::getTotals()
+Block FilterBlockInputStream::getTotals()
 {
     if (IProfilingBlockInputStream * child = dynamic_cast<IProfilingBlockInputStream *>(&*children.back()))
     {
@@ -53,37 +58,18 @@ const Block & FilterBlockInputStream::getTotals()
 }
 
 
+Block FilterBlockInputStream::getHeader() const
+{
+    return header;
+}
+
+
 Block FilterBlockInputStream::readImpl()
 {
     Block res;
 
-    if (is_first)
-    {
-        is_first = false;
-
-        const Block & sample_block = expression->getSampleBlock();
-
-        /// Find the current position of the filter column in the block.
-        /** sample_block has the result structure of evaluating the expression.
-          * But this structure does not necessarily match expression->execute(res) below,
-          *  because the expression can be applied to a block that also contains additional,
-          *  columns unnecessary for this expression, but needed later, in the next stages of the query execution pipeline.
-          * There will be no such columns in sample_block.
-          * Therefore, the position of the filter column in it can be different.
-          */
-        ssize_t filter_column_in_sample_block = filter_column;
-        if (filter_column_in_sample_block == -1)
-            filter_column_in_sample_block = sample_block.getPositionByName(filter_column_name);
-
-        /// Let's check if the filter column is a constant containing 0 or 1.
-        ColumnPtr column = sample_block.safeGetByPosition(filter_column_in_sample_block).column;
-
-        if (column)
-            constant_filter_description = ConstantFilterDescription(*column);
-
-        if (constant_filter_description.always_false)
-            return res;
-    }
+    if (constant_filter_description.always_false)
+        return res;
 
     /// Until non-empty block after filtering or end of stream.
     while (1)
@@ -96,10 +82,6 @@ Block FilterBlockInputStream::readImpl()
 
         if (constant_filter_description.always_true)
             return res;
-
-        /// Find the current position of the filter column in the block.
-        if (filter_column == -1)
-            filter_column = res.getPositionByName(filter_column_name);
 
         size_t columns = res.columns();
         ColumnPtr column = res.safeGetByPosition(filter_column).column;

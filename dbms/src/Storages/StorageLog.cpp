@@ -62,17 +62,15 @@ public:
 
     String getName() const override { return "Log"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream res;
-        res << "Log(" << storage.getTableName() << ", " << &storage << ", " << mark_number << ", " << rows_limit;
+        Block res;
 
         for (const auto & name_type : columns)
-            res << ", " << name_type.name;
+            res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
-        res << ")";
-        return res.str();
-    }
+        return Nested::flatten(res);
+    };
 
 protected:
     Block readImpl() override;
@@ -104,6 +102,7 @@ private:
     FileStreams streams;
 
     void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
+
 };
 
 
@@ -129,6 +128,7 @@ public:
         }
     }
 
+    Block getHeader() const override { return storage.getSampleBlock(); }
     void write(const Block & block) override;
     void writeSuffix() override;
 
@@ -359,12 +359,9 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
 StorageLog::StorageLog(
     const std::string & path_,
     const std::string & name_,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_,
+    const ColumnsDescription & columns_,
     size_t max_compress_block_size_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_},
+    : IStorage{columns_},
     path(path_), name(name_),
     max_compress_block_size(max_compress_block_size_),
     file_checker(path + escapeForFileName(name) + '/' + "sizes.json")
@@ -375,7 +372,7 @@ StorageLog::StorageLog(
      /// create files if they do not exist
     Poco::File(path + escapeForFileName(name) + '/').createDirectories();
 
-    for (const auto & column : getColumnsList())
+    for (const auto & column : getColumns().getAllPhysical())
         addFiles(column.name, *column.type);
 
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
@@ -466,11 +463,34 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
+void StorageLog::truncate(const ASTPtr &)
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+
+    String table_dir = path + escapeForFileName(name);
+
+    files.clear();
+    file_count = 0;
+    loaded_marks = false;
+
+    std::vector<Poco::File> data_files;
+    Poco::File(table_dir).list(data_files);
+
+    for (auto & file : data_files)
+        file.remove(false);
+
+    for (const auto  & column : getColumns().getAllPhysical())
+        addFiles(column.name, *column.type);
+
+    file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+    marks_file = Poco::File(table_dir + "/" + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+}
+
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
-    const String & column_name = columns.front().name;
-    const IDataType & column_type = *columns.front().type;
+    const String & column_name = getColumns().ordinary.front().name;
+    const IDataType & column_type = *getColumns().ordinary.front().type;
     String filename;
 
     /** We take marks from first column.
@@ -490,7 +510,6 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
     return it->second.marks;
 }
 
-
 BlockInputStreams StorageLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
@@ -503,7 +522,7 @@ BlockInputStreams StorageLog::read(
     processed_stage = QueryProcessingStage::FetchColumns;
     loadMarks();
 
-    NamesAndTypesList columns = Nested::collect(getColumnsList().addTypes(column_names));
+    NamesAndTypesList all_columns = Nested::collect(getColumns().getAllPhysical().addTypes(column_names));
 
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
@@ -527,7 +546,7 @@ BlockInputStreams StorageLog::read(
 
         res.emplace_back(std::make_shared<LogBlockInputStream>(
             max_block_size,
-            columns,
+            all_columns,
             *this,
             mark_begin,
             rows_end - rows_begin,
@@ -536,7 +555,6 @@ BlockInputStreams StorageLog::read(
 
     return res;
 }
-
 
 BlockOutputStreamPtr StorageLog::write(
     const ASTPtr & /*query*/, const Settings & /*settings*/)
@@ -563,7 +581,6 @@ void registerStorageLog(StorageFactory & factory)
 
         return StorageLog::create(
             args.data_path, args.table_name, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults,
             args.context.getSettings().max_compress_block_size);
     });
 }

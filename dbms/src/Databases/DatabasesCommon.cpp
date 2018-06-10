@@ -16,6 +16,9 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int TABLE_ALREADY_EXISTS;
+    extern const int UNKNOWN_TABLE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -55,7 +58,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     const String & description_for_error_message)
 {
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message);
+    ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.attach = true;
@@ -67,7 +70,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     if (!ast_create_query.columns)
         throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
 
-    InterpreterCreateQuery::ColumnsInfo columns_info = InterpreterCreateQuery::getColumnsInfo(*ast_create_query.columns, context);
+    ColumnsDescription columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns, context);
 
     return
     {
@@ -75,9 +78,95 @@ std::pair<String, StoragePtr> createTableFromDefinition(
         StorageFactory::instance().get(
             ast_create_query,
             database_data_path, ast_create_query.table, database_name, context, context.getGlobalContext(),
-            columns_info.columns, columns_info.materialized_columns, columns_info.alias_columns, columns_info.column_defaults,
+            columns,
             true, has_force_restore_data_flag)
     };
+}
+
+
+bool DatabaseWithOwnTablesBase::isTableExist(
+    const Context & /*context*/,
+    const String & table_name) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return tables.find(table_name) != tables.end();
+}
+
+StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
+    const Context & /*context*/,
+    const String & table_name) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    auto it = tables.find(table_name);
+    if (it == tables.end())
+        return {};
+    return it->second;
+}
+
+DatabaseIteratorPtr DatabaseWithOwnTablesBase::getIterator(const Context & /*context*/)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return std::make_unique<DatabaseSnapshotIterator>(tables);
+}
+
+bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    return tables.empty();
+}
+
+StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
+{
+    StoragePtr res;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        auto it = tables.find(table_name);
+        if (it == tables.end())
+            throw Exception("Table " + name + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+        res = it->second;
+        tables.erase(it);
+    }
+
+    return res;
+}
+
+void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    if (!tables.emplace(table_name, table).second)
+        throw Exception("Table " + name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+void DatabaseWithOwnTablesBase::shutdown()
+{
+    /// You can not hold a lock during shutdown.
+    /// Because inside `shutdown` function tables can work with database, and mutex is not recursive.
+
+    Tables tables_snapshot;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        tables_snapshot = tables;
+    }
+
+    for (const auto & kv : tables_snapshot)
+    {
+        kv.second->shutdown();
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    tables.clear();
+}
+
+DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
+{
+    try
+    {
+        shutdown();
+    }
+    catch(...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

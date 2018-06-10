@@ -21,7 +21,7 @@ void throwExceptionForIncompletelyParsedValue(
         message_buf << " at begin of string";
 
     if (to_type.isNumber())
-        message_buf << ". Note: there are to" << to_type.getName() << "OrZero function, which returns zero instead of throwing exception.";
+        message_buf << ". Note: there are to" << to_type.getName() << "OrZero and to" << to_type.getName() << "OrNull functions, which returns zero/NULL instead of throwing exception.";
 
     throw Exception(message_buf.str(), ErrorCodes::CANNOT_PARSE_TEXT);
 }
@@ -47,7 +47,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFixedString>();
 
     factory.registerFunction<FunctionToUnixTimestamp>();
-    factory.registerFunction<FunctionBuilderCast>();
+    factory.registerFunction<FunctionBuilderCast>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToUInt8OrZero>();
     factory.registerFunction<FunctionToUInt16OrZero>();
