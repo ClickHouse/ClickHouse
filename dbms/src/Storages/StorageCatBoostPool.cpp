@@ -4,7 +4,7 @@
 
 #include <Storages/StorageCatBoostPool.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -34,7 +34,7 @@ public:
             : file_name(file_name), format_name(format_name)
     {
         read_buf = std::make_unique<ReadBufferFromFile>(file_name);
-        reader = FormatFactory().getInput(format_name, *read_buf, sample_block, context, max_block_size);
+        reader = FormatFactory::instance().getInput(format_name, *read_buf, sample_block, context, max_block_size);
     }
 
     String getName() const override

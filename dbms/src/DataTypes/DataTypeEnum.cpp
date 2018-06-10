@@ -1,5 +1,5 @@
 #include <IO/WriteBufferFromString.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>

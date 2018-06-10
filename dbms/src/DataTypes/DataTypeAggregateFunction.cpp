@@ -7,7 +7,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
 
