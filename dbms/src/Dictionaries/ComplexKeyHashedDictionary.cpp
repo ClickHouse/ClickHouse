@@ -17,9 +17,9 @@ namespace ErrorCodes
 
 ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
     const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
-    const DictionaryLifetime dict_lifetime, bool require_nonempty)
+    const DictionaryLifetime dict_lifetime, bool require_nonempty, BlockPtr saved_block)
     : name{name}, dict_struct(dict_struct), source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
-    require_nonempty(require_nonempty)
+    require_nonempty(require_nonempty), saved_block{std::move(saved_block)}
 {
 
     createAttributes();
@@ -38,7 +38,7 @@ ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(
 }
 
 ComplexKeyHashedDictionary::ComplexKeyHashedDictionary(const ComplexKeyHashedDictionary & other)
-    : ComplexKeyHashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
+    : ComplexKeyHashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty, other.saved_block}
 {
 }
 
@@ -51,9 +51,7 @@ void ComplexKeyHashedDictionary::get##TYPE(\
     \
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
@@ -82,9 +80,7 @@ void ComplexKeyHashedDictionary::getString(
 
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -102,9 +98,7 @@ void ComplexKeyHashedDictionary::get##TYPE(\
     \
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, key_columns,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -131,9 +125,7 @@ void ComplexKeyHashedDictionary::getString(
 
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -149,9 +141,7 @@ void ComplexKeyHashedDictionary::get##TYPE(\
     \
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, key_columns,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -178,9 +168,7 @@ void ComplexKeyHashedDictionary::getString(
 
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -221,69 +209,155 @@ void ComplexKeyHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{
-                name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(), ErrorCodes::TYPE_MISMATCH};
     }
 }
 
-void ComplexKeyHashedDictionary::loadData()
+void ComplexKeyHashedDictionary::blockToAttributes(const Block & block)
 {
-    auto stream = source_ptr->loadAll();
-    stream->readPrefix();
+    /// created upfront to avoid excess allocations
+    const auto keys_size = dict_struct.key->size();
+    StringRefs keys(keys_size);
 
+    const auto attributes_size = attributes.size();
+    const auto rows = block.rows();
+    element_count += rows;
+
+    const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
+        [&](const size_t attribute_idx)
+        {
+            return block.safeGetByPosition(attribute_idx).column;
+        });
+
+    const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
+        [&](const size_t attribute_idx)
+        {
+            return block.safeGetByPosition(keys_size + attribute_idx).column;
+        });
+
+    for (const auto row_idx : ext::range(0, rows))
+    {
+        /// calculate key once per row
+        const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys, keys_pool);
+
+        auto should_rollback = false;
+
+        for (const auto attribute_idx : ext::range(0, attributes_size))
+        {
+            const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
+            auto &attribute = attributes[attribute_idx];
+            const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
+            if (!inserted)
+                should_rollback = true;
+        }
+
+        /// @note on multiple equal keys the mapped value for the first one is stored
+        if (should_rollback)
+            keys_pool.rollback(key.size);
+    }
+}
+
+void ComplexKeyHashedDictionary::updateData()
+{
     /// created upfront to avoid excess allocations
     const auto keys_size = dict_struct.key->size();
     StringRefs keys(keys_size);
 
     const auto attributes_size = attributes.size();
 
-    while (const auto block = stream->read())
+    if (!saved_block || saved_block->rows() == 0)
     {
-        const auto rows = block.rows();
-        element_count += rows;
+        auto stream = source_ptr->loadUpdatedAll();
+        stream->readPrefix();
 
-        const auto key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size),
-            [&] (const size_t attribute_idx)
-            {
-                return block.safeGetByPosition(attribute_idx).column;
-            });
-
-        const auto attribute_column_ptrs = ext::map<Columns>(ext::range(0, attributes_size),
-            [&] (const size_t attribute_idx)
-            {
-                return block.safeGetByPosition(keys_size + attribute_idx).column;
-            });
-
-        for (const auto row_idx : ext::range(0, rows))
+        while (const auto block = stream->read())
         {
-            /// calculate key once per row
-            const auto key = placeKeysInPool(row_idx, key_column_ptrs, keys, keys_pool);
-
-            auto should_rollback = false;
-
-            for (const auto attribute_idx : ext::range(0, attributes_size))
+            /// We are using this method to keep saved data if input stream consists of multiple blocks
+            if (!saved_block)
+                saved_block = std::make_shared<DB::Block>(block.cloneEmpty());
+            for (const auto attribute_idx : ext::range(0, keys_size + attributes_size))
             {
-                const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
-                auto & attribute = attributes[attribute_idx];
-                const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
-                if (!inserted)
-                    should_rollback = true;
+                const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
+                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->assumeMutable();
+                saved_column->insertRangeFrom(update_column, 0, update_column.size());
+            }
+        }
+        stream->readSuffix();
+    }
+    else
+    {
+        auto stream = source_ptr->loadUpdatedAll();
+
+        stream->readPrefix();
+        while (const auto block = stream->read())
+        {
+            const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
+            {
+                return saved_block->safeGetByPosition(key_idx).column;
+            });
+
+            const auto update_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
+            {
+                return block.safeGetByPosition(key_idx).column;
+            });
+
+            Arena temp_key_pool;
+            ContainerType <std::vector<size_t>> update_key_hash;
+
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                const auto u_key = placeKeysInPool(i, update_key_column_ptrs, keys, temp_key_pool);
+                update_key_hash[u_key].push_back(i);
             }
 
-            /// @note on multiple equal keys the mapped value for the first one is stored
-            if (should_rollback)
-                keys_pool.rollback(key.size);
-        }
+            const size_t rows = saved_block->rows();
+            IColumn::Filter filter(rows);
 
+            for (size_t i = 0; i < saved_block->rows(); ++i)
+            {
+                const auto s_key = placeKeysInPool(i, saved_key_column_ptrs, keys, temp_key_pool);
+                auto it = update_key_hash.find(s_key);
+                if (it != std::end(update_key_hash))
+                    filter[i] = 0;
+                else
+                    filter[i] = 1;
+            }
+
+            auto block_columns = block.mutateColumns();
+            for (const auto attribute_idx : ext::range(0, keys_size + attributes_size))
+            {
+                auto & column = saved_block->safeGetByPosition(attribute_idx).column;
+                const auto & filtered_column = column->filter(filter, -1);
+
+                block_columns[attribute_idx]->insertRangeFrom(*filtered_column.get(), 0, filtered_column->size());
+            }
+
+            saved_block->setColumns(std::move(block_columns));
+        }
+        stream->readSuffix();
     }
 
-    stream->readSuffix();
+    if (saved_block)
+        blockToAttributes(*saved_block.get());
+}
+
+void ComplexKeyHashedDictionary::loadData()
+{
+    if (!source_ptr->hasUpdateField())
+    {
+        auto stream = source_ptr->loadAll();
+        stream->readPrefix();
+
+        while (const auto block = stream->read())
+            blockToAttributes(block);
+
+        stream->readSuffix();
+    }
+    else
+        updateData();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{
-            name + ": dictionary source is empty and 'require_nonempty' property is set.",
-            ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -460,9 +534,7 @@ const ComplexKeyHashedDictionary::Attribute & ComplexKeyHashedDictionary::getAtt
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{
-            name + ": no such attribute '" + attribute_name + "'",
-            ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -520,18 +592,18 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8: return getKeys<UInt8>(attribute); break;
-        case AttributeUnderlyingType::UInt16: return getKeys<UInt16>(attribute); break;
-        case AttributeUnderlyingType::UInt32: return getKeys<UInt32>(attribute); break;
-        case AttributeUnderlyingType::UInt64: return getKeys<UInt64>(attribute); break;
-        case AttributeUnderlyingType::UInt128: return getKeys<UInt128>(attribute); break;
-        case AttributeUnderlyingType::Int8: return getKeys<Int8>(attribute); break;
-        case AttributeUnderlyingType::Int16: return getKeys<Int16>(attribute); break;
-        case AttributeUnderlyingType::Int32: return getKeys<Int32>(attribute); break;
-        case AttributeUnderlyingType::Int64: return getKeys<Int64>(attribute); break;
-        case AttributeUnderlyingType::Float32: return getKeys<Float32>(attribute); break;
-        case AttributeUnderlyingType::Float64: return getKeys<Float64>(attribute); break;
-        case AttributeUnderlyingType::String: return getKeys<StringRef>(attribute); break;
+        case AttributeUnderlyingType::UInt8: return getKeys<UInt8>(attribute);
+        case AttributeUnderlyingType::UInt16: return getKeys<UInt16>(attribute);
+        case AttributeUnderlyingType::UInt32: return getKeys<UInt32>(attribute);
+        case AttributeUnderlyingType::UInt64: return getKeys<UInt64>(attribute);
+        case AttributeUnderlyingType::UInt128: return getKeys<UInt128>(attribute);
+        case AttributeUnderlyingType::Int8: return getKeys<Int8>(attribute);
+        case AttributeUnderlyingType::Int16: return getKeys<Int16>(attribute);
+        case AttributeUnderlyingType::Int32: return getKeys<Int32>(attribute);
+        case AttributeUnderlyingType::Int64: return getKeys<Int64>(attribute);
+        case AttributeUnderlyingType::Float32: return getKeys<Float32>(attribute);
+        case AttributeUnderlyingType::Float64: return getKeys<Float64>(attribute);
+        case AttributeUnderlyingType::String: return getKeys<StringRef>(attribute);
     }
     return {};
 }

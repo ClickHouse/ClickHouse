@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <IO/ReadBufferAIO.h>
 #include <Common/ProfileEvents.h>
@@ -7,6 +7,7 @@
 
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 #include <optional>
 
@@ -85,8 +86,8 @@ void ReadBufferAIO::setMaxBytes(size_t max_bytes_read_)
 
 bool ReadBufferAIO::nextImpl()
 {
- /// If the end of the file has already been reached by calling this function,
- /// then the current call is wrong.
+    /// If the end of the file has already been reached by calling this function,
+    /// then the current call is wrong.
     if (is_eof)
         return false;
 

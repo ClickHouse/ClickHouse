@@ -33,6 +33,10 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 {
     assertNoParameters(name, params);
 
+    if (argument_types.empty())
+        throw Exception("Incorrect number of arguments for aggregate function " + name,
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     if (argument_types.size() == 1)
     {
         const IDataType & argument_type = *argument_types[0];
@@ -51,29 +55,28 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>(argument_types);
         else if (typeid_cast<const DataTypeUUID *>(&argument_type))
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>();
-        else
-            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
-    else if (argument_types.size() > 1)
+    else
     {
         /// If there are several arguments, then no tuples allowed among them.
         for (const auto & type : argument_types)
             if (typeid_cast<const DataTypeTuple *>(type.get()))
                 throw Exception("Tuple argument of function " + name + " must be the only argument",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, false>>(argument_types);
     }
-    else
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    /// "Variadic" method also works as a fallback generic case for single argument.
+    return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, false>>(argument_types);
 }
 
 template <template <typename> class Data, typename DataForVariadic>
 AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const DataTypes & argument_types, const Array & params)
 {
     assertNoParameters(name, params);
+
+    if (argument_types.empty())
+        throw Exception("Incorrect number of arguments for aggregate function " + name,
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (argument_types.size() == 1)
     {
@@ -93,23 +96,18 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
             return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true>>(argument_types);
         else if (typeid_cast<const DataTypeUUID *>(&argument_type))
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType>>>();
-        else
-            throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
-    else if (argument_types.size() > 1)
+    else
     {
         /// If there are several arguments, then no tuples allowed among them.
         for (const auto & type : argument_types)
             if (typeid_cast<const DataTypeTuple *>(type.get()))
                 throw Exception("Tuple argument of function " + name + " must be the only argument",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, false>>(argument_types);
     }
-    else
-        throw Exception("Incorrect number of arguments for aggregate function " + name,
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    /// "Variadic" method also works as a fallback generic case for single argument.
+    return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, false>>(argument_types);
 }
 
 }

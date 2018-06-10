@@ -3,7 +3,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 
@@ -20,8 +20,6 @@ public:
     IAST * sample_by = nullptr;
     ASTSetQuery * settings = nullptr;
 
-    ASTStorage() = default;
-    ASTStorage(StringRange range_) : IAST(range_) {}
     String getID() const override { return "Storage definition"; }
 
     ASTPtr clone() const override
@@ -93,13 +91,10 @@ public:
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
-    ASTSelectQuery * select = nullptr;
-
-    ASTCreateQuery() = default;
-    ASTCreateQuery(const StringRange range_) : ASTQueryWithOutput(range_) {}
+    ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
+    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; }
 
     ASTPtr clone() const override
     {

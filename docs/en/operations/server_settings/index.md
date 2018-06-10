@@ -10,10 +10,3 @@ Other settings are described in the "[Settings](../settings/index.md#settings)" 
 
 Before studying the settings, read the [Configuration files](../configuration_files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
-```eval_rst
-.. toctree::
-    :glob:
-
-    *
-```
-

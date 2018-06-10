@@ -385,19 +385,33 @@ void ExternalLoader::reload(const std::string & name)
         throw Exception("Failed to load " + object_name + " '" + name + "' during the reload process", ErrorCodes::BAD_ARGUMENTS);
 }
 
-ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name) const
+ExternalLoader::LoadablePtr ExternalLoader::getLoadableImpl(const std::string & name, bool throw_on_error) const
 {
     const std::lock_guard<std::mutex> lock{map_mutex};
 
     const auto it = loadable_objects.find(name);
     if (it == std::end(loadable_objects))
-        throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+    {
+        if (throw_on_error)
+            throw Exception("No such " + object_name + ": " + name, ErrorCodes::BAD_ARGUMENTS);
+        return nullptr;
+    }
 
-    if (!it->second.loadable)
-        it->second.exception ? std::rethrow_exception(it->second.exception) :
-        throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
+    if (!it->second.loadable && throw_on_error)
+        it->second.exception ? std::rethrow_exception(it->second.exception)
+                             : throw Exception{object_name + " '" + name + "' is not loaded", ErrorCodes::LOGICAL_ERROR};
 
     return it->second.loadable;
+}
+
+ExternalLoader::LoadablePtr ExternalLoader::getLoadable(const std::string & name) const
+{
+    return getLoadableImpl(name, true);
+}
+
+ExternalLoader::LoadablePtr ExternalLoader::tryGetLoadable(const std::string & name) const
+{
+    return getLoadableImpl(name, false);
 }
 
 ExternalLoader::LockedObjectsMap ExternalLoader::getObjectsMap() const

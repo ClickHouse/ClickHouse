@@ -260,7 +260,7 @@ std::string MergedBlockOutputStream::getPartPath() const
     return part_path;
 }
 
- /// If data is pre-sorted.
+/// If data is pre-sorted.
 void MergedBlockOutputStream::write(const Block & block)
 {
     writeImpl(block, nullptr);
@@ -293,7 +293,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (additional_column_checksums)
         checksums = std::move(*additional_column_checksums);
 
-    if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (index_stream)
     {
         index_stream->next();
         checksums.files["primary.idx"].file_size = index_stream->count();
@@ -309,17 +309,11 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 
     column_streams.clear();
 
-    if (rows_count == 0)
-    {
-        /// A part is empty - all records are deleted.
-        Poco::File(part_path).remove(true);
-        return;
-    }
-
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         new_part->partition.store(storage, part_path, checksums);
-        new_part->minmax_idx.store(storage, part_path, checksums);
+        if (new_part->minmax_idx.initialized)
+            new_part->minmax_idx.store(storage, part_path, checksums);
 
         WriteBufferFromFile count_out(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(count_out);
@@ -347,14 +341,14 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->columns = *total_column_list;
     new_part->index.assign(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
     new_part->checksums = checksums;
-    new_part->size_in_bytes = MergeTreeData::DataPart::calculateTotalSize(new_part->getFullPath());
+    new_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_part->getFullPath());
 }
 
 void MergedBlockOutputStream::init()
 {
     Poco::File(part_path).createDirectories();
 
-    if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (storage.hasPrimaryKey())
     {
         index_file_stream = std::make_unique<WriteBufferFromFile>(
             part_path + "primary.idx", DBMS_DEFAULT_BUFFER_SIZE, O_TRUNC | O_CREAT | O_WRONLY);
@@ -371,7 +365,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     OffsetColumns offset_columns;
 
-    auto sort_description = storage.getSortDescription();
+    auto sort_description = storage.getPrimarySortDescription();
 
     /// Here we will add the columns related to the Primary Key, then write the index.
     std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());
@@ -443,7 +437,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         /// Write index. The index contains Primary Key value for each `index_granularity` row.
         for (size_t i = index_offset; i < rows; i += storage.index_granularity)
         {
-            if (storage.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+            if (storage.hasPrimaryKey())
             {
                 for (size_t j = 0, size = primary_columns.size(); j < size; ++j)
                 {
@@ -465,12 +459,12 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 /// Implementation of MergedColumnOnlyOutputStream.
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    MergeTreeData & storage_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_)
+    MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_)
     : IMergedBlockOutputStream(
         storage_, storage_.context.getSettings().min_compress_block_size,
         storage_.context.getSettings().max_compress_block_size, compression_settings,
         storage_.context.getSettings().min_bytes_to_use_direct_io),
-    part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
+    header(header_), part_path(part_path_), sync(sync_), skip_offsets(skip_offsets_)
 {
 }
 

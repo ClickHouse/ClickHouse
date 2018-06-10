@@ -213,9 +213,9 @@ MergeTrees are different in two ways:
 - they may be replicated and non-replicated;
 - they may do different actions on merge: nothing; sign collapse; sum; apply aggregete functions.
 
-So we have 12 combinations:
-    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, GraphiteMergeTree
-    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedGraphiteMergeTree
+So we have 14 combinations:
+    MergeTree, CollapsingMergeTree, SummingMergeTree, AggregatingMergeTree, ReplacingMergeTree, GraphiteMergeTree, VersionedCollapsingMergeTree
+    ReplicatedMergeTree, ReplicatedCollapsingMergeTree, ReplicatedSummingMergeTree, ReplicatedAggregatingMergeTree, ReplicatedReplacingMergeTree, ReplicatedGraphiteMergeTree, ReplicatedVersionedCollapsingMergeTree
 
 In most of cases, you need MergeTree or ReplicatedMergeTree.
 
@@ -233,7 +233,7 @@ Date column must exist in the table and have type Date (not DateTime).
 It is used for internal data partitioning and works like some kind of index.
 
 If your source data doesn't have a column of type Date, but has a DateTime column, you may add values for Date column while loading,
- or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
+    or you may INSERT your source data to a table of type Log and then transform it with INSERT INTO t SELECT toDate(time) AS date, * FROM ...
 If your source data doesn't have any date or time, you may just pass any constant for a date column while loading.
 
 Next parameter is optional sampling expression. Sampling expression is used to implement SAMPLE clause in query for approximate query execution.
@@ -254,6 +254,8 @@ For the Summing mode, the optional last parameter is a list of columns to sum wh
 If this parameter is omitted, the storage will sum all numeric columns except columns participating in the primary key.
 
 For the Replacing mode, the optional last parameter is the name of a 'version' column. While merging, for all rows with the same primary key, only one row is selected: the last row, if the version column was not specified, or the last row with the maximum version value, if specified.
+
+For VersionedCollapsing mode, the last 2 parameters are the name of a sign column and the name of a 'version' column. Version column must be in primary key. While merging, a pair of rows with the same primary key and different sign may collapse.
 )";
 
     if (is_extended_syntax)
@@ -368,6 +370,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         merging_params.mode = MergeTreeData::MergingParams::Replacing;
     else if (name_part == "Graphite")
         merging_params.mode = MergeTreeData::MergingParams::Graphite;
+    else if (name_part == "VersionedCollapsing")
+        merging_params.mode = MergeTreeData::MergingParams::VersionedCollapsing;
     else if (!name_part.empty())
         throw Exception(
             "Unknown storage " + args.engine_name + getMergeTreeVerboseHelp(is_extended_storage_def),
@@ -424,6 +428,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     case MergeTreeData::MergingParams::Graphite:
         add_mandatory_param("'config_element_for_graphite_schema'");
         break;
+    case MergeTreeData::MergingParams::VersionedCollapsing:
+        {
+            add_mandatory_param("sign column");
+            add_mandatory_param("version");
+            break;
+        }
     }
 
     ASTs & engine_args = args.engine_args;
@@ -482,6 +492,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         engine_args.erase(engine_args.begin(), engine_args.begin() + 2);
     }
 
+    ASTPtr secondary_sorting_expr_list;
+
     if (merging_params.mode == MergeTreeData::MergingParams::Collapsing)
     {
         if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
@@ -536,6 +548,30 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         engine_args.pop_back();
         setGraphitePatternsFromConfig(args.context, graphite_config_name, merging_params.graphite_params);
     }
+    else if (merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
+    {
+        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
+        {
+            merging_params.version_column = ast->name;
+            secondary_sorting_expr_list = std::make_shared<ASTExpressionList>();
+            secondary_sorting_expr_list->children.push_back(engine_args.back());
+        }
+        else
+            throw Exception(
+                    "Version column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+
+        engine_args.pop_back();
+
+        if (auto ast = typeid_cast<const ASTIdentifier *>(engine_args.back().get()))
+            merging_params.sign_column = ast->name;
+        else
+            throw Exception(
+                    "Sign column name must be an unquoted string" + getMergeTreeVerboseHelp(is_extended_storage_def),
+                    ErrorCodes::BAD_ARGUMENTS);
+
+        engine_args.pop_back();
+    }
 
     String date_column_name;
     ASTPtr partition_expr_list;
@@ -550,6 +586,10 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         if (args.storage_def->order_by)
             primary_expr_list = extractKeyExpressionList(*args.storage_def->order_by);
+        else
+            throw Exception("You must provide an ORDER BY expression in the table definition. "
+                "If you don't want this table to be sorted, use ORDER BY tuple()",
+                ErrorCodes::BAD_ARGUMENTS);
 
         if (args.storage_def->sample_by)
             sampling_expression = args.storage_def->sample_by->ptr();
@@ -588,15 +628,14 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
         return StorageReplicatedMergeTree::create(
             zookeeper_path, replica_name, args.attach, args.data_path, args.database_name, args.table_name,
-            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults,
-            args.context, primary_expr_list, date_column_name, partition_expr_list,
+            args.columns,
+            args.context, primary_expr_list, secondary_sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
     else
         return StorageMergeTree::create(
-            args.data_path, args.database_name, args.table_name,
-            args.columns, args.materialized_columns, args.alias_columns, args.column_defaults, args.attach,
-            args.context, primary_expr_list, date_column_name, partition_expr_list,
+            args.data_path, args.database_name, args.table_name, args.columns, args.attach,
+            args.context, primary_expr_list, secondary_sorting_expr_list, date_column_name, partition_expr_list,
             sampling_expression, merging_params, storage_settings,
             args.has_force_restore_data_flag);
 }
@@ -610,6 +649,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("AggregatingMergeTree", create);
     factory.registerStorage("SummingMergeTree", create);
     factory.registerStorage("GraphiteMergeTree", create);
+    factory.registerStorage("VersionedCollapsingMergeTree", create);
 
     factory.registerStorage("ReplicatedMergeTree", create);
     factory.registerStorage("ReplicatedCollapsingMergeTree", create);
@@ -617,6 +657,7 @@ void registerStorageMergeTree(StorageFactory & factory)
     factory.registerStorage("ReplicatedAggregatingMergeTree", create);
     factory.registerStorage("ReplicatedSummingMergeTree", create);
     factory.registerStorage("ReplicatedGraphiteMergeTree", create);
+    factory.registerStorage("ReplicatedVersionedCollapsingMergeTree", create);
 }
 
 }

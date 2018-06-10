@@ -6,9 +6,15 @@
 namespace DB
 {
 
+Block MergeTreeBlockOutputStream::getHeader() const
+{
+    return storage.getSampleBlock();
+}
+
+
 void MergeTreeBlockOutputStream::write(const Block & block)
 {
-    storage.data.delayInsertIfNeeded();
+    storage.data.delayInsertOrThrowIfNeeded();
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block);
     for (auto & current_block : part_blocks)
@@ -18,7 +24,7 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         MergeTreeData::MutableDataPartPtr part = storage.writer.writeTempPart(current_block);
         storage.data.renameTempPartAndAdd(part, &storage.increment);
 
-        PartLog::addNewPartToTheLog(storage.context, *part, watch.elapsed());
+        PartLog::addNewPart(storage.context, part, watch.elapsed());
 
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
         storage.merge_task_handle->wake();

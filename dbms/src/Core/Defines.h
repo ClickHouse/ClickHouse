@@ -59,7 +59,8 @@
 #define DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE 54058
 #define DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO 54060
 #define DBMS_MIN_REVISION_WITH_TABLES_STATUS 54226
-#define DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE 54311
+#define DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE 54337
+#define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
@@ -74,8 +75,18 @@
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
-#define ALWAYS_INLINE __attribute__((__always_inline__))
-#define NO_INLINE __attribute__((__noinline__))
+// more aliases: https://mailman.videolan.org/pipermail/x264-devel/2014-May/010660.html
+
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+    #define NO_INLINE static __declspec(noinline)
+    #define MAY_ALIAS
+#else
+    #define ALWAYS_INLINE __attribute__((__always_inline__))
+    #define NO_INLINE __attribute__((__noinline__))
+    #define MAY_ALIAS __attribute__((__may_alias__))
+#endif
+
 
 #define PLATFORM_NOT_SUPPORTED "The only supported platforms are x86_64 and AArch64 (work in progress)"
 

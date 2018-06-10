@@ -4,8 +4,7 @@
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
-Main features:
-
+### Features:
 - Works with ClickHouse directly from the browser, without the need to install additional software.
 - Query editor with syntax highlighting.
 - Auto-completion of commands.
@@ -14,3 +13,17 @@ Main features:
 
 [Tabix documentation](https://tabix.io/doc/).
 
+
+## HouseOps
+
+[HouseOps](https://github.com/HouseOps/HouseOps) is a unique Desktop ClickHouse Ops UI / IDE for OSX, Linux and Windows.
+
+### Features:
+- Query builder;
+- Database manangement (soon);
+- Users manangement (soon);
+- Real-Time Data Analytics (soon);
+- Cluster/Infra monitoring (soon);
+- Cluster manangement (soon);
+- Kafka and Replicated tables monitoring (soon);
+- And a lot of others features (soon) for you take a beautiful implementation of ClickHouse.

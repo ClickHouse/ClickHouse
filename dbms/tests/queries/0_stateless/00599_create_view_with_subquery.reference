@@ -1,0 +1,1 @@
+CREATE VIEW test.test_view ( id UInt64) AS SELECT * FROM test.test  WHERE id = (SELECT 1)

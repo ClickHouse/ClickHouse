@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <yandex>
     <!-- How many simualteneous workers are posssible -->
-    <max_workers>4</max_workers>
+    <max_workers>3</max_workers>
 
     <!-- Common setting for pull and push operations -->
     <settings>
@@ -10,6 +10,7 @@
 
     <!-- Setting used to fetch data -->
     <settings_pull>
+        <max_rows_in_distinct>0</max_rows_in_distinct>
     </settings_pull>
 
     <!-- Setting used to insert data -->
@@ -27,10 +28,10 @@
             <database_push>default</database_push>
             <table_push>hits</table_push>
 
-            <enabled_partitions> 0  1   2</enabled_partitions>
+            <enabled_partitions>3 4 5 6 1 2 0   </enabled_partitions>
 
             <!-- Engine of destination tables -->
-            <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16</engine>
+            <engine>ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/hits', '{replica}') PARTITION BY d % 3 ORDER BY d SETTINGS index_granularity = 16</engine>
 
             <!-- Which sarding key to use while copying -->
             <sharding_key>d + 1</sharding_key>

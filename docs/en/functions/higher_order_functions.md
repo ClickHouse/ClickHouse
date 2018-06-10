@@ -71,3 +71,45 @@ Returns the first element in the 'arr1' array for which 'func' returns something
 
 Returns the index of the first element in the 'arr1' array for which 'func' returns something other than 0.
 
+### arrayCumSum(\[func,\] arr1, ...)
+
+Returns an array of partial sums of elements in the source array (a running sum). If the `func` function is specified, then the values of the array elements are converted by this function before summing.
+
+Example:
+
+```sql
+SELECT arrayCumSum([1, 1, 1, 1]) AS res
+```
+
+```text
+┌─res──────────┐
+│ [1, 2, 3, 4] │
+└──────────────┘
+```
+
+### arraySort(\[func,\] arr1, ...)
+
+Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
+
+Example:
+
+```sql
+SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
+```
+
+```text
+┌─res────────────────┐
+│ ['world', 'hello'] │
+└────────────────────┘
+```
+
+### arrayReverseSort(\[func,\] arr1, ...)
+
+Returns an array as result of sorting the elements of `arr1` in descending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
+
+
+
+
+ 

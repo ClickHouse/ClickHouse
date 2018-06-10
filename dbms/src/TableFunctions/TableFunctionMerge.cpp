@@ -51,11 +51,11 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
         throw Exception("Error while executing table function merge. In database " + source_database + " no one matches regular expression: "
             + table_name_regexp_, ErrorCodes::UNKNOWN_TABLE);
 
-    return any_table->getColumnsList();
+    return any_table->getColumns().getAllPhysical();
 }
 
 
-StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
@@ -79,10 +79,7 @@ StoragePtr TableFunctionMerge::execute(const ASTPtr & ast_function, const Contex
 
     auto res = StorageMerge::create(
         getName(),
-        chooseColumns(source_database, table_name_regexp, context),
-        NamesAndTypesList{},
-        NamesAndTypesList{},
-        ColumnDefaults{},
+        ColumnsDescription{chooseColumns(source_database, table_name_regexp, context)},
         source_database,
         table_name_regexp,
         context);

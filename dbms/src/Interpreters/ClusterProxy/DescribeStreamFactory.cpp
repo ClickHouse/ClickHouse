@@ -14,7 +14,7 @@ BlockExtraInfo toBlockExtraInfo(const Cluster::Address & address)
 {
     BlockExtraInfo block_extra_info;
     block_extra_info.host = address.host_name;
-    block_extra_info.resolved_address = address.resolved_address.toString();
+    block_extra_info.resolved_address = address.getResolvedAddress().toString();
     block_extra_info.port = address.port;
     block_extra_info.user = address.user;
     block_extra_info.is_valid = true;
@@ -45,11 +45,14 @@ void DescribeStreamFactory::createForShard(
         res.emplace_back(std::make_shared<BlockExtraInfoInputStream>(materialized_stream, toBlockExtraInfo(local_address)));
     }
 
-    auto remote_stream = std::make_shared<RemoteBlockInputStream>(
-            shard_info.pool, query, context, nullptr, throttler);
-    remote_stream->setPoolMode(PoolMode::GET_ALL);
-    remote_stream->appendExtraInfo();
-    res.emplace_back(std::move(remote_stream));
+    if (shard_info.hasRemoteConnections())
+    {
+        auto remote_stream = std::make_shared<RemoteBlockInputStream>(
+                shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context, nullptr, throttler);
+        remote_stream->setPoolMode(PoolMode::GET_ALL);
+        remote_stream->appendExtraInfo();
+        res.emplace_back(std::move(remote_stream));
+    }
 }
 
 }

@@ -7,7 +7,7 @@ set_target_properties(util-clickhouse-compressor PROPERTIES OUTPUT_NAME "clickho
 #install (TARGETS util-clickhouse-compressor RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse-compressor)
 
 add_executable (zstd_test zstd_test.cpp)
-target_link_libraries (zstd_test ${ZSTD_LIBRARY} Threads::Threads)
+target_link_libraries (zstd_test ${ZSTD_LIBRARY} common Threads::Threads)
 
 add_executable (mutator mutator.cpp)
 target_link_libraries (mutator clickhouse_common_io)

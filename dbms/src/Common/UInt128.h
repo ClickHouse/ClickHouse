@@ -40,9 +40,6 @@ struct UInt128
     bool inline operator>  (const UInt128 rhs) const { return tuple() > rhs.tuple(); }
     bool inline operator>= (const UInt128 rhs) const { return tuple() >= rhs.tuple(); }
 
-    /** Types who are stored at the moment in the database have no more than 64bits and can be handle
-     *  inside an unique UInt64.
-     */
     template <typename T> bool inline operator== (const T rhs) const { return *this == UInt128(rhs); }
     template <typename T> bool inline operator!= (const T rhs) const { return *this != UInt128(rhs); }
     template <typename T> bool inline operator>= (const T rhs) const { return *this >= UInt128(rhs); }

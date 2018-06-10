@@ -1,5 +1,5 @@
 if (APPLE)
-    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.1.0")
+    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.0.0")
         set (APPLE_SIERRA_OR_NEWER 1)
     else ()
         set (APPLE_SIERRA_OR_NEWER 0)
@@ -20,13 +20,14 @@ endif ()
 add_library (common ${SPLIT_SHARED}
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
-    src/exp10.c
+    src/preciseExp10.c
     src/shift10.cpp
     src/mremap.cpp
     src/JSON.cpp
     src/getMemoryAmount.cpp
     src/ThreadPool.cpp
-    src/iostream_debug_helpers.cpp
+    src/demangle.cpp
+    src/SetTerminalEcho.cpp
 
     include/common/Types.h
     include/common/DateLUT.h
@@ -34,7 +35,7 @@ add_library (common ${SPLIT_SHARED}
     include/common/LocalDate.h
     include/common/LocalDateTime.h
     include/common/ErrorHandlers.h
-    include/common/exp10.h
+    include/common/preciseExp10.h
     include/common/shift10.h
     include/common/intExp.h
     include/common/mremap.h
@@ -45,7 +46,8 @@ add_library (common ${SPLIT_SHARED}
     include/common/JSON.h
     include/common/getMemoryAmount.h
     include/common/ThreadPool.h
-    include/common/iostream_debug_helpers.h
+    include/common/demangle.h
+    include/common/SetTerminalEcho.h
 
     include/ext/bit_cast.h
     include/ext/collection_cast.h
@@ -111,9 +113,12 @@ target_link_libraries (
     ${Boost_FILESYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
-    ${RT_LIBRARY}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
     ${MEMCPY_LIBRARIES})
+
+if (RT_LIBRARY)
+    target_link_libraries (common ${RT_LIBRARY})
+endif ()
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

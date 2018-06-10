@@ -4,13 +4,6 @@
 
 #include <AggregateFunctions/AggregateFunctionQuantile.h>
 
-#include <AggregateFunctions/QuantileReservoirSampler.h>
-#include <AggregateFunctions/QuantileReservoirSamplerDeterministic.h>
-#include <AggregateFunctions/QuantileExact.h>
-#include <AggregateFunctions/QuantileExactWeighted.h>
-#include <AggregateFunctions/QuantileTiming.h>
-#include <AggregateFunctions/QuantileTDigest.h>
-
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 
@@ -54,27 +47,6 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 }
 
 #undef FOR_NUMERIC_TYPES
-
-
-struct NameQuantile { static constexpr auto name = "quantile"; };
-struct NameQuantiles { static constexpr auto name = "quantiles"; };
-struct NameQuantileDeterministic { static constexpr auto name = "quantileDeterministic"; };
-struct NameQuantilesDeterministic { static constexpr auto name = "quantilesDeterministic"; };
-
-struct NameQuantileExact { static constexpr auto name = "quantileExact"; };
-struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
-struct NameQuantilesExact { static constexpr auto name = "quantilesExact"; };
-struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
-
-struct NameQuantileTiming { static constexpr auto name = "quantileTiming"; };
-struct NameQuantileTimingWeighted { static constexpr auto name = "quantileTimingWeighted"; };
-struct NameQuantilesTiming { static constexpr auto name = "quantilesTiming"; };
-struct NameQuantilesTimingWeighted { static constexpr auto name = "quantilesTimingWeighted"; };
-
-struct NameQuantileTDigest { static constexpr auto name = "quantileTDigest"; };
-struct NameQuantileTDigestWeighted { static constexpr auto name = "quantileTDigestWeighted"; };
-struct NameQuantilesTDigest { static constexpr auto name = "quantilesTDigest"; };
-struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDigestWeighted"; };
 
 }
 

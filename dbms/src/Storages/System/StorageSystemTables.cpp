@@ -10,6 +10,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -114,13 +115,15 @@ protected:
 StorageSystemTables::StorageSystemTables(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList
+    setColumns(ColumnsDescription(
     {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
         {"engine", std::make_shared<DataTypeString>()},
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
-    };
+        {"data_path", std::make_shared<DataTypeString>()},
+        {"metadata_path", std::make_shared<DataTypeString>()},
+    }));
 
     virtual_columns =
     {
@@ -190,23 +193,15 @@ BlockInputStreams StorageSystemTables::read(
             res_columns[j++]->insert(table_name);
             res_columns[j++]->insert(iterator->table()->getName());
             res_columns[j++]->insert(UInt64(0));
+            res_columns[j++]->insert(iterator->table()->getDataPath());
+            res_columns[j++]->insert(database->getTableMetadataPath(table_name));
 
             if (has_metadata_modification_time)
                 res_columns[j++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
 
             if (has_create_table_query || has_engine_full)
             {
-                ASTPtr ast;
-
-                try
-                {
-                    ast = database->getCreateQuery(context, table_name);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() != ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY)
-                        throw;
-                }
+                ASTPtr ast = database->tryGetCreateTableQuery(context, table_name);
 
                 if (has_create_table_query)
                     res_columns[j++]->insert(ast ? queryToString(ast) : "");
@@ -245,6 +240,8 @@ BlockInputStreams StorageSystemTables::read(
             res_columns[j++]->insert(table.first);
             res_columns[j++]->insert(table.second->getName());
             res_columns[j++]->insert(UInt64(1));
+            res_columns[j++]->insertDefault();
+            res_columns[j++]->insertDefault();
 
             if (has_metadata_modification_time)
                 res_columns[j++]->insertDefault();

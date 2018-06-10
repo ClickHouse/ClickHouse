@@ -15,8 +15,6 @@ namespace DB
 
 bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_optimize_table("OPTIMIZE TABLE");
     ParserKeyword s_partition("PARTITION");
     ParserKeyword s_final("FINAL");
@@ -56,7 +54,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_deduplicate.ignore(pos, expected))
         deduplicate = true;
 
-    auto query = std::make_shared<ASTOptimizeQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTOptimizeQuery>();
     node = query;
 
     if (database)

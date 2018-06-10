@@ -28,12 +28,14 @@ namespace ClusterProxy
 {
 
 SelectStreamFactory::SelectStreamFactory(
-        QueryProcessingStage::Enum processed_stage_,
-        QualifiedTableName main_table_,
-        const Tables & external_tables_)
-    : processed_stage{processed_stage_}
-    , main_table(std::move(main_table_))
-    , external_tables{external_tables_}
+    const Block & header,
+    QueryProcessingStage::Enum processed_stage_,
+    QualifiedTableName main_table_,
+    const Tables & external_tables_)
+    : header(header),
+    processed_stage{processed_stage_},
+    main_table(std::move(main_table_)),
+    external_tables{external_tables_}
 {
 }
 
@@ -42,7 +44,7 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
-    InterpreterSelectQuery interpreter{query_ast, context, processed_stage};
+    InterpreterSelectQuery interpreter{query_ast, context, {}, processed_stage};
     BlockInputStreamPtr stream = interpreter.execute().in;
 
     /** Materialization is needed, since from remote servers the constants come materialized.
@@ -55,10 +57,10 @@ BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & 
 }
 
 void SelectStreamFactory::createForShard(
-        const Cluster::ShardInfo & shard_info,
-        const String & query, const ASTPtr & query_ast,
-        const Context & context, const ThrottlerPtr & throttler,
-        BlockInputStreams & res)
+    const Cluster::ShardInfo & shard_info,
+    const String & query, const ASTPtr & query_ast,
+    const Context & context, const ThrottlerPtr & throttler,
+    BlockInputStreams & res)
 {
     auto emplace_local_stream = [&]()
     {
@@ -67,7 +69,7 @@ void SelectStreamFactory::createForShard(
 
     auto emplace_remote_stream = [&]()
     {
-        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, context, nullptr, throttler, external_tables, processed_stage);
+        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, header, context, nullptr, throttler, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
         stream->setMainTable(main_table);
         res.emplace_back(std::move(stream));
@@ -155,7 +157,7 @@ void SelectStreamFactory::createForShard(
         /// Do it lazily to avoid connecting in the main thread.
 
         auto lazily_create_stream = [
-                pool = shard_info.pool, shard_num = shard_info.shard_num, query, query_ast, context, throttler,
+                pool = shard_info.pool, shard_num = shard_info.shard_num, query, header = header, query_ast, context, throttler,
                 main_table = main_table, external_tables = external_tables, stage = processed_stage,
                 local_delay]()
             -> BlockInputStreamPtr
@@ -192,11 +194,11 @@ void SelectStreamFactory::createForShard(
                     connections.emplace_back(std::move(try_result.entry));
 
                 return std::make_shared<RemoteBlockInputStream>(
-                        std::move(connections), query, context, nullptr, throttler, external_tables, stage);
+                    std::move(connections), query, header, context, nullptr, throttler, external_tables, stage);
             }
         };
 
-        res.emplace_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", lazily_create_stream));
+        res.emplace_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream));
     }
     else
         emplace_remote_stream();

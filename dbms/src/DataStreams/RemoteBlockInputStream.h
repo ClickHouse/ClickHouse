@@ -15,7 +15,7 @@
 namespace DB
 {
 
-/** This class allowes one to launch queries on remote replicas of one shard and get results
+/** This class allows one to launch queries on remote replicas of one shard and get results
   */
 class RemoteBlockInputStream : public IProfilingBlockInputStream
 {
@@ -24,7 +24,7 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             Connection & connection,
-            const String & query_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -32,7 +32,7 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             std::vector<IConnectionPool::Entry> && connections,
-            const String & query_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -40,7 +40,7 @@ public:
     /// If `settings` is nullptr, settings will be taken from context.
     RemoteBlockInputStream(
             const ConnectionPoolWithFailoverPtr & pool,
-            const String & query_, const Context & context_, const Settings * settings = nullptr,
+            const String & query_, const Block & header_, const Context & context_, const Settings * settings = nullptr,
             const ThrottlerPtr & throttler = nullptr, const Tables & external_tables_ = Tables(),
             QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete);
 
@@ -62,21 +62,16 @@ public:
       */
     void progress(const Progress & /*value*/) override {}
 
-    void cancel() override;
+    void cancel(bool kill) override;
 
     String getName() const override { return "Remote"; }
-
-    String getID() const override
-    {
-        std::stringstream res;
-        res << this;
-        return res.str();
-    }
 
     BlockExtraInfo getBlockExtraInfo() const override
     {
         return multiplexed_connections->getBlockExtraInfo();
     }
+
+    Block getHeader() const override { return header; }
 
 protected:
     /// Send all temporary tables to remote servers
@@ -95,10 +90,14 @@ protected:
 private:
     void sendQuery();
 
+    Block receiveBlock();
+
     /// If wasn't sent yet, send request to cancell all connections to replicas
     void tryCancel(const char * reason);
 
 private:
+    Block header;
+
     std::function<std::unique_ptr<MultiplexedConnections>()> create_multiplexed_connections;
 
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;

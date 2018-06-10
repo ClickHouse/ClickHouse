@@ -14,11 +14,13 @@
 namespace DB
 {
 
+using BlockPtr = std::shared_ptr<Block>;
+
 class HashedDictionary final : public IDictionary
 {
 public:
     HashedDictionary(const std::string & name, const DictionaryStructure & dict_struct,
-        DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty);
+        DictionarySourcePtr source_ptr, const DictionaryLifetime dict_lifetime, bool require_nonempty, BlockPtr saved_block = nullptr);
 
     HashedDictionary(const HashedDictionary & other);
 
@@ -152,6 +154,10 @@ private:
 
     void createAttributes();
 
+    void blockToAttributes(const Block & block);
+
+    void updateData();
+
     void loadData();
 
     template <typename T>
@@ -217,6 +223,8 @@ private:
     std::chrono::time_point<std::chrono::system_clock> creation_time;
 
     std::exception_ptr creation_exception;
+
+    BlockPtr saved_block;
 };
 
 }

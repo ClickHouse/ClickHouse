@@ -130,10 +130,13 @@ POST 'http://localhost:8123/?query=DROP TABLE t'
 
 For successful requests that don't return a data table, an empty response body is returned.
 
-You can use compression when transmitting data. The compressed data has a non-standard format, and you will need to use the special compressor program to work with it (sudo apt-get install compressor-metrika-yandex).
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you will need to use the special clickhouse-compressor program to work with it (it is installed with the clickhouse-client package).
 
 If you specified 'compress=1' in the URL, the server will compress the data it sends you.
 If you specified 'decompress=1' in the URL, the server will decompress the same data that you pass in the POST method.
+
+It is also possible to use the standard gzip-based HTTP compression. To send a POST request compressed using gzip, append the request header `Content-Encoding: gzip`.
+In order for ClickHouse to compress the response using gzip, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse setting `enable_http_compression`.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 
@@ -170,7 +173,8 @@ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @
 ```
 
 If the user name is not indicated, the username 'default' is used. If the password is not indicated, an empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:
+http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the section "Settings".
 
@@ -190,7 +194,11 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-In contrast to the native interface, the HTTP interface does not support the concept of sessions or session settings, does not allow aborting a query (to be exact, it allows this in only a few cases),  and does not show the progress of query processing. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
+Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
+
+You have the option to receive information about the progress of query execution in X-ClickHouse-Progress headers. To do this, enable the setting send_progress_in_http_headers.
+
+Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
 The optional 'query_id' parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
 
 The optional 'quota_key' parameter can be passed as the quota key (any string). For more information, see the section "Quotas".

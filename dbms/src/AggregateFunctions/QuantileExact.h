@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/PODArray.h>
+#include <Common/NaNUtils.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Core/Types.h>
@@ -32,7 +33,9 @@ struct QuantileExact
 
     void add(const Value & x)
     {
-        array.push_back(x);
+        /// We must skip NaNs as they are not compatible with comparison sorting.
+        if (!isNaN(x))
+            array.push_back(x);
     }
 
     template <typename Weight>

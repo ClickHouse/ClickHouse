@@ -40,10 +40,10 @@ public:
     std::unique_ptr<ReadBuffer> read_buffer;
     Block sample_block;
 
-    virtual ~BaseExternalTable() {};
+    virtual ~BaseExternalTable() {}
 
     /// Initialize read_buffer, depending on the data source. By default, does nothing.
-    virtual void initReadBuffer() {};
+    virtual void initReadBuffer() {}
 
     /// Get the table data - a pair (a thread with the contents of the table, the name of the table)
     ExternalTableData getData(const Context & context)
@@ -165,7 +165,7 @@ public:
 
 /// Parsing of external table used when sending tables via http
 /// The `handlePart` function will be called for each table passed,
- /// so it's also necessary to call `clean` at the end of the `handlePart`.
+/// so it's also necessary to call `clean` at the end of the `handlePart`.
 class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 {
 public:
@@ -198,7 +198,7 @@ public:
 
         /// Create table
         NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-        StoragePtr storage = StorageMemory::create(data.second, columns, NamesAndTypesList{}, NamesAndTypesList{}, ColumnDefaults{});
+        StoragePtr storage = StorageMemory::create(data.second, ColumnsDescription{columns});
         storage->startup();
         context.addExternalTable(data.second, storage);
         BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());

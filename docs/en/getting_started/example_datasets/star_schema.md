@@ -1,4 +1,4 @@
-# Star scheme
+# Star Schema Benchmark
 
 Compiling dbgen: <https://github.com/vadimtk/ssb-dbgen>
 

@@ -6,9 +6,9 @@ I.e. used for executing the query you are using to read from the system.settings
 Columns:
 
 ```text
-name String  – Setting name.
+name String   – Setting name.
 value String  – Setting value.
-changed UInt8 -–Whether the setting was explicitly defined in the config or explicitly changed.
+changed UInt8 - Whether the setting was explicitly defined in the config or explicitly changed.
 ```
 
 Example:

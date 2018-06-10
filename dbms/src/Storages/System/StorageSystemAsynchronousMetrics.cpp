@@ -16,10 +16,10 @@ StorageSystemAsynchronousMetrics::StorageSystemAsynchronousMetrics(const std::st
     : name(name_),
     async_metrics(async_metrics_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         {"metric", std::make_shared<DataTypeString>()},
         {"value", std::make_shared<DataTypeFloat64>()},
-    };
+    }));
 }
 
 

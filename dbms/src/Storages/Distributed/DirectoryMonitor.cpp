@@ -52,19 +52,24 @@ namespace
             const char * address_begin = static_cast<const char*>(address.data());
             const char * address_end = address_begin + address.size();
 
+            Protocol::Secure secure = Protocol::Secure::Disable;
+            const char * secure_tag = "+secure";
+            if (endsWith(address, secure_tag))
+            {
+                address_end -= strlen(secure_tag);
+                secure = Protocol::Secure::Enable;
+            }
+
             const char * user_pw_end = strchr(address.data(), '@');
             const char * colon = strchr(address.data(), ':');
             if (!user_pw_end || !colon)
-                throw Exception{
-                    "Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
+                throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
                     ErrorCodes::INCORRECT_FILE_NAME};
 
             const bool has_pw = colon < user_pw_end;
             const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
             if (!host_end)
-                throw Exception{
-                    "Shard address '" + address + "' does not contain port",
-                    ErrorCodes::INCORRECT_FILE_NAME};
+                throw Exception{"Shard address '" + address + "' does not contain port", ErrorCodes::INCORRECT_FILE_NAME};
 
             const char * has_db = strchr(address.data(), '#');
             const char * port_end = has_db ? has_db : address_end;
@@ -76,7 +81,7 @@ namespace
             const auto database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end))
                                          : std::string();
 
-            pools.emplace_back(factory(host, port, user, password, database));
+            pools.emplace_back(factory(host, port, secure, user, password, database));
         }
 
         return pools;
@@ -100,12 +105,31 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDi
 
 StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 {
+    if (!quit)
     {
-        quit = true;
-        std::lock_guard<std::mutex> lock{mutex};
+        {
+            quit = true;
+            std::lock_guard<std::mutex> lock{mutex};
+        }
+        cond.notify_one();
+        thread.join();
     }
-    cond.notify_one();
-    thread.join();
+}
+
+
+void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
+{
+    if (!quit)
+    {
+        {
+            quit = true;
+            std::lock_guard<std::mutex> lock{mutex};
+        }
+        cond.notify_one();
+        thread.join();
+    }
+
+    Poco::File(path).remove(true);
 }
 
 
@@ -150,15 +174,18 @@ void StorageDistributedDirectoryMonitor::run()
 
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
-    auto timeouts = ConnectionTimeouts::getTCPTimeouts(storage.context.getSettingsRef());
-    const auto pool_factory = [&storage, &name, &timeouts] (const std::string & host, const UInt16 port,
+    auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
+    const auto pool_factory = [&storage, &timeouts] (const std::string & host, const UInt16 port,
+                                                 const Protocol::Secure secure,
                                                  const std::string & user, const std::string & password,
                                                  const std::string & default_database)
     {
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,
             user, password, timeouts,
-            storage.getName() + '_' + name);
+            storage.getName() + '_' + user,
+            Protocol::Compression::Enable,
+            secure);
     };
 
     auto pools = createPoolsForAddresses(name, pool_factory);
@@ -201,7 +228,6 @@ bool StorageDistributedDirectoryMonitor::findFiles()
 
     return true;
 }
-
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
@@ -274,10 +300,16 @@ struct StorageDistributedDirectoryMonitor::Batch
     std::vector<UInt64> file_indices;
     size_t total_rows = 0;
     size_t total_bytes = 0;
+    bool recovered = false;
 
     StorageDistributedDirectoryMonitor & parent;
+    const std::map<UInt64, String> & file_index_to_path;
 
-    explicit Batch(StorageDistributedDirectoryMonitor & parent_) : parent(parent_) {}
+    Batch(
+        StorageDistributedDirectoryMonitor & parent_,
+        const std::map<UInt64, String> & file_index_to_path_)
+        : parent(parent_), file_index_to_path(file_index_to_path_)
+    {}
 
     bool isEnoughSize() const
     {
@@ -286,14 +318,14 @@ struct StorageDistributedDirectoryMonitor::Batch
             || (parent.min_batched_block_size_bytes && total_bytes >= parent.min_batched_block_size_bytes);
     }
 
-    void send(bool save, const std::map<UInt64, String> & file_index_to_path)
+    void send()
     {
         if (file_indices.empty())
             return;
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-        if (save)
+        if (!recovered)
         {
             /// For deduplication in Replicated tables to work, in case of error
             /// we must try to re-send exactly the same batches.
@@ -305,34 +337,72 @@ struct StorageDistributedDirectoryMonitor::Batch
 
         auto connection = parent.pool->get();
 
-        String insert_query;
-        std::unique_ptr<RemoteBlockOutputStream> remote;
-        bool first = true;
-
-        for (UInt64 file_idx : file_indices)
+        bool batch_broken = false;
+        try
         {
-            ReadBufferFromFile in{file_index_to_path.at(file_idx)};
-            readStringBinary(insert_query, in); /// NOTE: all files must have the same insert_query
+            String insert_query;
+            std::unique_ptr<RemoteBlockOutputStream> remote;
+            bool first = true;
 
-            if (first)
+            for (UInt64 file_idx : file_indices)
             {
-                first = false;
-                remote = std::make_unique<RemoteBlockOutputStream>(*connection, insert_query);
-                remote->writePrefix();
+                auto file_path = file_index_to_path.find(file_idx);
+                if (file_path == file_index_to_path.end())
+                {
+                    LOG_ERROR(parent.log, "Failed to send batch: file with index " << file_idx << " is absent");
+                    batch_broken = true;
+                    break;
+                }
+
+                ReadBufferFromFile in(file_path->second);
+                readStringBinary(insert_query, in); /// NOTE: all files must have the same insert_query
+
+                if (first)
+                {
+                    first = false;
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, insert_query);
+                    remote->writePrefix();
+                }
+
+                remote->writePrepared(in);
             }
 
-            remote->writePrepared(in);
+            remote->writeSuffix();
+        }
+        catch (const Exception & e)
+        {
+            if (isFileBrokenErrorCode(e.code()))
+            {
+                tryLogCurrentException(parent.log, "Failed to send batch due to");
+                batch_broken = true;
+            }
+            else
+                throw;
         }
 
-        remote->writeSuffix();
+        if (!batch_broken)
+        {
+            LOG_TRACE(parent.log, "Sent a batch of " << file_indices.size() << " files.");
 
-        LOG_TRACE(parent.log, "Sent a batch of " << file_indices.size() << " files.");
+            for (UInt64 file_index : file_indices)
+                Poco::File{file_index_to_path.at(file_index)}.remove();
+        }
+        else
+        {
+            LOG_ERROR(parent.log, "Marking a batch of " << file_indices.size() << " files as broken.");
 
-        for (UInt64 file_index : file_indices)
-            Poco::File{file_index_to_path.at(file_index)}.remove();
+            for (UInt64 file_idx : file_indices)
+            {
+                auto file_path = file_index_to_path.find(file_idx);
+                if (file_path != file_index_to_path.end())
+                    parent.markAsBroken(file_path->second);
+            }
+        }
+
         file_indices.clear();
         total_rows = 0;
         total_bytes = 0;
+        recovered = false;
 
         Poco::File{parent.current_batch_file_path}.setSize(0);
     }
@@ -351,8 +421,10 @@ struct StorageDistributedDirectoryMonitor::Batch
             in >> idx >> "\n";
             file_indices.push_back(idx);
         }
+        recovered = true;
     }
 };
+
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
@@ -361,11 +433,11 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     if (Poco::File{current_batch_file_path}.exists())
     {
         /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
-        Batch batch{*this};
+        Batch batch(*this, files);
         ReadBufferFromFile in{current_batch_file_path};
         batch.readText(in);
         file_indices_to_skip.insert(batch.file_indices.begin(), batch.file_indices.end());
-        batch.send(/* save = */ false, files);
+        batch.send();
     }
 
     std::unordered_map<BatchHeader, Batch, BatchHeader::Hash> header_to_batch;
@@ -381,21 +453,20 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         if (file_indices_to_skip.count(file_idx))
             continue;
 
-        ReadBufferFromFile in{file_path};
-        String insert_query;
-        readStringBinary(insert_query, in);
-
-        CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
-
         size_t total_rows = 0;
         size_t total_bytes = 0;
         Block sample_block;
-
-        block_in.readPrefix();
+        String insert_query;
         try
         {
-            /// Determine size of the current file and check if it is not broken.
+            /// Determine metadata of the current file and check if it is not broken.
+            ReadBufferFromFile in{file_path};
+            readStringBinary(insert_query, in);
+
+            CompressedReadBuffer decompressing_in(in);
+            NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
+            block_in.readPrefix();
+
             while (Block block = block_in.read())
             {
                 total_rows += block.rows();
@@ -404,6 +475,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 if (!sample_block)
                     sample_block = block.cloneEmpty();
             }
+            block_in.readSuffix();
         }
         catch (const Exception & e)
         {
@@ -415,60 +487,64 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
             else
                 throw;
         }
-        block_in.readSuffix();
 
         BatchHeader batch_header(std::move(insert_query), std::move(sample_block));
-        Batch & batch = header_to_batch.try_emplace(batch_header, *this).first->second;
+        Batch & batch = header_to_batch.try_emplace(batch_header, *this, files).first->second;
 
         batch.file_indices.push_back(file_idx);
         batch.total_rows += total_rows;
         batch.total_bytes += total_bytes;
 
         if (batch.isEnoughSize())
-            batch.send(/* save = */ true, files);
+            batch.send();
     }
 
     for (auto & kv : header_to_batch)
     {
         Batch & batch = kv.second;
-        batch.send(/* save = */ true, files);
+        batch.send();
     }
 
     Poco::File{current_batch_file_path}.remove();
 }
 
-
-bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception &e) const
+bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
 {
-    const auto code = e.code();
-
-    /// mark file as broken if necessary
-    if (code == ErrorCodes::CHECKSUM_DOESNT_MATCH
+    return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
         || code == ErrorCodes::TOO_LARGE_SIZE_COMPRESSED
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
-        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+        || code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
+}
+
+void StorageDistributedDirectoryMonitor::markAsBroken(const std::string & file_path) const
+{
+    const auto last_path_separator_pos = file_path.rfind('/');
+    const auto & path = file_path.substr(0, last_path_separator_pos + 1);
+    const auto & file_name = file_path.substr(last_path_separator_pos + 1);
+    const auto & broken_path = path + "broken/";
+    const auto & broken_file_path = broken_path + file_name;
+
+    Poco::File{broken_path}.createDirectory();
+    Poco::File{file_path}.renameTo(broken_file_path);
+
+    LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
+}
+
+bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & file_path, const Exception & e) const
+{
+    /// mark file as broken if necessary
+    if (isFileBrokenErrorCode(e.code()))
     {
-        const auto last_path_separator_pos = file_path.rfind('/');
-        const auto & path = file_path.substr(0, last_path_separator_pos + 1);
-        const auto & file_name = file_path.substr(last_path_separator_pos + 1);
-        const auto & broken_path = path + "broken/";
-        const auto & broken_file_path = broken_path + file_name;
-
-        Poco::File{broken_path}.createDirectory();
-        Poco::File{file_path}.renameTo(broken_file_path);
-
-        LOG_ERROR(log, "Renamed `" << file_path << "` to `" << broken_file_path << '`');
-
+        markAsBroken(file_path);
         return true;
     }
     else
         return false;
 }
 
-
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {
-    return storage.name + '.' + storage.getName() + ".DirectoryMonitor";
+    return storage.table_name + '.' + storage.getName() + ".DirectoryMonitor";
 }
 
 }

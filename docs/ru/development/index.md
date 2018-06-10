@@ -1,8 +1,1 @@
-# ClickHouse Development
-
-```eval_rst
-.. toctree::
-    :glob:
-
-    *
-```
+../../en/development/index.md

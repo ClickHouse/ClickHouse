@@ -1,3 +1,4 @@
+#include <Storages/ColumnsDescription.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
@@ -7,8 +8,13 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
-#include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Common/Exception.h>
+
+#include <ext/collection_cast.h>
+#include <ext/map.h>
+
+#include <boost/range/join.hpp>
 
 
 namespace DB
@@ -16,18 +22,54 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_PARSE_TEXT;
 }
 
 
-template <bool store>
-String ColumnsDescription<store>::toString() const
+NamesAndTypesList ColumnsDescription::getAllPhysical() const
+{
+    return ext::collection_cast<NamesAndTypesList>(boost::join(ordinary, materialized));
+}
+
+
+NamesAndTypesList ColumnsDescription::getAll() const
+{
+    return ext::collection_cast<NamesAndTypesList>(boost::join(ordinary, boost::join(materialized, aliases)));
+}
+
+
+Names ColumnsDescription::getNamesOfPhysical() const
+{
+    return ext::map<Names>(boost::join(ordinary, materialized), [] (const auto & it) { return it.name; });
+}
+
+
+NameAndTypePair ColumnsDescription::getPhysical(const String & column_name) const
+{
+    for (auto & it : boost::join(ordinary, materialized))
+        if (it.name == column_name)
+            return it;
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+}
+
+
+bool ColumnsDescription::hasPhysical(const String & column_name) const
+{
+    for (auto & it : boost::join(ordinary, materialized))
+        if (it.name == column_name)
+            return true;
+    return false;
+}
+
+
+String ColumnsDescription::toString() const
 {
     WriteBufferFromOwnString buf;
 
-    writeString("columns format version: 1\n", buf);
-    writeText(columns.size() + materialized.size() + alias.size(), buf);
-    writeString(" columns:\n", buf);
+    writeCString("columns format version: 1\n", buf);
+    writeText(ordinary.size() + materialized.size() + aliases.size(), buf);
+    writeCString(" columns:\n", buf);
 
     const auto write_columns = [this, &buf] (const NamesAndTypesList & columns)
     {
@@ -37,7 +79,7 @@ String ColumnsDescription<store>::toString() const
 
             writeBackQuotedString(column.name, buf);
             writeChar(' ', buf);
-            writeString(column.type->getName(), buf);
+            writeText(column.type->getName(), buf);
             if (it == std::end(defaults))
             {
                 writeChar('\n', buf);
@@ -46,23 +88,22 @@ String ColumnsDescription<store>::toString() const
             else
                 writeChar('\t', buf);
 
-            writeString(DB::toString(it->second.type), buf);
+            writeText(DB::toString(it->second.kind), buf);
             writeChar('\t', buf);
-            writeString(queryToString(it->second.expression), buf);
+            writeText(queryToString(it->second.expression), buf);
             writeChar('\n', buf);
         }
     };
 
-    write_columns(columns);
+    write_columns(ordinary);
     write_columns(materialized);
-    write_columns(alias);
+    write_columns(aliases);
 
     return buf.str();
 }
 
 
-template <>
-ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
+ColumnsDescription ColumnsDescription::parse(const String & str)
 {
     ReadBufferFromString buf{str};
 
@@ -74,7 +115,7 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
     ParserExpression expr_parser;
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    ColumnsDescription<true> result{};
+    ColumnsDescription result;
     for (size_t i = 0; i < count; ++i)
     {
         String column_name;
@@ -82,20 +123,20 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
         assertChar(' ', buf);
 
         String type_name;
-        readString(type_name, buf);
+        readText(type_name, buf);
         auto type = data_type_factory.get(type_name);
         if (*buf.position() == '\n')
         {
             assertChar('\n', buf);
 
-            result.columns.emplace_back(column_name, std::move(type));
+            result.ordinary.emplace_back(column_name, std::move(type));
             continue;
         }
         assertChar('\t', buf);
 
-        String default_type_str;
-        readString(default_type_str, buf);
-        const auto default_type = columnDefaultTypeFromString(default_type_str);
+        String default_kind_str;
+        readText(default_kind_str, buf);
+        const auto default_kind = columnDefaultKindFromString(default_kind_str);
         assertChar('\t', buf);
 
         String default_expr_str;
@@ -104,25 +145,21 @@ ColumnsDescription<true> ColumnsDescription<true>::parse(const String & str)
 
         const char * begin = default_expr_str.data();
         const auto end = begin + default_expr_str.size();
-        ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression");
+        ASTPtr default_expr = parseQuery(expr_parser, begin, end, "default expression", 0);
 
-        if (ColumnDefaultType::Default == default_type)
-            result.columns.emplace_back(column_name, std::move(type));
-        else if (ColumnDefaultType::Materialized == default_type)
+        if (ColumnDefaultKind::Default == default_kind)
+            result.ordinary.emplace_back(column_name, std::move(type));
+        else if (ColumnDefaultKind::Materialized == default_kind)
             result.materialized.emplace_back(column_name, std::move(type));
-        else if (ColumnDefaultType::Alias == default_type)
-            result.alias.emplace_back(column_name, std::move(type));
+        else if (ColumnDefaultKind::Alias == default_kind)
+            result.aliases.emplace_back(column_name, std::move(type));
 
-        result.defaults.emplace(column_name, ColumnDefault{default_type, default_expr});
+        result.defaults.emplace(column_name, ColumnDefault{default_kind, default_expr});
     }
 
     assertEOF(buf);
 
     return result;
 }
-
-
-template struct ColumnsDescription<false>;
-template struct ColumnsDescription<true>;
 
 }

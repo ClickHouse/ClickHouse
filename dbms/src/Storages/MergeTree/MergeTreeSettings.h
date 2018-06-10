@@ -104,6 +104,9 @@ struct MergeTreeSettings
                                                                                                               \
     /** Period to clean old queue logs, blocks hashes and parts */                                            \
     M(SettingUInt64, cleanup_delay_period, 30)                                                                \
+    /** Add uniformly distributed value from 0 to x seconds to cleanup_delay_period                           \
+        to avoid thundering herd effect and subsequent DoS of ZooKeeper in case of very large number of tables */ \
+    M(SettingUInt64, cleanup_delay_period_random_add, 10)                                                     \
                                                                                                               \
     /** Minimal delay from other replicas to yield leadership. Here and further 0 means unlimited. */         \
     M(SettingUInt64, min_relative_delay_to_yield_leadership, 120)                                             \
@@ -131,6 +134,12 @@ struct MergeTreeSettings
       *  for backward compatibility.                                                                          \
       */                                                                                                      \
     M(SettingBool, compatibility_allow_sampling_expression_not_in_primary_key, false)                         \
+                                                                                                              \
+    /** Use small format (dozens bytes) for part checksums in ZooKeeper                                       \
+      *  instead of ordinary ones (dozens KB).                                                                \
+      * Before enabling check that all replicas support new format.                                           \
+      */                                                                                                      \
+    M(SettingBool, use_minimalistic_checksums_in_zookeeper, false)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \

@@ -3,8 +3,8 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Common/HashTable/HashMap.h>
-#include <Common/SipHash.h>
 #include <Common/UInt128.h>
+
 
 namespace DB
 {
@@ -21,6 +21,8 @@ public:
     LimitByBlockInputStream(const BlockInputStreamPtr & input, size_t group_size_, const Names & columns);
 
     String getName() const override { return "LimitBy"; }
+
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;

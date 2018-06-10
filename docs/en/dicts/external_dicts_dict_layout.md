@@ -2,11 +2,11 @@
 
 # Storing dictionaries in memory
 
-There are [many different ways](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
+There are a [variety of ways](#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
 
-We recommend [flat](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-hashed), and [complex_key_hashed](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
+We recommend [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed)and[complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed). which provide optimal processing speed.
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more about this in the "[cache](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout-cache)" section.
+Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section "[cache](#dicts-external_dicts_dict_layout-cache)".
 
 There are several ways to improve dictionary performance:
 
@@ -27,7 +27,7 @@ The configuration looks like this:
     <dictionary>
         ...
         <layout>
-            <layout_type> 
+            <layout_type>
                 <!-- layout settings -->
             </layout_type>
         </layout>
@@ -46,6 +46,7 @@ The configuration looks like this:
 - [range_hashed](#dicts-external_dicts_dict_layout-range_hashed)
 - [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed)
 - [complex_key_cache](#dicts-external_dicts_dict_layout-complex_key_cache)
+- [ip_trie](#dicts-external_dicts_dict_layout-ip_trie)
 
 <a name="dicts-external_dicts_dict_layout-flat"></a>
 
@@ -87,7 +88,7 @@ Configuration example:
 
 ### complex_key_hashed
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md/#dicts-external_dicts_dict_structure). It is similar to hashed.
+This type of storage is for use with composite [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `hashed`.
 
 Configuration example:
 
@@ -108,10 +109,18 @@ This storage method works the same way as hashed and allows using date/time rang
 Example: The table contains discounts for each advertiser in the format:
 
 ```
-+------------------+-----------------------------+------------+----------+  | advertiser id | discount start date | discount end date | amount |  +==================+=============================+============+==========+  | 123              | 2015-01-01                  | 2015-01-15 | 0.15     |  +------------------+-----------------------------+------------+----------+  | 123              | 2015-01-16                  | 2015-01-31 | 0.25     |  +------------------+-----------------------------+------------+----------+  | 456              | 2015-01-01                  | 2015-01-15 | 0.05     |  +------------------+-----------------------------+------------+----------+
++---------------+---------------------+-------------------+--------+
+| advertiser id | discount start date | discount end date | amount |
++===============+=====================+===================+========+
+| 123           | 2015-01-01          | 2015-01-15        | 0.15   |
++---------------+---------------------+-------------------+--------+
+| 123           | 2015-01-16          | 2015-01-31        | 0.25   |
++---------------+---------------------+-------------------+--------+
+| 456           | 2015-01-01          | 2015-01-15        | 0.05   |
++---------------+---------------------+-------------------+--------+
 ```
 
-To use a sample for date ranges, define `range_min` and `range_max` in [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure).
+To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure).
 
 Example:
 
@@ -131,7 +140,9 @@ Example:
 
 To work with these dictionaries, you need to pass an additional date argument to the `dictGetT` function:
 
-    dictGetT('dict_name', 'attr_name', id, date)
+```
+dictGetT('dict_name', 'attr_name', id, date)
+```
 
 This function returns the value for the specified `id`s and the date range that includes the passed date.
 
@@ -182,7 +193,7 @@ The dictionary is stored in a cache that has a fixed number of cells. These cell
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using ` SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-For cache dictionaries, the expiration (lifetime &lt;dicts-external_dicts_dict_lifetime&gt;) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used, and it is re-requested the next time it needs to be used.
+For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used, and it is re-requested the next time it needs to be used.
 
 This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
 
@@ -195,8 +206,8 @@ Example of settings:
 ```xml
 <layout>
     <cache>
-        <!-- The size of the cache, in number of cells. Rounded up to a power of two. --> 
-               <size_in_cells>1000000000</size_in_cells>
+        <!-- The size of the cache, in number of cells. Rounded up to a power of two. -->
+        <size_in_cells>1000000000</size_in_cells>
     </cache>
 </layout>
 ```
@@ -218,5 +229,69 @@ Do not use ClickHouse as a source, because it is slow to process queries with ra
 
 ### complex_key_cache
 
-This type of storage is designed for use with compound [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
+This type of storage is for use with composite [keys](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Similar to `cache`.
 
+<a name="dicts-external_dicts_dict_layout-ip_trie"></a>
+
+### ip_trie
+
+This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
+
+Example: The table contains network prefixes and their corresponding AS number and country code:
+
+```
+  +-----------------+-------+--------+
+  | prefix          | asn   | cca2   |
+  +=================+=======+========+
+  | 202.79.32.0/20  | 17501 | NP     |
+  +-----------------+-------+--------+
+  | 2620:0:870::/48 | 3856  | US     |
+  +-----------------+-------+--------+
+  | 2a02:6b8:1::/48 | 13238 | RU     |
+  +-----------------+-------+--------+
+  | 2001:db8::/32   | 65536 | ZZ     |
+  +-----------------+-------+--------+
+```
+
+When using this type of layout, the structure must have a composite key.
+
+Example:
+
+```xml
+<structure>
+    <key>
+        <attribute>
+            <name>prefix</name>
+            <type>String</type>
+        </attribute>
+    </key>
+    <attribute>
+            <name>asn</name>
+            <type>UInt32</type>
+            <null_value />
+    </attribute>
+    <attribute>
+            <name>cca2</name>
+            <type>String</type>
+            <null_value>??</null_value>
+    </attribute>
+    ...
+```
+
+The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
+
+For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
+
+```
+dictGetT('dict_name', 'attr_name', tuple(ip))
+```
+
+The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
+
+```
+dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+```
+
+Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
+
+Data is stored in a `trie`. It must completely fit into RAM.

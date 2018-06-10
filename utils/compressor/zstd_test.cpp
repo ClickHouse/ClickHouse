@@ -1,7 +1,8 @@
-#include <unistd.h>
+#include <port/unistd.h>
 #include <zstd.h>
 #include <vector>
 #include <stdexcept>
+#include <sys/types.h>
 
 
 int main(int argc, char ** argv)

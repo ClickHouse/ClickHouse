@@ -1,7 +1,7 @@
 #include <Interpreters/ExternalLoaderConfigRepository.h>
 
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/ConfigProcessor/ConfigProcessor.h>
+#include <Common/Config/ConfigProcessor.h>
 #include <Common/getMultipleKeysFromConfig.h>
 
 #include <Poco/Glob.h>

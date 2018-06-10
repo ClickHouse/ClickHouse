@@ -23,7 +23,7 @@ static ReadBufferFromFile openForReading(const String & path)
 /// So if you want to change this method, be sure to guarantee compatibility with existing table data.
 String MergeTreePartition::getID(const MergeTreeData & storage) const
 {
-    if (value.size() != storage.partition_expr_columns.size())
+    if (value.size() != storage.partition_key_sample.columns())
         throw Exception("Invalid partition key size: " + toString(value.size()), ErrorCodes::LOGICAL_ERROR);
 
     if (value.empty())
@@ -51,8 +51,8 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
             if (i > 0)
                 result += '-';
 
-            if (typeid_cast<const DataTypeDate *>(storage.partition_expr_column_types[i].get()))
-                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum_t(value[i].safeGet<UInt64>())));
+            if (typeid_cast<const DataTypeDate *>(storage.partition_key_sample.getByPosition(i).type.get()))
+                result += toString(DateLUT::instance().toNumYYYYMMDD(DayNum(value[i].safeGet<UInt64>())));
             else
                 result += applyVisitor(to_string_visitor, value[i]);
 
@@ -77,9 +77,9 @@ String MergeTreePartition::getID(const MergeTreeData & storage) const
     return result;
 }
 
-void MergeTreePartition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out) const
+void MergeTreePartition::serializeTextQuoted(const MergeTreeData & storage, WriteBuffer & out, const FormatSettings & format_settings) const
 {
-    size_t key_size = storage.partition_expr_column_types.size();
+    size_t key_size = storage.partition_key_sample.columns();
 
     if (key_size == 0)
     {
@@ -95,10 +95,10 @@ void MergeTreePartition::serializeTextQuoted(const MergeTreeData & storage, Writ
         if (i > 0)
             writeCString(", ", out);
 
-        const DataTypePtr & type = storage.partition_expr_column_types[i];
+        const DataTypePtr & type = storage.partition_key_sample.getByPosition(i).type;
         auto column = type->createColumn();
         column->insert(value[i]);
-        type->serializeTextQuoted(*column, 0, out);
+        type->serializeTextQuoted(*column, 0, out, format_settings);
     }
 
     if (key_size > 1)
@@ -111,9 +111,9 @@ void MergeTreePartition::load(const MergeTreeData & storage, const String & part
         return;
 
     ReadBufferFromFile file = openForReading(part_path + "partition.dat");
-    value.resize(storage.partition_expr_column_types.size());
-    for (size_t i = 0; i < storage.partition_expr_column_types.size(); ++i)
-        storage.partition_expr_column_types[i]->deserializeBinary(value[i], file);
+    value.resize(storage.partition_key_sample.columns());
+    for (size_t i = 0; i < storage.partition_key_sample.columns(); ++i)
+        storage.partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], file);
 }
 
 void MergeTreePartition::store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const
@@ -124,7 +124,7 @@ void MergeTreePartition::store(const MergeTreeData & storage, const String & par
     WriteBufferFromFile out(part_path + "partition.dat");
     HashingWriteBuffer out_hashing(out);
     for (size_t i = 0; i < value.size(); ++i)
-        storage.partition_expr_column_types[i]->serializeBinary(value[i], out_hashing);
+        storage.partition_key_sample.getByPosition(i).type->serializeBinary(value[i], out_hashing);
     out_hashing.next();
     checksums.files["partition.dat"].file_size = out_hashing.count();
     checksums.files["partition.dat"].file_hash = out_hashing.getHash();

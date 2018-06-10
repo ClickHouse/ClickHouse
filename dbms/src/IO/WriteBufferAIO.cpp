@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__))
+#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <IO/WriteBufferAIO.h>
 #include <Common/ProfileEvents.h>
@@ -6,6 +6,7 @@
 #include <limits>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 
 namespace ProfileEvents

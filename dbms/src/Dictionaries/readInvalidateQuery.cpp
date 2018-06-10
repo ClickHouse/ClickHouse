@@ -6,8 +6,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int TOO_MUCH_COLUMNS;
-extern const int TOO_MUCH_ROWS;
+extern const int TOO_MANY_COLUMNS;
+extern const int TOO_MANY_ROWS;
 extern const int RECEIVED_EMPTY_DATA;
 }
 
@@ -22,13 +22,13 @@ std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)
 
     auto columns = block.columns();
     if (columns > 1)
-        throw Exception("Expected single column in resultset, got " + std::to_string(columns), ErrorCodes::TOO_MUCH_COLUMNS);
+        throw Exception("Expected single column in resultset, got " + std::to_string(columns), ErrorCodes::TOO_MANY_COLUMNS);
 
     auto rows = block.rows();
     if (rows == 0)
         throw Exception("Expected single row in resultset, got 0", ErrorCodes::RECEIVED_EMPTY_DATA);
     if (rows > 1)
-        throw Exception("Expected single row in resultset, got at least " + std::to_string(rows), ErrorCodes::TOO_MUCH_ROWS);
+        throw Exception("Expected single row in resultset, got at least " + std::to_string(rows), ErrorCodes::TOO_MANY_ROWS);
 
     auto column = block.getByPosition(0).column;
     response = column->getDataAt(0).toString();
@@ -36,7 +36,7 @@ std::string readInvalidateQuery(IProfilingBlockInputStream & block_input_stream)
     while ((block = block_input_stream.read()))
     {
         if (block.rows() > 0)
-            throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MUCH_ROWS);
+            throw Exception("Expected single row in resultset, got at least " + std::to_string(rows + 1), ErrorCodes::TOO_MANY_ROWS);
     }
 
     block_input_stream.readSuffix();

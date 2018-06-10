@@ -21,6 +21,11 @@ public:
 
     BlockInputStreamPtr loadAll() override;
 
+    BlockInputStreamPtr loadUpdatedAll() override
+    {
+        throw Exception{"Method loadUpdatedAll is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
+    }
+
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & /*ids*/) override
     {
         throw Exception{"Method loadIds is unsupported for FileDictionarySource", ErrorCodes::NOT_IMPLEMENTED};
@@ -34,6 +39,9 @@ public:
 
     bool isModified() const override { return getLastModification() > last_modification; }
     bool supportsSelectiveLoad() const override { return false; }
+
+    ///Not supported for FileDictionarySource
+    bool hasUpdateField() const override { return false; }
 
     DictionarySourcePtr clone() const override { return std::make_unique<FileDictionarySource>(*this); }
 

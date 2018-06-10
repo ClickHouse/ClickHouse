@@ -1,10 +1,10 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #set -e
 
 [[ -n "$1" ]] && host="$1" || host="localhost"
-[[ -n "$2" ]] && min_timestamp="$2" || min_timestamp=$(( $(date +%s) - 10 ))
-[[ -n "$3" ]] && max_timestamp="$3" || max_timestamp=$(( $(date +%s) + 10 ))
-[[ -n "$4" ]] && iters_per_timestamp="$4" || iters_per_timestamp=1
+[[ -n "$2" ]] && min_timestamp="$2" || min_timestamp=$(( $(date +%s) - 60 ))
+[[ -n "$3" ]] && max_timestamp="$3" || max_timestamp=$(( $(date +%s) + 60 ))
+[[ -n "$4" ]] && iters_per_timestamp="$4" || iters_per_timestamp=5
 
 timestamps=`seq $min_timestamp $max_timestamp`
 

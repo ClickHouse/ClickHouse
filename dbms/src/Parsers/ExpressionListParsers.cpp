@@ -206,7 +206,6 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
 
 bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
     ASTPtr arguments;
 
     if (!elem_parser->parse(pos, node, expected))
@@ -229,9 +228,6 @@ bool ParserVariableArityOperatorList::parseImpl(Pos & pos, ASTPtr & node, Expect
 
         arguments->children.push_back(elem);
     }
-
-    if (arguments)
-        arguments->range = node->range = StringRange(begin, pos);
 
     return true;
 }
@@ -539,13 +535,6 @@ ParserExpressionWithOptionalAlias::ParserExpressionWithOptionalAlias(bool allow_
 }
 
 
-ParserExpressionInCastExpression::ParserExpressionInCastExpression(bool allow_alias_without_as_keyword)
-    : impl(std::make_unique<ParserCastExpressionWithOptionalAlias>(std::make_unique<ParserExpression>(),
-                                                                   allow_alias_without_as_keyword, false))
-{
-}
-
-
 bool ParserExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(
@@ -575,8 +564,6 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!ParserComparisonExpression{}.parse(pos, node_comp, expected))
         return false;
 
-    Pos begin = pos;
-
     ParserKeyword s_is{"IS"};
     ParserKeyword s_not{"NOT"};
     ParserKeyword s_null{"NULL"};
@@ -593,7 +580,7 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         auto args = std::make_shared<ASTExpressionList>();
         args->children.push_back(node_comp);
 
-        auto function = std::make_shared<ASTFunction>(StringRange{begin, pos});
+        auto function = std::make_shared<ASTFunction>();
         function->name = is_not ? "isNotNull" : "isNull";
         function->arguments = args;
         function->children.push_back(function->arguments);

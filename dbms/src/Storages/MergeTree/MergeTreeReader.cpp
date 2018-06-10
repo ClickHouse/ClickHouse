@@ -66,12 +66,6 @@ const MergeTreeReader::ValueSizeMap & MergeTreeReader::getAvgValueSizeHints() co
 }
 
 
-MergeTreeRangeReader MergeTreeReader::readRange(size_t from_mark, size_t to_mark)
-{
-    return MergeTreeRangeReader(*this, from_mark, to_mark, storage.index_granularity);
-}
-
-
 size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Block & res)
 {
     size_t read_rows = 0;
@@ -111,7 +105,8 @@ size_t MergeTreeReader::readRows(size_t from_mark, bool continue_reading, size_t
 
                 /// share offsets in all elements of nested structure
                 if (!append)
-                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(), it_inserted.first->second);
+                    column = ColumnArray::create(type_arr->getNestedType()->createColumn(),
+                                                 it_inserted.first->second)->assumeMutable();
             }
 
             try
@@ -370,7 +365,7 @@ void MergeTreeReader::readData(
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
         /// If offsets for arrays have already been read.
-        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
+        if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, path);
@@ -413,7 +408,7 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_names, bool always_reorder)
+void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, bool & should_evaluate_missing_defaults)
 {
     if (!res)
         throw Exception("Empty block passed to fillMissingColumns", ErrorCodes::LOGICAL_ERROR);
@@ -422,7 +417,6 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
     {
         /// For a missing column of a nested data structure we must create not a column of empty
         /// arrays, but a column of arrays of correct length.
-        /// NOTE: Similar, but slightly different code is present in Block::addDefaults.
 
         /// First, collect offset columns for all arrays in the block.
         OffsetColumns offset_columns;
@@ -442,10 +436,8 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
             }
         }
 
-        bool should_evaluate_defaults = false;
-        bool should_sort = always_reorder;
-
-        size_t rows = res.rows();
+        should_evaluate_missing_defaults = false;
+        should_reorder = false;
 
         /// insert default values only for columns without default expressions
         for (const auto & requested_column : columns)
@@ -463,10 +455,10 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
 
             if (!has_column)
             {
-                should_sort = true;
-                if (storage.column_defaults.count(requested_column.name) != 0)
+                should_reorder = true;
+                if (storage.getColumns().defaults.count(requested_column.name) != 0)
                 {
-                    should_evaluate_defaults = true;
+                    should_evaluate_missing_defaults = true;
                     continue;
                 }
 
@@ -490,28 +482,46 @@ void MergeTreeReader::fillMissingColumns(Block & res, const Names & ordered_name
                 {
                     /// We must turn a constant column into a full column because the interpreter could infer that it is constant everywhere
                     /// but in some blocks (from other parts) it can be a full column.
-                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
+                    column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(res.rows())->convertToFullColumnIfConst();
                 }
 
                 res.insert(std::move(column_to_add));
             }
         }
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        e.addMessage("(while reading from part " + path + ")");
+        throw;
+    }
+}
 
-        /// evaluate defaulted columns if necessary
-        if (should_evaluate_defaults)
-            evaluateMissingDefaults(res, columns, storage.column_defaults, storage.context);
+void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
+{
+    try
+    {
+        Block ordered_block;
 
-        /// sort columns to ensure consistent order among all blocks
-        if (should_sort)
-        {
-            Block ordered_block;
+        for (const auto & name : ordered_names)
+            if (res.has(name))
+                ordered_block.insert(res.getByName(name));
 
-            for (const auto & name : ordered_names)
-                if (res.has(name))
-                    ordered_block.insert(res.getByName(name));
+        std::swap(res, ordered_block);
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        e.addMessage("(while reading from part " + path + ")");
+        throw;
+    }
+}
 
-            std::swap(res, ordered_block);
-        }
+void MergeTreeReader::evaluateMissingDefaults(Block & res)
+{
+    try
+    {
+        DB::evaluateMissingDefaults(res, columns, storage.getColumns().defaults, storage.context);
     }
     catch (Exception & e)
     {

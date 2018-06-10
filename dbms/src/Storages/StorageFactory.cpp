@@ -4,6 +4,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -45,10 +46,7 @@ StoragePtr StorageFactory::get(
     const String & database_name,
     Context & local_context,
     Context & context,
-    const NamesAndTypesList & columns,
-    const NamesAndTypesList & materialized_columns,
-    const NamesAndTypesList & alias_columns,
-    const ColumnDefaults & column_defaults,
+    const ColumnsDescription & columns,
     bool attach,
     bool has_force_restore_data_flag) const
 {
@@ -67,9 +65,7 @@ StoragePtr StorageFactory::get(
     {
         /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
         /// Exception: any type is allowed in View, because plain (non-materialized) View does not store anything itself.
-        checkAllTypesAreAllowedInTable(columns);
-        checkAllTypesAreAllowedInTable(materialized_columns);
-        checkAllTypesAreAllowedInTable(alias_columns);
+        checkAllTypesAreAllowedInTable(columns.getAll());
 
         if (query.is_materialized_view)
         {
@@ -130,9 +126,6 @@ StoragePtr StorageFactory::get(
         .local_context = local_context,
         .context = context,
         .columns = columns,
-        .materialized_columns = materialized_columns,
-        .alias_columns = alias_columns,
-        .column_defaults = column_defaults,
         .attach = attach,
         .has_force_restore_data_flag = has_force_restore_data_flag
     };

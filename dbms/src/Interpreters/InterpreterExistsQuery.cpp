@@ -17,22 +17,23 @@ BlockIO InterpreterExistsQuery::execute()
 {
     BlockIO res;
     res.in = executeImpl();
-    res.in_sample = getSampleBlock();
-
     return res;
 }
 
 
 Block InterpreterExistsQuery::getSampleBlock()
 {
-    return {{ std::make_shared<DataTypeUInt8>(), "result" }};
+    return Block{{
+        ColumnUInt8::create(),
+        std::make_shared<DataTypeUInt8>(),
+        "result" }};
 }
 
 
 BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
     const ASTExistsQuery & ast = typeid_cast<const ASTExistsQuery &>(*query_ptr);
-    bool res = context.isTableExist(ast.database, ast.table);
+    bool res = ast.temporary ? context.isExternalTableExist(ast.table) : context.isTableExist(ast.database, ast.table);
 
     return std::make_shared<OneBlockInputStream>(Block{{
         ColumnUInt8::create(1, res),

@@ -53,9 +53,9 @@ struct ExternalLoaderConfigSettings
 
 /** Manages user-defined objects.
 *    Monitors configuration file and automatically reloads objects in a separate thread.
-*    The monitoring thread wakes up every @check_period_sec seconds and checks
+*    The monitoring thread wakes up every 'check_period_sec' seconds and checks
 *    modification time of objects' configuration file. If said time is greater than
-*    @config_last_modified, the objects are created from scratch using configuration file,
+*    'config_last_modified', the objects are created from scratch using configuration file,
 *    possibly overriding currently existing objects with the same name (previous versions of
 *    overridden objects will live as long as there are any users retaining them).
 *
@@ -104,6 +104,7 @@ public:
     void reload(const std::string & name);
 
     LoadablePtr getLoadable(const std::string & name) const;
+    LoadablePtr tryGetLoadable(const std::string & name) const;
 
 protected:
     virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
@@ -112,11 +113,11 @@ protected:
     class LockedObjectsMap
     {
     public:
-        LockedObjectsMap(std::mutex & mutex, const ObjectsMap & objectsMap) : lock(mutex), objectsMap(objectsMap) {}
-        const ObjectsMap & get() { return objectsMap; }
+        LockedObjectsMap(std::mutex & mutex, const ObjectsMap & objects_map) : lock(mutex), objects_map(objects_map) {}
+        const ObjectsMap & get() { return objects_map; }
     private:
         std::unique_lock<std::mutex> lock;
-        const ObjectsMap & objectsMap;
+        const ObjectsMap & objects_map;
     };
 
     /// Direct access to objects.
@@ -172,6 +173,8 @@ private:
     void reloadAndUpdate(bool throw_on_error = false);
 
     void reloadPeriodically();
+
+    LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
 };
 
 }

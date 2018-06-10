@@ -167,7 +167,7 @@ void aggregate33(Map & local_map, Map & global_map, Mutex & mutex, Source::const
 
         if (inserted && local_map.size() == threshold)
         {
-            Poco::ScopedLock<Mutex> lock(mutex);
+            std::lock_guard<Mutex> lock(mutex);
             for (auto & value_type : local_map)
                 global_map[value_type.first] += value_type.second;
 

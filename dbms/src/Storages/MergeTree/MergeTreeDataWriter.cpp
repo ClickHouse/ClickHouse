@@ -81,9 +81,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     data.partition_expr->execute(block_copy);
 
     ColumnRawPtrs partition_columns;
-    partition_columns.reserve(data.partition_expr_columns.size());
-    for (const String & name : data.partition_expr_columns)
-        partition_columns.emplace_back(block_copy.getByName(name).column.get());
+    partition_columns.reserve(data.partition_key_sample.columns());
+    for (const ColumnWithTypeAndName & element : data.partition_key_sample)
+        partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
 
     PODArray<size_t> partition_num_to_first_row;
     IColumn::Selector selector;
@@ -103,7 +103,9 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(const Block & block
     if (partitions_count == 1)
     {
         /// A typical case is when there is one partition (you do not need to split anything).
-        result.emplace_back(std::move(block_copy), get_partition(0));
+        /// NOTE: returning a copy of the original block so that calculated partition key columns
+        /// do not interfere with possible calculated primary key columns of the same name.
+        result.emplace_back(Block(block), get_partition(0));
         return result;
     }
 
@@ -138,13 +140,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date(minmax_idx.min_values[data.minmax_idx_date_column_pos].get<UInt64>());
-        DayNum_t max_date(minmax_idx.max_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum min_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].left.get<UInt64>());
+        DayNum max_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
         const auto & date_lut = DateLUT::instance();
 
-        DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
-        DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
+        DayNum min_month = date_lut.toFirstDayNumOfMonth(DayNum(min_date));
+        DayNum max_month = date_lut.toFirstDayNumOfMonth(DayNum(max_date));
 
         if (min_month != max_month)
             throw Exception("Logical error: part spans more than one month.");
@@ -172,9 +174,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     dir.createDirectories();
 
-    /// If you need to calculate some columns to sort, we do it.
-    if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    /// If we need to calculate some columns to sort.
+    if (data.hasPrimaryKey())
+    {
         data.getPrimaryExpression()->execute(block);
+        auto secondary_sort_expr = data.getSecondarySortExpression();
+        if (secondary_sort_expr)
+            secondary_sort_expr->execute(block);
+    }
 
     SortDescription sort_descr = data.getSortDescription();
 
@@ -183,7 +190,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Sort.
     IColumn::Permutation * perm_ptr = nullptr;
     IColumn::Permutation perm;
-    if (data.merging_params.mode != MergeTreeData::MergingParams::Unsorted)
+    if (data.hasPrimaryKey())
     {
         if (!isAlreadySorted(block, sort_descr))
         {
@@ -198,7 +205,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_settings = data.context.chooseCompressionSettings(0, 0);
 
-    NamesAndTypesList columns = data.getColumnsList().filter(block.getNames());
+    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
     MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_settings);
 
     out.writePrefix();
@@ -207,7 +214,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterRows, block.rows());
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterUncompressedBytes, block.bytes());
-    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->size_in_bytes);
+    ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterCompressedBytes, new_data_part->bytes_on_disk);
 
     return new_data_part;
 }

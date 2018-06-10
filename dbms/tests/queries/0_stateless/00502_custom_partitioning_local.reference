@@ -7,6 +7,7 @@ tuple()	all_1_2_1
 Sum before DETACH PARTITION:
 15
 Sum after DETACH PARTITION:
+0
 *** Partitioned by week ***
 Parts before OPTIMIZE:
 \'1999-12-27\'	19991227_1_1_0

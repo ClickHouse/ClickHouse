@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
+#include <Storages/IStorage.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
@@ -22,8 +23,8 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
-    extern const int TOO_MUCH_SIMULTANEOUS_QUERIES;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace DataPartsExchange
@@ -68,6 +69,9 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     ++data.current_table_sends;
     SCOPE_EXIT({--data.current_table_sends;});
 
+    StoragePtr owned_storage = storage.lock();
+    if (!owned_storage)
+        throw Exception("The table was already dropped", ErrorCodes::UNKNOWN_TABLE);
 
     LOG_TRACE(log, "Sending part " << part_name);
 
@@ -122,7 +126,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
     }
     catch (const NetException & e)
     {
-        /// Network error or error on remote side. No need to enquue part for check.
+        /// Network error or error on remote side. No need to enqueue part for check.
         throw;
     }
     catch (const Exception & e)
@@ -156,7 +160,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & host,
     int port,
     const ConnectionTimeouts & timeouts,
-    bool to_detached)
+    bool to_detached,
+    const String & tmp_prefix_)
 {
     Poco::URI uri;
     uri.setScheme("http");
@@ -172,7 +177,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts};
 
     static const String TMP_PREFIX = "tmp_fetch_";
-    String relative_part_path = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;
+    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+
+    String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
     String absolute_part_path = data.getFullPath() + relative_part_path + "/";
     Poco::File part_file(absolute_part_path);
 

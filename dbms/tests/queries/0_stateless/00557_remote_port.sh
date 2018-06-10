@@ -20,3 +20,7 @@ fi
 
 $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('${CLICKHOUSE_HOST}',          system, one);"
 $CLICKHOUSE_CLIENT -q "SELECT * FROM remote('${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}',     system, one);"
+
+$CLICKHOUSE_CLIENT -q "SELECT * FROM remote(test_shard_localhost, system, one);"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM remote(test_shard_localhost, system, one, 'default', '');"
+$CLICKHOUSE_CLIENT -q "SELECT * FROM cluster('test_shard_localhost', system, one);"

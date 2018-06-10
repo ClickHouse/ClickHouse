@@ -76,7 +76,12 @@ private:
     const String group;
     const String format_name;
     const String schema_name;
-    size_t num_consumers; /// Total number of created consumers
+     /// Total number of consumers
+    size_t num_consumers;
+    /// Number of actually created consumers.
+    /// Can differ from num_consumers in case of exception in startup() (or if startup() hasn't been called).
+    /// In this case we still need to be able to shutdown() properly.
+    size_t num_created_consumers = 0;
     Poco::Logger * log;
 
     // Consumer list
@@ -102,10 +107,7 @@ protected:
         const std::string & table_name_,
         const std::string & database_name_,
         Context & context_,
-        const NamesAndTypesList & columns_,
-        const NamesAndTypesList & materialized_columns_,
-        const NamesAndTypesList & alias_columns_,
-        const ColumnDefaults & column_defaults_,
+        const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
         const String & format_name_, const String & schema_name_, size_t num_consumers_);
 };

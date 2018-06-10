@@ -118,9 +118,7 @@ struct AggregateFunctionUniqUpToData<UInt128> : AggregateFunctionUniqUpToData<UI
     void add(const IColumn & column, size_t row_num, UInt8 threshold)
     {
         UInt128 value = static_cast<const ColumnVector<UInt128> &>(column).getData()[row_num];
-        SipHash hash;
-        hash.update(reinterpret_cast<const char *>(&value), sizeof(value));
-        insert(hash.get64(), threshold);
+        insert(sipHash64(value), threshold);
     }
 };
 

@@ -1,4 +1,4 @@
-#Queries
+# Queries
 
 ## CREATE DATABASE
 
@@ -10,6 +10,8 @@ CREATE DATABASE [IF NOT EXISTS] db_name
 
 `A database` is just a directory for tables.
 If `IF NOT EXISTS` is included, the query won't return an error if the database already exists.
+
+<a name="query_language-queries-create_table"></a>
 
 ## CREATE TABLE
 
@@ -181,7 +183,7 @@ Deletes all tables inside the 'db' database, then deletes the 'db' database itse
 If `IF EXISTS` is specified, it doesn't return an error if the database doesn't exist.
 
 ```sql
-DROP TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
+DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Deletes the table.
@@ -305,16 +307,15 @@ SELECT * FROM system.parts WHERE active
 `active` – Only count active parts. Inactive parts are, for example, source parts remaining after merging to a larger part – these parts are deleted approximately 10 minutes after merging.
 
 Another way to view a set of parts and partitions is to go into the directory with table data.
-Data directory: `/var/lib/clickhouse/data/database/table/`,
-where `/var/lib/clickhouse/` is the path to the ClickHouse data, 'database' is the database name, and 'table' is the table name. Example:
+Data directory: `/var/lib/clickhouse/data/database/table/`,where `/var/lib/clickhouse/` is the path to the ClickHouse data, 'database' is the database name, and 'table' is the table name. Example:
 
 ```bash
 $ ls -l /var/lib/clickhouse/data/test/visits/
 total 48
-drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_2_2_0
-drwxrwxrwx 2 clickhouse clickhouse 20480 may   13 02:58 20140317_20140323_4_4_0
-drwxrwxrwx 2 clickhouse clickhouse  4096 may   13 02:55 detached
--rw-rw-rw- 1 clickhouse clickhouse     2 may   13 02:58 increment.txt
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_2_2_0
+drwxrwxrwx 2 clickhouse clickhouse 20480 May  5 02:58 20140317_20140323_4_4_0
+drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
+-rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
 ```
 
 Here, `20140317_20140323_2_2_0` and ` 20140317_20140323_4_4_0` are the directories of data parts.
@@ -449,7 +450,7 @@ See also the section "Formats".
 ## SHOW TABLES
 
 ```sql
-SHOW TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
+SHOW [TEMPORARY] TABLES [FROM db] [LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Displays a list of tables
@@ -459,7 +460,7 @@ Displays a list of tables
 
 This query is identical to: `SELECT name FROM system.tables WHERE database = 'db' [AND name LIKE 'pattern'] [INTO OUTFILE filename] [FORMAT format]`.
 
-See the section "LIKE operator" also.
+See also the section "LIKE operator".
 
 ## SHOW PROCESSLIST
 
@@ -483,7 +484,7 @@ Prints a table containing the columns:
 
 **query** – The query itself. In INSERT queries, the data for insertion is not output.
 
-**query_id** - The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
+**query_id** – The query identifier. Non-empty only if it was explicitly defined by the user. For distributed processing, the query ID is not passed to remote servers.
 
 This query is identical to: `SELECT * FROM system.processes [INTO OUTFILE filename] [FORMAT format]`.
 
@@ -496,7 +497,7 @@ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ## SHOW CREATE TABLE
 
 ```sql
-SHOW CREATE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
+SHOW CREATE [TEMPORARY] TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified table.
@@ -514,7 +515,7 @@ Nested data structures are output in "expanded" format. Each column is shown sep
 ## EXISTS
 
 ```sql
-EXISTS TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
+EXISTS [TEMPORARY] TABLE [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn't exist, or `1` if the table exists in the specified database.
@@ -570,9 +571,9 @@ The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case
 - The values calculated from the `DEFAULT`  expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-If [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), columns that do not have ` DEFAULT` defined must be listed in the query.
+If [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), columns that do not have `DEFAULT` defined must be listed in the query.
 
-The INSERT can pass data in any [format](../formats/index.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
+Data can be passed to the INSERT in any [format](../formats/index.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
 ```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -971,8 +972,7 @@ All columns that are not needed for the JOIN are deleted from the subquery.
 
 There are several types of JOINs:
 
-`INNER` or `LEFT` type:
-If INNER is specified, the result will contain only those rows that have a matching row in the right table.
+`INNER` or `LEFT` type:If INNER is specified, the result will contain only those rows that have a matching row in the right table.
 If LEFT is specified, any rows in the left table that don't have matching rows in the right table will be assigned the default value - zeros or empty rows. LEFT OUTER may be written instead of LEFT; the word OUTER does not affect anything.
 
 `ANY` or `ALL` stringency:If `ANY` is specified and the right table has several matching rows, only the first one found is joined.
@@ -1348,7 +1348,7 @@ There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  
 
 <div class="admonition attention">
 
-Remember that the algorithms described below may work differently depending on the [](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode` setting.
+Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode` setting.
 
 </div>
 
@@ -1434,7 +1434,7 @@ and the result will be put in a temporary table in RAM. Then the request will be
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 
-and the temporary table '_data1' will be sent to every remote server together with the query (the name of the temporary table is implementation-defined).
+and the temporary table `_data1` will be sent to every remote server with the query (the name of the temporary table is implementation-defined).
 
 This is more optimal than using the normal IN. However, keep the following points in mind:
 
@@ -1476,34 +1476,34 @@ In all other cases, we don't recommend using the asterisk, since it only gives y
 ## KILL QUERY
 
 ```sql
-KILL QUERY WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
+KILL QUERY
+  WHERE <where expression to SELECT FROM system.processes query>
+  [SYNC|ASYNC|TEST]
+  [FORMAT format]
 ```
 
-Attempts to terminate queries currently running.
-The queries to terminate are selected from the system.processes table for which expression_for_system.processes is true.
+Attempts to forcibly terminate the currently running queries.
+The queries to terminate are selected from the system.processes table using the criteria defined in the `WHERE` clause of the `KILL` query.
 
 Examples:
 
 ```sql
+-- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
-```
 
-Terminates all queries with the specified query_id.
-
-```sql
+-- Synchronously terminates all queries run by 'username':
 KILL QUERY WHERE user='username' SYNC
 ```
 
-Synchronously terminates all queries run by `username`.
+Read-only users can only stop their own queries.
 
-Readonly-users can only terminate their own requests.
-By default, the asynchronous version of queries is used (`ASYNC`), which terminates without waiting for queries to complete.
-The synchronous version (`SYNC`) waits for all queries to be completed and displays information about each process as it terminates.
+By default, the asynchronous version of queries is used (`ASYNC`), which doesn't wait for confirmation that queries have stopped.
+
+The synchronous version (`SYNC`) waits for all queries to stop and displays information about each process as it stops.
 The response contains the `kill_status` column, which can take the following values:
 
-1. 'finished' – The query completed successfully.
-2. 'waiting' – Waiting for the query to finish after sending it a signal to terminate.
-3. The other values ​​explain why the query can't be terminated.
+1. 'finished' – The query was terminated successfully.
+2. 'waiting' – Waiting for the query to end after sending it a signal to terminate.
+3. The other values ​​explain why the query can't be stopped.
 
-A test query (`TEST`) only checks the user's rights and displays a list of queries to terminate.
-
+A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.

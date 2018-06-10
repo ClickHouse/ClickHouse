@@ -16,12 +16,7 @@ public:
 
     String getName() const override { return "Squashing"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "Squashing(" << children.at(0)->getID() << ")";
-        return res.str();
-    }
+    Block getHeader() const override { return children.at(0)->getHeader(); }
 
 protected:
     Block readImpl() override;

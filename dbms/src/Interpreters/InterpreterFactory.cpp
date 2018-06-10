@@ -7,6 +7,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
@@ -25,6 +26,7 @@
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
@@ -33,7 +35,17 @@
 #include <Interpreters/InterpreterUseQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
+
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event Query;
+    extern const Event SelectQuery;
+    extern const Event InsertQuery;
+}
 
 
 namespace DB
@@ -47,19 +59,36 @@ namespace ErrorCodes
 
 static void throwIfReadOnly(Context & context)
 {
-    if (context.getSettingsRef().limits.readonly)
-        throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+    if (context.getSettingsRef().readonly)
+    {
+        const auto & client_info = context.getClientInfo();
+        if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
+            throw Exception("Cannot execute query in readonly mode. "
+                "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries.", ErrorCodes::READONLY);
+        else
+            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
+    }
 }
 
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
+    ProfileEvents::increment(ProfileEvents::Query);
+
     if (typeid_cast<ASTSelectQuery *>(query.get()))
     {
-        return std::make_unique<InterpreterSelectQuery>(query, context, stage);
+        /// This is internal part of ASTSelectWithUnionQuery.
+        /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
+        return std::make_unique<InterpreterSelectQuery>(query, context, Names{}, stage);
+    }
+    else if (typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
+    {
+        ProfileEvents::increment(ProfileEvents::SelectQuery);
+        return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, Names{}, stage);
     }
     else if (typeid_cast<ASTInsertQuery *>(query.get()))
     {
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
         /// readonly is checked inside InterpreterInsertQuery
         bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
@@ -101,7 +130,11 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         return std::make_unique<InterpreterExistsQuery>(query, context);
     }
-    else if (typeid_cast<ASTShowCreateQuery *>(query.get()))
+    else if (typeid_cast<ASTShowCreateTableQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterShowCreateQuery>(query, context);
+    }
+    else if (typeid_cast<ASTShowCreateDatabaseQuery *>(query.get()))
     {
         return std::make_unique<InterpreterShowCreateQuery>(query, context);
     }

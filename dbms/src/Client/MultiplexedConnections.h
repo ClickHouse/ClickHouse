@@ -3,7 +3,6 @@
 #include <Common/Throttler.h>
 #include <Client/Connection.h>
 #include <Client/ConnectionPoolWithFailover.h>
-#include <Poco/ScopedLock.h>
 #include <mutex>
 
 namespace DB

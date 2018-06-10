@@ -126,33 +126,12 @@ class GraphiteRollupSortedBlockInputStream : public MergingSortedBlockInputStrea
 {
 public:
     GraphiteRollupSortedBlockInputStream(
-        BlockInputStreams inputs_, const SortDescription & description_, size_t max_block_size_,
-        const Graphite::Params & params, time_t time_of_merge)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
-        params(params), time_of_merge(time_of_merge)
-    {
-    }
+        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        const Graphite::Params & params, time_t time_of_merge);
 
     String getName() const override { return "GraphiteRollupSorted"; }
 
-    String getID() const override
-    {
-        std::stringstream res;
-        res << "GraphiteRollupSorted(inputs";
-
-        for (size_t i = 0; i < children.size(); ++i)
-            res << ", " << children[i]->getID();
-
-        res << ", description";
-
-        for (size_t i = 0; i < description.size(); ++i)
-            res << ", " << description[i].getID();
-
-        res << ")";
-        return res.str();
-    }
-
-    ~GraphiteRollupSortedBlockInputStream()
+    ~GraphiteRollupSortedBlockInputStream() override
     {
         if (aggregate_state_created)
             current_pattern->function->destroy(place_for_aggregate_state.data());
@@ -201,7 +180,6 @@ private:
 
     /// Last row with maximum version for current primary key (time bucket).
     RowRef current_subgroup_newest_row;
-    UInt64 current_subgroup_max_version = 0;
 
     /// Time of last read row
     time_t current_time = 0;

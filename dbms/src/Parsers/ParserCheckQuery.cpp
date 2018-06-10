@@ -12,8 +12,6 @@ namespace DB
 
 bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserKeyword s_check_table("CHECK TABLE");
     ParserToken s_dot(TokenType::Dot);
 
@@ -32,7 +30,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!table_parser.parse(pos, table, expected))
             return false;
 
-        auto query = std::make_shared<ASTCheckQuery>(StringRange(begin, pos));
+        auto query = std::make_shared<ASTCheckQuery>();
         query->database = typeid_cast<const ASTIdentifier &>(*database).name;
         query->table = typeid_cast<const ASTIdentifier &>(*table).name;
         node = query;
@@ -40,7 +38,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
     {
         table = database;
-        auto query = std::make_shared<ASTCheckQuery>(StringRange(begin, pos));
+        auto query = std::make_shared<ASTCheckQuery>();
         query->table = typeid_cast<const ASTIdentifier &>(*table).name;
         node = query;
     }

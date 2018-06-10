@@ -46,7 +46,7 @@ There are numeric literals, string literals, and compound literals.
 
 A numeric literal tries to be parsed:
 
-- first as a 64-bit signed number, using the 'strtoull' function.
+- First as a 64-bit signed number, using the 'strtoull' function.
 - If unsuccessful, as a 64-bit unsigned number, using the 'strtoll' function.
 - If unsuccessful, as a floating-point number using the 'strtod' function.
 - Otherwise, an error is returned.

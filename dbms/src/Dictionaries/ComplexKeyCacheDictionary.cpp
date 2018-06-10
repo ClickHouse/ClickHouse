@@ -8,7 +8,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <ext/range.h>
-#include <ext/scope_guard.h>
 #include <ext/map.h>
 
 
@@ -60,9 +59,7 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(const std::string & name, c
     rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
-        throw Exception{
-            name + ": source cannot be used with ComplexKeyCacheDictionary",
-            ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception{name + ": source cannot be used with ComplexKeyCacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
 }
@@ -79,9 +76,7 @@ void ComplexKeyCacheDictionary::getString(
 
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -96,9 +91,7 @@ void ComplexKeyCacheDictionary::getString(
 
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsString(attribute, key_columns, out, [&] (const size_t row) { return def->getDataAt(row); });
 }
@@ -111,9 +104,7 @@ void ComplexKeyCacheDictionary::getString(
 
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsString(attribute, key_columns, out, [&] (const size_t) { return StringRef{def}; });
 }
@@ -249,9 +240,7 @@ void ComplexKeyCacheDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{
-                name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(), ErrorCodes::TYPE_MISMATCH};
     }
 }
 
@@ -259,9 +248,7 @@ ComplexKeyCacheDictionary::Attribute & ComplexKeyCacheDictionary::getAttribute(c
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{
-            name + ": no such attribute '" + attribute_name + "'",
-            ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }

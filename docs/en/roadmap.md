@@ -1,19 +1,20 @@
 # Roadmap
 
-## Q3 2017
+## Q3 2018
 
-- ` SYSTEM queries`
-- Limit the number of parallel downloads from replicas
-- Finish support for `NULL`
-- `SELECT db.table.column`
+- `ALTER UPDATE` for batch changing the data with approach similar to `ALTER DELETE`
+- Protobuf and Parquet input and output formats
+- Improved compatibility with Tableau and other BI tools
 
-## Q4 2017
+## Q4 2018
 
-- An arbitrary key for partitioning engines of the MergeTree family
-- Enhance the ` JOIN syntax`  for compatibility with the SQL standard
-- Resource pools for queries (CPU, disk I/O, and network bandwidth)
+- JOIN syntax compatible with SQL standard:
+    - Mutliple `JOIN`s in single `SELECT`
+    - Connecting tables with `ON`
+    - Support table reference instead of subquery
 
-## Q1 2018
+- JOIN execution improvements:
+    - Distributed join not limited by memory
+    - Predicate pushdown through join
 
-- Initial support for `UPDATE` and `DELETE`
-
+- Resource pools for more precise distribution of cluster capacity between users

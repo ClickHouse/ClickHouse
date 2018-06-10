@@ -1,87 +1,10 @@
+#include <list>
 #include <iostream>
 #include <boost/program_options.hpp>
 #include <Common/Exception.h>
-#include <Poco/Event.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 
-
-/** Outputs paths of all ZK nodes in arbitrary order. Possibly only in specified directory.
-  */
-
-struct CallbackState
-{
-    std::string path;
-    std::list<CallbackState>::const_iterator it;
-    std::list<std::list<CallbackState>::const_iterator> children;
-    Int64 dataLength = 0;
-};
-
-using CallbackStates = std::list<CallbackState>;
-CallbackStates states;
-
-zkutil::ZooKeeper * zookeeper;
-
-int running_count = 0;
-Poco::Event completed;
-
-
-void process(CallbackState & state);
-
-void callback(
-    int rc,
-    const String_vector * strings,
-    const Stat * stat,
-    const void * data)
-{
-    CallbackState * state = reinterpret_cast<CallbackState *>(const_cast<void *>(data));
-
-    if (rc != ZOK && rc != ZNONODE)
-    {
-        std::cerr << zerror(rc) << ", path: " << state->path << "\n";
-    }
-
-    if (stat != nullptr)
-        state->dataLength = stat->dataLength;
-
-    if (rc == ZOK && strings)
-    {
-        for (int32_t i = 0; i < strings->count; ++i)
-        {
-            states.emplace_back();
-            states.back().path = state->path + (state->path == "/" ? "" : "/") + strings->data[i];
-            states.back().it = --states.end();
-            state->children.push_back(states.back().it);
-
-            process(states.back());
-        }
-    }
-
-    --running_count;
-    if (running_count == 0)
-        completed.set();
-}
-
-void process(CallbackState & state)
-{
-    ++running_count;
-    zoo_awget_children2(zookeeper->getHandle(), state.path.data(), nullptr, nullptr, callback, &state);
-}
-
-typedef std::pair<Int64, Int64> NodesBytes;
-
-NodesBytes printTree(const CallbackState & state)
-{
-    Int64 nodes = 1;
-    Int64 bytes = state.dataLength;
-    for (auto child : state.children)
-    {
-        NodesBytes nodesBytes = printTree(*child);
-        nodes += nodesBytes.first;
-        bytes += nodesBytes.second;
-    }
-    std::cout << state.path << '\t' << nodes << '\t' << bytes <<'\n';
-    return NodesBytes(nodes, bytes);
-}
 
 int main(int argc, char ** argv)
 try
@@ -106,18 +29,35 @@ try
         return 1;
     }
 
-    zkutil::ZooKeeper zookeeper_(options.at("address").as<std::string>());
-    zookeeper = &zookeeper_;
+    zkutil::ZooKeeper zookeeper(options.at("address").as<std::string>());
 
-    states.emplace_back();
-    states.back().path = options.at("path").as<std::string>();
-    states.back().it = --states.end();
+    std::string initial_path = options.at("path").as<std::string>();
 
-    process(states.back());
+    std::list<std::pair<std::string, std::future<zkutil::ListResponse>>> list_futures;
+    list_futures.emplace_back(initial_path, zookeeper.asyncGetChildren(initial_path));
 
-    completed.wait();
+    for (auto it = list_futures.begin(); it != list_futures.end(); ++it)
+    {
+        zkutil::ListResponse response;
+        try
+        {
+            response = it->second.get();
+        }
+        catch (const zkutil::KeeperException & e)
+        {
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+                continue;
+            throw;
+        }
 
-    printTree(*states.begin());
+        std::cout << it->first << '\t' << response.stat.numChildren << '\t' << response.stat.dataLength << '\n';
+
+        for (const auto & name : response.names)
+        {
+            std::string child_path = it->first == "/" ? it->first + name : it->first + '/' + name;
+            list_futures.emplace_back(child_path, zookeeper.asyncGetChildren(child_path));
+        }
+    }
 }
 catch (...)
 {

@@ -9,7 +9,13 @@
 # auto generated files
 *.logrt
 
-build
+/build
+/docs/en_single_page/
+/docs/ru_single_page/
+/docs/venv/
+/docs/build/
+/docs/en/development/build/
+/docs/ru/development/build/
 
 # callgrind files
 callgrind.out.*
@@ -40,6 +46,7 @@ cmake-build-*
 # Python cache
 *.pyc
 __pycache__
+*.pytest_cache
 
 # ignore generated files
 *-metrika-yandex

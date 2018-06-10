@@ -1,8 +1,8 @@
-# Data about New York taxis
+# New York Taxi data
 
-## How to import raw data
+## How to import the raw data
 
-See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for description of the dataset and loading instructions.
+See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for the description of the dataset and instructions for downloading.
 
 Downloading will result in about 227 GB of uncompressed data in CSV files. The download takes about an hour over a 1 Gbit connection (parallel downloading from s3.amazonaws.com recovers at least half of a 1 Gbit channel).
 Some of the files might not download fully. Check the file sizes and re-download any that seem doubtful.
@@ -366,4 +366,3 @@ nodes   Q1     Q2     Q3     Q4
   3  0.212  0.438  0.733  1.241
 140  0.028  0.043  0.051  0.072
 ```
-

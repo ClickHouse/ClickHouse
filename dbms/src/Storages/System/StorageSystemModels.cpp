@@ -14,13 +14,13 @@ namespace DB
 StorageSystemModels::StorageSystemModels(const std::string & name)
     : name{name}
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         { "name", std::make_shared<DataTypeString>() },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "creation_time", std::make_shared<DataTypeDateTime>() },
-        { "last_exception", std::make_shared<DataTypeString>() }
-    };
+        { "last_exception", std::make_shared<DataTypeString>() },
+    }));
 }
 
 

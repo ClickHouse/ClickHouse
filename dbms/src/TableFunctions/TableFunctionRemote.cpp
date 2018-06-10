@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -181,22 +181,21 @@ static std::vector<String> parseDescription(const String & description, size_t l
 }
 
 
-StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Context & context) const
+StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     ASTs & args_func = typeid_cast<ASTFunction &>(*ast_function).children;
 
-    const char * err = "Table function 'remote' requires from 2 to 5 parameters: "
-        "addresses pattern, name of remote database, name of remote table, [username, [password]].";
-
     if (args_func.size() != 1)
-        throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
-    if (args.size() < 2 || args.size() > 5)
-        throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    const size_t max_args = is_cluster_function ? 3 : 5;
+    if (args.size() < 2 || args.size() > max_args)
+        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    String description;
+    String cluster_name;
+    String cluster_description;
     String remote_database;
     String remote_table;
     String username;
@@ -216,7 +215,18 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
         return safeGet<const String &>(lit->value);
     };
 
-    description = getStringLiteral(*args[arg_num], "Hosts pattern");
+    if (is_cluster_function)
+    {
+        ASTPtr ast_name = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+        cluster_name = static_cast<const ASTLiteral &>(*ast_name).value.safeGet<const String &>();
+    }
+    else
+    {
+        if (auto ast_cluster = typeid_cast<const ASTIdentifier *>(args[arg_num].get()))
+            cluster_name = ast_cluster->name;
+        else
+            cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
+    }
     ++arg_num;
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
@@ -233,29 +243,33 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
     else
     {
         if (arg_num >= args.size())
-            throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
         remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
         ++arg_num;
     }
 
-    if (arg_num < args.size())
+    /// Username and password parameters are prohibited in cluster version of the function
+    if (!is_cluster_function)
     {
-        username = getStringLiteral(*args[arg_num], "Username");
-        ++arg_num;
+        if (arg_num < args.size())
+        {
+            username = getStringLiteral(*args[arg_num], "Username");
+            ++arg_num;
+        }
+        else
+            username = "default";
+
+        if (arg_num < args.size())
+        {
+            password = getStringLiteral(*args[arg_num], "Password");
+            ++arg_num;
+        }
     }
-    else
-        username = "default";
 
     if (arg_num < args.size())
-    {
-        password = getStringLiteral(*args[arg_num], "Password");
-        ++arg_num;
-    }
-
-    if (arg_num < args.size())
-        throw Exception(err, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     /// ExpressionAnalyzer will be created in InterpreterSelectQuery that will meet these `Identifier` when processing the request.
     /// We need to mark them as the name of the database or table, because the default value is column.
@@ -263,18 +277,27 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
         if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
             id->kind = ASTIdentifier::Table;
 
-    size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
+    ClusterPtr cluster;
+    if (!cluster_name.empty())
+    {
+        /// Use an existing cluster from the main config
+        cluster = context.getCluster(cluster_name);
+    }
+    else
+    {
+        /// Create new cluster from the scratch
+        size_t max_addresses = context.getSettingsRef().table_function_remote_max_addresses;
+        std::vector<String> shards = parseDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
-    std::vector<std::vector<String>> names;
-    std::vector<String> shards = parseDescription(description, 0, description.size(), ',', max_addresses);
+        std::vector<std::vector<String>> names;
+        for (size_t i = 0; i < shards.size(); ++i)
+            names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
 
-    for (size_t i = 0; i < shards.size(); ++i)
-        names.push_back(parseDescription(shards[i], 0, shards[i].size(), '|', max_addresses));
+        if (names.empty())
+            throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
 
-    if (names.empty())
-        throw Exception("Shard list is empty after parsing first argument", ErrorCodes::BAD_ARGUMENTS);
-
-    auto cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort());
+        cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort(), false);
+    }
 
     auto res = StorageDistributed::createWithOwnCluster(
         getName(),
@@ -288,9 +311,23 @@ StoragePtr TableFunctionRemote::execute(const ASTPtr & ast_function, const Conte
 }
 
 
+TableFunctionRemote::TableFunctionRemote(const std::string & name_)
+    : name(name_)
+{
+    is_cluster_function = name == "cluster";
+
+    std::stringstream ss;
+    ss << "Table function '" << name + "' requires from 2 to " << (is_cluster_function ? 3 : 5) << " parameters"
+       << ": <addresses pattern or cluster name>, <name of remote database>, <name of remote table>"
+       << (is_cluster_function ? "" : ", [username, [password]].");
+    help_message = ss.str();
+}
+
+
 void registerTableFunctionRemote(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionRemote>();
+    factory.registerFunction("remote", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("remote"); });
+    factory.registerFunction("cluster", [] () -> TableFunctionPtr { return std::make_shared<TableFunctionRemote>("cluster"); });
 }
 
 }

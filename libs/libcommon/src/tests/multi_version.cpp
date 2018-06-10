@@ -19,7 +19,7 @@ void thread1(MV & x, T & result)
 
 void thread2(MV & x, const char * result)
 {
-    x.set(std::make_shared<T>(result));
+    x.set(std::make_unique<T>(result));
 }
 
 
@@ -31,7 +31,7 @@ int main(int argc, char ** argv)
         const char * s2 = "Goodbye!";
 
         size_t n = 1000;
-        MV x(std::make_shared<T>(s1));
+        MV x(std::make_unique<T>(s1));
         Results results(n);
 
         ThreadPool tp(8);

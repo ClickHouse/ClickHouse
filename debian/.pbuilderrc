@@ -55,13 +55,6 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
 # List of Ubuntu suites. Update these when needed.
 UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
-# Mirrors to use. Update these to your preferred mirror.
-DEBIAN_MIRROR=${DEBIAN_MIRROR:=deb.debian.org}
-UBUNTU_MIRROR=${UBUNTU_MIRROR:=archive.ubuntu.com}
-
-#DEBIAN_MIRROR="mirror.yandex.ru"
-#UBUNTU_MIRROR="mirror.yandex.ru"
-
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
 : ${DIST:="$HOST_DIST"}
@@ -104,7 +97,7 @@ ALLOWUNTRUSTED=${SET_ALLOWUNTRUSTED:=${ALLOWUNTRUSTED}}
 if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
     # Debian configuration
     OSNAME=debian
-    MIRRORSITE="http://$DEBIAN_MIRROR/$OSNAME/"
+    MIRRORSITE=${SET_MIRRORSITE="http://deb.debian.org/$OSNAME/"}
     COMPONENTS="main contrib non-free"
     if $(echo "$STABLE_CODENAME stable" | grep -q $DIST); then
         OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $STABLE_BACKPORTS_SUITE $COMPONENTS"
@@ -119,11 +112,16 @@ if $(echo ${DEBIAN_SUITES[@]} | grep -q $DIST); then
             DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-archive-keyring.gpg' )
             # DEBOOTSTRAPOPTS+=( '--keyring' '/usr/share/keyrings/debian-keyring.gpg' )
     esac
-
 elif $(echo ${UBUNTU_SUITES[@]} | grep -q $DIST); then
     # Ubuntu configuration
     OSNAME=ubuntu
-    MIRRORSITE="http://$UBUNTU_MIRROR/$OSNAME/"
+
+    if [[ "$ARCH" == "amd64" || "$ARCH" == "i386" ]]; then
+        MIRRORSITE=${SET_MIRRORSITE="http://archive.ubuntu.com/ubuntu/"}
+    else
+        MIRRORSITE=${SET_MIRRORSITE="http://ports.ubuntu.com/ubuntu-ports/"}
+    fi
+
     COMPONENTS="main restricted universe multiverse"
 
     OTHERMIRROR="$OTHERMIRROR | deb $MIRRORSITE $DIST-updates main restricted universe multiverse"
@@ -142,7 +140,7 @@ else
     exit 1
 fi
 
-echo "using $NAME $OSNAME $DIST $ARCH $LOGNAME"
+echo "using $NAME $OSNAME $DIST $ARCH $LOGNAME $MIRRORSITE"
 
 case "$DIST" in
     "trusty")
@@ -161,26 +159,25 @@ case "$DIST" in
         ;;
 esac
 
-case "$DIST" in
-    "bionic" )
+if [ "$ARCH" != arm64 ]; then
+   case "$DIST" in
+    "bionic" | "experimental" | "unstable" | "testing")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
-        export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 -DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
+        export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
-    "artful" | "experimental" | "unstable" | "testing" )
+    "artful" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
-        export CMAKE_FLAGS="-DUSE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
         ;;
-esac
+   esac
+else
+    export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
+fi
 
-# bundled zookeepeer have broken asm
-case "$ARCH" in
-    "arm64")
-        EXTRAPACKAGES+=" libzookeeper-mt-dev "
-        ;;
-esac
+# Will test symbols
+#EXTRAPACKAGES+=" gdb "
 
-# will test symbols
-EXTRAPACKAGES+=" gdb "
+# For killall in pbuilder-hooks:
+EXTRAPACKAGES+=" psmisc "
 
 [[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
 
@@ -188,7 +185,7 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 
 # Floating bug with permissions:
 [ -n "$CCACHEDIR" ] && sudo mkdir -p $CCACHEDIR
-[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR
+[ -n "$CCACHEDIR" ] && sudo chmod -R a+rwx $CCACHEDIR || true
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 

@@ -113,7 +113,7 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
 }
 
 
-MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
+ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_size_hint) const
 {
     size_t size = getData().size();
     if (size != filter.size())
@@ -140,7 +140,7 @@ MutableColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t 
 }
 
 
-MutableColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = getData().size();
 
@@ -325,7 +325,7 @@ void ColumnAggregateFunction::popBack(size_t n)
     data.resize_assume_reserved(new_size);
 }
 
-MutableColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const
+ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())

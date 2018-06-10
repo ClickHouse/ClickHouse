@@ -1,0 +1,13 @@
+1	1
+2	2
+*** With a DEFAULT column ***
+1	1
+2	2
+*** With a MATERIALIZED column ***
+1
+1	2
+*** With an ALIAS column ***
+1
+2
+1	2
+2	3

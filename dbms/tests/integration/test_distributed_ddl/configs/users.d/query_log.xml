@@ -3,7 +3,6 @@
         <!-- Default profile settings. -->
         <default>
             <log_queries>1</log_queries>
-            <distributed_ddl_allow_replicated_alter>1</distributed_ddl_allow_replicated_alter>
         </default>
     </profiles>
 </yandex>

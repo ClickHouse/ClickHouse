@@ -16,15 +16,14 @@ The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 For testing and development, the system can be installed on a single server or on a desktop computer.
 
-### Installing from packages
+### Installing from packages for Debian/Ubuntu
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
 ```text
-deb http://repo.yandex.ru/clickhouse/trusty stable main
+deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-On other versions of Ubuntu, replace `trusty` with `xenial` or `precise`.
 If you want to use the most recent test version, replace 'stable' with 'testing'.
 
 Then run:
@@ -32,10 +31,10 @@ Then run:
 ```bash
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server-common
+sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-You can also download and install packages manually from here:<http://repo.yandex.ru/clickhouse/trusty/pool/main/c/clickhouse/><http://repo.yandex.ru/clickhouse/xenial/pool/main/c/clickhouse/><http://repo.yandex.ru/clickhouse/precise/pool/main/c/clickhouse/>
+You can also download and install packages manually from here: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
 
 ClickHouse contains access restriction settings. They are located in the 'users.xml' file (next to 'config.xml').
 By default, access is allowed from anywhere for the 'default' user, without a password. See 'user/default/networks'.
@@ -49,8 +48,8 @@ You can compile packages and install them.
 You can also use programs without installing packages.
 
 ```text
-Client: dbms/src/Client/
-Server: dbms/src/Server/
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 For the server, create a catalog with data, such as:
@@ -63,7 +62,7 @@ For the server, create a catalog with data, such as:
 (Configurable in the server config.)
 Run 'chown' for the desired user.
 
-Note the path to logs in the server config (src/dbms/src/Server/config.xml).
+Note the path to logs in the server config (src/dbms/programs/config.xml).
 
 ### Other installation methods
 
@@ -132,12 +131,5 @@ SELECT 1
 
 **Congratulations, the system works!**
 
-To continue experimenting, you can try to download from the test data sets:
-
-```eval_rst
-.. toctree::
-    :glob:
-
-    example_datasets/*
-```
+To continue experimenting, you can try to download from the test data sets.
 

@@ -5,6 +5,7 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 
 #include <Analyzers/ExecuteTableFunctions.h>
@@ -72,7 +73,7 @@ void ExecuteTableFunctions::dump(WriteBuffer & out) const
     {
         writeString(table.second->getName(), out);
         writeCString("\n\n", out);
-        writeString(table.second->getColumnsList().toString(), out);
+        writeString(table.second->getColumns().getAllPhysical().toString(), out);
         writeCString("\n", out);
     }
 }

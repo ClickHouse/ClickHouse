@@ -16,6 +16,14 @@ public:
 
     String getName() const override { return "One"; }
 
+    Block getHeader() const override
+    {
+        Block res;
+        for (const auto & elem : block)
+            res.insert({ elem.column->cloneEmpty(), elem.type, elem.name });
+        return res;
+    }
+
 protected:
     Block readImpl() override
     {

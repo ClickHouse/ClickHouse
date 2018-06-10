@@ -1,11 +1,10 @@
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Common/typeid_cast.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
+
+#include <DataStreams/MaterializingBlockInputStream.h>
 
 
 namespace DB
@@ -19,14 +18,9 @@ namespace ErrorCodes
 
 StorageView::StorageView(
     const String & table_name_,
-    const String & database_name_,
     const ASTCreateQuery & query,
-    const NamesAndTypesList & columns_,
-    const NamesAndTypesList & materialized_columns_,
-    const NamesAndTypesList & alias_columns_,
-    const ColumnDefaults & column_defaults_)
-    : IStorage{columns_, materialized_columns_, alias_columns_, column_defaults_}, table_name(table_name_),
-    database_name(database_name_)
+    const ColumnsDescription & columns_)
+    : IStorage{columns_}, table_name(table_name_)
 {
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -44,7 +38,14 @@ BlockInputStreams StorageView::read(
     const unsigned /*num_streams*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-    return InterpreterSelectQuery(inner_query->clone(), context, column_names).executeWithoutUnion();
+    BlockInputStreams res = InterpreterSelectWithUnionQuery(inner_query, context, column_names).executeWithMultipleStreams();
+
+    /// It's expected that the columns read from storage are not constant.
+    /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
+    for (auto & stream : res)
+        stream = std::make_shared<MaterializingBlockInputStream>(stream);
+
+    return res;
 }
 
 
@@ -55,9 +56,7 @@ void registerStorageView(StorageFactory & factory)
         if (args.query.storage)
             throw Exception("Specifying ENGINE is not allowed for a View", ErrorCodes::INCORRECT_QUERY);
 
-        return StorageView::create(
-            args.table_name, args.database_name, args.query, args.columns,
-            args.materialized_columns, args.alias_columns, args.column_defaults);
+        return StorageView::create(args.table_name, args.query, args.columns);
     });
 }
 

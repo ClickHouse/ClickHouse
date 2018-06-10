@@ -1,17 +1,13 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-
 #include <Storages/IStorage.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/Data/SessionPool.h>
+#pragma GCC diagnostic pop
 
-namespace Poco
-{
-    namespace Data
-    {
-        class SessionPool;
-    }
-}
 
 
 namespace DB
@@ -30,7 +26,7 @@ public:
         const std::string & connection_string,
         const std::string & remote_database_name,
         const std::string & remote_table_name,
-        const NamesAndTypesList & columns_);
+        const ColumnsDescription & columns_);
 
     std::string getName() const override { return "ODBC"; }
     std::string getTableName() const override { return name; }

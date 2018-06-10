@@ -70,7 +70,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
-    return getImpl(name, argument_types, parameters, recursion_level);
+    auto res = getImpl(name, argument_types, parameters, recursion_level);
+    if (!res)
+        throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
+    return res;
 }
 
 

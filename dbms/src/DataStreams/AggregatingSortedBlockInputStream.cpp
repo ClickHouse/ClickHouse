@@ -12,57 +12,52 @@ namespace ErrorCodes
 }
 
 
+AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
+    const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
+{
+    /// Fill in the column numbers that need to be aggregated.
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        ColumnWithTypeAndName & column = header.safeGetByPosition(i);
+
+        /// We leave only states of aggregate functions.
+        if (!startsWith(column.type->getName(), "AggregateFunction"))
+        {
+            column_numbers_not_to_aggregate.push_back(i);
+            continue;
+        }
+
+        /// Included into PK?
+        SortDescription::const_iterator it = description.begin();
+        for (; it != description.end(); ++it)
+            if (it->column_name == column.name || (it->column_name.empty() && it->column_number == i))
+                break;
+
+        if (it != description.end())
+        {
+            column_numbers_not_to_aggregate.push_back(i);
+            continue;
+        }
+
+        column_numbers_to_aggregate.push_back(i);
+    }
+}
+
+
 Block AggregatingSortedBlockInputStream::readImpl()
 {
     if (finished)
         return Block();
 
-    if (children.size() == 1)
-        return children[0]->read();
-
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
 
     if (merged_columns.empty())
         return Block();
-
-    /// Additional initialization.
-    if (next_key.empty())
-    {
-        next_key.columns.resize(description.size());
-
-        /// Fill in the column numbers that need to be aggregated.
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            ColumnWithTypeAndName & column = header.safeGetByPosition(i);
-
-            /// We leave only states of aggregate functions.
-            if (!startsWith(column.type->getName(), "AggregateFunction"))
-            {
-                column_numbers_not_to_aggregate.push_back(i);
-                continue;
-            }
-
-            /// Included into PK?
-            SortDescription::const_iterator it = description.begin();
-            for (; it != description.end(); ++it)
-                if (it->column_name == column.name || (it->column_name.empty() && it->column_number == i))
-                    break;
-
-            if (it != description.end())
-            {
-                column_numbers_not_to_aggregate.push_back(i);
-                continue;
-            }
-
-            column_numbers_to_aggregate.push_back(i);
-        }
-    }
 
     columns_to_aggregate.resize(column_numbers_to_aggregate.size());
     for (size_t i = 0, size = columns_to_aggregate.size(); i < size; ++i)
@@ -88,7 +83,6 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
 
         if (current_key.empty())    /// The first key encountered.
         {
-            current_key.columns.resize(description.size());
             setPrimaryKeyRef(current_key, current);
             key_differs = true;
         }

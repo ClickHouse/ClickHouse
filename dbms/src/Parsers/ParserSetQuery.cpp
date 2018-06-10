@@ -40,8 +40,6 @@ static bool parseNameValuePair(ASTSetQuery::Change & change, IParser::Pos & pos,
 
 bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Pos begin = pos;
-
     ParserToken s_comma(TokenType::Comma);
 
     if (!parse_only_internals)
@@ -65,7 +63,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    auto query = std::make_shared<ASTSetQuery>(StringRange(begin, pos));
+    auto query = std::make_shared<ASTSetQuery>();
     node = query;
 
     query->is_standalone = !parse_only_internals;

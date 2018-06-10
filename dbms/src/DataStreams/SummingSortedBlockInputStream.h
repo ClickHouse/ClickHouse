@@ -24,18 +24,14 @@ namespace ErrorCodes
 class SummingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-    SummingSortedBlockInputStream(BlockInputStreams inputs_,
+    SummingSortedBlockInputStream(
+        const BlockInputStreams & inputs_,
         const SortDescription & description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum_,
-        size_t max_block_size_)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_), column_names_to_sum(column_names_to_sum_)
-    {
-    }
+        size_t max_block_size_);
 
     String getName() const override { return "SummingSorted"; }
-
-    String getID() const override;
 
 protected:
     /// Can return 1 more records than max_block_size.
@@ -48,7 +44,6 @@ private:
     bool finished = false;
 
     /// Columns with which values should be summed.
-    Names column_names_to_sum;    /// If set, it is converted to column_numbers_to_aggregate when initialized.
     ColumnNumbers column_numbers_not_to_aggregate;
 
     /** A table can have nested tables that are treated in a special way.

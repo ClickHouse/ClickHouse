@@ -7,7 +7,7 @@
 #include <sstream>
 
 #include <Common/StackTrace.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 
 
 StackTrace::StackTrace()

@@ -1,5 +1,6 @@
 #include <Storages/System/StorageSystemGraphite.h>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Util/Application.h>
+
 
 namespace DB
 {
@@ -125,15 +127,15 @@ static Strings getAllGraphiteSections(const AbstractConfiguration & config)
 StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
     : name(name_)
 {
-    columns = NamesAndTypesList{
+    setColumns(ColumnsDescription({
         {"config_name", std::make_shared<DataTypeString>()},
         {"regexp",      std::make_shared<DataTypeString>()},
         {"function",    std::make_shared<DataTypeString>()},
         {"age",         std::make_shared<DataTypeUInt64>()},
         {"precision",   std::make_shared<DataTypeUInt64>()},
         {"priority",    std::make_shared<DataTypeUInt16>()},
-        {"is_default",  std::make_shared<DataTypeUInt8>()}
-    };
+        {"is_default",  std::make_shared<DataTypeUInt8>()},
+    }));
 }
 
 

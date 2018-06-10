@@ -12,6 +12,31 @@ namespace ErrorCodes
 }
 
 
+GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
+    const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+    const Graphite::Params & params, time_t time_of_merge)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_),
+    params(params), time_of_merge(time_of_merge)
+{
+    size_t max_size_of_aggregate_state = 0;
+    for (const auto & pattern : params.patterns)
+        if (pattern.function->sizeOfData() > max_size_of_aggregate_state)
+            max_size_of_aggregate_state = pattern.function->sizeOfData();
+
+    place_for_aggregate_state.resize(max_size_of_aggregate_state);
+
+    /// Memoize column numbers in block.
+    path_column_num = header.getPositionByName(params.path_column_name);
+    time_column_num = header.getPositionByName(params.time_column_name);
+    value_column_num = header.getPositionByName(params.value_column_name);
+    version_column_num = header.getPositionByName(params.version_column_name);
+
+    for (size_t i = 0; i < num_columns; ++i)
+        if (i != time_column_num && i != value_column_num && i != version_column_num)
+            unmodified_column_numbers.push_back(i);
+}
+
+
 const Graphite::Pattern * GraphiteRollupSortedBlockInputStream::selectPatternForPath(StringRef path) const
 {
     for (const auto & pattern : params.patterns)
@@ -68,40 +93,14 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
 
     if (merged_columns.empty())
         return Block();
-
-    /// Additional initialization.
-    if (is_first)
-    {
-        size_t max_size_of_aggregate_state = 0;
-        for (const auto & pattern : params.patterns)
-            if (pattern.function->sizeOfData() > max_size_of_aggregate_state)
-                max_size_of_aggregate_state = pattern.function->sizeOfData();
-
-        place_for_aggregate_state.resize(max_size_of_aggregate_state);
-
-        /// Memoize column numbers in block.
-        path_column_num = header.getPositionByName(params.path_column_name);
-        time_column_num = header.getPositionByName(params.time_column_name);
-        value_column_num = header.getPositionByName(params.value_column_name);
-        version_column_num = header.getPositionByName(params.version_column_name);
-
-        for (size_t i = 0; i < num_columns; ++i)
-            if (i != time_column_num && i != value_column_num && i != version_column_num)
-                unmodified_column_numbers.push_back(i);
-
-        if (current_subgroup_newest_row.empty())
-            current_subgroup_newest_row.columns.resize(num_columns);
-    }
 
     merge(merged_columns, queue);
     return header.cloneWithColumns(std::move(merged_columns));
@@ -185,10 +184,12 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
 
         /// Within all rows with same key, we should leave only one row with maximum version;
         /// and for rows with same maximum version - only last row.
-        UInt64 next_version = next_cursor->all_columns[version_column_num]->get64(next_cursor->pos);
-        if (is_new_key || next_version >= current_subgroup_max_version)
+        if (is_new_key
+            || next_cursor->all_columns[version_column_num]->compareAt(
+                next_cursor->pos, current_subgroup_newest_row.row_num,
+                *(*current_subgroup_newest_row.columns)[version_column_num],
+                /* nan_direction_hint = */ 1) >= 0)
         {
-            current_subgroup_max_version = next_version;
             setRowRef(current_subgroup_newest_row, next_cursor);
 
             /// Small hack: group and subgroups have the same path, so we can set current_group_path here instead of startNextGroup
@@ -247,7 +248,8 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
 {
     /// Insert calculated values of the columns `time`, `value`, `version`.
     merged_columns[time_column_num]->insert(UInt64(current_time_rounded));
-    merged_columns[version_column_num]->insert(current_subgroup_max_version);
+    merged_columns[version_column_num]->insertFrom(
+        *(*current_subgroup_newest_row.columns)[version_column_num], current_subgroup_newest_row.row_num);
 
     if (aggregate_state_created)
     {
@@ -257,14 +259,14 @@ void GraphiteRollupSortedBlockInputStream::finishCurrentGroup(MutableColumns & m
     }
     else
         merged_columns[value_column_num]->insertFrom(
-            *current_subgroup_newest_row.columns[value_column_num], current_subgroup_newest_row.row_num);
+            *(*current_subgroup_newest_row.columns)[value_column_num], current_subgroup_newest_row.row_num);
 }
 
 
 void GraphiteRollupSortedBlockInputStream::accumulateRow(RowRef & row)
 {
     if (aggregate_state_created)
-        current_pattern->function->add(place_for_aggregate_state.data(), &row.columns[value_column_num], row.row_num, nullptr);
+        current_pattern->function->add(place_for_aggregate_state.data(), &(*row.columns)[value_column_num], row.row_num, nullptr);
 }
 
 }

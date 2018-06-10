@@ -1,10 +1,2 @@
-# Operation
-
-```eval_rst
-.. toctree::
-    :glob:
-
-    *
-    */index
-```
+# Usage
 

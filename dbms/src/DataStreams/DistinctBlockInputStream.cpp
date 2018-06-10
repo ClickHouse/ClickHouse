@@ -8,21 +8,12 @@ namespace ErrorCodes
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
-DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const Limits & limits, size_t limit_hint_, const Names & columns)
+DistinctBlockInputStream::DistinctBlockInputStream(const BlockInputStreamPtr & input, const SizeLimits & set_size_limits, size_t limit_hint_, const Names & columns)
     : columns_names(columns)
     , limit_hint(limit_hint_)
-    , max_rows(limits.max_rows_in_distinct)
-    , max_bytes(limits.max_bytes_in_distinct)
-    , overflow_mode(limits.distinct_overflow_mode)
+    , set_size_limits(set_size_limits)
 {
     children.push_back(input);
-}
-
-String DistinctBlockInputStream::getID() const
-{
-    std::stringstream res;
-    res << "Distinct(" << children.back()->getID() << ")";
-    return res.str();
 }
 
 Block DistinctBlockInputStream::readImpl()
@@ -75,25 +66,8 @@ Block DistinctBlockInputStream::readImpl()
         if (data.getTotalRowCount() == old_set_size)
             continue;
 
-        if (!checkLimits())
-        {
-            switch (overflow_mode)
-            {
-                case OverflowMode::THROW:
-                    throw Exception("DISTINCT-Set size limit exceeded."
-                        " Rows: " + toString(data.getTotalRowCount()) +
-                        ", limit: " + toString(max_rows) +
-                        ". Bytes: " + toString(data.getTotalByteCount()) +
-                        ", limit: " + toString(max_bytes) + ".",
-                        ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
-
-                case OverflowMode::BREAK:
-                    return Block();
-
-                default:
-                    throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-            }
-        }
+        if (!set_size_limits.check(data.getTotalRowCount(), data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
+            return {};
 
         for (auto & elem : block)
             elem.column = elem.column->filter(filter, -1);
@@ -102,14 +76,6 @@ Block DistinctBlockInputStream::readImpl()
     }
 }
 
-bool DistinctBlockInputStream::checkLimits() const
-{
-    if (max_rows && data.getTotalRowCount() > max_rows)
-        return false;
-    if (max_bytes && data.getTotalByteCount() > max_bytes)
-        return false;
-    return true;
-}
 
 template <typename Method>
 void DistinctBlockInputStream::buildFilter(
@@ -139,6 +105,7 @@ void DistinctBlockInputStream::buildFilter(
         filter[i] = inserted;
     }
 }
+
 
 ColumnRawPtrs DistinctBlockInputStream::getKeyColumns(const Block & block) const
 {

@@ -20,12 +20,12 @@ public:
         children.push_back(stream);
     }
 
+    Block getHeader() const override { return children.at(0)->getHeader(); }
+
 private:
     Block readImpl() override { return stream->read(); }
 
     String getName() const override { return "Owning"; }
-
-    String getID() const override {  return "Owning(" + stream->getID() + ")"; }
 
 protected:
     BlockInputStreamPtr stream;

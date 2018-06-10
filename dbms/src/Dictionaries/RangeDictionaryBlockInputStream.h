@@ -30,7 +30,7 @@ public:
 
     String getName() const override
     {
-        return "RangeDictionaryBlockInputStream";
+        return "RangeDictionary";
     }
 
 protected:

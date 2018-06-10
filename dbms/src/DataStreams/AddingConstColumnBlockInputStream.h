@@ -24,11 +24,11 @@ public:
 
     String getName() const override { return "AddingConstColumn"; }
 
-    String getID() const override
+    Block getHeader() const override
     {
-        std::stringstream res;
-        res << "AddingConstColumn(" << children.back()->getID() << ")";
-        return res.str();
+        Block res = children.back()->getHeader();
+        res.insert({data_type->createColumn(), data_type, column_name});
+        return res;
     }
 
 protected:

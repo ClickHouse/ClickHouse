@@ -25,8 +25,8 @@
 
 В структуре описываются столбцы:
 
--   `<id>` -[ключевой столбец](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
--   `<attribute>` -[столбец данных](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Столбцов может быть много.
+-   `<id>` - [ключевой столбец](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-key).
+-   `<attribute>` - [столбец данных](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Столбцов может быть много.
 
 <a name="dicts-external_dicts_dict_structure-key"></a>
 
@@ -66,9 +66,7 @@ ClickHouse поддерживает следующие виды ключей:
 Ключем может быть кортеж (`tuple`) из полей произвольных типов. [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) в этом случае должен быть `complex_key_hashed` или `complex_key_cache`.
 
 <div class="admonition tip">
-
-Cоставной ключ может состоять и из одного элемента, что даёт возможность использовать в качестве ключа, например, строку.
-
+Cоставной ключ может состоять из одного элемента. Это даёт возможность использовать в качестве ключа, например, строку.
 </div>
 
 Структура ключа задаётся в элементе `<key>`. Поля ключа задаются в том же формате, что и [атрибуты](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes) словаря. Пример:
@@ -107,6 +105,7 @@ Cоставной ключ может состоять и из одного эл
         <expression>rand64()</expression>
         <hierarchical>true</hierarchical>
         <injective>true</injective>
+        <is_object_id>true</is_object_id>
     </attribute>
 </structure>
 ```
@@ -119,4 +118,5 @@ Cоставной ключ может состоять и из одного эл
 -   `expression` - Атрибут может быть выражением. Тег не обязательный.
 -   `hierarchical` - Поддержка иерархии. Отображение в идентификатор родителя. По умолчанию, `false`.
 -   `injective` - Признак инъективности отображения `id -> attribute`. Если `true`, то можно оптимизировать `GROUP BY`. По умолчанию, `false`.
+-   `is_object_id` - Признак того, что запрос выполняется к документу MongoDB по `ObjectID`.
 
