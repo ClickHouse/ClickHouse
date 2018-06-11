@@ -7,16 +7,13 @@
 
 namespace DB
 {
-/* file(path, format, structure) - creates a temporary storage from file
+/* url(source, format, structure) - creates a temporary storage from url
  *
- *
- * The file must be in the clickhouse data directory.
- * The relative path begins with the clickhouse data directory.
  */
-class TableFunctionFile : public ITableFunctionFileLike
+class TableFunctionURL : public ITableFunctionFileLike
 {
 public:
-    static constexpr auto name = "file";
+    static constexpr auto name = "url";
     std::string getName() const override
     {
         return name;
