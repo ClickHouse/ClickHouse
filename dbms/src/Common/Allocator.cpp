@@ -11,6 +11,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
+#include <Common/randomSeed.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -60,7 +61,10 @@ void * Allocator<clear_memory_>::alloc(size_t size, size_t alignment)
             throw DB::Exception("Too large alignment " + formatReadableSizeWithBinarySuffix(alignment) + ": more than page size when allocating "
                 + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::BAD_ARGUMENTS);
 
-        buf = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        /// ASLR by hand
+        void * address_hint = reinterpret_cast<void *>(0x100000000000UL + randomSeed() % 0x600000000000UL);
+
+        buf = mmap(address_hint, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (MAP_FAILED == buf)
             DB::throwFromErrno("Allocator: Cannot mmap " + formatReadableSizeWithBinarySuffix(size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
 
