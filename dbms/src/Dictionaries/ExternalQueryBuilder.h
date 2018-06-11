@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/IColumn.h>
 
 

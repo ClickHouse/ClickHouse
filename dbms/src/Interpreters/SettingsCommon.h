@@ -2,7 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <DataStreams/SizeLimits.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <IO/CompressedStream.h>
 #include <Core/Types.h>
 

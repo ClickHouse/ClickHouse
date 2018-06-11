@@ -116,7 +116,22 @@ StorageSet::StorageSet(
 
 
 void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
-size_t StorageSet::getSize() const { return set->getTotalRowCount(); };
+size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
+
+
+void StorageSet::truncate(const ASTPtr &)
+{
+    Poco::File(path).remove(true);
+    Poco::File(path).createDirectories();
+    Poco::File(path + "tmp/").createDirectories();
+
+    Block header = getSampleBlock();
+    header = header.sortColumns();
+
+    increment = 0;
+    set = std::make_shared<Set>(SizeLimits());
+    set->setHeader(header);
+};
 
 
 void StorageSetOrJoinBase::restore()

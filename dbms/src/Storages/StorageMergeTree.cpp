@@ -134,6 +134,24 @@ void StorageMergeTree::drop()
     data.dropAllData();
 }
 
+void StorageMergeTree::truncate(const ASTPtr &)
+{
+    {
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = merger.actions_blocker.cancel();
+
+        /// NOTE: It's assumed that this method is called under lockForAlter.
+
+        auto parts_to_remove = data.getDataPartsVector();
+        data.removePartsFromWorkingSet(parts_to_remove, true);
+
+        LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
+    }
+
+    data.clearOldPartsFromFilesystem();
+}
+
 void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
@@ -146,6 +164,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
 
     /// NOTE: Logger names are not updated.
 }
+
 
 void StorageMergeTree::alter(
     const AlterCommands & params,
@@ -265,7 +284,6 @@ struct CurrentlyMergingPartsTagger
     }
 };
 
-
 bool StorageMergeTree::merge(
     size_t aio_threshold,
     bool aggressive,
@@ -381,6 +399,7 @@ bool StorageMergeTree::merge(
 
     return true;
 }
+
 
 bool StorageMergeTree::mergeTask()
 {
@@ -556,7 +575,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
     /// New parts with other data may appear in place of deleted parts.
     context.dropCaches();
 }
-
 
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {

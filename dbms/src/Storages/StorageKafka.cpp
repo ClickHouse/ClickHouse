@@ -11,7 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -144,7 +144,7 @@ public:
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
-        reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     ~KafkaBlockInputStream() override
