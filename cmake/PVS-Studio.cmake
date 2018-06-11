@@ -176,8 +176,9 @@ function (pvs_studio_analyze_file SOURCE SOURCE_DIR BINARY_DIR)
     get_filename_component(LOG "${LOG}" REALPATH)
     get_filename_component(PARENT_DIR "${LOG}" DIRECTORY)
 
-    if (EXISTS "${SOURCE}" AND NOT TARGET "${LOG}" AND NOT "${PVS_STUDIO_LANGUAGE}" STREQUAL "")
+    message("Will analyze file ${SOURCE}")
 
+    if (EXISTS "${SOURCE}" AND NOT TARGET "${LOG}" AND NOT "${PVS_STUDIO_LANGUAGE}" STREQUAL "")
         add_custom_command(OUTPUT "${LOG}"
                            COMMAND mkdir -p "${PARENT_DIR}"
                            COMMAND rm -f "${LOG}"
@@ -349,21 +350,41 @@ function (pvs_studio_add_target)
         set(PVS_STUDIO_ANALYZE "${PVS_STUDIO_RECURSIVE_TARGETS_NEW}")
     endif ()
 
+    message("${PVS_STUDIO_ANALYZE}")
+
     foreach (TARGET ${PVS_STUDIO_ANALYZE})
         set(DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-        string(FIND "${TARGET}" ":" DELIM)
-        if ("${DELIM}" EQUAL "-1")
+#         string(FIND "${TARGET}" ":" DELIM)
+#
+#         if ("${DELIM}" GREATER "-1")
+#             # target name has colon. Example: OpenSSL::SSL
+#
+#             message("${TARGET}, ${CMAKE_CURRENT_SOURCE_DIR}")
+#
+#             math(EXPR DELIMI "${DELIM}+1")
+#             # set DIR to suffix
+#             string(SUBSTRING "${TARGET}" "${DELIMI}" "-1" DIR)
+#             # set TARGET to prefix
+#             string(SUBSTRING "${TARGET}" "0" "${DELIM}" TARGET)
+#             # set DIR to current source dir + suffix
+#             pvs_studio_join_path(DIR "${CMAKE_CURRENT_SOURCE_DIR}" "${DIR}")
+#         else ()
           get_target_property(TARGET_SOURCE_DIR "${TARGET}" SOURCE_DIR)
           if (EXISTS "${TARGET_SOURCE_DIR}")
             set(DIR "${TARGET_SOURCE_DIR}")
           endif ()
-          pvs_studio_analyze_target("${TARGET}" "${DIR}")
-          list(APPEND PVS_STUDIO_DEPENDS "${TARGET}")
+#         endif ()
+
+        message("${DIR}")
+        if (NOT "${DIR}" MATCHES "contrib")
+            pvs_studio_analyze_target("${TARGET}" "${DIR}")
+            list(APPEND PVS_STUDIO_DEPENDS "${TARGET}")
         endif ()
     endforeach ()
 
     set(PVS_STUDIO_TARGET_CXX_FLAGS "")
     set(PVS_STUDIO_TARGET_C_FLAGS "")
+
     foreach (SOURCE ${PVS_STUDIO_SOURCES})
         pvs_studio_analyze_file("${SOURCE}" "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
     endforeach ()
