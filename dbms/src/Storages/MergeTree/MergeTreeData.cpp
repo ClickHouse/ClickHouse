@@ -15,7 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/ValuesRowInputStream.h>
+#include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -800,16 +800,7 @@ void MergeTreeData::dropAllData()
 
     LOG_TRACE(log, "dropAllData: removing data from filesystem.");
 
-    std::vector<Poco::File> data_dirs;
-
-    Poco::File(full_path).list(data_dirs);
-
-    auto detached_file = Poco::Path(full_path + "/detached").makeAbsolute().toString();
-    for (auto & data_dir : data_dirs)
-    {
-        if (Poco::Path(data_dir.path()).makeAbsolute().toString() != detached_file)
-            data_dir.remove(true);
-    }
+    Poco::File(full_path).remove(true);
 
     LOG_TRACE(log, "dropAllData: done.");
 }
