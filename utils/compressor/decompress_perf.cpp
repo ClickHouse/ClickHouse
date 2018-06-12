@@ -42,6 +42,11 @@ protected:
     /// Points to memory, holding compressed block.
     char * compressed_buffer = nullptr;
 
+    ssize_t variant;
+
+    /// Variant for reference implementation of LZ4.
+    static constexpr ssize_t LZ4_REFERENCE = -3;
+
     LZ4::StreamStatistics stream_stat;
     LZ4::PerformanceStatistics perf_stat;
 
@@ -83,7 +88,7 @@ protected:
         }
         else
         {
-            own_compressed_buffer.resize(size_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+            own_compressed_buffer.resize(size_compressed + variant == LZ4_REFERENCE ? 0 : LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
             compressed_buffer = &own_compressed_buffer[0];
             compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
         }
@@ -98,7 +103,14 @@ protected:
         if (method == static_cast<UInt8>(CompressionMethodByte::LZ4))
         {
             //LZ4::statistics(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed, stat);
-            LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
+
+            if (variant == LZ4_REFERENCE)
+            {
+                if (LZ4_decompress_fast(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_decompressed) < 0)
+                    throw Exception("Cannot LZ4_decompress_fast", ErrorCodes::CANNOT_DECOMPRESS);
+            }
+            else
+                LZ4::decompress(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, to, size_compressed_without_checksum, size_decompressed, perf_stat);
         }
         else
             throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
@@ -106,8 +118,8 @@ protected:
 
 public:
     /// 'compressed_in' could be initialized lazily, but before first call of 'readCompressedData'.
-    FasterCompressedReadBufferBase(ReadBuffer * in = nullptr)
-        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE)
+    FasterCompressedReadBufferBase(ReadBuffer * in, ssize_t variant)
+        : compressed_in(in), own_compressed_buffer(COMPRESSED_BLOCK_HEADER_SIZE), variant(variant), perf_stat(variant)
     {
     }
 
@@ -138,8 +150,8 @@ private:
     }
 
 public:
-    FasterCompressedReadBuffer(ReadBuffer & in_)
-        : FasterCompressedReadBufferBase(&in_), BufferWithOwnMemory<ReadBuffer>(0)
+    FasterCompressedReadBuffer(ReadBuffer & in_, ssize_t method)
+        : FasterCompressedReadBufferBase(&in_, method), BufferWithOwnMemory<ReadBuffer>(0)
     {
     }
 };
@@ -147,21 +159,28 @@ public:
 }
 
 
-int main(int, char **)
+int main(int argc, char ** argv)
 try
 {
     using namespace DB;
 
+    /** -3 - use reference implementation of LZ4
+      * -2 - run all algorithms in round robin fashion
+      * -1 - automatically detect best algorithm based on statistics
+      * 0..3 - run specified algorithm
+      */
+    ssize_t variant = argc < 2 ? -1 : parse<ssize_t>(argv[1]);
+
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
-    FasterCompressedReadBuffer decompressing_in(in);
+    FasterCompressedReadBuffer decompressing_in(in, variant);
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
-    HashingWriteBuffer hashing_out(out);
+//    HashingWriteBuffer hashing_out(out);
 
     Stopwatch watch;
-    copyData(decompressing_in, hashing_out);
+    copyData(decompressing_in, /*hashing_*/out);
     watch.stop();
 
-    auto hash = hashing_out.getHash();
+//    auto hash = hashing_out.getHash();
 
     double seconds = watch.elapsedSeconds();
     std::cerr << std::fixed << std::setprecision(3)
@@ -171,7 +190,7 @@ try
         << ", ratio: " << static_cast<double>(decompressing_in.count()) / in.count()
         << ", " << formatReadableSizeWithBinarySuffix(in.count() / seconds) << "/sec. compressed"
         << ", " << formatReadableSizeWithBinarySuffix(decompressing_in.count() / seconds) << "/sec. decompressed"
-        << ", checksum: " << hash.first << "_" << hash.second
+//        << ", checksum: " << hash.first << "_" << hash.second
         << "\n";
 
 //    decompressing_in.getStatistics().print();

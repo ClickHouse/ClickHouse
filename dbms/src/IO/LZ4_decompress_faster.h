@@ -71,7 +71,7 @@ struct PerformanceStatistics
         {
             ++count;
 
-            if (count > PerformanceStatistics::NUM_INVOCATIONS_TO_THROW_OFF)
+            if (count > NUM_INVOCATIONS_TO_THROW_OFF)
                 sum += seconds / bytes;
         }
 
@@ -93,6 +93,12 @@ struct PerformanceStatistics
     /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.
     static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 2;
 
+    /// How to select method to run.
+    /// -1 - automatically, based on statistics (default);
+    /// 0..3 - always choose specified method (for performance testing);
+    /// -2 - choose methods in round robin fashion (for performance testing).
+    ssize_t choose_method = -1;
+
     Element data[NUM_ELEMENTS];
 
     pcg64 rng;
@@ -101,12 +107,22 @@ struct PerformanceStatistics
     /// Sample random values from estimated normal distributions and choose the minimal.
     size_t select()
     {
-        double samples[NUM_ELEMENTS];
-        for (size_t i = 0; i < NUM_ELEMENTS; ++i)
-            samples[i] = data[i].sample(rng);
+        if (choose_method < 0)
+        {
+            double samples[NUM_ELEMENTS];
+            for (size_t i = 0; i < NUM_ELEMENTS; ++i)
+                samples[i] = choose_method == -1
+                    ? data[i].sample(rng)
+                    : data[i].adjustedCount();
 
-        return std::min_element(samples, samples + NUM_ELEMENTS) - samples;
+            return std::min_element(samples, samples + NUM_ELEMENTS) - samples;
+        }
+        else
+            return choose_method;
     }
+
+    PerformanceStatistics() {}
+    PerformanceStatistics(ssize_t choose_method) : choose_method(choose_method) {}
 };
 
 
