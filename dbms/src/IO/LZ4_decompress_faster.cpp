@@ -52,6 +52,8 @@ inline void wildCopy8(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
     /// 4 % n.
+    /// Or if 4 % n is zero, we use n.
+    /// It gives equivalent result, but is better CPU friendly for unknown reason.
     static constexpr int shift1[] = { 0, 1, 2, 1, 4, 4, 4, 4 };
 
     /// 8 % n - 4 % n
@@ -67,11 +69,89 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift2[offset];
 }
 
+
+/** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
+  *
+  * It is possible to use 'mm' (64bit MMX) registers to shuffle just 8 bytes as we need.
+  *
+  * There is corresponding version of 'pshufb' instruction that operates on 'mm' registers,
+  *  (it operates on MMX registers although it is available in SSSE3)
+  *  and compiler library has the corresponding intrinsic: '_mm_shuffle_pi8'.
+  *
+  * It can be done like this:
+  *
+  *  unalignedStore(op, _mm_shuffle_pi8(
+  *      unalignedLoad<__m64>(match),
+  *      unalignedLoad<__m64>(masks + 8 * offset)));
+  *
+  * This is perfectly correct and this code have the same or even better performance.
+  *
+  * But if we write code this way, it will lead to
+  *  extremely weird and extremely non obvious
+  *  effects in completely unrelated parts of code.
+  *
+  * Because using MMX registers alters the mode of operation of x87 FPU,
+  *  and then operations with FPU become broken.
+  *
+  * Example 1.
+  * Compile this code without optimizations:
+  *
+    #include <vector>
+    #include <unordered_set>
+    #include <iostream>
+    #include <tmmintrin.h>
+
+    int main(int, char **)
+    {
+        [[maybe_unused]] __m64 shuffled = _mm_shuffle_pi8(__m64{}, __m64{});
+
+        std::vector<int> vec;
+        std::unordered_set<int> set(vec.begin(), vec.end());
+
+        std::cerr << set.size() << "\n";
+        return 0;
+    }
+
+    $ g++ -g -O0 -mssse3 -std=c++17 mmx_bug1.cpp && ./a.out
+    terminate called after throwing an instance of 'std::bad_alloc'
+    what():  std::bad_alloc
+
+    Also reproduced with clang. But only with libstdc++, not with libc++.
+
+  * Example 2.
+
+    #include <math.h>
+    #include <iostream>
+    #include <tmmintrin.h>
+
+    int main(int, char **)
+    {
+        double max_fill = 1;
+
+        std::cerr << (long double)max_fill << "\n";
+        [[maybe_unused]] __m64 shuffled = _mm_shuffle_pi8(__m64{}, __m64{});
+        std::cerr << (long double)max_fill << "\n";
+
+        return 0;
+    }
+
+    $ g++ -g -O0 -mssse3 -std=c++17 mmx_bug2.cpp && ./a.out
+    1
+    -nan
+
+  * Explanation:
+  *
+  * https://stackoverflow.com/questions/33692969/assembler-mmx-errors
+  * https://software.intel.com/en-us/node/524274
+  *
+  * Actually it's possible to use 'emms' instruction after decompression routine.
+  * But it's more easy to just use 'xmm' registers and avoid using 'mm' registers.
+  */
 inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
 #ifdef __SSSE3__
 
-    static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
     {
         0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
         0, 0, 0, 0, 0, 0, 0, 0, /* offset = 1 */
@@ -81,11 +161,13 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
         0, 1, 2, 3, 4, 0, 1, 2,
         0, 1, 2, 3, 4, 5, 0, 1,
         0, 1, 2, 3, 4, 5, 6, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, /* this row is not used: padding to allow read 16 bytes starting at previous row */
     };
 
-    unalignedStore(op, _mm_shuffle_pi8(
-        unalignedLoad<__m64>(match),
-        unalignedLoad<__m64>(masks + 8 * offset)));
+    _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
+        _mm_shuffle_epi8(
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
+            _mm_load_si128(reinterpret_cast<const __m128i *>(masks + 8 * offset))));
 
     match += masks[offset];
 
@@ -225,6 +307,17 @@ void NO_INLINE decompressImpl(
 
         UInt8 * copy_end = op + length;
 
+        /// input: Hello, world
+        ///        ^-ip
+        /// output: xyz
+        ///            ^-op  ^-copy_end
+        /// output: xyzHello, w
+        ///                   ^- excessive copied bytes due to "wildCopy"
+        /// input: Hello, world
+        ///              ^-ip
+        /// output: xyzHello, w
+        ///                  ^-op (we will overwrite excessive bytes on next iteration)
+
         wildCopy<copy_amount>(op, ip, copy_end);    /// Here we can write up to copy_amount - 1 bytes after buffer.
 
         ip += length;
@@ -256,6 +349,17 @@ void NO_INLINE decompressImpl(
 
         if (unlikely(offset < copy_amount))
         {
+            /// output: Hello
+            ///              ^-op
+            ///         ^-match; offset = 5
+            ///
+            /// output: Hello
+            ///         [------] - copy_amount bytes
+            ///              [------] - copy them here
+            ///
+            /// output: HelloHelloHel
+            ///            ^-match   ^-op
+
             copyOverlap<copy_amount, use_shuffle>(op, match, offset);
         }
         else
