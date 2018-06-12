@@ -151,7 +151,7 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
 {
 #ifdef __SSSE3__
 
-    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
+    static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
     {
         0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
         0, 0, 0, 0, 0, 0, 0, 0, /* offset = 1 */
@@ -167,7 +167,7 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
     _mm_storeu_si128(reinterpret_cast<__m128i *>(op),
         _mm_shuffle_epi8(
             _mm_loadu_si128(reinterpret_cast<const __m128i *>(match)),
-            _mm_load_si128(reinterpret_cast<const __m128i *>(masks + 8 * offset))));
+            _mm_loadu_si128(reinterpret_cast<const __m128i *>(masks + 8 * offset))));
 
     match += masks[offset];
 
