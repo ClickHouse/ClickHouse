@@ -251,10 +251,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInRange(
-                    data.minmax_idx_columns.size(),
-                    &part->minmax_idx.min_values[0], &part->minmax_idx.max_values[0],
-                    data.minmax_idx_column_types))
+            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInParallelogram(
+                    part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
             if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)

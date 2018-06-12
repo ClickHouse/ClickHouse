@@ -240,6 +240,9 @@ public:
     /// data_types - the types of the key columns.
     bool mayBeTrueInRange(size_t used_key_size, const Field * left_key, const Field * right_key, const DataTypes & data_types) const;
 
+    /// Whether the condition is feasible in the direct product of single column ranges specified by `parallelogram`.
+    bool mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const;
+
     /// Is the condition valid in a semi-infinite (not limited to the right) key range.
     /// left_key must contain all the fields in the sort_descr in the appropriate order.
     bool mayBeTrueAfter(size_t used_key_size, const Field * left_key, const DataTypes & data_types) const;
@@ -257,6 +260,22 @@ public:
     String toString() const;
 
 
+    /** A chain of possibly monotone functions.
+      * If the key column is wrapped in functions that can be monotonous in some value ranges
+      * (for example: -toFloat64(toDayOfWeek(date))), then here the functions will be located: toDayOfWeek, toFloat64, negate.
+      */
+    using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
+
+
+    static Block getBlockWithConstants(
+        const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
+
+    static std::optional<Range> applyMonotonicFunctionsChainToRange(
+        Range key_range,
+        MonotonicFunctionsChain & functions,
+        DataTypePtr current_type);
+
+private:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
@@ -289,34 +308,23 @@ public:
 
         /// For FUNCTION_IN_RANGE and FUNCTION_NOT_IN_RANGE.
         Range range;
-        size_t key_column;
+        size_t key_column = 0;
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         ASTPtr in_function;
         using MergeTreeSetIndexPtr = std::shared_ptr<MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
 
-        /** A chain of possibly monotone functions.
-          * If the key column is wrapped in functions that can be monotonous in some value ranges
-          * (for example: -toFloat64(toDayOfWeek(date))), then here the functions will be located: toDayOfWeek, toFloat64, negate.
-          */
-        using MonotonicFunctionsChain = std::vector<FunctionBasePtr>;
         mutable MonotonicFunctionsChain monotonic_functions_chain;    /// The function execution does not violate the constancy.
     };
 
-    static Block getBlockWithConstants(
-        const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns);
-
-    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
-    static const AtomMap atom_map;
-
-    static std::optional<Range> applyMonotonicFunctionsChainToRange(
-        Range key_range,
-        RPNElement::MonotonicFunctionsChain & functions,
-        DataTypePtr current_type);
-
-private:
     using RPN = std::vector<RPNElement>;
     using ColumnIndices = std::map<String, size_t>;
+
+    using AtomMap = std::unordered_map<std::string, bool(*)(RPNElement & out, const Field & value, const ASTPtr & node)>;
+
+public:
+    static const AtomMap atom_map;
+private:
 
     bool mayBeTrueInRange(
         size_t used_key_size,
@@ -324,8 +332,6 @@ private:
         const Field * right_key,
         const DataTypes & data_types,
         bool right_bounded) const;
-
-    bool mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const;
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
     bool atomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
@@ -342,7 +348,7 @@ private:
         const Context & context,
         size_t & out_key_column_num,
         DataTypePtr & out_key_res_column_type,
-        RPNElement::MonotonicFunctionsChain & out_functions_chain);
+        MonotonicFunctionsChain & out_functions_chain);
 
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const ASTPtr & node,

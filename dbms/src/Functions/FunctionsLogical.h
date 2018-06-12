@@ -197,7 +197,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); }
 
 private:
     bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
@@ -430,7 +430,7 @@ class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); }
 
 private:
     template <typename T>

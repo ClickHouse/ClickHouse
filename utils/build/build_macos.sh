@@ -35,10 +35,10 @@ make -j `sysctl -n hw.ncpu`
 cd ../..
 
 #  Run server:
-# ClickHouse/build/dbms/src/Server/clickhouse-server --config-file=ClickHouse/dbms/src/Server/config.xml &
+# ClickHouse/build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
 
 #  Run client:
-# ClickHouse/build/dbms/src/Server/clickhouse-client
+# ClickHouse/build/dbms/programs/clickhouse-client
 
 
 ## Caveats

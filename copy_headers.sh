@@ -1,6 +1,8 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
 
-# set -x
+set -e
+#set -x
+#echo "Args: $*"; env | sort
 
 # Этот скрипт собирает все заголовочные файлы, нужные для компиляции некоторого translation unit-а
 #  и копирует их с сохранением путей в директорию DST.
@@ -49,12 +51,13 @@ for src_file in $(echo | $CLANG -M -xc++ -std=c++1z -Wall -Werror -msse4 -mcx16 
     $START_HEADERS_INCLUDE \
     - |
     tr -d '\\' |
-    sed -E -e 's/^-\.o://');
+    sed --posix -E -e 's/^-\.o://');
 do
     dst_file=$src_file;
-    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
-    dst_file=$(echo $dst_file | sed -E -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
-    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+    [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$BUILD_PATH!!")
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$DESTDIR!!")
+    dst_file=$(echo $dst_file | sed --posix -E -e 's/build\///')    # for simplicity reasons, will put generated headers near the rest.
+    mkdir -p "$DST/$(echo $dst_file | sed --posix -E -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
 
@@ -65,24 +68,31 @@ done
 for src_file in $(ls -1 $($CLANG -v -xc++ - <<<'' 2>&1 | grep '^ /' | grep 'include' | grep -E '/lib/clang/|/include/clang/')/*.h | grep -vE 'arm|altivec|Intrin');
 do
     dst_file=$src_file;
-    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
-    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
+    [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$BUILD_PATH!!")
+    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$DESTDIR!!")
+    mkdir -p "$DST/$(echo $dst_file | sed --posix -E -e 's/\/[^/]*$/\//')";
     cp "$src_file" "$DST/$dst_file";
 done
 
-# Even more platform-specific headers
-for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
-do
-    dst_file=$src_file;
-    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
-    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$dst_file";
-done
+if [ -d "$SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail" ]; then
+    # Even more platform-specific headers
+    for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/libs/smart_ptr/include/boost/smart_ptr/detail/*);
+    do
+        dst_file=$src_file;
+        [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$BUILD_PATH!!")
+        [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$DESTDIR!!")
+        mkdir -p "$DST/$(echo $dst_file | sed --posix -E -e 's/\/[^/]*$/\//')";
+        cp "$src_file" "$DST/$dst_file";
+    done
+fi
 
-for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
-do
-    dst_file=$src_file;
-    [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed -E -e "s!^$DESTDIR!!")
-    mkdir -p "$DST/$(echo $dst_file | sed -E -e 's/\/[^/]*$/\//')";
-    cp "$src_file" "$DST/$dst_file";
-done
+if [ -d "$SOURCE_PATH/contrib/boost/boost/smart_ptr/detail" ]; then
+    for src_file in $(ls -1 $SOURCE_PATH/contrib/boost/boost/smart_ptr/detail/*);
+    do
+        dst_file=$src_file;
+        [ -n $BUILD_PATH ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$BUILD_PATH!!")
+        [ -n $DESTDIR ] && dst_file=$(echo $dst_file | sed --posix -E -e "s!^$DESTDIR!!")
+        mkdir -p "$DST/$(echo $dst_file | sed --posix -E -e 's/\/[^/]*$/\//')";
+        cp "$src_file" "$DST/$dst_file";
+    done
+fi

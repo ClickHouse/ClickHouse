@@ -14,7 +14,6 @@ date
 env TEST_RUN=${TEST_RUN=1} \
     TEST_PORT_RANDOM= \
     `# Skip tests:` \
-    `# 00281 requires internal compiler` \
     `# 00416 requires patched poco from contrib/` \
     TEST_OPT="--skip long pocopatch $TEST_OPT" \
     TEST_SSL="" `# <Error> Application: SSL context exception: Error loading certificate from file /etc/clickhouse-server/server.crt: No error -- when using system poco on artful` \

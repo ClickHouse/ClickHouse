@@ -169,9 +169,9 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
         bool remove = false;
         if (with_node->nodeType() == Node::ELEMENT_NODE)
         {
-            Element * with_element = dynamic_cast<Element *>(with_node);
-            remove = with_element->hasAttribute("remove");
-            bool replace = with_element->hasAttribute("replace");
+            Element & with_element = dynamic_cast<Element &>(*with_node);
+            remove = with_element.hasAttribute("remove");
+            bool replace = with_element.hasAttribute("replace");
 
             if (remove && replace)
                 throw Poco::Exception("both remove and replace attributes set for element <" + with_node->nodeName() + ">");
@@ -189,7 +189,7 @@ void ConfigProcessor::mergeRecursive(XMLDocumentPtr config, Node * config_root, 
                 }
                 else if (replace)
                 {
-                    with_element->removeAttribute("replace");
+                    with_element.removeAttribute("replace");
                     NodePtr new_node = config->importNode(with_node, true);
                     config_root->replaceChild(new_node, config_node);
                 }
@@ -294,17 +294,17 @@ void ConfigProcessor::doIncludesRecursive(
         }
         else
         {
-            Element * element = dynamic_cast<Element *>(node);
+            Element & element = dynamic_cast<Element &>(*node);
 
-            element->removeAttribute("incl");
-            element->removeAttribute("from_zk");
+            element.removeAttribute("incl");
+            element.removeAttribute("from_zk");
 
             if (replace)
             {
                 while (Node * child = node->firstChild())
                     node->removeChild(child);
 
-                element->removeAttribute("replace");
+                element.removeAttribute("replace");
             }
 
             const NodeListPtr children = node_to_include->childNodes();
@@ -317,7 +317,7 @@ void ConfigProcessor::doIncludesRecursive(
             const NamedNodeMapPtr from_attrs = node_to_include->attributes();
             for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
             {
-                element->setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+                element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
             }
 
             included_something = true;

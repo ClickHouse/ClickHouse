@@ -19,6 +19,8 @@ class DatabaseMemory : public DatabaseWithOwnTablesBase
 public:
     DatabaseMemory(String name_);
 
+    String getDatabaseName() const override;
+
     String getEngineName() const override { return "Memory"; }
 
     void loadTables(
@@ -56,8 +58,6 @@ public:
     ASTPtr tryGetCreateTableQuery(const Context &, const String &) const override { return nullptr; }
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
-
-    void drop() override;
 
 private:
     Poco::Logger * log;

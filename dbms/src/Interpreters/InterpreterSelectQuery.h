@@ -53,7 +53,7 @@ public:
         const BlockInputStreamPtr & input = nullptr,
         bool only_analyze = false);
 
-    ~InterpreterSelectQuery();
+    ~InterpreterSelectQuery() override;
 
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;

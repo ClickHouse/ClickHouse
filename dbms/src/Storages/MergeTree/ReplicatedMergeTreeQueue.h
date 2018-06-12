@@ -157,7 +157,7 @@ private:
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & queue_lock) const;
 
-    /// After removing the queue element, update the insertion times in the RAM. Running under mutex.
+    /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
     void updateTimesOnRemoval(const LogEntryPtr & entry,
         std::optional<time_t> & min_unprocessed_insert_time_changed,
@@ -284,11 +284,11 @@ public:
         UInt32 queue_size;
         UInt32 inserts_in_queue;
         UInt32 merges_in_queue;
-        UInt32 mutations_in_queue;
+        UInt32 part_mutations_in_queue;
         UInt32 queue_oldest_time;
         UInt32 inserts_oldest_time;
         UInt32 merges_oldest_time;
-        UInt32 mutations_oldest_time;
+        UInt32 part_mutations_oldest_time;
         String oldest_part_to_get;
         String oldest_part_to_merge_to;
         String oldest_part_to_mutate_to;

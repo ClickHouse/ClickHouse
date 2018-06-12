@@ -48,15 +48,19 @@ static ReadBufferFromFile openForReading(const String & path)
 void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & storage, const String & part_path)
 {
     size_t minmax_idx_size = storage.minmax_idx_column_types.size();
-    min_values.resize(minmax_idx_size);
-    max_values.resize(minmax_idx_size);
+    parallelogram.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_name = part_path + "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
         ReadBufferFromFile file = openForReading(file_name);
         const DataTypePtr & type = storage.minmax_idx_column_types[i];
-        type->deserializeBinary(min_values[i], file);
-        type->deserializeBinary(max_values[i], file);
+
+        Field min_val;
+        type->deserializeBinary(min_val, file);
+        Field max_val;
+        type->deserializeBinary(max_val, file);
+
+        parallelogram.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
 }
@@ -74,8 +78,8 @@ void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const 
 
         WriteBufferFromFile out(part_path + file_name);
         HashingWriteBuffer out_hashing(out);
-        type->serializeBinary(min_values[i], out_hashing);
-        type->serializeBinary(max_values[i], out_hashing);
+        type->serializeBinary(parallelogram[i].left, out_hashing);
+        type->serializeBinary(parallelogram[i].right, out_hashing);
         out_hashing.next();
         checksums.files[file_name].file_size = out_hashing.count();
         checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -85,10 +89,7 @@ void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const 
 void MergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
 {
     if (!initialized)
-    {
-        min_values.resize(column_names.size());
-        max_values.resize(column_names.size());
-    }
+        parallelogram.reserve(column_names.size());
 
     for (size_t i = 0; i < column_names.size(); ++i)
     {
@@ -98,14 +99,11 @@ void MergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & c
         column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
-        {
-            min_values[i] = Field(min_value);
-            max_values[i] = Field(max_value);
-        }
+            parallelogram.emplace_back(min_value, true, max_value, true);
         else
         {
-            min_values[i] = std::min(min_values[i], min_value);
-            max_values[i] = std::max(max_values[i], max_value);
+            parallelogram[i].left = std::min(parallelogram[i].left, min_value);
+            parallelogram[i].right = std::max(parallelogram[i].right, max_value);
         }
     }
 
@@ -119,16 +117,15 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
     if (!initialized)
     {
-        min_values.assign(other.min_values);
-        max_values.assign(other.max_values);
+        parallelogram = other.parallelogram;
         initialized = true;
     }
     else
     {
-        for (size_t i = 0; i < min_values.size(); ++i)
+        for (size_t i = 0; i < parallelogram.size(); ++i)
         {
-            min_values[i] = std::min(min_values[i], other.min_values[i]);
-            max_values[i] = std::max(max_values[i], other.max_values[i]);
+            parallelogram[i].left = std::min(parallelogram[i].left, other.parallelogram[i].left);
+            parallelogram[i].right = std::max(parallelogram[i].right, other.parallelogram[i].right);
         }
     }
 }
@@ -255,7 +252,7 @@ String MergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) co
 DayNum MergeTreeDataPart::getMinDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-        return DayNum(minmax_idx.min_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+        return DayNum(minmax_idx.parallelogram[storage.minmax_idx_date_column_pos].left.get<UInt64>());
     else
         return DayNum();
 }
@@ -264,7 +261,7 @@ DayNum MergeTreeDataPart::getMinDate() const
 DayNum MergeTreeDataPart::getMaxDate() const
 {
     if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
-        return DayNum(minmax_idx.max_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+        return DayNum(minmax_idx.parallelogram[storage.minmax_idx_date_column_pos].right.get<UInt64>());
     else
         return DayNum();
 }
@@ -467,7 +464,7 @@ void MergeTreeDataPart::loadIndex()
         String index_path = getFullPath() + "primary.idx";
         ReadBufferFromFile index_file = openForReading(index_path);
 
-        for (size_t i = 0; i < marks_count; ++i)
+        for (size_t i = 0; i < marks_count; ++i)    //-V756
             for (size_t j = 0; j < key_size; ++j)
                 storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j].get(), index_file);
 

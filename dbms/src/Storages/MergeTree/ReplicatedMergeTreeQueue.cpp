@@ -52,7 +52,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
         LOG_DEBUG(log, "Having " << children.size() << " queue entries to load.");
         std::sort(children.begin(), children.end());
 
-        std::vector<std::pair<String, std::future<zkutil::GetResponse>>> futures;
+        zkutil::AsyncResponses<zkutil::GetResponse> futures;
         futures.reserve(children.size());
 
         for (const String & child : children)
@@ -350,7 +350,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
 
-            std::vector<std::pair<String, std::future<zkutil::GetResponse>>> futures;
+            zkutil::AsyncResponses<zkutil::GetResponse> futures;
             futures.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
@@ -920,6 +920,10 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
 {
+    /// NOTE: If the corresponding mutation is not found, the error is logged (and not thrown as an exception)
+    /// to allow recovering from a mutation that cannot be executed. This way you can delete the mutation entry
+    /// from /mutations in ZK and the replicas will simply skip the mutation.
+
     if (part->info.getDataVersion() > desired_mutation_version)
     {
         LOG_WARNING(log, "Data version of part " << part->name << " is already greater than "
@@ -973,11 +977,11 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
     res.inserts_in_queue = 0;
     res.merges_in_queue = 0;
-    res.mutations_in_queue = 0;
+    res.part_mutations_in_queue = 0;
     res.queue_oldest_time = 0;
     res.inserts_oldest_time = 0;
     res.merges_oldest_time = 0;
-    res.mutations_oldest_time = 0;
+    res.part_mutations_oldest_time = 0;
 
     for (const LogEntryPtr & entry : queue)
     {
@@ -1008,11 +1012,11 @@ ReplicatedMergeTreeQueue::Status ReplicatedMergeTreeQueue::getStatus() const
 
         if (entry->type == LogEntry::MUTATE_PART)
         {
-            ++res.mutations_in_queue;
+            ++res.part_mutations_in_queue;
 
-            if (entry->create_time && (!res.mutations_oldest_time || entry->create_time < res.mutations_oldest_time))
+            if (entry->create_time && (!res.part_mutations_oldest_time || entry->create_time < res.part_mutations_oldest_time))
             {
-                res.mutations_oldest_time = entry->create_time;
+                res.part_mutations_oldest_time = entry->create_time;
                 res.oldest_part_to_mutate_to = entry->new_part_name;
             }
         }
@@ -1226,7 +1230,8 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     if (left_max_block + 1 < right_min_block)
     {
         MergeTreePartInfo gap_part_info(
-            left->info.partition_id, left_max_block + 1, right_min_block - 1, 999999999, 999999999);
+            left->info.partition_id, left_max_block + 1, right_min_block - 1,
+            MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
 
         Strings covered = queue.virtual_parts.getPartsCoveredBy(gap_part_info);
         if (!covered.empty())
