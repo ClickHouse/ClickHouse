@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 #include <IO/copyData.h>
 #include <IO/ReadBuffer.h>
@@ -34,9 +35,9 @@ static String getSchemaPath(const String & schema_dir, const String & schema_fil
     return schema_dir + escapeForFileName(schema_file) + ".proto";
 }
 
-static std::unordered_map<std::string, const FieldDescriptor *> name_to_field;
+}
 
-static const std::unordered_map<FieldDescriptor::CppType, const std::string> protobuf_type_to_column_type = {
+const std::unordered_map<FieldDescriptor::CppType, const std::string> ProtobufRowInputStream::protobuf_type_to_column_type_name = {
     // TODO: what if numeric values are always smaller than int32/64?
     {FieldDescriptor::CPPTYPE_INT32,  "Int32"},
     {FieldDescriptor::CPPTYPE_INT64,  "Int64"},
@@ -52,7 +53,39 @@ static const std::unordered_map<FieldDescriptor::CppType, const std::string> pro
     /* FieldDescriptor::MAX_CPPTYPE */
 };
 
+void ProtobufRowInputStream::validateSchema()
+{
+    // TODO: support NULLs
+    for (size_t column_i = 0; column_i != header.columns(); ++column_i)
+    {
+        ColumnWithTypeAndName header_column = header.getByPosition(column_i);
+
+        if (name_to_field.find(header_column.name) == name_to_field.end())
+            throw Exception("Column \"" + header_column.name + "\" is not presented in a schema" /*, ErrorCodes::TODO*/);
+
+        const FieldDescriptor * field = name_to_field[header_column.name];
+        FieldDescriptor::CppType protobuf_type = field->cpp_type();
+
+        if (protobuf_type_to_column_type_name.find(protobuf_type) == protobuf_type_to_column_type_name.end())
+        {
+            throw Exception("Unsupported type " + std::string(field->type_name()) + " of a column " + header_column.name/*, ErrorCodes::TODO*/);
+        }
+
+        const std::string internal_type_name = protobuf_type_to_column_type_name.at(protobuf_type);
+        const std::string column_type_name = header_column.type->getName();
+
+        // TODO: can it be done with typeid_cast?
+        if (internal_type_name != column_type_name)
+        {
+            throw Exception(
+                "Input data type " + internal_type_name + " for column \"" + header_column.name + "\" "
+                "is not compatible with a column type " + column_type_name/*, ErrorCodes::TODO*/
+            );
+        }
+    }
 }
+
+// TODO: support Proto3
 
 ProtobufRowInputStream::ProtobufRowInputStream(
     ReadBuffer & istr_, const Block & header_,
@@ -60,10 +93,8 @@ ProtobufRowInputStream::ProtobufRowInputStream(
 ) : istr(istr_), header(header_)
 {
     String schema_path = getSchemaPath(schema_dir, schema_file);
-    // TODO: remove
-    std::cerr << "schema_path: " << schema_path << std::endl;
-    std::cerr << "root obj: " << root_obj << std::endl;
 
+    // TODO: is it possible to use a high-level function with Protobuf?
     int fd = open(schema_path.c_str(), O_RDONLY);
     if (!fd)
         throw Exception("Failed to open a schema file " + schema_path/*, ErrorCodes::TODO*/);
@@ -93,51 +124,71 @@ ProtobufRowInputStream::ProtobufRowInputStream(
     if (NULL == prototype_msg)
         throw Exception("Failed to create a prototype message from a message descriptor"/*, ErrorCodes::TODO*/);
 
-    // TODO: schema validation
-
     for (size_t field_i = 0; field_i != static_cast<size_t>(message_desc->field_count()); ++field_i)
     {
         const FieldDescriptor * field = message_desc->field(field_i);
         name_to_field[field->name()] = field;
     }
 
-    for (size_t column_i = 0; column_i != header.columns(); ++column_i)
-    {
-        ColumnWithTypeAndName header_column = header.getByPosition(column_i);
-
-        if (name_to_field.find(header_column.name) == name_to_field.end())
-            throw Exception("Column \"" + header_column.name + "\" is not presented in a schema" /*, ErrorCodes::TODO*/);
-
-        // TODO: remove
-        std::cerr << "Column " << header_column.name << " has a type " << name_to_field[header_column.name]->type_name()
-                  << "(" << name_to_field[header_column.name]->cpp_type() << ") in a schema" << std::endl;
-    }
+    validateSchema();
 
     // TODO: close(fd)?
 }
 
-// TODO: rename
-void ProtobufRowInputStream::printMessageValues(Message * mutable_msg)
+// TODO: get rid of code duplication
+
+// TODO: some types require a bigger one to create a Field. Is it really how it should work?
+#define FOR_PROTOBUF_CPP_TYPES(M)                          \
+    M(FieldDescriptor::CPPTYPE_INT32,  Int64,   GetInt32)  \
+    M(FieldDescriptor::CPPTYPE_INT64,  Int64,   GetInt64)  \
+    M(FieldDescriptor::CPPTYPE_UINT32, UInt64,  GetUInt32) \
+    M(FieldDescriptor::CPPTYPE_UINT64, UInt64,  GetUInt64) \
+    M(FieldDescriptor::CPPTYPE_FLOAT,  Float64, GetFloat)  \
+    M(FieldDescriptor::CPPTYPE_DOUBLE, Float64, GetDouble) \
+    M(FieldDescriptor::CPPTYPE_STRING, String,  GetString) \
+    // TODO:
+    /* M(FieldDescriptor::CPPTYPE_BOOL,   UInt8)  \ */
+
+    /* {Enum, FieldDescriptor::CPPTYPE_ENUM}, */
+    /* FieldDescriptor::CPPTYPE_MESSAGE, */
+    /* FieldDescriptor::MAX_CPPTYPE */
+
+void ProtobufRowInputStream::insertOneMessage(MutableColumns & columns, Message * mutable_msg)
 {
-    const Reflection* reflection = mutable_msg->GetReflection();
+    const Reflection * reflection = mutable_msg->GetReflection();
     std::vector<const FieldDescriptor *> fields;
     reflection->ListFields(*mutable_msg, &fields);
-    for (auto field_it = fields.begin(); field_it != fields.end(); ++field_it) {
-        const FieldDescriptor * field = *field_it;
-        if (field) {
-            if ("name" == field->name())
-            {
-                String value = reflection->GetString(*mutable_msg, field);
-                std::cout << field->name() << "(" << field->cpp_type() << ") -> " << value << std::endl;
-            }
-            else
-            {
-                uint32_t value = reflection->GetUInt32(*mutable_msg, field);
-                std::cout << field->name() << "(" << field->cpp_type() << ") -> " << value << std::endl;
-            }
-            /* std::cout << field->name() << " -> " << std::endl; */
-        } else
-            std::cerr << "Error fieldDescriptor object is NULL" << std::endl;
+
+    // TODO: what if a message has different fields order
+    // TODO: what if there are more fields?
+    // TODO: what if some field is not presented?
+
+
+    // TODO: "Field" types intersect (naming)
+    for (size_t field_i = 0; field_i != fields.size(); ++field_i)
+    {
+        const FieldDescriptor * field = fields[field_i];
+        if (nullptr == field)
+            throw Exception("FieldDescriptor for a column " + columns[field_i]->getName() + " is NULL"/*, ErrorCodes::TODO*/);
+
+        // TODO: check field name?
+        switch(field->cpp_type())
+        {
+#define DISPATCH(PROTOBUF_CPP_TYPE, CPP_TYPE, GETTER) \
+        case PROTOBUF_CPP_TYPE: \
+        { \
+            const CPP_TYPE value = reflection->GETTER(*mutable_msg, field); \
+            const Field field_value = value; \
+            columns[field_i]->insert(field_value); \
+            break; \
+        }
+
+        FOR_PROTOBUF_CPP_TYPES(DISPATCH);
+#undef DISPATCH
+        default:
+            // TODO
+            throw Exception("Unsupported type");
+        }
     }
 }
 
@@ -161,13 +212,9 @@ bool ProtobufRowInputStream::read(MutableColumns & columns)
     if (!mutable_msg->ParseFromArray(file_data.c_str(), file_data.size()))
         throw Exception("Failed to parse an input protobuf message"/*, ErrorCodes::TODO*/);
 
-    printMessageValues(mutable_msg);
+    insertOneMessage(columns, mutable_msg);
 
-    // TODO: remove
-    istr.next();
-    return columns[0]->getName()[0];
-
-    return true; // TODO: why bool?
+    return true;
 }
 
 }

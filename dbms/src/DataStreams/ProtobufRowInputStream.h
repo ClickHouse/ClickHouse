@@ -42,9 +42,11 @@ private:
     DescriptorPool descriptor_pool;
     DynamicMessageFactory message_factory;
 
+    std::unordered_map<std::string, const FieldDescriptor *> name_to_field;
+    static const std::unordered_map<FieldDescriptor::CppType, const std::string> protobuf_type_to_column_type_name;
 
-    // TODO: rename
-    void printMessageValues(Message * mutable_msg);
+    void validateSchema();
+    void insertOneMessage(MutableColumns & columns, Message * mutable_msg);
 };
 
 }
