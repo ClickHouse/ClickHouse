@@ -256,7 +256,7 @@ void Compiler::compile(
             " -isystem " << compiler_headers_root << "/usr/include"
     #endif
             " -I " << compiler_headers << "/dbms/src/"
-            " -I " << compiler_headers << "/contrib/libcityhash/include/"
+            " -I " << compiler_headers << "/contrib/cityhash102/include/"
             " -I " << compiler_headers << "/contrib/libpcg-random/include/"
             " -I " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
             " -I " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR
