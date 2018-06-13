@@ -68,6 +68,7 @@ namespace
         {
             return reader->getHeader();
         }
+
         void readPrefixImpl() override
         {
             reader->readPrefix();
