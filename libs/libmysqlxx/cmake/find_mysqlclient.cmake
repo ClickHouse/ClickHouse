@@ -3,28 +3,27 @@ option (ENABLE_MYSQL "Enable MySQL" ON)
 if (ENABLE_MYSQL)
     set (MYSQL_LIB_PATHS
         "/usr/local/opt/mysql/lib"
-        "/usr/local/lib/mysql/"
-        "/usr/local/lib/mysql"
-        "/usr/local/lib64/mysql"
-        "/usr/mysql/lib/mysql"
-        "/usr/mysql/lib64/mysql"
-        "/usr/lib/mysql"
-        "/usr/lib64/mysql"
-        "/lib/mysql"
-        "/lib64/mysql")
+        "/usr/local/lib"
+        "/usr/local/lib64"
+        "/usr/mysql/lib"
+        "/usr/mysql/lib64"
+        "/usr/lib"
+        "/usr/lib64"
+        "/lib"
+        "/lib64")
 
     set (MYSQL_INCLUDE_PATHS
         "/usr/local/opt/mysql/include"
-        "/usr/mysql/include/mysql"
-        "/usr/local/include/mysql"
-        "/usr/include/mysql")
+        "/usr/mysql/include"
+        "/usr/local/include"
+        "/usr/include")
 
-    find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h PATHS ${MYSQL_INCLUDE_PATHS})
+    find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h PATHS ${MYSQL_INCLUDE_PATHS} PATH_SUFFIXES mysql)
 
     if (USE_STATIC_LIBRARIES)
-        find_library (STATIC_MYSQLCLIENT_LIB mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS})
+        find_library (STATIC_MYSQLCLIENT_LIB NAMES mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS} PATH_SUFFIXES mysql)
     else ()
-        find_library (MYSQLCLIENT_LIBRARIES mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS})
+        find_library (MYSQLCLIENT_LIBRARIES NAMES mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS} PATH_SUFFIXES mysql)
     endif ()
 
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIBRARIES))
