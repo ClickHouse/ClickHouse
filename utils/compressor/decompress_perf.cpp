@@ -7,6 +7,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/MMapReadBufferFromFileDescriptor.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/CompressedStream.h>
@@ -172,7 +173,8 @@ try
       */
     ssize_t variant = argc < 2 ? -1 : parse<ssize_t>(argv[1]);
 
-    ReadBufferFromFileDescriptor in(STDIN_FILENO);
+    MMapReadBufferFromFileDescriptor in(STDIN_FILENO, 0);
+//    ReadBufferFromFileDescriptor in(STDIN_FILENO);
     FasterCompressedReadBuffer decompressing_in(in, variant);
 //    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 //    HashingWriteBuffer hashing_out(out);
