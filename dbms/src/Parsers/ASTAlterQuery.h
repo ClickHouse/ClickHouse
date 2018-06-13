@@ -54,7 +54,7 @@ public:
      */
     ASTPtr primary_key;
 
-    /** Used in DROP PARTITION, RESHARD PARTITION and ATTACH PARTITION FROM queries.
+    /** Used in DROP PARTITION and ATTACH PARTITION FROM queries.
      *  The value or ID of the partition is stored here.
      */
     ASTPtr partition;
@@ -65,8 +65,6 @@ public:
     bool detach = false;        /// true for DETACH PARTITION
 
     bool part = false;          /// true for ATTACH PART
-
-    bool do_copy = false;       /// for RESHARD PARTITION
 
     bool clear_column = false;  /// for CLEAR COLUMN (do not drop column from metadata)
 
