@@ -677,7 +677,8 @@ void ZooKeeper::receiveHandshake()
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
-        throw Exception("Received different session timeout from server: " + toString(timeout), ZMARSHALLINGERROR);
+        /// Use timeout from server.
+        session_timeout = timeout * Poco::Timespan::MILLISECONDS;
 
     read(session_id);
     read(passwd);
