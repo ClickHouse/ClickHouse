@@ -2,6 +2,7 @@
 
 #include <Common/CurrentThread.h>
 #include <Core/SystemLogsQueue.h>
+#include <Core/Block.h>
 
 #include <Poco/Message.h>
 #include <Poco/Ext/ThreadNumber.h>

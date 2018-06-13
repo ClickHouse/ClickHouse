@@ -7,6 +7,7 @@
 #include <sys/prctl.h>
 #endif
 #include <pthread.h>
+#include <cstring>
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
@@ -46,6 +47,6 @@ std::string getThreadName()
 #endif
         DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)");
 
-    name.resize(strlen(name.data()));
+    name.resize(std::strlen(name.data()));
     return name;
 }

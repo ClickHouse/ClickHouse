@@ -63,15 +63,11 @@ void RemoteBlockOutputStream::write(const Block & block)
     catch (const NetException & e)
     {
         /// Try to get more detailed exception from server
-        if (connection.poll(0))
+        auto packet_type = connection.checkPacket();
+        if (packet_type && *packet_type == Protocol::Server::Exception)
         {
             Connection::Packet packet = connection.receivePacket();
-
-            if (Protocol::Server::Exception == packet.type)
-            {
-                packet.exception->rethrow();
-                return;
-            }
+            packet.exception->rethrow();
         }
 
         throw;

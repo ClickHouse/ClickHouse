@@ -514,6 +514,7 @@ Connection::Packet Connection::receivePacket()
     {
         Packet res;
 
+        /// Have we already read packet type?
         if (last_input_packet_type)
         {
             res.type = *last_input_packet_type;
@@ -525,7 +526,7 @@ Connection::Packet Connection::receivePacket()
             readVarUInt(res.type, *in);
         }
 
-        // LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
+        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
         switch (res.type)
         {

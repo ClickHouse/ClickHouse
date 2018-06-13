@@ -1499,7 +1499,7 @@ void Context::initializeSystemLogs()
 }
 
 
-QueryLog * Context::getQueryLog()
+QueryLog * Context::getQueryLog(bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1508,6 +1508,9 @@ QueryLog * Context::getQueryLog()
 
     if (!system_logs->query_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
@@ -1521,7 +1524,7 @@ QueryLog * Context::getQueryLog()
 }
 
 
-QueryThreadLog * Context::getQueryThreadLog()
+QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1530,6 +1533,9 @@ QueryThreadLog * Context::getQueryThreadLog()
 
     if (!system_logs->query_thread_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
@@ -1544,7 +1550,7 @@ QueryThreadLog * Context::getQueryThreadLog()
 }
 
 
-PartLog * Context::getPartLog(const String & part_database)
+PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1561,11 +1567,14 @@ PartLog * Context::getPartLog(const String & part_database)
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == database)
+    if (!part_database.empty() && part_database == database)
         return nullptr;
 
     if (!system_logs->part_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 

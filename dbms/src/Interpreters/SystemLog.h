@@ -103,6 +103,9 @@ public:
             LOG_ERROR(log, "SystemLog queue is full");
     }
 
+    /// Flush data in the buffer to disk
+    void flush();
+
 protected:
     Context & context;
     const String database_name;
@@ -110,6 +113,7 @@ protected:
     const String storage_def;
     StoragePtr table;
     const size_t flush_interval_milliseconds;
+    std::mutex flush_mutex;
 
     using QueueItem = std::pair<bool, LogElement>;        /// First element is shutdown flag for thread.
 
@@ -129,7 +133,6 @@ protected:
     std::thread saving_thread;
 
     void threadFunction();
-    void flush();
 
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
@@ -233,6 +236,8 @@ void SystemLog<LogElement>::threadFunction()
 template <typename LogElement>
 void SystemLog<LogElement>::flush()
 {
+    std::lock_guard flush_lock(flush_mutex);
+
     try
     {
         LOG_TRACE(log, "Flushing system log");

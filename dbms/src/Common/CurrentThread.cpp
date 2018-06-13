@@ -71,6 +71,11 @@ void CurrentThread::detachQuery()
     getCurrentThreadImpl()->detachQuery();
 }
 
+void CurrentThread::detachQueryIfNotDetached()
+{
+    getCurrentThreadImpl()->detachQuery(true);
+}
+
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
     return current_thread->performance_counters;

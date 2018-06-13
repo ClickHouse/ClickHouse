@@ -167,7 +167,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             /// Query-level memory tracker is already set in the QueryStatus constructor
 
             /// Attach master thread
-            CurrentThread::attachQuery(&*process_it);
+            CurrentThread::attachQuery(&(*process_it));
             /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
             ///  since allocation and deallocation could happen in different threads
 
@@ -196,9 +196,8 @@ ProcessListEntry::~ProcessListEntry()
     it->releaseQueryStreams();
 
     /// Finalize all threads statuses
+    CurrentThread::detachQueryIfNotDetached();
     {
-        CurrentThread::detachQuery();
-
         std::shared_lock lock(it->threads_mutex);
         for (auto & elem : it->thread_statuses)
             elem.second->clean();

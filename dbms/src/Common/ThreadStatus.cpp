@@ -58,12 +58,7 @@ public:
             ThreadStatus & thread = *CurrentThread::get();
 
             LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " exited");
-            thread.memory_tracker.logPeakMemoryUsage();
-
-            if (thread.getCurrentState() != ThreadStatus::ThreadState::DetachedFromQuery)
-                thread.detachQuery(true);
-            else
-                thread.thread_state = ThreadStatus::ThreadState::Died;
+            thread.detachQuery(true, true);
         }
         catch (...)
         {
@@ -251,9 +246,14 @@ void ThreadStatus::attachQuery(
         parent_query = parent_query_;
         performance_counters.setParent(parent_counters);
         memory_tracker.setParent(parent_memory_tracker);
-        memory_tracker.setDescription("(for thread)");
         logs_queue_ptr = logs_queue_ptr_;
     }
+
+    /// Clear stats from previous query if a new query is started
+    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
+    performance_counters.resetCounters();
+    memory_tracker.resetCounters();
+    memory_tracker.setDescription("(for thread)");
 
     /// Try extract as many information as possible from ProcessList
     if (parent_query)
@@ -286,20 +286,18 @@ void ThreadStatus::attachQuery(
     query_start_time = time(nullptr);
     ++queries_started;
 
-    /// Clear stats from previous query if a new query is started
-    /// TODO: make separate query_thread_performance_counters and thread_performance_counters
-    if (queries_started != 1)
-    {
-        performance_counters.resetCounters();
-        memory_tracker.resetCounters();
-    }
-
     *last_rusage = RusageCounters::current(query_start_time_nanoseconds);
     *last_taskstats = TasksStatsCounters::current();
 }
 
-void ThreadStatus::detachQuery(bool thread_exits)
+void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 {
+    if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
+    {
+        thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
+        return;
+    }
+
     if (thread_state != ThreadState::AttachedToQuery && thread_state != ThreadState::QueryInitializing)
         throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
 
@@ -327,7 +325,6 @@ void ThreadStatus::detachQuery(bool thread_exits)
     }
 
     thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
-
     log_to_query_thread_log = true;
     log_profile_events = true;
 }

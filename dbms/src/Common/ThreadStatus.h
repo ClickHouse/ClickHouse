@@ -100,7 +100,7 @@ protected:
             const SystemLogsQueueWeakPtr & logs_queue_ptr_,
             bool check_detached = true);
 
-    void detachQuery(bool thread_exits = false);
+    void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 

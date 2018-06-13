@@ -296,11 +296,11 @@ void TCPHandler::readData(const Settings & global_settings)
     constexpr size_t min_poll_interval = 5000; // 5 ms
     size_t poll_interval = std::max(min_poll_interval, std::min(default_poll_interval, current_poll_interval));
 
+    sendLogs();
+
     while (true)
     {
         Stopwatch watch(CLOCK_MONOTONIC_COARSE);
-
-        sendLogs();
 
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
         while (true)
@@ -335,6 +335,8 @@ void TCPHandler::readData(const Settings & global_settings)
         /// We accept and process data. And if they are over, then we leave.
         if (!receivePacket())
             break;
+
+        sendLogs();
     }
 }
 

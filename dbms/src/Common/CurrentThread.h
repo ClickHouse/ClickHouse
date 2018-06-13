@@ -52,6 +52,7 @@ public:
 
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();
+    static void detachQueryIfNotDetached();
 
 private:
     static void attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thread, bool check_detached = true);
