@@ -179,8 +179,8 @@ try
 
     Stopwatch watch;
 //    copyData(decompressing_in, /*hashing_*/out);
-    while (!in.eof())
-        in.next();
+    while (!decompressing_in.eof())
+        decompressing_in.next();
     watch.stop();
 
 //    auto hash = hashing_out.getHash();
