@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import print_function
 import csv
+import sys
 import tempfile
 import threading
 import os, urllib
@@ -19,9 +20,9 @@ def get_ch_answer(query):
 def check_answers(query, answer):
     ch_answer = get_ch_answer(query)
     if ch_answer.strip() != answer.strip():
-        print("FAIL on query:", query)
-        print("Expected answer:", answer)
-        print("Fetched answer :", ch_answer)
+        print("FAIL on query:", query, file=sys.stderr)
+        print("Expected answer:", answer, file=sys.stderr)
+        print("Fetched answer :", ch_answer, file=sys.stderr)
         raise Exception("Fail on query")
 
 class CSVHTTPServer(BaseHTTPRequestHandler):
@@ -133,7 +134,7 @@ def test_insert(table_name="", schema="str String,numuint UInt32,numint Int32,do
 
 def main():
     test_data = "Hello,2,-2,7.7\nWorld,2,-5,8.8"
-    select_table_input = {
+    select_only_requests = {
         "select str,numuint,numint,double from {tbl}" : test_data.replace(',', '\t'),
         "select numuint, count(*) from {tbl} group by numuint" : "2\t2",
         "select str,numuint,numint,double from {tbl} limit 1": test_data.split("\n")[0].replace(',', '\t'),
@@ -150,12 +151,12 @@ def main():
         'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
     }
 
-    t = start_server(len(select_table_input) * 2 + (len(insert_requests) + len(select_requests)) * 2)
+    t = start_server(len(select_only_requests) * 2 + (len(insert_requests) + len(select_requests)) * 2)
     t.start()
     # test table with url engine
-    test_select(table_name="test_table_select", requests=select_table_input.keys(), answers=select_table_input.values(), test_data=test_data)
+    test_select(table_name="test_table_select", requests=select_only_requests.keys(), answers=select_only_requests.values(), test_data=test_data)
     # test table function url
-    test_select(requests=select_table_input.keys(), answers=select_table_input.values(), test_data=test_data)
+    test_select(requests=select_only_requests.keys(), answers=select_only_requests.values(), test_data=test_data)
     #test insert into table with url engine
     test_insert(table_name="test_table_insert", requests_insert=insert_requests, requests_select=select_requests.keys(), answers=select_requests.values())
     #test insert into table function url
