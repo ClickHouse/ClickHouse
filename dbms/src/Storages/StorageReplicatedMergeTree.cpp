@@ -1382,7 +1382,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands.commands, context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try

@@ -951,11 +951,11 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     else
         ++end;
 
-    std::vector<MutationCommand> commands;
+    MutationCommands commands;
     for (auto it = begin; it != end; ++it)
-        commands.insert(commands.end(), it->second->commands.commands.begin(), it->second->commands.commands.end());
+        commands.insert(commands.end(), it->second->commands.begin(), it->second->commands.end());
 
-    return MutationCommands{commands};
+    return commands;
 }
 
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
