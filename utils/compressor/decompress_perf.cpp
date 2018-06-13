@@ -174,11 +174,13 @@ try
 
     ReadBufferFromFileDescriptor in(STDIN_FILENO);
     FasterCompressedReadBuffer decompressing_in(in, variant);
-    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
+//    WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 //    HashingWriteBuffer hashing_out(out);
 
     Stopwatch watch;
-    copyData(decompressing_in, /*hashing_*/out);
+//    copyData(decompressing_in, /*hashing_*/out);
+    while (!in.eof())
+        in.next();
     watch.stop();
 
 //    auto hash = hashing_out.getHash();
