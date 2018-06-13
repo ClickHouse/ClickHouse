@@ -138,7 +138,7 @@ BlockInputStreams StorageURL::read(const Names & /*column_names*/,
         ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};
 }
 
-    void StorageURL::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
+void StorageURL::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
 
 BlockOutputStreamPtr StorageURL::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
