@@ -9,7 +9,9 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
+
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
@@ -47,7 +49,7 @@ namespace
         {
             read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET, nullptr, timeouts);
 
-            reader = FormatFactory().getInput(format, *read_buf, sample_block, context, max_block_size);
+            reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
         ~StorageURLBlockInputStream() override {}
@@ -105,7 +107,7 @@ namespace
         {
             ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr) {
                 WriteBufferFromOStream out_buffer(ostr);
-                auto writer = FormatFactory().getOutput(format, out_buffer, sample_block, global_context);
+                auto writer = FormatFactory::instance().getOutput(format, out_buffer, sample_block, global_context);
                 writer->writePrefix();
                 writer->write(block);
                 writer->writeSuffix();
