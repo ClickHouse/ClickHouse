@@ -1,5 +1,6 @@
 #include <lz4.h>
 #include <string.h>
+#include <optional>
 #include <common/likely.h>
 #include <common/Types.h>
 
@@ -197,16 +198,33 @@ try
 
     LZ4::PerformanceStatistics perf_stat = decompressing_in.getPerformanceStatistics();
 
+    std::optional<size_t> best_variant;
+    double best_variant_mean = 0;
+
     for (size_t i = 0; i < LZ4::PerformanceStatistics::NUM_ELEMENTS; ++i)
     {
         const LZ4::PerformanceStatistics::Element & elem = perf_stat.data[i];
 
-        std::cerr << "Variant " << i << ": "
-            << "count: " << elem.count
-            << ", mean ns/b: " << 1000000000.0 * elem.mean()
-            << ", sigma ns/b: " << 1000000000.0 * elem.sigma()
-            << "\n";
+        if (elem.count)
+        {
+            double mean = elem.mean();
+
+            std::cerr << "Variant " << i << ": "
+                << "count: " << elem.count
+                << ", mean ns/b: " << 1000000000.0 * mean << " (" << formatReadableSizeWithBinarySuffix(1 / mean) << ")"
+                << ", sigma ns/b: " << 1000000000.0 * elem.sigma()
+                << "\n";
+
+            if (!best_variant || mean < best_variant_mean)
+            {
+                best_variant_mean = mean;
+                best_variant = i;
+            }
+        }
     }
+
+    if (best_variant)
+        std::cerr << "Best variant: " << *best_variant << "\n";
 
     return 0;
 }
