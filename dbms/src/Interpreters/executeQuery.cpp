@@ -278,6 +278,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 if (!process_list_elem)
                     return;
 
+                /// Update performance counters before logging to query_log
+                CurrentThread::detachQuery();
+
                 QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events);
 
                 double elapsed_seconds = info.elapsed_seconds;
@@ -347,6 +350,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 QueryStatus * process_list_elem = context.getProcessListElement();
                 const Settings & settings = context.getSettingsRef();
+
+                /// Update performance counters before logging to query_log
+                CurrentThread::detachQuery();
 
                 if (process_list_elem)
                 {

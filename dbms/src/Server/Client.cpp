@@ -372,7 +372,12 @@ private:
         format_max_block_size = config().getInt("format_max_block_size", context.getSettingsRef().max_block_size);
 
         insert_format = "Values";
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
+
+        /// Setting value from cmd arg overrides one from config
+        if (context.getSettingsRef().max_insert_block_size.changed)
+            insert_format_max_block_size = context.getSettingsRef().max_insert_block_size;
+        else
+            insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
 
         if (!is_interactive)
         {
@@ -957,13 +962,13 @@ private:
             connection->sendData(block);
             processed_rows += block.rows();
 
-            if (!block)
-                break;
-
             /// Check if server send Log packet
             auto packet_type = connection->checkPacket();
             if (packet_type && *packet_type == Protocol::Server::Log)
-                connection->receivePacket();
+                receiveAndProcessPacket();
+
+            if (!block)
+                break;
         }
 
         async_block_input->readSuffix();

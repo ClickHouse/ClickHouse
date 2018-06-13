@@ -79,6 +79,11 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
+    # Force to print server warnings in stderr
+    # Sell scripts could change logging level
+    server_logs_level="warning"
+    os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
+
     # TODO ! use clickhouse-extract-from-config here:
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
@@ -147,12 +152,12 @@ def main(args):
                     break
 
                 case_file = os.path.join(suite_dir, case)
-                if os.path.isfile(case_file) and (case.endswith('.sh') or case.endswith('.py') or case.endswith('.sql')):
-                    (name, ext) = os.path.splitext(case)
+                (name, ext) = os.path.splitext(case)
+
+                if os.path.isfile(case_file) and (ext == '.sql' or ext == '.sh' or ext == '.py'):
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
-
                         print "{0:70}".format(name + ": "),
                         sys.stdout.flush()
 
@@ -190,9 +195,9 @@ def main(args):
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                                 if ext == '.sql':
-                                    command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
+                                    command = "{} --server_logs_level={} --multiquery < {} > {} 2> {}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
                                 else:
-                                    command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
+                                    command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 
                                 proc = Popen(command, shell = True)
                                 start_time = datetime.now()
@@ -364,7 +369,5 @@ if __name__ == '__main__':
             args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
         if os.getenv("CLICKHOUSE_PORT_TCP"):
             args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
-        # Will print all warnings and errors
-        args.client += ' --server_logs_level=warning' 
 
     main(args)
