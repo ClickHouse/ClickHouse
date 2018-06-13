@@ -211,7 +211,7 @@ try
 
             std::cerr << "Variant " << i << ": "
                 << "count: " << elem.count
-                << ", mean ns/b: " << 1000000000.0 * mean << " (" << formatReadableSizeWithBinarySuffix(1 / mean) << ")"
+                << ", mean ns/b: " << 1000000000.0 * mean << " (" << formatReadableSizeWithBinarySuffix(1 / mean) << "/sec.)"
                 << ", sigma ns/b: " << 1000000000.0 * elem.sigma()
                 << "\n";
 
