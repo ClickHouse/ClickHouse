@@ -188,6 +188,11 @@ try
     }
     watch.stop();
 
+    std::cout << std::fixed << std::setprecision(3)
+        << watch.elapsed() * 1000 / decompressing_in.count()
+        << '\n';
+
+/*
 //    auto hash = hashing_out.getHash();
 
     double seconds = watch.elapsedSeconds();
@@ -232,6 +237,7 @@ try
 
     if (best_variant)
         std::cerr << "Best variant: " << *best_variant << "\n";
+*/
 
     return 0;
 }
