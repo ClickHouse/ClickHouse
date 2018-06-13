@@ -52,8 +52,6 @@ namespace
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
-        ~StorageURLBlockInputStream() override {}
-
         String getName() const override
         {
             return name;
@@ -97,8 +95,6 @@ namespace
         {
         }
 
-        ~StorageURLBlockOutputStream() {}
-
         Block getHeader() const override
         {
             return sample_block;
@@ -106,7 +102,8 @@ namespace
 
         void write(const Block & block) override
         {
-            ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr) {
+            ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr)
+            {
                 WriteBufferFromOStream out_buffer(ostr);
                 auto writer = FormatFactory::instance().getOutput(format, out_buffer, sample_block, global_context);
                 writer->writePrefix();
@@ -132,7 +129,8 @@ BlockInputStreams StorageURL::read(const Names & /*column_names*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<StorageURLBlockInputStream>(uri,
+    return {std::make_shared<StorageURLBlockInputStream>(
+        uri,
         format_name,
         getName(),
         getSampleBlock(),
@@ -148,9 +146,11 @@ BlockOutputStreamPtr StorageURL::write(const ASTPtr & /*query*/, const Settings 
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
 }
+    
 void registerStorageURL(StorageFactory & factory)
 {
-    factory.registerStorage("URL", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (!(engine_args.size() == 1 || engine_args.size() == 2))
