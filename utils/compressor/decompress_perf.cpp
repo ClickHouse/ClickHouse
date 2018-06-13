@@ -180,7 +180,10 @@ try
     Stopwatch watch;
 //    copyData(decompressing_in, /*hashing_*/out);
     while (!decompressing_in.eof())
+    {
+        decompressing_in.position() = decompressing_in.buffer().end();
         decompressing_in.next();
+    }
     watch.stop();
 
 //    auto hash = hashing_out.getHash();
