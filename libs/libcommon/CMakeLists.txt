@@ -11,7 +11,7 @@ configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${
 
 add_library (apple_rt
     src/apple_rt.cpp
-    include/common/apple_rt.h
+    include/port/clock.h
 )
 target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 

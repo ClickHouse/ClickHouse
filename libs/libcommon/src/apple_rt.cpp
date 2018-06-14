@@ -5,7 +5,7 @@
   * To use, include this file with -include compiler parameter.
   */
 
-#include <common/apple_rt.h>
+#include <port/clock.h>
 
 #ifdef __APPLE__
 #if APPLE_SIERRA_OR_NEWER == 0
