@@ -287,7 +287,9 @@ void ThreadStatus::attachQuery(
     ++queries_started;
 
     *last_rusage = RusageCounters::current(query_start_time_nanoseconds);
-    *last_taskstats = TasksStatsCounters::current();
+    has_permissions_for_taskstats = TaskStatsInfoGetter::checkProcessHasRequiredPermissions();
+    if (has_permissions_for_taskstats)
+        *last_taskstats = TasksStatsCounters::current();
 }
 
 void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
@@ -335,7 +337,8 @@ void ThreadStatus::updatePerfomanceCountersImpl()
     try
     {
         RusageCounters::updateProfileEvents(*last_rusage, performance_counters);
-        TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
+        if (has_permissions_for_taskstats)
+            TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
     }
     catch (...)
     {

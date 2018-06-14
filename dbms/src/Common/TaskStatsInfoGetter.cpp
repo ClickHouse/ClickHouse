@@ -105,7 +105,7 @@ int send_cmd(int sock_fd, __u16 nlmsg_type, __u32 nlmsg_pid,
 }
 
 
-int get_family_id(int nl_sock_fd) noexcept
+UInt16 get_family_id(int nl_sock_fd) noexcept
 {
     struct
     {
@@ -121,7 +121,7 @@ int get_family_id(int nl_sock_fd) noexcept
                  strlen(TASKSTATS_GENL_NAME) + 1))
         return 0;
 
-    int id = 0;
+    UInt16 id = 0;
     ssize_t rep_len = ::recv(nl_sock_fd, &ans, sizeof(ans), 0);
     if (ans.n.nlmsg_type == NLMSG_ERROR || (rep_len < 0) || !NLMSG_OK((&ans.n), rep_len))
         return 0;
@@ -135,32 +135,54 @@ int get_family_id(int nl_sock_fd) noexcept
     return id;
 }
 
-bool get_taskstats(int nl_sock_fd, int nl_family_id, pid_t xxxid, ::taskstats & out_stats, Exception * out_exception = nullptr)
+#pragma GCC diagnostic pop
+}
+
+
+TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
+
+void TaskStatsInfoGetter::init()
 {
-    if (send_cmd(nl_sock_fd, nl_family_id, xxxid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &xxxid, sizeof(pid_t)))
+    if (netlink_socket_fd >= 0)
+        return;
+
+    netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
+    if (netlink_socket_fd < 0)
+        throwFromErrno("Can't create PF_NETLINK socket");
+
+    ::sockaddr_nl addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.nl_family = AF_NETLINK;
+
+    if (::bind(netlink_socket_fd, reinterpret_cast<::sockaddr *>(&addr), sizeof(addr)) < 0)
+        throwFromErrno("Can't bind PF_NETLINK socket");
+
+    netlink_family_id = get_family_id(netlink_socket_fd);
+}
+
+bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error)
+{
+    init();
+
+    if (send_cmd(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t)))
         throwFromErrno("Can't send a Netlink command");
 
     NetlinkMessage msg;
-    int rv = ::recv(nl_sock_fd, &msg, sizeof(msg), 0);
+    ssize_t rv = ::recv(netlink_socket_fd, &msg, sizeof(msg), 0);
 
     if (msg.n.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&msg.n), rv))
     {
         ::nlmsgerr * err = static_cast<::nlmsgerr *>(NLMSG_DATA(&msg));
-        Exception e("Can't get Netlink response, error=" + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
-
-        if (out_exception)
-        {
-            *out_exception = std::move(e);
+        if (throw_on_error)
+            throw Exception("Can't get Netlink response, error=" + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
+        else
             return false;
-        }
-
-        throw Exception(std::move(e));
     }
 
     rv = GENLMSG_PAYLOAD(&msg.n);
 
     ::nlattr * na = static_cast<::nlattr *>(GENLMSG_DATA(&msg));
-    int len = 0;
+    ssize_t len = 0;
 
     while (len < rv)
     {
@@ -191,49 +213,21 @@ bool get_taskstats(int nl_sock_fd, int nl_family_id, pid_t xxxid, ::taskstats & 
     return true;
 }
 
-#pragma GCC diagnostic pop
-
+void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
+{
+    tid = tid < 0 ? getDefaultTid() : tid;
+    getStatImpl(tid, stat, true);
 }
 
-
-TaskStatsInfoGetter::TaskStatsInfoGetter()
+bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid)
 {
-    netlink_socket_fd = socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
-    if (netlink_socket_fd < 0)
-        throwFromErrno("Can't create PF_NETLINK socket");
-
-    ::sockaddr_nl addr;
-    memset(&addr, 0, sizeof(addr));
-    addr.nl_family = AF_NETLINK;
-
-    if (::bind(netlink_socket_fd, reinterpret_cast<::sockaddr *>(&addr), sizeof(addr)) < 0)
-        throwFromErrno("Can't bind PF_NETLINK socket");
-
-    netlink_family_id = get_family_id(netlink_socket_fd);
-
-    initial_tid = getCurrentTID();
-}
-
-void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid) const
-{
-    if (tid < 0)
-        tid = initial_tid;
-
-    get_taskstats(netlink_socket_fd, netlink_family_id, tid, stat);
-}
-
-bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid) const
-{
-    if (tid < 0)
-        tid = initial_tid;
-
-    Exception e;
-    return get_taskstats(netlink_socket_fd, netlink_family_id, tid, stat, &e);
+    tid = tid < 0 ? getDefaultTid() : tid;
+    return getStatImpl(tid, stat, false);
 }
 
 TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
-    if (netlink_socket_fd > -1)
+    if (netlink_socket_fd >= 0)
         close(netlink_socket_fd);
 }
 
@@ -242,5 +236,33 @@ int TaskStatsInfoGetter::getCurrentTID()
     return static_cast<int>(syscall(SYS_gettid));
 }
 
+int TaskStatsInfoGetter::getDefaultTid()
+{
+    if (default_tid < 0)
+        default_tid = getCurrentTID();
+
+    return default_tid;
+}
+
+bool TaskStatsInfoGetter::checkProcessHasRequiredPermissions()
+{
+    /// 0 - wasn't checked
+    /// 1 - checked, has no permissions
+    /// 2 - checked, has permissions
+    static std::atomic<int> premissions_check_status{0};
+
+    int status = premissions_check_status.load(std::memory_order_relaxed);
+
+    if (status == 0)
+    {
+        TaskStatsInfoGetter getter;
+        ::taskstats stat;
+
+        status = getter.tryGetStat(stat) ? 2 : 1;
+        premissions_check_status.store(status, std::memory_order_relaxed);
+    }
+
+    return status == 2;
+}
 
 }

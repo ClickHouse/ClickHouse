@@ -277,7 +277,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     for (const ReplicaState & state : replica_states)
     {
         Connection * connection = state.connection;
-        if ((connection != nullptr) && connection->hasReadBufferPendingData())
+        if ((connection != nullptr) && connection->hasReadPendingData())
             read_list.push_back(*connection->socket);
     }
 
