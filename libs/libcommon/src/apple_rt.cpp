@@ -7,6 +7,7 @@
 
 #include <common/apple_rt.h>
 
+#ifdef __APPLE__
 #if APPLE_SIERRA_OR_NEWER == 0
 
 #include <time.h>
@@ -47,4 +48,5 @@ int clock_gettime(int clk_id, struct timespec* t) {
     return 0;
 }
 
+#endif
 #endif
