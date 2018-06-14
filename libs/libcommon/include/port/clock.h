@@ -6,6 +6,8 @@
   * To use, include this file with -include compiler parameter.
   */
 
+#include <time.h>
+
 #ifdef __APPLE__
 
 #if __has_include("config_common.h")

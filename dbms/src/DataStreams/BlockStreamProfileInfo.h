@@ -3,7 +3,6 @@
 #include <vector>
 #include <Common/Stopwatch.h>
 #include <Core/Types.h>
-#include <port/clock.h>
 
 namespace DB
 {

@@ -5,6 +5,7 @@
 #include <common/Types.h>
 #include <port/clock.h>
 
+
 namespace StopWatchDetail
 {
     inline UInt64 nanoseconds(clockid_t clock_type)
