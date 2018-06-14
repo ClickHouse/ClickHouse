@@ -109,7 +109,7 @@ inline bool isWhitespaceASCII(char c)
 
 inline bool isControlASCII(char c)
 {
-    return c >= 0 && c <= 31;
+    return static_cast<unsigned char>(c) <= 31;
 }
 
 /// Works assuming isAlphaASCII.
