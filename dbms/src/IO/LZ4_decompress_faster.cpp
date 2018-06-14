@@ -326,10 +326,10 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
     };
 
     unalignedStore(op,
-        vtbl2_u8(unalignedLoad<uint8x8x2_t>(src), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
+        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
 
     unalignedStore(op + 8,
-        vtbl2_u8(unalignedLoad<uint8x8x2_t>(src), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
+        vtbl2_u8(unalignedLoad<uint8x8x2_t>(match), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
 
     match += masks[offset];
 }
