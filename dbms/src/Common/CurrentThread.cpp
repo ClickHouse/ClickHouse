@@ -17,11 +17,13 @@ namespace ErrorCodes
 
 static ThreadStatusPtr getCurrentThreadImpl()
 {
+#ifndef NDEBUG
     if (!current_thread || current_thread.use_count() <= 0)
         throw Exception("Thread #" + std::to_string(Poco::ThreadNumber::get()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     if (Poco::ThreadNumber::get() != current_thread->thread_number)
         throw Exception("Current thread has different thread number", ErrorCodes::LOGICAL_ERROR);
+#endif
 
     return current_thread;
 }
@@ -144,7 +146,7 @@ void CurrentThread::attachSystemLogsQueue(const std::shared_ptr<SystemLogsQueue>
 std::shared_ptr<SystemLogsQueue> CurrentThread::getSystemLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage
-    /// NOTE: this method could be called in ThreadStatus destructor, therefore we make use_count() check
+    /// NOTE: this method could be called in ThreadStatus destructor, therefore we make use_count() check just in case
 
     if (!current_thread || current_thread.use_count() <= 0)
         return nullptr;

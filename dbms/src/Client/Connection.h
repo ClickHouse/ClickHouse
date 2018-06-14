@@ -139,7 +139,7 @@ public:
     bool poll(size_t timeout_microseconds = 0);
 
     /// Check, if has data in read buffer.
-    bool hasReadBufferPendingData() const;
+    bool hasReadPendingData() const;
 
     /// Checks if there is input data in connection and reads packet ID.
     std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);

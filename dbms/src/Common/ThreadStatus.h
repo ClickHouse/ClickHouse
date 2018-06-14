@@ -135,6 +135,7 @@ protected:
     std::unique_ptr<RusageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
     std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+    bool has_permissions_for_taskstats = false;
 
 public:
     class CurrentThreadScope;

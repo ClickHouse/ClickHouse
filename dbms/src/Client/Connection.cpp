@@ -505,7 +505,7 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
-bool Connection::hasReadBufferPendingData() const
+bool Connection::hasReadPendingData() const
 {
     return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
 }
@@ -516,7 +516,7 @@ std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
     if (last_input_packet_type.has_value())
         return last_input_packet_type;
 
-    if (hasReadBufferPendingData() || poll(timeout_microseconds))
+    if (hasReadPendingData() || poll(timeout_microseconds))
     {
         // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
         UInt64 packet_type;
