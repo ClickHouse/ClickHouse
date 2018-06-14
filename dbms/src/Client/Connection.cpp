@@ -639,13 +639,7 @@ Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
 
 void Connection::initInputBuffers()
 {
-    if (!maybe_compressed_in)
-    {
-        if (compression == Protocol::Compression::Enable)
-            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-        else
-            maybe_compressed_in = in;
-    }
+
 }
 
 
@@ -653,7 +647,14 @@ void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        initInputBuffers();
+        if (!maybe_compressed_in)
+        {
+            if (compression == Protocol::Compression::Enable)
+                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+            else
+                maybe_compressed_in = in;
+        }
+
         block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
     }
 }
@@ -663,9 +664,8 @@ void Connection::initBlockLogsInput()
 {
     if (!block_logs_in)
     {
-        initInputBuffers();
         /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
+        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
     }
 }
 
