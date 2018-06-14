@@ -386,7 +386,7 @@ void decompress(
     char * const dest,
     size_t source_size,
     size_t dest_size,
-    PerformanceStatistics & statistics)
+    PerformanceStatistics & [[maybe_unused]] statistics)
 {
     if (source_size == 0 || dest_size == 0)
         return;
