@@ -195,7 +195,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 }
 
 
-void ReplicatedMergeTreeQueue::remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
+void ReplicatedMergeTreeQueue::removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry)
 {
     auto code = zookeeper->tryRemove(replica_path + "/queue/" + entry->znode_name);
 
@@ -445,7 +445,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
 
         for (auto it = mutations_by_znode.begin(); it != mutations_by_znode.end(); )
         {
-            const ReplicatedMergeTreeMutationEntry & entry = it->second;
+            const ReplicatedMergeTreeMutationEntry & entry = *it->second;
             if (!entries_in_zk_set.count(entry.znode_name))
             {
                 LOG_DEBUG(log, "Removing obsolete mutation " + entry.znode_name + " from local state.");
@@ -478,25 +478,23 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
         for (const String & entry : entries_to_load)
             futures.emplace_back(zookeeper->asyncGet(zookeeper_path + "/mutations/" + entry));
 
-        std::vector<ReplicatedMergeTreeMutationEntry> new_mutations;
+        std::vector<ReplicatedMergeTreeMutationEntryPtr> new_mutations;
         for (size_t i = 0; i < entries_to_load.size(); ++i)
         {
-            new_mutations.push_back(
-                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i]));
+            new_mutations.push_back(std::make_shared<ReplicatedMergeTreeMutationEntry>(
+                ReplicatedMergeTreeMutationEntry::parse(futures[i].get().data, entries_to_load[i])));
         }
 
         {
             std::lock_guard lock(target_state_mutex);
 
-            for (ReplicatedMergeTreeMutationEntry & entry : new_mutations)
+            for (const ReplicatedMergeTreeMutationEntryPtr & entry : new_mutations)
             {
-                String znode = entry.znode_name;
-                const ReplicatedMergeTreeMutationEntry & inserted_entry =
-                    mutations_by_znode.emplace(znode, std::move(entry)).first->second;
+                mutations_by_znode.emplace(entry->znode_name, entry);
 
-                for (const auto & partition_and_block_num : inserted_entry.block_numbers)
+                for (const auto & partition_and_block_num : entry->block_numbers)
                     mutations_by_partition[partition_and_block_num.first].emplace(
-                        partition_and_block_num.second, &inserted_entry);
+                        partition_and_block_num.second, entry);
             }
         }
 
@@ -893,7 +891,7 @@ bool ReplicatedMergeTreeQueue::processEntry(
     try
     {
         if (func(entry))
-            remove(get_zookeeper(), entry);
+            removeProcessedEntry(get_zookeeper(), entry);
     }
     catch (...)
     {
@@ -951,11 +949,11 @@ MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     else
         ++end;
 
-    std::vector<MutationCommand> commands;
+    MutationCommands commands;
     for (auto it = begin; it != end; ++it)
-        commands.insert(commands.end(), it->second->commands.commands.begin(), it->second->commands.commands.end());
+        commands.insert(commands.end(), it->second->commands.begin(), it->second->commands.end());
 
-    return MutationCommands{commands};
+    return commands;
 }
 
 void ReplicatedMergeTreeQueue::disableMergesInRange(const String & part_name)
@@ -1042,6 +1040,33 @@ void ReplicatedMergeTreeQueue::getInsertTimes(time_t & out_min_unprocessed_inser
     std::lock_guard lock(queue_mutex);
     out_min_unprocessed_insert_time = min_unprocessed_insert_time;
     out_max_processed_insert_time = max_processed_insert_time;
+}
+
+
+std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatus() const
+{
+    std::lock_guard lock(target_state_mutex);
+
+    std::vector<MergeTreeMutationStatus> result;
+    for (const auto & pair : mutations_by_znode)
+    {
+        const ReplicatedMergeTreeMutationEntry & entry = *pair.second;
+
+        for (const MutationCommand & command : entry.commands)
+        {
+            std::stringstream ss;
+            formatAST(*command.ast, ss, false, true);
+            result.push_back(MergeTreeMutationStatus
+            {
+                entry.znode_name,
+                ss.str(),
+                entry.create_time,
+                entry.block_numbers,
+            });
+        }
+    }
+
+    return result;
 }
 
 
@@ -1348,4 +1373,5 @@ String padIndex(Int64 index)
     String index_str = toString(index);
     return std::string(10 - index_str.size(), '0') + index_str;
 }
+
 }
