@@ -10,11 +10,13 @@
 
 #ifdef __APPLE__
 
-#if __has_include("config_common.h")
-#include "config_common.h"
+#include <AvailabilityMacros.h>
+#ifndef MAC_OS_X_VERSION_10_12
+#define MAC_OS_X_VERSION_10_12 101200
 #endif
+#define APPLE_HAVE_CLOCK_GETTIME MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12
 
-#if APPLE_SIERRA_OR_NEWER == 0
+#if !APPLE_HAVE_CLOCK_GETTIME
 /**
  * MacOS X doesn't support different clock sources
  *
@@ -22,14 +24,23 @@
  * CLOCK_THREAD_CPUTIME_ID, because there is a way
  * to implement it using in-kernel stats about threads
  */
-#define CLOCK_MONOTONIC_COARSE 0
-#define CLOCK_REALTIME 0
+#if !defined(CLOCK_MONOTONIC)
 #define CLOCK_MONOTONIC 0
+#endif
+#if !defined(CLOCK_REALTIME)
+#define CLOCK_REALTIME CLOCK_MONOTONIC
+#endif
+#if !defined(CLOCK_THREAD_CPUTIME_ID)
 #define CLOCK_THREAD_CPUTIME_ID 3
+#endif
 
 typedef int clockid_t;
 int clock_gettime(int clk_id, struct timespec* t);
 #else
+
+#endif
+
+#if !defined(CLOCK_MONOTONIC_COARSE)
 #define CLOCK_MONOTONIC_COARSE CLOCK_MONOTONIC
 #endif
 

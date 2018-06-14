@@ -8,7 +8,7 @@
 #include <port/clock.h>
 
 #ifdef __APPLE__
-#if APPLE_SIERRA_OR_NEWER == 0
+#if !APPLE_HAVE_CLOCK_GETTIME
 
 #include <time.h>
 #include <stdlib.h>

@@ -1,11 +1,3 @@
-if (APPLE)
-    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.0.0")
-        set (APPLE_SIERRA_OR_NEWER 1)
-    else ()
-        set (APPLE_SIERRA_OR_NEWER 0)
-    endif ()
-endif ()
-
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 
