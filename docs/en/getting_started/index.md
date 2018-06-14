@@ -48,8 +48,8 @@ You can compile packages and install them.
 You can also use programs without installing packages.
 
 ```text
-Client: dbms/src/Client/
-Server: dbms/src/Server/
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 For the server, create a catalog with data, such as:
@@ -62,7 +62,7 @@ For the server, create a catalog with data, such as:
 (Configurable in the server config.)
 Run 'chown' for the desired user.
 
-Note the path to logs in the server config (src/dbms/src/Server/config.xml).
+Note the path to logs in the server config (src/dbms/programs/config.xml).
 
 ### Other installation methods
 

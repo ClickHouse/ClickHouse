@@ -3,6 +3,12 @@
 #include <Interpreters/SystemLog.h>
 
 
+namespace ProfileEvents
+{
+    class Counters;
+}
+
+
 namespace DB
 {
 

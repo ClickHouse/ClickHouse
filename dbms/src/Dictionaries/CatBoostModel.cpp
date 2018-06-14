@@ -72,7 +72,6 @@ public:
     ~CatBoostModelHolder() { api->ModelCalcerDelete(handle); }
 
     CatBoostWrapperAPI::ModelCalcerHandle * get() { return handle; }
-    explicit operator CatBoostWrapperAPI::ModelCalcerHandle * () { return handle; }
 };
 
 

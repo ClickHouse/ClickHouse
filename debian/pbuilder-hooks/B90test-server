@@ -5,7 +5,7 @@ set -x
 TEST_CONNECT=${TEST_CONNECT=1}
 TEST_SSL=${TEST_SSL=1}
 PACKAGE_INSTALL=${PACKAGE_INSTALL=1}
-PORT_RANDOM=${PORT_RANDOM=1}
+TEST_PORT_RANDOM=${TEST_PORT_RANDOM=1}
 
 if [ "${PACKAGE_INSTALL}" ]; then
     for PKG in $(ls /tmp/buildd/*.deb | sed -e's,.*/,,;s,_.*,,' ); do
@@ -25,7 +25,7 @@ fi
 
 mkdir -p /etc/clickhouse-server/config.d /etc/clickhouse-client/config.d
 
-if [ "${PORT_RANDOM}" ]; then
+if [ "${TEST_PORT_RANDOM}" ]; then
     CLICKHOUSE_PORT_BASE=${CLICKHOUSE_PORT_BASE:=$(( ( RANDOM % 50000 ) + 10000 ))}
     CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=$(($CLICKHOUSE_PORT_BASE + 1))}
     CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=$(($CLICKHOUSE_PORT_BASE + 2))}
@@ -41,10 +41,10 @@ export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=9440}
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=8443}
 
 if [ "${TEST_CONNECT}" ]; then
-    [ "${PORT_RANDOM}" ] && echo "<yandex><http_port>${CLICKHOUSE_PORT_HTTP}</http_port><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><interserver_http_port>${CLICKHOUSE_PORT_INTERSERVER}</interserver_http_port></yandex>" > /etc/clickhouse-server/config.d/port.xml
+    [ "${TEST_PORT_RANDOM}" ] && echo "<yandex><http_port>${CLICKHOUSE_PORT_HTTP}</http_port><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><interserver_http_port>${CLICKHOUSE_PORT_INTERSERVER}</interserver_http_port></yandex>" > /etc/clickhouse-server/config.d/port.xml
 
     if  [ "${TEST_SSL}" ]; then
-        [ "${PORT_RANDOM}" ] && echo "<yandex><https_port>${CLICKHOUSE_PORT_HTTPS}</https_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+        [ "${TEST_PORT_RANDOM}" ] && echo "<yandex><https_port>${CLICKHOUSE_PORT_HTTPS}</https_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
         echo "<yandex><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.d/ssl.xml
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
@@ -56,7 +56,7 @@ if [ "${TEST_CONNECT}" ]; then
 
     function finish {
         service clickhouse-server stop
-        tail -n 100 /var/log/clickhouse-server/*.log /var/log/stderr
+        tail -n 100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
         sleep 1
         killall -9 clickhouse-server || true
     }
@@ -66,7 +66,7 @@ if [ "${TEST_CONNECT}" ]; then
     sleep 3
 
     # TODO: remove me or make only on error:
-    tail -n100 /var/log/clickhouse-server/*.log /var/log/stderr
+    tail -n100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
 
     clickhouse-client --port $CLICKHOUSE_PORT_TCP -q "SELECT * from system.build_options;"
     clickhouse-client ${CLIENT_ADD} -q "SELECT toDateTime(1);"

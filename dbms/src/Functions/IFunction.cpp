@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
 #include <cstdlib>

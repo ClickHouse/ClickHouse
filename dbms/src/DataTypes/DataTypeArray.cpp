@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -310,51 +311,51 @@ static void deserializeTextImpl(IColumn & column, ReadBuffer & istr, Reader && r
 }
 
 
-void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeArray::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeTextImpl(column, row_num, ostr,
-                    [&](const IColumn & nested_column, size_t i)
-                    {
-                        nested->serializeTextQuoted(nested_column, i, ostr);
-                    });
+        [&](const IColumn & nested_column, size_t i)
+        {
+            nested->serializeTextQuoted(nested_column, i, ostr, settings);
+        });
 }
 
 
-void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr) const
+void DataTypeArray::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextImpl(column, istr,
-                    [&](IColumn & nested_column)
-                    {
-                        nested->deserializeTextQuoted(nested_column, istr);
-                    });
+        [&](IColumn & nested_column)
+        {
+            nested->deserializeTextQuoted(nested_column, istr, settings);
+        });
 }
 
 
-void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 
-void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeArray::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeText(column, istr);
+    deserializeText(column, istr, settings);
 }
 
 
-void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    serializeText(column, row_num, ostr);
+    serializeText(column, row_num, ostr, settings);
 }
 
 
-void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeArray::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeText(column, istr);
+    deserializeText(column, istr, settings);
 }
 
 
-void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const
+void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
@@ -375,13 +376,13 @@ void DataTypeArray::serializeTextJSON(const IColumn & column, size_t row_num, Wr
 }
 
 
-void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeArray::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr); });
+    deserializeTextImpl(column, istr, [&](IColumn & nested_column) { nested->deserializeTextJSON(nested_column, istr, settings); });
 }
 
 
-void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
     const ColumnArray::Offsets & offsets = column_array.getOffsets();
@@ -395,28 +396,28 @@ void DataTypeArray::serializeTextXML(const IColumn & column, size_t row_num, Wri
     for (size_t i = offset; i < next_offset; ++i)
     {
         writeCString("<elem>", ostr);
-        nested->serializeTextXML(nested_column, i, ostr);
+        nested->serializeTextXML(nested_column, i, ostr, settings);
         writeCString("</elem>", ostr);
     }
     writeCString("</array>", ostr);
 }
 
 
-void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     /// There is no good way to serialize an array in CSV. Therefore, we serialize it into a string, and then write the resulting string in CSV.
     WriteBufferFromOwnString wb;
-    serializeText(column, row_num, wb);
+    serializeText(column, row_num, wb, settings);
     writeCSV(wb.str(), ostr);
 }
 
 
-void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readCSV(s, istr, delimiter);
+    readCSV(s, istr, settings.csv.delimiter);
     ReadBufferFromString rb(s);
-    deserializeText(column, rb);
+    deserializeText(column, rb, settings);
 }
 
 

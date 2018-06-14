@@ -1,16 +1,22 @@
 #pragma once
 
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Defines.h>
-#include <Core/Field.h>
-
 #include <Interpreters/SettingsCommon.h>
 
+
+namespace Poco
+{
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
+}
 
 namespace DB
 {
 
 class IColumn;
+class Field;
 
 /** Settings of query execution.
   */
@@ -150,6 +156,7 @@ struct Settings
     M(SettingBool, output_format_json_quote_denormals, false, "Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.") \
     \
     M(SettingUInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.") \
+    M(SettingBool, output_format_pretty_color, true, "Use ANSI escape sequences to paint colors in Pretty formats") \
     \
     M(SettingBool, use_client_time_zone, false, "Use client timezone for interpreting DateTime string values, instead of adopting server timezone.") \
     \
@@ -256,10 +263,12 @@ struct Settings
     M(SettingUInt64, max_network_bandwidth_for_all_users, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running queries. Zero means unlimited.") \
     M(SettingChar, format_csv_delimiter, ',', "The character to be considered as a delimiter in CSV data. If setting with a string, a string has to have a length of 1.") \
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
+    M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
     M(SettingBool, log_profile_events, true, "Log query settings into the query_log and query_thread_log.") \
     M(SettingBool, log_query_settings, true, "Log query performance statistics into the query_log.") \
     M(SettingBool, log_query_threads, true, "Log query threads into system.query_log table.") \
     M(SettingString, server_logs_level, "none", "Send internal server logs to client.")
+
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};

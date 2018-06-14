@@ -16,7 +16,7 @@
   */
 
 #if USE_VECTORCLASS
-       #if __clang__
+       #ifdef __clang__
                #pragma clang diagnostic push
                #pragma clang diagnostic ignored "-Wshift-negative-value"
        #endif
@@ -25,7 +25,7 @@
        #include <vectormath_exp.h>
        #include <vectormath_trig.h>
 
-       #if __clang__
+       #ifdef __clang__
                #pragma clang diagnostic pop
        #endif
 #endif

@@ -101,6 +101,7 @@ public:
     ~MergeListEntry();
 
     MergeListElement * operator->() { return &*it; }
+    const MergeListElement * operator->() const { return &*it; }
 };
 
 

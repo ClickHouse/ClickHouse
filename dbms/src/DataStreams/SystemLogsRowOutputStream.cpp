@@ -1,5 +1,4 @@
 #include "SystemLogsRowOutputStream.h"
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
 #include <Core/Block.h>
 #include <Core/SystemLogsQueue.h>
 #include <Common/typeid_cast.h>

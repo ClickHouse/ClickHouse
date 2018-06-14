@@ -219,6 +219,8 @@ struct IntegerRoundingComputation
                     x = -x;
                 return x;
             }
+            default:
+                __builtin_unreachable();
         }
     }
 
@@ -232,6 +234,8 @@ struct IntegerRoundingComputation
                 return x;
             case ScaleMode::Negative:
                 return computeImpl(x, scale);
+            default:
+                __builtin_unreachable();
         }
     }
 

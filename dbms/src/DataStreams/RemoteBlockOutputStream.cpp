@@ -60,7 +60,7 @@ void RemoteBlockOutputStream::write(const Block & block)
     {
         connection.sendData(block);
     }
-    catch (const NetException & e)
+    catch (const NetException &)
     {
         /// Try to get more detailed exception from server
         auto packet_type = connection.checkPacket();
