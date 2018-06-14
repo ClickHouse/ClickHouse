@@ -1,5 +1,4 @@
-
-#if __has_include(<common/config_common.h>)
+#if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
 #include <common/config_common.h>
 #endif
 
