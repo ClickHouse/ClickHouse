@@ -1,3 +1,7 @@
+#if __APPLE__ || __FreeBSD__
+int main(int argc, char ** argv) { return 0; }
+#else
+
 #include <fcntl.h>
 #include <port/unistd.h>
 #include <stdlib.h>
@@ -232,3 +236,4 @@ int main(int argc, char ** argv)
         return 1;
     }
 }
+#endif
