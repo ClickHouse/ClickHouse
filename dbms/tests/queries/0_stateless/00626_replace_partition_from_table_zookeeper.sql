@@ -109,6 +109,7 @@ DROP TABLE test.src;
 -- do not wait other replicas to execute OPTIMIZE
 SET replication_alter_partitions_sync=0, optimize_throw_if_noop=1;
 SELECT count(), sum(d), uniqExact(_part) FROM test.dst_r1;
+SYSTEM SYNC REPLICA test.dst_r1;
 OPTIMIZE TABLE test.dst_r1 PARTITION 1;
 SET replication_alter_partitions_sync=1;
 SYSTEM SYNC REPLICA test.dst_r1;

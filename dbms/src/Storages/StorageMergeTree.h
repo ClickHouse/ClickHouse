@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
-#include <Storages/MergeTree/MergeTreeDataMerger.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -71,6 +71,7 @@ public:
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void drop() override;
+    void truncate(const ASTPtr &) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -78,7 +79,7 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
-    ActionLock getActionLock(StorageActionBlockType action_type) const override;
+    ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     MergeTreeData & getData() { return data; }
     const MergeTreeData & getData() const { return data; }
@@ -97,7 +98,7 @@ private:
     MergeTreeData data;
     MergeTreeDataSelectExecutor reader;
     MergeTreeDataWriter writer;
-    MergeTreeDataMerger merger;
+    MergeTreeDataMergerMutator merger;
 
     /// For block numbers.
     SimpleIncrement increment{0};

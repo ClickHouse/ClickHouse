@@ -72,7 +72,7 @@ StorageMergeTree::StorageMergeTree(
     if (!attach && !data.getDataParts().empty())
         throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
 
-    increment.set(data.getMaxDataPartIndex());
+    increment.set(data.getMaxBlockNumber());
 }
 
 
@@ -94,7 +94,7 @@ void StorageMergeTree::shutdown()
     if (shutdown_called)
         return;
     shutdown_called = true;
-    merger.merges_blocker.cancelForever();
+    merger.actions_blocker.cancelForever();
     if (merge_task_handle)
         background_pool.removeTask(merge_task_handle);
 }
@@ -134,6 +134,24 @@ void StorageMergeTree::drop()
     data.dropAllData();
 }
 
+void StorageMergeTree::truncate(const ASTPtr &)
+{
+    {
+        /// Asks to complete merges and does not allow them to start.
+        /// This protects against "revival" of data for a removed partition after completion of merge.
+        auto merge_blocker = merger.actions_blocker.cancel();
+
+        /// NOTE: It's assumed that this method is called under lockForAlter.
+
+        auto parts_to_remove = data.getDataPartsVector();
+        data.removePartsFromWorkingSet(parts_to_remove, true);
+
+        LOG_INFO(log, "Removed " << parts_to_remove.size() << " parts.");
+    }
+
+    data.clearOldPartsFromFilesystem();
+}
+
 void StorageMergeTree::rename(const String & new_path_to_db, const String & /*new_database_name*/, const String & new_table_name)
 {
     std::string new_full_path = new_path_to_db + escapeForFileName(new_table_name) + '/';
@@ -147,6 +165,7 @@ void StorageMergeTree::rename(const String & new_path_to_db, const String & /*ne
     /// NOTE: Logger names are not updated.
 }
 
+
 void StorageMergeTree::alter(
     const AlterCommands & params,
     const String & database_name,
@@ -154,7 +173,7 @@ void StorageMergeTree::alter(
     const Context & context)
 {
     /// NOTE: Here, as in ReplicatedMergeTree, you can do ALTER which does not block the writing of data for a long time.
-    auto merge_blocker = merger.merges_blocker.cancel();
+    auto merge_blocker = merger.actions_blocker.cancel();
 
     auto table_soft_lock = lockDataForAlter(__PRETTY_FUNCTION__);
 
@@ -265,7 +284,6 @@ struct CurrentlyMergingPartsTagger
     }
 };
 
-
 bool StorageMergeTree::merge(
     size_t aio_threshold,
     bool aggressive,
@@ -285,7 +303,7 @@ bool StorageMergeTree::merge(
 
     size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
 
-    MergeTreeDataMerger::FuturePart future_part;
+    MergeTreeDataMergerMutator::FuturePart future_part;
 
     /// You must call destructor with unlocked `currently_merging_mutex`.
     std::optional<CurrentlyMergingPartsTagger> merging_tagger;
@@ -302,9 +320,9 @@ bool StorageMergeTree::merge(
 
         if (partition_id.empty())
         {
-            size_t max_parts_size_for_merge = merger.getMaxPartsSizeForMerge();
-            if (max_parts_size_for_merge > 0)
-                selected = merger.selectPartsToMerge(future_part, aggressive, max_parts_size_for_merge, can_merge, out_disable_reason);
+            size_t max_source_parts_size = merger.getMaxSourcePartsSize();
+            if (max_source_parts_size > 0)
+                selected = merger.selectPartsToMerge(future_part, aggressive, max_source_parts_size, can_merge, out_disable_reason);
         }
         else
         {
@@ -314,7 +332,7 @@ bool StorageMergeTree::merge(
         if (!selected)
             return false;
 
-        merging_tagger.emplace(future_part.parts, MergeTreeDataMerger::estimateDiskSpaceForMerge(future_part.parts), *this);
+        merging_tagger.emplace(future_part.parts, MergeTreeDataMergerMutator::estimateNeededDiskSpace(future_part.parts), *this);
     }
 
     MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, future_part.name, future_part.parts);
@@ -382,12 +400,13 @@ bool StorageMergeTree::merge(
     return true;
 }
 
+
 bool StorageMergeTree::mergeTask()
 {
     if (shutdown_called)
         return false;
 
-    if (merger.merges_blocker.isCancelled())
+    if (merger.actions_blocker.isCancelled())
         return false;
 
     try
@@ -412,7 +431,7 @@ void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Fi
 {
     /// Asks to complete merges and does not allow them to start.
     /// This protects against "revival" of data for a removed partition after completion of merge.
-    auto merge_blocker = merger.merges_blocker.cancel();
+    auto merge_blocker = merger.actions_blocker.cancel();
 
     /// We don't change table structure, only data in some parts, parts are locked inside alterDataPart() function
     auto lock_read_structure = lockStructure(false, __PRETTY_FUNCTION__);
@@ -476,7 +495,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & /*query*/, const ASTPtr & pa
     {
         /// Asks to complete merges and does not allow them to start.
         /// This protects against "revival" of data for a removed partition after completion of merge.
-        auto merge_blocker = merger.merges_blocker.cancel();
+        auto merge_blocker = merger.actions_blocker.cancel();
         /// Waits for completion of merge and does not start new ones.
         auto lock = lockForAlter(__PRETTY_FUNCTION__);
 
@@ -557,7 +576,6 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool part, cons
     context.dropCaches();
 }
 
-
 void StorageMergeTree::freezePartition(const ASTPtr & partition, const String & with_name, const Context & context)
 {
     data.freezePartition(partition, with_name, context);
@@ -630,10 +648,10 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     }
 }
 
-ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type) const
+ActionLock StorageMergeTree::getActionLock(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
-        return merger.merges_blocker.cancel();
+        return merger.actions_blocker.cancel();
 
     return {};
 }

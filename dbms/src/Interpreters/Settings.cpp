@@ -1,3 +1,7 @@
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Core/Field.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Settings.h>
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>

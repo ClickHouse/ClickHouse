@@ -2,14 +2,17 @@
 
 #include <Core/Row.h>
 #include <Core/Block.h>
+#include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
+
+#include <Poco/Path.h>
+
 #include <shared_mutex>
-#include "../../../../contrib/poco/Foundation/include/Poco/Path.h"
-#include "../../Core/Types.h"
 
 
 namespace DB
@@ -62,11 +65,17 @@ struct MergeTreeDataPart
     /// Returns part->name with prefixes like 'tmp_<name>'
     String getNameWithPrefix() const;
 
+    /// Generate the new name for this part according to `new_part_info` and min/max dates from the old name.
+    /// This is useful when you want to change e.g. block numbers or the mutation version of the part.
+    String getNewName(const MergeTreePartInfo & new_part_info) const;
+
     bool contains(const MergeTreeDataPart & other) const { return info.contains(other.info); }
 
     /// If the partition key includes date column (a common case), these functions will return min and max values for this column.
     DayNum getMinDate() const;
     DayNum getMaxDate() const;
+
+    bool isEmpty() const { return rows_count == 0; }
 
     MergeTreeData & storage;
 
@@ -170,8 +179,8 @@ struct MergeTreeDataPart
     /// can be built using any set of columns.
     struct MinMaxIndex
     {
-        Row min_values;
-        Row max_values;
+        /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
+        std::vector<Range> parallelogram;
         bool initialized = false;
 
     public:
@@ -179,8 +188,7 @@ struct MergeTreeDataPart
 
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
-            : min_values(1, static_cast<UInt64>(min_date))
-            , max_values(1, static_cast<UInt64>(max_date))
+            : parallelogram(1, Range(static_cast<UInt64>(min_date), true, static_cast<UInt64>(max_date), true))
             , initialized(true)
         {
         }

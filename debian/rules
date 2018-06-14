@@ -99,9 +99,6 @@ override_dh_install:
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
 
-	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
-
 	# fake metrika files when private dir is empty
 	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika
 	touch $(DESTDIR)/etc/clickhouse-server/metrika/config.xml

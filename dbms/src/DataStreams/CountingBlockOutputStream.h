@@ -36,7 +36,7 @@ public:
     void writePrefix() override                         { stream->writePrefix(); }
     void writeSuffix() override                         { stream->writeSuffix(); }
     void flush() override                               { stream->flush(); }
-    void onProgress(const Progress & progress) override { stream->onProgress(progress); }
+    void onProgress(const Progress & current_progress) override { stream->onProgress(current_progress); }
     String getContentType() const override              { return stream->getContentType(); }
 
 protected:

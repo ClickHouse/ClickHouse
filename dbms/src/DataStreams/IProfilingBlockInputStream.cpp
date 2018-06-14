@@ -272,7 +272,6 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                         throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.bytes)
                             + " bytes read, maximum: " + toString(limits.size_limits.max_bytes),
                             ErrorCodes::TOO_MANY_BYTES);
-                    break;
                 }
 
                 case OverflowMode::BREAK:
@@ -317,8 +316,6 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                     throw Exception("Query is executing too slow: " + toString(progress.rows / elapsed_seconds)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
-
-                size_t total_rows = progress.total_rows;
 
                 /// If the predicted execution time is longer than `max_execution_time`.
                 if (limits.max_execution_time != 0 && total_rows)

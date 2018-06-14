@@ -53,7 +53,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo openssl"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
         shift
     else
         echo "Unknown option $1"
@@ -82,9 +82,9 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+=+$BUILD_TYPE
 fi
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS $CMAKE_FLAGS"
+CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 [[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
-[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
+#[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
 export CMAKE_FLAGS
 export EXTRAPACKAGES

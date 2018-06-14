@@ -54,7 +54,7 @@ struct RadixSortFloatTransform
 
     static KeyBits forward(KeyBits x)
     {
-        return x ^ (-((x >> (sizeof(KeyBits) * 8 - 1) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)))));
+        return x ^ (-(x >> (sizeof(KeyBits) * 8 - 1) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1))));
     }
 
     static KeyBits backward(KeyBits x)

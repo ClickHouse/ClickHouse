@@ -35,7 +35,17 @@
 #include <Interpreters/InterpreterUseQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
+
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event Query;
+    extern const Event SelectQuery;
+    extern const Event InsertQuery;
+}
 
 
 namespace DB
@@ -63,16 +73,22 @@ static void throwIfReadOnly(Context & context)
 
 std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & context, QueryProcessingStage::Enum stage)
 {
+    ProfileEvents::increment(ProfileEvents::Query);
+
     if (typeid_cast<ASTSelectQuery *>(query.get()))
     {
+        /// This is internal part of ASTSelectWithUnionQuery.
+        /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
         return std::make_unique<InterpreterSelectQuery>(query, context, Names{}, stage);
     }
     else if (typeid_cast<ASTSelectWithUnionQuery *>(query.get()))
     {
+        ProfileEvents::increment(ProfileEvents::SelectQuery);
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, Names{}, stage);
     }
     else if (typeid_cast<ASTInsertQuery *>(query.get()))
     {
+        ProfileEvents::increment(ProfileEvents::InsertQuery);
         /// readonly is checked inside InterpreterInsertQuery
         bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);

@@ -9,10 +9,10 @@ target_link_libraries(clickhouse_table_functions clickhouse_storages_system dbms
 
 if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_table_functions ${Poco_SQLODBC_LIBRARY})
-    target_include_directories (clickhouse_table_functions PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS})
+    target_include_directories (clickhouse_table_functions SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS})
 endif ()
 
 if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_table_functions ${Poco_DataODBC_LIBRARY})
-    target_include_directories (clickhouse_table_functions PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+    target_include_directories (clickhouse_table_functions SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
 endif ()

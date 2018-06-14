@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -285,9 +286,10 @@ struct ConvertImplGenericToString
 
         WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
 
+        FormatSettings format_settings;
         for (size_t i = 0; i < size; ++i)
         {
-            type.serializeText(col_from, i, write_buffer);
+            type.serializeText(col_from, i, write_buffer, format_settings);
             writeChar(0, write_buffer);
             offsets_to[i] = write_buffer.count();
         }
@@ -525,11 +527,12 @@ struct ConvertImplGenericFromString
 
             size_t current_offset = 0;
 
+            FormatSettings format_settings;
             for (size_t i = 0; i < size; ++i)
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.deserializeTextEscaped(column_to, read_buffer);
+                data_type_to.deserializeTextEscaped(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, block, result);

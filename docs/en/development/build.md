@@ -14,16 +14,10 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 ## Install Git and CMake
 
 ```bash
-sudo apt-get install git cmake
+sudo apt-get install git cmake ninja-build
 ```
 
 Or cmake3 instead of cmake on older systems.
-
-## Detect the number of threads
-
-```bash
-export THREADS=$(grep -c ^processor /proc/cpuinfo)
-```
 
 ## Install GCC 7
 
@@ -119,10 +113,10 @@ sudo service clickhouse-server start
 mkdir build
 cd build
 cmake ..
-make -j $THREADS
+ninja
 cd ..
 ```
 
-To create an executable, run `make clickhouse`.
-This will create the `dbms/src/Server/clickhouse` executable, which can be used with `client` or `server` arguments.
+To create an executable, run `ninja clickhouse`.
+This will create the `dbms/programs/clickhouse` executable, which can be used with `client` or `server` arguments.
 

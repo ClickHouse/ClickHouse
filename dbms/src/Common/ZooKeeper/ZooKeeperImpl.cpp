@@ -677,7 +677,8 @@ void ZooKeeper::receiveHandshake()
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
-        throw Exception("Received different session timeout from server: " + toString(timeout), ZMARSHALLINGERROR);
+        /// Use timeout from server.
+        session_timeout = timeout * Poco::Timespan::MILLISECONDS;
 
     read(session_id);
     read(passwd);
@@ -996,13 +997,13 @@ void ZooKeeper::receiveEvent()
 
 void ZooKeeper::finalize(bool error_send, bool error_receive)
 {
-    std::unique_lock lock(finalize_mutex, std::defer_lock);
-    if (!lock.try_lock())
-        return;
+    {
+        std::lock_guard lock(push_request_mutex);
 
-    if (expired)
-        return;
-    expired = true;
+        if (expired)
+            return;
+        expired = true;
+    }
 
     active_session_metric_increment.destroy();
 
@@ -1020,6 +1021,7 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
                 /// This happens for example, when "Cannot push request to queue within operation timeout".
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
+
             send_thread.join();
         }
 
@@ -1348,7 +1350,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
         ///  to avoid forgotten operations in the queue when session is expired.
         /// Invariant: when expired, no new operations will be pushed to the queue in 'pushRequest'
         ///  and the queue will be drained in 'finalize'.
-        std::lock_guard lock(finalize_mutex);
+        std::lock_guard lock(push_request_mutex);
 
         if (expired)
             throw Exception("Session expired", ZSESSIONEXPIRED);

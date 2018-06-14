@@ -117,7 +117,7 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    Block getHeader() const override { return res_sample_block; };
+    Block getHeader() const override { return res_sample_block; }
 
     Block readImpl() override
     {

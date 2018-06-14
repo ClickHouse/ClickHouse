@@ -15,7 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/ValuesRowInputStream.h>
+#include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -422,15 +422,15 @@ String MergeTreeData::MergingParams::getModeName() const
 }
 
 
-Int64 MergeTreeData::getMaxDataPartIndex()
+Int64 MergeTreeData::getMaxBlockNumber()
 {
     std::lock_guard<std::mutex> lock_all(data_parts_mutex);
 
-    Int64 max_block_id = 0;
+    Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
-        max_block_id = std::max(max_block_id, part->info.max_block);
+        max_block_num = std::max(max_block_num, part->info.max_block);
 
-    return max_block_id;
+    return max_block_num;
 }
 
 
@@ -1460,12 +1460,12 @@ void MergeTreeData::renameTempPartAndReplace(
       * Otherwise there is race condition - merge of blocks could happen in interval that doesn't yet contain new part.
       */
     if (increment)
+    {
         part_info.min_block = part_info.max_block = increment->get();
-
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        part_name = part_info.getPartNameV0(part->getMinDate(), part->getMaxDate());
+        part_name = part->getNewName(part_info);
+    }
     else
-        part_name = part_info.getPartName();
+        part_name = part->name;
 
     LOG_TRACE(log, "Renaming temporary part " << part->relative_path << " to " << part_name << ".");
 
@@ -2096,6 +2096,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
 
+    const FormatSettings format_settings;
     Row partition_row(fields_count);
 
     if (fields_count)
@@ -2105,7 +2106,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, partition_key_sample, context, /* interpret_expressions = */true);
+        ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
         MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
         if (!input_stream.read(columns))
@@ -2127,7 +2128,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         {
             WriteBufferFromOwnString buf;
             writeCString("Parsed partition value: ", buf);
-            partition.serializeTextQuoted(*this, buf);
+            partition.serializeTextQuoted(*this, buf, format_settings);
             writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
             writeString(existing_part_in_partition->name, buf);
             throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);
@@ -2340,7 +2341,7 @@ MergeTreeData * MergeTreeData::checkStructureAndGetMergeTreeData(const StoragePt
         return ast ? queryToString(ast) : "";
     };
 
-    if (query_to_string(secondary_sort_expr_ast) != query_to_string(secondary_sort_expr_ast))
+    if (query_to_string(secondary_sort_expr_ast) != query_to_string(src_data->secondary_sort_expr_ast))
         throw Exception("Tables have different ordering", ErrorCodes::BAD_ARGUMENTS);
 
     if (query_to_string(partition_expr_ast) != query_to_string(src_data->partition_expr_ast))

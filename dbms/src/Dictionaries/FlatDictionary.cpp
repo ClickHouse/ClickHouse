@@ -1,5 +1,7 @@
 #include <Dictionaries/FlatDictionary.h>
 #include <Dictionaries/DictionaryBlockInputStream.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {

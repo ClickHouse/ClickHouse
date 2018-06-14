@@ -38,6 +38,8 @@ class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 
+struct ProjectionManipulatorBase;
+using ProjectionManipulatorPtr = std::shared_ptr<ProjectionManipulatorBase>;
 
 /** Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
   */

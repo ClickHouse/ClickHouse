@@ -25,7 +25,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
         case MERGE_PARTS:
             out << "merge\n";
-            for (const String & s : parts_to_merge)
+            for (const String & s : source_parts)
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
@@ -49,6 +49,13 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
         case REPLACE_RANGE:
             out << typeToString(REPLACE_RANGE) << "\n";
             replace_range_entry->writeText(out);
+            break;
+
+        case MUTATE_PART:
+            out << "mutate\n"
+                << source_parts.at(0) << "\n"
+                << "to\n"
+                << new_part_name;
             break;
 
         default:
@@ -101,7 +108,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             in >> s >> "\n";
             if (s == "into")
                 break;
-            parts_to_merge.push_back(s);
+            source_parts.push_back(s);
         }
         in >> new_part_name;
         if (format_version >= 4)
@@ -123,6 +130,15 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         type = REPLACE_RANGE;
         replace_range_entry = std::make_shared<ReplaceRangeEntry>();
         replace_range_entry->readText(in);
+    }
+    else if (type_str == "mutate")
+    {
+        type = MUTATE_PART;
+        String source_part;
+        in >> source_part >> "\n"
+           >> "to\n"
+           >> new_part_name;
+        source_parts.push_back(source_part);
     }
 
     in >> "\n";
