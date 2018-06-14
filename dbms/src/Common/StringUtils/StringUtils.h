@@ -133,3 +133,4 @@ inline bool equalsCaseInsensitive(char a, char b)
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
+std::string trim(const std::string & str, const std::function<bool(char)> & predicate);
