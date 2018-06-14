@@ -19,9 +19,10 @@
 #include <tmmintrin.h>
 #endif
 
+#if __aarch64__
+#include <arm_neon.h>
+#endif
 
-/** for i in *.bin; do ./decompress_perf < $i > /dev/null; done
-  */
 
 namespace LZ4
 {
@@ -69,6 +70,8 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift2[offset];
 }
 
+
+#ifdef __x86_64__
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -176,19 +179,50 @@ inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t o
 #endif
 }
 
+#endif
+
+
+#ifdef __aarch64__
+
+inline void copyOverlap8Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+    static constexpr UInt8 __attribute__((__aligned__(8))) masks[] =
+    {
+        0, 1, 2, 2, 4, 3, 2, 1, /* offset = 0, not used as mask, but for shift amount instead */
+        0, 0, 0, 0, 0, 0, 0, 0, /* offset = 1 */
+        0, 1, 0, 1, 0, 1, 0, 1,
+        0, 1, 2, 0, 1, 2, 0, 1,
+        0, 1, 2, 3, 0, 1, 2, 3,
+        0, 1, 2, 3, 4, 0, 1, 2,
+        0, 1, 2, 3, 4, 5, 0, 1,
+        0, 1, 2, 3, 4, 5, 6, 0,
+    };
+
+    unalignedStore(op, vtbl1_u8(unalignedLoad<uint8x8_t>(match), unalignedLoad<uint8x8_t>(masks + 8 * offset)));
+    match += masks[offset];
+}
+
+#endif
+
+
+
 template <> void inline copy<8>(UInt8 * dst, const UInt8 * src) { copy8(dst, src); };
 template <> void inline wildCopy<8>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy8(dst, src, dst_end); };
 template <> void inline copyOverlap<8, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8(op, match, offset); };
 template <> void inline copyOverlap<8, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap8Shuffle(op, match, offset); };
 
 
-#if __SSE2__
-
 inline void copy16(UInt8 * dst, const UInt8 * src)
 {
+#if __SSE2__
     _mm_storeu_si128(reinterpret_cast<__m128i *>(dst),
         _mm_loadu_si128(reinterpret_cast<const __m128i *>(src)));
+#else
+    memcpy(dst, src, 16);
+#endif
 }
+
+
 
 inline void wildCopy16(UInt8 * dst, const UInt8 * src, UInt8 * dst_end)
 {
@@ -226,6 +260,9 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
     match += shift3[offset];
 }
 
+
+#ifdef __x86_64__
+
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {
 #ifdef __SSSE3__
@@ -262,12 +299,49 @@ inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t 
 #endif
 }
 
+#endif
+
+#ifdef __aarch64__
+
+inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
+{
+    static constexpr UInt8 __attribute__((__aligned__(16))) masks[] =
+    {
+        0,  1,  2,  1,  4,  1,  4,  2,  8,  7,  6,  5,  4,  3,  2,  1, /* offset = 0, not used as mask, but for shift amount instead */
+        0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, /* offset = 1 */
+        0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,  0,  1,
+        0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,  1,  2,  0,
+        0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,  1,  2,  3,  4,  0,
+        0,  1,  2,  3,  4,  5,  0,  1,  2,  3,  4,  5,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  0,  1,  2,  3,  4,  5,  6,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  0,  1,  2,  3,  4,  5,  6,  7,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  0,  1,  2,  3,  4,  5,  6,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  0,  1,  2,  3,  4,  5,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10,  0,  1,  2,  3,  4,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11,  0,  1,  2,  3,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12,  0,  1,  2,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13,  0,  1,
+        0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14,  0,
+    };
+
+    unalignedStore(op,
+        vtbl2_u8(unalignedLoad<uint8x8x2_t>(src), unalignedLoad<uint8x8_t>(masks + 16 * offset)));
+
+    unalignedStore(op + 8,
+        vtbl2_u8(unalignedLoad<uint8x8x2_t>(src), unalignedLoad<uint8x8_t>(masks + 16 * offset + 8)));
+
+    match += masks[offset];
+}
+
+#endif
+
+
 template <> void inline copy<16>(UInt8 * dst, const UInt8 * src) { copy16(dst, src); };
 template <> void inline wildCopy<16>(UInt8 * dst, const UInt8 * src, UInt8 * dst_end) { wildCopy16(dst, src, dst_end); };
 template <> void inline copyOverlap<16, false>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16(op, match, offset); };
 template <> void inline copyOverlap<16, true>(UInt8 * op, const UInt8 *& match, const size_t offset) { copyOverlap16Shuffle(op, match, offset); };
 
-#endif
 
 /// See also https://stackoverflow.com/a/30669632
 
