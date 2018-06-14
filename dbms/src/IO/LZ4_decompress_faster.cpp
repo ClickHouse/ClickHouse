@@ -391,8 +391,8 @@ void decompress(
     if (source_size == 0 || dest_size == 0)
         return;
 
+#if __SSE2__
     /// Don't run timer if the block is too small.
-
     if (dest_size >= 32768)
     {
         size_t best_variant = statistics.select();
@@ -420,6 +420,9 @@ void decompress(
     {
         decompressImpl<8, false>(source, dest, dest_size);
     }
+#else
+    decompressImpl<8, false>(source, dest, dest_size);
+#endif
 }
 
 
