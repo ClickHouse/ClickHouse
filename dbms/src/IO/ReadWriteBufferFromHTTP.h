@@ -12,9 +12,6 @@
 namespace DB
 {
 
-const int HTTP_TOO_MANY_REQUESTS = 429;
-
-
 /** Perform HTTP POST request and provide response to read.
   */
 class ReadWriteBufferFromHTTP : public ReadBuffer
@@ -22,9 +19,7 @@ class ReadWriteBufferFromHTTP : public ReadBuffer
 private:
     Poco::URI uri;
     std::string method;
-    ConnectionTimeouts timeouts;
 
-    bool is_ssl;
     std::unique_ptr<Poco::Net::HTTPClientSession> session;
     std::istream * istr;    /// owned by session
     std::unique_ptr<ReadBuffer> impl;

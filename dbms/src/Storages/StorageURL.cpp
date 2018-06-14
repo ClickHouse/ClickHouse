@@ -7,7 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
-#include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromHTTP.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -87,13 +87,15 @@ namespace
     class StorageURLBlockOutputStream : public IBlockOutputStream
     {
     public:
-        StorageURLBlockOutputStream(const Poco::URI & uri_,
-            const String & format_,
+        StorageURLBlockOutputStream(const Poco::URI & uri,
+            const String & format,
             const Block & sample_block_,
-            Context & context_,
-            const ConnectionTimeouts & timeouts_)
-            : global_context(context_), uri(uri_), format(format_), sample_block(sample_block_), timeouts(timeouts_)
+            Context & context,
+            const ConnectionTimeouts & timeouts)
+            : sample_block(sample_block_)
         {
+            write_buf = std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
+            writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
         ~StorageURLBlockOutputStream() {}
@@ -105,23 +107,22 @@ namespace
 
         void write(const Block & block) override
         {
-            ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [&](std::ostream & ostr) {
-                WriteBufferFromOStream out_buffer(ostr);
-                auto writer = FormatFactory::instance().getOutput(format, out_buffer, sample_block, global_context);
-                writer->writePrefix();
-                writer->write(block);
-                writer->writeSuffix();
-                writer->flush();
-            };
-            ReadWriteBufferFromHTTP(uri, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callback, timeouts); // just for request
+            writer->write(block);
+        }
+        void writePrefix() override {
+            writer->writePrefix();
+        }
+
+        void writeSuffix() override {
+            writer->writeSuffix();
+            writer->flush();
+            write_buf->finalize();
         }
 
     private:
-        Context & global_context;
-        Poco::URI uri;
-        String format;
         Block sample_block;
-        ConnectionTimeouts timeouts;
+        std::unique_ptr<WriteBufferFromHTTP> write_buf;
+        BlockOutputStreamPtr writer;
     };
 }
 BlockInputStreams StorageURL::read(const Names & /*column_names*/,
