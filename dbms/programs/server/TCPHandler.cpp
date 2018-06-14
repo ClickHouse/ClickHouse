@@ -742,7 +742,14 @@ void TCPHandler::initBlockOutput(const Block & block)
 {
     if (!state.block_out)
     {
-        initOutputBuffers();
+        if (!state.maybe_compressed_out)
+        {
+            if (state.compression == Protocol::Compression::Enable)
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
+                    *out, CompressionSettings(query_context.getSettingsRef()));
+            else
+                state.maybe_compressed_out = out;
+        }
 
         state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
@@ -755,25 +762,11 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
 {
     if (!state.logs_block_out)
     {
-        initOutputBuffers();
-
+        /// Use uncompressed stream since log blocks usually contain only one row
         state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
-            *state.maybe_compressed_out,
+            *out,
             client_revision,
             block.cloneEmpty());
-    }
-}
-
-
-void TCPHandler::initOutputBuffers()
-{
-    if (!state.maybe_compressed_out)
-    {
-        if (state.compression == Protocol::Compression::Enable)
-            state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                *out, CompressionSettings(query_context.getSettingsRef()));
-        else
-            state.maybe_compressed_out = out;
     }
 }
 
@@ -835,7 +828,6 @@ void TCPHandler::sendLogData(const Block & block)
     writeStringBinary("", *out);
 
     state.logs_block_out->write(block);
-    state.maybe_compressed_out->next();
     out->next();
 }
 

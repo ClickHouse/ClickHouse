@@ -157,7 +157,6 @@ private:
     void initBlockInput();
     void initBlockOutput(const Block & block);
     void initLogsBlockOutput(const Block & block);
-    void initOutputBuffers();
 
     bool isQueryCancelled();
 
