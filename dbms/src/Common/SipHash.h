@@ -147,10 +147,11 @@ public:
         reinterpret_cast<UInt64 *>(out)[1] = v2 ^ v3;
     }
 
-    /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old povo in macos
+    /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos
     template <typename T>
     void get128(T & lo, T & hi)
     {
+        static_assert<sizeof(T) == 8>;
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
