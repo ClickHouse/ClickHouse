@@ -52,8 +52,6 @@ namespace
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
 
-        ~StorageURLBlockInputStream() override {}
-
         String getName() const override
         {
             return name;
@@ -68,6 +66,7 @@ namespace
         {
             return reader->getHeader();
         }
+
         void readPrefixImpl() override
         {
             reader->readPrefix();
@@ -97,8 +96,6 @@ namespace
             write_buf = std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
-
-        ~StorageURLBlockOutputStream() {}
 
         Block getHeader() const override
         {
@@ -132,7 +129,8 @@ BlockInputStreams StorageURL::read(const Names & /*column_names*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<StorageURLBlockInputStream>(uri,
+    return {std::make_shared<StorageURLBlockInputStream>(
+        uri,
         format_name,
         getName(),
         getSampleBlock(),
@@ -148,9 +146,11 @@ BlockOutputStreamPtr StorageURL::write(const ASTPtr & /*query*/, const Settings 
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
 }
+    
 void registerStorageURL(StorageFactory & factory)
 {
-    factory.registerStorage("URL", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (!(engine_args.size() == 1 || engine_args.size() == 2))

@@ -8,7 +8,6 @@
 namespace DB
 {
 /* url(source, format, structure) - creates a temporary storage from url
- *
  */
 class TableFunctionURL : public ITableFunctionFileLike
 {
