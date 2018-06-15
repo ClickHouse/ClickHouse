@@ -16,7 +16,7 @@ nc -l -p 61845 -q 0 > /dev/null &
 ${CLICKHOUSE_CURL} -sS $url --data-binary "SELECT * FROM remote('localhost:61845', system.one, 'user', 'password')" > /dev/null 2>&1
 
 # Send packet to close listening nc (if clickhouse fails to send).
-echo Finish him! | nc -N localhost 61845
+echo "Finish him!\n" | nc localhost 61845
 
 wait
 
@@ -25,6 +25,6 @@ nc -l -p 61846 -q 0 > /dev/null &
 ${CLICKHOUSE_CURL} -sS $url --data-binary "SELECT * FROM remote('localhost:61846', system.one, 'user', 'passw
 ord')" 2>&1 | grep -o 'must not contain ASCII control characters'
 
-echo Finish him! | nc -N localhost 61846
+echo "Finish him!\n" | nc localhost 61846
 
 wait
