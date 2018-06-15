@@ -151,7 +151,7 @@ public:
     template <typename T>
     void get128(T & lo, T & hi)
     {
-        static_assert<sizeof(T) == 8>;
+        static_assert(sizeof(T) == 8);
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
