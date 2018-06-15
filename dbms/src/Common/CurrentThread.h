@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <string>
 
 
 namespace ProfileEvents
@@ -47,6 +48,10 @@ public:
 
     static ProfileEvents::Counters & getProfileEvents();
     static MemoryTracker & getMemoryTracker();
+
+    /// Returns a non-empty string if the thread is attached to a query
+    static std::string getCurrentQueryID();
+
     static void updateProgressIn(const Progress & value);
     static void updateProgressOut(const Progress & value);
 

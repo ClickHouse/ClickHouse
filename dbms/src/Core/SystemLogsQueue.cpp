@@ -20,6 +20,8 @@ Block SystemLogsQueue::getSampleBlock()
     return Block {
             {std::make_shared<DataTypeDateTime>(), "event_time"},
             {std::make_shared<DataTypeUInt32>(), "event_time_microseconds"},
+			{std::make_shared<DataTypeString>(), "host_name"},
+			{std::make_shared<DataTypeString>(), "query_id"},
             {std::make_shared<DataTypeUInt32>(), "thread_number"},
             {std::make_shared<DataTypeInt8>(), "priority"},
             {std::make_shared<DataTypeString>(), "source"},
@@ -33,7 +35,7 @@ MutableColumns SystemLogsQueue::getSampleColumns()
     return sample_block.cloneEmptyColumns();
 }
 
-const char * SystemLogsQueue::getProrityName(int priority)
+const char * SystemLogsQueue::getPriorityName(int priority)
 {
     /// See Poco::Message::Priority
 

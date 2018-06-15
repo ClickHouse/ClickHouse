@@ -303,7 +303,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     if (thread_state != ThreadState::AttachedToQuery && thread_state != ThreadState::QueryInitializing)
         throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
 
-    updatePerfomanceCountersImpl();
+    updatePerformanceCountersImpl();
 
     try
     {
@@ -332,7 +332,7 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
 }
 
 
-void ThreadStatus::updatePerfomanceCountersImpl()
+void ThreadStatus::updatePerformanceCountersImpl()
 {
     try
     {

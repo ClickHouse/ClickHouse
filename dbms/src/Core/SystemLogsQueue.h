@@ -18,7 +18,7 @@ public:
     static MutableColumns getSampleColumns();
 
     /// Converts priority from Poco::Message::Priority to a string
-    static const char * getProrityName(int priority);
+    static const char * getPriorityName(int priority);
 };
 
 using SystemLogsQueuePtr = std::shared_ptr<SystemLogsQueue>;

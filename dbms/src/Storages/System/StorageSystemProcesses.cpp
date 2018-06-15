@@ -58,15 +58,13 @@ StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
         { "memory_usage",         std::make_shared<DataTypeInt64>() },
         { "peak_memory_usage",    std::make_shared<DataTypeInt64>() },
         { "query",                std::make_shared<DataTypeString>() },
-    }));
 
-    virtual_columns = ColumnsWithTypeAndName{
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents_Names" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents_Values" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings_Names" },
-        { std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings_Values" }
-    };
+        { "thread_numbers",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()) },
+        { "ProfileEvents.Names",  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
+        { "Settings.Names",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "Settings.Values",      std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) }
+    }));
 }
 
 
@@ -79,20 +77,12 @@ BlockInputStreams StorageSystemProcesses::read(
     const unsigned /*num_streams*/)
 {
     processed_stage = QueryProcessingStage::FetchColumns;
-
-    auto virtual_columns_processor = getVirtualColumnsProcessor();
-    bool has_thread_numbers, has_profile_events_names, has_profile_events_values, has_settigns_names, has_settings_values;
-    std::vector<bool *> flags{&has_thread_numbers, &has_profile_events_names, &has_profile_events_values, &has_settigns_names, &has_settings_values};
-
-    Names real_columns = virtual_columns_processor.process(column_names, flags);
-    check(real_columns);
+    check(column_names);
 
     Block res_block = getSampleBlock().cloneEmpty();
-    virtual_columns_processor.appendVirtualColumns(res_block);
     MutableColumns res_columns = res_block.cloneEmptyColumns();
 
-    ProcessList::Info info = context.getProcessList().getInfo(has_thread_numbers, has_profile_events_names || has_profile_events_values,
-                                                              has_settigns_names || has_settings_values);
+    ProcessList::Info info = context.getProcessList().getInfo(true, true, true);
 
     for (const auto & process : info)
     {
@@ -127,7 +117,6 @@ BlockInputStreams StorageSystemProcesses::read(
         res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
 
-        if (has_thread_numbers)
         {
             Array threads_array;
             threads_array.reserve(process.thread_numbers.size());
@@ -136,24 +125,22 @@ BlockInputStreams StorageSystemProcesses::read(
             res_columns[i++]->insert(threads_array);
         }
 
-        if (has_profile_events_names || has_profile_events_values)
         {
-            IColumn * column_names = has_profile_events_names ? res_columns[i++].get() : nullptr;
-            IColumn * column_values = has_profile_events_values ? res_columns[i++].get() : nullptr;
-            process.profile_counters->dumpToArrayColumns(column_names, column_values, true);
+            IColumn * column_profile_events_names = res_columns[i++].get();
+            IColumn * column_profile_events_values = res_columns[i++].get();
+            process.profile_counters->dumpToArrayColumns(column_profile_events_names, column_profile_events_values, true);
         }
 
-        if (has_settigns_names || has_settings_values)
         {
-            IColumn * column_names = has_settigns_names ? res_columns[i++].get() : nullptr;
-            IColumn * column_values = has_settings_values ? res_columns[i++].get() : nullptr;
+            IColumn * column_settings_names = res_columns[i++].get();
+            IColumn * column_settings_values = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToArrayColumns(column_names, column_values, true);
+                process.query_settings->dumpToArrayColumns(column_settings_names, column_settings_values, true);
             else
             {
-                column_names->insertDefault();
-                column_values->insertDefault();
+                column_settings_names->insertDefault();
+                column_settings_values->insertDefault();
             }
         }
     }

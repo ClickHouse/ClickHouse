@@ -33,6 +33,7 @@
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Common/DNSResolver.h>
 
 
 namespace DB
@@ -156,7 +157,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-            input_rows_count, Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
+            input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };
 

@@ -1225,7 +1225,7 @@ private:
                 }
             }
 
-            logs_out_stream = SystemLogsRowOutputStream::create(*wb);
+            logs_out_stream = std::make_shared<SystemLogsRowOutputStream>(*wb);
             logs_out_stream->writePrefix();
         }
     }

@@ -293,7 +293,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
         size_t total_rows = progress.total_rows;
 
-        constexpr UInt64  profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
+        constexpr UInt64 profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
         UInt64 total_elapsed_microseconds = info.total_stopwatch.elapsedMicroseconds();
 
         if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
