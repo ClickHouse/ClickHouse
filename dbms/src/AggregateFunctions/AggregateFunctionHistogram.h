@@ -112,7 +112,6 @@ private:
      */
     void unique()
     {
-        sort();
         auto l = points.begin();
         for (auto r = std::next(l); r != points.end(); r++)
         {
@@ -137,32 +136,17 @@ public:
 
     void insertResultInto(ColumnVector<Mean>& to_lower, ColumnVector<Mean>& to_upper, ColumnVector<Weight>& to_weights) {
         compress();
-
-        points.push_back({lower_bound, 0});
-        points.push_back({upper_bound, 0});
         unique();
 
-        Weight prev_weight = points[0].weight;
-        Mean prev_value = points[0].mean;
-
-        // here we assume that pt.weight/2 points are before pt.mean  and pt.weight/2 are after
-        for (size_t i = 1; i < points.size(); i++)
+        for (size_t i = 0; i < points.size(); i++)
         {
-            auto cur_value = points[i].mean;
-            auto bin_weight = points[i].weight / 2 + prev_weight;
+            to_lower.insert((i == 0) ? lower_bound : (points[i].mean + points[i - 1].mean) / 2);
+            to_upper.insert((i + 1 == points.size()) ? upper_bound : (points[i].mean + points[i + 1].mean) / 2);
 
-            // all points are before
-            if (i + 1 == points.size())
-            {
-                bin_weight += points[i].weight / 2;
-            }
-
-            to_lower.insert(prev_value);
-            to_upper.insert(cur_value);
-            to_weights.insert(bin_weight / (cur_value - prev_value));
-
-            prev_weight = points[i].weight / 2;
-            prev_value = points[i].mean;
+            // linear density approximation
+            Weight lower_weight = (i == 0) ? points[i].weight : ((points[i - 1].weight) + points[i].weight * 3) / 4;
+            Weight upper_weight = (i + 1 == points.size()) ? points[i].weight : (points[i + 1].weight + points[i].weight * 3) / 4;
+            to_weights.insert((lower_weight + upper_weight) / 2);
         }
     }
 
