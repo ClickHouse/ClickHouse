@@ -252,10 +252,15 @@ void AlterCommands::apply(ColumnsDescription & columns_description) const
     columns_description = std::move(new_columns_description);
 }
 
-void AlterCommands::validate(const IStorage & table, const Context & context)
+void AlterCommands::validate(IStorage & table, const Context & context)
 {
-    auto all_columns = table.getColumns().getAll();
-    auto defaults = table.getColumns().defaults;
+    NamesAndTypesList all_columns;
+    ColumnDefaults defaults;
+    {
+        auto structure_lock = table.lockStructure(/*will_modify_data = */ false, __PRETTY_FUNCTION__);
+        all_columns = table.getColumns().getAll();
+        defaults = table.getColumns().defaults;
+    }
 
     std::vector<std::pair<NameAndTypePair, AlterCommand *>> defaulted_columns{};
 

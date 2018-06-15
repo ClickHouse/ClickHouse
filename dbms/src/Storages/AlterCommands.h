@@ -60,7 +60,7 @@ class AlterCommands : public std::vector<AlterCommand>
 public:
     void apply(ColumnsDescription & columns_description) const;
 
-    void validate(const IStorage & table, const Context & context);
+    void validate(IStorage & table, const Context & context);
 };
 
 }
