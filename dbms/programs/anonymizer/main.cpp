@@ -371,6 +371,13 @@ public:
 };
 
 
+struct MarkovModelParameters
+{
+    size_t order;
+    size_t frequency_cutoff;
+};
+
+
 class MarkovModel
 {
 private:
@@ -418,12 +425,13 @@ private:
     using Table = HashMap<NGramHash, Histogram, TrivialHash>;
     Table table;
 
-    size_t order;
-    size_t frequency_cutoff;
+    MarkovModelParameters params;
 
     std::vector<CodePoint> code_points;
 
+    /// Special code point to form context before beginning of string.
     static constexpr CodePoint BEGIN = -1;
+    /// Special code point to indicate end of string.
     static constexpr CodePoint END = -2;
 
 
@@ -462,12 +470,13 @@ private:
     }
 
 public:
-    MarkovModel(size_t order, size_t frequency_cutoff)
-        : order(order), frequency_cutoff(frequency_cutoff), code_points(order, BEGIN) {}
+    MarkovModel(MarkovModelParameters params)
+        : params(std::move(params)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
     {
-        code_points.resize(order);
+        /// First 'order' number of code points are pre-filled with BEGIN.
+        code_points.resize(params.order);
 
         const char * pos = data;
         const char * end = data + size;
@@ -481,7 +490,7 @@ public:
             if (inside)
                 next_code_point = readCodePoint(pos, end);
 
-            for (size_t context_size = 0; context_size < order; ++context_size)
+            for (size_t context_size = 0; context_size < params.order; ++context_size)
             {
                 NGramHash context_hash = hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size());
 
@@ -501,14 +510,14 @@ public:
 
     void finalize()
     {
-        if (frequency_cutoff == 0)
+        if (params.frequency_cutoff == 0)
             return;
 
         for (auto & elem : table)
         {
             Histogram & histogram = elem.second;
 
-            if (histogram.total + histogram.count_end < frequency_cutoff)
+            if (histogram.total + histogram.count_end < params.frequency_cutoff)
             {
                 histogram.buckets.clear();
                 histogram.total = 0;
@@ -520,7 +529,7 @@ public:
 
                 for (const auto & bucket : histogram.buckets)
                 {
-                    if (bucket.second >= frequency_cutoff)
+                    if (bucket.second >= params.frequency_cutoff)
                         new_buckets.emplace(bucket);
                     else
                         erased_count += bucket.second;
@@ -536,7 +545,7 @@ public:
     size_t generate(char * data, size_t desired_size, size_t buffer_size,
         UInt64 seed, const char * determinator_data, size_t determinator_size)
     {
-        code_points.resize(order);
+        code_points.resize(params.order);
 
         char * pos = data;
         char * end = data + buffer_size;
@@ -545,7 +554,7 @@ public:
         {
             Table::iterator it = table.end();
 
-            size_t context_size = order;
+            size_t context_size = params.order;
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
@@ -609,7 +618,7 @@ private:
     MarkovModel markov_model;
 
 public:
-    StringModel(UInt64 seed, UInt8 order, UInt64 frequency_cutoff) : seed(seed), markov_model(order, frequency_cutoff) {}
+    StringModel(UInt64 seed, MarkovModelParameters params) : seed(seed), markov_model(std::move(params)) {}
 
     void train(const IColumn & column) override
     {
@@ -724,7 +733,7 @@ public:
 class ModelFactory
 {
 public:
-    ModelPtr get(const IDataType & data_type, UInt64 seed, UInt8 markov_model_order, UInt64 frequency_cutoff) const
+    ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
     {
         if (data_type.isInteger())
         {
@@ -747,29 +756,29 @@ public:
             return std::make_unique<DateTimeModel>(seed);
 
         if (typeid_cast<const DataTypeString *>(&data_type))
-            return std::make_unique<StringModel>(seed, markov_model_order, frequency_cutoff);
+            return std::make_unique<StringModel>(seed, markov_model_params);
 
         if (typeid_cast<const DataTypeFixedString *>(&data_type))
             return std::make_unique<FixedStringModel>(seed);
 
         if (auto type = typeid_cast<const DataTypeArray *>(&data_type))
-            return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_order, frequency_cutoff));
+            return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed, markov_model_params));
 
         if (auto type = typeid_cast<const DataTypeNullable *>(&data_type))
-            return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_order, frequency_cutoff));
+            return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
         throw Exception("Unsupported data type");
     }
 };
 
 
-class Anonymizer
+class Obfuscator
 {
 private:
     std::vector<ModelPtr> models;
 
 public:
-    Anonymizer(const Block & header, UInt64 seed, UInt8 markov_model_order, UInt64 frequency_cutoff)
+    Obfuscator(const Block & header, UInt64 seed, MarkovModelParameters markov_model_params)
     {
         ModelFactory factory;
 
@@ -777,7 +786,7 @@ public:
         models.reserve(columns);
 
         for (size_t i = 0; i < columns; ++i)
-            models.emplace_back(factory.get(*header.getByPosition(i).type, hash(seed, i), markov_model_order, frequency_cutoff));
+            models.emplace_back(factory.get(*header.getByPosition(i).type, hash(seed, i), markov_model_params));
     }
 
     void train(const Columns & columns)
@@ -827,12 +836,16 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help") || !options.count("seed"))
+    if (options.count("help")
+        || !options.count("seed")
+        || !options.count("structure")
+        || !options.count("input-format")
+        || !options.count("output-format"))
     {
         std::cout << "Usage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed $RANDOM --order 5 --cutoff 5 --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom)\" --order 5 --cutoff 5 --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
@@ -842,8 +855,10 @@ try
     std::string input_format = options["input-format"].as<std::string>();
     std::string output_format = options["output-format"].as<std::string>();
 
-    UInt64 markov_model_order = options["order"].as<UInt64>();
-    UInt64 frequency_cutoff = options["cutoff"].as<UInt64>();
+    MarkovModelParameters markov_model_params;
+
+    markov_model_params.order = options["order"].as<UInt64>();
+    markov_model_params.frequency_cutoff = options["cutoff"].as<UInt64>();
 
     // Create header block
     std::vector<std::string> structure_vals;
@@ -870,7 +885,7 @@ try
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
 
-    Anonymizer anonymizer(header, seed, markov_model_order, frequency_cutoff);
+    Obfuscator obfuscator(header, seed, markov_model_params);
 
     size_t max_block_size = 8192;
 
@@ -883,14 +898,14 @@ try
         input->readPrefix();
         while (Block block = input->read())
         {
-            anonymizer.train(block.getColumns());
+            obfuscator.train(block.getColumns());
             processed_rows += block.rows();
             std::cerr << "Processed " << processed_rows << " rows\n";
         }
         input->readSuffix();
     }
 
-    anonymizer.finalize();
+    obfuscator.finalize();
 
     /// Generation step
     std::cerr << "Generating data\n";
@@ -905,7 +920,7 @@ try
         output->writePrefix();
         while (Block block = input->read())
         {
-            Columns columns = anonymizer.generate(block.getColumns());
+            Columns columns = obfuscator.generate(block.getColumns());
             output->write(header.cloneWithColumns(columns));
             processed_rows += block.rows();
             std::cerr << "Processed " << processed_rows << " rows\n";
