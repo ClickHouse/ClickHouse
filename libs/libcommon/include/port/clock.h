@@ -16,7 +16,7 @@
 #endif
 #define APPLE_HAVE_CLOCK_GETTIME MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_12
 
-#if !APPLE_HAVE_CLOCK_GETTIME
+#if !APPLE_HAVE_CLOCK_GETTIME || !defined(CLOCK_MONOTONIC)
 /**
  * MacOS X doesn't support different clock sources
  *
