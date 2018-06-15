@@ -344,16 +344,17 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
-            UInt32 src_time = src_data[i];
-            UInt32 src_date = date_lut.toDate(src_time);
+            UInt32 src_datetime = src_data[i];
+            UInt32 src_date = date_lut.toDate(src_datetime);
 
-            Int32 src_diff = src_time - src_prev_value;
-            Int32 res_diff = transform(src_diff, seed);
+            Int32 src_diff = src_datetime - src_prev_value;
+            Int32 res_diff = transformSigned(src_diff, seed);
 
-            UInt32 new_time = res_prev_value + res_diff;
-            res_data[i] = src_date + new_time % 86400;  /// Don't care about tz changes and daylight saving time.
+            UInt32 new_datetime = res_prev_value + res_diff;
+            UInt32 new_time = new_datetime - date_lut.toDate(new_datetime);
+            res_data[i] = src_date + new_time;
 
-            src_prev_value = src_time;
+            src_prev_value = src_datetime;
             res_prev_value = res_data[i];
         }
 
@@ -482,9 +483,9 @@ public:
 
         while (true)
         {
-            bool inside = pos < end;
+            const bool inside = pos < end;
 
-            CodePoint next_code_point;
+            CodePoint next_code_point {};
 
             if (inside)
                 next_code_point = readCodePoint(pos, end);
