@@ -1,11 +1,17 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnFixedString.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockInputStream.h>
@@ -236,6 +242,67 @@ public:
     ColumnPtr generate(const IColumn & column) override
     {
         return column.cloneResized(column.size());
+    }
+};
+
+
+/// Just pseudorandom function.
+void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
+{
+    {
+        SipHash hash;
+        hash.update(seed);
+        hash.update(reinterpret_cast<const char *>(src), size);
+        seed = hash.get64();
+    }
+
+    UInt8 * pos = dst;
+    UInt8 * end = dst + size;
+
+    size_t i = 0;
+    while (pos < end)
+    {
+        SipHash hash;
+        hash.update(seed);
+        hash.update(i);
+
+        char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+        hash.get128(dst);
+
+        pos += 16;
+        ++i;
+    }
+}
+
+
+class FixedStringModel : public IModel
+{
+private:
+    const UInt64 seed;
+
+public:
+    FixedStringModel(UInt64 seed) : seed(seed) {}
+
+    void train(const IColumn &) override {}
+    void finalize() override {}
+
+    ColumnPtr generate(const IColumn & column) override
+    {
+        const ColumnFixedString & column_fixed_string = static_cast<const ColumnFixedString &>(column);
+        const size_t string_size = column_fixed_string.getN();
+
+        const auto & src_data = column_fixed_string.getChars();
+        size_t size = column_fixed_string.size();
+
+        auto res_column = ColumnFixedString::create(string_size);
+        auto & res_data = res_column->getChars();
+
+        res_data.resize(src_data.size());
+
+        for (size_t i = 0; i < size; ++i)
+            transformFixedString(&src_data[i * string_size], &res_data[i * string_size], string_size, seed);
+
+        return res_column;
     }
 };
 
@@ -502,12 +569,80 @@ public:
             size_t desired_string_size = transform(src_string.size, seed);
             new_string.resize(desired_string_size);
 
-            size_t actual_size = markov_model.generate(new_string.data(), desired_string_size, seed, src_string.data, src_string.size);
+            size_t actual_size = 0;
+            if (desired_string_size != 0)
+                actual_size = markov_model.generate(new_string.data(), desired_string_size, seed, src_string.data, src_string.size);
 
             res_column->insertData(new_string.data(), actual_size);
         }
 
         return res_column;
+    }
+};
+
+
+class ArrayModel : public IModel
+{
+private:
+    ModelPtr nested_model;
+
+public:
+    ArrayModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+
+    void train(const IColumn & column) override
+    {
+        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const IColumn & nested_column = column_array.getData();
+
+        nested_model->train(nested_column);
+    }
+
+    void finalize() override
+    {
+        nested_model->finalize();
+    }
+
+    ColumnPtr generate(const IColumn & column) override
+    {
+        const ColumnArray & column_array = static_cast<const ColumnArray &>(column);
+        const IColumn & nested_column = column_array.getData();
+
+        ColumnPtr new_nested_column = nested_model->generate(nested_column);
+
+        return ColumnArray::create((*std::move(new_nested_column)).mutate(), (*std::move(column_array.getOffsetsPtr())).mutate());
+    }
+};
+
+
+class NullableModel : public IModel
+{
+private:
+    ModelPtr nested_model;
+
+public:
+    NullableModel(ModelPtr nested_model) : nested_model(std::move(nested_model)) {}
+
+    void train(const IColumn & column) override
+    {
+        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const IColumn & nested_column = column_nullable.getNestedColumn();
+
+        nested_model->train(nested_column);
+    }
+
+    void finalize() override
+    {
+        nested_model->finalize();
+    }
+
+    ColumnPtr generate(const IColumn & column) override
+    {
+        const ColumnNullable & column_nullable = static_cast<const ColumnNullable &>(column);
+        const IColumn & nested_column = column_nullable.getNestedColumn();
+
+        ColumnPtr new_nested_column = nested_model->generate(nested_column);
+
+        return ColumnNullable::create((*std::move(new_nested_column)).mutate(), (*std::move(column_nullable.getNullMapColumnPtr())).mutate());
     }
 };
 
@@ -524,16 +659,31 @@ public:
             else
                 return std::make_unique<SignedIntegerModel>(seed);
         }
+
         if (typeid_cast<const DataTypeFloat32 *>(&data_type))
             return std::make_unique<FloatModel<Float32>>(seed);
+
         if (typeid_cast<const DataTypeFloat64 *>(&data_type))
             return std::make_unique<FloatModel<Float64>>(seed);
+
         if (typeid_cast<const DataTypeDate *>(&data_type))
             return std::make_unique<IdentityModel>();
+
         if (typeid_cast<const DataTypeDateTime *>(&data_type))
             return std::make_unique<DateTimeModel>(seed);
+
         if (typeid_cast<const DataTypeString *>(&data_type))
             return std::make_unique<StringModel>(seed);
+
+        if (typeid_cast<const DataTypeFixedString *>(&data_type))
+            return std::make_unique<FixedStringModel>(seed);
+
+        if (auto type = typeid_cast<const DataTypeArray *>(&data_type))
+            return std::make_unique<ArrayModel>(get(*type->getNestedType(), seed));
+
+        if (auto type = typeid_cast<const DataTypeNullable *>(&data_type))
+            return std::make_unique<NullableModel>(get(*type->getNestedType(), seed));
+
         throw Exception("Unsupported data type");
     }
 };
