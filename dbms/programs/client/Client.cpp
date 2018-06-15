@@ -38,7 +38,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/SystemLogsRowOutputStream.h>
+#include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -1225,7 +1225,7 @@ private:
                 }
             }
 
-            logs_out_stream = std::make_shared<SystemLogsRowOutputStream>(*wb);
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
             logs_out_stream->writePrefix();
         }
     }

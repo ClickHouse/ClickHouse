@@ -1,4 +1,4 @@
-#include "SystemLogsQueue.h"
+#include "InternalTextLogsQueue.h"
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -10,12 +10,12 @@
 namespace DB
 {
 
-SystemLogsQueue::SystemLogsQueue()
+InternalTextLogsQueue::InternalTextLogsQueue()
 		: ConcurrentBoundedQueue<MutableColumns>(std::numeric_limits<int>::max()),
 		  max_priority(Poco::Message::Priority::PRIO_INFORMATION) {}
 
 
-Block SystemLogsQueue::getSampleBlock()
+Block InternalTextLogsQueue::getSampleBlock()
 {
     return Block {
             {std::make_shared<DataTypeDateTime>(), "event_time"},
@@ -29,13 +29,13 @@ Block SystemLogsQueue::getSampleBlock()
     };
 }
 
-MutableColumns SystemLogsQueue::getSampleColumns()
+MutableColumns InternalTextLogsQueue::getSampleColumns()
 {
     static Block sample_block = getSampleBlock();
     return sample_block.cloneEmptyColumns();
 }
 
-const char * SystemLogsQueue::getPriorityName(int priority)
+const char * InternalTextLogsQueue::getPriorityName(int priority)
 {
     /// See Poco::Message::Priority
 

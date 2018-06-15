@@ -1,6 +1,6 @@
-#include "SystemLogsRowOutputStream.h"
+#include "InternalTextLogsRowOutputStream.h"
 #include <Core/Block.h>
-#include <Core/SystemLogsQueue.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/ColumnsNumber.h>
@@ -11,12 +11,12 @@
 namespace DB
 {
 
-Block SystemLogsRowOutputStream::getHeader() const
+Block InternalTextLogsRowOutputStream::getHeader() const
 {
-    return SystemLogsQueue::getSampleBlock();
+    return InternalTextLogsQueue::getSampleBlock();
 }
 
-void SystemLogsRowOutputStream::write(const Block & block)
+void InternalTextLogsRowOutputStream::write(const Block & block)
 {
     auto & array_event_time = typeid_cast<const ColumnUInt32 &>(*block.getByName("event_time").column).getData();
     auto & array_microseconds = typeid_cast<const ColumnUInt32 &>(*block.getByName("event_time_microseconds").column).getData();
@@ -31,6 +31,14 @@ void SystemLogsRowOutputStream::write(const Block & block)
 
     for (size_t row_num = 0; row_num < block.rows(); ++row_num)
     {
+        auto host_name = column_host_name.getDataAt(row_num);
+        if (host_name.size)
+        {
+            writeCString("[", wb);
+            writeString(host_name, wb);
+            writeCString("] ", wb);
+        }
+
         auto event_time = array_event_time[row_num];
         writeDateTimeText<'.', ':'>(event_time, wb);
 
@@ -43,20 +51,12 @@ void SystemLogsRowOutputStream::write(const Block & block)
         writeChar('0' + ((microseconds / 10) % 10), wb);
         writeChar('0' + ((microseconds / 1) % 10), wb);
 
-        auto host_name = column_host_name.getDataAt(row_num);
-        if (host_name.size)
-        {
-            writeCString(" [ ", wb);
-            writeString(host_name, wb);
-            writeCString(" ]", wb);
-        }
-
         auto query_id = column_query_id.getDataAt(row_num);
         if (query_id.size)
         {
-            writeCString(" { ", wb);
+            writeCString(" {", wb);
             writeString(query_id, wb);
-            writeCString(" }", wb);
+            writeCString("}", wb);
         }
 
         UInt32 thread_number = array_thread_number[row_num];
@@ -65,7 +65,7 @@ void SystemLogsRowOutputStream::write(const Block & block)
         writeCString(" ] <", wb);
 
         Int8 priority = array_priority[row_num];
-        writeString(SystemLogsQueue::getPriorityName(priority), wb);
+        writeString(InternalTextLogsQueue::getPriorityName(priority), wb);
         writeCString("> ", wb);
 
         auto source = column_source.getDataAt(row_num);

@@ -103,4 +103,4 @@ WHERE
 
 
 # Clean 
-#rm "$server_logs_file"
+rm "$server_logs_file"

@@ -5,13 +5,13 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <IO/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
-#include <Core/SystemLogsQueue.h>
-#include <DataStreams/BlockIO.h>
+#include <IO/Progress.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <DataStreams/BlockIO.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
@@ -66,7 +66,7 @@ struct QueryState
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
     /// A queue with internal logs that will be passed to client
-    SystemLogsQueuePtr logs_queue;
+    InternalTextLogsQueuePtr logs_queue;
     BlockOutputStreamPtr logs_block_out;
 
     void reset()

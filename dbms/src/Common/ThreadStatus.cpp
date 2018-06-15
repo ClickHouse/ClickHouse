@@ -228,7 +228,7 @@ void ThreadStatus::attachQuery(
         QueryStatus * parent_query_,
         ProfileEvents::Counters * parent_counters,
         MemoryTracker * parent_memory_tracker,
-        const SystemLogsQueueWeakPtr & logs_queue_ptr_,
+        const InternalTextLogsQueueWeakPtr & logs_queue_ptr_,
         bool check_detached)
 {
     if (thread_state == ThreadState::AttachedToQuery)

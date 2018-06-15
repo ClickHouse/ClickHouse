@@ -2,6 +2,7 @@
 #include <common/logger_useful.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Context.h>
 #include <Poco/Ext/ThreadNumber.h>
 #include <Poco/Logger.h>
 
@@ -39,11 +40,12 @@ void CurrentThread::attachQuery(QueryStatus * parent_process)
     ThreadStatusPtr thread = getCurrentThreadImpl();
 
     if (!parent_process)
-        thread->attachQuery(nullptr, nullptr, nullptr, CurrentThread::getSystemLogsQueue());
+        thread->attachQuery(nullptr, nullptr, nullptr, CurrentThread::getInternalTextLogsQueue());
     else
     {
         thread->attachQuery(
-                parent_process, &parent_process->performance_counters, &parent_process->memory_tracker, CurrentThread::getSystemLogsQueue());
+                parent_process, &parent_process->performance_counters, &parent_process->memory_tracker,
+                CurrentThread::getInternalTextLogsQueue());
     }
 }
 
@@ -114,7 +116,7 @@ void CurrentThread::attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thr
     QueryStatus * parent_query;
     ProfileEvents::Counters * parent_counters;
     MemoryTracker * parent_memory_tracker;
-    SystemLogsQueueWeakPtr logs_queue_ptr;
+    InternalTextLogsQueueWeakPtr logs_queue_ptr;
     {
         /// NOTE: It is almost the only place where ThreadStatus::mutex is required
         /// In other cases ThreadStatus must be accessed only from the current_thread
@@ -138,12 +140,12 @@ void CurrentThread::attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thr
     thread->attachQuery(parent_query, parent_counters, parent_memory_tracker, logs_queue_ptr, check_detached);
 }
 
-void CurrentThread::attachSystemLogsQueue(const std::shared_ptr<SystemLogsQueue> & logs_queue)
+void CurrentThread::attachSystemLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
 {
     getCurrentThreadImpl()->attachSystemLogsQueue(logs_queue);
 }
 
-std::shared_ptr<SystemLogsQueue> CurrentThread::getSystemLogsQueue()
+std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
 {
     /// NOTE: this method could be called at early server startup stage
     /// NOTE: this method could be called in ThreadStatus destructor, therefore we make use_count() check just in case
@@ -154,15 +156,21 @@ std::shared_ptr<SystemLogsQueue> CurrentThread::getSystemLogsQueue()
     if (current_thread->getCurrentState() == ThreadStatus::ThreadState::Died)
         return nullptr;
 
-    return current_thread->getSystemLogsQueue();
+    return current_thread->getInternalTextLogsQueue();
 }
 
 std::string CurrentThread::getCurrentQueryID()
 {
-    if (!current_thread || current_thread.use_count() <= 0 || !current_thread->parent_query)
+    if (!current_thread || current_thread.use_count() <= 0)
         return {};
 
-    return current_thread->parent_query->client_info.current_query_id;
+    if (current_thread->parent_query)
+        return current_thread->parent_query->client_info.current_query_id;
+
+    if (current_thread->query_context)
+        return current_thread->query_context->getClientInfo().current_query_id;
+
+    return {};
 }
 
 }
