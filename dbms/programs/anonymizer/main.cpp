@@ -18,6 +18,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
@@ -247,7 +248,7 @@ public:
 };
 
 
-/// Just pseudorandom function.
+/// Pseudorandom function, but keep word characters as word characters.
 void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 seed)
 {
     {
@@ -272,6 +273,15 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
 
         pos += 16;
         ++i;
+    }
+
+    for (size_t j = 0; j < size; ++j)
+    {
+        if (isWordCharASCII(src[j]))
+        {
+            static constexpr char word_chars[] = "_01234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            dst[j] = word_chars[dst[j] % sizeof(word_chars)];
+        }
     }
 }
 
