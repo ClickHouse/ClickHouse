@@ -267,8 +267,17 @@ void transformFixedString(const UInt8 * src, UInt8 * dst, size_t size, UInt64 se
         hash.update(seed);
         hash.update(i);
 
-        char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
-        hash.get128(dst);
+        if (size >= 16)
+        {
+            char * dst = reinterpret_cast<char *>(std::min(pos, end - 16));
+            hash.get128(dst);
+        }
+        else
+        {
+            char value[16];
+            hash.get128(value);
+            memcpy(dst, value, end - dst);
+        }
 
         pos += 16;
         ++i;
@@ -453,7 +462,7 @@ private:
     }
 
 public:
-    explicit MarkovModel(size_t order, size_t frequency_cutoff)
+    MarkovModel(size_t order, size_t frequency_cutoff)
         : order(order), frequency_cutoff(frequency_cutoff), code_points(order, BEGIN) {}
 
     void consume(const char * data, size_t size)
@@ -803,7 +812,7 @@ try
     using namespace DB;
     namespace po = boost::program_options;
 
-    po::options_description description("Main options");
+    po::options_description description("Options");
     description.add_options()
         ("help", "produce help message")
         ("structure,S", po::value<std::string>(), "structure of the initial table (list of column and type names)")
