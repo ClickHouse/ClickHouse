@@ -104,7 +104,7 @@ protected:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
-    void updatePerfomanceCountersImpl();
+    void updatePerformanceCountersImpl();
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
 

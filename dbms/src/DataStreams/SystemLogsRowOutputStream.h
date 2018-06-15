@@ -13,13 +13,9 @@ class SystemLogsRowOutputStream : public IBlockOutputStream
 {
 public:
 
-    static BlockOutputStreamPtr create(WriteBuffer & buf_out);
-
     SystemLogsRowOutputStream(WriteBuffer & buf_out) : wb(buf_out) {}
 
     Block getHeader() const override;
-
-    void write(const Block & block, size_t row_num);
 
     void write(const Block & block) override;
 

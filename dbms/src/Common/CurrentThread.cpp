@@ -60,7 +60,7 @@ void CurrentThread::attachQueryFromSiblingThreadIfDetached(const ThreadStatusPtr
 
 void CurrentThread::updatePerformanceCounters()
 {
-    getCurrentThreadImpl()->updatePerfomanceCountersImpl();
+    getCurrentThreadImpl()->updatePerformanceCountersImpl();
 }
 
 ThreadStatusPtr CurrentThread::get()
@@ -155,6 +155,14 @@ std::shared_ptr<SystemLogsQueue> CurrentThread::getSystemLogsQueue()
         return nullptr;
 
     return current_thread->getSystemLogsQueue();
+}
+
+std::string CurrentThread::getCurrentQueryID()
+{
+    if (!current_thread || current_thread.use_count() <= 0 || !current_thread->parent_query)
+        return {};
+
+    return current_thread->parent_query->client_info.current_query_id;
 }
 
 }

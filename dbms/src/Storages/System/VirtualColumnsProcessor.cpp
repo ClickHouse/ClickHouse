@@ -3,7 +3,7 @@
 namespace DB
 {
 
-bool hasColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
+static bool hasColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
 {
     for (const auto & column : columns)
     {
@@ -15,7 +15,7 @@ bool hasColumn(const ColumnsWithTypeAndName & columns, const String & column_nam
 }
 
 
-NameAndTypePair tryGetColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
+static NameAndTypePair tryGetColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
 {
     for (const auto & column : columns)
     {
