@@ -11,8 +11,8 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Compiler.h>
 
-#if __has_include("config_compile.h")
-#include "config_compile.h"
+#if __has_include(<Interpreters/config_compile.h>)
+#include <Interpreters/config_compile.h>
 #endif
 
 namespace ProfileEvents

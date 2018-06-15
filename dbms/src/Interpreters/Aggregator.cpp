@@ -23,8 +23,8 @@
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
 #include <common/demangle.h>
-#if __has_include("config_compile.h")
-#include "config_compile.h"
+#if __has_include(<Interpreters/config_compile.h>)
+#include <Interpreters/config_compile.h>
 #endif
 
 
