@@ -376,11 +376,11 @@ private:
     }
 
 public:
-    explicit MarkovModel(size_t order) : order(order) {}
+    explicit MarkovModel(size_t order) : order(order), code_points(order, -1) {}
 
     void consume(const char * data, size_t size)
     {
-        code_points.clear();
+        code_points.resize(order);
 
         const char * pos = data;
         const char * end = data + size;
@@ -390,12 +390,7 @@ public:
             code_points.push_back(readCodePoint(pos, end));
 
             for (size_t context_size = 0; context_size < order; ++context_size)
-            {
-                if (code_points.size() <= context_size)
-                    break;
-
                 table[hashContext(&code_points.back() - context_size, &code_points.back())].add(code_points.back());
-            }
         }
     }
 
@@ -409,7 +404,7 @@ public:
     size_t generate(char * data, size_t size,
         UInt64 seed, const char * determinator_data, size_t determinator_size)
     {
-        code_points.clear();
+        code_points.resize(order);
 
         char * pos = data;
         char * end = data + size;
@@ -418,7 +413,7 @@ public:
         {
             Table::iterator it = table.end();
 
-            size_t context_size = std::min(order, code_points.size());
+            size_t context_size = order;
             while (true)
             {
                 it = table.find(hashContext(code_points.data() + code_points.size() - context_size, code_points.data() + code_points.size()));
