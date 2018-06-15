@@ -869,9 +869,14 @@ try
     {
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
 
+        UInt64 processed_rows = 0;
         input->readPrefix();
         while (Block block = input->read())
+        {
             anonymizer.train(block.getColumns());
+            processed_rows += block.rows();
+            std::cerr << "Processed " << processed_rows << " rows\n";
+        }
         input->readSuffix();
     }
 
@@ -885,12 +890,15 @@ try
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
         BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
 
+        UInt64 processed_rows = 0;
         input->readPrefix();
         output->writePrefix();
         while (Block block = input->read())
         {
             Columns columns = anonymizer.generate(block.getColumns());
             output->write(header.cloneWithColumns(columns));
+            processed_rows += block.rows();
+            std::cerr << "Processed " << processed_rows << " rows\n";
         }
         output->writeSuffix();
         input->readSuffix();
