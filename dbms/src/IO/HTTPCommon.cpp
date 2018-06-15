@@ -15,6 +15,7 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
 
+#include <sstream>
 
 namespace DB
 {
