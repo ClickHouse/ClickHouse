@@ -54,6 +54,9 @@ if [ "${TEST_CONNECT}" ]; then
         CLIENT_ADD+="--port $CLICKHOUSE_PORT_TCP"
     fi
 
+    # For debug
+    tail -n +1 -- /etc/clickhouse-server/*.xml /etc/clickhouse-server/config.d/*.xml
+
     function finish {
         service clickhouse-server stop
         tail -n 100 /var/log/clickhouse-server/*.log /var/log/clickhouse-server/stderr || true
