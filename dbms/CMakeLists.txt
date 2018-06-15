@@ -233,6 +233,8 @@ if (NOT USE_INTERNAL_ZSTD_LIBRARY)
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
+target_include_directories (dbms PRIVATE ${ClickHouse_BINARY_DIR}/dbms/src/Interpreters/) # config_compile.h
+
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
