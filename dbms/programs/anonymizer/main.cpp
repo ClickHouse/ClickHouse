@@ -34,8 +34,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 
-#include <common/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -820,9 +818,12 @@ try
     po::variables_map options;
     po::store(parsed, options);
 
-    if (options.count("help"))
+    if (options.count("help") || !options.count("seed"))
     {
-        /// TODO
+        std::cout << "Usage: " << argv[0] << " [options] < in > out\n"
+            << "\nInput must be seekable file (it will be read twice).\n"
+            << "\n" << description << "\n"
+            << "\nExample:\n    " << argv[0] << " --seed $RANDOM --order 5 --cutoff 5 --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
