@@ -9,11 +9,11 @@ namespace DB
 /// Prints internal server logs
 /// Input blocks have to have the same structure as SystemLogsQueue::getSampleBlock()
 /// NOTE: IRowOutputStream does not suite well for this case
-class SystemLogsRowOutputStream : public IBlockOutputStream
+class InternalTextLogsRowOutputStream : public IBlockOutputStream
 {
 public:
 
-    SystemLogsRowOutputStream(WriteBuffer & buf_out) : wb(buf_out) {}
+    InternalTextLogsRowOutputStream(WriteBuffer & buf_out) : wb(buf_out) {}
 
     Block getHeader() const override;
 

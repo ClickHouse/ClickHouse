@@ -29,8 +29,8 @@
 #include <Common/ExternalTable.h>
 
 #include "TCPHandler.h"
-#include <Interpreters/ClickHouseLogChannel.h>
-#include <Core/SystemLogsQueue.h>
+#include <daemon/OwnSplitChannel.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 
 #include <Common/NetException.h>
 #include <ext/scope_guard.h>
@@ -158,7 +158,7 @@ void TCPHandler::runImpl()
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
                 && query_context.getSettingsRef().server_logs_level.value != "none")
             {
-                state.logs_queue = std::make_shared<SystemLogsQueue>();
+                state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().server_logs_level.value);
                 CurrentThread::attachSystemLogsQueue(state.logs_queue);
             }
@@ -887,7 +887,7 @@ void TCPHandler::sendLogs()
 
     if (rows > 0)
     {
-        Block block = SystemLogsQueue::getSampleBlock();
+        Block block = InternalTextLogsQueue::getSampleBlock();
         block.setColumns(std::move(logs_columns));
         sendLogData(block);
     }

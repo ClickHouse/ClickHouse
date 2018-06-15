@@ -22,9 +22,9 @@ class QueryThreadLog;
 struct TasksStatsCounters;
 struct RusageCounters;
 class TaskStatsInfoGetter;
-class SystemLogsQueue;
-using SystemLogsQueuePtr = std::shared_ptr<SystemLogsQueue>;
-using SystemLogsQueueWeakPtr = std::weak_ptr<SystemLogsQueue>;
+class InternalTextLogsQueue;
+using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
+using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
 
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
@@ -68,13 +68,12 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
-    SystemLogsQueuePtr getSystemLogsQueue() const
+    InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {
-        std::lock_guard lock(mutex);
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
-    void attachSystemLogsQueue(const SystemLogsQueuePtr & logs_queue)
+    void attachSystemLogsQueue(const InternalTextLogsQueuePtr & logs_queue)
     {
         std::lock_guard lock(mutex);
         logs_queue_ptr = logs_queue;
@@ -97,7 +96,7 @@ protected:
             QueryStatus * parent_query_,
             ProfileEvents::Counters * parent_counters,
             MemoryTracker * parent_memory_tracker,
-            const SystemLogsQueueWeakPtr & logs_queue_ptr_,
+            const InternalTextLogsQueueWeakPtr & logs_queue_ptr_,
             bool check_detached = true);
 
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
@@ -117,7 +116,7 @@ protected:
     Context * query_context = nullptr;
 
     /// A logs queue used by TCPHandler to pass logs to a client
-    SystemLogsQueueWeakPtr logs_queue_ptr;
+    InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
