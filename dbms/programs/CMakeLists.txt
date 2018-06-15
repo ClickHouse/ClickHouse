@@ -25,6 +25,7 @@ add_subdirectory (compressor)
 add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (clang)
+add_subdirectory (anonymizer)
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
