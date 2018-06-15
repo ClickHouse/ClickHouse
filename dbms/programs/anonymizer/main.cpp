@@ -25,6 +25,8 @@
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
 
+#include <common/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -73,25 +75,26 @@ UInt64 maskBits(UInt64 x, size_t num_bits)
 /// Apply Feistel network round to least significant num_bits part of x.
 UInt64 feistelRound(UInt64 x, size_t num_bits, UInt64 seed, size_t round)
 {
-    size_t num_bits_right_half = num_bits / 2;
-    size_t num_bits_left_half = num_bits - num_bits_right_half;
+    size_t num_bits_left_half = num_bits / 2;
+    size_t num_bits_right_half = num_bits - num_bits_left_half;
 
-    UInt64 right_half = maskBits(x, num_bits_right_half);
     UInt64 left_half = maskBits(x >> num_bits_right_half, num_bits_left_half);
+    UInt64 right_half = maskBits(x, num_bits_right_half);
 
     UInt64 new_left_half = right_half;
-    UInt64 new_right_half = left_half ^ hash(right_half, seed, round);
+    UInt64 new_right_half = left_half ^ maskBits(hash(right_half, seed, round), num_bits_left_half);
 
-    return (new_left_half << num_bits_right_half) ^ new_right_half;
+    return (new_left_half << num_bits_left_half) ^ new_right_half;
 }
 
 
 /// Apply Feistel network with num_rounds to least significant num_bits part of x.
 UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds = 4)
 {
+    UInt64 bits = maskBits(x, num_bits);
     for (size_t i = 0; i < num_rounds; ++i)
-        x = feistelRound(x, num_bits, seed, i);
-    return x;
+        bits = feistelRound(bits, num_bits, seed, i);
+    return (x & ~((1 << num_bits) - 1)) ^ bits;
 }
 
 
@@ -107,6 +110,7 @@ UInt64 transform(UInt64 x, UInt64 seed)
         return x ^ (seed & 1);
 
     size_t num_leading_zeros = __builtin_clzll(x);
+
     return feistelNetwork(x, 64 - num_leading_zeros - 1, seed);
 }
 
@@ -351,6 +355,7 @@ private:
 
         CodePoint res = 0;
         memcpy(&res, pos, length);
+        pos += length;
         return res;
     }
 
@@ -476,6 +481,7 @@ public:
 
         for (size_t i = 0; i < size; ++i)
         {
+            std::cerr << i << "\n";
             StringRef string = column_string.getDataAt(i);
             markov_model.consume(string.data, string.size);
         }
@@ -582,6 +588,7 @@ public:
 
 
 int main(int argc, char ** argv)
+try
 {
     using namespace DB;
     namespace po = boost::program_options;
@@ -671,4 +678,10 @@ int main(int argc, char ** argv)
     }
 
     return 0;
+}
+catch (...)
+{
+    std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+    auto code = DB::getCurrentExceptionCode();
+    return code ? code : 1;
 }
