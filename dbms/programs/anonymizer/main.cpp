@@ -32,6 +32,7 @@
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/container/flat_map.hpp>
 
 #include <common/iostream_debug_helpers.h>
 
@@ -369,34 +370,17 @@ private:
     using CodePoint = UInt32;
     using NGramHash = UInt32;
 
-    struct Bucket
-    {
-        CodePoint code;
-        UInt64 count;
-
-        Bucket(CodePoint code) : code(code), count(1) {}
-    };
-
     struct Histogram
     {
         UInt64 total = 0;   /// Not including count_end.
         UInt64 count_end = 0;
-        std::vector<Bucket> data;
+        using Buckets = boost::container::flat_map<CodePoint, UInt64>;
+        Buckets buckets;
 
         void add(CodePoint code)
         {
             ++total;
-
-            for (auto & elem : data)
-            {
-                if (elem.code == code)
-                {
-                    ++elem.count;
-                    return;
-                }
-            }
-
-            data.emplace_back(code);
+            ++buckets[code];
         }
 
         void addEnd()
@@ -413,11 +397,11 @@ private:
             random %= range;
 
             UInt64 sum = 0;
-            for (const auto & elem : data)
+            for (const auto & elem : buckets)
             {
-                sum += elem.count;
+                sum += elem.second;
                 if (sum > random)
-                    return elem.code;
+                    return elem.first;
             }
 
             return END;
@@ -513,38 +497,32 @@ public:
         if (frequency_cutoff == 0)
             return;
 
-    //    size_t total_buckets = 0;
-    //    size_t erased_buckets = 0;
-
         for (auto & elem : table)
         {
             Histogram & histogram = elem.second;
-    //        total_buckets += histogram.data.size();
 
             if (histogram.total + histogram.count_end < frequency_cutoff)
             {
-    //            erased_buckets += histogram.data.size();
-
-                histogram.data.clear();
+                histogram.buckets.clear();
                 histogram.total = 0;
             }
             else
             {
-                auto erased = std::remove_if(histogram.data.begin(), histogram.data.end(),
-                    [frequency_cutoff=frequency_cutoff](const Bucket & bucket) { return bucket.count < frequency_cutoff; });
-
+                Histogram::Buckets new_buckets;
                 UInt64 erased_count = 0;
-                for (auto it = erased; it < histogram.data.end(); ++it)
-                    erased_count += it->count;
 
-    //            erased_buckets += histogram.data.end() - erased;
+                for (const auto & bucket : histogram.buckets)
+                {
+                    if (bucket.second >= frequency_cutoff)
+                        new_buckets.emplace(bucket);
+                    else
+                        erased_count += bucket.second;
+                }
 
-                histogram.data.erase(erased, histogram.data.end());
+                histogram.buckets.swap(new_buckets);
                 histogram.total -= erased_count;
             }
         }
-
-    //    std::cerr << "Erased " << erased_buckets << " out of " << total_buckets << " buckets\n";
     }
 
 
