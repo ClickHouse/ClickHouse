@@ -430,8 +430,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("https_port"))
                 {
 #if USE_POCO_NETSSL
-                    std::call_once(ssl_init_once, SSLInit);
-
+                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -452,7 +451,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 /// TCP
                 if (config().has("tcp_port"))
                 {
-                    std::call_once(ssl_init_once, SSLInit);
                     Poco::Net::ServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port"));
                     socket.setReceiveTimeout(settings.receive_timeout);
@@ -470,6 +468,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port_secure"))
                 {
 #if USE_POCO_NETSSL
+                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);

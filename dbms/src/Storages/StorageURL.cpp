@@ -106,11 +106,14 @@ namespace
         {
             writer->write(block);
         }
-        void writePrefix() override {
+
+        void writePrefix() override
+        {
             writer->writePrefix();
         }
 
-        void writeSuffix() override {
+        void writeSuffix() override
+        {
             writer->writeSuffix();
             writer->flush();
             write_buf->finalize();
@@ -122,7 +125,10 @@ namespace
         BlockOutputStreamPtr writer;
     };
 }
-BlockInputStreams StorageURL::read(const Names & /*column_names*/,
+
+
+BlockInputStreams StorageURL::read(
+    const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum & /*processed_stage*/,
@@ -146,7 +152,7 @@ BlockOutputStreamPtr StorageURL::write(const ASTPtr & /*query*/, const Settings 
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
 }
-    
+
 void registerStorageURL(StorageFactory & factory)
 {
     factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
@@ -169,4 +175,5 @@ void registerStorageURL(StorageFactory & factory)
         return StorageURL::create(uri, args.table_name, format_name, args.columns, args.context);
     });
 }
+
 }
