@@ -22,9 +22,8 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
     : ReadBuffer(nullptr, 0),
       uri{uri},
       method{!method_.empty() ? method_ : out_stream_callback ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET},
-      session{getPreparedSession(uri, timeouts)}
+      session{makeHTTPSession(uri, timeouts)}
 {
-
     Poco::Net::HTTPRequest request(method, uri.getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1);
     request.setHost(uri.getHost()); // use original, not resolved host name in header
 
@@ -40,7 +39,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
     if (out_stream_callback)
         out_stream_callback(stream_out);
 
-    istr = makeRequest(*session, request, response);
+    istr = receiveResponse(*session, request, response);
 
     impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
 }
@@ -54,4 +53,5 @@ bool ReadWriteBufferFromHTTP::nextImpl()
     working_buffer = internal_buffer;
     return true;
 }
+
 }
