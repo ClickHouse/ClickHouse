@@ -720,7 +720,7 @@ public:
 /// To generate content of strings, use
 ///  order-N Markov model on Unicode code points,
 ///  and to generate next code point use deterministic RNG
-///  determined by hash of 8-byte sliding window of source string.
+///  determined by hash of a sliding window (default 8 bytes) of source string.
 /// This is intended to generate locally-similar strings from locally-similar sources.
 class StringModel : public IModel
 {
