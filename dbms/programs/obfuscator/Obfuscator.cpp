@@ -963,7 +963,7 @@ try
             << "\nUsage: " << argv[0] << " [options] < in > out\n"
             << "\nInput must be seekable file (it will be read twice).\n"
             << "\n" << description << "\n"
-            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
+            << "\nExample:\n    " << argv[0] << " --seed \"$(head -c16 /dev/urandom | base64)\" --input-format TSV --output-format TSV --structure 'CounterID UInt32, URLDomain String, URL String, SearchPhrase String, Title String' < stats.tsv\n";
         return 0;
     }
 
