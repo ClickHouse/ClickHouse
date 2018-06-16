@@ -1,9 +1,12 @@
 #include <IO/HTTPCommon.h>
 
+#include <Common/DNSResolver.h>
+#include <Common/Exception.h>
 #include <Common/config.h>
 #if USE_POCO_NETSSL
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>
+#include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/InvalidCertificateHandler.h>
 #include <Poco/Net/PrivateKeyPassphraseHandler.h>
 #include <Poco/Net/RejectCertificateHandler.h>
@@ -12,9 +15,16 @@
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Util/Application.h>
 
+#include <sstream>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+    extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
+}
+
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
     if (!response.getKeepAlive())
@@ -33,5 +43,47 @@ void SSLInit()
 #if USE_POCO_NETSSL
     Poco::Net::initializeSSL();
 #endif
+}
+
+
+std::unique_ptr<Poco::Net::HTTPClientSession> getPreparedSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
+{
+    bool is_ssl = static_cast<bool>(uri.getScheme() == "https");
+    std::unique_ptr<Poco::Net::HTTPClientSession> session(
+#if USE_POCO_NETSSL
+        is_ssl ? new Poco::Net::HTTPSClientSession :
+#endif
+               new Poco::Net::HTTPClientSession);
+
+    session->setHost(DNSResolver::instance().resolveHost(uri.getHost()).toString());
+    session->setPort(uri.getPort());
+
+#if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
+    session->setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
+#else
+    session->setTimeout(timeouts.connection_timeout);
+#endif
+
+    return session;
+}
+
+
+std::istream * makeRequest(
+    Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
+{
+    auto istr = &session.receiveResponse(response);
+    auto status = response.getStatus();
+
+    if (status != Poco::Net::HTTPResponse::HTTP_OK)
+    {
+        std::stringstream error_message;
+        error_message << "Received error from remote server " << request.getURI() << ". HTTP status code: " << status << " "
+                      << response.getReason() << ", body: " << istr->rdbuf();
+
+        throw Exception(error_message.str(),
+            status == HTTP_TOO_MANY_REQUESTS ? ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                                             : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER);
+    }
+    return istr;
 }
 }
