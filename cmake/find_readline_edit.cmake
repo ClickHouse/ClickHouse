@@ -10,7 +10,7 @@ endif ()
 
 list(APPEND CMAKE_FIND_LIBRARY_SUFFIXES .so.2)
 
-find_library (TERMCAP_LIB NAMES termcap)
+find_library (TERMCAP_LIB NAMES termcap tinfo)
 find_library (EDIT_LIB NAMES edit)
 
 set(READLINE_INCLUDE_PATHS "/usr/local/opt/readline/include")
