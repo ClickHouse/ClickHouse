@@ -31,6 +31,8 @@ if (ENABLE_EMBEDDED_COMPILER)
 
             option(LLVM_HAS_RTTI "Enable if LLVM was build with RTTI enabled" ON)
             set (USE_EMBEDDED_COMPILER 1)
+        else()
+            set (USE_EMBEDDED_COMPILER 0)
         endif()
     else()
         set (LLVM_FOUND 1)
