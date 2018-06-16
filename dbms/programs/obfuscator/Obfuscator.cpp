@@ -376,9 +376,20 @@ struct MarkovModelParameters
 {
     size_t order;
     size_t frequency_cutoff;
+    size_t num_buckets_cutoff;
+    size_t frequency_add;
+    double frequency_desaturate;
 };
 
 
+/** Actually it's not an order-N model, but a mix of order-{0..N} models.
+  *
+  * We calculate code point counts for every context of 0..N previous code points.
+  * Then throw off some context with low amount of statistics.
+  *
+  * When generating data, we try to find statistics for a context of maximum order.
+  * And if not found - use context of smaller order, up to 0.
+  */
 class MarkovModel
 {
 private:
@@ -511,33 +522,80 @@ public:
 
     void finalize()
     {
-        if (params.frequency_cutoff == 0)
-            return;
-
-        for (auto & elem : table)
+        if (params.num_buckets_cutoff)
         {
-            Histogram & histogram = elem.second;
-
-            if (histogram.total + histogram.count_end < params.frequency_cutoff)
+            for (auto & elem : table)
             {
-                histogram.buckets.clear();
-                histogram.total = 0;
-            }
-            else
-            {
-                Histogram::Buckets new_buckets;
-                UInt64 erased_count = 0;
+                Histogram & histogram = elem.second;
 
-                for (const auto & bucket : histogram.buckets)
+                if (histogram.buckets.size() < params.num_buckets_cutoff)
                 {
-                    if (bucket.second >= params.frequency_cutoff)
-                        new_buckets.emplace(bucket);
-                    else
-                        erased_count += bucket.second;
+                    histogram.buckets.clear();
+                    histogram.total = 0;
+                }
+            }
+        }
+
+        if (params.frequency_cutoff)
+        {
+            for (auto & elem : table)
+            {
+                Histogram & histogram = elem.second;
+
+                if (histogram.total + histogram.count_end < params.frequency_cutoff)
+                {
+                    histogram.buckets.clear();
+                    histogram.total = 0;
+                }
+                else
+                {
+                    Histogram::Buckets new_buckets;
+                    UInt64 erased_count = 0;
+
+                    for (const auto & bucket : histogram.buckets)
+                    {
+                        if (bucket.second >= params.frequency_cutoff)
+                            new_buckets.emplace(bucket);
+                        else
+                            erased_count += bucket.second;
+                    }
+
+                    histogram.buckets.swap(new_buckets);
+                    histogram.total -= erased_count;
+                }
+            }
+        }
+
+        if (params.frequency_add)
+        {
+            for (auto & elem : table)
+            {
+                Histogram & histogram = elem.second;
+
+                for (auto & bucket : histogram.buckets)
+                    bucket.second += params.frequency_add;
+
+                histogram.count_end += params.frequency_add;
+                histogram.total += params.frequency_add * histogram.buckets.size();
+            }
+        }
+
+        if (params.frequency_desaturate)
+        {
+            for (auto & elem : table)
+            {
+                Histogram & histogram = elem.second;
+
+                double average = histogram.total / histogram.buckets.size();
+
+                UInt64 new_total = 0;
+                for (auto & bucket : histogram.buckets)
+                {
+                    bucket.second = bucket.second * (1 - params.frequency_desaturate) + average * params.frequency_desaturate;
+                    new_total += bucket.second;
                 }
 
-                histogram.buckets.swap(new_buckets);
-                histogram.total -= erased_count;
+                histogram.total = new_total;
             }
         }
     }
@@ -832,7 +890,10 @@ try
         ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
         ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")
-        ("cutoff", po::value<UInt64>()->default_value(5), "frequency cutoff for markov model")
+        ("frequency-cutoff", po::value<UInt64>()->default_value(5), "frequency cutoff for markov model: remove all buckets with count less than specified")
+        ("num-buckets-cutoff", po::value<UInt64>()->default_value(2), "cutoff for number of different possible continuations for a context: remove all histograms with less than specified number of buckets")
+        ("frequency-add", po::value<UInt64>()->default_value(0), "add a constant to every count to lower probability distribution skew")
+        ("frequency-desaturate", po::value<double>()->default_value(0), "0..1 - move every frequency towards average to lower probability distribution skew")
         ;
 
     po::parsed_options parsed = po::command_line_parser(argc, argv).options(description).run();
@@ -867,7 +928,10 @@ try
     MarkovModelParameters markov_model_params;
 
     markov_model_params.order = options["order"].as<UInt64>();
-    markov_model_params.frequency_cutoff = options["cutoff"].as<UInt64>();
+    markov_model_params.frequency_cutoff = options["frequency-cutoff"].as<UInt64>();
+    markov_model_params.num_buckets_cutoff = options["num-buckets-cutoff"].as<UInt64>();
+    markov_model_params.frequency_add = options["frequency-add"].as<UInt64>();
+    markov_model_params.frequency_desaturate = options["frequency-desaturate"].as<double>();
 
     // Create header block
     std::vector<std::string> structure_vals;
