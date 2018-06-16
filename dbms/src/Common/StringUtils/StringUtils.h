@@ -4,7 +4,6 @@
 #include <cstring>
 #include <cstddef>
 #include <type_traits>
-#include <functional>
 
 
 namespace detail
@@ -135,5 +134,31 @@ inline bool equalsCaseInsensitive(char a, char b)
 }
 
 
-/// Inefficient.
-std::string trim(const std::string & str, const std::function<bool(char)> & predicate);
+template <typename F>
+std::string trim(const std::string & str, F && predicate)
+{
+    size_t cut_front = 0;
+    size_t cut_back = 0;
+    size_t size = str.size();
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (predicate(str[i]))
+            ++cut_front;
+        else
+            break;
+    }
+
+    if (cut_front == size)
+        return {};
+
+    for (auto it = str.rbegin(); it != str.rend(); ++it)
+    {
+        if (predicate(*it))
+            ++cut_back;
+        else
+            break;
+    }
+
+    return str.substr(cut_front, size - cut_front - cut_back);
+}
