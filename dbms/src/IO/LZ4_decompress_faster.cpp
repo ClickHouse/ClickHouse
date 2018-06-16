@@ -475,13 +475,11 @@ void decompress(
         Stopwatch watch;
 
         if (best_variant == 0)
-            decompressImpl<8, false>(source, dest, dest_size);
-        if (best_variant == 1)
-            decompressImpl<8, true>(source, dest, dest_size);
-        if (best_variant == 2)
-            decompressImpl<16, false>(source, dest, dest_size);
-        if (best_variant == 3)
             decompressImpl<16, true>(source, dest, dest_size);
+        if (best_variant == 1)
+            decompressImpl<16, false>(source, dest, dest_size);
+        if (best_variant == 2)
+            decompressImpl<8, true>(source, dest, dest_size);
 
         watch.stop();
 

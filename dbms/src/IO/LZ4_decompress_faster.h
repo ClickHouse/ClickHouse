@@ -88,7 +88,7 @@ struct PerformanceStatistics
     };
 
     /// Number of different algorithms to select from.
-    static constexpr size_t NUM_ELEMENTS = 4;
+    static constexpr size_t NUM_ELEMENTS = 3;
 
     /// Cold invocations may be affected by additional memory latencies. Don't take first invocations into account.
     static constexpr double NUM_INVOCATIONS_TO_THROW_OFF = 2;
