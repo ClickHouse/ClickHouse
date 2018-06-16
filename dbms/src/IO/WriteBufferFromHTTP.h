@@ -8,8 +8,10 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/URI.h>
 
+
 namespace DB
 {
+
 /* Perform HTTP POST/PUT request.
  */
 class WriteBufferFromHTTP : public WriteBufferFromOStream
@@ -25,9 +27,8 @@ public:
         const ConnectionTimeouts & timeouts = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
-    ~WriteBufferFromHTTP() override {}
-
-    // This method have to be called, to make actual request
+    /// Receives response from the server after sending all data.
     void finalize();
 };
+
 }

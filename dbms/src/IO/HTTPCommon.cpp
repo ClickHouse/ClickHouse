@@ -19,11 +19,14 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
 }
+
 
 void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigned keep_alive_timeout)
 {
@@ -35,25 +38,37 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-std::once_flag ssl_init_once;
 
-void SSLInit()
+void initSSL()
 {
     // http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
 #if USE_POCO_NETSSL
-    Poco::Net::initializeSSL();
+    struct Initializer
+    {
+        Initializer()
+        {
+            Poco::Net::initializeSSL();
+        }
+    };
+
+    static Initializer initializer;
 #endif
 }
 
 
-std::unique_ptr<Poco::Net::HTTPClientSession> getPreparedSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
+std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
 {
     bool is_ssl = static_cast<bool>(uri.getScheme() == "https");
-    std::unique_ptr<Poco::Net::HTTPClientSession> session(
+    std::unique_ptr<Poco::Net::HTTPClientSession> session;
+
+    if (is_ssl)
 #if USE_POCO_NETSSL
-        is_ssl ? new Poco::Net::HTTPSClientSession :
+        session = std::make_unique<Poco::Net::HTTPSClientSession>();
+#else
+        throw Exception("ClickHouse was built without HTTPS support", ErrorCodes::FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME);
 #endif
-               new Poco::Net::HTTPClientSession);
+    else
+        session = std::make_unique<Poco::Net::HTTPClientSession>();
 
     session->setHost(DNSResolver::instance().resolveHost(uri.getHost()).toString());
     session->setPort(uri.getPort());
@@ -68,7 +83,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> getPreparedSession(const Poco::URI
 }
 
 
-std::istream * makeRequest(
+std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response)
 {
     auto istr = &session.receiveResponse(response);
@@ -86,4 +101,5 @@ std::istream * makeRequest(
     }
     return istr;
 }
+
 }
