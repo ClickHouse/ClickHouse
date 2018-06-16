@@ -30,6 +30,7 @@
 #include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
+#include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string.hpp>
@@ -85,6 +86,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
 
@@ -1012,15 +1014,11 @@ try
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
 
-    try
     {
         /// stdin must be seekable
-        file_in.seek(0);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("Input must be seekable file (it will be read twice).");
-        throw;
+        auto res = lseek(file_in.getFD(), 0, SEEK_SET);
+        if (-1 == res)
+            throwFromErrno("Input must be seekable file (it will be read twice).", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
     }
 
     Obfuscator obfuscator(header, seed, markov_model_params);
