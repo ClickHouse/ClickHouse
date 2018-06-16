@@ -16,6 +16,7 @@
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -815,7 +816,7 @@ public:
 }
 
 
-int main(int argc, char ** argv)
+int mainEntryClickHouseObfuscator(int argc, char ** argv)
 try
 {
     using namespace DB;
@@ -828,6 +829,8 @@ try
         ("input-format", po::value<std::string>(), "input format of the initial table data")
         ("output-format", po::value<std::string>(), "default output format")
         ("seed", po::value<std::string>(), "seed (arbitary string), must be random string with at least 10 bytes length")
+        ("limit", po::value<UInt64>(), "if specified - stop after generating that number of rows")
+        ("silent", po::value<bool>()->default_value(false), "don't print information messages to stderr")
         ("order", po::value<UInt64>()->default_value(5), "order of markov model to generate strings")
         ("cutoff", po::value<UInt64>()->default_value(5), "frequency cutoff for markov model")
         ;
@@ -855,6 +858,12 @@ try
     std::string input_format = options["input-format"].as<std::string>();
     std::string output_format = options["output-format"].as<std::string>();
 
+    std::optional<UInt64> limit;
+    if (options.count("limit"))
+        limit = options["limit"].as<UInt64>();
+
+    bool silent = options["silent"].as<bool>();
+
     MarkovModelParameters markov_model_params;
 
     markov_model_params.order = options["order"].as<UInt64>();
@@ -881,17 +890,29 @@ try
 
     Context context = Context::createGlobal();
 
-    /// stdin must be seekable
     ReadBufferFromFileDescriptor file_in(STDIN_FILENO);
     WriteBufferFromFileDescriptor file_out(STDOUT_FILENO);
+
+    try
+    {
+        /// stdin must be seekable
+        file_in.seek(0);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("Input must be seekable file (it will be read twice).");
+        throw;
+    }
 
     Obfuscator obfuscator(header, seed, markov_model_params);
 
     size_t max_block_size = 8192;
 
     /// Train step
-    std::cerr << "Training models\n";
     {
+        if (!silent)
+            std::cerr << "Training models\n";
+
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
 
         UInt64 processed_rows = 0;
@@ -900,7 +921,8 @@ try
         {
             obfuscator.train(block.getColumns());
             processed_rows += block.rows();
-            std::cerr << "Processed " << processed_rows << " rows\n";
+            if (!silent)
+                std::cerr << "Processed " << processed_rows << " rows\n";
         }
         input->readSuffix();
     }
@@ -908,12 +930,17 @@ try
     obfuscator.finalize();
 
     /// Generation step
-    std::cerr << "Generating data\n";
     {
+        if (!silent)
+            std::cerr << "Generating data\n";
+
         file_in.seek(0);
 
         BlockInputStreamPtr input = context.getInputFormat(input_format, file_in, header, max_block_size);
         BlockOutputStreamPtr output = context.getOutputFormat(output_format, file_out, header);
+
+        if (limit)
+            input = std::make_shared<LimitBlockInputStream>(input, *limit, 0);
 
         UInt64 processed_rows = 0;
         input->readPrefix();
@@ -923,7 +950,8 @@ try
             Columns columns = obfuscator.generate(block.getColumns());
             output->write(header.cloneWithColumns(columns));
             processed_rows += block.rows();
-            std::cerr << "Processed " << processed_rows << " rows\n";
+            if (!silent)
+                std::cerr << "Processed " << processed_rows << " rows\n";
         }
         output->writeSuffix();
         input->readSuffix();
