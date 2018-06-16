@@ -35,8 +35,6 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/container/flat_map.hpp>
 
-#include <common/iostream_debug_helpers.h>
-
 
 static const char * documantation = R"(
 Simple tool for table data obfuscation.
