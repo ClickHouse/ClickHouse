@@ -200,25 +200,25 @@ struct MinusImpl
 template <typename T>
 struct ExtendedOperation<T, T, PlusImpl<T, T>, T>
 {
-    static inline void apply(const T * a, const T * b, T * c, size_t size) { sse::add(a, b, c, size); }
-    static inline void apply(const T * a, T b, T * c, size_t size) { sse::addC(a, b, c, size); }
-    static inline void apply(T a, const T * b, T * c, size_t size) { sse::addC(b, a, c, size); }
+    static inline void apply(const T * a, const T * b, T * c, size_t size) { simd::add(a, b, c, size); }
+    static inline void apply(const T * a, T b, T * c, size_t size) { simd::addC(a, b, c, size); }
+    static inline void apply(T a, const T * b, T * c, size_t size) { simd::addC(b, a, c, size); }
 };
 
 template <typename T>
 struct ExtendedOperation<T, T, MultiplyImpl<T, T>, T>
 {
-    static inline void apply(const T * a, const T * b, T * c, size_t size) { sse::mul(a, b, c, size); }
-    static inline void apply(const T * a, T b, T * c, size_t size) { sse::mulC(a, b, c, size); }
-    static inline void apply(T a, const T * b, T * c, size_t size) { sse::mulC(b, a, c, size); }
+    static inline void apply(const T * a, const T * b, T * c, size_t size) { simd::mul(a, b, c, size); }
+    static inline void apply(const T * a, T b, T * c, size_t size) { simd::mulC(a, b, c, size); }
+    static inline void apply(T a, const T * b, T * c, size_t size) { simd::mulC(b, a, c, size); }
 };
 
 template <typename T>
 struct ExtendedOperation<T, T, MinusImpl<T, T>, T>
 {
-    static inline void apply(const T * a, const T * b, T * c, size_t size) { sse::sub(a, b, c, size); }
-    static inline void apply(const T * a, T b, T * c, size_t size) { sse::subC(a, b, c, size); }
-    static inline void apply(T a, const T * b, T * c, size_t size) { sse::subCRev(b, a, c, size); }
+    static inline void apply(const T * a, const T * b, T * c, size_t size) { simd::sub(a, b, c, size); }
+    static inline void apply(const T * a, T b, T * c, size_t size) { simd::subC(a, b, c, size); }
+    static inline void apply(T a, const T * b, T * c, size_t size) { simd::subCRev(b, a, c, size); }
 };
 #endif
 

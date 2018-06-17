@@ -3,10 +3,10 @@ include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 
 if (USE_LIBSIMD)
     add_definitions(-DUSE_LIBSIMD=1)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-ignored-attributes")
     if (SIMD_AVX)
         add_definitions(-DSIMD_AVX=1)
-        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
+    elseif (SIMD_OPENCL)
+        add_definitions(-DSIMD_OPENCL=1)
     endif ()
 endif ()
 
@@ -95,12 +95,22 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+set (FUNCTIONS_PRIVATE_LIBS libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+target_link_libraries (clickhouse_functions PUBLIC dbms PRIVATE ${FUNCTIONS_PRIVATE_LIBS})
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
-target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${LIBSIMD_INCLUDE_DIR})
+
+if (USE_LIBSIMD)
+    target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${LIBSIMD_INCLUDE_DIR})
+    target_compile_options (clickhouse_functions PRIVATE "-Wno-ignored-attributes")
+    if (SIMD_AVX)
+        target_compile_options (clickhouse_functions PRIVATE "-mavx2")
+    elseif (SIMD_OPENCL)
+        target_link_libraries (clickhouse_functions PUBLIC dbms PRIVATE simdocl ${OpenCL_LIBRARY} ${FUNCTIONS_PRIVATE_LIBS})
+    endif ()
+endif ()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
