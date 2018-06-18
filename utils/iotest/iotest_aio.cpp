@@ -22,7 +22,10 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <linux/aio_abi.h>
+    /// https://stackoverflow.com/questions/20759750/resolving-redefinition-of-timespec-in-time-h
+    #define timespec linux_timespec
+    #include <linux/aio_abi.h>
+    #undef timespec
 #endif
 #include <sys/syscall.h>
 
