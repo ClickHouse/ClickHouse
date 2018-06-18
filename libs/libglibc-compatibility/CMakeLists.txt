@@ -1,5 +1,9 @@
 enable_language (ASM)
 
+if (COMPILER_CLANG)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-builtin-requires-header")
+endif ()
+
 add_library (glibc-compatibility glibc-compatibility.c
 musl/pipe2.c
 musl/fallocate.c
