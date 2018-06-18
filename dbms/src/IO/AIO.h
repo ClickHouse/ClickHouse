@@ -6,10 +6,14 @@
 #define timespec linux_timespec
 #define timeval linux_timeval
 #define itimerspec linux_itimerspec
+#define sigset_t linux_sigset_t
+
 #include <linux/aio_abi.h>
+
 #undef timespec
 #undef timeval
 #undef itimerspec
+#undef sigset_t
 
 
 /** Small wrappers for asynchronous I/O.
