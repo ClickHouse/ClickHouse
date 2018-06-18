@@ -102,6 +102,7 @@ endif ()
 if (USE_EMBEDDED_COMPILER)
     llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 
+message(STATUS "llllllllvm=${REQUIRED_LLVM_LIBRARIES}")
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
