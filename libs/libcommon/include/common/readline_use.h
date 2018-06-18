@@ -1,7 +1,7 @@
 #pragma once
 
-#if __has_include("config_common.h")
-#include "config_common.h"
+#if __has_include(<common/config_common.h>)
+#include <common/config_common.h>
 #endif
 
 /// Different line editing libraries can be used depending on the environment.
