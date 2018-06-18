@@ -4,6 +4,8 @@
 #include <common/logger_useful.h>
 
 #include <Common/NetException.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 
 
 namespace DB
@@ -43,7 +45,9 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const
         }
         else if (Protocol::Server::Log == packet.type)
         {
-            /// Do nothing
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
         }
         else
             throw NetException("Unexpected packet from server (expected Data or Exception, got "

@@ -1,6 +1,6 @@
 #pragma once
-#include "../Common/ConcurrentBoundedQueue.h"
-#include "../Core/Block.h"
+#include <Common/ConcurrentBoundedQueue.h>
+#include <Core/Block.h>
 
 
 namespace DB
@@ -16,6 +16,9 @@ public:
 
     static Block getSampleBlock();
     static MutableColumns getSampleColumns();
+
+    /// Is used to pass block from remote server to the client
+    void pushBlock(Block && log_block);
 
     /// Converts priority from Poco::Message::Priority to a string
     static const char * getPriorityName(int priority);
