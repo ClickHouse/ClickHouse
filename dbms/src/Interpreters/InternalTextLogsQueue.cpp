@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <common/logger_useful.h>
 
 #include <Poco/Message.h>
 
@@ -33,6 +34,16 @@ MutableColumns InternalTextLogsQueue::getSampleColumns()
 {
     static Block sample_block = getSampleBlock();
     return sample_block.cloneEmptyColumns();
+}
+
+void InternalTextLogsQueue::pushBlock(Block && log_block)
+{
+	static Block sample_block = getSampleBlock();
+
+	if (blocksHaveEqualStructure(sample_block, log_block))
+		emplace(log_block.mutateColumns());
+	else
+        LOG_WARNING(&Poco::Logger::get("InternalTextLogsQueue"), "Log block have different structure");
 }
 
 const char * InternalTextLogsQueue::getPriorityName(int priority)

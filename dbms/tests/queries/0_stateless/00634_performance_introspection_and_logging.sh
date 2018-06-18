@@ -46,7 +46,7 @@ SELECT
 	threads_realtime >= threads_time_user_system_io,
 	any(length(thread_numbers)) >= 1
 	FROM
-		(SELECT * FROM system.query_log WHERE event_date >= today()-1 AND type=2 AND query='$heavy_cpu_query' ORDER BY event_time DESC LIMIT 1)
+		(SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
 	ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
 
@@ -71,7 +71,7 @@ FROM
 		sumIf(PV, PN = 'RealTimeMicroseconds') AS thread_realtime,
 		sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds')) AS thread_time_user_system_io
 		FROM
-			(SELECT * FROM system.query_thread_log WHERE event_date >= today()-1 AND query_id='$query_id')
+			(SELECT * FROM system.query_thread_log PREWHERE query_id='$query_id' WHERE event_date >= today()-1)
 		ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
 		GROUP BY thread_number
 )
@@ -100,6 +100,35 @@ WHERE
 	NOT PN IN ('ContextLock') AND
 	NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
 "
+
+
+# Check that logs from remote servers are passed from client
+
+# SELECT
+> "$server_logs_file"
+$CLICKHOUSE_CLIENT $settings -q "SELECT 1 FROM system.one FORMAT Null"
+lines_one_server=`cat "$server_logs_file" | wc -l`
+
+> "$server_logs_file"
+$CLICKHOUSE_CLIENT $settings -q "SELECT 1 FROM remote('127.0.0.2,127.0.0.3', system, one) FORMAT Null"
+lines_two_servers=`cat "$server_logs_file" | wc -l`
+
+(( $lines_two_servers >= 2 * $lines_one_server )) || echo "Fail: $lines_two_servers $lines_one_server"
+
+# INSERT
+$CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS test.null"
+$CLICKHOUSE_CLIENT $settings -q "CREATE TABLE test.null (i Int8) ENGINE = Null"
+
+> "$server_logs_file"
+$CLICKHOUSE_CLIENT $settings -q "INSERT INTO test.null VALUES (0)"
+lines_one_server=`cat "$server_logs_file" | wc -l`
+
+> "$server_logs_file"
+$CLICKHOUSE_CLIENT $settings -q "INSERT INTO TABLE FUNCTION remote('127.0.0.2', 'test', 'null') VALUES (0)"
+lines_two_servers=`cat "$server_logs_file" | wc -l`
+
+$CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS test.null"
+(( $lines_two_servers > $lines_one_server )) || echo "Fail: $lines_two_servers $lines_one_server"
 
 
 # Clean 
