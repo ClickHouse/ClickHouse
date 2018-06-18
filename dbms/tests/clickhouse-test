@@ -77,6 +77,8 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
+    if args.configclient:
+        os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
     # TODO ! use clickhouse-extract-from-config here:
@@ -100,6 +102,9 @@ def main(args):
     passed_total = 0
     skipped_total = 0
     failures_total = 0
+
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
