@@ -1,6 +1,9 @@
 include (CMakePushCheckState)
 cmake_push_check_state ()
 
+option (ENABLE_READLINE "Enable readline" 1)
+if (ENABLE_READLINE)
+
 set (READLINE_PATHS "/usr/local/opt/readline/lib")
 # First try find custom lib for macos users (default lib without history support)
 find_library (READLINE_LIB NAMES readline PATHS ${READLINE_PATHS} NO_DEFAULT_PATH)
@@ -31,6 +34,8 @@ elseif (EDIT_LIB AND TERMCAP_LIBRARY)
         set (LINE_EDITING_LIBS ${EDIT_LIB} ${CURSES_LIB} ${TERMCAP_LIBRARY})
         message (STATUS "Using line editing libraries (edit): ${READLINE_INCLUDE_DIR} : ${LINE_EDITING_LIBS}")
     endif ()
+endif ()
+
 endif ()
 
 if (LINE_EDITING_LIBS AND READLINE_INCLUDE_DIR)
