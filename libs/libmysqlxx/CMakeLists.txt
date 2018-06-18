@@ -1,4 +1,3 @@
-
 add_library (mysqlxx ${SPLIT_SHARED}
     src/Connection.cpp
     src/Exception.cpp

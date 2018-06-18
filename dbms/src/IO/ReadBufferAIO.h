@@ -5,11 +5,12 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/AIO.h>
 #include <Core/Defines.h>
-#include <Common/AIO.h>
 #include <Common/CurrentMetrics.h>
 #include <string>
 #include <limits>
+#include <future>
 #include <unistd.h>
 #include <fcntl.h>
 
