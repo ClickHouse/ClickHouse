@@ -244,25 +244,18 @@ int TaskStatsInfoGetter::getDefaultTid()
     return default_tid;
 }
 
+static bool tryGetTaskStats()
+{
+    TaskStatsInfoGetter getter;
+    ::taskstats stat;
+    return getter.tryGetStat(stat);
+}
+
 bool TaskStatsInfoGetter::checkProcessHasRequiredPermissions()
 {
-    /// 0 - wasn't checked
-    /// 1 - checked, has no permissions
-    /// 2 - checked, has permissions
-    static std::atomic<int> premissions_check_status{0};
-
-    int status = premissions_check_status.load(std::memory_order_relaxed);
-
-    if (status == 0)
-    {
-        TaskStatsInfoGetter getter;
-        ::taskstats stat;
-
-        status = getter.tryGetStat(stat) ? 2 : 1;
-        premissions_check_status.store(status, std::memory_order_relaxed);
-    }
-
-    return status == 2;
+    /// It is thread- and exception- safe since C++11
+    static bool res = tryGetTaskStats();
+    return res;
 }
 
 }
