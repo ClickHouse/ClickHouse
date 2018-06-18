@@ -5,9 +5,11 @@
 /// https://stackoverflow.com/questions/20759750/resolving-redefinition-of-timespec-in-time-h
 #define timespec linux_timespec
 #define timeval linux_timeval
+#define itimerspec linux_itimerspec
 #include <linux/aio_abi.h>
 #undef timespec
 #undef timeval
+#undef itimerspec
 
 
 /** Small wrappers for asynchronous I/O.
