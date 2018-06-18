@@ -59,6 +59,11 @@ private:
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex queue_mutex;
 
+    /// A set of parts that should be on this replica according to the queue entries executed up to this point.
+    /// Note: it can be different from the actual set of parts because the replica can decide to fetch
+    /// a bigger part instead of the part mentioned in the log entry.
+    ActiveDataPartSet current_parts;
+
     /** The queue of what you need to do on this line to catch up. It is taken from ZooKeeper (/replicas/me/queue/).
       * In ZK records in chronological order. Here it is not necessary.
       */
@@ -71,7 +76,7 @@ private:
     time_t last_queue_update = 0;
 
     /// parts that will appear as a result of actions performed right now by background threads (these actions are not in the queue).
-    /// Used to not perform other actions at the same time with these parts.
+    /// Used to block other actions on parts in the range covered by future_parts.
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet future_parts;
 
@@ -92,8 +97,17 @@ private:
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this list.
     /// Note that mutations are updated in such a way that they are always more recent than
     /// log_pointer (see pullLogsToQueue()).
-    std::map<String, ReplicatedMergeTreeMutationEntryPtr> mutations_by_znode;
-    std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>> mutations_by_partition;
+
+    struct MutationStatus
+    {
+        ReplicatedMergeTreeMutationEntryPtr entry;
+
+        /// A number of parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
+        Int64 parts_to_do = 0;
+    };
+
+    std::map<String, MutationStatus> mutations_by_znode;
+    std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
 
 
     /// Provides only one simultaneous call to pullLogsToQueue.
@@ -160,7 +174,8 @@ private:
 
     /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
-    void updateTimesOnRemoval(const LogEntryPtr & entry,
+    void updateStateOnQueueEntryRemoval(const LogEntryPtr & entry,
+        bool is_successful,
         std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::optional<time_t> & max_processed_insert_time_changed,
         std::unique_lock<std::mutex> & queue_lock);

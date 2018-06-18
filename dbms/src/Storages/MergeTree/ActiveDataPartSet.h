@@ -43,7 +43,7 @@ public:
         return *this;
     }
 
-    void add(const String & name);
+    bool add(const String & name, Strings * out_replaced_parts = nullptr);
 
     bool remove(const MergeTreePartInfo & part_info)
     {
