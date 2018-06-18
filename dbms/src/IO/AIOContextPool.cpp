@@ -4,7 +4,6 @@
 #include <common/logger_useful.h>
 #include <Poco/Logger.h>
 #include <boost/range/iterator_range.hpp>
-#include <linux/aio_abi.h>
 #include <errno.h>
 
 #include <IO/AIOContextPool.h>
