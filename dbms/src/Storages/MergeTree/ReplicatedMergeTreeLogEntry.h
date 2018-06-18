@@ -98,17 +98,18 @@ struct ReplicatedMergeTreeLogEntryData
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
 
-    /// Returns set of parts that will appear after the entry execution
-    /// These parts are added to virtual_parts
-    Strings getNewPartNames() const
+    /// Returns a set of parts that will appear after executing the entry + parts to block
+    /// selection of merges. These parts are added to queue.virtual_parts.
+    Strings getVirtualPartNames() const
     {
-        /// Clear column actually does not produce new parts
-        if (type == CLEAR_COLUMN)
-            return {};
-
-        /// It does not add a real part, it just disables merges in that range
+        /// DROP_RANGE does not add a real part, but we must disable merges in that range
         if (type == DROP_RANGE)
             return {new_part_name};
+
+        /// Return {} because selection of merges in the partition where the column is cleared
+        /// should not be blocked (only execution of merges should be blocked).
+        if (type == CLEAR_COLUMN)
+            return {};
 
         if (type == REPLACE_RANGE)
         {
@@ -120,11 +121,11 @@ struct ReplicatedMergeTreeLogEntryData
         return {new_part_name};
     }
 
-    /// Returns set of parts that should be blocked during the entry execution
-    /// These parts are added to future_parts
+    /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
+    /// These parts are added to future_parts.
     Strings getBlockingPartNames() const
     {
-        Strings res = getNewPartNames();
+        Strings res = getVirtualPartNames();
 
         if (type == CLEAR_COLUMN)
             res.emplace_back(new_part_name);
