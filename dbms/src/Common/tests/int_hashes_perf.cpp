@@ -4,18 +4,13 @@
 
 #include <iostream>
 #include <iomanip>
-
 #include <Poco/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
-
 #include "AvalancheTest.h"  /// Taken from SMHasher.
+#include <port/clock.h>
 
-
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
 
 void setAffinity()
 {

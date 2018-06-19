@@ -6,10 +6,7 @@
 #include <fcntl.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
-
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
+#include <port/clock.h>
 
 namespace DB
 {

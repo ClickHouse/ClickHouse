@@ -30,6 +30,7 @@
 #include <ext/bit_cast.h>
 #include <memory>
 #include <cmath>
+#include <optional>
 #include <unistd.h>
 #include <boost/program_options/options_description.hpp>
 #include <boost/program_options.hpp>

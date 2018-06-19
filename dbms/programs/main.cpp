@@ -1,10 +1,17 @@
-#include <common/config_common.h>
-#include <Common/config.h>
-#include <config_tools.h>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <utility>  /// pair
+
+#if __has_include("config_tools.h")
+#include "config_tools.h"
+#endif
+#if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
+#include <common/config_common.h>
+#endif
+#if __has_include(<Common/config.h>)
+#include <Common/config.h>
+#endif
 
 #if USE_TCMALLOC
 #include <gperftools/malloc_extension.h>
@@ -19,31 +26,31 @@
 #include <Common/StringUtils/StringUtils.h>
 
 /// Universal executable for various clickhouse applications
-#if ENABLE_CLICKHOUSE_SERVER
+#if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
 int mainEntryClickHouseServer(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_CLIENT
+#if ENABLE_CLICKHOUSE_CLIENT || !defined(ENABLE_CLICKHOUSE_CLIENT)
 int mainEntryClickHouseClient(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_LOCAL
+#if ENABLE_CLICKHOUSE_LOCAL || !defined(ENABLE_CLICKHOUSE_LOCAL)
 int mainEntryClickHouseLocal(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
+#if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE
+#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
 int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
+#if ENABLE_CLICKHOUSE_COMPRESSOR || !defined(ENABLE_CLICKHOUSE_COMPRESSOR)
 int mainEntryClickHouseCompressor(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_FORMAT
+#if ENABLE_CLICKHOUSE_FORMAT || !defined(ENABLE_CLICKHOUSE_FORMAT)
 int mainEntryClickHouseFormat(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_COPIER
+#if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
@@ -64,31 +71,31 @@ using MainFunc = int (*)(int, char**);
 /// Add an item here to register new application
 std::pair<const char *, MainFunc> clickhouse_applications[] =
 {
-#if ENABLE_CLICKHOUSE_LOCAL
+#if ENABLE_CLICKHOUSE_LOCAL || !defined(ENABLE_CLICKHOUSE_LOCAL)
     {"local", mainEntryClickHouseLocal},
 #endif
-#if ENABLE_CLICKHOUSE_CLIENT
+#if ENABLE_CLICKHOUSE_CLIENT || !defined(ENABLE_CLICKHOUSE_CLIENT)
     {"client", mainEntryClickHouseClient},
 #endif
-#if ENABLE_CLICKHOUSE_BENCHMARK
+#if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
     {"benchmark", mainEntryClickHouseBenchmark},
 #endif
-#if ENABLE_CLICKHOUSE_SERVER
+#if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
     {"server", mainEntryClickHouseServer},
 #endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE
+#if ENABLE_CLICKHOUSE_PERFORMANCE || !defined(ENABLE_CLICKHOUSE_PERFORMANCE)
     {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
-#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG
+#if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
 #endif
-#if ENABLE_CLICKHOUSE_COMPRESSOR
+#if ENABLE_CLICKHOUSE_COMPRESSOR || !defined(ENABLE_CLICKHOUSE_COMPRESSOR)
     {"compressor", mainEntryClickHouseCompressor},
 #endif
-#if ENABLE_CLICKHOUSE_FORMAT
+#if ENABLE_CLICKHOUSE_FORMAT || !defined(ENABLE_CLICKHOUSE_FORMAT)
     {"format", mainEntryClickHouseFormat},
 #endif
-#if ENABLE_CLICKHOUSE_COPIER
+#if ENABLE_CLICKHOUSE_COPIER || !defined(ENABLE_CLICKHOUSE_COPIER)
     {"copier", mainEntryClickHouseClusterCopier},
 #endif
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
