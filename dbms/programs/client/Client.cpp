@@ -111,7 +111,9 @@ public:
         for (const auto &block : blocks) {
             size_t size = block.rows();
             for (size_t i = size; i--;) {
-                node.add_word(strdup(block.getByName("name").column->getDataAt(i).toString().c_str()));
+                char *funcName = strdup(block.getByName("name").column->getDataAt(i).toString().c_str());
+                node.add_word(funcName);
+                free(funcName);
             }
         }
         blocks.clear();
@@ -125,7 +127,9 @@ public:
         for (const auto &block : blocks) {
                 size_t size = block.rows();
                 for (size_t i = size; i--;) {
-                    node.add_word(strdup(block.getByName("name").column->getDataAt(i).toString().c_str()));
+                    char *dbName = strdup(block.getByName("name").column->getDataAt(i).toString().c_str());
+                    node.add_word(dbName);
+                    free(dbName);
                 }
         }
         blocks.clear();
@@ -145,8 +149,8 @@ public:
             ColumnWithTypeAndName columnNameColumn = block.getByName("name");
                 size_t size = block.rows();
                 for (size_t i = size; i--;) {
-                    const char *tableName = strdup(tableNameColumn.column->getDataAt(i).toString().c_str());
-                    const char *columnName = strdup(columnNameColumn.column->getDataAt(i).toString().c_str());
+                    char *tableName = strdup(tableNameColumn.column->getDataAt(i).toString().c_str());
+                    char *columnName = strdup(columnNameColumn.column->getDataAt(i).toString().c_str());
                     auto *implodedName = new char[strlen(tableName)+strlen(columnName)+2];
                     sprintf(implodedName, "%s.%s", tableName, columnName);
                     if (!node.has(tableName))  {
@@ -158,10 +162,34 @@ public:
                     if (!node.has(implodedName)) {
                         node.add_word(implodedName);
                     }
+                    free(tableName);
+                    free(columnName);
                     delete implodedName;
             }
         }
+        blocks.clear();
         delete query;
+
+        //preload dictionaries names and attributes
+        sendQuery("SELECT name, attrName FROM system.dictionaries ARRAY JOIN attribute.names AS attrName", blocks);
+        for (const auto &block : blocks) {
+            ColumnWithTypeAndName dictNameColumn = block.getByName("name");
+            ColumnWithTypeAndName dictAttrNamesColumn = block.getByName("attrName");
+            size_t size = block.rows();
+            for (size_t i = size; i--;) {
+                char *dictName = strdup(dictNameColumn.column->getDataAt(i).toString().c_str());
+                char *attrName = strdup(dictAttrNamesColumn.column->getDataAt(i).toString().c_str());
+                if (!node.has(dictName)) {
+                    node.add_word(dictName);
+                }
+                if (!node.has(attrName)) {
+                    node.add_word(attrName);
+                }
+                free(dictName);
+                free(attrName);
+            }
+        }
+        blocks.clear();
     }
 
 private:
@@ -243,7 +271,7 @@ private:
     std::list<ExternalTable> external_tables;
 
     /// Suggestion limit for how many databases and tables to fetch
-    int suggestion_limit = 100;
+    int suggestion_limit = 256;
 
 
     struct ConnectionParameters
@@ -522,6 +550,7 @@ private:
 #if USE_READLINE
             rl_attempted_completion_function = query_parts_completion;
             std::thread tS([=] {init_suggestions(completionNode);});
+            tS.detach();
 #else
             /// Turn tab completion off.
             rl_bind_key('\t', rl_insert);
