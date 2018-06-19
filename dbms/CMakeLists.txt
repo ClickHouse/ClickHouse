@@ -101,7 +101,6 @@ endif ()
 
 if (USE_EMBEDDED_COMPILER)
     llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
-
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
@@ -242,7 +241,6 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 add_subdirectory (programs)
-
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)

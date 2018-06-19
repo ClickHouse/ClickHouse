@@ -26,7 +26,7 @@ if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
-    add_subdirectory (libcityhash)
+    add_subdirectory (cityhash102)
 endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
