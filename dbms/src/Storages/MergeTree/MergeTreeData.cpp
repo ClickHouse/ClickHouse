@@ -15,7 +15,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/ValuesRowInputStream.h>
+#include <Formats/ValuesRowInputStream.h>
 #include <DataStreams/copyData.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -2096,6 +2096,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
             ", must be: " + toString(fields_count),
             ErrorCodes::INVALID_PARTITION_VALUE);
 
+    const FormatSettings format_settings;
     Row partition_row(fields_count);
 
     if (fields_count)
@@ -2105,7 +2106,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         ReadBufferFromMemory right_paren_buf(")", 1);
         ConcatReadBuffer buf({&left_paren_buf, &fields_buf, &right_paren_buf});
 
-        ValuesRowInputStream input_stream(buf, partition_key_sample, context, /* interpret_expressions = */true);
+        ValuesRowInputStream input_stream(buf, partition_key_sample, context, format_settings);
         MutableColumns columns = partition_key_sample.cloneEmptyColumns();
 
         if (!input_stream.read(columns))
@@ -2127,7 +2128,7 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, const Context 
         {
             WriteBufferFromOwnString buf;
             writeCString("Parsed partition value: ", buf);
-            partition.serializeTextQuoted(*this, buf);
+            partition.serializeTextQuoted(*this, buf, format_settings);
             writeCString(" doesn't match partition value for an existing part with the same partition ID: ", buf);
             writeString(existing_part_in_partition->name, buf);
             throw Exception(buf.str(), ErrorCodes::INVALID_PARTITION_VALUE);

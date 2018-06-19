@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/BackgroundSchedulePool.h>
@@ -91,8 +92,8 @@ private:
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this list.
     /// Note that mutations are updated in such a way that they are always more recent than
     /// log_pointer (see pullLogsToQueue()).
-    std::map<String, ReplicatedMergeTreeMutationEntry> mutations_by_znode;
-    std::unordered_map<String, std::map<Int64, const ReplicatedMergeTreeMutationEntry *>> mutations_by_partition;
+    std::map<String, ReplicatedMergeTreeMutationEntryPtr> mutations_by_znode;
+    std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>> mutations_by_partition;
 
 
     /// Provides only one simultaneous call to pullLogsToQueue.
@@ -138,7 +139,7 @@ private:
         std::lock_guard<std::mutex> & target_state_lock,
         std::lock_guard<std::mutex> & queue_lock);
 
-    void remove(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
+    void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
       * Called under the queue_mutex.
@@ -304,6 +305,8 @@ public:
 
     /// Get information about the insertion times.
     void getInsertTimes(time_t & out_min_unprocessed_insert_time, time_t & out_max_processed_insert_time) const;
+
+    std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 };
 
 class ReplicatedMergeTreeMergePredicate

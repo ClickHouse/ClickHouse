@@ -2,6 +2,7 @@
 
 #include <Poco/Timespan.h>
 #include <DataStreams/SizeLimits.h>
+#include <Formats/FormatSettings.h>
 #include <IO/CompressedStream.h>
 #include <Core/Types.h>
 
@@ -345,6 +346,30 @@ public:
     void set(const Field & x);
     void set(ReadBuffer & buf);
 
+    void write(WriteBuffer & buf) const;
+};
+
+
+struct SettingDateTimeInputFormat
+{
+    using Value = FormatSettings::DateTimeInputFormat;
+
+    Value value;
+    bool changed = false;
+
+    SettingDateTimeInputFormat(Value x) : value(x) {}
+
+    operator Value() const { return value; }
+    SettingDateTimeInputFormat & operator= (Value x) { set(x); return *this; }
+
+    static Value getValue(const String & s);
+
+    String toString() const;
+
+    void set(Value x);
+    void set(const Field & x);
+    void set(const String & x);
+    void set(ReadBuffer & buf);
     void write(WriteBuffer & buf) const;
 };
 

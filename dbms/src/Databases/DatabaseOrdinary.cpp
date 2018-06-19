@@ -509,12 +509,6 @@ void DatabaseOrdinary::shutdown()
     tables.clear();
 }
 
-
-void DatabaseOrdinary::drop()
-{
-    /// No additional removal actions are required.
-}
-
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & name,
@@ -568,6 +562,14 @@ void DatabaseOrdinary::alterTable(
     }
 }
 
+
+void DatabaseOrdinary::drop()
+{
+    Poco::File(data_path).remove(false);
+    Poco::File(metadata_path).remove(false);
+}
+
+
 String DatabaseOrdinary::getDataPath() const
 {
     return data_path;
@@ -576,6 +578,11 @@ String DatabaseOrdinary::getDataPath() const
 String DatabaseOrdinary::getMetadataPath() const
 {
     return metadata_path;
+}
+
+String DatabaseOrdinary::getDatabaseName() const
+{
+    return name;
 }
 
 String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const

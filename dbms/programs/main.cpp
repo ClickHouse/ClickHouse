@@ -46,6 +46,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_COPIER
 int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #endif
+#if ENABLE_CLICKHOUSE_OBFUSCATOR
+int mainEntryClickHouseObfuscator(int argc, char ** argv);
+#endif
 
 #if USE_EMBEDDED_COMPILER
     int mainEntryClickHouseClang(int argc, char ** argv);
@@ -87,6 +90,9 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_COPIER
     {"copier", mainEntryClickHouseClusterCopier},
+#endif
+#if ENABLE_CLICKHOUSE_OBFUSCATOR
+    {"obfuscator", mainEntryClickHouseObfuscator},
 #endif
 #if USE_EMBEDDED_COMPILER
     {"clang", mainEntryClickHouseClang},

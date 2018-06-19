@@ -33,7 +33,7 @@ cmake $CUR_DIR/../.. -DCMAKE_CXX_COMPILER=`which $DEB_CXX $CXX` -DCMAKE_C_COMPIL
     -DUNBUNDLED=1 \
     `# Disable all features` \
     -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_TCMALLOC=0 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DUSE_INTERNAL_LLVM_LIBRARY=0 $CMAKE_FLAGS \
-    && make -j `nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4` clickhouse-bundle \
+    && ninja clickhouse-bundle \
     `# Skip tests:` \
     `# 00281 requires internal compiler` \
     `# 00428 requires sudo (not all vms allow this)` \

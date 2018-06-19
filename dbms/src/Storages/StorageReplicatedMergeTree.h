@@ -125,9 +125,13 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
+    std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
+
+    void truncate(const ASTPtr &) override;
 
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
@@ -483,6 +487,9 @@ private:
 
     /// Info about how other replicas can access this one.
     ReplicatedMergeTreeAddress getReplicatedMergeTreeAddress() const;
+
+    bool dropPartsInPartition(zkutil::ZooKeeper & zookeeper, String & partition_id,
+        StorageReplicatedMergeTree::LogEntry & entry, bool detach);
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

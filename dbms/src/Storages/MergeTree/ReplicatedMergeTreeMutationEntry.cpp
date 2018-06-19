@@ -1,11 +1,20 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/formatAST.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_MUTATION_COMMAND;
+}
 
 void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
 {
@@ -21,8 +30,9 @@ void ReplicatedMergeTreeMutationEntry::writeText(WriteBuffer & out) const
         out << partition_id << "\t" << number << "\n";
     }
 
-    out << "mutation commands:\n";
-    commands.writeText(out);
+    std::stringstream commands_ss;
+    formatAST(*commands.ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
+    out << "commands: " << escape << commands_ss.str();
 }
 
 void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
@@ -45,8 +55,20 @@ void ReplicatedMergeTreeMutationEntry::readText(ReadBuffer & in)
         block_numbers[partition_id] = number;
     }
 
-    in >> "mutation commands:\n";
-    commands.readText(in);
+    String commands_str;
+    in >> "commands: " >> escape >> commands_str;
+
+    ParserAlterCommandList p_alter_commands;
+    auto commands_ast = parseQuery(
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0);
+    for (ASTAlterCommand * command_ast : typeid_cast<const ASTAlterCommandList &>(*commands_ast).commands)
+    {
+        auto command = MutationCommand::parse(command_ast);
+        if (!command)
+            throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+        commands.push_back(std::move(*command));
+    }
+
 }
 
 String ReplicatedMergeTreeMutationEntry::toString() const

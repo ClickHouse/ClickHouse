@@ -45,11 +45,6 @@
 #include <Common/typeid_cast.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event SelectQuery;
-}
-
 namespace DB
 {
 
@@ -103,8 +98,6 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 void InterpreterSelectQuery::init(const Names & required_result_column_names)
 {
-    ProfileEvents::increment(ProfileEvents::SelectQuery);
-
     if (!context.hasQueryContext())
         context.setQueryContext(context);
 

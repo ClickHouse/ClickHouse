@@ -320,7 +320,7 @@ void ExternalQueryBuilder::composeKeyCondition(const Columns & key_columns, cons
         /// key_i=value_i
         writeString(key_description.name, out);
         writeString("=", out);
-        key_description.type->serializeTextQuoted(*key_columns[i], row, out);
+        key_description.type->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 
     writeString(")", out);
@@ -362,7 +362,7 @@ void ExternalQueryBuilder::composeKeyTuple(const Columns & key_columns, const si
             writeString(", ", out);
 
         first = false;
-        (*dict_struct.key)[i].type->serializeTextQuoted(*key_columns[i], row, out);
+        (*dict_struct.key)[i].type->serializeTextQuoted(*key_columns[i], row, out, format_settings);
     }
 
     writeString(")", out);
