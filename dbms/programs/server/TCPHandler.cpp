@@ -160,7 +160,7 @@ void TCPHandler::runImpl()
             {
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(query_context.getSettingsRef().server_logs_level.value);
-                CurrentThread::attachSystemLogsQueue(state.logs_queue);
+                CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
             }
 
             query_context.setExternalTablesInitializer([&global_settings, this] (Context & context) {
@@ -264,6 +264,9 @@ void TCPHandler::runImpl()
 
         try
         {
+            /// It will forcibly detach query even if unexpected error ocсurred and detachQuery() was not called
+            CurrentThread::detachQueryIfNotDetached();
+
             state.reset();
         }
         catch (...)

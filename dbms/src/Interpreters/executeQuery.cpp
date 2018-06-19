@@ -118,6 +118,9 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     setExceptionStackTrace(elem);
     logException(context, elem);
 
+    /// Update performance counters before logging to query_log
+    CurrentThread::finalizePerformanceCounters();
+
     if (log_queries)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
@@ -134,6 +137,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     time_t current_time = time(nullptr);
 
     context.setQueryContext(context);
+    CurrentThread::attachQueryContext(context);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -270,7 +274,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     return;
 
                 /// Update performance counters before logging to query_log
-                CurrentThread::detachQuery();
+                CurrentThread::finalizePerformanceCounters();
 
                 QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events);
 
@@ -343,7 +347,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 const Settings & settings = context.getSettingsRef();
 
                 /// Update performance counters before logging to query_log
-                CurrentThread::detachQuery();
+                CurrentThread::finalizePerformanceCounters();
 
                 if (process_list_elem)
                 {

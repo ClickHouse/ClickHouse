@@ -106,7 +106,7 @@ public:
     }
 
     /// Flush data in the buffer to disk
-    void flush();
+    void flush(bool quiet = false);
 
 protected:
     Context & context;
@@ -115,7 +115,6 @@ protected:
     const String storage_def;
     StoragePtr table;
     const size_t flush_interval_milliseconds;
-    std::mutex flush_mutex;
 
     using QueueItem = std::pair<bool, LogElement>;        /// First element is shutdown flag for thread.
 
@@ -127,6 +126,7 @@ protected:
       *  than accumulation of large amount of log records (for example, for query log - processing of large amount of queries).
       */
     std::vector<LogElement> data;
+    std::mutex data_mutex;
 
     Logger * log;
 
@@ -192,7 +192,16 @@ void SystemLog<LogElement>::threadFunction()
             QueueItem element;
             bool has_element = false;
 
-            if (data.empty())
+            bool is_empty;
+            {
+                std::unique_lock lock(data_mutex);
+                is_empty = data.empty();
+            }
+
+            /// data.size() is increased only in this function
+            /// TODO: get rid of data and queue duality
+
+            if (is_empty)
             {
                 queue.pop(element);
                 has_element = true;
@@ -214,14 +223,17 @@ void SystemLog<LogElement>::threadFunction()
                     break;
                 }
                 else
+                {
+                    std::unique_lock lock(data_mutex);
                     data.push_back(element.second);
+                }
             }
 
             size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
             if (milliseconds_elapsed >= flush_interval_milliseconds)
             {
                 /// Write data to a table.
-                flush();
+                flush(true);
                 time_after_last_write.restart();
             }
         }
@@ -236,12 +248,15 @@ void SystemLog<LogElement>::threadFunction()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush()
+void SystemLog<LogElement>::flush(bool quiet)
 {
-    std::lock_guard flush_lock(flush_mutex);
+    std::unique_lock lock(data_mutex);
 
     try
     {
+        if (quiet && data.empty())
+            return;
+
         LOG_TRACE(log, "Flushing system log");
 
         /// We check for existence of the table and create it as needed at every flush.

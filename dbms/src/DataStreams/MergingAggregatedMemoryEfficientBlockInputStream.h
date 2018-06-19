@@ -3,7 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/ThreadStatus.h>
+#include <Common/CurrentThread.h>
 #include <common/ThreadPool.h>
 #include <condition_variable>
 
@@ -152,7 +152,7 @@ private:
 
     std::unique_ptr<ParallelMergeData> parallel_merge_data;
 
-    void mergeThread(ThreadStatusPtr main_thread);
+    void mergeThread(ThreadGroupStatusPtr main_thread);
 
     void finalize();
 };

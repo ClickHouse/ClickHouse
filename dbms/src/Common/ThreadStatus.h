@@ -3,7 +3,9 @@
 #include <Common/MemoryTracker.h>
 #include <IO/Progress.h>
 #include <memory>
+#include <map>
 #include <mutex>
+#include <shared_mutex>
 
 
 namespace Poco
@@ -31,6 +33,31 @@ using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 extern thread_local ThreadStatusPtr current_thread;
 
 
+class ThreadGroupStatus
+{
+public:
+
+    mutable std::shared_mutex mutex;
+
+    ProfileEvents::Counters performance_counters{VariableContext::Process};
+    MemoryTracker memory_tracker{VariableContext::Process};
+
+    Context * query_context = nullptr;
+    Context * global_context = nullptr;
+
+    InternalTextLogsQueueWeakPtr logs_queue_ptr;
+
+    /// Key is Poco's thread_id
+    using QueryThreadStatuses = std::map<UInt32, ThreadStatusPtr>;
+    QueryThreadStatuses thread_statuses;
+    ThreadStatusPtr master_thread;
+
+    String query;
+};
+
+using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
+
+
 class ThreadStatus : public std::enable_shared_from_this<ThreadStatus>
 {
 public:
@@ -52,13 +79,14 @@ public:
 
     static ThreadStatusPtr create();
 
-    /// Called by master thread when the query finishes
-    void clean();
+    ThreadGroupStatusPtr getThreadGroup() const
+    {
+        return thread_group;
+    }
 
     enum ThreadState
     {
-        DetachedFromQuery = 0,  /// We just created thread or it is background thread
-        QueryInitializing,      /// We accepted a connection, but haven't enqueued a query to ProcessList
+        DetachedFromQuery = 0,  /// We just created thread or it is a background thread
         AttachedToQuery,        /// Thread executes enqueued query
         Died,                   /// Thread does not exist
     };
@@ -68,21 +96,33 @@ public:
         return thread_state.load(std::memory_order_relaxed);
     }
 
+    String getQueryID();
+
+    /// Starts new query and create new thread group fro it, current thread becomes master thread of the query
+    void initializeQuery();
+
+    /// Attaches slave thread to existing thread group
+    void attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached = true);
+
     InternalTextLogsQueuePtr getInternalTextLogsQueue() const
     {
         return thread_state == Died ? nullptr : logs_queue_ptr.lock();
     }
 
-    void attachSystemLogsQueue(const InternalTextLogsQueuePtr & logs_queue)
-    {
-        std::lock_guard lock(mutex);
-        logs_queue_ptr = logs_queue;
-    }
+    void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue);
 
-    Context * getGlobalContext()
-    {
-        return global_context.load(std::memory_order_relaxed);
-    }
+    /// Sets query context for current thread and its thread group
+    /// NOTE: query_context have to be alive until detachQuery() is called
+    void attachQueryContext(Context & query_context);
+
+    /// Update several ProfileEvents counters
+    void updatePerformanceCounters();
+
+    /// Update ProfileEvents and dumps info to system.query_thread_log
+    void finalizePerformanceCounters();
+
+    /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
+    void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
     ~ThreadStatus();
 
@@ -90,39 +130,27 @@ protected:
 
     ThreadStatus();
 
-    void initializeQuery();
-
-    void attachQuery(
-            QueryStatus * parent_query_,
-            ProfileEvents::Counters * parent_counters,
-            MemoryTracker * parent_memory_tracker,
-            const InternalTextLogsQueueWeakPtr & logs_queue_ptr_,
-            bool check_detached = true);
-
-    void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
+    void initPerformanceCounters();
 
     void logToQueryThreadLog(QueryThreadLog & thread_log);
 
-    void updatePerformanceCountersImpl();
+    void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr);
+
+    ThreadGroupStatusPtr thread_group;
 
     std::atomic<int> thread_state{ThreadState::DetachedFromQuery};
 
-    mutable std::mutex mutex;
-    QueryStatus * parent_query = nullptr;
-
     /// Is set once
-    std::atomic<Context *> global_context{nullptr};
+    Context * global_context = nullptr;
     /// Use it only from current thread
     Context * query_context = nullptr;
 
     /// A logs queue used by TCPHandler to pass logs to a client
     InternalTextLogsQueueWeakPtr logs_queue_ptr;
 
+    bool performance_counters_finalized = false;
     UInt64 query_start_time_nanoseconds = 0;
     time_t query_start_time = 0;
-
-    bool log_to_query_thread_log = true;
-    bool log_profile_events = true;
     size_t queries_started = 0;
 
     Poco::Logger * log = nullptr;

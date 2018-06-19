@@ -7,6 +7,7 @@
 #include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 #include <chrono>
+#include <ext/scope_guard.h>
 
 
 namespace CurrentMetrics
@@ -141,6 +142,12 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 
+    /// Put all threads of both thread pools to one thread group
+    /// The master thread exits immediately
+    CurrentThread::initializeQuery();
+    thread_group = CurrentThread::getGroup();
+    CurrentThread::detachQuery();
+
     threads.resize(size);
     for (auto & thread : threads)
         thread = std::thread([this] { threadFunction(); });
@@ -213,7 +220,10 @@ void BackgroundSchedulePool::threadFunction()
 {
     setThreadName("BackgrSchedPool");
 
-    CurrentThread::attachQuery(nullptr);
+    /// Put all threads to one thread pool
+    CurrentThread::attachTo(thread_group);
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
+
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
     while (!shutdown)
@@ -230,6 +240,10 @@ void BackgroundSchedulePool::threadFunction()
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName("BckSchPoolDelay");
+
+    /// Put all threads to one thread pool
+    CurrentThread::attachTo(thread_group);
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
     {

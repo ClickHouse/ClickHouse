@@ -87,6 +87,9 @@ protected:
     /// Is set once when init
     Context * query_context = nullptr;
 
+    /// Info about all threads involved in query execution
+    ThreadGroupStatusPtr thread_group;
+
     Stopwatch watch;
 
     /// Progress of input stream
@@ -96,16 +99,10 @@ protected:
 
     QueryPriorities::Handle priority_handle;
 
-    ProfileEvents::Counters performance_counters{VariableContext::Process};
-    MemoryTracker memory_tracker{VariableContext::Process};
-
-    mutable std::shared_mutex threads_mutex;
-    /// Key is Poco's thread_id
-    using QueryThreadStatuses = std::map<UInt32, ThreadStatusPtr>;
-    QueryThreadStatuses thread_statuses;
-    ThreadStatusPtr master_thread;
-
     CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
+
+    size_t max_memory_usage = 0;
+    double memory_tracker_fault_probability = 0.0;
 
     std::atomic<bool> is_killed { false };
 
@@ -218,7 +215,7 @@ struct ProcessListForUser
     /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
     ///  due to the fact that there are cases when memory can be allocated while processing the query, but released later.
     /// Clears network bandwidth Throttler, so it will not count periods of inactivity.
-    void reset()
+    void resetTrackers()
     {
         user_memory_tracker.reset();
         if (user_throttler)

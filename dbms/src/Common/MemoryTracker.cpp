@@ -18,7 +18,7 @@ namespace DB
 
 MemoryTracker::~MemoryTracker()
 {
-    if (level != VariableContext::Thread && peak)
+    if (static_cast<int>(level) < static_cast<int>(VariableContext::Process) && peak)
     {
         try
         {

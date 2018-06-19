@@ -9,6 +9,7 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/DNSCacheUpdater.h>
 
+#include <ext/scope_guard.h>
 #include <pcg_random.hpp>
 #include <random>
 
@@ -56,6 +57,14 @@ void BackgroundProcessingPoolTaskInfo::wake()
 BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 {
     LOG_INFO(&Logger::get("BackgroundProcessingPool"), "Create BackgroundProcessingPool with " << size << " threads");
+
+    /// Put all threads to one thread group
+    /// The master thread exits immediately
+    CurrentThread::initializeQuery();
+    thread_group = CurrentThread::getGroup();
+    LOG_INFO(&Logger::get("BackgroundProcessingPool"), "thread_group " << thread_group.get());
+    CurrentThread::detachQuery();
+    LOG_INFO(&Logger::get("BackgroundProcessingPool"), "thread_group " << thread_group.get());
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -115,7 +124,10 @@ void BackgroundProcessingPool::threadFunction()
 {
     setThreadName("BackgrProcPool");
 
-    CurrentThread::attachQuery(nullptr);
+    /// Put all threads to one thread pool
+    CurrentThread::attachTo(thread_group);
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
+
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
 
     pcg64 rng(randomSeed());

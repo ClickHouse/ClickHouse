@@ -166,10 +166,27 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Query-level memory tracker is already set in the QueryStatus constructor
 
-            /// Attach master thread
-            CurrentThread::attachQuery(&(*process_it));
-            /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
-            ///  since allocation and deallocation could happen in different threads
+            /// Actualize thread group info
+            {
+                auto thread_group = CurrentThread::getGroup();
+
+                std::unique_lock lock(thread_group->mutex);
+                thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
+                thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
+                thread_group->query = process_it->query;
+
+                /// Set memory trackers
+                thread_group->memory_tracker.setOrRaiseLimit(process_it->max_memory_usage);
+                thread_group->memory_tracker.setDescription("(for query)");
+
+                if (process_it->memory_tracker_fault_probability)
+                    thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
+
+                /// NOTE: Do not set the limit for thread-level memory tracker since it could show unreal values
+                ///  since allocation and deallocation could happen in different threads
+
+                process_it->thread_group = std::move(thread_group);
+            }
 
             if (!user_process_list.user_throttler)
             {
@@ -194,14 +211,6 @@ ProcessListEntry::~ProcessListEntry()
 {
     /// Destroy all streams to avoid long lock of ProcessList
     it->releaseQueryStreams();
-
-    /// Finalize all threads statuses
-    CurrentThread::detachQueryIfNotDetached();
-    {
-        std::shared_lock lock(it->threads_mutex);
-        for (auto & elem : it->thread_statuses)
-            elem.second->clean();
-    }
 
     std::lock_guard<std::mutex> lock(parent.mutex);
 
@@ -248,7 +257,7 @@ ProcessListEntry::~ProcessListEntry()
 
     /// If there are no more queries for the user, then we will reset memory tracker and network throttler.
     if (user_process_list.queries.empty())
-        user_process_list.reset();
+        user_process_list.resetTrackers();
 
     /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
     if (parent.processes.size() == 0)
@@ -264,20 +273,17 @@ ProcessListEntry::~ProcessListEntry()
 QueryStatus::QueryStatus(
     const String & query_,
     const ClientInfo & client_info_,
-    size_t max_memory_usage,
-    double memory_tracker_fault_probability,
+    size_t max_memory_usage_,
+    double memory_tracker_fault_probability_,
     QueryPriorities::Handle && priority_handle_)
     :
     query(query_),
     client_info(client_info_),
     priority_handle(std::move(priority_handle_)),
-    num_queries_increment{CurrentMetrics::Query}
+    num_queries_increment{CurrentMetrics::Query},
+    max_memory_usage(max_memory_usage_),
+    memory_tracker_fault_probability(memory_tracker_fault_probability_)
 {
-    memory_tracker.setOrRaiseLimit(max_memory_usage);
-    memory_tracker.setDescription("(for query)");
-
-    if (memory_tracker_fault_probability)
-        memory_tracker.setFaultProbability(memory_tracker_fault_probability);
 }
 
 QueryStatus::~QueryStatus() = default;
@@ -330,8 +336,6 @@ bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStream
 void QueryStatus::setUserProcessList(ProcessListForUser * user_process_list_)
 {
     user_process_list = user_process_list_;
-    performance_counters.setParent(&user_process_list->user_performance_counters);
-    memory_tracker.setParent(&user_process_list->user_memory_tracker);
 }
 
 
@@ -403,20 +407,24 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
     res.total_rows        = progress_in.total_rows;
     res.written_rows      = progress_out.rows;
     res.written_bytes     = progress_out.bytes;
-    res.memory_usage      = memory_tracker.get();
-    res.peak_memory_usage = memory_tracker.getPeak();
 
-    if (get_thread_list)
+    if (thread_group)
     {
-        std::shared_lock lock(threads_mutex);
-        res.thread_numbers.reserve(thread_statuses.size());
+        res.memory_usage = thread_group->memory_tracker.get();
+        res.peak_memory_usage = thread_group->memory_tracker.getPeak();
 
-        for (auto & thread_status_elem : thread_statuses)
-            res.thread_numbers.emplace_back(thread_status_elem.second->thread_number);
+        if (get_thread_list)
+        {
+            std::shared_lock lock(thread_group->mutex);
+            res.thread_numbers.reserve(thread_group->thread_statuses.size());
+
+            for (auto & thread_status_elem : thread_group->thread_statuses)
+                res.thread_numbers.emplace_back(thread_status_elem.second->thread_number);
+        }
+
+        if (get_profile_events)
+            res.profile_counters = std::make_shared<ProfileEvents::Counters>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
-
-    if (get_profile_events)
-        res.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
 
     if (get_settings && query_context)
         res.query_settings = std::make_shared<Settings>(query_context->getSettingsRef());
