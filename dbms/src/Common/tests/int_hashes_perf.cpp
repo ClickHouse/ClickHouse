@@ -4,18 +4,13 @@
 
 #include <iostream>
 #include <iomanip>
-
 #include <Poco/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
-
 #include "AvalancheTest.h"  /// Taken from SMHasher.
+#include <port/clock.h>
 
-
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
 
 void setAffinity()
 {
@@ -113,15 +108,15 @@ static inline size_t murmurMix(UInt64 x)
     return x;
 }
 
+
+#if __x86_64__
 static inline size_t crc32Hash(UInt64 x)
 {
     UInt64 crc = -1ULL;
-#if __x86_64__
     asm("crc32q %[x], %[crc]\n" : [crc] "+r" (crc) : [x] "rm" (x));
-#endif
     return crc;
 }
-
+#endif
 
 static inline size_t mulShift(UInt64 x)
 {
@@ -279,11 +274,6 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
 int main(int argc, char ** argv)
 {
-
-#if !__x86_64__
-    std::cerr << "Only for x86_64 arch" << std::endl;
-#endif
-
     const size_t BUF_SIZE = 1024;
 
     size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
@@ -321,7 +311,10 @@ int main(int argc, char ** argv)
     if (!method || method == 7) test<murmurMix> (n, &data[0], "6: murmur64 mixer");
     if (!method || method == 8) test<mulShift>  (n, &data[0], "7: mulShift");
     if (!method || method == 9) test<tabulation>(n, &data[0], "8: tabulation");
+
+#if __x86_64__
     if (!method || method == 10) test<crc32Hash> (n, &data[0], "9: crc32");
+#endif
 
     return 0;
 }

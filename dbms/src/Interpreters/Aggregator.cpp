@@ -24,7 +24,9 @@
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <common/demangle.h>
+#if __has_include(<Interpreters/config_compile.h>)
 #include <Interpreters/config_compile.h>
+#endif
 
 
 namespace ProfileEvents
@@ -175,6 +177,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
     compiled_if_possible = true;
 
+#if !defined(INTERNAL_COMPILER_HEADERS)
+    throw Exception("Cannot compile code: Compiler disabled", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
     std::string method_typename;
     std::string method_typename_two_level;
 
@@ -353,6 +358,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
     /// If the result is already ready.
     if (lib)
         on_ready(lib);
+#endif
 }
 
 

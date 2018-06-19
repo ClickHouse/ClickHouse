@@ -13,7 +13,7 @@ inc="-I. \
 -I./contrib/libfarmhash \
 -I./contrib/libmetrohash/src \
 -I./contrib/double-conversion \
--I./contrib/libcityhash/include \
+-I./contrib/cityhash102/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
 -I./contrib/libtcmalloc/include \

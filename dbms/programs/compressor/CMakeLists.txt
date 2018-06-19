@@ -4,6 +4,5 @@ target_link_libraries (clickhouse-compressor-lib clickhouse_common_io ${Boost_PR
 if (CLICKHOUSE_SPLIT_BINARY)
     # Also in utils
     add_executable (clickhouse-compressor clickhouse-compressor.cpp)
-    set_target_properties(clickhouse-compressor PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
     target_link_libraries (clickhouse-compressor clickhouse-compressor-lib)
 endif ()

@@ -806,13 +806,14 @@ struct ImplCityHash64
     static auto Hash64(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
+// see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
 struct ImplFarmHash64
 {
     static constexpr auto name = "farmHash64";
-    using uint128_t = farmhash::uint128_t;
+    using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
 
-    static auto Hash128to64(const uint128_t & x) { return farmhash::Hash128to64(x); }
-    static auto Hash64(const char * s, const size_t len) { return farmhash::Hash64(s, len); }
+    static auto Hash128to64(const uint128_t & x) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(x); }
+    static auto Hash64(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
 };
 
 struct ImplMetroHash64
