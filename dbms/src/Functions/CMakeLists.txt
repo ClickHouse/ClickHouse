@@ -1,7 +1,7 @@
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_glob_sources.cmake)
 include(${ClickHouse_SOURCE_DIR}/cmake/dbms_generate_function.cmake)
 
-set (FUNCTIONS_GENERATED_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated/)
+set (FUNCTIONS_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/)
 
 generate_function_register(Arithmetic
     FunctionPlus
