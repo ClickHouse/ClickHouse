@@ -23,6 +23,7 @@ QUERYPART queryParts[] = {
         {(const char *)"AS"},
         {(const char *)"VIEW"},
         {(const char *)"POPULATE"},
+        {(const char *)"SETTINGS"},
         //ATTACH/DETACH
         {(const char *)"ATTACH"},
         {(const char *)"DETACH"},
@@ -35,8 +36,15 @@ QUERYPART queryParts[] = {
         {(const char *)"ALTER"},
         {(const char *)"ADD"},
         {(const char *)"MODIFY"},
+        {(const char *)"CLEAR"},
         {(const char *)"COLUMN"},
         {(const char *)"AFTER"},
+        {(const char *)"COPY"},
+        {(const char *)"PROJECT"},
+        {(const char *)"PRIMARY"},
+        {(const char *)"KEY"},
+        //CHECK
+        {(const char *)"CHECK"},
         //PARTITIONS
         {(const char *)"PARTITION"},
         {(const char *)"PART"},
@@ -49,8 +57,15 @@ QUERYPART queryParts[] = {
         {(const char *)"OUTFILE"},
         {(const char *)"FORMAT"},
         {(const char *)"TABLES"},
+        {(const char *)"DATABASES"},
         {(const char *)"LIKE"},
         {(const char *)"PROCESSLIST"},
+        //CONDITIONAL EXPRESSIONS
+        {(const char *)"CASE"},
+        {(const char *)"WHEN"},
+        {(const char *)"THEN"},
+        {(const char *)"ELSE"},
+        {(const char *)"END"},
         //DESCRIBE
         {(const char *)"DESCRIBE"},
         {(const char *)"DESC"},
@@ -61,6 +76,7 @@ QUERYPART queryParts[] = {
         //OPTIMIZE
         {(const char *)"OPTIMIZE"},
         {(const char *)"FINAL"},
+        {(const char *)"DEDUPLICATE"},
         //INSERT
         {(const char *)"INSERT"},
         {(const char *)"VALUES"},
@@ -71,10 +87,15 @@ QUERYPART queryParts[] = {
         {(const char *)"ARRAY"},
         {(const char *)"JOIN"},
         {(const char *)"GLOBAL"},
+        {(const char *)"LOCAL"},
         {(const char *)"ANY"},
         {(const char *)"ALL"},
         {(const char *)"INNER"},
         {(const char *)"LEFT"},
+        {(const char *)"RIGHT"},
+        {(const char *)"FULL"},
+        {(const char *)"OUTER"},
+        {(const char *)"CROSS"},
         {(const char *)"USING"},
         {(const char *)"PREWHERE"},
         {(const char *)"WHERE"},
@@ -84,11 +105,17 @@ QUERYPART queryParts[] = {
         {(const char *)"TOTALS"},
         {(const char *)"HAVING"},
         {(const char *)"ORDER"},
+        {(const char *)"COLLATE"},
         {(const char *)"LIMIT"},
         {(const char *)"UNION"},
         {(const char *)"AND"},
         {(const char *)"OR"},
         {(const char *)"ASC"},
+        //TABLE FUNCTIONS
+        {(const char *)"file"},
+        {(const char *)"merge"},
+        {(const char *)"numbers"},
+        {(const char *)"remote"},
         //IN
         {(const char *)"IN"},
         //KILL QUERY
@@ -97,7 +124,7 @@ QUERYPART queryParts[] = {
         {(const char *)"SYNC"},
         {(const char *)"ASYNC"},
         {(const char *)"TEST"},
-        //Table engines
+        //TABLE ENGINES
         {(const char *)"TinyLog"},
         {(const char *)"Log"},
         {(const char *)"Memory"},
@@ -150,6 +177,10 @@ QUERYPART queryParts[] = {
         {(const char *)"Native"},
         {(const char *)"XML"},
         {(const char *)"CapnProto"},
+        {(const char *)"ODBCDriver"},
+        {(const char *)"PrettyCompactNoEscapes"},
+        {(const char *)"PrettySpaceNoEscapes"},
+        {(const char *)"TSVRaw"},
         //TYPES
         {(const char *)"Int8"},
         {(const char *)"Int16"},
@@ -173,6 +204,8 @@ QUERYPART queryParts[] = {
         {(const char *)"Nested"},
         {(const char *)"Expression"},
         {(const char *)"Set"},
+        {(const char *)"Nullable"},
+        {(const char *)"tuple"},
         //END OF LIST
         {(const char *)nullptr},
 };
