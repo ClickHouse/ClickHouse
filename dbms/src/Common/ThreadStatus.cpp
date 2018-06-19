@@ -57,7 +57,7 @@ public:
         {
             ThreadStatus & thread = *CurrentThread::get();
 
-            LOG_DEBUG(thread.log, "Thread " << thread.thread_number << " exited");
+            LOG_TRACE(thread.log, "Thread " << thread.thread_number << " exited");
             thread.detachQuery(true, true);
         }
         catch (...)
@@ -218,18 +218,22 @@ ThreadStatus::~ThreadStatus() = default;
 
 void ThreadStatus::initializeQuery()
 {
-    if (thread_state != ThreadState::QueryInitializing && thread_state != ThreadState::DetachedFromQuery)
-        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
+    assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
 
-    thread_state = ThreadState::QueryInitializing;
+    thread_group = std::make_shared<ThreadGroupStatus>();
+
+    performance_counters.setParent(&thread_group->performance_counters);
+    memory_tracker.setParent(&thread_group->memory_tracker);
+    thread_group->memory_tracker.setDescription("(for query)");
+
+    thread_group->master_thread = shared_from_this();
+    thread_group->thread_statuses.emplace(thread_number, shared_from_this());
+
+    initPerformanceCounters();
+    thread_state = ThreadState::AttachedToQuery;
 }
 
-void ThreadStatus::attachQuery(
-        QueryStatus * parent_query_,
-        ProfileEvents::Counters * parent_counters,
-        MemoryTracker * parent_memory_tracker,
-        const InternalTextLogsQueueWeakPtr & logs_queue_ptr_,
-        bool check_detached)
+void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
 {
     if (thread_state == ThreadState::AttachedToQuery)
     {
@@ -238,49 +242,67 @@ void ThreadStatus::attachQuery(
         return;
     }
 
-    if (thread_state != ThreadState::DetachedFromQuery && thread_state != ThreadState::QueryInitializing)
-        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
+    assertState({ThreadState::DetachedFromQuery}, __PRETTY_FUNCTION__);
+
+    if (!thread_group_)
+        throw Exception("Attempt to attach to nullptr thread group", ErrorCodes::LOGICAL_ERROR);
+
+    /// Attach current thread to thread group and copy useful information from it
+    thread_group = thread_group_;
+
+    performance_counters.setParent(&thread_group->performance_counters);
+    memory_tracker.setParent(&thread_group->memory_tracker);
 
     {
-        std::lock_guard lock(mutex);
-        parent_query = parent_query_;
-        performance_counters.setParent(parent_counters);
-        memory_tracker.setParent(parent_memory_tracker);
-        logs_queue_ptr = logs_queue_ptr_;
+        std::unique_lock lock(thread_group->mutex);
+
+        logs_queue_ptr = thread_group->logs_queue_ptr;
+        query_context = thread_group->query_context;
+
+        if (!global_context)
+            global_context = thread_group->global_context;
+
+        if (!thread_group->thread_statuses.emplace(thread_number, shared_from_this()).second)
+            throw Exception("Thread " + std::to_string(thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
     }
+
+    initPerformanceCounters();
+    thread_state = ThreadState::AttachedToQuery;
+}
+
+void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
+{
+    if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
+    {
+        thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
+        return;
+    }
+
+    assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
+    finalizePerformanceCounters();
+
+    /// For better logging ({query_id} will be shown here)
+    if (thread_group && thread_group.use_count() == 1)
+        thread_group->memory_tracker.logPeakMemoryUsage();
+
+    /// Detach from thread group
+    performance_counters.setParent(&ProfileEvents::global_counters);
+    memory_tracker.setParent(nullptr);
+    query_context = nullptr;
+    thread_group.reset();
+
+    thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
+}
+
+void ThreadStatus::initPerformanceCounters()
+{
+    performance_counters_finalized = false;
 
     /// Clear stats from previous query if a new query is started
     /// TODO: make separate query_thread_performance_counters and thread_performance_counters
     performance_counters.resetCounters();
     memory_tracker.resetCounters();
     memory_tracker.setDescription("(for thread)");
-
-    /// Try extract as many information as possible from ProcessList
-    if (parent_query)
-    {
-        /// Attach current thread to list of query threads
-        {
-            std::unique_lock lock(parent_query->threads_mutex);
-
-            if (parent_query->thread_statuses.empty())
-                parent_query->master_thread = shared_from_this();
-
-            if (!parent_query->thread_statuses.emplace(thread_number, shared_from_this()).second)
-                throw Exception("Thread " + std::to_string(thread_number) + " is attached twice", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        query_context = parent_query->tryGetQueryContext();
-        if (query_context)
-        {
-            log_to_query_thread_log = query_context->getSettingsRef().log_query_threads.value != 0;
-            log_profile_events = query_context->getSettingsRef().log_profile_events.value != 0;
-
-            if (!getGlobalContext())
-                global_context = &query_context->getGlobalContext();
-        }
-    }
-
-    thread_state = ThreadState::AttachedToQuery;
 
     query_start_time_nanoseconds = getCurrentTimeNanoseconds();
     query_start_time = time(nullptr);
@@ -292,47 +314,7 @@ void ThreadStatus::attachQuery(
         *last_taskstats = TasksStatsCounters::current();
 }
 
-void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
-{
-    if (exit_if_already_detached && thread_state == ThreadState::DetachedFromQuery)
-    {
-        thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
-        return;
-    }
-
-    if (thread_state != ThreadState::AttachedToQuery && thread_state != ThreadState::QueryInitializing)
-        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
-
-    updatePerformanceCountersImpl();
-
-    try
-    {
-        if (log_to_query_thread_log)
-            if (auto global_context = getGlobalContext())
-                if (auto thread_log = global_context->getQueryThreadLog())
-                    logToQueryThreadLog(*thread_log);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log);
-    }
-
-    {
-        std::lock_guard lock(mutex);
-
-        /// Detach from parent
-        performance_counters.setParent(&ProfileEvents::global_counters);
-        memory_tracker.setParent(nullptr);
-        query_context = nullptr;
-    }
-
-    thread_state = thread_exits ? ThreadState::Died : ThreadState::DetachedFromQuery;
-    log_to_query_thread_log = true;
-    log_profile_events = true;
-}
-
-
-void ThreadStatus::updatePerformanceCountersImpl()
+void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
@@ -345,6 +327,28 @@ void ThreadStatus::updatePerformanceCountersImpl()
         tryLogCurrentException(log);
     }
 }
+
+void ThreadStatus::finalizePerformanceCounters()
+{
+    if (performance_counters_finalized)
+        return;
+
+    performance_counters_finalized = true;
+    updatePerformanceCounters();
+
+    try
+    {
+        bool log_to_query_thread_log = global_context && query_context && query_context->getSettingsRef().log_query_threads.value != 0;
+        if (log_to_query_thread_log)
+            if (auto thread_log = global_context->getQueryThreadLog())
+                logToQueryThreadLog(*thread_log);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
+}
+
 
 void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
 {
@@ -364,40 +368,83 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.thread_number = thread_number;
     elem.os_thread_id = os_thread_id;
 
-    if (parent_query)
+    if (thread_group)
     {
         {
-            std::shared_lock threads_mutex(parent_query->threads_mutex);
+            std::shared_lock lock(thread_group->mutex);
 
-            if (parent_query->master_thread)
+            if (thread_group->master_thread)
             {
-                elem.master_thread_number = parent_query->master_thread->thread_number;
-                elem.master_os_thread_id = parent_query->master_thread->os_thread_id;
+                elem.master_thread_number = thread_group->master_thread->thread_number;
+                elem.master_os_thread_id = thread_group->master_thread->os_thread_id;
             }
-        }
 
-        elem.query = parent_query->query;
-        elem.client_info = parent_query->getClientInfo();
+            elem.query = thread_group->query;
+        }
     }
 
-    if (log_profile_events)
+    if (query_context)
     {
-        /// NOTE: Here we are in the same thread, so we can make memcpy()
-        elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+        elem.client_info = query_context->getClientInfo();
+
+        if (query_context->getSettingsRef().log_profile_events.value != 0)
+        {
+            /// NOTE: Here we are in the same thread, so we can make memcpy()
+            elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+        }
     }
 
     thread_log.add(elem);
 }
 
-void ThreadStatus::clean()
+
+void ThreadStatus::assertState(const std::initializer_list<int> & permitted_states, const char * description)
 {
+    for (auto permitted_state : permitted_states)
     {
-        std::lock_guard lock(mutex);
-        parent_query = nullptr;
+        if (getCurrentState() == permitted_state)
+            return;
     }
 
-    if (thread_state != ThreadState::DetachedFromQuery && thread_state != ThreadState::Died)
-        throw Exception("Unexpected thread state " + std::to_string(getCurrentState()) + __PRETTY_FUNCTION__, ErrorCodes::LOGICAL_ERROR);
+    std::stringstream ss;
+    ss << "Unexpected thread state " << getCurrentState();
+    if (description)
+        ss << ": " << description;
+    throw Exception(ss.str(), ErrorCodes::LOGICAL_ERROR);
+}
+
+void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue)
+{
+    logs_queue_ptr = logs_queue;
+
+    if (!thread_group)
+        return;
+
+    std::unique_lock lock(thread_group->mutex);
+    thread_group->logs_queue_ptr = logs_queue;
+}
+
+void ThreadStatus::attachQueryContext(Context & query_context_)
+{
+    query_context = &query_context_;
+    if (!global_context)
+        global_context = &query_context->getGlobalContext();
+
+    if (!thread_group)
+        return;
+
+    std::unique_lock lock(thread_group->mutex);
+    thread_group->query_context = query_context;
+    if (!thread_group->global_context)
+        thread_group->global_context = global_context;
+}
+
+String ThreadStatus::getQueryID()
+{
+    if (query_context)
+        return query_context->getClientInfo().current_query_id;
+
+    return {};
 }
 
 }

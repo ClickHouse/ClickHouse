@@ -35,7 +35,7 @@ void AsynchronousBlockInputStream::next()
 {
     ready.reset();
 
-    pool.schedule([this, main_thread=CurrentThread::get()] ()
+    pool.schedule([this, thread_group=CurrentThread::getGroup()] ()
     {
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
@@ -43,7 +43,7 @@ void AsynchronousBlockInputStream::next()
         {
             if (first)
                 setThreadName("AsyncBlockInput");
-            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+            CurrentThread::attachToIfDetached(thread_group);
         }
         catch (...)
         {

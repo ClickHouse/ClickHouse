@@ -176,10 +176,10 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
         {
             auto & child = children[i];
 
-            auto main_thread = CurrentThread::get();
-            reading_pool->schedule([&child, main_thread]
+            auto thread_group = CurrentThread::getGroup();
+            reading_pool->schedule([&child, thread_group]
             {
-                CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+                CurrentThread::attachToIfDetached(thread_group);
                 setThreadName("MergeAggReadThr");
                 CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                 child->readPrefix();
@@ -197,7 +197,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::start()
           */
 
         for (size_t i = 0; i < merging_threads; ++i)
-            pool.schedule([this] () { mergeThread(current_thread); } );
+            pool.schedule([this, thread_group=CurrentThread::getGroup()] () { mergeThread(thread_group); } );
     }
 }
 
@@ -293,15 +293,16 @@ void MergingAggregatedMemoryEfficientBlockInputStream::finalize()
 }
 
 
-void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(ThreadStatusPtr main_thread)
+void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(ThreadGroupStatusPtr thread_group)
 {
-    if (main_thread)
-        CurrentThread::attachQueryFromSiblingThread(main_thread);
-    setThreadName("MergeAggMergThr");
     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
     try
     {
+        if (thread_group)
+            CurrentThread::attachTo(thread_group);
+        setThreadName("MergeAggMergThr");
+
         while (!parallel_merge_data->finish)
         {
             /** Receiving next blocks is processing by one thread pool, and merge is in another.
@@ -481,10 +482,10 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
         {
             if (need_that_input(input))
             {
-                auto main_thread = current_thread;
-                reading_pool->schedule([&input, &read_from_input, main_thread]
+                auto thread_group = CurrentThread::getGroup();
+                reading_pool->schedule([&input, &read_from_input, thread_group]
                 {
-                    CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+                    CurrentThread::attachToIfDetached(thread_group);
                     setThreadName("MergeAggReadThr");
                     CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
                     read_from_input(input);

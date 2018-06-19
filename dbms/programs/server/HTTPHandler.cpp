@@ -209,7 +209,13 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
+    Context context = server.context();
+    context.setGlobalContext(server.context());
+
     CurrentThread::initializeQuery();
+    /// It will forcibly detach query even if unexpected error ocurred and detachQuery() was not called
+    /// Normal detaching is happen in BlockIO callbacks
+    SCOPE_EXIT({CurrentThread::detachQueryIfNotDetached();});
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
@@ -260,14 +266,9 @@ void HTTPHandler::processQuery(
     }
 
     std::string query_id = params.get("query_id", "");
-
-    const auto & config = server.config();
-
-    Context context = server.context();
-    context.setGlobalContext(server.context());
-
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
+    CurrentThread::attachQueryContext(context);
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -276,6 +277,7 @@ void HTTPHandler::processQuery(
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
+    const auto & config = server.config();
 
     if (session_is_set)
     {

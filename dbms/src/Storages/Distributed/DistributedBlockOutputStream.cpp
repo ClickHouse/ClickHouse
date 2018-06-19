@@ -193,10 +193,10 @@ void DistributedBlockOutputStream::waitForJobs()
 
 ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
-    auto main_thread = CurrentThread::get();
-    return [this, main_thread, &job, &current_block]()
+    auto thread_group = CurrentThread::getGroup();
+    return [this, thread_group, &job, &current_block]()
     {
-        CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+        CurrentThread::attachToIfDetached(thread_group);
         setThreadName("DistrOutStrProc");
 
         ++job.blocks_started;

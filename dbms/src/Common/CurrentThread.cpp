@@ -35,34 +35,19 @@ void CurrentThread::initializeQuery()
     getCurrentThreadImpl()->initializeQuery();
 }
 
-void CurrentThread::attachQuery(QueryStatus * parent_process)
+void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
-    ThreadStatusPtr thread = getCurrentThreadImpl();
-
-    if (!parent_process)
-        thread->attachQuery(nullptr, nullptr, nullptr, CurrentThread::getInternalTextLogsQueue());
-    else
-    {
-        thread->attachQuery(
-                parent_process, &parent_process->performance_counters, &parent_process->memory_tracker,
-                CurrentThread::getInternalTextLogsQueue());
-    }
+    getCurrentThreadImpl()->attachQuery(thread_group, true);
 }
 
-
-void CurrentThread::attachQueryFromSiblingThread(const ThreadStatusPtr & sibling_thread)
+void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
-    attachQueryFromSiblingThreadImpl(sibling_thread, true);
-}
-
-void CurrentThread::attachQueryFromSiblingThreadIfDetached(const ThreadStatusPtr & sibling_thread)
-{
-    attachQueryFromSiblingThreadImpl(sibling_thread, false);
+    getCurrentThreadImpl()->attachQuery(thread_group, false);
 }
 
 void CurrentThread::updatePerformanceCounters()
 {
-    getCurrentThreadImpl()->updatePerformanceCountersImpl();
+    getCurrentThreadImpl()->updatePerformanceCounters();
 }
 
 ThreadStatusPtr CurrentThread::get()
@@ -100,49 +85,9 @@ void CurrentThread::updateProgressOut(const Progress & value)
     current_thread->progress_out.incrementPiecewiseAtomically(value);
 }
 
-void CurrentThread::attachQueryFromSiblingThreadImpl(ThreadStatusPtr sibling_thread, bool check_detached)
+void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
 {
-    if (sibling_thread == nullptr)
-        throw Exception("Sibling thread was not initialized", ErrorCodes::LOGICAL_ERROR);
-
-    ThreadStatusPtr thread = getCurrentThreadImpl();
-
-    if (sibling_thread->getCurrentState() == ThreadStatus::ThreadState::QueryInitializing)
-    {
-        LOG_WARNING(thread->log, "An attempt to \'fork\' from initializing thread detected."
-                                 << " Performance statistics for this thread will be inaccurate");
-    }
-
-    QueryStatus * parent_query;
-    ProfileEvents::Counters * parent_counters;
-    MemoryTracker * parent_memory_tracker;
-    InternalTextLogsQueueWeakPtr logs_queue_ptr;
-    {
-        /// NOTE: It is almost the only place where ThreadStatus::mutex is required
-        /// In other cases ThreadStatus must be accessed only from the current_thread
-        std::lock_guard lock(sibling_thread->mutex);
-
-        parent_query = sibling_thread->parent_query;
-        if (parent_query)
-        {
-            parent_counters = &parent_query->performance_counters;
-            parent_memory_tracker = &parent_query->memory_tracker;
-        }
-        else
-        {
-            /// Fallback
-            parent_counters = sibling_thread->performance_counters.getParent();
-            parent_memory_tracker = sibling_thread->memory_tracker.getParent();
-        }
-        logs_queue_ptr = sibling_thread->logs_queue_ptr;
-    }
-
-    thread->attachQuery(parent_query, parent_counters, parent_memory_tracker, logs_queue_ptr, check_detached);
-}
-
-void CurrentThread::attachSystemLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
-{
-    getCurrentThreadImpl()->attachSystemLogsQueue(logs_queue);
+    getCurrentThreadImpl()->attachInternalTextLogsQueue(logs_queue);
 }
 
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
@@ -164,13 +109,22 @@ std::string CurrentThread::getCurrentQueryID()
     if (!current_thread || current_thread.use_count() <= 0)
         return {};
 
-    if (current_thread->parent_query)
-        return current_thread->parent_query->client_info.current_query_id;
+    return current_thread->getQueryID();
+}
 
-    if (current_thread->query_context)
-        return current_thread->query_context->getClientInfo().current_query_id;
+ThreadGroupStatusPtr CurrentThread::getGroup()
+{
+    return getCurrentThreadImpl()->getThreadGroup();
+}
 
-    return {};
+void CurrentThread::attachQueryContext(Context & query_context)
+{
+    return getCurrentThreadImpl()->attachQueryContext(query_context);
+}
+
+void CurrentThread::finalizePerformanceCounters()
+{
+    getCurrentThreadImpl()->finalizePerformanceCounters();
 }
 
 }

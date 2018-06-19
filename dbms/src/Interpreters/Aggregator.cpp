@@ -1274,9 +1274,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     bool final,
     ThreadPool * thread_pool) const
 {
-    auto converter = [&](size_t bucket, ThreadStatusPtr main_thread)
+    auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
     {
-        CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+        CurrentThread::attachToIfDetached(thread_group);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1291,7 +1291,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (method.data.impls[bucket].empty())
                 continue;
 
-            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::get()));
+            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::getGroup()));
 
             if (thread_pool)
                 thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
@@ -1721,15 +1721,15 @@ private:
             return;
 
         parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
-            max_scheduled_bucket_num, CurrentThread::get()));
+            max_scheduled_bucket_num, CurrentThread::getGroup()));
     }
 
-    void thread(Int32 bucket_num, ThreadStatusPtr main_thread)
+    void thread(Int32 bucket_num, ThreadGroupStatusPtr thread_group)
     {
         try
         {
             setThreadName("MergingAggregtd");
-            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+            CurrentThread::attachToIfDetached(thread_group);
             CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
             /// TODO: add no_more_keys support maybe
@@ -2031,9 +2031,9 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadStatusPtr main_thread)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
-            CurrentThread::attachQueryFromSiblingThreadIfDetached(main_thread);
+            CurrentThread::attachToIfDetached(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
@@ -2066,7 +2066,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::get());
+            auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::getGroup());
 
             if (thread_pool)
                 thread_pool->schedule(task);
