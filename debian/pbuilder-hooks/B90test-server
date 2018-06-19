@@ -55,7 +55,7 @@ if [ "${TEST_CONNECT}" ]; then
     fi
 
     # For debug
-    tail -n +1 -- /etc/clickhouse-server/*.xml /etc/clickhouse-server/config.d/*.xml || true
+    # tail -n +1 -- /etc/clickhouse-server/*.xml /etc/clickhouse-server/config.d/*.xml || true
 
     function finish {
         service clickhouse-server stop
