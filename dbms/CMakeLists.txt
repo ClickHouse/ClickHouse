@@ -101,8 +101,6 @@ endif ()
 
 if (USE_EMBEDDED_COMPILER)
     llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
-
-message(STATUS "llllllllvm=${REQUIRED_LLVM_LIBRARIES}")
     target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
     target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
@@ -234,7 +232,6 @@ if (NOT USE_INTERNAL_ZSTD_LIBRARY)
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
-
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
@@ -244,7 +241,6 @@ target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_C
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 add_subdirectory (programs)
-
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)

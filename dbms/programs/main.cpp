@@ -1,8 +1,3 @@
-#if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
-#include <common/config_common.h>
-#endif
-
-#include <Common/config.h>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -10,6 +5,12 @@
 
 #if __has_include("config_tools.h")
 #include "config_tools.h"
+#endif
+#if __has_include(<common/config_common.h>)     /// "Arcadia" build system lacks configure files.
+#include <common/config_common.h>
+#endif
+#if __has_include(<Common/config.h>)
+#include <Common/config.h>
 #endif
 
 #if USE_TCMALLOC
