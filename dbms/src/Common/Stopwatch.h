@@ -3,10 +3,7 @@
 #include <time.h>
 #include <atomic>
 #include <common/Types.h>
-
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
+#include <port/clock.h>
 
 
 namespace StopWatchDetail

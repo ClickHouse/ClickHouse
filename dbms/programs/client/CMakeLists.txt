@@ -4,7 +4,6 @@ target_include_directories (clickhouse-client-lib SYSTEM PRIVATE ${READLINE_INCL
 
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-client clickhouse-client.cpp)
-    set_target_properties(clickhouse-client PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
     target_link_libraries (clickhouse-client clickhouse-client-lib)
 endif ()
 

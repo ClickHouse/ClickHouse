@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <IO/WriteHelpers.h>
+#include <port/clock.h>
 
 
 namespace ProfileEvents

@@ -742,7 +742,7 @@ private:
 
     bool processSingleQuery(const String & line, ASTPtr parsed_query_ = nullptr)
     {
-        if (exit_strings.end() != exit_strings.find(line))
+        if (exit_strings.end() != exit_strings.find(trim(line, [](char c){ return isWhitespaceASCII(c) || c == ';'; })))
             return false;
 
         resetOutput();
