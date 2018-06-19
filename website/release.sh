@@ -15,8 +15,6 @@ DOCKER_HASH="$2"
 GULP="$BASE_DIR/node_modules/gulp/bin/gulp.js"
 if [[ -z "$1" ]]
 then
-    git clone --recursive https://github.com/yandex/clickhouse-presentations.git presentations || true
-    git --work-tree=$(readlink -f presentations) --git-dir=$(readlink -f presentations)/.git pull
     $GULP clean
     $GULP build
     docker build -t "${FULL_NAME}" "${BASE_DIR}"

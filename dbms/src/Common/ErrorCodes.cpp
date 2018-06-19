@@ -273,8 +273,8 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP = 269;
     extern const int CANNOT_COMPRESS = 270;
     extern const int CANNOT_DECOMPRESS = 271;
-    extern const int AIO_SUBMIT_ERROR = 272;
-    extern const int AIO_COMPLETION_ERROR = 273;
+    extern const int CANNOT_IO_SUBMIT = 272;
+    extern const int CANNOT_IO_GETEVENTS = 273;
     extern const int AIO_READ_ERROR = 274;
     extern const int AIO_WRITE_ERROR = 275;
     extern const int INDEX_NOT_USED = 277;
@@ -373,6 +373,10 @@ namespace ErrorCodes
     extern const int TOO_MANY_ROWS_OR_BYTES = 396;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
     extern const int UNKNOWN_MUTATION_COMMAND = 398;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT = 399;
+    extern const int CANNOT_STAT = 400;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME = 401;
+    extern const int CANNOT_IOSETUP = 402;
 
 
     extern const int KEEPER_EXCEPTION = 999;

@@ -4,9 +4,6 @@ target_link_libraries (system_numbers dbms clickhouse_storages_system)
 add_executable (storage_log storage_log.cpp)
 target_link_libraries (storage_log dbms)
 
-add_executable (hit_log hit_log.cpp)
-target_link_libraries (hit_log dbms)
-
 add_executable (seek_speed_test seek_speed_test.cpp)
 target_link_libraries (seek_speed_test dbms)
 

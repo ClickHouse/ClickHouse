@@ -2,6 +2,8 @@
 #include <DataStreams/FilterBlockInputStream.h>
 #include <Parsers/ASTFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -32,7 +34,7 @@ ApplyingMutationsBlockInputStream::ApplyingMutationsBlockInputStream(
             break;
         }
         default:
-            throw Exception("Unsupported mutation cmd type: " + toString(static_cast<int>(cmd.type)),
+            throw Exception("Unsupported mutation cmd type: " + toString<int>(cmd.type),
                 ErrorCodes::LOGICAL_ERROR);
         }
     }

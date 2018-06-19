@@ -307,6 +307,16 @@ MutableColumns Block::cloneEmptyColumns() const
 }
 
 
+Columns Block::getColumns() const
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column;
+    return columns;
+}
+
+
 MutableColumns Block::mutateColumns() const
 {
     size_t num_columns = data.size();
@@ -325,6 +335,15 @@ void Block::setColumns(MutableColumns && columns)
 }
 
 
+void Block::setColumns(const Columns & columns)
+{
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        data[i].column = columns[i];
+}
+
+
+
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;
@@ -332,6 +351,18 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ std::move(columns[i]), data[i].type, data[i].name });
+
+    return res;
+}
+
+
+Block Block::cloneWithColumns(const Columns & columns) const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ columns[i], data[i].type, data[i].name });
 
     return res;
 }
