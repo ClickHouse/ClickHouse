@@ -212,10 +212,9 @@ void HTTPHandler::processQuery(
     Context context = server.context();
     context.setGlobalContext(server.context());
 
-    CurrentThread::initializeQuery();
     /// It will forcibly detach query even if unexpected error ocurred and detachQuery() was not called
     /// Normal detaching is happen in BlockIO callbacks
-    SCOPE_EXIT({CurrentThread::detachQueryIfNotDetached();});
+    CurrentThread::QueryScope query_scope_holder(context);
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
 

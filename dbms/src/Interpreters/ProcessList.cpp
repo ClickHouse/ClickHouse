@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <common/logger_useful.h>
-#include <pthread.h>
 #include <chrono>
 
 
@@ -164,21 +163,17 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             user_process_list.user_memory_tracker.setOrRaiseLimit(settings.max_memory_usage_for_user);
             user_process_list.user_memory_tracker.setDescription("(for user)");
 
-            /// Query-level memory tracker is already set in the QueryStatus constructor
-
             /// Actualize thread group info
+            if (auto thread_group = CurrentThread::getGroup())
             {
-                auto thread_group = CurrentThread::getGroup();
-
-                std::unique_lock lock(thread_group->mutex);
+                std::unique_lock lock_thread_group(thread_group->mutex);
                 thread_group->performance_counters.setParent(&user_process_list.user_performance_counters);
                 thread_group->memory_tracker.setParent(&user_process_list.user_memory_tracker);
                 thread_group->query = process_it->query;
 
-                /// Set memory trackers
+                /// Set query-level memory trackers
                 thread_group->memory_tracker.setOrRaiseLimit(process_it->max_memory_usage);
                 thread_group->memory_tracker.setDescription("(for query)");
-
                 if (process_it->memory_tracker_fault_probability)
                     thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
 

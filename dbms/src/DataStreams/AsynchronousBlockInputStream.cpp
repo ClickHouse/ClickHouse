@@ -43,7 +43,10 @@ void AsynchronousBlockInputStream::next()
         {
             if (first)
                 setThreadName("AsyncBlockInput");
-            CurrentThread::attachToIfDetached(thread_group);
+
+            /// AsynchronousBlockInputStream is used in Client which does not create queries and thread groups
+            if (thread_group)
+                CurrentThread::attachToIfDetached(thread_group);
         }
         catch (...)
         {

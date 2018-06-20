@@ -161,6 +161,8 @@
     M(InvoluntaryContextSwitches) \
     \
     M(OSIOWaitMicroseconds) \
+    M(OSCPUWaitMicroseconds) \
+    M(OSCPUVirtualTimeMicroseconds) \
     M(OSReadBytes) \
     M(OSWriteBytes) \
     M(OSReadChars) \
