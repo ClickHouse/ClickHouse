@@ -10,4 +10,6 @@ RUN apt-get update -y && \
 ADD build.sh /
 RUN chmod +x /build.sh
 
+ENV USE_INTERNAL_ZLIB_LIBRARY 1
+
 CMD ["/build.sh"]
