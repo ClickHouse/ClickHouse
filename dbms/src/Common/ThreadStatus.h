@@ -20,6 +20,7 @@ namespace DB
 class Context;
 class QueryStatus;
 class ThreadStatus;
+using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 class QueryThreadLog;
 struct TasksStatsCounters;
 struct RusageCounters;
@@ -27,10 +28,6 @@ class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
-
-
-using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
-extern thread_local ThreadStatusPtr current_thread;
 
 
 class ThreadGroupStatus
@@ -167,7 +164,34 @@ protected:
     bool has_permissions_for_taskstats = false;
 
 public:
-    class CurrentThreadScope;
+
+    /// Implicitly finalizes current thread in the destructor
+    class CurrentThreadScope
+    {
+    public:
+        void (*deleter)() = nullptr;
+
+        CurrentThreadScope() = default;
+        ~CurrentThreadScope()
+        {
+            try
+            {
+                if (deleter)
+                    deleter();
+            }
+            catch (...)
+            {
+                std::terminate();
+            }
+        }
+    };
+
+private:
+    static void defaultThreadDeleter();
 };
+
+
+extern thread_local ThreadStatusPtr current_thread;
+extern thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
 
 }

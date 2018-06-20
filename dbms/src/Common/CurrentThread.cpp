@@ -15,8 +15,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+void CurrentThread::updatePerformanceCounters()
+{
+    get()->updatePerformanceCounters();
+}
 
-static ThreadStatusPtr getCurrentThreadImpl()
+ThreadStatusPtr CurrentThread::get()
 {
 #ifndef NDEBUG
     if (!current_thread || current_thread.use_count() <= 0)
@@ -27,42 +31,6 @@ static ThreadStatusPtr getCurrentThreadImpl()
 #endif
 
     return current_thread;
-}
-
-
-void CurrentThread::initializeQuery()
-{
-    getCurrentThreadImpl()->initializeQuery();
-}
-
-void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
-{
-    getCurrentThreadImpl()->attachQuery(thread_group, true);
-}
-
-void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
-{
-    getCurrentThreadImpl()->attachQuery(thread_group, false);
-}
-
-void CurrentThread::updatePerformanceCounters()
-{
-    getCurrentThreadImpl()->updatePerformanceCounters();
-}
-
-ThreadStatusPtr CurrentThread::get()
-{
-    return getCurrentThreadImpl();
-}
-
-void CurrentThread::detachQuery()
-{
-    getCurrentThreadImpl()->detachQuery(false);
-}
-
-void CurrentThread::detachQueryIfNotDetached()
-{
-    getCurrentThreadImpl()->detachQuery(true);
 }
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
@@ -87,7 +55,7 @@ void CurrentThread::updateProgressOut(const Progress & value)
 
 void CurrentThread::attachInternalTextLogsQueue(const std::shared_ptr<InternalTextLogsQueue> & logs_queue)
 {
-    getCurrentThreadImpl()->attachInternalTextLogsQueue(logs_queue);
+    get()->attachInternalTextLogsQueue(logs_queue);
 }
 
 std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
@@ -104,38 +72,9 @@ std::shared_ptr<InternalTextLogsQueue> CurrentThread::getInternalTextLogsQueue()
     return current_thread->getInternalTextLogsQueue();
 }
 
-std::string CurrentThread::getCurrentQueryID()
-{
-    if (!current_thread || current_thread.use_count() <= 0)
-        return {};
-
-    return current_thread->getQueryID();
-}
-
-void CurrentThread::attachQueryContext(Context & query_context)
-{
-    return getCurrentThreadImpl()->attachQueryContext(query_context);
-}
-
-void CurrentThread::finalizePerformanceCounters()
-{
-    getCurrentThreadImpl()->finalizePerformanceCounters();
-}
-
 ThreadGroupStatusPtr CurrentThread::getGroup()
 {
-    return getCurrentThreadImpl()->getThreadGroup();
+    return get()->getThreadGroup();
 }
 
-CurrentThread::QueryScope::~QueryScope()
-{
-    try
-    {
-        CurrentThread::detachQueryIfNotDetached();
-    }
-    catch (...)
-    {
-        tryLogCurrentException("CurrentThread", __PRETTY_FUNCTION__);
-    }
-}
 }
