@@ -26,10 +26,12 @@ namespace ProfileEvents
     extern const Event InvoluntaryContextSwitches;
 
     extern const Event OSIOWaitMicroseconds;
-    extern const Event OSReadBytes;
-    extern const Event OSWriteBytes;
+    extern const Event OSCPUWaitMicroseconds;
+    extern const Event OSCPUVirtualTimeMicroseconds;
     extern const Event OSReadChars;
     extern const Event OSWriteChars;
+    extern const Event OSReadBytes;
+    extern const Event OSWriteBytes;
 }
 
 
@@ -99,8 +101,6 @@ struct RusageCounters
 
     UInt64 soft_page_faults = 0;
     UInt64 hard_page_faults = 0;
-    UInt64 voluntary_context_switches = 0;
-    UInt64 involuntary_context_switches = 0;
 
     RusageCounters() = default;
     RusageCounters(const ::rusage & rusage_, UInt64 real_time_)
@@ -116,8 +116,6 @@ struct RusageCounters
 
         soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
-        voluntary_context_switches = static_cast<UInt64>(rusage.ru_nvcsw);
-        involuntary_context_switches = static_cast<UInt64>(rusage.ru_nivcsw);
     }
 
     static RusageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
@@ -169,12 +167,21 @@ struct TasksStatsCounters
 
     static void incrementProfileEvents(const TasksStatsCounters & prev, const TasksStatsCounters & curr, ProfileEvents::Counters & profile_events)
     {
+        profile_events.increment(ProfileEvents::OSCPUWaitMicroseconds,
+                                 safeDiff(prev.stat.cpu_delay_total, curr.stat.cpu_delay_total) / 1000U);
         profile_events.increment(ProfileEvents::OSIOWaitMicroseconds,
                                  safeDiff(prev.stat.blkio_delay_total, curr.stat.blkio_delay_total) / 1000U);
-        profile_events.increment(ProfileEvents::OSReadBytes,  safeDiff(prev.stat.read_bytes, curr.stat.read_bytes));
-        profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.stat.write_bytes, curr.stat.write_bytes));
+        profile_events.increment(ProfileEvents::OSCPUVirtualTimeMicroseconds,
+                                 safeDiff(prev.stat.cpu_run_virtual_total, curr.stat.cpu_run_virtual_total) / 1000U);
+
+        /// Too old struct version, do not read new fields
+        if (curr.stat.version < TASKSTATS_VERSION)
+            return;
+
         profile_events.increment(ProfileEvents::OSReadChars,  safeDiff(prev.stat.read_char, curr.stat.read_char));
         profile_events.increment(ProfileEvents::OSWriteChars, safeDiff(prev.stat.write_char, curr.stat.write_char));
+        profile_events.increment(ProfileEvents::OSReadBytes,  safeDiff(prev.stat.read_bytes, curr.stat.read_bytes));
+        profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.stat.write_bytes, curr.stat.write_bytes));
     }
 
     static void updateProfileEvents(TasksStatsCounters & last_counters, ProfileEvents::Counters & profile_events)
@@ -362,7 +369,8 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     elem.read_bytes = progress_in.bytes.load(std::memory_order_relaxed);
     elem.written_rows = progress_out.rows.load(std::memory_order_relaxed);
     elem.written_bytes = progress_out.bytes.load(std::memory_order_relaxed);
-    elem.memory_usage = memory_tracker.getPeak();
+    elem.memory_usage = memory_tracker.get();
+    elem.peak_memory_usage = memory_tracker.getPeak();
 
     elem.thread_name = getThreadName();
     elem.thread_number = thread_number;

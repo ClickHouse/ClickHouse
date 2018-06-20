@@ -39,7 +39,7 @@ $CLICKHOUSE_CLIENT $settings -q "
 WITH
 	any(query_duration_ms*1000) AS duration,
 	sumIf(PV, PN = 'RealTimeMicroseconds') AS threads_realtime,
-	sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds')) AS threads_time_user_system_io
+	sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS threads_time_user_system_io
 SELECT
 	--duration, threads_realtime, threads_time_user_system_io,
 	threads_realtime >= 0.99 * duration,
@@ -69,7 +69,7 @@ FROM
 	SELECT
 		thread_number,
 		sumIf(PV, PN = 'RealTimeMicroseconds') AS thread_realtime,
-		sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds')) AS thread_time_user_system_io
+		sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS thread_time_user_system_io
 		FROM
 			(SELECT * FROM system.query_thread_log PREWHERE query_id='$query_id' WHERE event_date >= today()-1)
 		ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV

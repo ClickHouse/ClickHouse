@@ -62,9 +62,7 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
     /// The master thread exits immediately
     CurrentThread::initializeQuery();
     thread_group = CurrentThread::getGroup();
-    LOG_INFO(&Logger::get("BackgroundProcessingPool"), "thread_group " << thread_group.get());
     CurrentThread::detachQuery();
-    LOG_INFO(&Logger::get("BackgroundProcessingPool"), "thread_group " << thread_group.get());
 
     threads.resize(size);
     for (auto & thread : threads)

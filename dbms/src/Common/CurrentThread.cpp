@@ -57,7 +57,7 @@ ThreadStatusPtr CurrentThread::get()
 
 void CurrentThread::detachQuery()
 {
-    getCurrentThreadImpl()->detachQuery();
+    getCurrentThreadImpl()->detachQuery(false);
 }
 
 void CurrentThread::detachQueryIfNotDetached()
@@ -112,11 +112,6 @@ std::string CurrentThread::getCurrentQueryID()
     return current_thread->getQueryID();
 }
 
-ThreadGroupStatusPtr CurrentThread::getGroup()
-{
-    return getCurrentThreadImpl()->getThreadGroup();
-}
-
 void CurrentThread::attachQueryContext(Context & query_context)
 {
     return getCurrentThreadImpl()->attachQueryContext(query_context);
@@ -127,4 +122,20 @@ void CurrentThread::finalizePerformanceCounters()
     getCurrentThreadImpl()->finalizePerformanceCounters();
 }
 
+ThreadGroupStatusPtr CurrentThread::getGroup()
+{
+    return getCurrentThreadImpl()->getThreadGroup();
+}
+
+CurrentThread::QueryScope::~QueryScope()
+{
+    try
+    {
+        CurrentThread::detachQueryIfNotDetached();
+    }
+    catch (...)
+    {
+        tryLogCurrentException("CurrentThread", __PRETTY_FUNCTION__);
+    }
+}
 }

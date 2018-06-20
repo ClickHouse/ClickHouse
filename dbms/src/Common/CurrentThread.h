@@ -64,8 +64,20 @@ public:
     /// Non-master threads call this method in destructor automatically
     static void detachQuery();
     static void detachQueryIfNotDetached();
+
+
+    /// Initializes query with current thread as master thread in constructor, and detaches it in desstructor
+    struct QueryScope
+    {
+        explicit QueryScope(Context & query_context)
+        {
+            CurrentThread::initializeQuery();
+            CurrentThread::attachQueryContext(query_context);
+        }
+
+        ~QueryScope();
+    };
 };
 
 }
-
 

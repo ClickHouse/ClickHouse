@@ -51,6 +51,8 @@ void OwnSplitChannel::log(const Poco::Message & msg)
 
         logs_queue->emplace(std::move(columns));
     }
+
+    /// TODO: Also log to system.internal_text_log table
 }
 
 void OwnSplitChannel::addChannel(Poco::AutoPtr<Poco::Channel> channel)

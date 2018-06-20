@@ -351,7 +351,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 if (process_list_elem)
                 {
-                    QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events);
+                    QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events, false);
 
                     elem.query_duration_ms = info.elapsed_seconds * 1000;
 

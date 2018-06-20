@@ -50,6 +50,8 @@ public:
     /// Key is Poco's thread_id
     using QueryThreadStatuses = std::map<UInt32, ThreadStatusPtr>;
     QueryThreadStatuses thread_statuses;
+
+    /// The first thread created this thread group
     ThreadStatusPtr master_thread;
 
     String query;
