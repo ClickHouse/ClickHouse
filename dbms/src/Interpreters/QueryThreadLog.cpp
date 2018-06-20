@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Common/ClickHouseRevision.h>
 #include <Poco/Net/IPAddress.h>
 #include <array>
@@ -100,7 +101,7 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
     {
         auto column_names = columns[i++].get();
         auto column_values = columns[i++].get();
-        profile_counters->dumpToArrayColumns(column_names, column_values, true);
+        dumpToArrayColumns(*profile_counters, column_names, column_values, true);
     }
     else
     {

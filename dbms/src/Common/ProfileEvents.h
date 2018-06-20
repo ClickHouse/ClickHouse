@@ -1,16 +1,9 @@
 #pragma once
 
-#include "VariableContext.h"
-#include <stddef.h>
+#include <Common/VariableContext.h>
 #include <atomic>
 #include <memory>
-
-namespace DB
-{
-
-class IColumn;
-
-}
+#include <stddef.h>
 
 /** Implements global counters for various events happening in the application
   *  - for high level profiling.
@@ -46,7 +39,12 @@ namespace ProfileEvents
         Counters(Counter * allocated_counters)
             :  counters(allocated_counters), parent(nullptr), level(VariableContext::Global) {}
 
-        inline Counter & operator[] (Event event)
+        Counter & operator[] (Event event)
+        {
+            return counters[event];
+        }
+
+        const Counter & operator[] (Event event) const
         {
             return counters[event];
         }
@@ -80,9 +78,6 @@ namespace ProfileEvents
 
         /// Set all counters to zero
         void resetCounters();
-
-        /// Dumps profile events to two column Array(String) and Array(UInt64)
-        void dumpToArrayColumns(DB::IColumn * column_names, DB::IColumn * column_value, bool nonzero_only = true);
 
         static const Event num_counters;
     };

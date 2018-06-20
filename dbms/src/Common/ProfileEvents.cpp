@@ -237,49 +237,6 @@ void increment(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().increment(event, amount);
 }
 
-void Counters::dumpToArrayColumns(DB::IColumn * column_names_, DB::IColumn * column_values_, bool nonzero_only)
-{
-    /// Convert ptr and make simple check
-    auto column_names = (column_names_) ? &typeid_cast<DB::ColumnArray &>(*column_names_) : nullptr;
-    auto column_values = (column_values_) ? &typeid_cast<DB::ColumnArray &>(*column_values_) : nullptr;
-
-    size_t size = 0;
-
-    for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
-    {
-        UInt64 value = counters[event].load(std::memory_order_relaxed);
-
-        if (nonzero_only && 0 == value)
-            continue;
-
-        ++size;
-
-        if (column_names)
-        {
-            const char * desc = ProfileEvents::getDescription(event);
-            column_names->getData().insertData(desc, strlen(desc));
-        }
-
-        if (column_values)
-            column_values->getData().insert(value);
-    }
-
-    if (column_names)
-    {
-        auto & offsets = column_names->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
-    }
-
-    /// Nested columns case
-    bool the_same_offsets = column_names && column_values && column_names->getOffsetsPtr() == column_values->getOffsetsPtr();
-
-    if (column_values && !the_same_offsets)
-    {
-        auto & offsets = column_values->getOffsets();
-        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
-    }
-}
-
 }
 
 #undef APPLY_FOR_EVENTS
