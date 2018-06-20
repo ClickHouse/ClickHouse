@@ -1382,7 +1382,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands.commands, context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -3180,6 +3180,7 @@ void StorageReplicatedMergeTree::clearColumnInPartition(
     }
 }
 
+
 void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & context)
 {
     assertNotReadonly();
@@ -3193,43 +3194,41 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
     }
 
     String partition_id = data.getPartitionIDFromQuery(partition, context);
-    MergeTreePartInfo drop_range_info;
-    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
+
+    LogEntry entry;
+    if (dropPartsInPartition(*zookeeper, partition_id, entry, detach))
     {
-        LOG_INFO(log, "Will not drop partition " << partition_id << ", it is empty.");
+        /// If necessary, wait until the operation is performed on itself or on all replicas.
+        if (context.getSettingsRef().replication_alter_partitions_sync != 0)
+        {
+            if (context.getSettingsRef().replication_alter_partitions_sync == 1)
+                waitForReplicaToProcessLogEntry(replica_name, entry);
+            else
+                waitForAllReplicasToProcessLogEntry(entry);
+        }
+    }
+}
+
+
+void StorageReplicatedMergeTree::truncate(const ASTPtr & query)
+{
+    assertNotReadonly();
+
+    zkutil::ZooKeeperPtr zookeeper = getZooKeeper();
+
+    if (!is_leader)
+    {
+        sendRequestToLeaderReplica(query, context.getSettingsRef());
         return;
     }
 
-    clearBlocksInPartition(*zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
+    Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
 
-    /** Forbid to choose the parts to be deleted for merging.
-      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
-      */
-    String drop_range_fake_part_name = getPartNamePossiblyFake(data.format_version, drop_range_info);
+    for (String & partition_id : partitions)
     {
-        std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
-        queue.disableMergesInRange(drop_range_fake_part_name);
-    }
+        LogEntry entry;
 
-    LOG_DEBUG(log, "Disabled merges covered by range " << drop_range_fake_part_name);
-
-    /// Finally, having achieved the necessary invariants, you can put an entry in the log.
-    LogEntry entry;
-    entry.type = LogEntry::DROP_RANGE;
-    entry.source_replica = replica_name;
-    entry.new_part_name = drop_range_fake_part_name;
-    entry.detach = detach;
-    entry.create_time = time(nullptr);
-
-    String log_znode_path = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
-    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
-
-    /// If necessary, wait until the operation is performed on itself or on all replicas.
-    if (context.getSettingsRef().replication_alter_partitions_sync != 0)
-    {
-        if (context.getSettingsRef().replication_alter_partitions_sync == 1)
-            waitForReplicaToProcessLogEntry(replica_name, entry);
-        else
+        if (dropPartsInPartition(*zookeeper, partition_id, entry, false))
             waitForAllReplicasToProcessLogEntry(entry);
     }
 }
@@ -3952,6 +3951,60 @@ void StorageReplicatedMergeTree::freezePartition(const ASTPtr & partition, const
 
 void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
+    /// Overview of the mutation algorithm.
+    ///
+    /// When the client executes a mutation, this method is called. It acquires block numbers in all
+    /// partitions, saves them in the mutation entry and writes the mutation entry to a new ZK node in
+    /// the /mutations folder. This block numbers are needed to determine which parts should be mutated and
+    /// which shouldn't (parts inserted after the mutation will have the block number higher than the
+    /// block number acquired by the mutation in that partition and so will not be mutatied).
+    /// This block number is called "mutation version" in that partition.
+    ///
+    /// Mutation versions are acquired atomically in all partitions, so the case when an insert in some
+    /// partition has the block number higher than the mutation version but the following insert into another
+    /// partition acquires the block number lower than the mutation version in that partition is impossible.
+    /// Another important invariant: mutation entries appear in /mutations in the order of their mutation
+    /// versions (in any partition). This means that mutations form a sequence and we can execute them in
+    /// the order of their mutation versions and not worry that some mutation with the smaller version
+    /// will suddenly appear.
+    ///
+    /// During mutations individual parts are immutable - when we want to change the contents of a part
+    /// we prepare the new part and add it to MergeTreeData (the original part gets replaced). The fact that
+    /// we have mutated the part is recorded in the part->info.mutation field of MergeTreePartInfo.
+    /// The relation with the original part is preserved because the new part covers the same block range
+    /// as the original one.
+    ///
+    /// We then can for each part determine its "mutation version": the version of the last mutation in
+    /// the mutation sequence that we regard as already applied to that part. All mutations with the greater
+    /// version number will still need to be applied to that part.
+    ///
+    /// Execution of mutations is done asynchronously. All replicas watch the /mutations directory and
+    /// load new mutation entries as they appear (see mutationsUpdatingTask()). Next we need to determine
+    /// how to mutate individual parts consistently with part merges. This is done by the leader replica
+    /// (see mergeSelectingTask() and class ReplicatedMergeTreeMergePredicate for details). Important
+    /// invariants here are that a) all source parts for a single merge must have the same mutation version
+    /// and b) any part can be mutated only once or merged only once (e.g. once we have decided to mutate
+    /// a part then we need to execute that mutation and can assign merges only to the new part and not to the
+    /// original part). Multiple consecutive mutations can be executed at once (without writing the
+    /// intermediate result to a part).
+    ///
+    /// Leader replica records its decisions to the replication log (/log directory in ZK) in the form of
+    /// MUTATE_PART entries and all replicas then execute them in the background pool
+    /// (see tryExecutePartMutation() function). When a replica encounters a MUTATE_PART command, it is
+    /// guaranteed that the corresponding mutation entry is already loaded (when we pull entries from
+    /// replication log into the replica queue, we also load mutation entries). Note that just as with merges
+    /// the replica can decide not to do the mutation locally and fetch the mutated part from another replica
+    /// instead.
+    ///
+    /// Mutations of individual parts are in fact pretty similar to merges, e.g. their assignment and execution
+    /// is governed by the same settings. TODO: support a single "merge-mutation" operation when the data
+    /// read from the the source parts is first mutated on the fly to some uniform mutation version and then
+    /// merged to a resulting part.
+    ///
+    /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
+    /// the version of this mutation), the mutation is considered done and can be deleted.
+    /// TODO: add a way to track the progress of mutations and a process to clean old mutations.
+
     ReplicatedMergeTreeMutationEntry entry;
     entry.source_replica = replica_name;
     entry.commands = commands;
@@ -3994,6 +4047,11 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         else
             throw zkutil::KeeperException("Unable to create a mutation znode", rc);
     }
+}
+
+std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
+{
+    return queue.getMutationsStatus();
 }
 
 
@@ -4230,7 +4288,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         throw Exception(zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
     String partition_prefix = partition_id + "_";
-    std::vector<std::pair<String, std::future<zkutil::GetResponse>>> get_futures;
+    zkutil::AsyncResponses<zkutil::GetResponse> get_futures;
     for (const String & block_id : blocks)
     {
         if (startsWith(block_id, partition_prefix))
@@ -4240,7 +4298,7 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
         }
     }
 
-    std::vector<std::pair<String, std::future<zkutil::RemoveResponse>>> to_delete_futures;
+    zkutil::AsyncResponses<zkutil::RemoveResponse> to_delete_futures;
     for (auto & pair : get_futures)
     {
         const String & path = pair.first;
@@ -4507,6 +4565,7 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
     return {};
 }
 
+
 bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UInt64 max_wait_milliseconds)
 {
     /// Let's fetch new log entries firstly
@@ -4541,6 +4600,43 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
     }
 
     return cond_reached.load(std::memory_order_relaxed);
+}
+
+
+bool StorageReplicatedMergeTree::dropPartsInPartition(
+    zkutil::ZooKeeper & zookeeper, String & partition_id, StorageReplicatedMergeTree::LogEntry & entry, bool detach)
+{
+    MergeTreePartInfo drop_range_info;
+    if (!getFakePartCoveringAllPartsInPartition(partition_id, drop_range_info))
+    {
+        LOG_INFO(log, "Will not drop partition " << partition_id << ", it is empty.");
+        return false;
+    }
+
+    clearBlocksInPartition(zookeeper, partition_id, drop_range_info.min_block, drop_range_info.max_block);
+
+    /** Forbid to choose the parts to be deleted for merging.
+      * Invariant: after the `DROP_RANGE` entry appears in the log, merge of deleted parts will not appear in the log.
+      */
+    String drop_range_fake_part_name = getPartNamePossiblyFake(data.format_version, drop_range_info);
+    {
+        std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
+        queue.disableMergesInRange(drop_range_fake_part_name);
+    }
+
+    LOG_DEBUG(log, "Disabled merges covered by range " << drop_range_fake_part_name);
+
+    /// Finally, having achieved the necessary invariants, you can put an entry in the log.
+    entry.type = LogEntry::DROP_RANGE;
+    entry.source_replica = replica_name;
+    entry.new_part_name = drop_range_fake_part_name;
+    entry.detach = detach;
+    entry.create_time = time(nullptr);
+
+    String log_znode_path = zookeeper.create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
+    entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
+
+    return true;
 }
 
 }

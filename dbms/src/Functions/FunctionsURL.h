@@ -8,10 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsString.h>
 #include <Functions/FunctionsStringArray.h>
-
-#ifdef __APPLE__
-#include <common/apple_memrchr.h>
-#endif
+#include <port/memrchr.h>
 
 
 namespace DB

@@ -1,14 +1,17 @@
+#include <fstream>
+#include <sstream>
+#include <boost/filesystem.hpp>
+
 #include <Storages/StorageCatBoostPool.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <fstream>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <boost/filesystem.hpp>
 #include <Parsers/ASTIdentifier.h>
+
 
 namespace DB
 {
@@ -31,7 +34,7 @@ public:
             : file_name(file_name), format_name(format_name)
     {
         read_buf = std::make_unique<ReadBufferFromFile>(file_name);
-        reader = FormatFactory().getInput(format_name, *read_buf, sample_block, context, max_block_size);
+        reader = FormatFactory::instance().getInput(format_name, *read_buf, sample_block, context, max_block_size);
     }
 
     String getName() const override

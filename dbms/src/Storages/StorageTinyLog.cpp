@@ -365,6 +365,22 @@ bool StorageTinyLog::checkData() const
     return file_checker.check();
 }
 
+void StorageTinyLog::truncate(const ASTPtr &)
+{
+    if (name.empty())
+        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
+
+    auto file = Poco::File(path + escapeForFileName(name));
+    file.remove(true);
+    file.createDirectories();
+
+    files.clear();
+    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
+
+    for (const auto &column : getColumns().getAllPhysical())
+        addFiles(column.name, *column.type);
+}
+
 
 void registerStorageTinyLog(StorageFactory & factory)
 {

@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/NumberTraits.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -1684,11 +1685,12 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
     String tmp;
+    FormatSettings format_settings;
     for (size_t i = 0; i < size; ++i)
     {
         {
             WriteBufferFromString out(tmp);
-            src.type->serializeTextEscaped(*src.column, i, out);
+            src.type->serializeText(*src.column, i, out, format_settings);
         }
 
         res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());

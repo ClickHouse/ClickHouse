@@ -69,8 +69,9 @@ override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
 
 override_dh_auto_build:
-	# Fix fir ninja. Do not add -O.
-	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
+	# Fix for ninja. Do not add -O.
+	#cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
+	cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT)
 
 override_dh_auto_test:
 	#TODO, use ENABLE_TESTS=1
@@ -98,11 +99,6 @@ override_dh_install:
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
-
-	#TODO: use from cmake:
-	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	#mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
-	#CLANG=$(DESTDIR)/usr/bin/clickhouse-clang DESTDIR=$(DESTDIR) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 	# fake metrika files when private dir is empty
 	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika

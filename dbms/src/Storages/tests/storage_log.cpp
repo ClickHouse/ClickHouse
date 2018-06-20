@@ -2,9 +2,10 @@
 
 #include <IO/WriteBufferFromOStream.h>
 #include <Storages/StorageLog.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/LimitBlockInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -91,11 +92,12 @@ try
 
         WriteBufferFromOStream out_buf(std::cout);
 
-        LimitBlockInputStream in_limit(in, 10, 0);
-        RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
-        BlockOutputStreamFromRowOutputStream output(output_, sample);
+        Context context = Context::createGlobal();
 
-        copyData(in_limit, output);
+        LimitBlockInputStream in_limit(in, 10, 0);
+        BlockOutputStreamPtr output = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
+
+        copyData(in_limit, *output);
     }
 
     return 0;

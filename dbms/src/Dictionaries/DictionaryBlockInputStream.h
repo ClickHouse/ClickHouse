@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /*
  * BlockInputStream implementation for external dictionaries
  * read() returns single block consisting of the in-memory contents of the dictionaries

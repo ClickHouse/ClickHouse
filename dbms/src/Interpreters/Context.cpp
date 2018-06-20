@@ -16,7 +16,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <Common/BackgroundSchedulePool.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -117,7 +117,6 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
-    FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
     mutable std::shared_ptr<ExternalModels> external_models;
@@ -355,7 +354,7 @@ std::shared_ptr<Context> Context::acquireSession(const String & session_id, std:
         if (session_check)
             throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
 
-        auto new_session = std::make_shared<Context>(*global_context);
+        auto new_session = std::make_shared<Context>(*this);
 
         new_session->scheduleCloseSession(key, timeout);
 
@@ -1655,12 +1654,12 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 
 BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
 {
-    return shared->format_factory.getInput(name, buf, sample, *this, max_block_size);
+    return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
 
 BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return shared->format_factory.getOutput(name, buf, sample, *this);
+    return FormatFactory::instance().getOutput(name, buf, sample, *this);
 }
 
 

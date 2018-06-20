@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
 }
 
 /** Functions that use plug-ins (external) dictionaries.

@@ -6,7 +6,7 @@ Each row describes one part of the data.
 
 Columns:
 
-- partition (String) – The partition name. YYYYMM format. To learn what a partition is, see the description of the [ALTER](../query_language/queries.md#query_language_queries_alter) query.
+- partition (String) – The partition name. It's in YYYYMM format in case of old-style partitioning and is arbitary serialized value in case of custom partitioning. To learn what a partition is, see the description of the [ALTER](../query_language/queries.md#query_language_queries_alter) query.
 - name (String) – Name of the data part.
 - active (UInt8) – Indicates whether the part is active. If a part is active, it is used in a table; otherwise, it will be deleted. Inactive data parts remain after merging.
 - marks (UInt64) – The number of marks. To get the approximate number of rows in a data part, multiply ``marks``  by the index granularity (usually 8192).
