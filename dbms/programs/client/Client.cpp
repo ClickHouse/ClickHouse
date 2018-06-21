@@ -962,10 +962,17 @@ private:
             connection->sendData(block);
             processed_rows += block.rows();
 
-            /// Check if server send Log packet
-            auto packet_type = connection->checkPacket();
-            if (packet_type && *packet_type == Protocol::Server::Log)
-                receiveAndProcessPacket();
+            /// Check if server send a packet that should be processed immediately
+            if (auto packet_type = connection->checkPacketType())
+            {
+                if (*packet_type == Protocol::Server::Log || *packet_type == Protocol::Server::Pong)
+                    receiveAndProcessPacket();
+                else if (*packet_type == Protocol::Server::Exception)
+                {
+                    /// Break insert in an exception ocurred
+                    break;
+                }
+            }
 
             if (!block)
                 break;
@@ -1057,6 +1064,9 @@ private:
                 onProgress(packet.progress);
                 return true;
 
+            case Protocol::Server::Pong:
+                return false;
+
             case Protocol::Server::ProfileInfo:
                 onProfileInfo(packet.profile_info);
                 return true;
@@ -1083,7 +1093,7 @@ private:
                 return false;
 
             default:
-                throw Exception("Unknown packet from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+                throw Exception("Unknown packet " + std::to_string(packet.type) + " from server", ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
         }
     }
 
@@ -1110,6 +1120,9 @@ private:
                     onLogData(packet.block);
                     break;
 
+                case Protocol::Server::Pong:
+                    break;
+
                 default:
                     throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
                         + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
@@ -1118,7 +1131,7 @@ private:
     }
 
 
-    /// Process Log packets, exit when recieve Exception or EndOfStream
+    /// Process Log packets, exit when receieve Exception or EndOfStream
     bool receiveEndOfQuery()
     {
         while (true)
@@ -1138,6 +1151,9 @@ private:
 
                 case Protocol::Server::Log:
                     onLogData(packet.block);
+                    break;
+
+                case Protocol::Server::Pong:
                     break;
 
                 default:

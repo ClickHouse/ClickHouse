@@ -15,7 +15,7 @@ rm -f "$server_logs_file"
 settings="$server_logs --log_queries=1 --log_query_threads=1 --log_profile_events=1 --log_query_settings=1"
 
 
-# Test insert logging on each block and checkPacket() method
+# Test insert logging on each block and checkPacketType() method
 
 $CLICKHOUSE_CLIENT $settings -n -q "
 DROP TABLE IF EXISTS test.null;

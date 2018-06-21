@@ -52,6 +52,24 @@ namespace ErrorCodes
 }
 
 
+bool TCPHandler::poll(size_t timeout_microseconds)
+{
+    return static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_microseconds);
+}
+
+
+bool TCPHandler::hasReadPendingData() const
+{
+    return in_last_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+
+bool TCPHandler::eof() const
+{
+    return !in_last_packet_type.has_value() && in->eof();
+}
+
+
 void TCPHandler::runImpl()
 {
     connection_context = server.context();
@@ -63,10 +81,11 @@ void TCPHandler::runImpl()
     socket().setSendTimeout(global_settings.send_timeout);
     socket().setNoDelay(true);
 
+    in_last_packet_type.reset();
     in = std::make_shared<ReadBufferFromPocoSocket>(socket());
     out = std::make_shared<WriteBufferFromPocoSocket>(socket());
 
-    if (in->eof())
+    if (eof())
     {
         LOG_WARNING(log, "Client has not sent any data.");
         return;
@@ -119,14 +138,14 @@ void TCPHandler::runImpl()
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
-    while (1)
+    while (true)
     {
         /// We are waiting for a packet from the client. Thus, every `POLL_INTERVAL` seconds check whether we need to shut down.
-        while (!static_cast<ReadBufferFromPocoSocket &>(*in).poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
+        while (!hasReadPendingData() && !poll(global_settings.poll_interval * 1000000) && !server.isCancelled())
             ;
 
         /// If we need to shut down, or client disconnects.
-        if (server.isCancelled() || in->eof())
+        if (server.isCancelled() || eof())
             break;
 
         Stopwatch watch;
@@ -146,11 +165,27 @@ void TCPHandler::runImpl()
             /// If a user passed query-local timeouts, reset socket to initial state at the end of the query
             SCOPE_EXIT({state.timeout_setter.reset();});
 
-            /** If Query - process it. If Ping or Cancel - go back to the beginning.
+            /** If Query - process it. If Ping, Cancel or TablesStatusRequest - go back to the beginning.
              *  There may come settings for a separate query that modify `query_context`.
              */
-            if (!receivePacket())
-                continue;
+            UInt64 packet_type = receivePacketType();
+            switch (packet_type)
+            {
+                case Protocol::Client::Query:
+                    receiveAndProcessPacket();
+                    break;
+
+                case Protocol::Client::Ping:
+                case Protocol::Client::Cancel:
+                case Protocol::Client::TablesStatusRequest:
+                    receiveAndProcessPacket();
+                    /// exit from the loop iteration
+                    continue;
+
+                default:
+                    throw Exception("Unexpected packet " + String(Protocol::Client::toString(packet_type)) + " received from client",
+                                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+            }
 
             CurrentThread::initializeQuery();
 
@@ -192,7 +227,7 @@ void TCPHandler::runImpl()
                 processOrdinaryQuery();
 
             /// Reset BlockIO in advance to log destruction actions
-            state.io.reset();
+            //state.io.reset();
             sendLogs();
 
             sendEndOfStream();
@@ -332,12 +367,31 @@ void TCPHandler::readData(const Settings & global_settings)
         }
 
         /// If client disconnected.
-        if (in->eof())
+        if (eof())
             return;
 
-        /// We accept and process data. And if they are over, then we leave.
-        if (!receivePacket())
+        UInt64 packet_type = receivePacketType();
+        if (packet_type == Protocol::Client::Data)
+        {
+            /// Accept and process data. And if they are over, then we leave.
+            if (!receiveAndProcessPacket())
+                break;
+        }
+        else if (packet_type == Protocol::Client::Ping && client_revision >= DBMS_MIN_REVISION_WITH_EXTENDED_PING)
+        {
+            /// We allow ping packets in the middle of the query only for new enough clients
+            receiveAndProcessPacket();
+        }
+        else if (packet_type == Protocol::Client::Cancel)
+        {
+            receiveAndProcessPacket();
             break;
+        }
+        else
+        {
+            throw Exception("Unexpected packet " + String(Protocol::Client::toString(packet_type)) + " received from client",
+                ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
 
         sendLogs();
     }
@@ -521,11 +575,12 @@ void TCPHandler::sendExtremes()
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
-    UInt64 packet_type = 0;
+    UInt64 packet_type = receivePacketType();
+    in_last_packet_type.reset();
+
     String user = "default";
     String password;
 
-    readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::Hello)
     {
         /** If you accidentally accessed the HTTP protocol for a port destined for an internal TCP protocol,
@@ -583,10 +638,22 @@ void TCPHandler::sendHello()
 }
 
 
-bool TCPHandler::receivePacket()
+UInt64 TCPHandler::receivePacketType()
 {
-    UInt64 packet_type = 0;
-    readVarUInt(packet_type, *in);
+    if (!in_last_packet_type.has_value())
+    {
+        UInt64 packet_type;
+        readVarUInt(packet_type, *in);
+        in_last_packet_type.emplace(packet_type);
+    }
+
+    return in_last_packet_type.value();
+}
+
+bool TCPHandler::receiveAndProcessPacket()
+{
+    UInt64 packet_type = receivePacketType();
+    in_last_packet_type.reset();
 
 //    std::cerr << "Packet: " << packet_type << std::endl;
 
@@ -604,8 +671,7 @@ bool TCPHandler::receivePacket()
             return receiveData();
 
         case Protocol::Client::Ping:
-            writeVarUInt(Protocol::Server::Pong, *out);
-            out->next();
+            processPing();
             return false;
 
         case Protocol::Client::Cancel:
@@ -722,6 +788,22 @@ bool TCPHandler::receiveData()
     }
     else
         return false;
+}
+
+
+void TCPHandler::processPing()
+{
+    /// New versions send ID of ping packet to distinguish them
+    bool receive_id = client_revision >= DBMS_MIN_REVISION_WITH_EXTENDED_PING;
+    UInt64 id;
+
+    if (receive_id)
+        readVarUInt(id, *in);
+
+    writeVarUInt(Protocol::Server::Pong, *out);
+    if (receive_id)
+        writeVarUInt(id, *out);
+    out->next();
 }
 
 

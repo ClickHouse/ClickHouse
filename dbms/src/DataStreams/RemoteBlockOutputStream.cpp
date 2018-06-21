@@ -67,7 +67,7 @@ void RemoteBlockOutputStream::write(const Block & block)
     catch (const NetException &)
     {
         /// Try to get more detailed exception from server
-        auto packet_type = connection.checkPacket();
+        auto packet_type = connection.checkPacketType();
         if (packet_type && *packet_type == Protocol::Server::Exception)
         {
             Connection::Packet packet = connection.receivePacket();

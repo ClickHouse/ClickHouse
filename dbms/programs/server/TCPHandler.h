@@ -13,6 +13,7 @@
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Client/TimeoutSetter.h>
+#include <optional>
 
 #include "IServer.h"
 
@@ -112,6 +113,19 @@ private:
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
 
+    /// Contains type of a packet read from in buffer, but the packet has not been processed yet.
+    /// In fact, if it not empty, it is additional bytes in the head of in buffer.
+    std::optional<UInt64> in_last_packet_type;
+
+    /// Check, if has data to read.
+    bool poll(size_t timeout_microseconds = 0);
+
+    /// Check, if has data in read buffer or there is a pending packet type.
+    bool hasReadPendingData() const;
+
+    /// in->eof() and there is no read packet type.
+    bool eof() const;
+
     /// Time after the last check to stop the request and send the progress.
     Stopwatch after_check_cancelled;
     Stopwatch after_send_progress;
@@ -129,9 +143,11 @@ private:
     void runImpl();
 
     void receiveHello();
-    bool receivePacket();
+    UInt64 receivePacketType();
+    bool receiveAndProcessPacket();
     void receiveQuery();
     bool receiveData();
+    void processPing();
     void readData(const Settings & global_settings);
 
     /// Process INSERT query

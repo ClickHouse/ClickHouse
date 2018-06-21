@@ -113,12 +113,13 @@ void Connection::disconnect()
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
     in = nullptr;
-    last_input_packet_type.reset();
+    in_last_packet_type.reset();
     out = nullptr; // can write to socket
     if (socket)
         socket->close();
     socket = nullptr;
     connected = false;
+    ping_id_increment = 0;
 }
 
 
@@ -264,28 +265,44 @@ bool Connection::ping()
     TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
-        UInt64 pong = 0;
+        bool send_ping_id = server_revision >= DBMS_MIN_REVISION_WITH_EXTENDED_PING;
+        UInt64 ping_id = 0;
+
         writeVarUInt(Protocol::Client::Ping, *out);
+        if (send_ping_id)
+        {
+            ping_id = ++ping_id_increment;
+            writeVarUInt(ping_id, *out);
+        }
         out->next();
 
-        if (in->eof())
+        if (eof())
             return false;
 
-        readVarUInt(pong, *in);
-
-        /// Could receive late packets with progress. TODO: Maybe possible to fix.
-        while (pong == Protocol::Server::Progress)
+        while (true)
         {
-            receiveProgress();
+            UInt64 packet_type = receivePacketType();
 
-            if (in->eof())
-                return false;
+            /// Could receive late packets with progress. TODO: Maybe possible to fix.
+            if (packet_type == Protocol::Server::Progress)
+            {
+                receivePacket();
+                if (eof())
+                    return false;
+            }
+            else if (packet_type == Protocol::Server::Pong)
+            {
+                if (receivePong() != ping_id)
+                    throw NetException("Unexpected ping-pong response from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 
-            readVarUInt(pong, *in);
+                /// Exit at first Pong
+                break;
+            }
+            else
+            {
+                throwUnexpectedPacket(packet_type, "Pong");
+            }
         }
-
-        if (pong != Protocol::Server::Pong)
-            throwUnexpectedPacket(pong, "Pong");
     }
     catch (const Poco::Exception & e)
     {
@@ -507,26 +524,45 @@ bool Connection::poll(size_t timeout_microseconds)
 
 bool Connection::hasReadPendingData() const
 {
-    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+    return in_last_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
+}
+
+bool Connection::eof() const
+{
+    return !in_last_packet_type.has_value() && in->eof();
 }
 
 
-std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
+std::optional<UInt64> Connection::checkPacketType(size_t timeout_microseconds)
 {
-    if (last_input_packet_type.has_value())
-        return last_input_packet_type;
+    if (in_last_packet_type.has_value())
+        return in_last_packet_type;
 
     if (hasReadPendingData() || poll(timeout_microseconds))
     {
-        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        LOG_TRACE(log_wrapper.get(), "Receiving packet type");
         UInt64 packet_type;
         readVarUInt(packet_type, *in);
 
-        last_input_packet_type.emplace(packet_type);
-        return last_input_packet_type;
+        in_last_packet_type.emplace(packet_type);
+        return in_last_packet_type;
     }
 
     return {};
+}
+
+UInt64 Connection::receivePacketType()
+{
+    /// Have we already read packet type?
+    if (!in_last_packet_type.has_value())
+    {
+        LOG_TRACE(log_wrapper.get(), "Receiving packet type");
+        UInt64 packet_type = 0;
+        readVarUInt(packet_type, *in);
+        in_last_packet_type.emplace(packet_type);
+    }
+
+    return in_last_packet_type.value();
 }
 
 
@@ -535,20 +571,10 @@ Connection::Packet Connection::receivePacket()
     try
     {
         Packet res;
+        res.type = receivePacketType();
+        in_last_packet_type.reset();
 
-        /// Have we already read packet type?
-        if (last_input_packet_type)
-        {
-            res.type = *last_input_packet_type;
-            last_input_packet_type.reset();
-        }
-        else
-        {
-            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
-            readVarUInt(res.type, *in);
-        }
-
-        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
+        LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
 
         switch (res.type)
         {
@@ -562,6 +588,10 @@ Connection::Packet Connection::receivePacket()
 
             case Protocol::Server::Progress:
                 res.progress = receiveProgress();
+                return res;
+
+            case Protocol::Server::Pong:
+                receivePong();
                 return res;
 
             case Protocol::Server::ProfileInfo:
@@ -698,6 +728,26 @@ Progress Connection::receiveProgress()
     Progress progress;
     progress.read(*in, server_revision);
     return progress;
+}
+
+
+UInt64 Connection::receivePong()
+{
+    bool receive_id = server_revision >= DBMS_MIN_REVISION_WITH_EXTENDED_PING;
+
+    if (receive_id)
+    {
+        UInt64 pong_id;
+        readVarUInt(pong_id, *in);
+
+        /// Invalid response
+        if (pong_id > ping_id_increment)
+            throw NetException("Unexpected ping-pong response from server", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+
+        return pong_id;
+    }
+
+    return std::numeric_limits<UInt64>::max();
 }
 
 

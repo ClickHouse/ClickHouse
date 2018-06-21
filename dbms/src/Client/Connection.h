@@ -24,6 +24,8 @@
 
 #include <atomic>
 #include <optional>
+#include "../IO/Progress.h"
+#include "../Common/Exception.h"
 
 
 namespace DB
@@ -138,11 +140,17 @@ public:
     /// Check, if has data to read.
     bool poll(size_t timeout_microseconds = 0);
 
-    /// Check, if has data in read buffer.
+    /// Check, if has data in read buffer or read packet type.
     bool hasReadPendingData() const;
 
+    /// in->eof() and there is no read packet type.
+    bool eof() const;
+
     /// Checks if there is input data in connection and reads packet ID.
-    std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
+    std::optional<UInt64> checkPacketType(size_t timeout_microseconds = 0);
+
+    /// Read packet type or returns already read one.
+    UInt64 receivePacketType();
 
     /// Receive packet from server.
     Packet receivePacket();
@@ -198,7 +206,7 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
-    std::optional<UInt64> last_input_packet_type;
+    std::optional<UInt64> in_last_packet_type;
 
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
@@ -253,12 +261,16 @@ private:
     void receiveHello();
     bool ping();
 
+    /// Is used to generate ping ids
+    UInt64 ping_id_increment = 0;
+
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(BlockInputStreamPtr & stream);
 
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
+    UInt64 receivePong();
     BlockStreamProfileInfo receiveProfileInfo();
 
     void initInputBuffers();

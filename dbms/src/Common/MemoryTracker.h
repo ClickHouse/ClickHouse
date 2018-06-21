@@ -37,9 +37,9 @@ class MemoryTracker
     const char * description = nullptr;
 
 public:
-    MemoryTracker(VariableContext level = VariableContext::Thread) : level(level) {}
-    MemoryTracker(Int64 limit_, VariableContext level = VariableContext::Thread) : limit(limit_), level(level) {}
-    MemoryTracker(MemoryTracker * parent_, VariableContext level = VariableContext::Thread) : parent(parent_), level(level) {}
+    explicit MemoryTracker(VariableContext level = VariableContext::Thread) : level(level) {}
+    explicit MemoryTracker(Int64 limit_, VariableContext level = VariableContext::Thread) : limit(limit_), level(level) {}
+    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level = VariableContext::Thread) : parent(parent_), level(level) {}
 
     ~MemoryTracker();
 
