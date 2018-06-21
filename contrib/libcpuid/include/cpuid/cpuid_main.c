@@ -83,7 +83,7 @@ static int parse_token(const char* expected_token, const char *token,
 /* get_total_cpus() system specific code: uses OS routines to determine total number of CPUs */
 #ifdef __APPLE__
 #include <unistd.h>
-#include <mach/clock_types.h>
+#include <mach/clock_types.h> // Y_IGNORE
 #include <mach/clock.h>
 #include <mach/mach.h>
 static int get_total_cpus(void)
