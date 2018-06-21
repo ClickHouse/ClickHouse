@@ -14,7 +14,7 @@
 #endif
 
 #if USE_TCMALLOC
-#include <gperftools/malloc_extension.h>
+#include <gperftools/malloc_extension.h> // Y_IGNORE
 #endif
 
 #if ENABLE_CLICKHOUSE_SERVER
