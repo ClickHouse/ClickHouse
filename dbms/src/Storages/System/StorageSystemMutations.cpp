@@ -26,6 +26,7 @@ StorageSystemMutations::StorageSystemMutations(const std::string & name_)
         { "block_numbers.number",                 std::make_shared<DataTypeArray>(
                                                       std::make_shared<DataTypeInt64>())  },
         { "parts_to_do",                          std::make_shared<DataTypeInt64>()      },
+        { "is_done",                              std::make_shared<DataTypeUInt8>()      },
     }));
 }
 
@@ -112,6 +113,7 @@ BlockInputStreams StorageSystemMutations::read(
             res_columns[col_num++]->insert(block_partition_ids);
             res_columns[col_num++]->insert(block_numbers);
             res_columns[col_num++]->insert(status.parts_to_do);
+            res_columns[col_num++]->insert(UInt64(status.is_done));
         }
     }
 
