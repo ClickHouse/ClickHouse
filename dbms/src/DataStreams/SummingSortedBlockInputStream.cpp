@@ -3,6 +3,8 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/FieldVisitors.h>
@@ -74,7 +76,8 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         }
         else
         {
-            if (!column.type->isSummable())
+            bool isAggFunc = checkDataType<DataTypeAggregateFunction>(&*column.type);
+            if (!column.type->isSummable() && !isAggFunc)
             {
                 column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -93,8 +96,23 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
             {
                 // Create aggregator to sum this column
                 AggregateDescription desc;
+                desc.isAggFuncType = isAggFunc;
                 desc.column_numbers = {i};
-                desc.init("sumWithOverflow", {column.type});
+
+                if (isAggFunc)
+                {
+                    auto type = checkAndGetDataType<DataTypeAggregateFunction>(&*column.type);
+                    desc.init(type->getFunctionName().c_str(), type->getArgumentsDataTypes());
+                    //FIXME: would this be better instead?
+                    //desc.function = type->getFunction();
+                    //desc.add_function = desc.function->getAddressOfAddFunction();
+                    //desc.state.resize(desc.function->sizeOfData());
+                }
+                else
+                {
+                    desc.init("sumWithOverflow", {column.type});
+                }
+
                 columns_to_aggregate.emplace_back(std::move(desc));
             }
             else
@@ -195,8 +213,16 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
         {
             try
             {
-                desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+                if (desc.isAggFuncType)
+                {
+                    static_cast<ColumnAggregateFunction &>(*desc.merged_column).insertFrom(desc.state.data());
+                }
+                else
+                {
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+                }
 
+                // FIXME: Don't forget to mark the row as non-zero if AggregateFunction(...) is involved
                 /// Update zero status of current row
                 if (desc.column_numbers.size() == 1)
                 {
