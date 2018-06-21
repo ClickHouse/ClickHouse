@@ -29,9 +29,9 @@
 #include "recog_amd.h"
 #include "asm-bits.h"
 #include "libcpuid_util.h"
-#ifdef HAVE_CONFIG_H
+//#ifdef HAVE_CONFIG_H // CLICKHOUSE PATCH
 #include "config.h"
-#endif
+//#endif // CLICKHOUSE PATCH
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>

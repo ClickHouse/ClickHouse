@@ -32,11 +32,12 @@
 #ifndef __LIBCPUID_TYPES_H__
 #define __LIBCPUID_TYPES_H__
 
-//#ifdef HAVE_CONFIG_H
+//#ifdef HAVE_CONFIG_H // CLICKHOUSE PATCH
 #  include "config.h"
-//#endif
+//#endif // CLICKHOUSE PATCH
 
-#if 1 // defined(HAVE_STDINT_H)
+#if 1 // CLICKHOUSE PATCH
+//#if defined(HAVE_STDINT_H) // CLICKHOUSE PATCH
 #  include <stdint.h>
 #else
 /* we have to provide our own: */
