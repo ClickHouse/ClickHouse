@@ -89,7 +89,7 @@ private:
     ActiveDataPartSet virtual_parts;
 
     /// A set of mutations loaded from ZooKeeper.
-    /// mutations_by_partition is an index partition ID -> block ID -> mutation into this list.
+    /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
     /// Note that mutations are updated in such a way that they are always more recent than
     /// log_pointer (see pullLogsToQueue()).
 
@@ -99,10 +99,16 @@ private:
 
         /// A number of parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
         Int64 parts_to_do = 0;
+
+        /// Note that is_done is not equivalent to parts_to_do == 0
+        /// (even if parts_to_do == 0 some relevant parts can still commit in the future).
+        bool is_done = false;
     };
 
     std::map<String, MutationStatus> mutations_by_znode;
     std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
+    /// Znode ID of the latest mutation that is done.
+    String mutation_pointer;
 
 
     /// Provides only one simultaneous call to pullLogsToQueue.
@@ -274,6 +280,10 @@ public:
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
 
+    /// Mark finished mutations as done. If the function needs to be called again at some later time
+    /// (because some mutations are probably done but we are not sure yet), returns true.
+    bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
+
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
 
@@ -339,6 +349,8 @@ public:
     /// Return nonempty optional if the part can and should be mutated.
     /// Returned mutation version number is always the biggest possible.
     std::optional<Int64> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+
+    bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;
