@@ -75,6 +75,7 @@ private:
         MutableColumnPtr merged_column;
         std::vector<char> state;
         bool created = false;
+        bool isAggFuncType = false;
 
         void init(const char * function_name, const DataTypes & argument_types)
         {
