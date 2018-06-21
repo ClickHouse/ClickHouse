@@ -24,11 +24,14 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 #include "libcpuid.h"
+#include "libcpuid_internal.h"
 #include "recog_intel.h"
 #include "recog_amd.h"
 #include "asm-bits.h"
 #include "libcpuid_util.h"
+//#ifdef HAVE_CONFIG_H // CLICKHOUSE PATCH
 #include "config.h"
+//#endif // CLICKHOUSE PATCH
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -51,9 +54,9 @@ static void raw_data_t_constructor(struct cpu_raw_data_t* raw)
 static void cpu_id_t_constructor(struct cpu_id_t* id)
 {
 	memset(id, 0, sizeof(struct cpu_id_t));
-	id->l1_data_cache = id->l1_instruction_cache = id->l2_cache = id->l3_cache = -1;
-	id->l1_assoc = id->l2_assoc = id->l3_assoc = -1;
-	id->l1_cacheline = id->l2_cacheline = id->l3_cacheline = -1;
+	id->l1_data_cache = id->l1_instruction_cache = id->l2_cache = id->l3_cache = id->l4_cache = -1;
+	id->l1_assoc = id->l2_assoc = id->l3_assoc = id->l4_assoc = -1;
+	id->l1_cacheline = id->l2_cacheline = id->l3_cacheline = id->l4_cacheline = -1;
 	id->sse_size = -1;
 }
 
@@ -181,14 +184,26 @@ static void load_features_common(struct cpu_raw_data_t* raw, struct cpu_id_t* da
 	};
 	const struct feature_map_t matchtable_ecx1[] = {
 		{  0, CPU_FEATURE_PNI },
+		{  1, CPU_FEATURE_PCLMUL },
 		{  3, CPU_FEATURE_MONITOR },
 		{  9, CPU_FEATURE_SSSE3 },
 		{ 12, CPU_FEATURE_FMA3 },
 		{ 13, CPU_FEATURE_CX16 },
 		{ 19, CPU_FEATURE_SSE4_1 },
-		{ 21, CPU_FEATURE_X2APIC },
+		{ 20, CPU_FEATURE_SSE4_2 },
+		{ 22, CPU_FEATURE_MOVBE },
 		{ 23, CPU_FEATURE_POPCNT },
+		{ 25, CPU_FEATURE_AES },
+		{ 26, CPU_FEATURE_XSAVE },
+		{ 27, CPU_FEATURE_OSXSAVE },
+		{ 28, CPU_FEATURE_AVX },
 		{ 29, CPU_FEATURE_F16C },
+		{ 30, CPU_FEATURE_RDRAND },
+	};
+	const struct feature_map_t matchtable_ebx7[] = {
+		{  3, CPU_FEATURE_BMI1 },
+		{  5, CPU_FEATURE_AVX2 },
+		{  8, CPU_FEATURE_BMI2 },
 	};
 	const struct feature_map_t matchtable_edx81[] = {
 		{ 11, CPU_FEATURE_SYSCALL },
@@ -204,6 +219,9 @@ static void load_features_common(struct cpu_raw_data_t* raw, struct cpu_id_t* da
 	if (raw->basic_cpuid[0][0] >= 1) {
 		match_features(matchtable_edx1, COUNT_OF(matchtable_edx1), raw->basic_cpuid[1][3], data);
 		match_features(matchtable_ecx1, COUNT_OF(matchtable_ecx1), raw->basic_cpuid[1][2], data);
+	}
+	if (raw->basic_cpuid[0][0] >= 7) {
+		match_features(matchtable_ebx7, COUNT_OF(matchtable_ebx7), raw->basic_cpuid[7][1], data);
 	}
 	if (raw->ext_cpuid[0][0] >= 0x80000001) {
 		match_features(matchtable_edx81, COUNT_OF(matchtable_edx81), raw->ext_cpuid[1][3], data);
@@ -229,10 +247,10 @@ static void load_features_common(struct cpu_raw_data_t* raw, struct cpu_id_t* da
 	}
 }
 
-static int cpuid_basic_identify(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
+static cpu_vendor_t cpuid_vendor_identify(const uint32_t *raw_vendor, char *vendor_str)
 {
-	int i, j, basic, xmodel, xfamily, ext;
-	char brandstr[64] = {0};
+	int i;
+	cpu_vendor_t vendor = VENDOR_UNKNOWN;
 	const struct { cpu_vendor_t vendor; char match[16]; }
 	matchtable[NUM_CPU_VENDORS] = {
 		/* source: http://www.sandpile.org/ia32/cpuid.htm */
@@ -247,18 +265,27 @@ static int cpuid_basic_identify(struct cpu_raw_data_t* raw, struct cpu_id_t* dat
 		{ VENDOR_SIS		, "SiS SiS SiS " },
 		{ VENDOR_NSC		, "Geode by NSC" },
 	};
-	
-	memcpy(data->vendor_str + 0, &raw->basic_cpuid[0][1], 4);
-	memcpy(data->vendor_str + 4, &raw->basic_cpuid[0][3], 4);
-	memcpy(data->vendor_str + 8, &raw->basic_cpuid[0][2], 4);
-	data->vendor_str[12] = 0;
+
+	memcpy(vendor_str + 0, &raw_vendor[1], 4);
+	memcpy(vendor_str + 4, &raw_vendor[3], 4);
+	memcpy(vendor_str + 8, &raw_vendor[2], 4);
+	vendor_str[12] = 0;
+
 	/* Determine vendor: */
-	data->vendor = VENDOR_UNKNOWN;
 	for (i = 0; i < NUM_CPU_VENDORS; i++)
-		if (!strcmp(data->vendor_str, matchtable[i].match)) {
-			data->vendor = matchtable[i].vendor;
+		if (!strcmp(vendor_str, matchtable[i].match)) {
+			vendor = matchtable[i].vendor;
 			break;
 		}
+	return vendor;
+}
+
+static int cpuid_basic_identify(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
+{
+	int i, j, basic, xmodel, xfamily, ext;
+	char brandstr[64] = {0};
+	data->vendor = cpuid_vendor_identify(raw->basic_cpuid[0], data->vendor_str);
+
 	if (data->vendor == VENDOR_UNKNOWN)
 		return set_error(ERR_CPU_UNKN);
 	basic = raw->basic_cpuid[0][0];
@@ -347,7 +374,7 @@ int cpuid_get_raw_data(struct cpu_raw_data_t* data)
 		cpu_exec_cpuid(i, data->basic_cpuid[i]);
 	for (i = 0; i < 32; i++)
 		cpu_exec_cpuid(0x80000000 + i, data->ext_cpuid[i]);
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < MAX_INTELFN4_LEVEL; i++) {
 		memset(data->intel_fn4[i], 0, sizeof(data->intel_fn4[i]));
 		data->intel_fn4[i][0] = 4;
 		data->intel_fn4[i][2] = i;
@@ -358,6 +385,18 @@ int cpuid_get_raw_data(struct cpu_raw_data_t* data)
 		data->intel_fn11[i][0] = 11;
 		data->intel_fn11[i][2] = i;
 		cpu_exec_cpuid_ext(data->intel_fn11[i]);
+	}
+	for (i = 0; i < MAX_INTELFN12H_LEVEL; i++) {
+		memset(data->intel_fn12h[i], 0, sizeof(data->intel_fn12h[i]));
+		data->intel_fn12h[i][0] = 0x12;
+		data->intel_fn12h[i][2] = i;
+		cpu_exec_cpuid_ext(data->intel_fn12h[i]);
+	}
+	for (i = 0; i < MAX_INTELFN14H_LEVEL; i++) {
+		memset(data->intel_fn14h[i], 0, sizeof(data->intel_fn14h[i]));
+		data->intel_fn14h[i][0] = 0x14;
+		data->intel_fn14h[i][2] = i;
+		cpu_exec_cpuid_ext(data->intel_fn14h[i]);
 	}
 	return set_error(ERR_OK);
 }
@@ -390,6 +429,14 @@ int cpuid_serialize_raw_data(struct cpu_raw_data_t* data, const char* filename)
 		fprintf(f, "intel_fn11[%d]=%08x %08x %08x %08x\n", i,
 			data->intel_fn11[i][0], data->intel_fn11[i][1],
 			data->intel_fn11[i][2], data->intel_fn11[i][3]);
+	for (i = 0; i < MAX_INTELFN12H_LEVEL; i++)
+		fprintf(f, "intel_fn12h[%d]=%08x %08x %08x %08x\n", i,
+			data->intel_fn12h[i][0], data->intel_fn12h[i][1],
+			data->intel_fn12h[i][2], data->intel_fn12h[i][3]);
+	for (i = 0; i < MAX_INTELFN14H_LEVEL; i++)
+		fprintf(f, "intel_fn14h[%d]=%08x %08x %08x %08x\n", i,
+			data->intel_fn14h[i][0], data->intel_fn14h[i][1],
+			data->intel_fn14h[i][2], data->intel_fn14h[i][3]);
 	
 	if (strcmp(filename, ""))
 		fclose(f);
@@ -434,10 +481,12 @@ int cpuid_deserialize_raw_data(struct cpu_raw_data_t* data, const char* filename
 			recognized = 1;
 		}
 		syntax = 1;
-		syntax = syntax && parse_token("basic_cpuid", token, value, data->basic_cpuid, 32, &recognized);
-		syntax = syntax && parse_token("ext_cpuid", token, value, data->ext_cpuid, 32, &recognized);
-		syntax = syntax && parse_token("intel_fn4", token, value, data->intel_fn4,  4, &recognized);
-		syntax = syntax && parse_token("intel_fn11", token, value, data->intel_fn11,  4, &recognized);
+		syntax = syntax && parse_token("basic_cpuid", token, value, data->basic_cpuid,   MAX_CPUID_LEVEL, &recognized);
+		syntax = syntax && parse_token("ext_cpuid", token, value, data->ext_cpuid,       MAX_EXT_CPUID_LEVEL, &recognized);
+		syntax = syntax && parse_token("intel_fn4", token, value, data->intel_fn4,       MAX_INTELFN4_LEVEL, &recognized);
+		syntax = syntax && parse_token("intel_fn11", token, value, data->intel_fn11,     MAX_INTELFN11_LEVEL, &recognized);
+		syntax = syntax && parse_token("intel_fn12h", token, value, data->intel_fn12h,   MAX_INTELFN12H_LEVEL, &recognized);
+		syntax = syntax && parse_token("intel_fn14h", token, value, data->intel_fn14h,   MAX_INTELFN14H_LEVEL, &recognized);
 		if (!syntax) {
 			warnf("Error: %s:%d: Syntax error\n", filename, cur_line);
 			fclose(f);
@@ -453,7 +502,7 @@ int cpuid_deserialize_raw_data(struct cpu_raw_data_t* data, const char* filename
 	return set_error(ERR_OK);
 }
 
-int cpu_identify(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
+int cpu_ident_internal(struct cpu_raw_data_t* raw, struct cpu_id_t* data, struct internal_id_info_t* internal)
 {
 	int r;
 	struct cpu_raw_data_t myraw;
@@ -467,15 +516,21 @@ int cpu_identify(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
 		return set_error(r);
 	switch (data->vendor) {
 		case VENDOR_INTEL:
-			r = cpuid_identify_intel(raw, data);
+			r = cpuid_identify_intel(raw, data, internal);
 			break;
 		case VENDOR_AMD:
-			r = cpuid_identify_amd(raw, data);
+			r = cpuid_identify_amd(raw, data, internal);
 			break;
 		default:
 			break;
 	}
 	return set_error(r);
+}
+
+int cpu_identify(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
+{
+	struct internal_id_info_t throwaway;
+	return cpu_ident_internal(raw, data, &throwaway);
 }
 
 const char* cpu_feature_str(cpu_feature_t feature)
@@ -577,6 +632,21 @@ const char* cpu_feature_str(cpu_feature_t feature)
 		{ CPU_FEATURE_PFI, "pfi" },
 		{ CPU_FEATURE_PA, "pa" },
 		{ CPU_FEATURE_AVX2, "avx2" },
+		{ CPU_FEATURE_BMI1, "bmi1" },
+		{ CPU_FEATURE_BMI2, "bmi2" },
+		{ CPU_FEATURE_HLE, "hle" },
+		{ CPU_FEATURE_RTM, "rtm" },
+		{ CPU_FEATURE_AVX512F, "avx512f" },
+		{ CPU_FEATURE_AVX512DQ, "avx512dq" },
+		{ CPU_FEATURE_AVX512PF, "avx512pf" },
+		{ CPU_FEATURE_AVX512ER, "avx512er" },
+		{ CPU_FEATURE_AVX512CD, "avx512cd" },
+		{ CPU_FEATURE_SHA_NI, "sha_ni" },
+		{ CPU_FEATURE_AVX512BW, "avx512bw" },
+		{ CPU_FEATURE_AVX512VL, "avx512vl" },
+		{ CPU_FEATURE_SGX, "sgx" },
+		{ CPU_FEATURE_RDSEED, "rdseed" },
+		{ CPU_FEATURE_ADX, "adx" },
 	};
 	unsigned i, n = COUNT_OF(matchtable);
 	if (n != NUM_CPU_FEATURES) {
@@ -600,6 +670,15 @@ const char* cpuid_error(void)
 		{ ERR_BADFMT   , "Bad file format"},
 		{ ERR_NOT_IMP  , "Not implemented"},
 		{ ERR_CPU_UNKN , "Unsupported processor"},
+		{ ERR_NO_RDMSR , "RDMSR instruction is not supported"},
+		{ ERR_NO_DRIVER, "RDMSR driver error (generic)"},
+		{ ERR_NO_PERMS , "No permissions to install RDMSR driver"},
+		{ ERR_EXTRACT  , "Cannot extract RDMSR driver (read only media?)"},
+		{ ERR_HANDLE   , "Bad handle"},
+		{ ERR_INVMSR   , "Invalid MSR"},
+		{ ERR_INVCNB   , "Invalid core number"},
+		{ ERR_HANDLE_R , "Error on handle read"},
+		{ ERR_INVRANGE , "Invalid given range"},
 	};
 	unsigned i;
 	for (i = 0; i < COUNT_OF(matchtable); i++)
@@ -624,6 +703,23 @@ libcpuid_warn_fn_t cpuid_set_warn_function(libcpuid_warn_fn_t new_fn)
 void cpuid_set_verbosiness_level(int level)
 {
 	_current_verboselevel = level;
+}
+
+cpu_vendor_t cpuid_get_vendor(void)
+{
+	static cpu_vendor_t vendor = VENDOR_UNKNOWN;
+	uint32_t raw_vendor[4];
+	char vendor_str[VENDOR_STR_MAX];
+
+	if(vendor == VENDOR_UNKNOWN) {
+		if (!cpuid_present())
+			set_error(ERR_NO_CPUID);
+		else {
+			cpu_exec_cpuid(0, raw_vendor);
+			vendor = cpuid_vendor_identify(raw_vendor, vendor_str);
+		}
+	}
+	return vendor;
 }
 
 void cpuid_get_cpu_list(cpu_vendor_t vendor, struct cpu_list_t* list)
