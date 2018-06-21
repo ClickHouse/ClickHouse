@@ -8,7 +8,7 @@
 #define itimerspec linux_itimerspec
 #define sigset_t linux_sigset_t
 
-#include <linux/aio_abi.h>
+#include <linux/aio_abi.h> // Y_IGNORE
 
 #undef timespec
 #undef timeval
