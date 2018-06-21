@@ -16,6 +16,9 @@ struct MergeTreeMutationStatus
 
     /// A number of parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
     Int64 parts_to_do = 0;
+
+    /// If the mutation is done. Note that in case of ReplicatedMergeTree parts_to_do == 0 doesn't imply is_done == true.
+    bool is_done = false;
 };
 
 }
