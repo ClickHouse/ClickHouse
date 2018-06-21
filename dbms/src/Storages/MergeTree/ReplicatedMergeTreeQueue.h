@@ -180,6 +180,10 @@ private:
         std::optional<time_t> & max_processed_insert_time_changed,
         std::unique_lock<std::mutex> & state_lock);
 
+    /// If the new part appears (add == true) or becomes obsolete (add == false), update parts_to_do of all affected mutations.
+    /// Notifies storage.mutations_finalizing_task if some mutations are probably finished.
+    void updateMutationsPartsToDo(const String & part_name, bool add);
+
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
         std::optional<time_t> min_unprocessed_insert_time_changed,

@@ -104,19 +104,7 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
     for (const String & virtual_part_name : entry->getVirtualPartNames())
     {
         virtual_parts.add(virtual_part_name);
-
-        /// Update mutations status.
-        /// To complete each mutation with a block number bigger than part_info.getDataVersion()
-        /// we would need to mutate the part `virtual_part_name`.
-
-        auto part_info = MergeTreePartInfo::fromPartName(virtual_part_name, format_version);
-        auto mutations_in_partition = mutations_by_partition.find(part_info.partition_id);
-        if (mutations_in_partition == mutations_by_partition.end())
-            continue;
-
-        auto from_it = mutations_in_partition->second.upper_bound(part_info.getDataVersion());
-        for (auto it = from_it; it != mutations_in_partition->second.end(); ++it)
-            ++it->second->parts_to_do;
+        updateMutationsPartsToDo(virtual_part_name, /* add = */ true);
     }
 
     /// Put 'DROP PARTITION' entries at the beginning of the queue not to make superfluous fetches of parts that will be eventually deleted
@@ -181,8 +169,6 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
         }
     }
 
-    bool some_mutations_are_probably_done = false;
-
     if (is_successful)
     {
         for (const String & virtual_part_name : entry->getVirtualPartNames())
@@ -190,25 +176,10 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
             Strings replaced_parts;
             current_parts.add(virtual_part_name, &replaced_parts);
 
-            /// Update mutations state.
             /// Each part from `replaced_parts` should become Obsolete as a result of executing the entry.
             /// So it is one less part to mutate for each mutation with block number greater than part_info.getDataVersion()
-
             for (const String & replaced_part_name : replaced_parts)
-            {
-                auto part_info = MergeTreePartInfo::fromPartName(replaced_part_name, format_version);
-                auto in_partition = mutations_by_partition.find(part_info.partition_id);
-                if (in_partition == mutations_by_partition.end())
-                    continue;
-
-                auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
-                for (auto it = from_it; it != in_partition->second.end(); ++it)
-                {
-                    --it->second->parts_to_do;
-                    if (it->second->parts_to_do <= 0)
-                        some_mutations_are_probably_done = true;
-                }
-            }
+                updateMutationsPartsToDo(replaced_part_name, /* add = */ false);
         }
 
         String drop_range_part_name;
@@ -227,23 +198,29 @@ void ReplicatedMergeTreeQueue::updateStateOnQueueEntryRemoval(
     {
         for (const String & virtual_part_name : entry->getVirtualPartNames())
         {
-            /// Update mutations state.
             /// Because execution of the entry is unsuccessful, `virtual_part_name` will never appear
             /// so we won't need to mutate it.
-
-            auto part_info = MergeTreePartInfo::fromPartName(virtual_part_name, format_version);
-            auto in_partition = mutations_by_partition.find(part_info.partition_id);
-            if (in_partition == mutations_by_partition.end())
-                continue;
-
-            auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
-            for (auto it = from_it; it != in_partition->second.end(); ++it)
-            {
-                --it->second->parts_to_do;
-                if (it->second->parts_to_do <= 0)
-                    some_mutations_are_probably_done = true;
-            }
+            updateMutationsPartsToDo(virtual_part_name, /* add = */ false);
         }
+    }
+}
+
+
+void ReplicatedMergeTreeQueue::updateMutationsPartsToDo(const String & part_name, bool add)
+{
+    auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
+    auto in_partition = mutations_by_partition.find(part_info.partition_id);
+    if (in_partition == mutations_by_partition.end())
+        return;
+
+    bool some_mutations_are_probably_done = false;
+
+    auto from_it = in_partition->second.upper_bound(part_info.getDataVersion());
+    for (auto it = from_it; it != in_partition->second.end(); ++it)
+    {
+        it->second->parts_to_do += (add ? +1 : -1);
+        if (it->second->parts_to_do <= 0)
+            some_mutations_are_probably_done = true;
     }
 
     if (some_mutations_are_probably_done)
@@ -520,6 +497,32 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
     }
 }
 
+
+static size_t countPartsToMutate(
+    const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & parts)
+{
+    size_t count = 0;
+    for (const auto & pair : mutation.block_numbers)
+    {
+        const String & partition_id = pair.first;
+        Int64 block_num = pair.second;
+
+        /// Note that we cannot simply count all parts to mutate using getPartsCoveredBy(appropriate part_info)
+        /// because they are not consecutive in `parts`.
+        MergeTreePartInfo covering_part_info(
+            partition_id, 0, block_num, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
+        for (const String & covered_part_name : parts.getPartsCoveredBy(covering_part_info))
+        {
+            auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, parts.getFormatVersion());
+            if (part_info.getDataVersion() < block_num)
+                ++count;
+        }
+    }
+
+    return count;
+}
+
+
 void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
@@ -588,23 +591,14 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
                 {
                     const String & partition_id = pair.first;
                     Int64 block_num = pair.second;
-
                     mutations_by_partition[partition_id].emplace(block_num, &mutation);
-
-                    /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
-                    MergeTreePartInfo covering_part_info(
-                        partition_id, 0, block_num, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
-                    for (const String & covered_part_name : current_parts.getPartsCoveredBy(covering_part_info))
-                    {
-                        auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, format_version);
-                        if (part_info.getDataVersion() < block_num)
-                            ++mutation.parts_to_do;
-                    }
                 }
 
-                /// (continue initializing `mutation.parts_to_do`) And next we would need to mutate all
-                /// parts with getDataVersion() greater than mutation block number that would appear as
-                /// a result of executing the queue.
+                /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
+                mutation.parts_to_do += countPartsToMutate(*entry, current_parts);
+
+                /// And next we would need to mutate all parts with getDataVersion() greater than
+                /// mutation block number that would appear as a result of executing the queue.
                 for (const auto & queue_entry : queue)
                 {
                     for (const String & produced_part_name : queue_entry->getVirtualPartNames())
@@ -1549,26 +1543,16 @@ bool ReplicatedMergeTreeMergePredicate::isMutationFinished(const ReplicatedMerge
                 return false;
             }
         }
+    }
 
-        size_t suddenly_appeared_parts = 0;
-        {
-            std::lock_guard lock(queue.state_mutex);
+    {
+        std::lock_guard lock(queue.state_mutex);
 
-            MergeTreePartInfo covering_part_info(
-                partition_id, 0, block_num, MergeTreePartInfo::MAX_LEVEL, MergeTreePartInfo::MAX_BLOCK_NUMBER);
-            for (const String & covered_part_name : queue.virtual_parts.getPartsCoveredBy(covering_part_info))
-            {
-                auto part_info = MergeTreePartInfo::fromPartName(covered_part_name, queue.format_version);
-                if (part_info.getDataVersion() < block_num)
-                    ++suddenly_appeared_parts;
-            }
-        }
-
+        size_t suddenly_appeared_parts = countPartsToMutate(mutation, queue.virtual_parts);
         if (suddenly_appeared_parts)
         {
             LOG_TRACE(queue.log, "Mutation " << mutation.znode_name << " is not done yet because "
-                << "in partition ID " << partition_id  << " " << suddenly_appeared_parts
-                << " suddenly appeared.");
+                << suddenly_appeared_parts << " parts to mutate suddenly appeared.");
             return false;
         }
     }

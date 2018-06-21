@@ -66,6 +66,8 @@ public:
 
     size_t size() const;
 
+    MergeTreeDataFormatVersion getFormatVersion() const { return format_version; }
+
 private:
     MergeTreeDataFormatVersion format_version;
     std::map<MergeTreePartInfo, String> part_info_to_name;
