@@ -1,5 +1,5 @@
 /*
- * Copyright 2008  Veselin Georgiev,
+ * Copyright 2016  Veselin Georgiev,
  * anrieffNOSPAM @ mgail_DOT.com (convert to gmail)
  *
  * Redistribution and use in source and binary forms, with or without
@@ -23,10 +23,41 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef __RECOG_AMD_H__
-#define __RECOG_AMD_H__
+#ifndef __LIBCPUID_INTERNAL_H__
+#define __LIBCPUID_INTERNAL_H__
+/*
+ * This file contains internal undocumented declarations and function prototypes
+ * for the workings of the internal library infrastructure.
+ */
 
-int cpuid_identify_amd(struct cpu_raw_data_t* raw, struct cpu_id_t* data, struct internal_id_info_t* internal);
-void cpuid_get_list_amd(struct cpu_list_t* list);
+enum _common_codes_t {
+	NA = 0,
+	NO_CODE,
+};
 
-#endif /* __RECOG_AMD_H__ */
+#define CODE(x) x
+#define CODE2(x, y) x = y
+enum _amd_code_t {
+	#include "amd_code_t.h"
+};
+typedef enum _amd_code_t amd_code_t;
+
+enum _intel_code_t {
+	#include "intel_code_t.h"
+};
+typedef enum _intel_code_t intel_code_t;
+#undef CODE
+#undef CODE2
+
+struct internal_id_info_t {
+	union {
+		amd_code_t   amd;
+		intel_code_t intel;
+	} code;
+	int score; // detection (matchtable) score
+};
+
+int cpu_ident_internal(struct cpu_raw_data_t* raw, struct cpu_id_t* data, 
+		       struct internal_id_info_t* internal);
+
+#endif /* __LIBCPUID_INTERNAL_H__ */

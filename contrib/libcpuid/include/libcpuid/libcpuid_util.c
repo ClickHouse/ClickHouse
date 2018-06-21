@@ -38,7 +38,7 @@ void match_features(const struct feature_map_t* matchtable, int count, uint32_t 
 {
 	int i;
 	for (i = 0; i < count; i++)
-		if (reg & (1U << matchtable[i].bit))
+		if (reg & (1u << matchtable[i].bit))
 			data->flags[matchtable[i].feature] = 1;
 }
 
@@ -78,20 +78,20 @@ static int score(const struct match_entry_t* entry, const struct cpu_id_t* data,
                  int brand_code, int model_code)
 {
 	int res = 0;
-	if (entry->family	== data->family    ) res++;
-	if (entry->model	== data->model     ) res++;
-	if (entry->stepping	== data->stepping  ) res++;
-	if (entry->ext_family	== data->ext_family) res++;
-	if (entry->ext_model	== data->ext_model ) res++;
-	if (entry->ncores	== data->num_cores ) res++;
-	if (entry->l2cache	== data->l2_cache  ) res++;
-	if (entry->l3cache	== data->l3_cache  ) res++;
-	if (entry->brand_code   == brand_code      ) res++;
-	if (entry->model_code   == model_code      ) res++;
+	if (entry->family	== data->family    ) res += 2;
+	if (entry->model	== data->model     ) res += 2;
+	if (entry->stepping	== data->stepping  ) res += 2;
+	if (entry->ext_family	== data->ext_family) res += 2;
+	if (entry->ext_model	== data->ext_model ) res += 2;
+	if (entry->ncores	== data->num_cores ) res += 2;
+	if (entry->l2cache	== data->l2_cache  ) res += 1;
+	if (entry->l3cache	== data->l3_cache  ) res += 1;
+	if (entry->brand_code   == brand_code      ) res += 2;
+	if (entry->model_code   == model_code      ) res += 2;
 	return res;
 }
 
-void match_cpu_codename(const struct match_entry_t* matchtable, int count,
+int match_cpu_codename(const struct match_entry_t* matchtable, int count,
                         struct cpu_id_t* data, int brand_code, int model_code)
 {
 	int bestscore = -1;
@@ -112,6 +112,7 @@ void match_cpu_codename(const struct match_entry_t* matchtable, int count,
 		}
 	}
 	strcpy(data->cpu_codename, matchtable[bestindex].name);
+	return bestscore;
 }
 
 void generic_get_cpu_list(const struct match_entry_t* matchtable, int count,
@@ -129,7 +130,11 @@ void generic_get_cpu_list(const struct match_entry_t* matchtable, int count,
 				break;
 			}
 		if (!good) continue;
+#if defined(_MSC_VER)
+		list->names[n++] = _strdup(matchtable[i].name);
+#else
 		list->names[n++] = strdup(matchtable[i].name);
+#endif
 	}
 	list->num_entries = n;
 }
