@@ -62,25 +62,17 @@ static void mutate(pcg64 & generator, void * src, size_t length)
 {
     UInt8 * pos = static_cast<UInt8 *>(src);
     UInt8 * end = pos + length;
-
+    std::string wordWithoutReplace[3] = {"https", "http", "www"};
+    
     while (pos < end)
     {
-        if (pos + strlen("https") <= end && 0 == memcmp(pos, "https", strlen("https")))
-        {
-            pos += strlen("https");
-            continue;
-        }
-
-        if (pos + strlen("http") <= end && 0 == memcmp(pos, "http", strlen("http")))
-        {
-            pos += strlen("http");
-            continue;
-        }
-
-        if (pos + strlen("www") <= end && 0 == memcmp(pos, "www", strlen("www")))
-        {
-            pos += strlen("www");
-            continue;
+        for(int i=0; i<3; i++) {
+            int len = wordWithoutReplace[i].length();
+            if (pos + len <= end && 0 == memcmp(pos, wordWithoutReplace[i].c_str(), len))
+            {
+                pos += len;
+                goto end_while;
+            }
         }
 
         if (*pos >= '1' && *pos <= '9')
@@ -95,6 +87,7 @@ static void mutate(pcg64 & generator, void * src, size_t length)
             ++pos;
 
         ++pos;
+end_while:
     }
 
     pos = static_cast<UInt8 *>(src);
