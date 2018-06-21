@@ -42,7 +42,8 @@ struct match_entry_t {
 	char name[32];
 };
 
-void match_cpu_codename(const struct match_entry_t* matchtable, int count,
+// returns the match score:
+int match_cpu_codename(const struct match_entry_t* matchtable, int count,
                         struct cpu_id_t* data, int brand_code, int model_code);
 
 void warnf(const char* format, ...)
