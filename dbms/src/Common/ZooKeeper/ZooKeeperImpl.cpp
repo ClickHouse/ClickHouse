@@ -834,7 +834,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                     throw Exception("Operation timeout (no response) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
                 waited += max_wait;
-                if (waited > session_timeout.totalMicroseconds())
+                if (waited >= session_timeout.totalMicroseconds())
                     throw Exception("Nothing is received in session timeout", ZOPERATIONTIMEOUT);
 
             }
