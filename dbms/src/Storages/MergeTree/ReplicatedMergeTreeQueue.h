@@ -59,7 +59,8 @@ private:
     /// Protects the queue, future_parts and other queue state variables.
     mutable std::mutex state_mutex;
 
-    /// A set of parts that should be on this replica according to the queue entries executed up to this point.
+    /// A set of parts that should be on this replica according to the queue entries that have been done
+    /// up to this point. The invariant holds: `virtual_parts` = `current_parts` + `queue`.
     /// Note: it can be different from the actual set of parts because the replica can decide to fetch
     /// a bigger part instead of the part mentioned in the log entry.
     ActiveDataPartSet current_parts;
