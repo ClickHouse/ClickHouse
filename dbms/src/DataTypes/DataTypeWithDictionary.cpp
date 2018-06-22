@@ -354,12 +354,11 @@ namespace
     MutableColumnPtr mapIndexWithOverflow(PaddedPODArray<T> & index, size_t max_val)
     {
         HashMap<T, T> hash_map;
-        HashMap<T, T> hash_map_with_overflow;
 
         for (auto val : index)
         {
-            auto & map = val < max_val ? hash_map : hash_map_with_overflow;
-            map.insert({val, map.size()});
+            if (val < max_val)
+                hash_map.insert({val, hash_map.size()});
         }
 
         auto index_map_col = ColumnVector<T>::create();
@@ -371,7 +370,7 @@ namespace
 
         for (auto & val : index)
             val = val < max_val ? hash_map[val]
-                                : hash_map_with_overflow[val] + hash_map.size();
+                                : val - max_val + hash_map.size();
 
         return index_map_col;
     }
