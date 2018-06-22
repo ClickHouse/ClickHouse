@@ -165,6 +165,9 @@ public:
 
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override
     {
+        if (limit == 0)
+            limit = size();
+
         size_t unique_limit = std::min(limit, getUnique()->size());
         Permutation unique_perm;
         getUnique()->getNestedColumn()->getPermutation(reverse, unique_limit, nan_direction_hint, unique_perm);
