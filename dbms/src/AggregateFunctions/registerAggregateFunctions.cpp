@@ -33,6 +33,7 @@ void registerAggregateFunctionCombinatorState(AggregateFunctionCombinatorFactory
 void registerAggregateFunctionCombinatorMerge(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory &);
 
+void registerAggregateFunctionHistogram(AggregateFunctionFactory & factory);
 
 void registerAggregateFunctions()
 {
@@ -57,6 +58,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
         registerAggregateFunctionsMaxIntersections(factory);
+        registerAggregateFunctionHistogram(factory);
     }
 
     {
