@@ -10,6 +10,8 @@ if (USE_LIBSIMD)
     endif ()
 endif ()
 
+set (FUNCTIONS_GENERATED_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated/)
+
 generate_function_register(Arithmetic
     FunctionPlus
     FunctionMinus
@@ -88,18 +90,17 @@ generate_function_register(Projection
 add_headers_and_sources(clickhouse_functions .)
 add_headers_and_sources(clickhouse_functions ./GatherUtils)
 add_headers_and_sources(clickhouse_functions ./Conditional)
-add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
+#add_headers_and_sources(clickhouse_functions ${ClickHouse_BINARY_DIR}/dbms/src/Functions)
+add_headers_and_sources(clickhouse_functions ${FUNCTIONS_GENERATED_DIR})
+
 
 list(REMOVE_ITEM clickhouse_functions_sources IFunction.cpp FunctionFactory.cpp FunctionHelpers.cpp)
 list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h FunctionHelpers.h)
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-set (FUNCTIONS_PRIVATE_LIBS libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
-target_link_libraries (clickhouse_functions PUBLIC dbms PRIVATE ${FUNCTIONS_PRIVATE_LIBS})
+target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
 
-target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
-target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 
 if (USE_LIBSIMD)
@@ -108,7 +109,7 @@ if (USE_LIBSIMD)
     if (SIMD_AVX)
         target_compile_options (clickhouse_functions PRIVATE "-mavx2")
     elseif (SIMD_OPENCL)
-        target_link_libraries (clickhouse_functions PUBLIC dbms PRIVATE simdocl ${OpenCL_LIBRARY} ${FUNCTIONS_PRIVATE_LIBS})
+        target_link_libraries (clickhouse_functions PUBLIC simdocl PRIVATE ${OpenCL_LIBRARY})
     endif ()
 endif ()
 

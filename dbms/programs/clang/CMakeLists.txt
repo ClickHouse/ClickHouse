@@ -10,7 +10,6 @@ if (CLICKHOUSE_SPLIT_BINARY)
         add_executable (clickhouse-lld clickhouse-lld.cpp)
         target_link_libraries (clickhouse-lld clickhouse-compiler-lib)
         install (TARGETS clickhouse-clang clickhouse-lld RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
-        set_target_properties(clickhouse-clang clickhouse-lld PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
     endif ()
 endif ()
 

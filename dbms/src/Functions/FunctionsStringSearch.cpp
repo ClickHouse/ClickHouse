@@ -14,7 +14,7 @@
 #include <re2/stringpiece.h>
 
 #if USE_RE2_ST
-    #include <re2_st/re2.h>
+    #include <re2_st/re2.h> // Y_IGNORE
 #else
     #define re2_st re2
 #endif

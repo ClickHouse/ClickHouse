@@ -1,21 +1,11 @@
-if (APPLE)
-    if ("${CMAKE_SYSTEM_NAME}" STREQUAL "Darwin" AND NOT "${CMAKE_SYSTEM_VERSION}" VERSION_LESS "16.0.0")
-        set (APPLE_SIERRA_OR_NEWER 1)
-    else ()
-        set (APPLE_SIERRA_OR_NEWER 0)
-    endif ()
-endif ()
-
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/include/common/config_common.h)
 configure_file (${CMAKE_CURRENT_SOURCE_DIR}/include/common/config_common.h.in ${CONFIG_COMMON})
 
-if (APPLE)
-    add_library (apple_rt
-        src/apple_rt.cpp
-        include/common/apple_rt.h
-    )
-    target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
-endif ()
+add_library (apple_rt
+    src/apple_rt.cpp
+    include/port/clock.h
+)
+target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
 
 add_library (common ${SPLIT_SHARED}
     src/DateLUT.cpp

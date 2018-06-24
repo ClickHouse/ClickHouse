@@ -119,6 +119,7 @@ namespace ActionLocks
 
 static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
 static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
+static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, MergeTreeData::data_parts, all_data_parts.
@@ -235,6 +236,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     /// Will be activated if we win leader election.
     merge_selecting_task->deactivate();
 
+    mutations_finalizing_task = context.getSchedulePool().createTask(database_name + "." + table_name + " (StorageReplicatedMergeTree::mutationsFinalizingTask)", [this] { mutationsFinalizingTask(); });
+
     if (context.hasZooKeeper())
         current_zookeeper = context.getZooKeeper();
 
@@ -307,6 +310,7 @@ void StorageReplicatedMergeTree::createNewZooKeeperNodes()
 
     /// Mutations
     zookeeper->createIfNotExists(zookeeper_path + "/mutations", String());
+    zookeeper->createIfNotExists(replica_path + "/mutation_pointer", String());
 }
 
 
@@ -1382,7 +1386,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
 
     try
     {
-        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands.commands, context);
+        new_part = merger_mutator.mutatePartToTemporaryPart(future_mutated_part, commands, context);
         data.renameTempPartAndReplace(new_part, nullptr, &transaction);
 
         try
@@ -2246,6 +2250,25 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
     else
         merge_selecting_task->schedule();
 
+}
+
+
+void StorageReplicatedMergeTree::mutationsFinalizingTask()
+{
+    bool needs_reschedule = false;
+
+    try
+    {
+        needs_reschedule = queue.tryFinalizeMutations(getZooKeeper());
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        needs_reschedule = true;
+    }
+
+    if (needs_reschedule)
+        mutations_finalizing_task->scheduleAfter(MUTATIONS_FINALIZING_SLEEP_MS);
 }
 
 
@@ -4038,7 +4061,13 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         int32_t rc = zookeeper->tryMulti(requests, responses);
 
         if (rc == ZooKeeperImpl::ZooKeeper::ZOK)
+        {
+            const String & path_created =
+                static_cast<const zkutil::CreateResponse *>(responses[1].get())->path_created;
+            entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
+            LOG_TRACE(log, "Created mutation with id " << entry.znode_name);
             break;
+        }
         else if (rc == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
         {
             LOG_TRACE(log, "Version conflict when trying to create a mutation node, retrying...");
@@ -4047,6 +4076,11 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
         else
             throw zkutil::KeeperException("Unable to create a mutation znode", rc);
     }
+}
+
+std::vector<MergeTreeMutationStatus> StorageReplicatedMergeTree::getMutationsStatus() const
+{
+    return queue.getMutationsStatus();
 }
 
 

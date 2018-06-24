@@ -4,6 +4,7 @@ set -e -x
 source default-config
 
 ./install-os-packages.sh cmake
+./install-os-packages.sh ninja
 
 if [[ "$COMPILER_INSTALL_METHOD" == "packages" ]]; then
     . install-compiler-from-packages.sh

@@ -125,6 +125,8 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
+    std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+
     /** Removes a replica from ZooKeeper. If there are no other replicas, it deletes the entire table from ZooKeeper.
       */
     void drop() override;
@@ -282,6 +284,9 @@ private:
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
 
+    /// A task that marks finished mutations as done.
+    BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
+
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
@@ -409,6 +414,9 @@ private:
     /** Selects the parts to merge and writes to the log.
       */
     void mergeSelectingTask();
+
+    /// Checks if some mutations are done and marks them as done.
+    void mutationsFinalizingTask();
 
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
