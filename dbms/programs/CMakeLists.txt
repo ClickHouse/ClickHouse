@@ -36,6 +36,8 @@ if (CLICKHOUSE_SPLIT_BINARY)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)
     endif ()
 
+    set_target_properties(${CLICKHOUSE_ALL_TARGETS} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
+
     add_custom_target (clickhouse-bundle ALL DEPENDS ${CLICKHOUSE_ALL_TARGETS})
     add_custom_target (clickhouse ALL DEPENDS clickhouse-bundle)
 else ()

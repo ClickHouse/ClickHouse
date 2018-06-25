@@ -15,7 +15,6 @@ target_include_directories (clickhouse-server-lib PUBLIC ${ClickHouse_SOURCE_DIR
 
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-server clickhouse-server.cpp)
-    set_target_properties(clickhouse-server PROPERTIES RUNTIME_OUTPUT_DIRECTORY ..)
     target_link_libraries (clickhouse-server clickhouse-server-lib)
     install (TARGETS clickhouse-server ${CLICKHOUSE_ALL_TARGETS} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
 endif ()

@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <algorithm>
 
 
 namespace DB
@@ -12,15 +13,18 @@ ActiveDataPartSet::ActiveDataPartSet(MergeTreeDataFormatVersion format_version_,
 }
 
 
-void ActiveDataPartSet::add(const String & name)
+bool ActiveDataPartSet::add(const String & name, Strings * out_replaced_parts)
 {
     auto part_info = MergeTreePartInfo::fromPartName(name, format_version);
 
     if (getContainingPartImpl(part_info) != part_info_to_name.end())
-        return;
+        return false;
 
     /// Parts contained in `part` are located contiguously in `part_info_to_name`, overlapping with the place where the part itself would be inserted.
     auto it = part_info_to_name.lower_bound(part_info);
+
+    if (out_replaced_parts)
+        out_replaced_parts->clear();
 
     /// Let's go left.
     while (it != part_info_to_name.begin())
@@ -31,16 +35,25 @@ void ActiveDataPartSet::add(const String & name)
             ++it;
             break;
         }
+
+        if (out_replaced_parts)
+            out_replaced_parts->push_back(it->second);
         part_info_to_name.erase(it++);
     }
+
+    if (out_replaced_parts)
+        std::reverse(out_replaced_parts->begin(), out_replaced_parts->end());
 
     /// Let's go to the right.
     while (it != part_info_to_name.end() && part_info.contains(it->first))
     {
+        if (out_replaced_parts)
+            out_replaced_parts->push_back(it->second);
         part_info_to_name.erase(it++);
     }
 
     part_info_to_name.emplace(part_info, name);
+    return true;
 }
 
 

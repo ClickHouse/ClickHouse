@@ -1,3 +1,10 @@
+#pragma once
+
+/// Arcadia compatibility DEVTOOLS-3976
+#if defined(MEMRCHR_INCLUDE)
+#include MEMRCHR_INCLUDE
+#else
+
 /*
  * Copyright (C) 2008 The Android Open Source Project
  * All rights reserved.
@@ -25,7 +32,6 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
  */
-#pragma once
 #ifdef __APPLE__
 
 #include <stddef.h>
@@ -51,5 +57,5 @@ inline void *memrchr(const void *s, int c, size_t n) {
 #if defined (__cplusplus)
 }
 #endif
-
+#endif
 #endif
