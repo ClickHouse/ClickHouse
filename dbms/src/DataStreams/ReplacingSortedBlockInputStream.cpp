@@ -109,7 +109,8 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
     }
 
     /// We will write the data for the last primary key.
-    insertRow(merged_columns, merged_rows);
+    if (!selected_row.empty())
+        insertRow(merged_columns, merged_rows);
 
     finished = true;
 }
