@@ -6,8 +6,8 @@
 
 ClickHouse:
 
-> -   Полностью или частично хранит словари в оперативной памяти.
-> -   Периодически обновляет их и динамически подгружает отсутствующие значения. Т.е. словари можно подгружать динамически.
+-   Полностью или частично хранит словари в оперативной памяти.
+-   Периодически обновляет их и динамически подгружает отсутствующие значения. Т.е. словари можно подгружать динамически.
 
 Конфигурация внешних словарей находится в одном или нескольких файлах. Путь к конфигурации указывается в параметре [dictionaries_config](../operations/server_settings/settings.md#server_settings-dictionaries_config).
 
@@ -22,7 +22,7 @@ ClickHouse:
     <!--Необязательный элемент, имя файла с подстановками-->
     <include_from>/etc/metrika.xml</include_from>
 
-    
+
     <dictionary>
         <!-- Конфигурация словаря -->
     </dictionary>
@@ -37,17 +37,14 @@ ClickHouse:
 
 В одном файле можно [сконфигурировать](external_dicts_dict.md#dicts-external_dicts_dict) произвольное количество словарей. Формат файла сохраняется даже если словарь один (т.е. `<yandex><dictionary> <!--configuration--> </dictionary></yandex>`).
 
-Смотрите также "[Функции для работы с внешними словарями](../functions/ext_dict_functions.md#ext_dict_functions)" .
+>Вы можете преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../functions/other_functions.md#other_functions-transform)). Эта функциональность не связана с внешними словарями.
 
-<div class="admonition attention">
 
-Вы можете преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../functions/other_functions.md#other_functions-transform)). Эта функциональность не связана с внешними словарями.
+Смотрите также:
 
-</div>
-
-```eval_rst
-.. toctree::
-    :glob:
-   
-    external_dicts_dict*
-```
+- [Настройка внешнего словаря](external_dicts_dict.md#dicts-external_dicts_dict)
+- [Хранение словарей в памяти](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout)
+- [Обновление словарей](external_dicts_dict_lifetime#dicts-external_dicts_dict_lifetime)
+- [Источники внешних словарей](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources)
+- [Ключ и поля словаря](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure)
+- [Функции для работы с внешними словарями](../functions/ext_dict_functions.md#ext_dict_functions)

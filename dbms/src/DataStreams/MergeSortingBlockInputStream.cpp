@@ -108,6 +108,7 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
+                Poco::File(tmp_path).createDirectories();
                 temporary_files.emplace_back(new Poco::TemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
                 WriteBufferFromFile file_buf(path);

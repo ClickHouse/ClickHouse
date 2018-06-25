@@ -1,6 +1,6 @@
 #include <TableFunctions/TableFunctionODBC.h>
 
-#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #include <type_traits>
 #include <ext/scope_guard.h>
 
@@ -39,9 +39,9 @@ DataTypePtr getDataType(SQLSMALLINT type)
     switch (type)
     {
         case SQL_INTEGER:
-            return factory.get("UInt32");
+            return factory.get("Int32");
         case SQL_SMALLINT:
-            return factory.get("UInt16");
+            return factory.get("Int16");
         case SQL_FLOAT:
             return factory.get("Float32");
         case SQL_REAL:

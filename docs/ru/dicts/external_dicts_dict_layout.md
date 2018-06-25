@@ -2,11 +2,11 @@
 
 # Хранение словарей в памяти
 
-Словари можно размещать в памяти [множеством способов](external_dicts_dict_layout#dicts-external_dicts_dict_layout-manner).
+Словари можно размещать в памяти [множеством способов](#dicts-external_dicts_dict_layout-manner).
 
-Рекомендуем [flat](external_dicts_dict_layout#dicts-external_dicts_dict_layout-flat), [hashed](external_dicts_dict_layout#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](external_dicts_dict_layout#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
+Рекомендуем [flat](#dicts-external_dicts_dict_layout-flat), [hashed](#dicts-external_dicts_dict_layout-hashed) и [complex_key_hashed](#dicts-external_dicts_dict_layout-complex_key_hashed). Скорость обработки словарей при этом максимальна.
 
-Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе " [cache](external_dicts_dict_layout#dicts-external_dicts_dict_layout-cache)".
+Размещение с кэшированием не рекомендуется использовать из-за потенциально низкой производительности и сложностей в подборе оптимальных параметров. Читайте об этом подробнее в разделе "[cache](#dicts-external_dicts_dict_layout-cache)".
 
 Повысить производительнось словарей можно следующими способами:
 
@@ -88,7 +88,7 @@
 
 ### complex_key_hashed
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `hashed`.
 
 Пример конфигурации:
 
@@ -120,7 +120,7 @@
 +---------------+---------------------+-------------------+--------+
 ```
 
-Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
+Чтобы использовать выборку по диапазонам дат, необходимо в [structure](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure) определить элементы `range_min`, `range_max`.
 
 Пример:
 
@@ -191,13 +191,13 @@
 
 При поиске в словаре сначала просматривается кэш. На каждый блок данных, все не найденные в кэше или устаревшие ключи запрашиваются у источника с помощью `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Затем, полученные данные записываются в кэш.
 
-Для cache-словарей может быть задано время устаревания (lifetime &lt;dicts-external_dicts_dict_lifetime&gt;) данных в кэше. Если от загрузки данных в ячейке прошло больше времени, чем `lifetime`, то значение не используется, и будет запрошено заново при следующей необходимости его использовать.
+Для cache-словарей может быть задано время устаревания [lifetime](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime) данных в кэше. Если от загрузки данных в ячейке прошло больше времени, чем `lifetime`, то значение не используется, и будет запрошено заново при следующей необходимости его использовать.
 
 Это наименее эффективный из всех способов размещения словарей. Скорость работы кэша очень сильно зависит от правильности настройки и сценария использования. Словарь типа cache показывает высокую производительность лишь при достаточно больших hit rate-ах (рекомендуется 99% и выше). Посмотреть средний hit rate можно в таблице `system.dictionaries`.
 
 Чтобы увеличить производительность кэша, используйте подзапрос с `LIMIT`, а снаружи вызывайте функцию со словарём.
 
-Поддерживаются [источники](external_dicts_dict_sources#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
+Поддерживаются [источники](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources): MySQL, ClickHouse, executable, HTTP.
 
 Пример настройки:
 
@@ -227,7 +227,7 @@
 
 ### complex_key_cache
 
-Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure#dicts-external_dicts_dict_structure). Аналогичен `cache`.
+Тип размещения предназначен для использования с составными [ключами](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure). Аналогичен `cache`.
 
 <a name="dicts-external_dicts_dict_layout-ip_trie"></a>
 
@@ -276,16 +276,20 @@
     ...
 ```
 
-Этот ключ должен иметь только один атрибут типа String, содержащий допустимый префикс IP. Другие типы еще не поддерживаются.
+Этот ключ должен иметь только один атрибут типа `String`, содержащий допустимый префикс IP. Другие типы еще не поддерживаются.
 
 Для запросов необходимо использовать те же функции (`dictGetT` с кортежем), что и для словарей с составными ключами:
 
-    dictGetT('dict_name', 'attr_name', tuple(ip))
+```
+dictGetT('dict_name', 'attr_name', tuple(ip))
+```
 
-Функция принимает либо UInt32 для адреса IPv4, либо FixedString(16) для адреса IPv6:
+Функция принимает либо `UInt32` для IPv4, либо `FixedString(16)` для IPv6:
 
-    dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+```
+dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
+```
 
 Никакие другие типы не поддерживаются. Функция возвращает атрибут для префикса, соответствующего данному IP-адресу. Если есть перекрывающиеся префиксы, возвращается наиболее специфический.
 
-Данные хранятся в побитовом дереве (trie), он должены полностью помещаться в оперативной памяти.
+Данные хранятся в побитовом дереве (`trie`), он должены полностью помещаться в оперативной памяти.

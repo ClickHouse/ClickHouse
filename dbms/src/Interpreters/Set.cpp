@@ -208,6 +208,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
 
     MutableColumns columns = header.cloneEmptyColumns();
 
+    DataTypePtr tuple_type;
     Row tuple_values;
     ASTExpressionList & list = typeid_cast<ASTExpressionList &>(*node);
     for (auto & elem : list.children)
@@ -221,10 +222,22 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
         }
         else if (ASTFunction * func = typeid_cast<ASTFunction *>(elem.get()))
         {
+            Field function_result;
+            const TupleBackend * tuple = nullptr;
             if (func->name != "tuple")
-                throw Exception("Incorrect element of set. Must be tuple.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+            {
+                if (!tuple_type)
+                    tuple_type = std::make_shared<DataTypeTuple>(types);
 
-            size_t tuple_size = func->arguments->children.size();
+                function_result = extractValueFromNode(elem, *tuple_type, context);
+                if (function_result.getType() != Field::Types::Tuple)
+                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
+                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
+
+                tuple = &function_result.get<Tuple>().toUnderType();
+            }
+
+            size_t tuple_size = tuple ? tuple->size() : func->arguments->children.size();
             if (tuple_size != num_columns)
                 throw Exception("Incorrect size of tuple in set: " + toString(tuple_size) + " instead of " + toString(num_columns),
                     ErrorCodes::INCORRECT_ELEMENT_OF_SET);
@@ -235,7 +248,8 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
             size_t i = 0;
             for (; i < tuple_size; ++i)
             {
-                Field value = extractValueFromNode(func->arguments->children[i], *types[i], context);
+                Field value = tuple ? (*tuple)[i]
+                                    : extractValueFromNode(func->arguments->children[i], *types[i], context);
 
                 /// If at least one of the elements of the tuple has an impossible (outside the range of the type) value, then the entire tuple too.
                 if (value.isNull())

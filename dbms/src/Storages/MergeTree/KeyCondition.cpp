@@ -362,7 +362,7 @@ static void applyFunction(
         { nullptr, res_type, "y" }
     };
 
-    func->execute(block, {0}, 1);
+    func->execute(block, {0}, 1, 1);
 
     block.safeGetByPosition(1).column->get(0, res_value);
 }
@@ -535,7 +535,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const Context & context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
-    RPNElement::MonotonicFunctionsChain & out_functions_chain)
+    MonotonicFunctionsChain & out_functions_chain)
 {
     std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
@@ -637,12 +637,12 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
         size_t key_column_num;        /// Number of a key column (inside sort_descr array)
-        RPNElement::MonotonicFunctionsChain chain;
+        MonotonicFunctionsChain chain;
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
-        if (prepared_sets.count(args[1].get())
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1].get()], key_column_num))
+        if (prepared_sets.count(args[1]->range)
+            && isTupleIndexable(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
         {
             key_arg_pos = 0;
             is_set_const = true;
@@ -921,7 +921,7 @@ bool KeyCondition::mayBeTrueInRange(
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges)
     {
-        auto res = mayBeTrueInRangeImpl(key_ranges, data_types);
+        auto res = mayBeTrueInParallelogram(key_ranges, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -934,7 +934,7 @@ bool KeyCondition::mayBeTrueInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    RPNElement::MonotonicFunctionsChain & functions,
+    MonotonicFunctionsChain & functions,
     DataTypePtr current_type
 )
 {
@@ -969,7 +969,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -982,7 +982,7 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
-            const Range * key_range = &key_ranges[element.key_column];
+            const Range * key_range = &parallelogram[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range transformed_range;
@@ -1016,10 +1016,10 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
         {
             auto in_func = typeid_cast<const ASTFunction *>(element.in_function.get());
             const ASTs & args = typeid_cast<const ASTExpressionList &>(*in_func->arguments).children;
-            PreparedSets::const_iterator it = prepared_sets.find(args[1].get());
+            PreparedSets::const_iterator it = prepared_sets.find(args[1]->range);
             if (in_func && it != prepared_sets.end())
             {
-                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
+                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                     rpn_stack.back() = !rpn_stack.back();
             }

@@ -15,12 +15,9 @@ For information on connecting and configuring external dictionaries, see "[Exter
 ## dictGetUUID
 
 ## dictGetString
-
 `dictGetT('dict_name', 'attr_name', id)`
 
-- Get the value of the attr_name attribute  from the dict_name dictionary using the 'id' key.
-`dict_name`  and `attr_name`  are constant strings.
-`id`must be UInt64.
+- Get the value of the attr_name attribute  from the dict_name dictionary using the 'id' key.`dict_name`  and `attr_name`  are constant strings.`id`must be UInt64.
 If there is no `id` key in the dictionary, it returns the default value specified in the dictionary description.
 
 ## dictGetTOrDefault

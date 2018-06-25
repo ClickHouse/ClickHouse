@@ -19,6 +19,8 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 
@@ -220,7 +222,7 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -316,7 +318,7 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -452,7 +454,7 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// The dictionary key that defines the "point of view".
         std::string dict_key;
@@ -728,7 +730,7 @@ public:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         RegionsNames::Language language = RegionsNames::Language::RU;
 

@@ -33,11 +33,14 @@ StorageSystemReplicas::StorageSystemReplicas(const std::string & name_)
         { "queue_size",                           std::make_shared<DataTypeUInt32>()   },
         { "inserts_in_queue",                     std::make_shared<DataTypeUInt32>()   },
         { "merges_in_queue",                      std::make_shared<DataTypeUInt32>()   },
+        { "part_mutations_in_queue",              std::make_shared<DataTypeUInt32>()   },
         { "queue_oldest_time",                    std::make_shared<DataTypeDateTime>() },
         { "inserts_oldest_time",                  std::make_shared<DataTypeDateTime>() },
         { "merges_oldest_time",                   std::make_shared<DataTypeDateTime>() },
+        { "part_mutations_oldest_time",           std::make_shared<DataTypeDateTime>() },
         { "oldest_part_to_get",                   std::make_shared<DataTypeString>()   },
         { "oldest_part_to_merge_to",              std::make_shared<DataTypeString>()   },
+        { "oldest_part_to_mutate_to",             std::make_shared<DataTypeString>()   },
         { "log_max_index",                        std::make_shared<DataTypeUInt64>()   },
         { "log_pointer",                          std::make_shared<DataTypeUInt64>()   },
         { "last_queue_update",                    std::make_shared<DataTypeDateTime>() },
@@ -140,11 +143,14 @@ BlockInputStreams StorageSystemReplicas::read(
         res_columns[col_num++]->insert(UInt64(status.queue.queue_size));
         res_columns[col_num++]->insert(UInt64(status.queue.inserts_in_queue));
         res_columns[col_num++]->insert(UInt64(status.queue.merges_in_queue));
+        res_columns[col_num++]->insert(UInt64(status.queue.part_mutations_in_queue));
         res_columns[col_num++]->insert(UInt64(status.queue.queue_oldest_time));
         res_columns[col_num++]->insert(UInt64(status.queue.inserts_oldest_time));
         res_columns[col_num++]->insert(UInt64(status.queue.merges_oldest_time));
+        res_columns[col_num++]->insert(UInt64(status.queue.part_mutations_oldest_time));
         res_columns[col_num++]->insert(status.queue.oldest_part_to_get);
         res_columns[col_num++]->insert(status.queue.oldest_part_to_merge_to);
+        res_columns[col_num++]->insert(status.queue.oldest_part_to_mutate_to);
         res_columns[col_num++]->insert(status.log_max_index);
         res_columns[col_num++]->insert(status.log_pointer);
         res_columns[col_num++]->insert(UInt64(status.queue.last_queue_update));

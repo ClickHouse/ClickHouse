@@ -43,7 +43,7 @@ public:
     virtual IRegionsHierarchyDataSourcePtr getDefaultHierarchySource() const = 0;
     virtual IRegionsHierarchyDataSourcePtr getHierarchySource(const std::string & name) const = 0;
 
-    virtual ~IRegionsHierarchiesDataProvider() {};
+    virtual ~IRegionsHierarchiesDataProvider() {}
 };
 
 using IRegionsHierarchiesDataProviderPtr = std::shared_ptr<IRegionsHierarchiesDataProvider>;

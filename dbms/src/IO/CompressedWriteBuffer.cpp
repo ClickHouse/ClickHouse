@@ -45,7 +45,7 @@ void CompressedWriteBuffer::nextImpl()
             compressed_buffer.resize(header_size + LZ4_COMPRESSBOUND(uncompressed_size));
 #pragma GCC diagnostic pop
 
-            compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::LZ4);
+            compressed_buffer[0] = static_cast<char>(CompressionMethodByte::LZ4);
 
             if (compression_settings.method == CompressionMethod::LZ4)
                 compressed_size = header_size + LZ4_compress_default(
@@ -76,7 +76,7 @@ void CompressedWriteBuffer::nextImpl()
 
             compressed_buffer.resize(header_size + ZSTD_compressBound(uncompressed_size));
 
-            compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::ZSTD);
+            compressed_buffer[0] = static_cast<char>(CompressionMethodByte::ZSTD);
 
             size_t res = ZSTD_compress(
                 &compressed_buffer[header_size],
@@ -109,7 +109,7 @@ void CompressedWriteBuffer::nextImpl()
 
             compressed_buffer.resize(compressed_size);
 
-            compressed_buffer[0] = static_cast<UInt8>(CompressionMethodByte::NONE);
+            compressed_buffer[0] = static_cast<char>(CompressionMethodByte::NONE);
 
             unalignedStore(&compressed_buffer[1], compressed_size_32);
             unalignedStore(&compressed_buffer[5], uncompressed_size_32);

@@ -22,6 +22,10 @@ if (NOT MSVC)
     set (NOT_MSVC 1)
 endif ()
 
+if (NOT APPLE)
+    set (NOT_APPLE 1)
+endif ()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (COMPILER_GCC 1)
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")

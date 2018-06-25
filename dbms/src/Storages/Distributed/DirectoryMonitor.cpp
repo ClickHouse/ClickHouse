@@ -63,16 +63,13 @@ namespace
             const char * user_pw_end = strchr(address.data(), '@');
             const char * colon = strchr(address.data(), ':');
             if (!user_pw_end || !colon)
-                throw Exception{
-                    "Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
+                throw Exception{"Shard address '" + address + "' does not match to 'user[:password]@host:port#default_database' pattern",
                     ErrorCodes::INCORRECT_FILE_NAME};
 
             const bool has_pw = colon < user_pw_end;
             const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
             if (!host_end)
-                throw Exception{
-                    "Shard address '" + address + "' does not contain port",
-                    ErrorCodes::INCORRECT_FILE_NAME};
+                throw Exception{"Shard address '" + address + "' does not contain port", ErrorCodes::INCORRECT_FILE_NAME};
 
             const char * has_db = strchr(address.data(), '#');
             const char * port_end = has_db ? has_db : address_end;
@@ -108,12 +105,31 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(StorageDi
 
 StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 {
+    if (!quit)
     {
-        quit = true;
-        std::lock_guard<std::mutex> lock{mutex};
+        {
+            quit = true;
+            std::lock_guard<std::mutex> lock{mutex};
+        }
+        cond.notify_one();
+        thread.join();
     }
-    cond.notify_one();
-    thread.join();
+}
+
+
+void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
+{
+    if (!quit)
+    {
+        {
+            quit = true;
+            std::lock_guard<std::mutex> lock{mutex};
+        }
+        cond.notify_one();
+        thread.join();
+    }
+
+    Poco::File(path).remove(true);
 }
 
 
@@ -159,7 +175,7 @@ void StorageDistributedDirectoryMonitor::run()
 ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::string & name, const StorageDistributed & storage)
 {
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(storage.context.getSettingsRef());
-    const auto pool_factory = [&storage, &name, &timeouts] (const std::string & host, const UInt16 port,
+    const auto pool_factory = [&storage, &timeouts] (const std::string & host, const UInt16 port,
                                                  const Protocol::Secure secure,
                                                  const std::string & user, const std::string & password,
                                                  const std::string & default_database)
@@ -167,7 +183,7 @@ ConnectionPoolPtr StorageDistributedDirectoryMonitor::createPool(const std::stri
         return std::make_shared<ConnectionPool>(
             1, host, port, default_database,
             user, password, timeouts,
-            storage.getName() + '_' + name,
+            storage.getName() + '_' + user,
             Protocol::Compression::Enable,
             secure);
     };
@@ -212,7 +228,6 @@ bool StorageDistributedDirectoryMonitor::findFiles()
 
     return true;
 }
-
 
 void StorageDistributedDirectoryMonitor::processFile(const std::string & file_path)
 {
@@ -410,6 +425,7 @@ struct StorageDistributedDirectoryMonitor::Batch
     }
 };
 
+
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
 {
     std::unordered_set<UInt64> file_indices_to_skip;
@@ -492,7 +508,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
     Poco::File{current_batch_file_path}.remove();
 }
 
-
 bool StorageDistributedDirectoryMonitor::isFileBrokenErrorCode(int code)
 {
     return code == ErrorCodes::CHECKSUM_DOESNT_MATCH
@@ -526,7 +541,6 @@ bool StorageDistributedDirectoryMonitor::maybeMarkAsBroken(const std::string & f
     else
         return false;
 }
-
 
 std::string StorageDistributedDirectoryMonitor::getLoggerName() const
 {

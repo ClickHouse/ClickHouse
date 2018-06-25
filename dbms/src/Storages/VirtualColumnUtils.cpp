@@ -14,6 +14,7 @@
 #include <Columns/ColumnsCommon.h>
 
 #include <Storages/VirtualColumnUtils.h>
+#include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
 
 

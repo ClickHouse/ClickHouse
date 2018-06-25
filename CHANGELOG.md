@@ -1,3 +1,38 @@
+# ClickHouse release 1.1.54385, 2018-06-01
+
+## Bug fixes:
+* Fixed an error that in some cases caused ZooKeeper operations to block.
+
+# ClickHouse release 1.1.54383, 2018-05-22
+
+## Bug fixes:
+* Fixed a slowdown of replication queue if a table has many replicas.
+
+# ClickHouse release 1.1.54381, 2018-05-14
+
+## Bug fixes:
+* Fixed a nodes leak in ZooKeeper when ClickHouse loses connection to ZooKeeper server.
+
+# ClickHouse release 1.1.54380, 2018-04-21
+
+## New features:
+* Added table function `file(path, format, structure)`. An example reading bytes from `/dev/urandom`: `ln -s /dev/urandom /var/lib/clickhouse/user_files/random` `clickhouse-client -q "SELECT * FROM file('random', 'RowBinary', 'd UInt8') LIMIT 10"`.
+
+## Improvements:
+* Subqueries could be wrapped by `()` braces (to enhance queries readability). For example, `(SELECT 1) UNION ALL (SELECT 1)`.
+* Simple `SELECT` queries  from table `system.processes` are not counted in `max_concurrent_queries` limit.
+
+## Bug fixes:
+* Fixed incorrect behaviour of `IN` operator when select from `MATERIALIZED VIEW`.
+* Fixed incorrect filtering by partition index in expressions like `WHERE partition_key_column IN (...)`
+* Fixed inability to execute `OPTIMIZE` query on non-leader replica if the table was `REANAME`d.
+* Fixed authorization error when execute `OPTIMIZE` or `ALTER` queries on a non-leader replica.
+* Fixed freezing of `KILL QUERY` queries.
+* Fixed an error in ZooKeeper client library which led to watches loses, freezing of distributed DDL queue and slowing replication queue if non-empty `chroot` prefix is used in ZooKeeper configuration.
+
+## Backward incompatible changes:
+* Removed support of expressions like `(a, b) IN (SELECT (a, b))` (instead of them you can use their equivalent `(a, b) IN (SELECT a, b)`). In previous releases, these expressions led to undetermined data filtering or caused errors.
+
 # ClickHouse release 1.1.54378, 2018-04-16
 ## New features:
 

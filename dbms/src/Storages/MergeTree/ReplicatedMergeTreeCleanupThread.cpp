@@ -16,42 +16,37 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
-    : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")),
-    thread([this] { run(); })
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeCleanupThread)")
+    , log(&Logger::get(log_name))
 {
+    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
+    task->schedule();
 }
-
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    setThreadName("ReplMTCleanup");
-
     const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000
         + std::uniform_int_distribution<UInt64>(0, storage.data.settings.cleanup_delay_period_random_add * 1000)(rng);
 
-    while (!storage.shutdown_called)
+    try
     {
-        try
-        {
-            iterate();
-        }
-        catch (const zkutil::KeeperException & e)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        iterate();
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
-                break;
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
-
-        storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    LOG_DEBUG(log, "Cleanup thread finished");
+    task->scheduleAfter(CLEANUP_SLEEP_MS);
+
 }
 
 
@@ -158,7 +153,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
-    std::vector<std::pair<String, std::future<zkutil::RemoveResponse>>> try_remove_futures;
+    zkutil::AsyncResponses<zkutil::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
@@ -213,7 +208,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
                                    << " to clear old ones from ZooKeeper.");
     }
 
-    std::vector<std::pair<String, std::future<zkutil::ExistsResponse>>> exists_futures;
+    zkutil::AsyncResponses<zkutil::ExistsResponse> exists_futures;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);
@@ -241,13 +236,6 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     }
 
     std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
-}
-
-
-ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
-{
-    if (thread.joinable())
-        thread.join();
 }
 
 }

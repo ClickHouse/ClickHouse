@@ -3,10 +3,7 @@
 #include <time.h>
 #include <atomic>
 #include <common/Types.h>
-
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
+#include <port/clock.h>
 
 
 namespace StopWatchDetail
@@ -15,7 +12,7 @@ namespace StopWatchDetail
     {
         struct timespec ts;
         clock_gettime(clock_type, &ts);
-        return ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+        return UInt64(ts.tv_sec * 1000000000LL + ts.tv_nsec);
     }
 }
 
@@ -65,7 +62,7 @@ public:
       */
     bool compareAndRestart(double seconds)
     {
-        UInt64 threshold = seconds * 1000000000ULL;
+        UInt64 threshold = static_cast<UInt64>(seconds * 1000000000.0);
         UInt64 current_ns = nanoseconds();
         UInt64 current_start_ns = start_ns;
 
@@ -109,7 +106,7 @@ public:
       */
     Lock compareAndRestartDeferred(double seconds)
     {
-        UInt64 threshold = seconds * 1000000000ULL;
+        UInt64 threshold = UInt64(seconds * 1000000000.0);
         UInt64 current_ns = nanoseconds();
         UInt64 current_start_ns = start_ns;
 

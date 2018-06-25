@@ -10,7 +10,7 @@ In this section we discuss regular functions. For aggregate functions, see the s
 
 In contrast to standard SQL, ClickHouse has strong typing. In other words, it doesn't make implicit conversions between types. Each function works for a specific set of types. This means that sometimes you need to use type conversion functions.
 
-## Сommon subexpression elimination
+## Common subexpression elimination
 
 All expressions in a query that have the same AST (the same record or same result of syntactic parsing) are considered to have identical values. Such expressions are concatenated and executed once. Identical subqueries are also eliminated this way.
 

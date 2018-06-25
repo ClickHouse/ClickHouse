@@ -2,6 +2,7 @@
 
 #include <Poco/Event.h>
 #include <common/logger_useful.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <Core/Types.h>
 #include <thread>
 #include <atomic>
@@ -22,16 +23,12 @@ class ReplicatedMergeTreeRestartingThread
 {
 public:
     ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
-
-    ~ReplicatedMergeTreeRestartingThread()
-    {
-        if (thread.joinable())
-            thread.join();
-    }
+    ~ReplicatedMergeTreeRestartingThread();
 
     void wakeup()
     {
         wakeup_event.set();
+        task->schedule();
     }
 
     Poco::Event & getWakeupEvent()
@@ -42,11 +39,12 @@ public:
     void stop()
     {
         need_stop = true;
-        wakeup();
+        wakeup_event.set();
     }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
     Poco::Event wakeup_event;
     std::atomic<bool> need_stop {false};
@@ -54,9 +52,14 @@ private:
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
+    Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
+    bool first_time = true;                 /// Activate replica for the first time.
+    time_t prev_time_of_check_delay = 0;
+    bool startup_completed = false;
 
     void run();
+    void completeShutdown();
 
     /// Start or stop background threads. Used for partial reinitialization when re-creating a session in ZooKeeper.
     bool tryStartup(); /// Returns false if ZooKeeper is not available.
