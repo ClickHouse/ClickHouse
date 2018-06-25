@@ -264,8 +264,8 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        google::dense_hash_map<Key, Value, DefaultHash<Key>> map;
-        google::dense_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
+        GOOGLE_NAMESPACE::dense_hash_map<Key, Value, DefaultHash<Key>> map;
+        GOOGLE_NAMESPACE::dense_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         map.set_empty_key(-1ULL);
         for (size_t i = 0; i < n; ++i)
         {
@@ -285,8 +285,8 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        google::sparse_hash_map<Key, Value, DefaultHash<Key>> map;
-        google::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
+        GOOGLE_NAMESPACE::sparse_hash_map<Key, Value, DefaultHash<Key>> map;
+        GOOGLE_NAMESPACE::sparse_hash_map<Key, Value, DefaultHash<Key>>::iterator it;
         for (size_t i = 0; i < n; ++i)
         {
             map.insert(std::make_pair(data[i], std::move(value)));

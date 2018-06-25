@@ -45,7 +45,6 @@ class IRegionsNamesDataProvider
 public:
     virtual ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(
         const std::string& language) const = 0;
-    ;
 
     virtual ~IRegionsNamesDataProvider() {}
 };

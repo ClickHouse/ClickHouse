@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <background_pool_size>0</background_pool_size>
+        </default>
+    </profiles>
+</yandex>

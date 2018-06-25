@@ -408,7 +408,7 @@ protected:
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
-        memcpy(&buf[place_value], &x, sizeof(x));
+        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x));
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
@@ -726,7 +726,7 @@ public:
     {
         size_t place_value = findEmptyCell(grower.place(hash_value));
 
-        memcpy(&buf[place_value], cell, sizeof(*cell));
+        memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
         ++m_size;
 
         if (unlikely(grower.overflow(m_size)))
@@ -897,7 +897,7 @@ public:
         this->clearHasZero();
         m_size = 0;
 
-        memset(buf, 0, grower.bufSize() * sizeof(*buf));
+        memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
     }
 
     /// After executing this function, the table can only be destroyed,

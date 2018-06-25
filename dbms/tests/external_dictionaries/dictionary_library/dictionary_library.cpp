@@ -3,18 +3,28 @@
 /// proller: TODO: describe
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <vector>
 
 #include <Dictionaries/LibraryDictionarySourceExternal.h>
 
 //#define DUMPS(VAR) #VAR " = " << VAR
-//#define DUMP(VAR) std::cerr << __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR) << "\n";
+//#define DUMP(VAR) LOG(ptr->lib->log, __FILE__ << ":" << __LINE__ << " " << DUMPS(VAR));
 
+#define LOG(logger, message)                                             \
+    do                                                                   \
+    {                                                                    \
+        std::stringstream builder;                                       \
+        builder << message;                                              \
+        (logger)(ClickHouseLibrary::INFORMATION, builder.str().c_str()); \
+    } while (false)
 
 struct LibHolder
 {
+    std::function<void(ClickHouseLibrary::LogLevel, ClickHouseLibrary::CString)> log;
     //Some your data, maybe service connection
 };
 
@@ -54,7 +64,7 @@ void MakeColumnsFromVector(DataHolder * ptr)
 
 extern "C" {
 
-void * ClickHouseDictionary_v2_loadIds(void * data_ptr,
+void * ClickHouseDictionary_v3_loadIds(void * data_ptr,
     ClickHouseLibrary::CStrings * settings,
     ClickHouseLibrary::CStrings * columns,
     const struct ClickHouseLibrary::VectorUInt64 * ids)
@@ -62,31 +72,35 @@ void * ClickHouseDictionary_v2_loadIds(void * data_ptr,
     auto ptr = static_cast<DataHolder *>(data_ptr);
 
     if (ids)
-        std::cerr << "loadIds lib call ptr=" << data_ptr << " => " << ptr << " size=" << ids->size << "\n";
+        LOG(ptr->lib->log, "loadIds lib call ptr=" << data_ptr << " => " << ptr << " size=" << ids->size);
 
     if (!ptr)
         return nullptr;
 
     if (settings)
     {
-        std::cerr << "settings passed: " << settings->size << "\n";
+        LOG(ptr->lib->log, "settings passed: " << settings->size);
         for (size_t i = 0; i < settings->size; ++i)
-            std::cerr << "setting " << i << " :" << settings->data[i] << " \n";
+        {
+            LOG(ptr->lib->log, "setting " << i << " :" << settings->data[i]);
+        }
     }
 
     if (columns)
     {
-        std::cerr << "columns passed:" << columns->size << "\n";
+        LOG(ptr->lib->log, "columns passed:" << columns->size);
         for (size_t i = 0; i < columns->size; ++i)
-            std::cerr << "column " << i << " :" << columns->data[i] << "\n";
+        {
+            LOG(ptr->lib->log, "column " << i << " :" << columns->data[i]);
+        }
     }
 
     if (ids)
     {
-        std::cerr << "ids passed: " << ids->size << "\n";
+        LOG(ptr->lib->log, "ids passed: " << ids->size);
         for (size_t i = 0; i < ids->size; ++i)
         {
-            std::cerr << "id " << i << " :" << ids->data[i] << " replying.\n";
+            LOG(ptr->lib->log, "id " << i << " :" << ids->data[i] << " replying.");
             ptr->dataHolder.emplace_back(std::vector<uint64_t>{ids->data[i], ids->data[i] + 1, (1 + ids->data[i]) * 10, 65});
         }
     }
@@ -95,25 +109,26 @@ void * ClickHouseDictionary_v2_loadIds(void * data_ptr,
     return static_cast<void *>(&ptr->ctable);
 }
 
-void * ClickHouseDictionary_v2_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
+void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::CStrings * /*columns*/)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
-    std::cerr << "loadAll lib call ptr=" << data_ptr << " => " << ptr << "\n";
+    LOG(ptr->lib->log, "loadAll lib call ptr=" << data_ptr << " => " << ptr);
     if (!ptr)
         return nullptr;
     if (settings)
     {
-        std::cerr << "settings passed: " << settings->size << "\n";
+        LOG(ptr->lib->log, "settings passed: " << settings->size);
         for (size_t i = 0; i < settings->size; ++i)
         {
-            std::cerr << "setting " << i << " :" << settings->data[i] << " \n";
+            LOG(ptr->lib->log, "setting " << i << " :" << settings->data[i]);
         }
     }
 
     for (size_t i = 0; i < 7; ++i)
     {
-        std::cerr << "id " << i << " :"
-                  << " generating.\n";
+        LOG(ptr->lib->log,
+            "id " << i << " :"
+                  << " generating.");
         ptr->dataHolder.emplace_back(std::vector<uint64_t>{i, i + 1, (1 + i) * 10, 65});
     }
 
@@ -121,35 +136,35 @@ void * ClickHouseDictionary_v2_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     return static_cast<void *>(&ptr->ctable);
 }
 
-void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
+void * ClickHouseDictionary_v3_loadKeys(void * data_ptr,
     ClickHouseLibrary::CStrings * settings,
     ClickHouseLibrary::CStrings * columns,
     const ClickHouseLibrary::VectorUInt64 * requested_rows)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
-    std::cerr << "loadKeys lib call ptr=" << data_ptr << " => " << ptr << "\n";
+    LOG(ptr->lib->log, "loadKeys lib call ptr=" << data_ptr << " => " << ptr);
     if (settings)
     {
-        std::cerr << "settings passed: " << settings->size << "\n";
+        LOG(ptr->lib->log, "settings passed: " << settings->size);
         for (size_t i = 0; i < settings->size; ++i)
         {
-            std::cerr << "setting " << i << " :" << settings->data[i] << " \n";
+            LOG(ptr->lib->log, "setting " << i << " :" << settings->data[i]);
         }
     }
     if (columns)
     {
-        std::cerr << "columns passed:" << columns->size << "\n";
+        LOG(ptr->lib->log, "columns passed:" << columns->size);
         for (size_t i = 0; i < columns->size; ++i)
         {
-            std::cerr << "col " << i << " :" << columns->data[i] << "\n";
+            LOG(ptr->lib->log, "col " << i << " :" << columns->data[i]);
         }
     }
     if (requested_rows)
     {
-        std::cerr << "requested_rows passed: " << requested_rows->size << "\n";
+        LOG(ptr->lib->log, "requested_rows passed: " << requested_rows->size);
         for (size_t i = 0; i < requested_rows->size; ++i)
         {
-            std::cerr << "id " << i << " :" << requested_rows->data[i] << "\n";
+            LOG(ptr->lib->log, "id " << i << " :" << requested_rows->data[i]);
         }
     }
 
@@ -158,27 +173,29 @@ void * ClickHouseDictionary_v2_loadKeys(void * data_ptr,
     return nullptr;
 }
 
-void * ClickHouseDictionary_v2_libNew(ClickHouseLibrary::CStrings * /*settings*/)
+void * ClickHouseDictionary_v3_libNew(
+    ClickHouseLibrary::CStrings * /*settings*/, void (*logFunc)(ClickHouseLibrary::LogLevel, ClickHouseLibrary::CString))
 {
     auto lib_ptr = new LibHolder;
+    lib_ptr->log = logFunc;
     return lib_ptr;
 }
 
-void ClickHouseDictionary_v2_libDelete(void * lib_ptr)
+void ClickHouseDictionary_v3_libDelete(void * lib_ptr)
 {
     auto ptr = static_cast<LibHolder *>(lib_ptr);
     delete ptr;
     return;
 }
 
-void * ClickHouseDictionary_v2_dataNew(void * lib_ptr)
+void * ClickHouseDictionary_v3_dataNew(void * lib_ptr)
 {
     auto data_ptr = new DataHolder;
     data_ptr->lib = static_cast<decltype(data_ptr->lib)>(lib_ptr);
     return data_ptr;
 }
 
-void ClickHouseDictionary_v2_dataDelete(void * /*lib_ptr*/, void * data_ptr)
+void ClickHouseDictionary_v3_dataDelete(void * /*lib_ptr*/, void * data_ptr)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     delete ptr;

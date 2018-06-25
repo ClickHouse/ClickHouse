@@ -14,6 +14,8 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Common/ProfileEvents.h>
+#include <string>
+#include <memory>
 
 
 namespace ProfileEvents
@@ -142,7 +144,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
 
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();

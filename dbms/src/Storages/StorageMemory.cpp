@@ -1,11 +1,11 @@
-#include <map>
-
 #include <Common/Exception.h>
 
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageFactory.h>
+
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -123,6 +123,12 @@ BlockOutputStreamPtr StorageMemory::write(
 
 
 void StorageMemory::drop()
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    data.clear();
+}
+
+void StorageMemory::truncate(const ASTPtr &)
 {
     std::lock_guard<std::mutex> lock(mutex);
     data.clear();

@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Core/NamesAndTypes.h>
+#include <port/clock.h>
 
 
 namespace DB

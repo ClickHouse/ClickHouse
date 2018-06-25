@@ -20,11 +20,11 @@ public:
     MergeTreeBaseBlockInputStream(
         MergeTreeData & storage,
         const PrewhereInfoPtr & prewhere_info,
-        size_t max_block_size_rows,
-        size_t preferred_block_size_bytes,
-        size_t preferred_max_column_in_block_size_bytes,
-        size_t min_bytes_to_use_direct_io,
-        size_t max_read_buffer_size,
+        UInt64 max_block_size_rows,
+        UInt64 preferred_block_size_bytes,
+        UInt64 preferred_max_column_in_block_size_bytes,
+        UInt64 min_bytes_to_use_direct_io,
+        UInt64 max_read_buffer_size,
         bool use_uncompressed_cache,
         bool save_marks_in_cache = true,
         const Names & virt_column_names = {});
@@ -51,12 +51,12 @@ protected:
 
     PrewhereInfoPtr prewhere_info;
 
-    size_t max_block_size_rows;
-    size_t preferred_block_size_bytes;
-    size_t preferred_max_column_in_block_size_bytes;
+    UInt64 max_block_size_rows;
+    UInt64 preferred_block_size_bytes;
+    UInt64 preferred_max_column_in_block_size_bytes;
 
-    size_t min_bytes_to_use_direct_io;
-    size_t max_read_buffer_size;
+    UInt64 min_bytes_to_use_direct_io;
+    UInt64 max_read_buffer_size;
 
     bool use_uncompressed_cache;
     bool save_marks_in_cache;
@@ -72,7 +72,7 @@ protected:
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 
-    size_t max_block_size_marks;
+    UInt64 max_block_size_marks;
 };
 
 }

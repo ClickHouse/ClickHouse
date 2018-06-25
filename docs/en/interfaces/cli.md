@@ -31,6 +31,7 @@ _EOF
 
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
+In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
 By default, you can only process a single query in batch mode. To make multiple queries from a "script," use the --multiquery parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
 Similarly, to process a large number of queries, you can run 'clickhouse-client' for each query. Note that it may take tens of milliseconds to launch the 'clickhouse-client' program.

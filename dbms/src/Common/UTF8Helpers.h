@@ -3,6 +3,10 @@
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
 
+#if __SSE2__
+#include <emmintrin.h>
+#endif
+
 
 namespace DB
 {
@@ -49,10 +53,21 @@ inline size_t seqLength(const UInt8 first_octet)
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
     size_t res = 0;
+    const auto end = data + size;
 
-    /// TODO SIMD implementation looks quite simple.
-    for (auto end = data + size; data < end; ++data) /// Skip UTF-8 continuation bytes.
-        res += (*data <= 0x7F || *data >= 0xC0);
+#if __SSE2__
+    constexpr auto bytes_sse = sizeof(__m128i);
+    const auto src_end_sse = data + size / bytes_sse * bytes_sse;
+
+    const auto threshold = _mm_set1_epi8(0xBF);
+
+    for (; data < src_end_sse; data += bytes_sse)
+        res += __builtin_popcount(_mm_movemask_epi8(
+            _mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)), threshold)));
+#endif
+
+    for (; data < end; ++data) /// Skip UTF-8 continuation bytes.
+        res += static_cast<Int8>(*data) > static_cast<Int8>(0xBF);
 
     return res;
 }

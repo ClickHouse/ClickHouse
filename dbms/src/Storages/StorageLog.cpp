@@ -102,6 +102,7 @@ private:
     FileStreams streams;
 
     void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
+
 };
 
 
@@ -462,6 +463,29 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
+void StorageLog::truncate(const ASTPtr &)
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+
+    String table_dir = path + escapeForFileName(name);
+
+    files.clear();
+    file_count = 0;
+    loaded_marks = false;
+
+    std::vector<Poco::File> data_files;
+    Poco::File(table_dir).list(data_files);
+
+    for (auto & file : data_files)
+        file.remove(false);
+
+    for (const auto  & column : getColumns().getAllPhysical())
+        addFiles(column.name, *column.type);
+
+    file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+    marks_file = Poco::File(table_dir + "/" + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+}
+
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
@@ -485,7 +509,6 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
     return it->second.marks;
 }
-
 
 BlockInputStreams StorageLog::read(
     const Names & column_names,
@@ -532,7 +555,6 @@ BlockInputStreams StorageLog::read(
 
     return res;
 }
-
 
 BlockOutputStreamPtr StorageLog::write(
     const ASTPtr & /*query*/, const Settings & /*settings*/)

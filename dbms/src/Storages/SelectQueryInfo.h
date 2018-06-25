@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <unordered_map>
-
+#include <Parsers/StringRange.h>
 
 namespace DB
 {
@@ -17,7 +17,7 @@ class Set;
 using SetPtr = std::shared_ptr<Set>;
 
 /// Information about calculated sets in right hand side of IN.
-using PreparedSets = std::unordered_map<IAST*, SetPtr>;
+using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 struct PrewhereInfo
 {

@@ -8,9 +8,7 @@ namespace DB
 
 void registerFunctions@FUNCTION_AREA@(FunctionFactory & factory)
 {
-
 @REGISTER_FUNCTIONS@
-
 }
 
 }

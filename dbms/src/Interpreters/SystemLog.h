@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
+#include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 
 

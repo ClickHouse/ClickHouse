@@ -15,6 +15,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
@@ -72,7 +73,7 @@ public:
 
     String getName() const override { return "Buffer"; }
 
-    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); };
+    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); }
 
 protected:
     Block readImpl() override

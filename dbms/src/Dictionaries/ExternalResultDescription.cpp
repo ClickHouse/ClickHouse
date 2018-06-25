@@ -56,9 +56,7 @@ void ExternalResultDescription::init(const Block & sample_block_)
         else if (typeid_cast<const DataTypeDateTime *>(type))
             types.push_back(ValueType::DateTime);
         else
-            throw Exception{
-                "Unsupported type " + type->getName(),
-                ErrorCodes::UNKNOWN_TYPE};
+            throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
 
         names.emplace_back(column.name);
         sample_columns.emplace_back(column.column);

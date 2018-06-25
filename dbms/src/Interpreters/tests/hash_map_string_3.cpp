@@ -25,27 +25,27 @@
 
 /** Do this:
 for file in MobilePhoneModel PageCharset Params URLDomain UTMSource Referer URL Title; do
- for size in 30000 100000 300000 1000000 5000000; do
-  echo
-  BEST_METHOD=0
-  BEST_RESULT=0
-  for method in {1..11}; do
-   echo -ne $file $size $method '';
-   TOTAL_ELEMS=0
-   for i in {0..1000}; do
-    TOTAL_ELEMS=$(( $TOTAL_ELEMS + $size ))
-    if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
-    ./hash_map_string_3 $size $method < ${file}.bin 2>&1 |
-     grep HashMap | grep -oE '[0-9\.]+ elem';
-   done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_3_res;
-   CUR_RESULT=$(cat /tmp/hash_map_string_3_res | tr -d '.')
-   if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
-    BEST_METHOD=$method
-    BEST_RESULT=$CUR_RESULT
-   fi;
-  done;
-  echo Best: $BEST_METHOD - $BEST_RESULT
- done;
+    for size in 30000 100000 300000 1000000 5000000; do
+        echo
+        BEST_METHOD=0
+        BEST_RESULT=0
+        for method in {1..11}; do
+            echo -ne $file $size $method '';
+            TOTAL_ELEMS=0
+            for i in {0..1000}; do
+                TOTAL_ELEMS=$(( $TOTAL_ELEMS + $size ))
+                if [[ $TOTAL_ELEMS -gt 25000000 ]]; then break; fi
+                ./hash_map_string_3 $size $method < ${file}.bin 2>&1 |
+                    grep HashMap | grep -oE '[0-9\.]+ elem';
+            done | awk -W interactive '{ if ($1 > x) { x = $1 }; printf(".") } END { print x }' | tee /tmp/hash_map_string_3_res;
+            CUR_RESULT=$(cat /tmp/hash_map_string_3_res | tr -d '.')
+            if [[ $CUR_RESULT -gt $BEST_RESULT ]]; then
+                BEST_METHOD=$method
+                BEST_RESULT=$CUR_RESULT
+            fi;
+        done;
+        echo Best: $BEST_METHOD - $BEST_RESULT
+    done;
 done
 */
 
@@ -94,13 +94,16 @@ inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
 }
 
 
-#define mix(h) ({                   \
-    (h) ^= (h) >> 23;               \
-    (h) *= 0x2127599bf4325c37ULL;   \
-    (h) ^= (h) >> 47; })
-
 struct FastHash64
 {
+    static inline uint64_t mix(uint64_t h)
+    {
+        h ^= h >> 23;
+        h *= 0x2127599bf4325c37ULL;
+        h ^= h >> 47;
+        return h;
+    }
+
     size_t operator() (StringRef x) const
     {
         const char * buf = x.data;
@@ -316,7 +319,7 @@ struct FarmHash64
 {
     size_t operator() (StringRef x) const
     {
-        return farmhash::Hash64(x.data, x.size);
+        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data, x.size);
     }
 };
 

@@ -69,7 +69,7 @@ public:
     SetElements & getSetElements() { return *set_elements.get(); }
 
 private:
-    size_t keys_size;
+    size_t keys_size = 0;
     Sizes key_sizes;
 
     SetVariants data;

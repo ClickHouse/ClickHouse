@@ -50,6 +50,42 @@ Events that occur during the same second can be put in the chain in any order. T
 Works the same way as the sequenceMatch function, but instead of returning whether there is an event chain, it returns UInt64 with the number of event chains found.
 Chains are searched for without overlapping. In other words, the next chain can start only after the end of the previous one.
 
+## windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
+
+Window funnel matching for event chains, calculates the max event level in a sliding window.
+
+`window` is the timestamp window value, such as 3600.
+
+`timestamp` is the time of the event with the DateTime type or UInt32 type.
+
+`cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event
+
+Example: 
+
+Consider you are doing a website analytics, intend to find out the user counts clicked login button (event = 1001), then the user counts followed by searched the phones( event = 1003 and product = 'phone'), then the user counts followed by made an order (event = 1009). And all event chains must be in a 3600 seconds sliding window. 
+
+This could be easily calculate by `windowFunnel`
+
+```
+SELECT
+    level,
+    count() AS c
+FROM
+(
+    SELECT
+        user_id,
+        windowFunnel(3600)(timestamp, event_id = 1001, event_id = 1003 AND product = 'phone', event_id = 1009) AS level
+    FROM trend_event
+    WHERE (event_date >= '2017-01-01') AND (event_date <= '2017-01-31')
+    GROUP BY user_id
+)
+GROUP BY level
+ORDER BY level
+```
+
+Simply, the level value could only be 0, 1, 2, 3, it means the maxium event action stage that one user could reach.
+
+
 ## uniqUpTo(N)(x)
 
 Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.

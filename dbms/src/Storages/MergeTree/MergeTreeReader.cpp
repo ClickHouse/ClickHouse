@@ -365,7 +365,7 @@ void MergeTreeReader::readData(
     IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
     {
         /// If offsets for arrays have already been read.
-        if (!with_offsets && !path.empty() && path.back().type == IDataType::Substream::ArraySizes)
+        if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
             return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, path);
