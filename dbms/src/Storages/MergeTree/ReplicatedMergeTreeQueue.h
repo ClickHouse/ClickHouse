@@ -57,7 +57,13 @@ private:
     Logger * log = nullptr;
 
     /// Protects the queue, future_parts and other queue state variables.
-    mutable std::mutex queue_mutex;
+    mutable std::mutex state_mutex;
+
+    /// A set of parts that should be on this replica according to the queue entries that have been done
+    /// up to this point. The invariant holds: `virtual_parts` = `current_parts` + `queue`.
+    /// Note: it can be different from the actual set of parts because the replica can decide to fetch
+    /// a bigger part instead of the part mentioned in the log entry.
+    ActiveDataPartSet current_parts;
 
     /** The queue of what you need to do on this line to catch up. It is taken from ZooKeeper (/replicas/me/queue/).
       * In ZK records in chronological order. Here it is not necessary.
@@ -71,14 +77,9 @@ private:
     time_t last_queue_update = 0;
 
     /// parts that will appear as a result of actions performed right now by background threads (these actions are not in the queue).
-    /// Used to not perform other actions at the same time with these parts.
+    /// Used to block other actions on parts in the range covered by future_parts.
     using FuturePartsSet = std::map<String, LogEntryPtr>;
     FuturePartsSet future_parts;
-
-
-    /// Protects virtual_parts, log_pointer, mutations.
-    /// If you intend to lock both target_state_mutex and queue_mutex, lock target_state_mutex first.
-    mutable std::mutex target_state_mutex;
 
     /// Index of the first log entry that we didn't see yet.
     Int64 log_pointer = 0;
@@ -89,11 +90,26 @@ private:
     ActiveDataPartSet virtual_parts;
 
     /// A set of mutations loaded from ZooKeeper.
-    /// mutations_by_partition is an index partition ID -> block ID -> mutation into this list.
+    /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
     /// Note that mutations are updated in such a way that they are always more recent than
     /// log_pointer (see pullLogsToQueue()).
-    std::map<String, ReplicatedMergeTreeMutationEntryPtr> mutations_by_znode;
-    std::unordered_map<String, std::map<Int64, ReplicatedMergeTreeMutationEntryPtr>> mutations_by_partition;
+
+    struct MutationStatus
+    {
+        ReplicatedMergeTreeMutationEntryPtr entry;
+
+        /// A number of parts that should be mutated/merged or otherwise moved to Obsolete state for this mutation to complete.
+        Int64 parts_to_do = 0;
+
+        /// Note that is_done is not equivalent to parts_to_do == 0
+        /// (even if parts_to_do == 0 some relevant parts can still commit in the future).
+        bool is_done = false;
+    };
+
+    std::map<String, MutationStatus> mutations_by_znode;
+    std::unordered_map<String, std::map<Int64, MutationStatus *>> mutations_by_partition;
+    /// Znode ID of the latest mutation that is done.
+    String mutation_pointer;
 
 
     /// Provides only one simultaneous call to pullLogsToQueue.
@@ -136,34 +152,38 @@ private:
 
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
-        std::lock_guard<std::mutex> & target_state_lock,
-        std::lock_guard<std::mutex> & queue_lock);
+        std::lock_guard<std::mutex> & state_lock);
 
     void removeProcessedEntry(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
 
     /** Can I now try this action. If not, you need to leave it in the queue and try another one.
-      * Called under the queue_mutex.
+      * Called under the state_mutex.
       */
     bool shouldExecuteLogEntry(
         const LogEntry & entry, String & out_postpone_reason,
         MergeTreeDataMergerMutator & merger_mutator, MergeTreeData & data,
-        std::lock_guard<std::mutex> & queue_lock) const;
+        std::lock_guard<std::mutex> & state_lock) const;
 
-    Int64 getCurrentMutationVersionImpl(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* target_state_lock */) const;
+    Int64 getCurrentMutationVersionImpl(const String & partition_id, Int64 data_version, std::lock_guard<std::mutex> & /* state_lock */) const;
 
     /** Check that part isn't in currently generating parts and isn't covered by them.
-      * Should be called under queue_mutex.
+      * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
         const String & new_part_name, String & out_reason,
-        std::lock_guard<std::mutex> & queue_lock) const;
+        std::lock_guard<std::mutex> & state_lock) const;
 
-    /// After removing the queue element, update the insertion times in the RAM. Running under queue_mutex.
+    /// After removing the queue element, update the insertion times in the RAM. Running under state_mutex.
     /// Returns information about what times have changed - this information can be passed to updateTimesInZooKeeper.
-    void updateTimesOnRemoval(const LogEntryPtr & entry,
+    void updateStateOnQueueEntryRemoval(const LogEntryPtr & entry,
+        bool is_successful,
         std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::optional<time_t> & max_processed_insert_time_changed,
-        std::unique_lock<std::mutex> & queue_lock);
+        std::unique_lock<std::mutex> & state_lock);
+
+    /// If the new part appears (add == true) or becomes obsolete (add == false), update parts_to_do of all affected mutations.
+    /// Notifies storage.mutations_finalizing_task if some mutations are probably finished.
+    void updateMutationsPartsToDo(const String & part_name, bool add);
 
     /// Update the insertion times in ZooKeeper.
     void updateTimesInZooKeeper(zkutil::ZooKeeperPtr zookeeper,
@@ -173,7 +193,7 @@ private:
     /// Returns list of currently executing parts blocking execution a command modifying specified range
     size_t getConflictsCountForRange(
         const MergeTreePartInfo & range, const LogEntry & entry, String * out_description,
-        std::lock_guard<std::mutex> & queue_lock) const;
+        std::lock_guard<std::mutex> & state_lock) const;
 
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
@@ -187,7 +207,7 @@ private:
         /// Created only in the selectEntryToProcess function. It is called under mutex.
         CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue);
 
-        /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under queue_mutex.
+        /// In case of fetch, we determine actual part during the execution, so we need to update entry. It is called under state_mutex.
         static void setActualPartName(ReplicatedMergeTreeQueue::LogEntry & entry, const String & actual_part_name,
             ReplicatedMergeTreeQueue & queue);
     public:
@@ -265,6 +285,10 @@ public:
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
 
+    /// Mark finished mutations as done. If the function needs to be called again at some later time
+    /// (because some mutations are probably done but we are not sure yet), returns true.
+    bool tryFinalizeMutations(zkutil::ZooKeeperPtr zookeeper);
+
     /// Prohibit merges in the specified range.
     void disableMergesInRange(const String & part_name);
 
@@ -330,6 +354,8 @@ public:
     /// Return nonempty optional if the part can and should be mutated.
     /// Returned mutation version number is always the biggest possible.
     std::optional<Int64> getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const;
+
+    bool isMutationFinished(const ReplicatedMergeTreeMutationEntry & mutation) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

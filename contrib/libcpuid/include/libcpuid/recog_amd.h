@@ -23,15 +23,10 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-/**
- * @File     libcpuid_types.h
- * @Author   Veselin Georgiev
- * @Brief    Type specifications for libcpuid.
- */
+#ifndef __RECOG_AMD_H__
+#define __RECOG_AMD_H__
 
-#ifndef __LIBCPUID_TYPES_H__
-#define __LIBCPUID_TYPES_H__
+int cpuid_identify_amd(struct cpu_raw_data_t* raw, struct cpu_id_t* data, struct internal_id_info_t* internal);
+void cpuid_get_list_amd(struct cpu_list_t* list);
 
-#  include <stdint.h>
-
-#endif /* __LIBCPUID_TYPES_H__ */
+#endif /* __RECOG_AMD_H__ */

@@ -28,47 +28,16 @@
 #include <string.h>
 #include <ctype.h>
 #include "libcpuid.h"
-#include "recog_amd.h"
 #include "libcpuid_util.h"
+#include "libcpuid_internal.h"
+#include "recog_amd.h"
 
-enum _amd_code_t {
-	NA,
-	NO_CODE,
-	OPTERON_GENERIC,
-	OPTERON_800,
-	ATHLON_XP,
-	ATHLON_XP_M,
-	ATHLON_XP_M_LV,
-	ATHLON,
-	ATHLON_MP,
-	MOBILE_ATHLON64,
-	ATHLON_FX,
-	DURON,
-	DURON_MP,
-	MOBILE_DURON,
-	MOBILE_SEMPRON,
-	OPTERON_SINGLE,
-	OPTERON_DUALCORE,
-	OPTERON_800_DUALCORE,
-	MOBILE_TURION,
-	ATHLON_64,
-	ATHLON_64_FX,
-	TURION_64,
-	TURION_X2,
-	SEMPRON,
-	M_SEMPRON,
-	SEMPRON_DUALCORE,
-	PHENOM,
-	PHENOM2,
-	ATHLON_64_X2,
-	ATHLON_64_X3,
-	ATHLON_64_X4,
-	FUSION_C,
-	FUSION_E,
-	FUSION_EA,
-	FUSION_Z,
+const struct amd_code_str { amd_code_t code; char *str; } amd_code_str[] = {
+	#define CODE(x) { x, #x }
+	#define CODE2(x, y) CODE(x)
+	#include "amd_code_t.h"
+	#undef CODE
 };
-typedef enum _amd_code_t amd_code_t;
 
 const struct match_entry_t cpudb_amd[] = {
 	{ -1, -1, -1, -1,   -1,   1,    -1,    -1, NO_CODE                 ,     0, "Unknown AMD CPU"               },
@@ -146,6 +115,7 @@ const struct match_entry_t cpudb_amd[] = {
 	{ 15, -1, -1, 15,   -1,   1,  1024,    -1, ATHLON_64               ,     0, "Athlon 64 (1024K)"             },
 	{ 15, -1, -1, 15,   -1,   1,    -1,    -1, ATHLON_FX               ,     0, "Athlon FX"                     },
 	{ 15, -1, -1, 15,   -1,   1,    -1,    -1, ATHLON_64_FX            ,     0, "Athlon 64 FX"                  },
+	{ 15,  3, -1, 15,   35,   2,    -1,    -1, ATHLON_64_FX            ,     0, "Athlon 64 FX X2 (Toledo)"      },
 	{ 15, -1, -1, 15,   -1,   2,   512,    -1, ATHLON_64_X2            ,     0, "Athlon 64 X2 (512K)"           },
 	{ 15, -1, -1, 15,   -1,   2,  1024,    -1, ATHLON_64_X2            ,     0, "Athlon 64 X2 (1024K)"          },
 	{ 15, -1, -1, 15,   -1,   1,   512,    -1, TURION_64               ,     0, "Turion 64 (512K)"              },
@@ -237,31 +207,65 @@ const struct match_entry_t cpudb_amd[] = {
 	{ 15,  4, -1, 16,   10,   4,   512,    -1, PHENOM2                 ,     0, "Phenom II X4 (Zosma)"          },
 	{ 15,  4, -1, 16,   10,   6,   512,    -1, PHENOM2                 ,     0, "Phenom II X6 (Thuban)"         },
 	
-	{ 15,  4, -1, 16,   -1,   2,  1024,    -1, ATHLON_64_X2            ,     0, "Athlon II X2 (Regor)"          },
-	{ 15,  4, -1, 16,   -1,   2,   512,    -1, ATHLON_64_X2            ,     0, "Athlon II X2 (Regor)"          },
+	{ 15,  6, -1, 16,    6,   2,   512,    -1, ATHLON                  ,     0, "Athlon II (Champlain)"         },
+	{ 15,  6, -1, 16,    6,   2,   512,    -1, ATHLON_64_X2            ,     0, "Athlon II X2 (Regor)"          },
+	{ 15,  6, -1, 16,    6,   2,  1024,    -1, ATHLON_64_X2            ,     0, "Athlon II X2 (Regor)"          },
 	{ 15,  5, -1, 16,    5,   3,   512,    -1, ATHLON_64_X3            ,     0, "Athlon II X3 (Rana)"           },
 	{ 15,  5, -1, 16,    5,   4,   512,    -1, ATHLON_64_X4            ,     0, "Athlon II X4 (Propus)"         },
-	/* 2011 CPUs with AMD fusion: */
-	{ 15, -1, -1, 20,    1,   1,   512,    -1, FUSION_C                ,     0, "Brazos Ontario"                },
-	{ 15, -1, -1, 20,    1,   2,   512,    -1, FUSION_C                ,     0, "Brazos Ontario (Dual-core)"    },
-	{ 15, -1, -1, 20,    1,   1,   512,    -1, FUSION_E                ,     0, "Brazos Zacate"                 },
-	{ 15, -1, -1, 20,    1,   2,   512,    -1, FUSION_E                ,     0, "Brazos Zacate (Dual-core)"     },
-	{ 15, -1, -1, 20,    1,   1,   512,    -1, FUSION_Z                ,     0, "Brazos Desna"                  },
-	{ 15, -1, -1, 18,    1,   2,   512,    -1, FUSION_EA               ,     0, "Llano X2"                      },
-	{ 15, -1, -1, 18,    1,   2,  1024,    -1, FUSION_EA               ,     0, "Llano X2"                      },
-	{ 15, -1, -1, 18,    1,   3,  1024,    -1, FUSION_EA               ,     0, "Llano X3"                      },
-	{ 15, -1, -1, 18,    1,   4,  1024,    -1, FUSION_EA               ,     0, "Llano X4"                      },
+
+	/* 2011 CPUs: K10 architecture: Llano */
+	{ 15,  1, -1, 18,    1,   2,   512,    -1, FUSION_EA               ,     0, "Llano X2"                      },
+	{ 15,  1, -1, 18,    1,   2,  1024,    -1, FUSION_EA               ,     0, "Llano X2"                      },
+	{ 15,  1, -1, 18,    1,   3,  1024,    -1, FUSION_EA               ,     0, "Llano X3"                      },
+	{ 15,  1, -1, 18,    1,   4,  1024,    -1, FUSION_EA               ,     0, "Llano X4"                      },
+	/* 2011 CPUs: Bobcat architecture: Ontario, Zacate, Desna, Hondo */
+	{ 15,  2, -1, 20,   -1,   1,   512,    -1, FUSION_C                ,     0, "Brazos Ontario"                },
+	{ 15,  2, -1, 20,   -1,   2,   512,    -1, FUSION_C                ,     0, "Brazos Ontario (Dual-core)"    },
+	{ 15,  1, -1, 20,   -1,   1,   512,    -1, FUSION_E                ,     0, "Brazos Zacate"                 },
+	{ 15,  1, -1, 20,   -1,   2,   512,    -1, FUSION_E                ,     0, "Brazos Zacate (Dual-core)"     },
+	{ 15,  2, -1, 20,   -1,   2,   512,    -1, FUSION_Z                ,     0, "Brazos Desna (Dual-core)"      },
+	/* 2012 CPUs: Piledriver architecture: Trinity and Richland */
+	{ 15,  0, -1, 21,   10,   2,  1024,    -1, FUSION_A                ,     0, "Trinity X2"                    },
+	{ 15,  0, -1, 21,   16,   2,  1024,    -1, FUSION_A                ,     0, "Trinity X2"                    },
+	{ 15,  0, -1, 21,   10,   4,  1024,    -1, FUSION_A                ,     0, "Trinity X4"                    },
+	{ 15,  0, -1, 21,   16,   4,  1024,    -1, FUSION_A                ,     0, "Trinity X4"                    },
+	{ 15,  3, -1, 21,   13,   2,  1024,    -1, FUSION_A                ,     0, "Richland X2"                   },
+	{ 15,  3, -1, 21,   13,   4,  1024,    -1, FUSION_A                ,     0, "Richland X4"                   },
+	/* 2013 CPUs: Jaguar architecture: Kabini and Temash */
+	{ 15,  0, -1, 22,    0,   2,  1024,    -1, FUSION_A                ,     0, "Kabini X2"                     },
+	{ 15,  0, -1, 22,    0,   4,  1024,    -1, FUSION_A                ,     0, "Kabini X4"                     },
+	/* 2014 CPUs: Steamroller architecture: Kaveri */
+	{ 15,  0, -1, 21,   30,   2,  1024,    -1, FUSION_A                ,     0, "Kaveri X2"                     },
+	{ 15,  0, -1, 21,   30,   4,  1024,    -1, FUSION_A                ,     0, "Kaveri X4"                     },
+	/* 2014 CPUs: Puma architecture: Beema and Mullins */
+	{ 15,  0, -1, 22,   30,   2,  1024,    -1, FUSION_E                ,     0, "Mullins X2"                     },
+	{ 15,  0, -1, 22,   30,   4,  1024,    -1, FUSION_A                ,     0, "Mullins X4"                     },
+	/* 2015 CPUs: Excavator architecture: Carrizo */
+	{ 15,  1, -1, 21,   60,   2,  1024,    -1, FUSION_A                ,     0, "Carrizo X2"                     },
+	{ 15,  1, -1, 21,   60,   4,  1024,    -1, FUSION_A                ,     0, "Carrizo X4"                     },
+	/* 2015 CPUs: Steamroller architecture: Godavari */
+	//TODO
+	/* 2016 CPUs: Excavator architecture: Bristol Ridge */
+	//TODO
 	
 	/* Newer Opterons: */
-	{ 15,  9, -1, 16,    9,   8,    -1,    -1, OPTERON_GENERIC         ,     0, "Magny-Cours Opteron"           },
+	{ 15,  9, -1, 22,    9,   8,    -1,    -1, OPTERON_GENERIC         ,     0, "Magny-Cours Opteron"           },
 	
 	/* Bulldozer CPUs: */
+	{ 15, -1, -1, 21,    0,   4,  2048,    -1, NO_CODE                 ,     0, "Bulldozer X2"                  },
 	{ 15, -1, -1, 21,    1,   4,  2048,    -1, NO_CODE                 ,     0, "Bulldozer X2"                  },
 	{ 15, -1, -1, 21,    1,   6,  2048,    -1, NO_CODE                 ,     0, "Bulldozer X3"                  },
 	{ 15, -1, -1, 21,    1,   8,  2048,    -1, NO_CODE                 ,     0, "Bulldozer X4"                  },
+	/* Piledriver CPUs: */
 	{ 15, -1, -1, 21,    2,   4,  2048,    -1, NO_CODE                 ,     0, "Vishera X2"                    },
 	{ 15, -1, -1, 21,    2,   6,  2048,    -1, NO_CODE                 ,     0, "Vishera X3"                    },
 	{ 15, -1, -1, 21,    2,   8,  2048,    -1, NO_CODE                 ,     0, "Vishera X4"                    },
+	/* Steamroller CPUs: */
+	//TODO
+	/* Excavator CPUs: */
+	//TODO
+	/* Zen CPUs: */
+	//TODO
 };
 
 
@@ -287,6 +291,7 @@ static void load_amd_features(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
 		{ 12, CPU_FEATURE_SKINIT },
 		{ 13, CPU_FEATURE_WDT },
 		{ 16, CPU_FEATURE_FMA4 },
+		{ 21, CPU_FEATURE_TBM },
 	};
 	const struct feature_map_t matchtable_edx87[] = {
 		{  0, CPU_FEATURE_TS },
@@ -307,7 +312,7 @@ static void load_amd_features(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
 		match_features(matchtable_edx81, COUNT_OF(matchtable_edx81), raw->ext_cpuid[1][3], data);
 		match_features(matchtable_ecx81, COUNT_OF(matchtable_ecx81), raw->ext_cpuid[1][2], data);
 	}
-	if (raw->ext_cpuid[0][0] >= 0x80000001)
+	if (raw->ext_cpuid[0][0] >= 0x80000007)
 		match_features(matchtable_edx87, COUNT_OF(matchtable_edx87), raw->ext_cpuid[7][3], data);
 	if (raw->ext_cpuid[0][0] >= 0x8000001a) {
 		/* We have the extended info about SSE unit size */
@@ -320,7 +325,7 @@ static void decode_amd_cache_info(struct cpu_raw_data_t* raw, struct cpu_id_t* d
 {
 	int l3_result;
 	const int assoc_table[16] = {
-		0, 1, 2, 0, 4, 0, 8, 0, 16, 0, 32, 48, 64, 92, 128, 255
+		0, 1, 2, 0, 4, 0, 8, 0, 16, 0, 32, 48, 64, 96, 128, 255
 	};
 	unsigned n = raw->ext_cpuid[0][0];
 	
@@ -442,24 +447,36 @@ static amd_code_t decode_amd_codename_part1(const char *bs)
 	if (match_pattern(bs, "Z-##")) return FUSION_Z;
 	if (match_pattern(bs, "E#-####") || match_pattern(bs, "A#-####")) return FUSION_EA;
 	
-	return NO_CODE;
+	return (amd_code_t) NO_CODE;
 }
 
-static void decode_amd_codename(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
+static void decode_amd_codename(struct cpu_raw_data_t* raw, struct cpu_id_t* data, struct internal_id_info_t* internal)
 {
 	amd_code_t code = decode_amd_codename_part1(data->brand_str);
-	
+	int i = 0;
+	char* code_str = NULL;
+	for (i = 0; i < COUNT_OF(amd_code_str); i++) {
+		if (code == amd_code_str[i].code) {
+			code_str = amd_code_str[i].str;
+			break;
+		}
+	}
 	if (code == ATHLON_64_X2 && data->l2_cache < 512)
 		code = SEMPRON_DUALCORE;
-	match_cpu_codename(cpudb_amd, COUNT_OF(cpudb_amd), data, code, 0);
+	if (code_str)
+		debugf(2, "Detected AMD brand code: %d (%s)\n", code, code_str);
+	else
+		debugf(2, "Detected AMD brand code: %d\n", code);
+	internal->code.amd = code;
+	internal->score = match_cpu_codename(cpudb_amd, COUNT_OF(cpudb_amd), data, code, 0);
 }
 
-int cpuid_identify_amd(struct cpu_raw_data_t* raw, struct cpu_id_t* data)
+int cpuid_identify_amd(struct cpu_raw_data_t* raw, struct cpu_id_t* data, struct internal_id_info_t* internal)
 {
 	load_amd_features(raw, data);
 	decode_amd_cache_info(raw, data);
 	decode_amd_number_of_cores(raw, data);
-	decode_amd_codename(raw, data);
+	decode_amd_codename(raw, data, internal);
 	return 0;
 }
 

@@ -1,20 +1,20 @@
 add_library(cpuid
-include/cpuid/asm-bits.c
-include/cpuid/cpuid_main.c
-include/cpuid/libcpuid_util.c
-include/cpuid/rdtsc.c
-include/cpuid/recog_amd.c
-include/cpuid/recog_intel.c
+include/libcpuid/asm-bits.c
+include/libcpuid/cpuid_main.c
+include/libcpuid/libcpuid_util.c
+include/libcpuid/rdtsc.c
+include/libcpuid/recog_amd.c
+include/libcpuid/recog_intel.c
 
-include/cpuid/asm-bits.h
-include/cpuid/config.h
-include/cpuid/libcpuid_constants.h
-include/cpuid/libcpuid.h
-include/cpuid/libcpuid_types.h
-include/cpuid/libcpuid_util.h
-include/cpuid/rdtsc.h
-include/cpuid/recog_amd.h
-include/cpuid/recog_intel.h
+include/libcpuid/asm-bits.h
+include/libcpuid/config.h
+include/libcpuid/libcpuid_constants.h
+include/libcpuid/libcpuid.h
+include/libcpuid/libcpuid_types.h
+include/libcpuid/libcpuid_util.h
+include/libcpuid/rdtsc.h
+include/libcpuid/recog_amd.h
+include/libcpuid/recog_intel.h
 )
 
 target_include_directories (cpuid PUBLIC include)

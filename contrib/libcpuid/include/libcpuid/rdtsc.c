@@ -226,6 +226,45 @@ int cpu_clock_measure(int millis, int quad_check)
 	return (results[bi] + results[bj] + _zero) / 2;
 }
 
+
+static void adjust_march_ic_multiplier(const struct cpu_id_t* id, int* numerator, int* denom)
+{
+	/*
+	 * for cpu_clock_by_ic: we need to know how many clocks does a typical ADDPS instruction
+	 * take, when issued in rapid succesion without dependencies. The whole idea of
+	 * cpu_clock_by_ic was that this is easy to determine, at least it was back in 2010. Now
+	 * it's getting progressively more hairy, but here are the current measurements:
+	 *
+	 * 1. For CPUs with  64-bit SSE units, ADDPS issue rate is 0.5 IPC (one insn in 2 clocks)
+	 * 2. For CPUs with 128-bit SSE units, issue rate is exactly 1.0 IPC
+	 * 3. For Bulldozer and later, it is 1.4 IPC (we multiply by 5/7)
+	 * 4. For Skylake and later, it is 1.6 IPC (we multiply by 5/8)
+	 */
+	//
+	if (id->sse_size < 128) {
+		debugf(1, "SSE execution path is 64-bit\n");
+		// on a CPU with half SSE unit length, SSE instructions execute at 0.5 IPC;
+		// the resulting value must be multiplied by 2:
+		*numerator = 2;
+	} else {
+		debugf(1, "SSE execution path is 128-bit\n");
+	}
+	//
+	// Bulldozer or later: assume 1.4 IPC
+	if (id->vendor == VENDOR_AMD && id->ext_family >= 21) {
+		debugf(1, "cpu_clock_by_ic: Bulldozer (or later) detected, dividing result by 1.4\n");
+		*numerator = 5;
+		*denom = 7; // multiply by 5/7, to divide by 1.4
+	}
+	//
+	// Skylake or later: assume 1.6 IPC
+	if (id->vendor == VENDOR_INTEL && id->ext_model >= 94) {
+		debugf(1, "cpu_clock_by_ic: Skylake (or later) detected, dividing result by 1.6\n");
+		*numerator = 5;
+		*denom = 8; // to divide by 1.6, multiply by 5/8
+	}
+}
+
 int cpu_clock_by_ic(int millis, int runs)
 {
 	int max_value = 0, cur_value, i, ri, cycles_inner, cycles_outer, c;
@@ -237,21 +276,7 @@ int cpu_clock_by_ic(int millis, int runs)
 	// if there aren't SSE instructions - we can't run the test at all
 	if (!id || !id->flags[CPU_FEATURE_SSE]) return -1;
 	//
-	if (id->sse_size < 128) {
-		debugf(1, "SSE execution path is 64-bit\n");
-		// on a CPU with half SSE unit length, SSE instructions execute at 0.5 IPC;
-		// the resulting value must be multiplied by 2:
-		multiplier_numerator = 2;
-	} else {
-		debugf(1, "SSE execution path is 128-bit\n");
-	}
-	//
-	// on a Bulldozer or later CPU, SSE instructions execute at 1.4 IPC, handle that as well:
-	if (id->vendor == VENDOR_AMD && id->ext_family >= 21) {
-		debugf(1, "cpu_clock_by_ic: Bulldozer (or later) detected, dividing result by 1.4\n");
-		multiplier_numerator = 5;
-		multiplier_denom = 7; // multiply by 5/7, to divide by 1.4
-	}
+	adjust_march_ic_multiplier(id, &multiplier_numerator, &multiplier_denom);
 	//
 	tl = millis * 125; // (*1000 / 8)
 	cycles_inner = 128;
