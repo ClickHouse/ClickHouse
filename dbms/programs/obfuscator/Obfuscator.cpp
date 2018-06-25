@@ -156,11 +156,11 @@ UInt64 feistelNetwork(UInt64 x, size_t num_bits, UInt64 seed, size_t num_rounds 
 UInt64 transform(UInt64 x, UInt64 seed)
 {
     /// Keep 0 and 1 as is.
-    if (x == 0 || x == 1)
+    if (x < 2)
         return x;
 
     /// Pseudorandom permutation of two elements.
-    if (x == 2 || x == 3)
+    if (x < 4)
         return x ^ (seed & 1);
 
     size_t num_leading_zeros = __builtin_clzll(x);
