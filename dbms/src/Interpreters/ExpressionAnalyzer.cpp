@@ -2533,7 +2533,7 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
         ///    Example: select A prewhere B > 0. B can be removed at prewhere step.
         /// 2. Store side columns which were calculated during prewhere actions execution if they are used.
         ///    Example: select F(A) prewhere F(A) > 0. F(A) can be saved from prewhere step.
-        /// 3. Check if we can remove filer column at prewhere step. If we can, action will store single REMOVE_COLUMN.
+        /// 3. Check if we can remove filter column at prewhere step. If we can, action will store single REMOVE_COLUMN.
         ColumnsWithTypeAndName columns = step.actions->getSampleBlock().getColumnsWithTypeAndName();
         auto required_columns = step.actions->getRequiredColumns();
         NameSet prewhere_input_names(required_columns.begin(), required_columns.end());
