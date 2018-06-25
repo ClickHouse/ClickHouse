@@ -833,7 +833,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     BlockInputStreamPtr in = std::make_shared<MergeTreeBlockInputStream>(
         data, source_part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, all_columns.getNames(),
         MarkRanges(1, MarkRange(0, source_part->marks_count)),
-        false, nullptr, String(), true, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+        false, nullptr, true, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
     in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
 
