@@ -171,11 +171,20 @@ BlockInputStreams StorageMerge::read(
 
     const ASTPtr & query = query_info.query;
 
-    /// If PREWHERE is used in query, you need to make sure that all tables support this.
-    if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
-        for (const auto & elem : selected_tables)
+    for (const auto & elem : selected_tables)
+    {
+        /// Check processing stage again in case new table was added after getQueryProcessingStage call.
+        auto stage = elem.first->getQueryProcessingStage(context);
+        if (stage != processed_stage)
+            throw Exception("Source tables for Merge table are processing data up to different stages",
+                            ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+        /// If PREWHERE is used in query, you need to make sure that all tables support this.
+        if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
             if (!elem.first->supportsPrewhere())
-                throw Exception("Storage " + elem.first->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
+                throw Exception("Storage " + elem.first->getName() + " doesn't support PREWHERE.",
+                                ErrorCodes::ILLEGAL_PREWHERE);
+    }
 
     Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 
