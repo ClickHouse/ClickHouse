@@ -115,52 +115,58 @@ void Allocator<clear_memory_>::free(void * buf, size_t size)
 template <bool clear_memory_>
 void * Allocator<clear_memory_>::realloc(void * buf, size_t old_size, size_t new_size, size_t alignment)
 {
-    if (old_size == new_size)
+    if (old_size != new_size)
     {
-        /// nothing to do.
-    }
-    else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT)
-    {
-        CurrentMemoryTracker::realloc(old_size, new_size);
-
-        void * new_buf = ::realloc(buf, new_size);
-        if (nullptr == new_buf)
-            DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
-
-        buf = new_buf;
-        if (clear_memory && new_size > old_size)
-            memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
-    }
-    else if (old_size >= MMAP_THRESHOLD && new_size >= MMAP_THRESHOLD)
-    {
-        CurrentMemoryTracker::realloc(old_size, new_size);
-
-        // On apple and freebsd self-implemented mremap used (common/mremap.h)
-        buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (MAP_FAILED == buf)
-            DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
-
-        /// No need for zero-fill, because mmap guarantees it.
-    }
-    else if (old_size >= MMAP_THRESHOLD && new_size < MMAP_THRESHOLD)
-    {
-        void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, new_size);
-        if (0 != munmap(buf, old_size))
+        if (old_size < MMAP_THRESHOLD)
         {
-            ::free(new_buf);
-            DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
-        }
-        buf = new_buf;
-    }
-    else
-    {
-        void * new_buf = alloc(new_size, alignment);
-        memcpy(new_buf, buf, old_size);
-        free(buf, old_size);
-        buf = new_buf;
-    }
+            if (new_size < MMAP_THRESHOLD && alignment <= MALLOC_MIN_ALIGNMENT) 
+            {
+                CurrentMemoryTracker::realloc(old_size, new_size);
 
+                void * new_buf = ::realloc(buf, new_size);
+                if (nullptr == new_buf)
+                    DB::throwFromErrno("Allocator: Cannot realloc from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_ALLOCATE_MEMORY);
+
+                buf = new_buf;
+                if (clear_memory && new_size > old_size)
+                    memset(reinterpret_cast<char *>(buf) + old_size, 0, new_size - old_size);
+            } 
+            else 
+            {
+                void * new_buf = alloc(new_size, alignment);
+                memcpy(new_buf, buf, old_size);
+                free(buf, old_size);
+                buf = new_buf;
+            }
+        }
+        else
+        {
+            if (new_size >= MMAP_THRESHOLD) 
+            {
+                CurrentMemoryTracker::realloc(old_size, new_size);
+
+                // On apple and freebsd self-implemented mremap used (common/mremap.h)
+                buf = clickhouse_mremap(buf, old_size, new_size, MREMAP_MAYMOVE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                if (MAP_FAILED == buf)
+                    DB::throwFromErrno("Allocator: Cannot mremap memory chunk from " + formatReadableSizeWithBinarySuffix(old_size) + " to " + formatReadableSizeWithBinarySuffix(new_size) + ".", DB::ErrorCodes::CANNOT_MREMAP);
+
+                /// No need for zero-fill, because mmap guarantees it.
+            } 
+            else 
+            {
+                void * new_buf = alloc(new_size, alignment);
+                memcpy(new_buf, buf, new_size);
+                if (0 != munmap(buf, old_size))
+                {
+                    ::free(new_buf);
+                    DB::throwFromErrno("Allocator: Cannot munmap " + formatReadableSizeWithBinarySuffix(old_size) + ".", DB::ErrorCodes::CANNOT_MUNMAP);
+                }
+                buf = new_buf;
+            }
+        }
+        
+    }
+    
     return buf;
 }
 
