@@ -99,16 +99,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
                 desc.isAggFuncType = isAggFunc;
                 desc.column_numbers = {i};
 
-                if (isAggFunc)
-                {
-                    auto type = checkAndGetDataType<DataTypeAggregateFunction>(&*column.type);
-                    desc.init(type->getFunctionName().c_str(), type->getArgumentsDataTypes());
-                    //FIXME: would this be better instead?
-                    //desc.function = type->getFunction();
-                    //desc.add_function = desc.function->getAddressOfAddFunction();
-                    //desc.state.resize(desc.function->sizeOfData());
-                }
-                else
+                if (!isAggFunc)
                 {
                     desc.init("sumWithOverflow", {column.type});
                 }
@@ -211,35 +202,34 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
         // Do not insert if the aggregation state hasn't been created
         if (desc.created)
         {
-            try
+            if (desc.isAggFuncType)
             {
-                if (desc.isAggFuncType)
-                {
-                    static_cast<ColumnAggregateFunction &>(*desc.merged_column).insertFrom(desc.state.data());
-                }
-                else
+                current_row_is_zero = false;
+            }
+            else
+            {
+                try
                 {
                     desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
-                }
 
-                // FIXME: Don't forget to mark the row as non-zero if AggregateFunction(...) is involved
-                /// Update zero status of current row
-                if (desc.column_numbers.size() == 1)
-                {
-                    // Flag row as non-empty if at least one column number if non-zero
-                    current_row_is_zero = current_row_is_zero && desc.merged_column->get64(desc.merged_column->size() - 1) == 0;
+                    /// Update zero status of current row
+                    if (desc.column_numbers.size() == 1)
+                    {
+                        // Flag row as non-empty if at least one column number if non-zero
+                        current_row_is_zero = current_row_is_zero && desc.merged_column->get64(desc.merged_column->size() - 1) == 0;
+                    }
+                    else
+                    {
+                        /// It is sumMap aggregate function.
+                        /// Assume that the row isn't empty in this case (just because it is compatible with previous version)
+                        current_row_is_zero = false;
+                    }
                 }
-                else
+                catch (...)
                 {
-                    /// It is sumMap aggregate function.
-                    /// Assume that the row isn't empty in this case (just because it is compatible with previous version)
-                    current_row_is_zero = false;
+                    desc.destroyState();
+                    throw;
                 }
-            }
-            catch (...)
-            {
-                desc.destroyState();
-                throw;
             }
             desc.destroyState();
         }
@@ -284,7 +274,7 @@ Block SummingSortedBlockInputStream::readImpl()
     for (auto & desc : columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.isAggFuncType && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -303,7 +293,7 @@ Block SummingSortedBlockInputStream::readImpl()
     /// Place aggregation results into block.
     for (auto & desc : columns_to_aggregate)
     {
-        if (checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.isAggFuncType && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
@@ -491,23 +481,32 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {
-        if (!desc.created)
-            throw Exception("Logical error in SummingSortedBlockInputStream, there are no description", ErrorCodes::LOGICAL_ERROR);
-
-        // Specialized case for unary functions
-        if (desc.column_numbers.size() == 1)
+        if (desc.isAggFuncType)
         {
+            // desc.state is not used for AggregateFunction types
             auto & col = cursor->all_columns[desc.column_numbers[0]];
-            desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, nullptr);
+            static_cast<ColumnAggregateFunction &>(*desc.merged_column).insertMergeFrom(*col, cursor->pos);
         }
         else
         {
-            // Gather all source columns into a vector
-            ColumnRawPtrs columns(desc.column_numbers.size());
-            for (size_t i = 0; i < desc.column_numbers.size(); ++i)
-                columns[i] = cursor->all_columns[desc.column_numbers[i]];
+            if (!desc.created)
+                throw Exception("Logical error in SummingSortedBlockInputStream, there are no description", ErrorCodes::LOGICAL_ERROR);
 
-            desc.add_function(desc.function.get(), desc.state.data(), columns.data(), cursor->pos, nullptr);
+            // Specialized case for unary functions
+            if (desc.column_numbers.size() == 1)
+            {
+                auto & col = cursor->all_columns[desc.column_numbers[0]];
+                desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, nullptr);
+            }
+            else
+            {
+                // Gather all source columns into a vector
+                ColumnRawPtrs columns(desc.column_numbers.size());
+                for (size_t i = 0; i < desc.column_numbers.size(); ++i)
+                    columns[i] = cursor->all_columns[desc.column_numbers[i]];
+
+                desc.add_function(desc.function.get(), desc.state.data(), columns.data(), cursor->pos, nullptr);
+            }
         }
     }
 }
