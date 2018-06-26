@@ -549,6 +549,17 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         }
         else
         {
+            if (column_with_global_dictionary)
+            {
+                auto unique_indexes = mapUniqueIndex(*column_with_dictionary.getIndexes());
+                auto sub_keys = column_with_dictionary.getUnique()->getNestedColumn()->index(*unique_indexes, 0);
+                auto new_unique = createColumnUnique(*dictionary_type, *indexes_type);
+                auto new_idx = new_unique->uniqueInsertRangeFrom(*sub_keys, 0, sub_keys->size());
+                column_with_dictionary.setUnique(std::move(new_unique));
+                column_with_dictionary.setIndexes((*(new_idx->index(*column_with_dictionary.getIndexes(), 0))).mutate());
+                column_unique = column_with_dictionary.getUnique();
+            }
+
             auto index_map = mapIndexWithOverflow(*indexes_column, global_dictionary->size());
             auto used_keys = global_dictionary->getNestedColumn()->index(*index_map, 0);
             auto indexes = column_unique->uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
