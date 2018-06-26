@@ -1,67 +1,67 @@
 # ClickHouse release 1.1.54387, 2018-06-26
 
 ## Новые возможности:
-* Добавлена агрегатная функция `windowFunnel` ([sundy-li](https://github.com/yandex/ClickHouse/pull/2352)).
-* Добавлена возможность записи в таблицу с движком MySQL и соответствующую табличную функцию ([sundy-li](https://github.com/yandex/ClickHouse/pull/2294)).
 * Добавлена поддержка запроса `ALTER TABLE t DELETE WHERE` для реплицированных таблиц и таблица `system.mutations`.
 * Добавлена поддержка запроса `ALTER TABLE t [REPLACE|ATTACH] PARTITION` для *MergeTree-таблиц.
+* Добавлена поддержка запроса `TRUNCATE TABLE` ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2260))
+* Добавлено несколько новых `SYSTEM`-запросов для реплицированных таблиц (`RESTART REPLICAS`, `SYNC REPLICA`, `[STOP|START] [MERGES|FETCHES|REPLICATED SENDS|REPLICATION QUEUES]`).
+* Добавлена возможность записи в таблицу с движком MySQL и соответствующую табличную функцию ([sundy-li](https://github.com/yandex/ClickHouse/pull/2294)).
+* Добавлена табличная функция `url()` и движок таблиц `URL` ([Александр Сапин](https://github.com/yandex/ClickHouse/pull/2501)).
+* Добавлена агрегатная функция `windowFunnel` ([sundy-li](https://github.com/yandex/ClickHouse/pull/2352)).
+* Добавлены функции `startsWith` и `endsWith` для строк ([Вадим Плахтинский](https://github.com/yandex/ClickHouse/pull/2429)).
+* В табличной функции `numbers()` добавлена возможность указывать offset ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2535)).
 * Добавлена возможность интерактивного ввода пароля в `clickhouse-client`.
 * Добавлена возможность отправки логов сервера в syslog ([Александр Крашенинников](https://github.com/yandex/ClickHouse/pull/2459)).
-* Добавлено несколько новых `SYSTEM`-запросов для реплицированных таблиц (`RESTART REPLICAS`, `SYNC REPLICA`, `[STOP|START] [MERGES|FETCHES|REPLICATED SENDS|REPLICATION QUEUES]`).
-* Добавлены функции `startsWith` и `endsWith` для строк ([Вадим Плахтинский](https://github.com/yandex/ClickHouse/pull/2429)).
-* Добавлена поддержка запроса `TRUNCATE TABLE` ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2260))
 * Добавлена поддержка логирования в словарях с источником shared library ([Александр Сапин](https://github.com/yandex/ClickHouse/pull/2472)).
 * Добавлена поддержка произвольного разделителя в формате CSV ([Иван Жуков](https://github.com/yandex/ClickHouse/pull/2263))
 * Добавлена настройка `date_time_input_format`. Если переключить эту настройку в значение `'best_effort'`, значения DateTime будут читаться в широком диапазоне форматов.
 * Добавлена утилита `clickhouse-obfuscator` для обфускации данных. Пример использования: публикация данных, используемых в тестах производительности.
-* Добавлена табличная функция `url()` и движок таблиц `URL` ([Александр Сапин](https://github.com/yandex/ClickHouse/pull/2501)).
-* В табличной функции `numbers()` добавлена возможность указывать offset ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2535)).
 
 ## Экспериментальные возможности:
 * Добавлена возможность вычислять аргументы функции `and` только там, где они нужны ([Анастасия Царькова](https://github.com/yandex/ClickHouse/pull/2272))
 * Добавлена возможность JIT-компиляции в нативный код некоторых выражений ([pyos](https://github.com/yandex/ClickHouse/pull/2277)).
 
 ## Исправление ошибок:
+* Исправлено появление дублей в запросе с `DISTINCT` и `ORDER BY`.
+* Запросы с `ARRAY JOIN` и `arrayFilter` раньше возвращали некорректный результат.
 * Исправлена ошибка при чтении столбца-массива из Nested-структуры ([#2066](https://github.com/yandex/ClickHouse/issues/2066)).
-* Исправлено соответствие типов в табличной функции ODBC ([sundy-li](https://github.com/yandex/ClickHouse/pull/2268)).
-* Исправлено применение настроек из параметров командной строки в программе clickhouse-local.
 * Исправлена ошибка при анализе запросов с секцией HAVING вида `HAVING tuple IN (...)`.
 * Исправлена ошибка при анализе запросов с рекурсивными алиасами.
-* Запросы с `ARRAY JOIN` и `arrayFilter` возвращали некорректный результат.
-* Исправлено некорректное сравнение типов `DateTime` с таймзоной и без неё ([Александр Бочаров](https://github.com/yandex/ClickHouse/pull/2400)).
-* После `CLEAR COLUMN IN PARTITION` в соответствующей партиции теперь возможны слияния ([#2315](https://github.com/yandex/ClickHouse/issues/2315)).
-* Исправлено появление дублей в запросе с `DISTINCT` и `ORDER BY`.
-* Исправлена вставка в материализованное представление в случае, если движок таблицы представления - Distributed ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2411)).
-* Исправлено отсечение ненужных кусков при запросе с условием на столбцы ключа партиционирования ([#2342](https://github.com/yandex/ClickHouse/issues/2342)).
 * Настройки профиля пользователя не применялись при использовании сессий в HTTP-интерфейсе.
-* Исправлена SSRF в табличной функции remote().
+* Исправлено применение настроек из параметров командной строки в программе clickhouse-local.
 * Клиентская библиотека ZooKeeper теперь использует таймаут сессии, полученный от сервера.
-* Исправлен синтаксический разбор и форматирование оператора `CAST`.
-* Исправлен race condition при записи данных из движка `Kafka` в материализованные представления ([Yangkuan Liu](https://github.com/yandex/ClickHouse/pull/2448)).
-* Исправлен выход из `clickhouse-client` в multiline-режиме ([#2510](https://github.com/yandex/ClickHouse/issues/2510)).
 * Исправлена ошибка в клиентской библиотеке ZooKeeper, из-за которой ожидание ответа от сервера могло длиться дольше таймаута.
+* Исправлено отсечение ненужных кусков при запросе с условием на столбцы ключа партиционирования ([#2342](https://github.com/yandex/ClickHouse/issues/2342)).
+* После `CLEAR COLUMN IN PARTITION` в соответствующей партиции теперь возможны слияния ([#2315](https://github.com/yandex/ClickHouse/issues/2315)).
+* Исправлено соответствие типов в табличной функции ODBC ([sundy-li](https://github.com/yandex/ClickHouse/pull/2268)).
+* Исправлено некорректное сравнение типов `DateTime` с таймзоной и без неё ([Александр Бочаров](https://github.com/yandex/ClickHouse/pull/2400)).
+* Исправлен синтаксический разбор и форматирование оператора `CAST`.
+* Исправлена вставка в материализованное представление в случае, если движок таблицы представления - Distributed ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2411)).
+* Исправлен race condition при записи данных из движка `Kafka` в материализованные представления ([Yangkuan Liu](https://github.com/yandex/ClickHouse/pull/2448)).
+* Исправлена SSRF в табличной функции remote().
+* Исправлен выход из `clickhouse-client` в multiline-режиме ([#2510](https://github.com/yandex/ClickHouse/issues/2510)).
 
 ## Улучшения:
+* Фоновые задачи в реплицированных таблицах теперь выполняются не в отдельных потоках, а в пуле потоков ([Silviu Caragea](https://github.com/yandex/ClickHouse/pull/1722))
+* Улучшена производительность разжатия LZ4.
+* Ускорен анализ запроса с большим числом JOIN-ов и подзапросов.
+* DNS-кэш теперь автоматически обновляется при большом числе сетевых ошибок.
+* Вставка в таблицу теперь не происходит, если вставка в одно из её материализованных представлений невозможна из-за того, что в нём много кусков.
+* Исправлено несоответствие в значениях счётчиков событий `Query`, `SelectQuery`, `InsertQuery`.
+* Разрешены выражения вида `tuple IN (SELECT tuple)`, если типы кортежей совпадают.
 * Сервер с реплицированными таблицами теперь может стартовать, даже если не сконфигурирован ZooKeeper.
 * При расчёте количества доступных ядер CPU теперь учитываются ограничения cgroups ([Atri Sharma](https://github.com/yandex/ClickHouse/pull/2325)).
-* DNS-кэш теперь автоматически обновляется при большом числе сетевых ошибок.
-* Фоновые задачи в реплицированных таблицах теперь выполняются не в отдельных потоках, а в пуле потоков ([Silviu Caragea](https://github.com/yandex/ClickHouse/pull/1722))
-* Вставка в таблицу теперь не происходит, если вставка в одно из её материализованных представлений невозможна из-за того, что в нём много кусков.
-* Разрешены выражения вида `tuple IN (SELECT tuple)`, если типы кортежей совпадают.
-* Ускорен анализ запроса с большим числом JOIN-ов и подзапросов.
-* Исправлено несоответствие в значениях счётчиков событий `Query`, `SelectQuery`, `InsertQuery`.
 * Добавлен chown директорий конфигов в конфигурационном файле systemd ([Михаил Ширяев](https://github.com/yandex/ClickHouse/pull/2421)).
-* Улучшена производительность разжатия LZ4.
 
 ## Изменения сборки:
-* Используемая версия библиотеки librdkafka обновлена до v0.11.4.
-* Исправлена сборка с использованием библиотеки vectorclass ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2274)).
 * Добавлена возможность сборки компилятором gcc8.
 * Добавлена возможность сборки llvm из submodule.
+* Используемая версия библиотеки librdkafka обновлена до v0.11.4.
+* Добавлена возможность использования библиотеки libcpuid из системы, используемая версия библиотеки обновлена до 0.4.0.
+* Исправлена сборка с использованием библиотеки vectorclass ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2274)).
 * Cmake теперь по умолчанию генерирует файлы для ninja (как при использовании `-G Ninja`).
 * Добавлена возможность использования библиотеки libtinfo вместо libtermcap ([Георгий Кондратьев](https://github.com/yandex/ClickHouse/pull/2519)).
 * Исправлен конфликт заголовочных файлов в Fedora Rawhide ([#2520](https://github.com/yandex/ClickHouse/issues/2520)).
-* Добавлена возможность использования библиотеки libcpuid из системы, используемая версия библиотеки обновлена до 0.4.0.
 
 ## Обратно несовместимые изменения:
 * Убран escaping в форматах `Vertical` и `Pretty*`, удалён формат `VerticalRaw`.
