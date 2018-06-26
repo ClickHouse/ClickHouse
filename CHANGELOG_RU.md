@@ -1,12 +1,10 @@
-# ClickHouse release 1.1.5438x, 2018-06-xx
+# ClickHouse release 1.1.54387, 2018-06-26
 
 ## Новые возможности:
-* Добавлена возможность вычислять аргументы функции `and` только там, где они нужны ([Анастасия Царькова](https://github.com/yandex/ClickHouse/pull/2272))
-* Добавлена возможность JIT-компиляции в нативный код некоторых выражений ([pyos](https://github.com/yandex/ClickHouse/pull/2277)).
 * Добавлена агрегатная функция `windowFunnel` ([sundy-li](https://github.com/yandex/ClickHouse/pull/2352)).
 * Добавлена возможность записи в таблицу с движком MySQL и соответствующую табличную функцию ([sundy-li](https://github.com/yandex/ClickHouse/pull/2294)).
 * Добавлена поддержка запроса `ALTER TABLE t DELETE WHERE` для реплицированных таблиц и таблица `system.mutations`.
-* Добавлена поддержка запроса `ALTER TABLE t [REPLACE|ATTACH] PARTITION` для реплицированных таблиц.
+* Добавлена поддержка запроса `ALTER TABLE t [REPLACE|ATTACH] PARTITION` для *MergeTree-таблиц.
 * Добавлена возможность интерактивного ввода пароля в `clickhouse-client`.
 * Добавлена возможность отправки логов сервера в syslog ([Александр Крашенинников](https://github.com/yandex/ClickHouse/pull/2459)).
 * Добавлено несколько новых `SYSTEM`-запросов для реплицированных таблиц (`RESTART REPLICAS`, `SYNC REPLICA`, `[STOP|START] [MERGES|FETCHES|REPLICATED SENDS|REPLICATION QUEUES]`).
@@ -15,6 +13,13 @@
 * Добавлена поддержка логирования в словарях с источником shared library ([Александр Сапин](https://github.com/yandex/ClickHouse/pull/2472)).
 * Добавлена поддержка произвольного разделителя в формате CSV ([Иван Жуков](https://github.com/yandex/ClickHouse/pull/2263))
 * Добавлена настройка `date_time_input_format`. Если переключить эту настройку в значение `'best_effort'`, значения DateTime будут читаться в широком диапазоне форматов.
+* Добавлена утилита `clickhouse-obfuscator` для обфускации данных. Пример использования: публикация данных, используемых в тестах производительности.
+* Добавлена табличная функция `url()` и движок таблиц `URL` ([Александр Сапин](https://github.com/yandex/ClickHouse/pull/2501)).
+* В табличной функции `numbers()` добавлена возможность указывать offset ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2535)).
+
+## Экспериментальные возможности:
+* Добавлена возможность вычислять аргументы функции `and` только там, где они нужны ([Анастасия Царькова](https://github.com/yandex/ClickHouse/pull/2272))
+* Добавлена возможность JIT-компиляции в нативный код некоторых выражений ([pyos](https://github.com/yandex/ClickHouse/pull/2277)).
 
 ## Исправление ошибок:
 * Исправлена ошибка при чтении столбца-массива из Nested-структуры ([#2066](https://github.com/yandex/ClickHouse/issues/2066)).
@@ -33,6 +38,8 @@
 * Клиентская библиотека ZooKeeper теперь использует таймаут сессии, полученный от сервера.
 * Исправлен синтаксический разбор и форматирование оператора `CAST`.
 * Исправлен race condition при записи данных из движка `Kafka` в материализованные представления ([Yangkuan Liu](https://github.com/yandex/ClickHouse/pull/2448)).
+* Исправлен выход из `clickhouse-client` в multiline-режиме ([#2510](https://github.com/yandex/ClickHouse/issues/2510)).
+* Исправлена ошибка в клиентской библиотеке ZooKeeper, из-за которой ожидание ответа от сервера могло длиться дольше таймаута.
 
 ## Улучшения:
 * Сервер с реплицированными таблицами теперь может стартовать, даже если не сконфигурирован ZooKeeper.
@@ -43,6 +50,8 @@
 * Разрешены выражения вида `tuple IN (SELECT tuple)`, если типы кортежей совпадают.
 * Ускорен анализ запроса с большим числом JOIN-ов и подзапросов.
 * Исправлено несоответствие в значениях счётчиков событий `Query`, `SelectQuery`, `InsertQuery`.
+* Добавлен chown директорий конфигов в конфигурационном файле systemd ([Михаил Ширяев](https://github.com/yandex/ClickHouse/pull/2421)).
+* Улучшена производительность разжатия LZ4.
 
 ## Изменения сборки:
 * Используемая версия библиотеки librdkafka обновлена до v0.11.4.
@@ -50,9 +59,12 @@
 * Добавлена возможность сборки компилятором gcc8.
 * Добавлена возможность сборки llvm из submodule.
 * Cmake теперь по умолчанию генерирует файлы для ninja (как при использовании `-G Ninja`).
+* Добавлена возможность использования библиотеки libtinfo вместо libtermcap ([Георгий Кондратьев](https://github.com/yandex/ClickHouse/pull/2519)).
+* Исправлен конфликт заголовочных файлов в Fedora Rawhide ([#2520](https://github.com/yandex/ClickHouse/issues/2520)).
+* Добавлена возможность использования библиотеки libcpuid из системы, используемая версия библиотеки обновлена до 0.4.0.
 
 ## Обратно несовместимые изменения:
-* Убран escaping в форматах `Vertical` и `Pretty*`.
+* Убран escaping в форматах `Vertical` и `Pretty*`, удалён формат `VerticalRaw`.
 
 
 # ClickHouse release 1.1.54385, 2018-06-01
