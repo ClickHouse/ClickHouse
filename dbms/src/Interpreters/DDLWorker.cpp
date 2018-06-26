@@ -1,42 +1,34 @@
 #include <Interpreters/DDLWorker.h>
-
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-
 #include <Storages/IStorage.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
-
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Poco/Timestamp.h>
-
 #include <random>
 #include <pcg_random.hpp>
 #include <Poco/Net/NetException.h>

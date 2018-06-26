@@ -8,7 +8,8 @@ Group=clickhouse
 PermissionsStartOnly=true
 Restart=always
 RestartSec=30
-ExecStartPre=/usr/bin/chown clickhouse:clickhouse -R /etc/clickhouse-server
+ExecStartPre=-/usr/bin/chown clickhouse:clickhouse -R /etc/clickhouse-server
+ExecStartPre=-/bin/chown clickhouse:clickhouse -R /etc/clickhouse-server
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml
 LimitCORE=infinity
 LimitNOFILE=500000

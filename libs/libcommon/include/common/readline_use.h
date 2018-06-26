@@ -1,6 +1,8 @@
 #pragma once
 
+#if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
+#endif
 
 /// Different line editing libraries can be used depending on the environment.
 #if USE_READLINE
@@ -8,7 +10,7 @@
     #include <readline/history.h>
 #elif USE_LIBEDIT
     #include <editline/readline.h>
-    #include <editline/history.h>
+    #include <editline/history.h> // Y_IGNORE
 #else
     #include <string>
     #include <cstring>
