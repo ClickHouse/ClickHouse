@@ -213,9 +213,9 @@ void DatabaseDictionary::shutdown()
 {
 }
 
-void DatabaseDictionary::drop()
+String DatabaseDictionary::getDatabaseName() const
 {
-    /// Additional actions to delete database are not required.
+    return name;
 }
 
 }

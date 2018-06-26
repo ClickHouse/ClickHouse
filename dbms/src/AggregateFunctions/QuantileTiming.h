@@ -749,7 +749,7 @@ public:
         {
             medium.getMany(levels, levels_permutation, size, result);
         }
-        else if (kind == Kind::Large)
+        else /*if (kind == Kind::Large)*/
         {
             large->getMany(levels, levels_permutation, size, result);
         }

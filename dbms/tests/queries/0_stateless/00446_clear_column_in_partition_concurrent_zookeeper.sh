@@ -7,8 +7,8 @@ ch="$CLICKHOUSE_CLIENT --stacktrace -q"
 
 $ch "DROP TABLE IF EXISTS test.clear_column1"
 $ch "DROP TABLE IF EXISTS test.clear_column2"
-$ch "CREATE TABLE test.clear_column1 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/clear_column', '1', d, d, 8192)"
-$ch "CREATE TABLE test.clear_column2 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/clear_column', '2', d, d, 8192)"
+$ch "CREATE TABLE test.clear_column1 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '1', d, d, 8192)"
+$ch "CREATE TABLE test.clear_column2 (d Date, i Int64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test/tables/clear_column', '2', d, d, 8192)"
 
 $ch "ALTER TABLE test.clear_column1 CLEAR COLUMN VasyaUnexistingColumn IN PARTITION '200001'" 1>/dev/null 2>/dev/null
 rc=$?

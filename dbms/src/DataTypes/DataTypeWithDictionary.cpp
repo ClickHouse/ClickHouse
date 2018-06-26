@@ -624,7 +624,7 @@ void DataTypeWithDictionary::serializeImpl(
 template <typename ... Args>
 void DataTypeWithDictionary::deserializeImpl(
         IColumn & column, ReadBuffer & istr,
-        DataTypeWithDictionary::DeserealizeFunctionPtr<Args ...> func, Args ... args) const
+        DataTypeWithDictionary::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
 {
     auto & column_with_dictionary = getColumnWithDictionary(column);
     auto temp_column = column_with_dictionary.getUnique()->cloneEmpty();

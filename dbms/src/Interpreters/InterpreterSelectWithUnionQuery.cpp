@@ -9,7 +9,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
-
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -157,7 +157,15 @@ Block InterpreterSelectWithUnionQuery::getSampleBlock(
     const ASTPtr & query_ptr,
     const Context & context)
 {
-    return InterpreterSelectWithUnionQuery(query_ptr, context).getSampleBlock();
+    auto & cache = context.getSampleBlockCache();
+    /// Using query string because query_ptr changes for every internal SELECT
+    auto key = queryToString(query_ptr);
+    if (cache.find(key) != cache.end())
+    {
+        return cache[key];
+    }
+
+    return cache[key] = InterpreterSelectWithUnionQuery(query_ptr, context).getSampleBlock();
 }
 
 

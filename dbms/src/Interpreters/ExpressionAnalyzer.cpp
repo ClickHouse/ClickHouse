@@ -88,6 +88,7 @@ namespace ErrorCodes
     extern const int TOO_BIG_AST;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
+    extern const int TYPE_MISMATCH;
 }
 
 

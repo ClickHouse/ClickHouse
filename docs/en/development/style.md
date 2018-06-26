@@ -686,8 +686,6 @@ std::string s{"Hello"};
 
 **2.** Exception specifiers from C++03 are not used.
 
-**3.** Function try block is not used, except for the main function in tests.
-
 ## Platform
 
 **1.** We write code for a specific platform.

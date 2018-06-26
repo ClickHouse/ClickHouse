@@ -22,14 +22,14 @@ class ReplicatedMergeTreeAlterThread
 {
 public:
     ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_);
-    ~ReplicatedMergeTreeAlterThread();
 
 private:
     void run();
 
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    BackgroundSchedulePool::TaskHandle task_handle;
+    BackgroundSchedulePool::TaskHolder task;
 };
 
 }
