@@ -1,6 +1,7 @@
 drop table if exists test.summing_merge_tree_aggregate_function;
+drop table if exists test.summing_merge_tree_null;
 
--- sum + uniq + uniqExact
+---- sum + uniq + uniqExact
 create table test.summing_merge_tree_aggregate_function (
 	d materialized today(),
 	k UInt64,
@@ -30,7 +31,7 @@ from test.summing_merge_tree_aggregate_function group by k;
 
 drop table test.summing_merge_tree_aggregate_function;
 
--- sum + topK
+---- sum + topK
 create table test.summing_merge_tree_aggregate_function (d materialized today(), k UInt64, c UInt64, x AggregateFunction(topK(2), UInt8)) engine=SummingMergeTree(d, k, 8192);
 
 insert into test.summing_merge_tree_aggregate_function select 1, 1, topKState(2)(1);
@@ -45,7 +46,7 @@ select k, sum(c), topKMerge(2)(x) from test.summing_merge_tree_aggregate_functio
 
 drop table test.summing_merge_tree_aggregate_function;
 
--- avg
+---- avg
 create table test.summing_merge_tree_aggregate_function (d materialized today(), k UInt64, x AggregateFunction(avg, Float64)) engine=SummingMergeTree(d, k, 8192);
 
 insert into test.summing_merge_tree_aggregate_function select 1, avgState(0.0);
@@ -65,7 +66,7 @@ select k, avgMerge(x) from test.summing_merge_tree_aggregate_function group by k
 
 drop table test.summing_merge_tree_aggregate_function;
 
--- quantile
+---- quantile
 create table test.summing_merge_tree_aggregate_function (d materialized today(), k UInt64, x AggregateFunction(quantile(0.1), Float64)) engine=SummingMergeTree(d, k, 8192);
 
 insert into test.summing_merge_tree_aggregate_function select 1, quantileState(0.1)(0.0);
@@ -84,3 +85,31 @@ optimize table test.summing_merge_tree_aggregate_function;
 select k, quantileMerge(0.1)(x) from test.summing_merge_tree_aggregate_function group by k;
 
 drop table test.summing_merge_tree_aggregate_function;
+
+---- sum + uniq with more data
+create table test.summing_merge_tree_null (
+    d materialized today(),
+    k UInt64,
+    c UInt64,
+    u UInt64
+) engine=Null;
+
+create materialized view test.summing_merge_tree_aggregate_function (
+	d materialized today(),
+	k UInt64,
+	c UInt64,
+	u AggregateFunction(uniq, UInt64)
+) engine=SummingMergeTree(d, k, 8192)
+as select d, k, sum(c) as c, uniqState(u) as u
+from test.summing_merge_tree_null
+group by d, k;
+
+-- prime number 53 to avoid resonanse between %3 and %53
+insert into test.summing_merge_tree_null select number % 3, 1, number % 53 from numbers(999999);
+
+select k, sum(c), uniqMerge(u) from test.summing_merge_tree_aggregate_function group by k order by k;
+optimize table test.summing_merge_tree_aggregate_function;
+select k, sum(c), uniqMerge(u) from test.summing_merge_tree_aggregate_function group by k order by k;
+
+drop table test.summing_merge_tree_aggregate_function;
+drop table test.summing_merge_tree_null;
