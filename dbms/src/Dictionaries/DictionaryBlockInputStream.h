@@ -15,6 +15,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /*
  * BlockInputStream implementation for external dictionaries
  * read() returns single block consisting of the in-memory contents of the dictionaries
@@ -394,7 +400,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
             ptr = column->deserializeAndInsertFromArena(ptr);
     }
 
-    for (size_t i = 0, size = columns.size(); i < size; ++i)
+    for (size_t i = 0, num_columns = columns.size(); i < num_columns; ++i)
         res.emplace_back(ColumnWithTypeAndName{ std::move(columns[i]), (*dictionary_structure.key)[i].type, (*dictionary_structure.key)[i].name });
 }
 

@@ -1,5 +1,7 @@
 #include <IO/CachedCompressedReadBuffer.h>
 #include <IO/WriteHelpers.h>
+#include <IO/CompressedStream.h>
+#include <IO/LZ4_decompress_faster.h>
 
 
 namespace DB
@@ -45,21 +47,21 @@ bool CachedCompressedReadBuffer::nextImpl()
 
         if (owned_cell->compressed_size)
         {
-            owned_cell->data.resize(size_decompressed);
-            decompress(owned_cell->data.m_data, size_decompressed, size_compressed_without_checksum);
+            owned_cell->data.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
+            decompress(owned_cell->data.data(), size_decompressed, size_compressed_without_checksum);
 
             /// Put data into cache.
             cache->set(key, owned_cell);
         }
     }
 
-    if (owned_cell->data.m_size == 0)
+    if (owned_cell->data.size() == 0)
     {
         owned_cell = nullptr;
         return false;
     }
 
-    working_buffer = Buffer(owned_cell->data.m_data, owned_cell->data.m_data + owned_cell->data.m_size);
+    working_buffer = Buffer(owned_cell->data.data(), owned_cell->data.data() + owned_cell->data.size() - LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
 
     file_pos += owned_cell->compressed_size;
 

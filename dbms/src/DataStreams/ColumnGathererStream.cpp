@@ -1,6 +1,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 #include <iomanip>
 
 
@@ -20,7 +21,7 @@ namespace ErrorCodes
 ColumnGathererStream::ColumnGathererStream(
         const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_)
-    : name(column_name_), row_sources_buf(row_sources_buf_)
+    : column_name(column_name_), row_sources_buf(row_sources_buf_)
     , block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())
@@ -35,28 +36,28 @@ void ColumnGathererStream::init()
     sources.reserve(children.size());
     for (size_t i = 0; i < children.size(); ++i)
     {
-        sources.emplace_back(children[i]->read(), name);
+        sources.emplace_back(children[i]->read(), column_name);
 
         Block & block = sources.back().block;
 
         /// Sometimes MergeTreeReader injects additional column with partitioning key
         if (block.columns() > 2)
             throw Exception(
-                    "Block should have 1 or 2 columns, but contains " + toString(block.columns()),
-                    ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-        if (!block.has(name))
+                "Block should have 1 or 2 columns, but contains " + toString(block.columns()),
+                ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
+        if (!block.has(column_name))
             throw Exception(
-                    "Not found column `" + name + "' in block.",
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                "Not found column '" + column_name + "' in block.",
+                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
         if (i == 0)
         {
-            column.name = name;
-            column.type = block.getByName(name).type;
+            column.name = column_name;
+            column.type = block.getByName(column_name).type;
             column.column = column.type->createColumn();
         }
 
-        if (block.getByName(name).column->getName() != column.column->getName())
+        if (block.getByName(column_name).column->getName() != column.column->getName())
             throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);
     }
 }
@@ -90,7 +91,7 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
     try
     {
         source.block = children[source_num]->read();
-        source.update(name);
+        source.update(column_name);
     }
     catch (Exception & e)
     {
@@ -120,7 +121,7 @@ void ColumnGathererStream::readSuffixImpl()
         speed << ", " << profile_info.rows / seconds << " rows/sec., "
             << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
     LOG_TRACE(log, std::fixed << std::setprecision(2)
-        << "Gathered column " << name
+        << "Gathered column " << column_name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
         << " in " << seconds << " sec."
         << speed.str());

@@ -12,7 +12,7 @@ fi
 
 ## Install required compilers, tools, libraries
 
-brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext zlib readline boost --cc=gcc-7
+brew install cmake gcc icu4c mysql openssl unixodbc libtool gettext readline
 
 ## Checkout ClickHouse sources
 
@@ -35,10 +35,10 @@ make -j `sysctl -n hw.ncpu`
 cd ../..
 
 #  Run server:
-# ClickHouse/build/dbms/src/Server/clickhouse-server --config-file=ClickHouse/dbms/src/Server/config.xml &
+# ClickHouse/build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
 
 #  Run client:
-# ClickHouse/build/dbms/src/Server/clickhouse-client
+# ClickHouse/build/dbms/programs/clickhouse-client
 
 
 ## Caveats

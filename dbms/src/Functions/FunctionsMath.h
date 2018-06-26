@@ -16,16 +16,16 @@
   */
 
 #if USE_VECTORCLASS
-       #if __clang__
+       #ifdef __clang__
                #pragma clang diagnostic push
                #pragma clang diagnostic ignored "-Wshift-negative-value"
        #endif
 
-       #include <vectorf128.h>
-       #include <vectormath_exp.h>
-       #include <vectormath_trig.h>
+       #include <vectorf128.h> // Y_IGNORE
+       #include <vectormath_exp.h> // Y_IGNORE
+       #include <vectormath_trig.h> // Y_IGNORE
 
-       #if __clang__
+       #ifdef __clang__
                #pragma clang diagnostic pop
        #endif
 #endif

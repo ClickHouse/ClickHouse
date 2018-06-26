@@ -18,7 +18,7 @@ select 5 = windowFunnel(4)(timestamp, event = 1003, event = 1004, event = 1005, 
 
 drop table if exists funnel_test2;
 create table funnel_test2 (uid UInt32 default 1,timestamp DateTime, event UInt32) engine=Memory;
-insert into funnel_test2(timestamp, event) values  (now() + 1,1001),(now() + 2,1002),(now() + 3,1003),(now() + 4,1004),(now() + 5,1005),(now() + 6,1006),(now() + 7,1007),(now() + 8,1008);
+insert into funnel_test2(timestamp, event) values  ('2018-01-01 01:01:01',1001),('2018-01-01 01:01:02',1002),('2018-01-01 01:01:03',1003),('2018-01-01 01:01:04',1004),('2018-01-01 01:01:05',1005),('2018-01-01 01:01:06',1006),('2018-01-01 01:01:07',1007),('2018-01-01 01:01:08',1008);
 
 
 select 5 = windowFunnel(4)(timestamp, event = 1003, event = 1004, event = 1005, event = 1006, event = 1007) from funnel_test2;

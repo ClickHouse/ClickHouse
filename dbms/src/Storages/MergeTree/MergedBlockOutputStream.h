@@ -128,9 +128,6 @@ public:
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    /// How many rows are already written.
-    size_t getRowsCount() const { return rows_count; }
-
 private:
     void init();
 

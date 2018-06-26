@@ -19,6 +19,7 @@ source "./release_lib.sh"
 
 DEB_CC=${DEB_CC:=gcc-7}
 DEB_CXX=${DEB_CXX:=g++-7}
+PBUILDER_AUTOUPDATE=${PBUILDER_AUTOUPDATE=4320}
 
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
@@ -53,7 +54,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo openssl"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
         shift
     else
         echo "Unknown option $1"
@@ -82,9 +83,9 @@ elif [[ $BUILD_TYPE == 'debug' ]]; then
     VERSION_POSTFIX+=+$BUILD_TYPE
 fi
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS $CMAKE_FLAGS"
+CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 [[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
-[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
+#[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
 export CMAKE_FLAGS
 export EXTRAPACKAGES
@@ -118,10 +119,12 @@ else
         sudo --preserve-env bash -x pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 
-    # Update every 3 days (60*24*3 minutes)
-    if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +4320` ; then
-        echo Updating base system $BASETGZ
-        sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+    if [ "$PBUILDER_AUTOUPDATE" -gt 0 ]; then
+        # Update every 3 days (60*24*3 minutes)
+        if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +$PBUILDER_AUTOUPDATE` ; then
+            echo Updating base system $BASETGZ
+            sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+        fi
     fi
 
     pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT

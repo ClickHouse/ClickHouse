@@ -214,7 +214,7 @@ protected:
     /// Файлы с логами.
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
-    Poco::AutoPtr<Poco::SyslogChannel> syslog_channel;
+    Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 

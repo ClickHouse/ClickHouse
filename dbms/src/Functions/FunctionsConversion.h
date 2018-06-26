@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <Formats/FormatSettings.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
@@ -114,7 +115,7 @@ struct ToDateTimeImpl
 
     static inline UInt32 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.fromDayNum(DayNum_t(d));
+        return time_zone.fromDayNum(DayNum(d));
     }
 };
 
@@ -177,7 +178,7 @@ struct FormatImpl<DataTypeDate>
 {
     static void execute(const DataTypeDate::FieldType x, WriteBuffer & wb, const DataTypeDate *, const DateLUTImpl *)
     {
-        writeDateText(DayNum_t(x), wb);
+        writeDateText(DayNum(x), wb);
     }
 };
 
@@ -287,9 +288,10 @@ struct ConvertImplGenericToString
 
         WriteBufferFromVector<ColumnString::Chars_t> write_buffer(data_to);
 
+        FormatSettings format_settings;
         for (size_t i = 0; i < size; ++i)
         {
-            type.serializeText(col_from, i, write_buffer);
+            type.serializeText(col_from, i, write_buffer, format_settings);
             writeChar(0, write_buffer);
             offsets_to[i] = write_buffer.count();
         }
@@ -309,7 +311,7 @@ template <typename DataType> void parseImpl(typename DataType::FieldType & x, Re
 
 template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
-    DayNum_t tmp(0);
+    DayNum tmp(0);
     readDateText(tmp, rb);
     x = tmp;
 }
@@ -527,11 +529,12 @@ struct ConvertImplGenericFromString
 
             size_t current_offset = 0;
 
+            FormatSettings format_settings;
             for (size_t i = 0; i < size; ++i)
             {
                 ReadBufferFromMemory read_buffer(&chars[current_offset], offsets[i] - current_offset - 1);
 
-                data_type_to.deserializeTextEscaped(column_to, read_buffer);
+                data_type_to.deserializeTextEscaped(column_to, read_buffer, format_settings);
 
                 if (!read_buffer.eof())
                     throwExceptionForIncompletelyParsedValue(read_buffer, block, result);

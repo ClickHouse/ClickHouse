@@ -34,6 +34,9 @@ case $PACKAGE_MANAGER in
             cmake)
                 $SUDO apt-get install -y cmake3 || $SUDO apt-get install -y cmake
                 ;;
+            ninja)
+                $SUDO apt-get install -y ninja-build
+                ;;
             curl)
                 $SUDO apt-get install -y curl
                 ;;
@@ -69,6 +72,52 @@ case $PACKAGE_MANAGER in
                 ;;
         esac
         ;;
+    yum)
+        case $WHAT in
+            prepare)
+                ;;
+            svn)
+                $SUDO yum install -y subversion
+                ;;
+            gcc*)
+                $SUDO yum install -y gcc gcc-c++ libstdc++-static
+                ;;
+            git)
+                $SUDO yum install -y git
+                ;;
+            cmake)
+                $SUDO yum install -y cmake
+                ;;
+            ninja)
+                $SUDO yum install -y ninja-build
+                ;;
+            curl)
+                $SUDO yum install -y curl
+                ;;
+            jq)
+                $SUDO yum install -y jq
+                ;;
+            libssl-dev)
+                $SUDO yum install -y openssl-devel
+                ;;
+            libicu-dev)
+                $SUDO yum install -y libicu-devel
+                ;;
+            libreadline-dev)
+                $SUDO yum install -y readline-devel
+                ;;
+            libunixodbc-dev)
+                $SUDO yum install -y unixODBC-devel libtool-ltdl-devel
+                ;;
+            libmariadbclient-dev)
+                echo "There is no package with static mysqlclient library"; echo 1;
+                #$SUDO yum install -y mariadb-connector-c-devel
+                ;;
+            *)
+                echo "Unknown package"; exit 1;
+                ;;
+        esac
+        ;;
     pkg)
         case $WHAT in
             prepare)
@@ -87,6 +136,9 @@ case $PACKAGE_MANAGER in
                 ;;
             cmake)
                 $SUDO pkg install -y cmake
+                ;;
+            ninja)
+                $SUDO pkg install -y ninja-build
                 ;;
             curl)
                 $SUDO pkg install -y curl

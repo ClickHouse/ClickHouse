@@ -10,10 +10,12 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
+#if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
+#endif
 
 #if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h>
+    #include <gperftools/malloc_extension.h> // Y_IGNORE
 
     /// Initializing malloc extension in global constructor as required.
     struct MallocExtensionInitializer
