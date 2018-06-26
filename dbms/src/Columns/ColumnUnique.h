@@ -54,14 +54,14 @@ class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<Colum
     friend class COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType, IndexType>>;
 
 private:
-    explicit ColumnUnique(MutableColumnPtr && holder);
+    explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
     explicit ColumnUnique(const IDataType & type);
-    ColumnUnique(const ColumnUnique & other)
-            : column_holder(other.column_holder), nullable_column(other.nullable_column)
-            , nullable_column_map(other.nullable_column_map), is_nullable(other.is_nullable) {}
+    ColumnUnique(const ColumnUnique & other) : column_holder(other.column_holder), is_nullable(other.is_nullable) {}
 
 public:
-    const ColumnPtr & getNestedColumn() const override;
+    ColumnPtr getNestedColumn() const override;
+    const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
+
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
@@ -113,18 +113,11 @@ public:
     {
         return column_holder->allocatedBytes()
                + (index ? index->getBufferSizeInBytes() : 0)
-               + (nullable_column ? nullable_column->allocatedBytes() : 0);
+               + (cached_null_mask ? cached_null_mask->allocatedBytes() : 0);
     }
     void forEachSubcolumn(IColumn::ColumnCallback callback) override
     {
-        callback(is_nullable ? nullable_column : column_holder);
-        /// If column was mutated, we need to restore ptrs.
-        if (is_nullable)
-        {
-            auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
-            column_holder = column_nullable.getNestedColumnPtr();
-            nullable_column_map = &column_nullable.getNullMapData();
-        }
+        callback(column_holder);
     }
 
 private:
@@ -133,9 +126,8 @@ private:
 
     ColumnPtr column_holder;
 
-    /// For DataTypeNullable, nullptr otherwise.
-    ColumnPtr nullable_column;
-    NullMap * nullable_column_map = nullptr;
+    /// For DataTypeNullable, stores null map.
+    mutable ColumnPtr cached_null_mask;
 
     /// Lazy initialized.
     std::unique_ptr<IndexMapType> index;
@@ -146,7 +138,7 @@ private:
 
     void buildIndex();
     ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder->assumeMutable().get()); }
-    const ColumnType * getRawColumnPtr() const { return static_cast<ColumnType *>(column_holder.get()); }
+    const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
     IndexType insertIntoMap(const StringRefWrapper<ColumnType> & ref, IndexType value);
 
     void uniqueInsertRangeImpl(
@@ -161,38 +153,41 @@ private:
 template <typename ColumnType, typename IndexType>
 ColumnUnique<ColumnType, IndexType>::ColumnUnique(const IDataType & type) : is_nullable(type.isNullable())
 {
-    if (is_nullable)
-    {
-        nullable_column = type.createColumn()->cloneResized(numSpecialValues());
-        auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
-        column_holder = column_nullable.getNestedColumnPtr();
-        nullable_column_map = &column_nullable.getNullMapData();
-        (*nullable_column_map)[getDefaultValueIndex()] = 0;
-    }
-    else
-        column_holder = type.createColumn()->cloneResized(numSpecialValues());
+    const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
+    column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
 }
 
 template <typename ColumnType, typename IndexType>
-ColumnUnique<ColumnType, IndexType>::ColumnUnique(MutableColumnPtr && holder) : column_holder(std::move(holder))
+ColumnUnique<ColumnType, IndexType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
+    : column_holder(std::move(holder)), is_nullable(is_nullable)
 {
+    if (column_holder->size() < numSpecialValues())
+        throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
     if (column_holder->isColumnNullable())
-    {
-        nullable_column = std::move(column_holder);
-        auto & column_nullable = static_cast<ColumnNullable &>(nullable_column->assumeMutableRef());
-        column_holder = column_nullable.getNestedColumnPtr();
-        nullable_column_map = &column_nullable.getNullMapData();
-        is_nullable = true;
-    }
+        throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
 template <typename ColumnType, typename IndexType>
-const ColumnPtr& ColumnUnique<ColumnType, IndexType>::getNestedColumn() const
+ColumnPtr ColumnUnique<ColumnType, IndexType>::getNestedColumn() const
 {
     if (is_nullable)
     {
-        nullable_column_map->resize_fill(column_holder->size());
-        return nullable_column;
+        size_t size = getRawColumnPtr()->size();
+        if (!cached_null_mask)
+        {
+            ColumnUInt8::MutablePtr null_mask = ColumnUInt8::create(size, UInt8(0));
+            null_mask->getData()[getNullValueIndex()] = 1;
+            cached_null_mask = std::move(null_mask);
+        }
+
+        if (cached_null_mask->size() != size)
+        {
+            MutableColumnPtr null_mask = (*std::move(cached_null_mask)).mutate();
+            static_cast<ColumnUInt8 &>(*null_mask).getData().resize_fill(size);
+            cached_null_mask = std::move(null_mask);
+        }
+
+        return ColumnNullable::create(column_holder, cached_null_mask);
     }
     return column_holder;
 }
@@ -201,7 +196,7 @@ template <typename ColumnType, typename IndexType>
 size_t ColumnUnique<ColumnType, IndexType>::getNullValueIndex() const
 {
     if (!is_nullable)
-        throw Exception("ColumnUnique can't contain null values.");
+        throw Exception("ColumnUnique can't contain null values.", ErrorCodes::LOGICAL_ERROR);
 
     return 0;
 }

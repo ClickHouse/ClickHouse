@@ -100,7 +100,8 @@ public:
             throw Exception("Expected ColumnWithDictionary, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         auto & src_with_dict = static_cast<const ColumnWithDictionary &>(src);
-        auto & src_nested = src_with_dict.getUnique()->getNestedColumn();
+        /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
+        auto src_nested = src_with_dict.getUnique()->getNestedColumn();
         auto inserted_idx = getUnique()->uniqueInsertRangeFrom(*src_nested, 0, src_nested->size());
         auto idx = inserted_idx->index(*src_with_dict.getIndexes()->cut(start, length), 0);
         getIndexes()->insertRangeFrom(*idx, 0, length);
