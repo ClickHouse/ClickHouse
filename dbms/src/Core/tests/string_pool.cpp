@@ -33,8 +33,8 @@ int main(int argc, char ** argv)
     using Vec = std::vector<std::string>;
     using Set = std::unordered_map<std::string, int>;
     using RefsSet = std::unordered_map<StringRef, int, StringRefHash>;
-    using DenseSet = google::dense_hash_map<std::string, int>;
-    using RefsDenseSet = google::dense_hash_map<StringRef, int, StringRefHash>;
+    using DenseSet = GOOGLE_NAMESPACE::dense_hash_map<std::string, int>;
+    using RefsDenseSet = GOOGLE_NAMESPACE::dense_hash_map<StringRef, int, StringRefHash>;
     using RefsHashMap = HashMap<StringRef, int, StringRefHash>;
     Vec vec;
 

@@ -1,3 +1,7 @@
+#if __APPLE__ || __FreeBSD__
+int main(int argc, char ** argv) { return 0; }
+#else
+
 #include <fcntl.h>
 #include <port/unistd.h>
 #include <stdlib.h>
@@ -13,42 +17,21 @@
 #include <Common/Stopwatch.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <stdlib.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <malloc.h>
-#endif
 #include <fcntl.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <IO/AIO.h>
+
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <linux/aio_abi.h>
+    #include <malloc.h>
 #endif
 #include <sys/syscall.h>
 
 
 using DB::throwFromErrno;
 
-inline int io_setup(unsigned nr, aio_context_t *ctxp)
-{
-    return syscall(__NR_io_setup, nr, ctxp);
-}
-
-inline int io_destroy(aio_context_t ctx)
-{
-    return syscall(__NR_io_destroy, ctx);
-}
-
-inline int io_submit(aio_context_t ctx, long nr, struct iocb **iocbpp)
-{
-    return syscall(__NR_io_submit, ctx, nr, iocbpp);
-}
-
-inline int io_getevents(aio_context_t ctx, long min_nr, long max_nr,
-                        struct io_event *events, struct timespec *timeout)
-{
-    return syscall(__NR_io_getevents, ctx, min_nr, max_nr, events, timeout);
-}
 
 enum Mode
 {
@@ -57,27 +40,9 @@ enum Mode
 };
 
 
-struct AioContext
-{
-    aio_context_t ctx;
-
-    AioContext()
-    {
-        ctx = 0;
-        if (io_setup(128, &ctx) < 0)
-            throwFromErrno("io_setup failed");
-    }
-
-    ~AioContext()
-    {
-        io_destroy(ctx);
-    }
-};
-
-
 void thread(int fd, int mode, size_t min_offset, size_t max_offset, size_t block_size, size_t buffers_count, size_t count)
 {
-    AioContext ctx;
+    AIOContext ctx;
 
     std::vector<DB::Memory> buffers(buffers_count);
     for (size_t i = 0; i < buffers_count; ++i)
@@ -232,3 +197,4 @@ int main(int argc, char ** argv)
         return 1;
     }
 }
+#endif

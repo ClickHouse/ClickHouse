@@ -4,6 +4,7 @@
 #include <Core/Field.h>
 #include <Parsers/IAST.h>
 #include <vector>
+#include <optional>
 
 
 namespace DB
