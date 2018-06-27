@@ -19,7 +19,7 @@ public:
         clone->cloneChildren();
         return std::move(clone);
     }
-    String getColumnName() const override;
+    void appendColumnName(WriteBuffer & ostr) const override;
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
