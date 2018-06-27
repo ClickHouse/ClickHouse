@@ -70,6 +70,9 @@ public:
         std::mutex exec_mutex;
         std::mutex schedule_mutex;
 
+        /// Invariants:
+        /// * If deactivated is true then scheduled, delayed and executing are all false.
+        /// * scheduled and delayed cannot be true at the same time.
         bool deactivated = false;
         bool scheduled = false;
         bool delayed = false;
