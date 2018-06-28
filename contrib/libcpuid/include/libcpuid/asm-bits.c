@@ -75,13 +75,13 @@ int cpuid_exists_by_eflags(void)
 #endif /* PLATFORM_X86 */
 }
 
+#ifdef INLINE_ASM_SUPPORTED
 /* 
  * with MSVC/AMD64, the exec_cpuid() and cpu_rdtsc() functions
  * are implemented in separate .asm files. Otherwise, use inline assembly
  */
 void exec_cpuid(uint32_t *regs)
 {
-#ifdef INLINE_ASM_SUPPORTED
 #ifdef COMPILER_GCC
 #	ifdef PLATFORM_X64
 	__asm __volatile(
@@ -166,8 +166,8 @@ void exec_cpuid(uint32_t *regs)
 #    error "Unsupported compiler"
 #  endif /* COMPILER_MICROSOFT */
 #endif
-#endif /* INLINE_ASSEMBLY_SUPPORTED */
 }
+#endif /* INLINE_ASSEMBLY_SUPPORTED */
 
 #ifdef INLINE_ASM_SUPPORTED
 void cpu_rdtsc(uint64_t* result)
@@ -214,7 +214,8 @@ void busy_sse_loop(int cycles)
 		"	xorps	%%xmm6,	%%xmm6\n"
 		"	xorps	%%xmm7,	%%xmm7\n"
 		XALIGN
-		".bsLoop:\n"
+		/* ".bsLoop:\n" */
+		"1:\n"
 		// 0:
 		"	addps	%%xmm1, %%xmm0\n"
 		"	addps	%%xmm2, %%xmm1\n"
@@ -505,7 +506,8 @@ void busy_sse_loop(int cycles)
 		"	addps	%%xmm0, %%xmm7\n"
 		
 		"	dec	%%eax\n"
-		"	jnz	.bsLoop\n"
+		/* "jnz	.bsLoop\n" */
+		"	jnz	1b\n"
 		::"a"(cycles)
 	);
 #else

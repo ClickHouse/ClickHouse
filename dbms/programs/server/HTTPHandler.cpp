@@ -426,8 +426,7 @@ void HTTPHandler::processQuery(
     std::unique_ptr<ReadBuffer> in;
 
     static const NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"
-    };
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
 
     Names reserved_param_suffixes;
 
@@ -445,12 +444,14 @@ void HTTPHandler::processQuery(
         return false;
     };
 
+    /// Used in case of POST request with form-data, but it not to be expectd to be deleted after that scope
+    std::string full_query;
+
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
-        in = std::move(in_param);
-
-        context.setExternalTablesInitializer([&params, &request, &istr] (Context & context_query) {
+        context.setExternalTablesInitializer([&params, &request, &istr] (Context & context_query)
+        {
             ExternalTablesHandler handler(context_query, params);
             params.load(request, istr, handler);
         });
@@ -459,6 +460,16 @@ void HTTPHandler::processQuery(
         reserved_param_suffixes.emplace_back("_format");
         reserved_param_suffixes.emplace_back("_types");
         reserved_param_suffixes.emplace_back("_structure");
+
+        /// Params are of both form params POST and uri (GET params)
+        for (const auto & it : params)
+        {
+            if (it.first == "query")
+            {
+                full_query += it.second;
+            }
+        }
+        in = std::make_unique<ReadBufferFromString>(full_query);
     }
     else
         in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
