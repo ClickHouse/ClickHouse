@@ -37,34 +37,22 @@ public:
     std::string getName() const override { return "ColumnWithDictionary"; }
     const char * getFamilyName() const override { return "ColumnWithDictionary"; }
 
-    ColumnPtr convertToFullColumn() const
-    {
-        return getUnique()->getNestedColumn()->index(*indexes, 0);
-    }
-
+    ColumnPtr convertToFullColumn() const { return getUnique()->getNestedColumn()->index(*indexes, 0); }
     ColumnPtr convertToFullColumnIfWithDictionary() const override { return convertToFullColumn(); }
 
-    MutableColumnPtr cloneResized(size_t size) const override
-    {
-        auto unique_ptr = column_unique;
-        return ColumnWithDictionary::create((*std::move(unique_ptr)).mutate(), indexes->cloneResized(size));
-    }
-
+    MutableColumnPtr cloneResized(size_t size) const override;
     size_t size() const override { return indexes->size(); }
-
 
     Field operator[](size_t n) const override { return (*column_unique)[indexes->getUInt(n)]; }
     void get(size_t n, Field & res) const override { column_unique->get(indexes->getUInt(n), res); }
 
     StringRef getDataAt(size_t n) const override { return column_unique->getDataAt(indexes->getUInt(n)); }
-
     StringRef getDataAtWithTerminatingZero(size_t n) const override
     {
         return column_unique->getDataAtWithTerminatingZero(indexes->getUInt(n));
     }
 
     UInt64 get64(size_t n) const override { return column_unique->get64(indexes->getUInt(n)); }
-
     UInt64 getUInt(size_t n) const override { return column_unique->getUInt(indexes->getUInt(n)); }
     Int64 getInt(size_t n) const override { return column_unique->getInt(indexes->getUInt(n)); }
     bool isNullAt(size_t n) const override { return column_unique->isNullAt(indexes->getUInt(n)); }
@@ -251,6 +239,13 @@ public:
 private:
     ColumnPtr column_unique;
     ColumnPtr indexes;
+
+    size_t getSizeOfCurrentIndexType() const;
+
+    template <typename IndexType>
+    void convertIndexes();
+    void insertIndex(size_t value);
+    void insertIndexesRange(const ColumnPtr & column);
 
 };
 
