@@ -267,7 +267,7 @@ struct Settings
     M(SettingBool, log_profile_events, true, "Log query performance statistics into the query_log and query_thread_log.") \
     M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \
     M(SettingBool, log_query_threads, true, "Log query threads into system.query_thread_log table.") \
-    M(SettingString, server_logs_level, "none", "Send internal server logs to client.")
+    M(SettingString, send_logs_level, "none", "Send server text logs with specified minumum level to client. Valid values: 'trace', 'debug', 'info', 'warning', 'error', 'none'")
 
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
