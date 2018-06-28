@@ -11,7 +11,6 @@ namespace DB
 class ExtendedLogMessage
 {
 public:
-
     explicit ExtendedLogMessage(const Poco::Message & base) : base(base) {}
 
     /// Attach additional data to the message

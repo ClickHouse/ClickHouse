@@ -16,9 +16,8 @@ namespace DB
 class OwnFormattingChannel : public Poco::Channel, public ExtendedLogChannel
 {
 public:
-
     explicit OwnFormattingChannel(Poco::AutoPtr<OwnPatternFormatter> pFormatter_ = nullptr, Poco::AutoPtr<Poco::Channel> pChannel_ = nullptr)
-            : pFormatter(std::move(pFormatter_)), pChannel(std::move(pChannel_)) {}
+        : pFormatter(std::move(pFormatter_)), pChannel(std::move(pChannel_)) {}
 
     void setChannel(Poco::AutoPtr<Poco::Channel> pChannel_)
     {
@@ -48,7 +47,6 @@ public:
     ~OwnFormattingChannel() override;
 
 private:
-
     Poco::AutoPtr<OwnPatternFormatter> pFormatter;
     Poco::AutoPtr<Poco::Channel> pChannel;
     Poco::Message::Priority priority = Poco::Message::PRIO_TRACE;

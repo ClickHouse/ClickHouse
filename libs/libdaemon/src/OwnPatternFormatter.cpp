@@ -45,16 +45,18 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     DB::writeChar('0' + ((msg_ext.time_microseconds / 10) % 10), wb);
     DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
 
+    writeCString(" [ ", wb);
+    DB::writeIntText(msg_ext.thread_number, wb);
+    writeCString(" ] ", wb);
+
     if (!msg_ext.query_id.empty())
     {
-        writeCString(" {", wb);
+        writeCString("{", wb);
         DB::writeString(msg_ext.query_id, wb);
         writeCString("}", wb);
     }
 
-    writeCString(" [ ", wb);
-    DB::writeIntText(msg_ext.thread_number, wb);
-    writeCString(" ] <", wb);
+    writeCString(" <", wb);
     DB::writeString(getPriorityName(static_cast<int>(msg.getPriority())), wb);
     writeCString("> ", wb);
     DB::writeString(msg.getSource(), wb);
