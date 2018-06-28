@@ -9,7 +9,7 @@ Ways to configure settings, in order of priority:
 
 - Settings in the server config file `users.xml`.
 
-- Settings from user profiles.
+   Set it in user profile in `<profiles>` element.
 
 - Session settings.
 
