@@ -63,6 +63,10 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     void drop() override {}
+
+    /// Removes temporary data in local filesystem.
+    void truncate(const ASTPtr &) override;
+
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
@@ -121,6 +125,8 @@ public:
         void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
         /// Creates directory_monitor if not exists.
         void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
+
+        void shutdownAndDropAllData();
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     std::mutex cluster_nodes_mutex;
