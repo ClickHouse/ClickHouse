@@ -1304,11 +1304,9 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & argu
 
 void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
-    Columns array_columns(arguments.size());
     const ColumnArray::Offsets * offsets = nullptr;
-    ColumnRawPtrs data_columns(arguments.size());
-    ColumnRawPtrs original_data_columns(arguments.size());
-    ColumnRawPtrs null_maps(arguments.size());
+    ColumnRawPtrs data_columns;
+    data_columns.reserve(arguments.size());
 
     bool has_nullable_columns = false;
 
@@ -1327,7 +1325,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             array_ptr = const_array->convertToFullColumn();
             array = checkAndGetColumn<ColumnArray>(array_ptr.get());
         }
-        array_columns[i] = array_ptr;
+
         const ColumnArray::Offsets & offsets_i = array->getOffsets();
         if (i == 0)
             offsets = &offsets_i;
@@ -1335,7 +1333,22 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             throw Exception("Lengths of all arrays passed to " + getName() + " must be equal.",
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
-        data_columns[i] = &array->getData();
+        auto * array_data = &array->getData();
+        if (auto * tuple_column = checkAndGetColumn<ColumnTuple>(array_data))
+        {
+            for (const auto & element : tuple_column->getColumns())
+                data_columns.push_back(element.get());
+        }
+        else
+            data_columns.push_back(array_data);
+    }
+
+    size_t num_columns = data_columns.size();
+    ColumnRawPtrs original_data_columns(num_columns);
+    ColumnRawPtrs null_maps(num_columns);
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
         original_data_columns[i] = data_columns[i];
 
         if (data_columns[i]->isColumnNullable())
@@ -1349,7 +1362,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             null_maps[i] = nullptr;
     }
 
-    const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(array_columns[0].get());
+    const ColumnArray * first_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments.at(0)).column.get());
     const IColumn * first_null_map = null_maps[0];
     auto res_nested = ColumnUInt32::create();
 
@@ -1357,7 +1370,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
     if (!offsets->empty())
         res_values.resize(offsets->back());
 
-    if (arguments.size() == 1)
+    if (num_columns == 1)
     {
         if (!( executeNumber<UInt8>(first_array, first_null_map, res_values)
             || executeNumber<UInt16>(first_array, first_null_map, res_values)
