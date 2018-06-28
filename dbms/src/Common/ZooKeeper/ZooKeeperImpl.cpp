@@ -677,7 +677,8 @@ void ZooKeeper::receiveHandshake()
 
     read(timeout);
     if (timeout != session_timeout.totalMilliseconds())
-        throw Exception("Received different session timeout from server: " + toString(timeout), ZMARSHALLINGERROR);
+        /// Use timeout from server.
+        session_timeout = timeout * Poco::Timespan::MILLISECONDS;
 
     read(session_id);
     read(passwd);
@@ -833,7 +834,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                     throw Exception("Operation timeout (no response) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
                 waited += max_wait;
-                if (waited > session_timeout.totalMicroseconds())
+                if (waited >= session_timeout.totalMicroseconds())
                     throw Exception("Nothing is received in session timeout", ZOPERATIONTIMEOUT);
 
             }

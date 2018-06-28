@@ -6,7 +6,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <Core/Defines.h>
-#include <Common/AIO.h>
+#include <IO/AIO.h>
 #include <Common/CurrentMetrics.h>
 
 #include <string>
@@ -58,9 +58,8 @@ private:
     BufferWithOwnMemory<WriteBuffer> flush_buffer;
 
     /// Description of the asynchronous write request.
-    iocb request = {};
-    std::vector<iocb *> request_ptrs{&request};
-    std::vector<io_event> events{1};
+    iocb request{};
+    iocb * request_ptr{&request};
 
     AIOContext aio_context{1};
 

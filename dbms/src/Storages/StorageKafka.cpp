@@ -23,15 +23,15 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/StorageKafka.h>
+#include <Storages/StorageKafka.h> // Y_IGNORE
 #include <Storages/StorageFactory.h>
 #include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
 
 #if __has_include(<rdkafka.h>) // maybe bundled
-#include <rdkafka.h>
+#include <rdkafka.h> // Y_IGNORE
 #else // system
-#include <librdkafka/rdkafka.h>
+#include <librdkafka/rdkafka.h> // Y_IGNORE
 #endif
 
 

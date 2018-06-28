@@ -19,6 +19,7 @@ source "./release_lib.sh"
 
 DEB_CC=${DEB_CC:=gcc-7}
 DEB_CXX=${DEB_CXX:=g++-7}
+PBUILDER_AUTOUPDATE=${PBUILDER_AUTOUPDATE=4320}
 
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
@@ -118,10 +119,12 @@ else
         sudo --preserve-env bash -x pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 
-    # Update every 3 days (60*24*3 minutes)
-    if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +4320` ; then
-        echo Updating base system $BASETGZ
-        sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+    if [ "$PBUILDER_AUTOUPDATE" -gt 0 ]; then
+        # Update every 3 days (60*24*3 minutes)
+        if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +$PBUILDER_AUTOUPDATE` ; then
+            echo Updating base system $BASETGZ
+            sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+        fi
     fi
 
     pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT

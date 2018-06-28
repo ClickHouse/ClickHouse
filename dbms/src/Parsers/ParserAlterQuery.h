@@ -18,6 +18,23 @@ namespace DB
   *     [FREEZE PARTITION]
   *     [DELETE WHERE ...]
   */
+
+class ParserAlterCommand : public IParserBase
+{
+protected:
+    const char * getName() const { return "ALTER command"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
+class ParserAlterCommandList : public IParserBase
+{
+protected:
+    const char * getName() const { return "a list of ALTER commands"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
 class ParserAlterQuery : public IParserBase
 {
 protected:

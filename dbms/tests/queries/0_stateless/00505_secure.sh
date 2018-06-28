@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-#set -x
+# set -x
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 
 if [ -n $CLICKHOUSE_CONFIG_CLIENT ]; then
-    USE_CONFIG="--config $CLICKHOUSE_CONFIG_CLIENT"
+    USE_CONFIG="--config-file $CLICKHOUSE_CONFIG_CLIENT"
 fi
 
 
@@ -19,13 +19,13 @@ if [ -z $tcp_port_secure ]; then
     cat $CURDIR/00505_secure.reference
 else
 
+    CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:="${CLICKHOUSE_BINARY}-client"}
     if [[ $CLICKHOUSE_CLIENT != *"--port"* ]]; then
-        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
+        CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
 
         # Auto port detect. Cant test with re-definedvia command line ports
-        $CLICKHOUSE_CLIENT $USE_CONFIG --secure -q "SELECT 1";
+        $CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure -q "SELECT 1";
     else
-        CLICKHOUSE_CLIENT_BINARY=${CLICKHOUSE_CLIENT_BINARY:="${CLICKHOUSE_BINARY}-client"}
         CLICKHOUSE_CLIENT_SECURE=${CLICKHOUSE_CLIENT_SECURE:="$CLICKHOUSE_CLIENT_BINARY $USE_CONFIG --secure --port=$CLICKHOUSE_PORT_TCP_SECURE"}
         echo 1
     fi
