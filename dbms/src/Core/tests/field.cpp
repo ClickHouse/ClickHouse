@@ -6,7 +6,6 @@
 #include <Common/FieldVisitors.h>
 
 #include <Common/Stopwatch.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <DataTypes/DataTypeString.h>

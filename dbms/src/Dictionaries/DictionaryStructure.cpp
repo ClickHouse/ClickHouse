@@ -1,5 +1,5 @@
 #include <Dictionaries/DictionaryStructure.h>
-#include <DataTypes/FormatSettings.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
 #include <Common/StringUtils/StringUtils.h>
