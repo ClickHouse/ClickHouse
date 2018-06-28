@@ -15,7 +15,7 @@
 #endif
 
 #if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h>
+    #include <gperftools/malloc_extension.h> // Y_IGNORE
 
     /// Initializing malloc extension in global constructor as required.
     struct MallocExtensionInitializer

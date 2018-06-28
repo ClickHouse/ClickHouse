@@ -26,25 +26,37 @@
 #ifndef __LIBCPUID_H__
 #define __LIBCPUID_H__
 /**
- * @File     libcpuid.h
- * @Author   Veselin Georgiev
- * @Date     Oct 2008
- * @Version  0.2.1
+ * \file     libcpuid.h
+ * \author   Veselin Georgiev
+ * \date     Oct 2008
+ * \version  0.4.0
  *
  * Version history:
  *
- *  0.1.0 (2008-10-15): initial adaptation from wxfractgui sources
- *  0.1.1 (2009-07-06): Added intel_fn11 fields to cpu_raw_data_t to handle
- *                      new processor topology enumeration required on Core i7
- *  0.1.2 (2009-09-26): Added support for MSR reading through self-extracting
- *                      kernel driver on Win32.
- *  0.1.3 (2010-04-20): Added support for greater more accurate CPU clock
- *                      measurements with cpu_clock_by_ic()
- *  0.2.0 (2011-10-11): Support for AMD Bulldozer CPUs, 128-bit SSE unit size
- *                      checking. A backwards-incompatible change, since the
- *                      sizeof cpu_id_t is now different.
- *  0.2.1 (2012-05-26): Support for Ivy Bridge, and detecting the presence of
- *                      the RdRand instruction.
+ * * 0.1.0 (2008-10-15): initial adaptation from wxfractgui sources
+ * * 0.1.1 (2009-07-06): Added intel_fn11 fields to cpu_raw_data_t to handle
+ *                       new processor topology enumeration required on Core i7
+ * * 0.1.2 (2009-09-26): Added support for MSR reading through self-extracting
+ *                       kernel driver on Win32.
+ * * 0.1.3 (2010-04-20): Added support for greater more accurate CPU clock
+ *                       measurements with cpu_clock_by_ic()
+ * * 0.2.0 (2011-10-11): Support for AMD Bulldozer CPUs, 128-bit SSE unit size
+ *                       checking. A backwards-incompatible change, since the
+ *                       sizeof cpu_id_t is now different.
+ * * 0.2.1 (2012-05-26): Support for Ivy Bridge, and detecting the presence of
+ *                       the RdRand instruction.
+ * * 0.2.2 (2015-11-04): Support for newer processors up to Haswell and Vishera.
+ *                       Fix clock detection in cpu_clock_by_ic() for Bulldozer.
+ *                       More entries supported in cpu_msrinfo().
+ *                       *BSD and Solaris support (unofficial).
+ * * 0.3.0 (2016-07-09): Support for Skylake; MSR ops in FreeBSD; INFO_VOLTAGE
+ *                       for AMD CPUs. Level 4 cache support for Crystalwell
+ *                       (a backwards-incompatible change since the sizeof
+ *                        cpu_raw_data_t is now different).
+ * * 0.4.0 (2016-09-30): Better detection of AMD clock multiplier with msrinfo.
+ *                       Support for Intel SGX detection
+ *                       (a backwards-incompatible change since the sizeof
+ *                        cpu_raw_data_t and cpu_id_t is now different).
  */
 
 /** @mainpage A simple libcpuid introduction
@@ -57,6 +69,15 @@
  * To fetch the CPUID info needed for CPU identification, use
  *   \ref cpuid_get_raw_data <br>
  * To make sense of that data (decode, extract features), use \ref cpu_identify <br>
+ * To detect the CPU speed, use either \ref cpu_clock, \ref cpu_clock_by_os,
+ * \ref cpu_tsc_mark + \ref cpu_tsc_unmark + \ref cpu_clock_by_mark,
+ * \ref cpu_clock_measure or \ref cpu_clock_by_ic.
+ * Read carefully for pros/cons of each method. <br>
+ * 
+ * To read MSRs, use \ref cpu_msr_driver_open to get a handle, and then
+ * \ref cpu_rdmsr for querying abilities. Some MSR decoding is available on recent
+ * CPUs, and can be queried through \ref cpu_msrinfo; the various types of queries
+ * are described in \ref cpu_msrinfo_request_t.
  * </p>
  */
 
@@ -116,6 +137,81 @@ struct cpu_raw_data_t {
 	    enumeration leaf), this stores the result of CPUID with 
 	    eax = 11 and ecx = 0, 1, 2... */
 	uint32_t intel_fn11[MAX_INTELFN11_LEVEL][4];
+	
+	/** when the CPU is intel and supports leaf 12h (SGX enumeration leaf),
+	 *  this stores the result of CPUID with eax = 0x12 and
+	 *  ecx = 0, 1, 2... */
+	uint32_t intel_fn12h[MAX_INTELFN12H_LEVEL][4];
+
+	/** when the CPU is intel and supports leaf 14h (Intel Processor Trace
+	 *  capabilities leaf).
+	 *  this stores the result of CPUID with eax = 0x12 and
+	 *  ecx = 0, 1, 2... */
+	uint32_t intel_fn14h[MAX_INTELFN14H_LEVEL][4];
+};
+
+/**
+ * @brief This contains information about SGX features of the processor
+ * Example usage:
+ * @code
+ * ...
+ * struct cpu_raw_data_t raw;
+ * struct cpu_id_t id;
+ * 
+ * if (cpuid_get_raw_data(&raw) == 0 && cpu_identify(&raw, &id) == 0 && id.sgx.present) {
+ *   printf("SGX is present.\n");
+ *   printf("SGX1 instructions: %s.\n", id.sgx.flags[INTEL_SGX1] ? "present" : "absent");
+ *   printf("SGX2 instructions: %s.\n", id.sgx.flags[INTEL_SGX2] ? "present" : "absent");
+ *   printf("Max 32-bit enclave size: 2^%d bytes.\n", id.sgx.max_enclave_32bit);
+ *   printf("Max 64-bit enclave size: 2^%d bytes.\n", id.sgx.max_enclave_64bit);
+ *   for (int i = 0; i < id.sgx.num_epc_sections; i++) {
+ *     struct cpu_epc_t epc = cpuid_get_epc(i, NULL);
+ *     printf("EPC section #%d: address = %x, size = %d bytes.\n", epc.address, epc.size);
+ *   }
+ * } else {
+ *   printf("SGX is not present.\n");
+ * }
+ * @endcode
+ */ 
+struct cpu_sgx_t {
+	/** Whether SGX is present (boolean) */
+	uint32_t present;
+	
+	/** Max enclave size in 32-bit mode. This is a power-of-two value:
+	 *  if it is "31", then the max enclave size is 2^31 bytes (2 GiB).
+	 */
+	uint8_t max_enclave_32bit;
+	
+	/** Max enclave size in 64-bit mode. This is a power-of-two value:
+	 *  if it is "36", then the max enclave size is 2^36 bytes (64 GiB).
+	 */
+	uint8_t max_enclave_64bit;
+	
+	/**
+	 * contains SGX feature flags. See the \ref cpu_sgx_feature_t
+	 * "INTEL_SGX*" macros below.
+	 */
+	uint8_t flags[SGX_FLAGS_MAX];
+	
+	/** number of Enclave Page Cache (EPC) sections. Info for each
+	 *  section is available through the \ref cpuid_get_epc() function
+	 */
+	int num_epc_sections;
+	
+	/** bit vector of the supported extended  features that can be written
+	 *  to the MISC region of the SSA (Save State Area)
+	 */ 
+	uint32_t misc_select;
+	
+	/** a bit vector of the attributes that can be set to SECS.ATTRIBUTES
+	 *  via ECREATE. Corresponds to bits 0-63 (incl.) of SECS.ATTRIBUTES.
+	 */ 
+	uint64_t secs_attributes;
+	
+	/** a bit vector of the bits that can be set in the XSAVE feature
+	 *  request mask; Corresponds to bits 64-127 of SECS.ATTRIBUTES.
+	 */
+	uint64_t secs_xfrm;
 };
 
 /**
@@ -133,7 +229,8 @@ struct cpu_id_t {
 	
 	/**
 	 * contain CPU flags. Used to test for features. See
-	 * the CPU_FEATURE_* macros below. @see Features
+	 * the \ref cpu_feature_t "CPU_FEATURE_*" macros below.
+	 * @see Features
 	 */
 	uint8_t flags[CPU_FLAGS_MAX];
 	
@@ -164,11 +261,17 @@ struct cpu_id_t {
 	
 	/**
 	 * The total number of logical processors.
+	 * The same value is availabe through \ref cpuid_get_total_cpus.
 	 *
 	 * This is num_logical_cpus * {total physical processors in the system}
+	 * (but only on a real system, under a VM this number may be lower).
 	 *
 	 * If you're writing a multithreaded program and you want to run it on
 	 * all CPUs, this is the number of threads you need.
+	 *
+	 * @note in a VM, this will exactly match the number of CPUs set in
+	 *       the VM's configuration.
+	 *
 	 */
 	int32_t total_logical_cpus;
 	
@@ -194,6 +297,9 @@ struct cpu_id_t {
 	
 	/** L3 cache size in KB. Zero on most systems */
 	int32_t l3_cache;
+
+	/** L4 cache size in KB. Zero on most systems */
+	int32_t l4_cache;
 	
 	/** Cache associativity for the L1 data cache. -1 if undetermined */
 	int32_t l1_assoc;
@@ -203,6 +309,9 @@ struct cpu_id_t {
 	
 	/** Cache associativity for the L3 cache. -1 if undetermined */
 	int32_t l3_assoc;
+
+	/** Cache associativity for the L4 cache. -1 if undetermined */
+	int32_t l4_assoc;
 	
 	/** Cache-line size for L1 data cache. -1 if undetermined */
 	int32_t l1_cacheline;
@@ -213,6 +322,9 @@ struct cpu_id_t {
 	/** Cache-line size for L3 cache. -1 if undetermined */
 	int32_t l3_cacheline;
 	
+	/** Cache-line size for L4 cache. -1 if undetermined */
+	int32_t l4_cacheline;
+
 	/**
 	 * The brief and human-friendly CPU codename, which was recognized.<br>
 	 * Examples:
@@ -234,9 +346,13 @@ struct cpu_id_t {
 	
 	/**
 	 * contain miscellaneous detection information. Used to test about specifics of
-	 * certain detected features. See CPU_HINT_* macros below. @see Hints
+	 * certain detected features. See \ref cpu_hint_t "CPU_HINT_*" macros below.
+	 * @see Hints
 	 */
 	uint8_t detection_hints[CPU_HINTS_MAX];
+	
+	/** contains information about SGX features if the processor, if present */
+	struct cpu_sgx_t sgx;
 };
 
 /**
@@ -355,6 +471,21 @@ typedef enum {
 	CPU_FEATURE_PFI,	/*!< Processor Feedback Interface support */
 	CPU_FEATURE_PA,		/*!< Processor accumulator */
 	CPU_FEATURE_AVX2,	/*!< AVX2 instructions */
+	CPU_FEATURE_BMI1,	/*!< BMI1 instructions */
+	CPU_FEATURE_BMI2,	/*!< BMI2 instructions */
+	CPU_FEATURE_HLE,	/*!< Hardware Lock Elision prefixes */
+	CPU_FEATURE_RTM,	/*!< Restricted Transactional Memory instructions */
+	CPU_FEATURE_AVX512F,	/*!< AVX-512 Foundation */
+	CPU_FEATURE_AVX512DQ,	/*!< AVX-512 Double/Quad granular insns */
+	CPU_FEATURE_AVX512PF,	/*!< AVX-512 Prefetch */
+	CPU_FEATURE_AVX512ER,	/*!< AVX-512 Exponential/Reciprocal */
+	CPU_FEATURE_AVX512CD,	/*!< AVX-512 Conflict detection */
+	CPU_FEATURE_SHA_NI,	/*!< SHA-1/SHA-256 instructions */
+	CPU_FEATURE_AVX512BW,	/*!< AVX-512 Byte/Word granular insns */
+	CPU_FEATURE_AVX512VL,	/*!< AVX-512 128/256 vector length extensions */
+	CPU_FEATURE_SGX,	/*!< SGX extensions. Non-autoritative, check cpu_id_t::sgx::present to verify presence */
+	CPU_FEATURE_RDSEED,	/*!< RDSEED instruction */
+	CPU_FEATURE_ADX,	/*!< ADX extensions (arbitrary precision) */
 	/* termination: */
 	NUM_CPU_FEATURES,
 } cpu_feature_t;
@@ -369,6 +500,36 @@ typedef enum {
 	/* termination */
 	NUM_CPU_HINTS,
 } cpu_hint_t;
+
+/**
+ * @brief SGX features flags
+ * \see cpu_sgx_t
+ *
+ * Usage:
+ * @code
+ * ...
+ * struct cpu_raw_data_t raw;
+ * struct cpu_id_t id;
+ * if (cpuid_get_raw_data(&raw) == 0 && cpu_identify(&raw, &id) == 0 && id.sgx.present) {
+ *     if (id.sgx.flags[INTEL_SGX1])
+ *         // The CPU has SGX1 instructions support...
+ *         ...
+ *     } else {
+ *         // no SGX
+ *     }
+ * } else {
+ *   // processor cannot be determined.
+ * }
+ * @endcode
+ */
+ 
+typedef enum {
+	INTEL_SGX1,		/*!< SGX1 instructions support */
+	INTEL_SGX2,		/*!< SGX2 instructions support */
+	
+	/* termination: */
+	NUM_SGX_FEATURES,
+} cpu_sgx_feature_t;
 
 /**
  * @brief Describes common library error codes
@@ -387,7 +548,10 @@ typedef enum {
 	ERR_NO_PERMS = -10,	/*!< "No permissions to install RDMSR driver" */
 	ERR_EXTRACT  = -11,	/*!< "Cannot extract RDMSR driver (read only media?)" */
 	ERR_HANDLE   = -12,	/*!< "Bad handle" */
-	ERR_INVMSR   = -13,     /*!< "Invalid MSR" */
+	ERR_INVMSR   = -13,	/*!< "Invalid MSR" */
+	ERR_INVCNB   = -14,	/*!< "Invalid core number" */
+	ERR_HANDLE_R = -15,	/*!< "Error on handle read" */
+	ERR_INVRANGE = -16,	/*!< "Invalid given range" */
 } cpu_error_t;
 
 /**
@@ -400,8 +564,14 @@ struct cpu_mark_t {
 };
 
 /**
- * @brief Returns the total number of CPUs even if CPUID is not present
- * @retval Number of CPUs available
+ * @brief Returns the total number of logical CPU threads (even if CPUID is not present).
+ *
+ * Under VM, this number (and total_logical_cpus, since they are fetched with the same code)
+ * may be nonsensical, i.e. might not equal NumPhysicalCPUs*NumCoresPerCPU*HyperThreading.
+ * This is because no matter how many logical threads the host machine has, you may limit them
+ * in the VM to any number you like. **This** is the number returned by cpuid_get_total_cpus().
+ *
+ * @returns Number of logical CPU threads available. Equals the \ref cpu_id_t::total_logical_cpus.
  */
 int cpuid_get_total_cpus(void);
 
@@ -713,6 +883,32 @@ int cpu_clock_by_ic(int millis, int runs);
  */
 int cpu_clock(void);
 
+
+/**
+ * @brief The return value of cpuid_get_epc().
+ * @details
+ * Describes an EPC (Enclave Page Cache) layout (physical address and size).
+ * A CPU may have one or more EPC areas, and information about each is
+ * fetched via \ref cpuid_get_epc.
+ */ 
+struct cpu_epc_t {
+	uint64_t start_addr;
+	uint64_t length;
+};
+
+/**
+ * @brief Fetches information about an EPC (Enclave Page Cache) area.
+ * @param index - zero-based index, valid range [0..cpu_id_t.egx.num_epc_sections)
+ * @param raw   - a pointer to fetched raw CPUID data. Needed only for testing,
+ *                you can safely pass NULL here (if you pass a real structure,
+ *                it will be used for fetching the leaf 12h data if index < 2;
+ *                otherwise the real CPUID instruction will be used).
+ * @returns the requested data. If the CPU doesn't support SGX, or if
+ *          index >= cpu_id_t.egx.num_epc_sections, both fields of the returned
+ *          structure will be zeros.
+ */
+struct cpu_epc_t cpuid_get_epc(int index, const struct cpu_raw_data_t* raw);
+
 /**
  * @brief Returns the libcpuid version
  *
@@ -749,6 +945,14 @@ libcpuid_warn_fn_t cpuid_set_warn_function(libcpuid_warn_fn_t warn_fun);
  */
 void cpuid_set_verbosiness_level(int level);
 
+
+/**
+ * @brief Obtains the CPU vendor from CPUID from the current CPU
+ * @note The result is cached.
+ * @returns VENDOR_UNKNOWN if failed, otherwise the CPU vendor type.
+ *          @see cpu_vendor_t
+ */
+cpu_vendor_t cpuid_get_vendor(void);
 
 /**
  * @brief a structure that holds a list of processor names
@@ -788,6 +992,7 @@ void cpuid_get_cpu_list(cpu_vendor_t vendor, struct cpu_list_t* list);
  */
 void cpuid_free_cpu_list(struct cpu_list_t* list);
 
+struct msr_driver_t;
 /**
  * @brief Starts/opens a driver, needed to read MSRs (Model Specific Registers)
  *
@@ -799,8 +1004,22 @@ void cpuid_free_cpu_list(struct cpu_list_t* list);
  *          The error message can be obtained by calling \ref cpuid_error.
  *          @see cpu_error_t
  */
-struct msr_driver_t;
 struct msr_driver_t* cpu_msr_driver_open(void);
+
+/**
+ * @brief Similar to \ref cpu_msr_driver_open, but accept one parameter
+ *
+ * This function works on certain operating systems (GNU/Linux, FreeBSD)
+ *
+ * @param core_num specify the core number for MSR.
+ *          The first core number is 0.
+ *          The last core number is \ref cpuid_get_total_cpus - 1.
+ *
+ * @returns a handle to the driver on success, and NULL on error.
+ *          The error message can be obtained by calling \ref cpuid_error.
+ *          @see cpu_error_t
+ */
+struct msr_driver_t* cpu_msr_driver_open_core(unsigned core_num);
 
 /**
  * @brief Reads a Model-Specific Register (MSR)
@@ -826,25 +1045,50 @@ struct msr_driver_t* cpu_msr_driver_open(void);
  *          The error message can be obtained by calling \ref cpuid_error.
  *          @see cpu_error_t
  */
-int cpu_rdmsr(struct msr_driver_t* handle, int msr_index, uint64_t* result);
+int cpu_rdmsr(struct msr_driver_t* handle, uint32_t msr_index, uint64_t* result);
 
 
 typedef enum {
 	INFO_MPERF,                /*!< Maximum performance frequency clock. This
                                     is a counter, which increments as a
-                                    proportion of the actual processor speed */
+                                    proportion of the actual processor speed. */
 	INFO_APERF,                /*!< Actual performance frequency clock. This
                                     accumulates the core clock counts when the
                                     core is active. */
+	INFO_MIN_MULTIPLIER,       /*!< Minimum CPU:FSB ratio for this CPU,
+                                    multiplied by 100. */
 	INFO_CUR_MULTIPLIER,       /*!< Current CPU:FSB ratio, multiplied by 100.
                                     e.g., a CPU:FSB value of 18.5 reads as
-                                    1850. */
-	INFO_MAX_MULTIPLIER,       /*!< Maxumum CPU:FSB ratio for this CPU,
-                                    multiplied by 100 */
-	INFO_TEMPERATURE,          /*!< The current core temperature in Celsius */
+                                    "1850". */
+	INFO_MAX_MULTIPLIER,       /*!< Maximum CPU:FSB ratio for this CPU,
+                                    multiplied by 100. */
+	INFO_TEMPERATURE,          /*!< The current core temperature in Celsius. */
 	INFO_THROTTLING,           /*!< 1 if the current logical processor is
                                     throttling. 0 if it is running normally. */
+	INFO_VOLTAGE,              /*!< The current core voltage in Volt,
+	                            multiplied by 100. */
+	INFO_BCLK,                 /*!< See \ref INFO_BUS_CLOCK. */
+	INFO_BUS_CLOCK,            /*!< The main bus clock in MHz,
+	                            e.g., FSB/QPI/DMI/HT base clock,
+	                            multiplied by 100. */
 } cpu_msrinfo_request_t;
+
+/**
+ * @brief Similar to \ref cpu_rdmsr, but extract a range of bits
+ *
+ * @param handle - a handle to the MSR reader driver, as created by
+ *                 cpu_msr_driver_open
+ * @param msr_index - the numeric ID of the MSR you want to read
+ * @param highbit - the high bit in range, must be inferior to 64
+ * @param lowbit - the low bit in range, must be equal or superior to 0
+ * @param result - a pointer to a 64-bit integer, where the MSR value is stored
+ *
+ * @returns zero if successful, and some negative number on error.
+ *          The error message can be obtained by calling \ref cpuid_error.
+ *          @see cpu_error_t
+ */
+int cpu_rdmsr_range(struct msr_driver_t* handle, uint32_t msr_index, uint8_t highbit,
+                    uint8_t lowbit, uint64_t* result);
 
 /**
  * @brief Reads extended CPU information from Model-Specific Registers.
