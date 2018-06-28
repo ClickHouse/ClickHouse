@@ -421,13 +421,25 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
+    // Used in case of POST request with form-data, but it not to be expectd to be deleted after that scope
+    std::string full_query;
+
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
-        in = std::move(in_param);
         ExternalTablesHandler handler(context, params);
 
+        /// Params are of both form params POST and uri (GET params)
         params.load(request, istr, handler);
+
+        for (const auto & it : params)
+        {
+            if (it.first == "query")
+            {
+                full_query += it.second;
+            }
+        }
+        in = std::make_unique<ReadBufferFromString>(full_query);
 
         /// Erase unneeded parameters to avoid confusing them later with context settings or query
         /// parameters.
