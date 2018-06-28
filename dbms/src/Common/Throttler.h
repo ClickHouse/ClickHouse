@@ -6,6 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+#include <port/clock.h>
 
 
 namespace DB

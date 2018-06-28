@@ -10,8 +10,10 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Interpreters/Compiler.h>
-#include <Interpreters/config_compile.h>
 
+#if __has_include(<Interpreters/config_compile.h>)
+#include <Interpreters/config_compile.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -25,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_DLOPEN;
+    extern const int CANNOT_COMPILE_CODE;
 }
 
 Compiler::Compiler(const std::string & path_, size_t threads)
@@ -202,6 +205,9 @@ void Compiler::compile(
 {
     ProfileEvents::increment(ProfileEvents::CompileAttempt);
 
+#if !defined(INTERNAL_COMPILER_EXECUTABLE)
+    throw Exception("Cannot compile code: Compiler disabled", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
     std::string prefix = path + "/" + file_name;
     std::string cpp_file_path = prefix + ".cpp";
     std::string so_file_path = prefix + ".so";
@@ -250,7 +256,7 @@ void Compiler::compile(
             " -isystem " << compiler_headers_root << "/usr/include"
     #endif
             " -I " << compiler_headers << "/dbms/src/"
-            " -I " << compiler_headers << "/contrib/libcityhash/include/"
+            " -I " << compiler_headers << "/contrib/cityhash102/include/"
             " -I " << compiler_headers << "/contrib/libpcg-random/include/"
             " -I " << compiler_headers << INTERNAL_DOUBLE_CONVERSION_INCLUDE_DIR
             " -I " << compiler_headers << INTERNAL_Poco_Foundation_INCLUDE_DIR
@@ -291,6 +297,8 @@ void Compiler::compile(
     ProfileEvents::increment(ProfileEvents::CompileSuccess);
 
     on_ready(lib);
+
+#endif
 }
 
 

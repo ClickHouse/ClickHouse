@@ -43,7 +43,7 @@ using StorageWeakPtr = std::weak_ptr<IStorage>;
 struct Settings;
 
 class AlterCommands;
-struct MutationCommands;
+class MutationCommands;
 
 
 /** Does not allow changing the table description (including rename and delete the table).

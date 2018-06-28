@@ -39,10 +39,17 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 #include <nmmintrin.h>
 #endif
 
+#if __aarch64__
+#include <arm_acle.h>
+#include <arm_neon.h>
+#endif
+
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
 {
 #if __SSE4_2__
     return _mm_crc32_u64(-1ULL, x);
+#elif __aarch64__
+    return __crc32cd(-1ULL, x);
 #else
     /// On other platforms we do not have CRC32. NOTE This can be confusing.
     return intHash64(x);

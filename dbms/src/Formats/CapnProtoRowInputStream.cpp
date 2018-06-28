@@ -4,12 +4,12 @@
 #include <Common/escapeForFileName.h>
 #include <IO/ReadBuffer.h>
 #include <Interpreters/Context.h>
-#include <Formats/CapnProtoRowInputStream.h>
+#include <Formats/CapnProtoRowInputStream.h> // Y_IGNORE
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
 
-#include <capnp/serialize.h>
-#include <capnp/dynamic.h>
+#include <capnp/serialize.h> // Y_IGNORE
+#include <capnp/dynamic.h> // Y_IGNORE
 #include <boost/algorithm/string.hpp>
 #include <boost/range/join.hpp>
 #include <common/logger_useful.h>
