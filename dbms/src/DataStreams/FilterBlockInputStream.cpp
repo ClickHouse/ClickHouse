@@ -184,7 +184,7 @@ Block FilterBlockInputStream::removeFilterIfNeed(Block && block)
     if (block && remove_filter)
         block.erase(static_cast<size_t>(filter_column));
 
-    return block;
+    return std::move(block);
 }
 
 
