@@ -187,7 +187,11 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
 {
     auto cluster = getCluster();
+    return getQueryProcessingStage(context, cluster);
+}
 
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+{
     const Settings & settings = context.getSettingsRef();
 
     size_t num_local_shards = cluster->getLocalShardCount();
@@ -209,13 +213,13 @@ BlockInputStreams StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    checkQueryProcessingStage(processed_stage, context);
 
     auto cluster = getCluster();
+    checkQueryProcessingStage(processed_stage, getQueryProcessingStage(context, cluster));
+
     const Settings & settings = context.getSettingsRef();
 
-    const auto & modified_query_ast = rewriteSelectQuery(
-        query_info.query, remote_database, remote_table);
+    const auto & modified_query_ast = rewriteSelectQuery(query_info.query, remote_database, remote_table);
 
     Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
 

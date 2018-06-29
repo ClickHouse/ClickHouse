@@ -242,15 +242,34 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         *  throw out unnecessary columns based on the entire query. In unnecessary parts of the query, we will not execute subqueries.
         */
 
-    bool remove_prewhere_filter;
+    bool has_prewhere = false;
+    bool has_where = false;
+    size_t where_step_num;
+
+    auto finalizeChain = [&](ExpressionActionsChain & chain)
+    {
+        chain.finalize();
+
+        if (has_prewhere)
+            res.prewhere_info->remove_prewhere_column = chain.steps.at(0).can_remove_required_output.at(0);
+        if (has_where)
+            res.remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
+
+        has_prewhere = has_where = false;
+
+        chain.clear();
+    };
 
     {
         ExpressionActionsChain chain;
 
-        if (query_analyzer->appendPrewhere(chain, !res.first_stage, remove_prewhere_filter))
+        if (query_analyzer->appendPrewhere(chain, !res.first_stage))
         {
+            has_prewhere = true;
+
             res.prewhere_info = std::make_shared<PrewhereInfo>(
                     chain.steps.front().actions, query.prewhere_expression->getColumnName());
+
             chain.addStep();
         }
 
@@ -265,9 +284,10 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             chain.addStep();
         }
 
-        if (query_analyzer->appendWhere(chain, !res.first_stage, res.remove_where_filter))
+        if (query_analyzer->appendWhere(chain, !res.first_stage))
         {
-            res.has_where = true;
+            where_step_num = chain.steps.size() - 1;
+            has_where = res.has_where = true;
             res.before_where = chain.getLastActions();
             chain.addStep();
         }
@@ -278,8 +298,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             query_analyzer->appendAggregateFunctionsArguments(chain, !res.first_stage);
             res.before_aggregation = chain.getLastActions();
 
-            chain.finalize();
-            chain.clear();
+            finalizeChain(chain);
 
             if (query_analyzer->appendHaving(chain, !res.second_stage))
             {
@@ -306,12 +325,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         query_analyzer->appendProjectResult(chain);
         res.final_projection = chain.getLastActions();
 
-        chain.finalize();
-        chain.clear();
+        finalizeChain(chain);
     }
-
-    if (res.prewhere_info)
-        res.prewhere_info->remove_prewhere_column = remove_prewhere_filter;
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).
     if (res.has_where)

@@ -1079,7 +1079,7 @@ void ExpressionActionsChain::finalize()
         std::unordered_map<String, size_t> required_output_indexes;
         for (size_t j = 0; j < required_output.size(); ++j)
             required_output_indexes[required_output[j]] = j;
-        auto & can_remove_required_output = steps[i].not_need_in_future_steps;
+        auto & can_remove_required_output = steps[i].can_remove_required_output;
 
         if (i + 1 < static_cast<int>(steps.size()))
         {
@@ -1092,7 +1092,7 @@ void ExpressionActionsChain::finalize()
                     if (iter == required_output_indexes.end())
                         required_output.push_back(it.name);
                     else if (!can_remove_required_output.empty())
-                        *can_remove_required_output[iter->second] = false;
+                        can_remove_required_output[iter->second] = false;
                 }
             }
         }

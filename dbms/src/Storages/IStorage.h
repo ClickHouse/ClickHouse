@@ -344,10 +344,15 @@ protected:
 
     void checkQueryProcessingStage(QueryProcessingStage::Enum processed_stage, const Context & context)
     {
-        auto expected = getQueryProcessingStage(context);
-        if (processed_stage != expected)
+        auto expected_stage = getQueryProcessingStage(context);
+        checkQueryProcessingStage(processed_stage, expected_stage);
+    }
+
+    void checkQueryProcessingStage(QueryProcessingStage::Enum processed_stage, QueryProcessingStage::Enum expected_stage)
+    {
+        if (processed_stage != expected_stage)
             throw Exception("Unexpected query processing stage for storage " + getName() +
-                            ": expected " + QueryProcessingStage::toString(expected) +
+                            ": expected " + QueryProcessingStage::toString(expected_stage) +
                             ", got " + QueryProcessingStage::toString(processed_stage), ErrorCodes::LOGICAL_ERROR);
     }
 
