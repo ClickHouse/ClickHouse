@@ -20,6 +20,8 @@
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
 
+#include <Formats/FormatSettings.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -398,7 +400,8 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
 
 /** Read string in CSV format.
   * Parsing rules:
-  * - string could be placed in quotes; quotes could be single: ' or double: ";
+  * - string could be placed in quotes; quotes could be single: ' if FormatSettings::CSV::single_quote is true
+  *   or double: " if FormatSettings::CSV::double_quote is true;
   * - or string could be unquoted - this is determined by first character;
   * - if string is unquoted, then it is read until next delimiter,
   *   either until end of line (CR or LF),
@@ -407,7 +410,7 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
   * - if string is in quotes, then it will be read until closing quote,
   *   but sequences of two consecutive quotes are parsed as single quote inside string;
   */
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter);
+void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & csv);
 
 
 /// Read and append result to array of characters.
@@ -430,7 +433,7 @@ template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter);
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & csv);
 
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
@@ -688,7 +691,7 @@ template <typename T>
 inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
-inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
+inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & csv) { readCSVString(x, buf, csv); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
