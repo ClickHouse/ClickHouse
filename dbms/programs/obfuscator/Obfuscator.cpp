@@ -503,8 +503,11 @@ private:
     CodePoint readCodePoint(const char *& pos, const char * end)
     {
         size_t length = UTF8::seqLength(*pos);
+
         if (pos + length > end)
             length = end - pos;
+        if (length > sizeof(CodePoint))
+            length = sizeof(CodePoint);
 
         CodePoint res = 0;
         memcpy(&res, pos, length);
