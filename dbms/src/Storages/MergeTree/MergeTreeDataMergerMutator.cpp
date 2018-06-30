@@ -549,7 +549,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    const SortDescription sort_desc = data.getSortDescription();
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
@@ -611,6 +610,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             src_streams.emplace_back(std::move(input));
     }
 
+    Names sort_columns = data.getSortColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    Block header = src_streams.at(0)->getHeader();
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
     ///  that is going in insertion order.
@@ -620,38 +628,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Summing:
             merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
             merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE);
             break;
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Graphite:
             merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE,
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE,
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
-                    src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
             break;
 
         default:
