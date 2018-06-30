@@ -4,8 +4,8 @@ set -e -x
 source default-config
 
 # TODO Non debian systems
-$SUDO apt-get install -y subversion
-apt-cache search cmake3 | grep -P '^cmake3 ' && $SUDO apt-get -y install cmake3 || $SUDO apt-get -y install cmake
+./install-os-packages.sh svn
+./install-os-packages.sh cmake
 
 mkdir "${WORKSPACE}/llvm"
 
@@ -23,10 +23,10 @@ cd "${WORKSPACE}/llvm/build"
 
 # NOTE You must build LLVM with the same ABI as ClickHouse.
 # For example, if you compile ClickHouse with libc++, you must add
-#  -D LLVM_ENABLE_LIBCXX=1
+#  -DLLVM_ENABLE_LIBCXX=1
 # to the line below.
 
-cmake -D CMAKE_BUILD_TYPE:STRING=Release ../llvm
+cmake -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_LIBCXX=1 -DLLVM_ENABLE_RTTI=1 ../llvm
 
 make -j $THREADS
 $SUDO make install

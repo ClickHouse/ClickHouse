@@ -94,4 +94,19 @@ size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
     return res;
 }
 
+
+void IAST::cloneChildren()
+{
+    for (auto & child : children)
+        child = child->clone();
+}
+
+
+String IAST::getColumnName() const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnName(write_buffer);
+    return write_buffer.str();
+}
+
 }

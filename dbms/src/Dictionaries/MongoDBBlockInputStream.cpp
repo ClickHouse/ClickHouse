@@ -1,5 +1,5 @@
 #include <Common/config.h>
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
 
 #include <vector>
 #include <string>
@@ -17,12 +17,20 @@
 #include <Dictionaries/MongoDBBlockInputStream.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <ext/range.h>
 #include <Common/FieldVisitors.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+#include <ext/range.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int TYPE_MISMATCH;
+}
+
 
 MongoDBBlockInputStream::MongoDBBlockInputStream(
     std::shared_ptr<Poco::MongoDB::Connection> & connection_,

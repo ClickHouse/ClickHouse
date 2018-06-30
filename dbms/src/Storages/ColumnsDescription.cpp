@@ -67,9 +67,9 @@ String ColumnsDescription::toString() const
 {
     WriteBufferFromOwnString buf;
 
-    writeString("columns format version: 1\n", buf);
+    writeCString("columns format version: 1\n", buf);
     writeText(ordinary.size() + materialized.size() + aliases.size(), buf);
-    writeString(" columns:\n", buf);
+    writeCString(" columns:\n", buf);
 
     const auto write_columns = [this, &buf] (const NamesAndTypesList & columns)
     {
@@ -79,7 +79,7 @@ String ColumnsDescription::toString() const
 
             writeBackQuotedString(column.name, buf);
             writeChar(' ', buf);
-            writeString(column.type->getName(), buf);
+            writeText(column.type->getName(), buf);
             if (it == std::end(defaults))
             {
                 writeChar('\n', buf);
@@ -88,9 +88,9 @@ String ColumnsDescription::toString() const
             else
                 writeChar('\t', buf);
 
-            writeString(DB::toString(it->second.kind), buf);
+            writeText(DB::toString(it->second.kind), buf);
             writeChar('\t', buf);
-            writeString(queryToString(it->second.expression), buf);
+            writeText(queryToString(it->second.expression), buf);
             writeChar('\n', buf);
         }
     };
@@ -123,7 +123,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         assertChar(' ', buf);
 
         String type_name;
-        readString(type_name, buf);
+        readText(type_name, buf);
         auto type = data_type_factory.get(type_name);
         if (*buf.position() == '\n')
         {
@@ -135,7 +135,7 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
         assertChar('\t', buf);
 
         String default_kind_str;
-        readString(default_kind_str, buf);
+        readText(default_kind_str, buf);
         const auto default_kind = columnDefaultKindFromString(default_kind_str);
         assertChar('\t', buf);
 

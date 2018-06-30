@@ -5,6 +5,7 @@ CLICKHOUSE_USER=${CLICKHOUSE_USER=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP=${CLICKHOUSE_USER}}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR=/var/log/clickhouse-server}
+OS=${OS=`lsb_release -is 2>/dev/null || uname -s || true`}
 
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
 
@@ -21,7 +22,7 @@ if [ "$1" = configure ]; then
     else
         # If you downgrading to version older than 1.1.54336 run: systemctl disable clickhouse-server
         if [ -x "/etc/init.d/clickhouse-server" ]; then
-            if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
+            if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]; then
                 echo # TODO
             else
                 update-rc.d clickhouse-server defaults 19 19 >/dev/null || exit $?
@@ -31,7 +32,7 @@ if [ "$1" = configure ]; then
 
     # Make sure the administrative user exists
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
-        if [ "$OS" == "rhel" ] || [ "$OS" == "centos" ] || [ "$OS" == "fedora" ]; then
+        if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ]; then
             adduser --system --no-create-home --home /nonexistent \
                 --shell /bin/false ${CLICKHOUSE_USER} > /dev/null
         else

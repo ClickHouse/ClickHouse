@@ -116,7 +116,7 @@ namespace detail
 
         while (x >= 100)
         {
-            const UInt32 i = (x % 100) * 2;
+            const auto i = (x % 100) * 2;
             x /= 100;
             dst[next] = digits[i + 1];
             dst[next - 1] = digits[i];
@@ -129,7 +129,7 @@ namespace detail
         }
         else
         {
-            const UInt32 i = x * 2;
+            const auto i = x * 2;
             dst[next] = digits[i + 1];
             dst[next - 1] = digits[i];
         }

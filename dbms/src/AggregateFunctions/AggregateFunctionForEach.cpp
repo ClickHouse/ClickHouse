@@ -13,7 +13,7 @@ namespace ErrorCodes
 class AggregateFunctionCombinatorForEach final : public IAggregateFunctionCombinator
 {
 public:
-    String getName() const override { return "ForEach"; };
+    String getName() const override { return "ForEach"; }
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {

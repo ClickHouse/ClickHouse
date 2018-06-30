@@ -62,6 +62,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <daemon/OwnPatternFormatter.h>
+#include <Poco/Net/RemoteSyslogChannel.h>
 
 
 using Poco::Logger;
@@ -761,7 +762,29 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
-        syslog_channel = new Poco::SyslogChannel(commandName(), Poco::SyslogChannel::SYSLOG_CONS | Poco::SyslogChannel::SYSLOG_PID, Poco::SyslogChannel::SYSLOG_DAEMON);
+
+        const std::string & cmd_name = commandName();
+
+        if (config.has("logger.syslog.address"))
+        {
+            syslog_channel = new Poco::Net::RemoteSyslogChannel();
+            // syslog address
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_LOGHOST, config.getString("logger.syslog.address"));
+            if (config.has("logger.syslog.hostname"))
+            {
+                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
+            }
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
+        }
+        else
+        {
+            syslog_channel = new Poco::SyslogChannel();
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
+        }
+
         log->setChannel(syslog_channel);
         split->addChannel(log);
         syslog_channel->open();
@@ -943,28 +966,29 @@ void BaseDaemon::initialize(Application & self)
     if (!log_path.empty())
         log_path = Poco::Path(log_path).setFileName("").toString();
 
-    if (is_daemon)
+    /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
+      * Some libraries write to stderr in case of errors in debug mode,
+      *  and this output makes sense even if the program is run in daemon mode.
+      * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
+      * If logger.stderr is specified then stderr will be forcibly redirected to that file.
+      */
+    if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
-        /** Redirect stdout, stderr to separate files in the log directory.
-          * Some libraries write to stderr in case of errors in debug mode,
-          *  and this output makes sense even if the program is run in daemon mode.
-          * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
-          */
-        if (!log_path.empty())
-        {
-            std::string stdout_path = log_path + "/stdout";
-            if (!freopen(stdout_path.c_str(), "a+", stdout))
-                throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
-
-            std::string stderr_path = log_path + "/stderr";
-            if (!freopen(stderr_path.c_str(), "a+", stderr))
-                throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
-        }
-
-        /// Create pid file.
-        if (is_daemon && config().has("pid"))
-            pid.seed(config().getString("pid"));
+        std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr");
+        if (!freopen(stderr_path.c_str(), "a+", stderr))
+            throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
     }
+
+    if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
+    {
+        std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout");
+        if (!freopen(stdout_path.c_str(), "a+", stdout))
+            throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+    }
+
+    /// Create pid file.
+    if (is_daemon && config().has("pid"))
+        pid.seed(config().getString("pid"));
 
     /// Change path for logging.
     if (!log_path.empty())

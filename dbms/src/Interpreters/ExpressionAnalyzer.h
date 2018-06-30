@@ -3,9 +3,9 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
-#include "ExpressionActions.h"
-#include "ProjectionManipulation.h"
-
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ProjectionManipulation.h>
+#include <Parsers/StringRange.h>
 
 namespace DB
 {
@@ -23,7 +23,9 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
-using PreparedSets = std::unordered_map<IAST*, SetPtr>;
+/// Will compare sets by their position in query string. It's possible because IAST::clone() doesn't chane IAST::range.
+/// It should be taken into account when we want to change AST part which contains sets.
+using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -36,6 +38,8 @@ class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 
+struct ProjectionManipulatorBase;
+using ProjectionManipulatorPtr = std::shared_ptr<ProjectionManipulatorBase>;
 
 /** Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
   */

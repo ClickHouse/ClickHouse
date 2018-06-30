@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -49,10 +50,11 @@ public:
 private:
     const std::string name;
 
-
     bool hasStateColumn(const Names & column_names);
 
 protected:
+    const FormatSettings format_settings;
+
     StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_);
 
     virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;

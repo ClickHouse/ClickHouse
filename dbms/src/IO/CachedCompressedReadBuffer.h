@@ -2,10 +2,10 @@
 
 #include <memory>
 #include <time.h>
-
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/CompressedReadBufferBase.h>
 #include <IO/UncompressedCache.h>
+#include <port/clock.h>
 
 
 namespace DB
@@ -38,7 +38,7 @@ private:
 
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;
-    clockid_t clock_type;
+    clockid_t clock_type {};
 
 public:
     CachedCompressedReadBuffer(

@@ -422,7 +422,7 @@ public:
         return function->checkNumberOfArguments(number_of_arguments);
     }
 
-    String getName() const override { return function->getName(); };
+    String getName() const override { return function->getName(); }
     bool isVariadic() const override { return function->isVariadic(); }
     size_t getNumberOfArguments() const override { return function->getNumberOfArguments(); }
 

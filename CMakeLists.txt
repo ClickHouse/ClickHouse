@@ -6,15 +6,20 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modul
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7 AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
-        message (FATAL_ERROR "GCC version must be at least 7! For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
+        message (FATAL_ERROR "GCC version must be at least 7. For example, if GCC 7 is available under gcc-7, g++-7 names, do the following: export CC=gcc-7 CXX=g++-7; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     # Require at least clang 5
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 5)
-        message (FATAL_ERROR "Clang version must be at least 5!")
+        message (FATAL_ERROR "Clang version must be at least 5.")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler! Compilation has only been tested with Clang 5+ and GCC 7+.")
+    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 5+ and GCC 7+.")
+endif ()
+
+# Check that submodules are present only if source was downloaded with git
+if (EXISTS "${ClickHouse_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+    message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
 # Write compile_commands.json
@@ -35,6 +40,11 @@ message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
 
 include (cmake/arch.cmake)
+
+if (CMAKE_GENERATOR STREQUAL "Ninja")
+    # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-color=always")
+endif ()
 
 if (NOT MSVC)
     set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror is also added inside directories with our own code.
@@ -92,7 +102,7 @@ else ()
     set (CXX11_ABI_FLAGS "")
 endif ()
 
-set (COMPILER_FLAGS                      "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
+set (COMPILER_FLAGS "${COMPILER_FLAGS} ${CXX11_ABI_FLAGS}")
 
 string(REGEX MATCH "-?[0-9]+(.[0-9]+)?$" COMPILER_POSTFIX ${CMAKE_CXX_COMPILER})
 
@@ -128,14 +138,14 @@ endif ()
 #endif ()
 
 if (CMAKE_VERSION VERSION_LESS "3.8.0")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
+    if (NOT MSVC)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++1z")
+    endif ()
 else ()
     set (CMAKE_CXX_STANDARD 17)
     set (CMAKE_CXX_EXTENSIONS 0) # https://cmake.org/cmake/help/latest/prop_tgt/CXX_EXTENSIONS.html#prop_tgt:CXX_EXTENSIONS
     set (CMAKE_CXX_STANDARD_REQUIRED ON)
     set (CXX_FLAGS_INTERNAL_COMPILER "-std=c++1z")
-    # This needs to propagate to vendored projects in contrib
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 endif ()
 
 set (CMAKE_BUILD_COLOR_MAKEFILE          ON)
@@ -263,6 +273,7 @@ include (cmake/find_re2.cmake)
 include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
+include (cmake/find_cpuid.cmake)
 
 include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)

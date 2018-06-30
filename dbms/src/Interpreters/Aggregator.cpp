@@ -23,7 +23,9 @@
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
 #include <common/demangle.h>
+#if __has_include(<Interpreters/config_compile.h>)
 #include <Interpreters/config_compile.h>
+#endif
 
 
 namespace ProfileEvents
@@ -173,6 +175,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
     compiled_if_possible = true;
 
+#if !defined(INTERNAL_COMPILER_HEADERS)
+    throw Exception("Cannot compile code: Compiler disabled", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
     std::string method_typename;
     std::string method_typename_two_level;
 
@@ -351,6 +356,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
     /// If the result is already ready.
     if (lib)
         on_ready(lib);
+#endif
 }
 
 
@@ -2051,8 +2057,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         };
 
         std::unique_ptr<ThreadPool> thread_pool;
-        if (max_threads > 1 && total_input_rows > 100000    /// TODO Make a custom threshold.
-            && has_two_level)
+        if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
             thread_pool = std::make_unique<ThreadPool>(max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)

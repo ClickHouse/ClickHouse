@@ -11,16 +11,18 @@ struct StrongTypedef
     : boost::totally_ordered1< StrongTypedef<T, Tag>
                                , boost::totally_ordered2< StrongTypedef<T, Tag>, T> >
 {
+private:
     using Self = StrongTypedef<T, Tag>;
     T t;
 
+public:
     template <class Enable = typename std::is_copy_constructible<T>::type>
-    explicit StrongTypedef(const T & t_) : t(t_) {};
+    explicit StrongTypedef(const T & t_) : t(t_) {}
     template <class Enable = typename std::is_move_constructible<T>::type>
-    explicit StrongTypedef(T && t_) : t(std::move(t_)) {};
+    explicit StrongTypedef(T && t_) : t(std::move(t_)) {}
 
     template <class Enable = typename std::is_default_constructible<T>::type>
-    StrongTypedef(): t() {};
+    StrongTypedef(): t() {}
 
     StrongTypedef(const Self &) = default;
     StrongTypedef(Self &&) = default;
@@ -34,7 +36,7 @@ struct StrongTypedef
     template <class Enable = typename std::is_move_assignable<T>::type>
     Self & operator=(T && rhs) { t = std::move(rhs); return *this;}
 
-    operator const T & () const {return t; }
+    operator const T & () const { return t; }
     operator T & () { return t; }
 
     bool operator==(const Self & rhs) const { return t == rhs.t; }

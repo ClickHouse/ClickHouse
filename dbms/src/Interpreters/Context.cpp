@@ -15,7 +15,8 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
-#include <DataStreams/FormatFactory.h>
+#include <Common/BackgroundSchedulePool.h>
+#include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -24,6 +25,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/CompressionSettingsSelector.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
@@ -115,7 +117,6 @@ struct ContextShared
     ConfigurationPtr config;                                /// Global configuration settings.
 
     Databases databases;                                    /// List of databases and tables in them.
-    FormatFactory format_factory;                           /// Formats.
     mutable std::shared_ptr<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaeis. Have lazy initialization.
     mutable std::shared_ptr<ExternalDictionaries> external_dictionaries;
     mutable std::shared_ptr<ExternalModels> external_models;
@@ -131,6 +132,7 @@ struct ContextShared
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     BackgroundProcessingPoolPtr background_pool;            /// The thread pool for the background work performed by the tables.
+    BackgroundSchedulePoolPtr schedule_pool;                /// A thread pool that can run different jobs in background (used in replicated tables)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<Compiler> compiler;                     /// Used for dynamic compilation of queries' parts if it necessary.
     std::shared_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
@@ -139,7 +141,7 @@ struct ContextShared
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
-
+    ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
 
     /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
 
@@ -189,7 +191,7 @@ struct ContextShared
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
-        : runtime_components_factory(std::move(runtime_components_factory_))
+        : runtime_components_factory(std::move(runtime_components_factory_)), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -352,7 +354,7 @@ std::shared_ptr<Context> Context::acquireSession(const String & session_id, std:
         if (session_check)
             throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
 
-        auto new_session = std::make_shared<Context>(*global_context);
+        auto new_session = std::make_shared<Context>(*this);
 
         new_session->scheduleCloseSession(key, timeout);
 
@@ -1328,6 +1330,14 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     return *shared->background_pool;
 }
 
+BackgroundSchedulePool & Context::getSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->schedule_pool)
+        shared->schedule_pool = std::make_shared<BackgroundSchedulePool>(settings.background_schedule_pool_size);
+    return *shared->schedule_pool;
+}
+
 void Context::setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker)
 {
     auto lock = getLock();
@@ -1644,12 +1654,12 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 
 BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, size_t max_block_size) const
 {
-    return shared->format_factory.getInput(name, buf, sample, *this, max_block_size);
+    return FormatFactory::instance().getInput(name, buf, sample, *this, max_block_size);
 }
 
 BlockOutputStreamPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return shared->format_factory.getOutput(name, buf, sample, *this);
+    return FormatFactory::instance().getOutput(name, buf, sample, *this);
 }
 
 
@@ -1721,6 +1731,20 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
+Context::getSampleBlockCacheType & Context::getSampleBlockCache() const
+{
+    return getQueryContext().get_sample_block_cache;
+}
+
+std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
+{
+    auto lock = getLock();
+
+    if (!shared->action_locks_manager)
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
+
+    return shared->action_locks_manager;
+}
 
 SessionCleaner::~SessionCleaner()
 {

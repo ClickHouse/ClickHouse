@@ -1,5 +1,3 @@
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
 add_executable (read_buffer read_buffer.cpp)
 target_link_libraries (read_buffer clickhouse_common_io)
 

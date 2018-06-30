@@ -259,4 +259,4 @@ void NO_INLINE Aggregator::executeSpecializedWithoutKey(
   *
   * Therefore, we can work around the problem this way
   */
-extern "C" void __attribute__((__visibility__("default"), __noreturn__)) __cxa_pure_virtual() { abort(); };
+extern "C" void __attribute__((__visibility__("default"), __noreturn__)) __cxa_pure_virtual() { abort(); }
