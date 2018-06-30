@@ -87,6 +87,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_SEEK_THROUGH_FILE;
 }
 
@@ -682,7 +683,7 @@ public:
             }
 
             if (table.end() == it)
-                throw Exception("Logical error in markov model");
+                throw Exception("Logical error in markov model", ErrorCodes::LOGICAL_ERROR);
 
             size_t offset_from_begin_of_string = pos - data;
             size_t determinator_sliding_window_size = params.determinator_sliding_window_size;
@@ -703,13 +704,22 @@ public:
             /// If string is greater than desired_size, increase probability of end.
             double end_probability_multiplier = 0;
             Int64 num_bytes_after_desired_size = (pos - data) - desired_size;
-            if (num_bytes_after_desired_size)
+
+            if (num_bytes_after_desired_size > 0)
                 end_probability_multiplier = std::pow(1.25, num_bytes_after_desired_size);
 
             CodePoint code = it->second.sample(determinator, end_probability_multiplier);
 
             if (code == END)
                 break;
+
+            if (num_bytes_after_desired_size > 0)
+            {
+                /// Heuristic: break at ASCII non-alnum code point.
+                /// This allows to be close to desired_size but not break natural looking words.
+                if (code < 128 && !isAlphaNumericASCII(code))
+                    break;
+            }
 
             if (!writeCodePoint(code, pos, end))
                 break;
@@ -884,7 +894,7 @@ public:
         if (auto type = typeid_cast<const DataTypeNullable *>(&data_type))
             return std::make_unique<NullableModel>(get(*type->getNestedType(), seed, markov_model_params));
 
-        throw Exception("Unsupported data type");
+        throw Exception("Unsupported data type", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 
