@@ -1,4 +1,4 @@
-<a name="json"></a>
+<a name="formats-json"></a>
 
 # JSON
 
