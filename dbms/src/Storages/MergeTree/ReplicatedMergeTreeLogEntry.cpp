@@ -25,7 +25,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
 
         case MERGE_PARTS:
             out << "merge\n";
-            for (const String & s : parts_to_merge)
+            for (const String & s : source_parts)
                 out << s << '\n';
             out << "into\n" << new_part_name;
             out << "\ndeduplicate: " << deduplicate;
@@ -43,6 +43,18 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << "clear_column\n"
                 << escape << column_name
                 << "\nfrom\n"
+                << new_part_name;
+            break;
+
+        case REPLACE_RANGE:
+            out << typeToString(REPLACE_RANGE) << "\n";
+            replace_range_entry->writeText(out);
+            break;
+
+        case MUTATE_PART:
+            out << "mutate\n"
+                << source_parts.at(0) << "\n"
+                << "to\n"
                 << new_part_name;
             break;
 
@@ -96,7 +108,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
             in >> s >> "\n";
             if (s == "into")
                 break;
-            parts_to_merge.push_back(s);
+            source_parts.push_back(s);
         }
         in >> new_part_name;
         if (format_version >= 4)
@@ -113,16 +125,20 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         type = CLEAR_COLUMN;
         in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
     }
-    else if (type_str == "attach")
+    else if (type_str == typeToString(REPLACE_RANGE))
     {
-        /// Obsolete. TODO: Remove after half year.
-        type = ATTACH_PART;
-        String source_type;
-        in >> source_type;
-        if (source_type != "detached")
-            throw Exception("Bad format: expected 'detached', found '" + source_type + "'", ErrorCodes::CANNOT_PARSE_TEXT);
-        String source_part_name;
-        in >> "\n" >> source_part_name >> "\ninto\n" >> new_part_name;
+        type = REPLACE_RANGE;
+        replace_range_entry = std::make_shared<ReplaceRangeEntry>();
+        replace_range_entry->readText(in);
+    }
+    else if (type_str == "mutate")
+    {
+        type = MUTATE_PART;
+        String source_part;
+        in >> source_part >> "\n"
+           >> "to\n"
+           >> new_part_name;
+        source_parts.push_back(source_part);
     }
 
     in >> "\n";
@@ -130,6 +146,48 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     /// Optional field.
     if (!in.eof())
         in >> "quorum: " >> quorum >> "\n";
+}
+
+void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::writeText(WriteBuffer & out) const
+{
+    out << "drop_range_name: " << drop_range_part_name << "\n";
+    out << "from_database: " << escape << from_database << "\n";
+    out << "from_table: " << escape << from_table << "\n";
+
+    out << "source_parts: ";
+    writeQuoted(src_part_names, out);
+    out << "\n";
+
+    out << "new_parts: ";
+    writeQuoted(new_part_names, out);
+    out << "\n";
+
+    out << "part_checksums: ";
+    writeQuoted(part_names_checksums, out);
+    out << "\n";
+
+    out << "columns_version: " << columns_version;
+}
+
+void ReplicatedMergeTreeLogEntryData::ReplaceRangeEntry::readText(ReadBuffer & in)
+{
+    in >> "drop_range_name: " >> drop_range_part_name >> "\n";
+    in >> "from_database: " >> escape >> from_database >> "\n";
+    in >> "from_table: " >> escape >> from_table >> "\n";
+
+    in >> "source_parts: ";
+    readQuoted(src_part_names, in);
+    in >> "\n";
+
+    in >> "new_parts: ";
+    readQuoted(new_part_names, in);
+    in >> "\n";
+
+    in >> "part_checksums: ";
+    readQuoted(part_names_checksums, in);
+    in >> "\n";
+
+    in >> "columns_version: " >> columns_version;
 }
 
 String ReplicatedMergeTreeLogEntryData::toString() const

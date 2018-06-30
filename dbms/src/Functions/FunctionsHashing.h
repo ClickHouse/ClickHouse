@@ -181,7 +181,7 @@ class FunctionStringHash64 : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash64>(); }
 
     String getName() const override
     {
@@ -233,7 +233,7 @@ class FunctionStringHashFixedString : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHashFixedString>(); }
 
     String getName() const override
     {
@@ -286,7 +286,7 @@ class FunctionIntHash : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIntHash>(); }
 
 private:
     using ToType = typename Impl::ReturnType;
@@ -375,7 +375,7 @@ class FunctionNeighbourhoodHash64 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbourhoodHash64>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbourhoodHash64>(); }
 
 private:
     template <typename FromType, bool first>
@@ -806,13 +806,14 @@ struct ImplCityHash64
     static auto Hash64(const char * s, const size_t len) { return CityHash_v1_0_2::CityHash64(s, len); }
 };
 
+// see farmhash.h for definition of NAMESPACE_FOR_HASH_FUNCTIONS
 struct ImplFarmHash64
 {
     static constexpr auto name = "farmHash64";
-    using uint128_t = farmhash::uint128_t;
+    using uint128_t = NAMESPACE_FOR_HASH_FUNCTIONS::uint128_t;
 
-    static auto Hash128to64(const uint128_t & x) { return farmhash::Hash128to64(x); }
-    static auto Hash64(const char * s, const size_t len) { return farmhash::Hash64(s, len); }
+    static auto Hash128to64(const uint128_t & x) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash128to64(x); }
+    static auto Hash64(const char * s, const size_t len) { return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(s, len); }
 };
 
 struct ImplMetroHash64

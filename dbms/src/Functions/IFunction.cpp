@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
 #include <cstdlib>
@@ -17,7 +18,7 @@
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/IRBuilder.h> // Y_IGNORE
 #pragma GCC diagnostic pop
 #endif
 

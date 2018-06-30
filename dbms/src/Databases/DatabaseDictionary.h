@@ -25,6 +25,8 @@ class DatabaseDictionary : public IDatabase
 public:
     DatabaseDictionary(const String & name_, const Context & context);
 
+    String getDatabaseName() const override;
+
     String getEngineName() const override
     {
         return "Dictionary";
@@ -87,7 +89,6 @@ public:
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     void shutdown() override;
-    void drop() override;
 
 private:
     const String name;

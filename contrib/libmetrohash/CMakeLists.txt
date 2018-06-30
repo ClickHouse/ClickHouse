@@ -10,4 +10,4 @@ add_library(metrohash
     src/metrohash128.cpp
     ${SOURCES_SSE42_ONLY})
 
-target_include_directories(metrohash PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(metrohash PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)

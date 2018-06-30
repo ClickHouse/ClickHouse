@@ -24,6 +24,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/NumberTraits.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -755,7 +756,9 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        if (tuple)
+        auto set = column_set->getData();
+        auto set_types = set->getDataTypes();
+        if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
         {
             const Columns & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
@@ -766,7 +769,7 @@ public:
         else
             block_of_key_columns.insert(left_arg);
 
-        block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
+        block.getByPosition(result).column = set->execute(block_of_key_columns, negative);
     }
 };
 
@@ -1236,7 +1239,7 @@ struct IsNaNImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return t != t;
+        return t != t;  //-V501
     }
 };
 
@@ -1682,11 +1685,12 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
     String tmp;
+    FormatSettings format_settings;
     for (size_t i = 0; i < size; ++i)
     {
         {
             WriteBufferFromString out(tmp);
-            src.type->serializeTextEscaped(*src.column, i, out);
+            src.type->serializeText(*src.column, i, out, format_settings);
         }
 
         res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());

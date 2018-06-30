@@ -4,6 +4,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
+#include <Core/ColumnWithTypeAndName.h>
 
 
 namespace DB
@@ -79,6 +80,20 @@ FilterDescription::FilterDescription(const IColumn & column)
 
     throw Exception("Illegal type " + column.getName() + " of column for filter. Must be UInt8 or Nullable(UInt8) or Const variants of them.",
         ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
+}
+
+
+void checkColumnCanBeUsedAsFilter(const ColumnWithTypeAndName & column_elem)
+{
+    ConstantFilterDescription const_filter;
+    if (column_elem.column)
+        const_filter = ConstantFilterDescription(*column_elem.column);
+
+    if (!const_filter.always_false && !const_filter.always_true)
+    {
+        auto column = column_elem.column ? column_elem.column : column_elem.type->createColumn();
+        FilterDescription filter(*column);
+    }
 }
 
 }

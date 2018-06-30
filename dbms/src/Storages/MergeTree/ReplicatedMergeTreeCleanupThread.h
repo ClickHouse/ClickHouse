@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <thread>
 #include <map>
 
@@ -23,12 +24,13 @@ class ReplicatedMergeTreeCleanupThread
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    ~ReplicatedMergeTreeCleanupThread();
+    void schedule() { task->schedule(); }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
     pcg64 rng;
 
     void run();
@@ -48,7 +50,6 @@ private:
     void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
 
     /// TODO Removing old quorum/failed_parts
-    /// TODO Removing old nonincrement_block_numbers
 };
 
 

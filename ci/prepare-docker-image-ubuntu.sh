@@ -6,7 +6,7 @@ source default-config
 ./check-docker.sh
 
 # http://fl47l1n3.net/2015/12/24/binfmt/
-$SUDO apt-get -y install qemu-user-static
+./install-os-packages.sh qemu-user-static
 
 pushd docker-multiarch
 

@@ -12,8 +12,9 @@ void registerTableFunctionShardByHash(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
 void registerTableFunctionCatBoostPool(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
+void registerTableFunctionURL(TableFunctionFactory & factory);
 
-#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
 #endif
 
@@ -32,8 +33,9 @@ void registerTableFunctions()
     registerTableFunctionNumbers(factory);
     registerTableFunctionCatBoostPool(factory);
     registerTableFunctionFile(factory);
+    registerTableFunctionURL(factory);
 
-#if Poco_SQLODBC_FOUND || Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
 #endif
 

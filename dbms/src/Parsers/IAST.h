@@ -46,7 +46,11 @@ public:
     virtual ~IAST() = default;
 
     /** Get the canonical name of the column if the element is a column */
-    virtual String getColumnName() const { throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN); }
+    String getColumnName() const;
+    virtual void appendColumnName(WriteBuffer &) const
+    {
+        throw Exception("Trying to get name of not a column: " + getID(), ErrorCodes::NOT_A_COLUMN);
+    }
 
     /** Get the alias, if any, or the canonical name of the column, if it is not. */
     virtual String getAliasOrColumnName() const { return getColumnName(); }
@@ -65,7 +69,7 @@ public:
 
     ASTPtr ptr() { return shared_from_this(); }
 
-    /** Get a deep copy of the tree. */
+    /** Get a deep copy of the tree. Cloned object must have the same range. */
     virtual ASTPtr clone() const = 0;
 
     /** Get hash code, identifying this element and its subtree.
@@ -191,6 +195,8 @@ public:
     }
 
     void writeAlias(const String & name, std::ostream & s, bool hilite) const;
+
+    void cloneChildren();
 
 public:
     /// For syntax highlighting.

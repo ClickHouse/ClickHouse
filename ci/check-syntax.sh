@@ -3,14 +3,14 @@ set -e -x
 
 source default-config
 
-$SUDO apt-get install -y jq
+./install-os-packages.sh jq
 
 [[ -d "${WORKSPACE}/sources" ]] || die "Run get-sources.sh first"
 
 mkdir -p "${WORKSPACE}/build"
 pushd "${WORKSPACE}/build"
 
-cmake -D CMAKE_BUILD_TYPE=Debug $CMAKE_FLAGS ../sources
+cmake -DCMAKE_BUILD_TYPE=Debug $CMAKE_FLAGS ../sources
 
 make -j $THREADS re2_st # Generated headers
 

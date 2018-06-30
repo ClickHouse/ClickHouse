@@ -328,6 +328,28 @@ Keys:
 </logger>
 ```
 
+Also, logging to syslog is possible. Configuration example:
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname> 
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+Keys:
+- user_syslog - activation key, turning on syslog logging.
+- address - host[:port] of syslogd. If not specified, local one would be used.
+- hostname - optional, source host of logs
+- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility), 
+in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.). 
+Default values: when ``address`` is specified, then ``LOG_USER``, otherwise - ``LOG_DAEMON``
+- format - message format. Possible values are - ``bsd`` and ``syslog``
+
 <a name="server_settings-macros"></a>
 
 ## macros
@@ -655,6 +677,16 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ```xml
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
+```
+
+## user_files_path
+
+A catalog with user files. Used in a [file()](../../table_functions/file.md#table_functions-file) table function.
+
+**Example**
+
+```xml
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
 <a name="server_settings-users_config"></a>

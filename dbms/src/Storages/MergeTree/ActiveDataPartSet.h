@@ -12,8 +12,7 @@ namespace DB
 
 /** Supports multiple names of active parts of data.
   * Repeats part of the MergeTreeData functionality.
-  * TODO: generalize with MergeTreeData. It is possible to leave this class approximately as is and use it from MergeTreeData.
-  *       Then in MergeTreeData you can make map<String, DataPartPtr> data_parts and all_data_parts.
+  * TODO: generalize with MergeTreeData
   */
 class ActiveDataPartSet
 {
@@ -21,24 +20,61 @@ public:
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_) : format_version(format_version_) {}
     ActiveDataPartSet(MergeTreeDataFormatVersion format_version_, const Strings & names);
 
-    void add(const String & name);
+    ActiveDataPartSet(const ActiveDataPartSet & other)
+        : format_version(other.format_version)
+        , part_info_to_name(other.part_info_to_name)
+    {}
 
-    /// If not found, returns an empty string.
+    ActiveDataPartSet(ActiveDataPartSet && other) noexcept { swap(other); }
+
+    void swap(ActiveDataPartSet & other) noexcept
+    {
+        std::swap(format_version, other.format_version);
+        std::swap(part_info_to_name, other.part_info_to_name);
+    }
+
+    ActiveDataPartSet & operator=(const ActiveDataPartSet & other)
+    {
+        if (&other != this)
+        {
+            ActiveDataPartSet tmp(other);
+            swap(tmp);
+        }
+        return *this;
+    }
+
+    /// Returns true if the part was actually added. If out_replaced_parts != nullptr, it will contain
+    /// parts that were replaced from the set by the newly added part.
+    bool add(const String & name, Strings * out_replaced_parts = nullptr);
+
+    bool remove(const MergeTreePartInfo & part_info)
+    {
+        return part_info_to_name.erase(part_info) > 0;
+    }
+
+    bool remove(const String & part_name)
+    {
+        return remove(MergeTreePartInfo::fromPartName(part_name, format_version));
+    }
+
+    /// If not found, return an empty string.
+    String getContainingPart(const MergeTreePartInfo & part_info) const;
     String getContainingPart(const String & name) const;
 
-    Strings getParts() const; /// In ascending order of the partition_id and block number.
+    Strings getPartsCoveredBy(const MergeTreePartInfo & part_info) const;
+
+    /// Returns parts in ascending order of the partition_id and block number.
+    Strings getParts() const;
 
     size_t size() const;
 
+    MergeTreeDataFormatVersion getFormatVersion() const { return format_version; }
+
 private:
     MergeTreeDataFormatVersion format_version;
-
-    mutable std::mutex mutex;
     std::map<MergeTreePartInfo, String> part_info_to_name;
 
-    /// Do not block mutex.
-    void addImpl(const String & name);
-    String getContainingPartImpl(const MergeTreePartInfo & part_info) const;
+    std::map<MergeTreePartInfo, String>::const_iterator getContainingPartImpl(const MergeTreePartInfo & part_info) const;
 };
 
 }

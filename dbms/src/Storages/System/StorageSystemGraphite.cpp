@@ -1,5 +1,6 @@
 #include <Storages/System/StorageSystemGraphite.h>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Util/Application.h>
+
 
 namespace DB
 {

@@ -24,7 +24,9 @@ In addition, a table can have nested data structures that are processed in a spe
 If the name of a nested table ends in 'Map' and it contains at least two columns that meet the following criteria:
 
 - The first table is numeric ((U)IntN, Date, DateTime), which we'll refer to as the 'key'.
-- The other columns are arithmetic ((U)IntN, Float32/64), which we'll refer to as '(values...)'. Then this nested table is interpreted as a mapping of key =`>` (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
+- The other columns are arithmetic ((U)IntN, Float32/64), which we'll refer to as '(values...)'.
+
+Then this nested table is interpreted as a mapping of key `=>` (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
 
 Examples:
 

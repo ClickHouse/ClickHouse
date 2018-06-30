@@ -1,6 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
+#include <Core/Types.h>
 
 
 namespace DB
@@ -17,6 +18,8 @@ public:
     std::string getName() const override { return name; }
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, const Context & context) const override;
+
+    UInt64 evaluateArgument(const Context & context, ASTPtr & argument) const;
 };
 
 
