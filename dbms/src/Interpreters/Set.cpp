@@ -197,7 +197,10 @@ bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
         for (size_t i = 0; i < keys_size; ++i)
         {
             auto filtered_column = block.getByPosition(i).column->filter(filter->getData(), rows);
-            set_elements[i]->assumeMutableRef().insertRangeFrom(*filtered_column, 0, filtered_column->size());
+            if (!set_elements[i])
+                set_elements[i] = filtered_column;
+            else
+                set_elements[i]->assumeMutableRef().insertRangeFrom(*filtered_column, 0, filtered_column->size());
         }
     }
 
