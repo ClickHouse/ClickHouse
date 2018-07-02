@@ -1473,11 +1473,23 @@ void ExpressionAnalyzer::makeSetsForIndex()
 }
 
 
-void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name)
+void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
 
-    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode), true);
+    SizeLimits set_for_index_size_limits;
+    if (settings.use_index_for_in_with_subqueries_max_values && settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
+    {
+        /// Silently cancel creating the set for index if the specific limit has been reached.
+        set_for_index_size_limits = SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
+    }
+    else
+    {
+        /// If the limit specific for set for index is lower than general limits for set - use general limit.
+        set_for_index_size_limits = SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
+    }
+
+    SetPtr set = std::make_shared<Set>(set_for_index_size_limits, true);
 
     set->setHeader(res.in->getHeader());
     while (Block block = res.in->read())
@@ -1521,7 +1533,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
                 {
                     if (settings.use_index_for_in_with_subqueries)
-                        tryMakeSetFromSubquery(arg);
+                        tryMakeSetForIndexFromSubquery(arg);
                 }
                 else
                 {
