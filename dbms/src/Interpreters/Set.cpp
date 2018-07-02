@@ -135,12 +135,22 @@ void Set::setHeader(const Block & block)
     ConstNullMapPtr null_map{};
     extractNestedColumnsAndNullMap(key_columns, null_map_holder, null_map);
 
+    if (fill_set_elements)
+    {
+        /// Create empty columns with set values in advance.
+        /// It is needed because set may be empty, so method 'insertFromBlock' will be never called.
+        set_elements.reserve(keys_size);
+        for (const auto & type : data_types)
+            set_elements.emplace_back(removeNullable(type)->createColumn());
+    }
+
+
     /// Choose data structure to use for the set.
     data.init(data.chooseMethod(key_columns, key_sizes));
 }
 
 
-bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
+bool Set::insertFromBlock(const Block & block)
 {
     std::unique_lock lock(rwlock);
 
@@ -191,13 +201,10 @@ bool Set::insertFromBlock(const Block & block, bool fill_set_elements)
 
     if (fill_set_elements)
     {
-        if (set_elements.empty())
-            set_elements.resize(keys_size);
-
         for (size_t i = 0; i < keys_size; ++i)
         {
             auto filtered_column = block.getByPosition(i).column->filter(filter->getData(), rows);
-            if (!set_elements[i])
+            if (set_elements[i]->empty())
                 set_elements[i] = filtered_column;
             else
                 set_elements[i]->assumeMutableRef().insertRangeFrom(*filtered_column, 0, filtered_column->size());
@@ -224,7 +231,7 @@ static Field extractValueFromNode(ASTPtr & node, const IDataType & type, const C
 }
 
 
-void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context, bool fill_set_elements)
+void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
 {
     /// Will form a block with values from the set.
 
@@ -295,7 +302,7 @@ void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & co
     }
 
     Block block = header.cloneWithColumns(std::move(columns));
-    insertFromBlock(block, fill_set_elements);
+    insertFromBlock(block);
 }
 
 

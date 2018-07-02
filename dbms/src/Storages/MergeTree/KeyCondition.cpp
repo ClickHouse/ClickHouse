@@ -484,14 +484,17 @@ void KeyCondition::getKeyTuplePositionMapping(
 }
 
 
-/// Try to prepare KeyTuplePositionMapping for tuples from IN expression.
-bool KeyCondition::isTupleIndexable(
+bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & node,
     const Context & context,
     RPNElement & out,
     const SetPtr & prepared_set,
     size_t & out_key_column_num)
 {
+    /// The index can be prepared if the elements of the set were saved in advance.
+    if (!prepared_set->hasExplicitSetElements())
+        return false;
+
     out_key_column_num = 0;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
 
@@ -641,7 +644,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
         bool is_constant_transformed = false;
 
         if (prepared_sets.count(args[1]->range)
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
+            && tryPrepareSetIndex(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
         {
             key_arg_pos = 0;
             is_set_const = true;

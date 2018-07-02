@@ -372,7 +372,10 @@ private:
         const size_t tuple_index,
         size_t & out_key_column_num);
 
-    bool isTupleIndexable(
+    /// If it's possible to make an RPNElement
+    /// that will filter values (possibly tuples) by the content of 'prepared_set',
+    /// do it and return true.
+    bool tryPrepareSetIndex(
         const ASTPtr & node,
         const Context & context,
         RPNElement & out,
