@@ -149,6 +149,11 @@ ExpressionAnalyzerData::~ExpressionAnalyzerData() = default;
 ExpressionAnalyzer::ExtractedSettings::ExtractedSettings(const Settings & settings_)
     : use_index_for_in_with_subqueries(settings_.use_index_for_in_with_subqueries)
     , size_limits_for_set(settings_.max_rows_in_set, settings_.max_bytes_in_set, settings_.set_overflow_mode)
+    , size_limits_for_set_used_with_index(
+        (settings_.use_index_for_in_with_subqueries_max_values &&
+            settings_.use_index_for_in_with_subqueries_max_values < settings_.max_rows_in_set) ?
+        size_limits_for_set :
+        SizeLimits(settings_.use_index_for_in_with_subqueries_max_values, settings_.max_bytes_in_set, OverflowMode::BREAK))
     , distributed_group_by_no_merge(settings_.distributed_group_by_no_merge)
 {}
 
@@ -469,8 +474,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
         auto io = interpreter_subquery->execute();
         PullingAsyncPipelineExecutor executor(io.pipeline);
 
-        SizeLimits size_limits_for_key_condition_sets(0, 400*1024*1024, OverflowMode::BREAK);
-        SetPtr set = std::make_shared<Set>(size_limits_for_key_condition_sets, true, getContext()->getSettingsRef().transform_null_in);
+        SetPtr set = std::make_shared<Set>(settings.size_limits_for_set_used_with_index, true, getContext()->getSettingsRef().transform_null_in);
         set->setHeader(executor.getHeader().getColumnsWithTypeAndName());
 
         Block block;
