@@ -65,7 +65,7 @@
 * The version of the librdkafka library has been updated to v0.11.4.
 * Added the ability to use the system libcpuid library. The library version has been updated to 0.4.0.
 * Fixed the build using the vectorclass library ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2274)).
-* Cmake now generates files for ninja by default (like when using `-G ninja`).
+* Cmake now generates files for ninja by default (like when using `-G Ninja`).
 * Added the ability to use the libtinfo library instead of libtermcap ([Georgy Kondratiev](https://github.com/yandex/ClickHouse/pull/2519)).
 * Fixed a header file conflict in Fedora Rawhide ([#2520](https://github.com/yandex/ClickHouse/issues/2520)).
 
