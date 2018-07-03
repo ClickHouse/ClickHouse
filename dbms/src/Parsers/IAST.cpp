@@ -101,4 +101,12 @@ void IAST::cloneChildren()
         child = child->clone();
 }
 
+
+String IAST::getColumnName() const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnName(write_buffer);
+    return write_buffer.str();
+}
+
 }

@@ -37,4 +37,9 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     }
 }
 
+void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
+{
+    writeString(name, ostr);
+}
+
 }
