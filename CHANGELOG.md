@@ -2,16 +2,16 @@
 
 ## New features:
 
-* Support for the `ALTER TABLE t DELETE WHERE` query for replicated tables and the `system.mutations` table.
+* Support for the `ALTER TABLE t DELETE WHERE` query for replicated tables. Added the `system.mutations` table to track progress of this type of queries.
 * Support for the `ALTER TABLE t [REPLACE|ATTACH] PARTITION` query for MergeTree tables.
 * Support for the `TRUNCATE TABLE` query ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2260)).
 * Several new `SYSTEM` queries for replicated tables (`RESTART REPLICAS`, `SYNC REPLICA`, `[STOP|START] [MERGES|FETCHES|SENDS REPLICATED|REPLICATION QUEUES]`).
 * Added the ability to write to a table with the MySQL engine and the corresponding table function ([sundy-li](https://github.com/yandex/ClickHouse/pull/2294)).
-* Added the `url()` table-valued function and the `URL` table engine ([Alexander Sapin](https://github.com/yandex/ClickHouse/pull/2501)).
+* Added the `url()` table function and the `URL` table engine ([Alexander Sapin](https://github.com/yandex/ClickHouse/pull/2501)).
 * Added the `windowFunnel` aggregate function ([sundy-li](https://github.com/yandex/ClickHouse/pull/2352)).
 * New `startsWith` and `endsWith` functions for strings ([Vadim Plakhtinsky](https://github.com/yandex/ClickHouse/pull/2429)).
 * The `numbers()` table function now allows you to specify the offset ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2535)).
-* The password to `clickhouse-client`  can be entered interactively.
+* The password to `clickhouse-client` can be entered interactively.
 * Server logs can now be sent to syslog ([Alexander Krasheninnikov](https://github.com/yandex/ClickHouse/pull/2459)).
 * Support for logging in dictionaries with a shared library source ([Alexander Sapin](https://github.com/yandex/ClickHouse/pull/2472)).
 * Support for custom CSV delimiters ([Ivan Zhukov](https://github.com/yandex/ClickHouse/pull/2263)).
@@ -21,7 +21,7 @@
 ## Experimental features:
 
 * Added the ability to calculate `and` arguments only where they are needed ([Anastasia Tsarkova](https://github.com/yandex/ClickHouse/pull/2272)).
-* JIT compilation to native code is now available for some expressions ([Python](https://github.com/yandex/ClickHouse/pull/2277)).
+* JIT compilation to native code is now available for some expressions ([pyos](https://github.com/yandex/ClickHouse/pull/2277)).
 
 ## Bug fixes:
 
@@ -32,18 +32,18 @@
 * Fixed an error when analyzing queries with recursive aliases.
 * Fixed an error when reading from ReplacingMergeTree with a condition in PREWHERE that filters all rows ([#2525](https://github.com/yandex/ClickHouse/issues/2525)).
 * User profile settings were not applied when using sessions in the HTTP interface.
-* Fixed how settings are applied from the command line parameters in clickhouse-local.
+* Fixed how settings are applied from the command line parameters in `clickhouse-local`.
 * The ZooKeeper client library now uses the session timeout received from the server.
 * Fixed a bug in the ZooKeeper client library when the client waited for the server response longer than the timeout.
-* Fixed pruning of parts for queries with conditions on partition key columns ([#Two thousand three hundred forty two](https://github.com/yandex/ClickHouse/issues/2342)).
+* Fixed pruning of parts for queries with conditions on partition key columns ([#2342](https://github.com/yandex/ClickHouse/issues/2342)).
 * Merges are now possible after `CLEAR COLUMN IN PARTITION` ([#2315](https://github.com/yandex/ClickHouse/issues/2315)).
 * Type mapping in the ODBC table function has been fixed ([sundy-li](https://github.com/yandex/ClickHouse/pull/2268)).
 * Type comparisons have been fixed for `DateTime` with and without the time zone ([Alexander Bocharov](https://github.com/yandex/ClickHouse/pull/2400)).
 * Fixed syntactic parsing and formatting of the `CAST` operator.
 * Fixed insertion into a materialized view for the Distributed table engine ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2411)).
 * Fixed a race condition when writing data from the `Kafka` engine to materialized views ([Yangkuan Liu](https://github.com/yandex/ClickHouse/pull/2448)).
-* Fixed SSRF in the remote() table function.
-* Fixed exit behavior `clickhouse-client` in multiline mode ([#2510](https://github.com/yandex/ClickHouse/issues/2510)).
+* Fixed SSRF in the `remote()` table function.
+* Fixed exit behavior of `clickhouse-client` in multiline mode ([#2510](https://github.com/yandex/ClickHouse/issues/2510)).
 
 ## Improvements:
 
@@ -65,7 +65,7 @@
 * The version of the librdkafka library has been updated to v0.11.4.
 * Added the ability to use the system libcpuid library. The library version has been updated to 0.4.0.
 * Fixed the build using the vectorclass library ([Babacar Diassé](https://github.com/yandex/ClickHouse/pull/2274)).
-* Cmake now generates files for ninja by default (like when using `G Widget`).
+* Cmake now generates files for ninja by default (like when using `-G ninja`).
 * Added the ability to use the libtinfo library instead of libtermcap ([Georgy Kondratiev](https://github.com/yandex/ClickHouse/pull/2519)).
 * Fixed a header file conflict in Fedora Rawhide ([#2520](https://github.com/yandex/ClickHouse/issues/2520)).
 
