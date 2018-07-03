@@ -125,6 +125,7 @@ pages:
   - 'remote': 'table_functions/remote.md'
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
+  - 'file': 'table_functions/file.md'
 
 - 'Форматы':
   - 'Введение': 'formats/index.md'

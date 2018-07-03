@@ -4,7 +4,7 @@
 
 Позволяет хранить в таблице [NULL](../query_language/syntax.md#null-literal) вместо значения типа `TypeName`.
 
-В качестве `TypeName` нельзя использовать составные типы данных [Array](array.md#data_type-array) и [Tuple](typle.md#data_type-tuple). Составные типы данных могут содержать значения типа `Nullable`, например `Array(Nullable(Int8))`.
+В качестве `TypeName` нельзя использовать составные типы данных [Array](array.md#data_type-array) и [Tuple](tuple.md#data_type-tuple). Составные типы данных могут содержать значения типа `Nullable`, например `Array(Nullable(Int8))`.
 
 Поле типа `Nullable` нельзя включать в индексы.
 
