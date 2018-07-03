@@ -40,7 +40,7 @@ public:
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    String getColumnNameImpl() const override { return name; }
+    void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 
 }

@@ -374,7 +374,6 @@ private:
             echo_queries = config().getBool("echo", false);
         }
 
-        connection_parameters = ConnectionParameters(config());
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -492,6 +491,8 @@ private:
 
     void connect()
     {
+        connection_parameters = ConnectionParameters(config());
+
         if (is_interactive)
             std::cout << "Connecting to "
                 << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at " : "")
