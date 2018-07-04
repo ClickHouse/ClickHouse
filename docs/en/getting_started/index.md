@@ -70,7 +70,7 @@ Docker image: <https://hub.docker.com/r/yandex/clickhouse-server/>
 
 RPM packages for CentOS or RHEL: <https://github.com/Altinity/clickhouse-rpm-install>
 
-Gentoo overlay: <https://github.com/kmeaw/clickhouse-overlay>
+Gentoo: `emerge clickhouse`
 
 ## Launch
 
