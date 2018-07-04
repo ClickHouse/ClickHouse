@@ -97,7 +97,7 @@ public:
 
     String getQueryID();
 
-    /// Starts new query and create new thread group fro it, current thread becomes master thread of the query
+    /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
 
     /// Attaches slave thread to existing thread group
