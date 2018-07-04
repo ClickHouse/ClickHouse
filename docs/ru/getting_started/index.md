@@ -16,7 +16,7 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 В целях тестирования и разработки, система может быть установлена на один сервер или на рабочий компьютер.
 
-### Установка из пакетов для Debian/Ubuntu 
+### Установка из пакетов для Debian/Ubuntu
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
 
@@ -70,7 +70,7 @@ Docker образ: <https://hub.docker.com/r/yandex/clickhouse-server/>
 
 RPM пакеты для CentOS, RHEL: <https://github.com/Altinity/clickhouse-rpm-install>
 
-Gentoo overlay: <https://github.com/kmeaw/clickhouse-overlay>
+Gentoo: `emerge clickhouse`
 
 ## Запуск
 
