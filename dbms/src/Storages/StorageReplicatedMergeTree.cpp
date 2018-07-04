@@ -2323,16 +2323,6 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     String path_created = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
-    const String & partition_id = parts[0]->info.partition_id;
-    for (size_t i = 0; i + 1 < parts.size(); ++i)
-    {
-        /// Remove the unnecessary entries about non-existent blocks.
-        for (Int64 number = parts[i]->info.max_block + 1; number <= parts[i + 1]->info.min_block - 1; ++number)
-        {
-            zookeeper->tryRemove(zookeeper_path + "/block_numbers/" + partition_id + "/block-" + padIndex(number));
-        }
-    }
-
     if (out_log_entry)
         *out_log_entry = entry;
 
@@ -3414,7 +3404,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 }
 
 
-std::optional<AbandonableLockInZooKeeper>
+std::optional<EphemeralLockInZooKeeper>
 StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path)
 {
@@ -3444,11 +3434,11 @@ StorageReplicatedMergeTree::allocateBlockNumber(
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
-    AbandonableLockInZooKeeper lock;
+    EphemeralLockInZooKeeper lock;
     /// 2 RTT
     try
     {
-        lock = AbandonableLockInZooKeeper(
+        lock = EphemeralLockInZooKeeper(
             partition_path + "/block-", zookeeper_path + "/temp", *zookeeper, &deduplication_check_ops);
     }
     catch (const zkutil::KeeperMultiException & e)
@@ -4385,7 +4375,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     MergeTreeData::MutableDataPartsVector dst_parts;
     Strings block_id_paths;
     Strings part_checksums;
-    std::vector<AbandonableLockInZooKeeper> abandonable_locks;
+    std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
 
     LOG_DEBUG(log, "Cloning " << src_all_parts.size() << " parts");
 
@@ -4441,7 +4431,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         src_parts.emplace_back(src_part);
         dst_parts.emplace_back(dst_part);
-        abandonable_locks.emplace_back(std::move(*lock));
+        ephemeral_locks.emplace_back(std::move(*lock));
         block_id_paths.emplace_back(block_id_path);
         part_checksums.emplace_back(hash_hex);
     }
@@ -4482,7 +4472,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         for (size_t i = 0; i < dst_parts.size(); ++i)
         {
             getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-            abandonable_locks[i].getUnlockOps(ops);
+            ephemeral_locks[i].getUnlockOps(ops);
 
             if (ops.size() > zkutil::MULTI_BATCH_SIZE)
             {
@@ -4523,7 +4513,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     String log_znode_path = dynamic_cast<const zkutil::CreateResponse &>(*op_results.back()).path_created;
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-    for (auto & lock : abandonable_locks)
+    for (auto & lock : ephemeral_locks)
         lock.assumeUnlocked();
 
     /// Forcibly remove replaced parts from ZooKeeper
