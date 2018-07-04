@@ -1,11 +1,13 @@
-#include "AggregateFunctionHistogram.h"
-#include "AggregateFunctionFactory.h"
-#include "FactoryHelpers.h"
-#include "Helpers.h"
+#include <AggregateFunctions/AggregateFunctionHistogram.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
 
 #include <Common/FieldVisitors.h>
 
-namespace DB {
+
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -14,7 +16,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace {
+namespace
+{
 
 AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, const DataTypes & arguments, const Array & params)
 {
