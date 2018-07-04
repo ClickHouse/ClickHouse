@@ -2282,14 +2282,20 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     bool deduplicate,
     ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
-    bool all_in_zk = true;
+    std::vector<std::future<zkutil::ExistsResponse>> exists_futures;
+    exists_futures.reserve(parts.size());
     for (const auto & part : parts)
+        exists_futures.emplace_back(zookeeper->asyncExists(replica_path + "/parts/" + part->name));
+
+    bool all_in_zk = true;
+    for (size_t i = 0; i < parts.size(); ++i)
     {
         /// If there is no information about part in ZK, we will not merge it.
-        if (!zookeeper->exists(replica_path + "/parts/" + part->name))
+        if (exists_futures[i].get().error == ZooKeeperImpl::ZooKeeper::ZNONODE)
         {
             all_in_zk = false;
 
+            const auto & part = parts[i];
             if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
                 LOG_WARNING(log, "Part " << part->name << " (that was selected for merge)"
@@ -2300,6 +2306,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
             }
         }
     }
+
     if (!all_in_zk)
         return false;
 
