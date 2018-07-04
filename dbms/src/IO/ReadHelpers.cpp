@@ -501,7 +501,7 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & csv)
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     if (buf.eof())
         throwReadAfterEOF();
@@ -513,7 +513,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     if (maybe_quote == delimiter)
         return;
 
-    if ((csv.single_quote && maybe_quote == '\'') || (csv.double_quote && maybe_quote == '"'))
+    if ((csv.allow_single_quotes && maybe_quote == '\'') || (csv.allow_double_quotes && maybe_quote == '"'))
     {
         ++buf.position();
 
@@ -577,13 +577,13 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     }
 }
 
-void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & csv)
+void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    readCSVStringInto(s, buf, csv);
+    readCSVStringInto(s, buf, settings);
 }
 
-template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & csv);
+template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>

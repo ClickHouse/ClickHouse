@@ -83,16 +83,16 @@ static inline void skipWhitespacesAndTabs(ReadBuffer & buf)
 }
 
 
-static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & csv, size_t num_columns)
+static void skipRow(ReadBuffer & istr, const FormatSettings::CSV & settings, size_t num_columns)
 {
     String tmp;
     for (size_t i = 0; i < num_columns; ++i)
     {
         skipWhitespacesAndTabs(istr);
-        readCSVString(tmp, istr, csv);
+        readCSVString(tmp, istr, settings);
         skipWhitespacesAndTabs(istr);
 
-        skipDelimiter(istr, csv.delimiter, i + 1 == num_columns);
+        skipDelimiter(istr, settings.delimiter, i + 1 == num_columns);
     }
 }
 
