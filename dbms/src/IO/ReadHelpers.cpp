@@ -506,14 +506,14 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
     if (buf.eof())
         throwReadAfterEOF();
 
-    const char delimiter = csv.delimiter;
+    const char delimiter = settings.delimiter;
     const char maybe_quote = *buf.position();
 
     /// Emptiness and not even in quotation marks.
     if (maybe_quote == delimiter)
         return;
 
-    if ((csv.allow_single_quotes && maybe_quote == '\'') || (csv.allow_double_quotes && maybe_quote == '"'))
+    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
         ++buf.position();
 
