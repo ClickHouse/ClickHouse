@@ -20,7 +20,9 @@
 
 #include <queue>
 
-namespace DB {
+
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -58,8 +60,8 @@ private:
     WeightedValue * points = nullptr;
 
     // calculated lower and upper bounds of seen points
-    Mean lower_bound = std::numeric_limits<Mean>::max();
-    Mean upper_bound = std::numeric_limits<Mean>::min();
+    Mean lower_bound = 0;
+    Mean upper_bound = 0;
 
 
     static constexpr Mean epsilon = 1e-8;   /// TODO How this value was chosen?
@@ -203,13 +205,19 @@ public:
     void add(Mean value, Weight weight, Arena * arena, UInt32 max_bins)
     {
         if (!points)
+        {
             init(arena, max_bins);
+            lower_bound = value;
+            upper_bound = value;
+        }
+        else
+        {
+            lower_bound = std::min(lower_bound, value);
+            upper_bound = std::max(upper_bound, value);
+        }
 
         points[size] = {value, weight};
         ++size;
-
-        lower_bound = std::min(lower_bound, value);
-        upper_bound = std::max(upper_bound, value);
 
         if (size >= max_bins * 2)
             compress(max_bins);
@@ -217,12 +225,23 @@ public:
 
     void merge(const AggregateFunctionHistogramData & other, Arena * arena, UInt32 max_bins)
     {
-        lower_bound = std::min(lower_bound, other.lower_bound);
-        upper_bound = std::max(lower_bound, other.upper_bound);
+        if (other.size)
+        {
+            if (!size)
+            {
+                lower_bound = other.lower_bound;
+                upper_bound = other.upper_bound;
+            }
+            else
+            {
+                lower_bound = std::min(lower_bound, other.lower_bound);
+                upper_bound = std::max(lower_bound, other.upper_bound);
+            }
 
-        /// TODO possibly inefficient
-        for (size_t i = 0; i < other.size; ++i)
-            add(other.points[i].mean, other.points[i].weight, arena, max_bins);
+            /// TODO possibly inefficient
+            for (size_t i = 0; i < other.size; ++i)
+                add(other.points[i].mean, other.points[i].weight, arena, max_bins);
+        }
     }
 
     void write(WriteBuffer & buf) const
@@ -258,7 +277,7 @@ class AggregateFunctionHistogram final: public IAggregateFunctionDataHelper<Aggr
 private:
     using Data = AggregateFunctionHistogramData;
 
-    UInt32 max_bins;
+    const UInt32 max_bins;
 
 public:
     AggregateFunctionHistogram(UInt32 max_bins)
@@ -278,8 +297,8 @@ public:
         types.emplace_back(mean);
         // weight
         types.emplace_back(weight);
-        auto tuple = std::make_shared<DataTypeTuple>(types);
 
+        auto tuple = std::make_shared<DataTypeTuple>(types);
         return std::make_shared<DataTypeArray>(tuple);
     }
 
