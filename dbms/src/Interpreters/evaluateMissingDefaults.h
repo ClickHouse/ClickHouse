@@ -17,4 +17,9 @@ void evaluateMissingDefaults(Block & block,
     const std::unordered_map<std::string, ColumnDefault> & column_defaults,
     const Context & context);
 
+void evaluateMissingDefaultsUnsafe(Block & block,
+    const NamesAndTypesList & required_columns,
+    const std::unordered_map<std::string, ColumnDefault> & column_defaults,
+    const Context & context);
+
 }

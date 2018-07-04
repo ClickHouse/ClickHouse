@@ -38,6 +38,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -941,7 +942,9 @@ private:
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
-        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
+        ColumnDefaults column_defaults; // TODO: get from server
+        BlockInputStreamPtr defs_block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
+        BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(defs_block_input);
 
         async_block_input->readPrefix();
 

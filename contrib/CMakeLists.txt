@@ -148,6 +148,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
     endif ()
 endif ()
 
-if (USE_INTERNAL_LLVM_LIBRARY)
+if (ENABLE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     add_subdirectory (llvm/llvm)
 endif ()

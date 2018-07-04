@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Core/Block.h>
+#include <Interpreters/evaluateMissingDefaults.h>
 
 
 namespace DB

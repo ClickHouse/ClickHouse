@@ -63,6 +63,12 @@ static void skipColonDelimeter(ReadBuffer & istr)
 
 bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 {
+    RowReadExtention tmp;
+    return extendedRead(columns, tmp);
+}
+
+bool JSONEachRowRowInputStream::extendedRead(MutableColumns & columns, RowReadExtention & ext)
+{
     skipWhitespaceIfAny(istr);
 
     /// We consume ;, or \n before scanning a new row, instead scanning to next row at the end.
@@ -84,8 +90,8 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     /// TODO Ability to provide your DEFAULTs.
-    bool read_columns[num_columns];
-    memset(read_columns, 0, num_columns);
+    auto & read_columns = ext.read_columns;
+    read_columns.assign(num_columns, false);
 
     bool first = true;
     while (true)
