@@ -53,10 +53,10 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     {
         writeCString("{", wb);
         DB::writeString(msg_ext.query_id, wb);
-        writeCString("}", wb);
+        writeCString("} ", wb);
     }
 
-    writeCString(" <", wb);
+    writeCString("<", wb);
     DB::writeString(getPriorityName(static_cast<int>(msg.getPriority())), wb);
     writeCString("> ", wb);
     DB::writeString(msg.getSource(), wb);
