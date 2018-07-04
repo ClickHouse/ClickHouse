@@ -11,14 +11,8 @@
 namespace DB
 {
 
-void evaluateMissingDefaults(Block & block,
-    const NamesAndTypesList & required_columns,
-    const ColumnDefaults & column_defaults,
-    const Context & context)
+static ASTPtr requiredExpressions(Block & block, const NamesAndTypesList & required_columns, const ColumnDefaults & column_defaults)
 {
-    if (column_defaults.empty())
-        return;
-
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
 
     for (const auto & column : required_columns)
@@ -34,6 +28,19 @@ void evaluateMissingDefaults(Block & block,
                 setAlias(it->second.expression->clone(), it->first));
     }
 
+    return default_expr_list;
+}
+
+
+void evaluateMissingDefaults(Block & block,
+    const NamesAndTypesList & required_columns,
+    const ColumnDefaults & column_defaults,
+    const Context & context)
+{
+    if (column_defaults.empty())
+        return;
+
+    ASTPtr default_expr_list = requiredExpressions(block, required_columns, column_defaults);
     /// nothing to evaluate
     if (default_expr_list->children.empty())
         return;
@@ -57,6 +64,26 @@ void evaluateMissingDefaults(Block & block,
 
         block.insert(std::move(column_name_type));
     }
+}
+
+
+void evaluateMissingDefaultsUnsafe(Block & block,
+    const NamesAndTypesList & required_columns,
+    const std::unordered_map<std::string, ColumnDefault> & column_defaults,
+    const Context & context)
+{
+    if (column_defaults.empty())
+        return;
+
+    ASTPtr default_expr_list = requiredExpressions(block, required_columns, column_defaults);
+    if (default_expr_list->children.empty())
+        return;
+
+    NamesAndTypesList available_columns;
+    for (size_t i = 0, size = block.columns(); i < size; ++i)
+        available_columns.emplace_back(block.getByPosition(i).name, block.getByPosition(i).type);
+
+    ExpressionAnalyzer{default_expr_list, context, {}, available_columns}.getActions(true)->execute(block);
 }
 
 }

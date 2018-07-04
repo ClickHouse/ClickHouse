@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include <Core/Types.h>
 
 
@@ -41,6 +43,24 @@ struct BlockInfo
 
     /// Read the values in binary form.
     void read(ReadBuffer & in);
+};
+
+/// Block extention to support delayed defaults.
+/// It's expected that it would be lots unset defaults or none.
+/// NOTE It's possible to make better solution for sparse values.
+class BlockDelayedDefaults
+{
+public:
+    using BitMask = std::vector<bool>;
+    using MaskById = std::unordered_map<size_t, BitMask>;
+
+    const BitMask & getColumnBitmask(size_t column_idx) const;
+    void setBit(size_t column_idx, size_t row_idx);
+    bool empty() const { return columns_defaults.empty(); }
+    size_t size() const { return columns_defaults.size(); }
+
+private:
+    MaskById columns_defaults;
 };
 
 }

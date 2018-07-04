@@ -35,6 +35,7 @@ private:
 
 public:
     BlockInfo info;
+    BlockDelayedDefaults delayed_defaults;
 
     Block() = default;
     Block(std::initializer_list<ColumnWithTypeAndName> il);
