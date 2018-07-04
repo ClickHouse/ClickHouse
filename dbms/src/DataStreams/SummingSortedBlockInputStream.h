@@ -75,6 +75,7 @@ private:
         MutableColumnPtr merged_column;
         std::vector<char> state;
         bool created = false;
+        bool isAggFuncType = false;
 
         void init(const char * function_name, const DataTypes & argument_types)
         {
@@ -87,7 +88,10 @@ private:
         {
             if (created)
                 return;
-            function->create(state.data());
+            if (isAggFuncType)
+                merged_column->insertDefault();
+            else
+                function->create(state.data());
             created = true;
         }
 
@@ -95,7 +99,8 @@ private:
         {
             if (!created)
                 return;
-            function->destroy(state.data());
+            if (!isAggFuncType)
+                function->destroy(state.data());
             created = false;
         }
 
