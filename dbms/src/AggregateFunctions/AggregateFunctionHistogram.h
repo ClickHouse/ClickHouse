@@ -185,7 +185,8 @@ private:
 public:
     void insertResultInto(ColumnVector<Mean> & to_lower, ColumnVector<Mean> & to_upper, ColumnVector<Weight> & to_weights, UInt32 max_bins)
     {
-        if (!points) return;
+        if (!points)
+            return;
 
         compress(max_bins);
         unique();
