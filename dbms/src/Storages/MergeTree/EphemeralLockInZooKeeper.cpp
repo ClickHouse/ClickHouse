@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <common/logger_useful.h>
 
@@ -11,59 +11,59 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-AbandonableLockInZooKeeper::AbandonableLockInZooKeeper(
+EphemeralLockInZooKeeper::EphemeralLockInZooKeeper(
     const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Requests * precheck_ops)
     : zookeeper(&zookeeper_), path_prefix(path_prefix_)
 {
-    String abandonable_path = temp_path + "/abandonable_lock-";
+    /// The /abandonable_lock- name is for backward compatibility.
+    String holder_path_prefix = temp_path + "/abandonable_lock-";
 
     /// Let's create an secondary ephemeral node.
     if (!precheck_ops || precheck_ops->empty())
     {
-        holder_path = zookeeper->create(abandonable_path, "", zkutil::CreateMode::EphemeralSequential);
+        holder_path = zookeeper->create(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential);
     }
     else
     {
-        precheck_ops->emplace_back(zkutil::makeCreateRequest(abandonable_path, "", zkutil::CreateMode::EphemeralSequential));
+        precheck_ops->emplace_back(zkutil::makeCreateRequest(holder_path_prefix, "", zkutil::CreateMode::EphemeralSequential));
         zkutil::Responses op_results = zookeeper->multi(*precheck_ops);
         holder_path = dynamic_cast<const zkutil::CreateResponse &>(*op_results.back()).path_created;
     }
 
     /// Write the path to the secondary node in the main node.
-    path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::PersistentSequential);
+    path = zookeeper->create(path_prefix, holder_path, zkutil::CreateMode::EphemeralSequential);
 
     if (path.size() <= path_prefix.size())
-        throw Exception("Logical error: name of sequential node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error: name of the main node is shorter than prefix.", ErrorCodes::LOGICAL_ERROR);
 }
 
-void AbandonableLockInZooKeeper::unlock()
+void EphemeralLockInZooKeeper::unlock()
 {
-    checkCreated();
-    zookeeper->remove(path);
-    zookeeper->remove(holder_path);
+    zkutil::Requests ops;
+    getUnlockOps(ops);
+    zookeeper->multi(ops);
     holder_path = "";
 }
 
-void AbandonableLockInZooKeeper::getUnlockOps(zkutil::Requests & ops)
+void EphemeralLockInZooKeeper::getUnlockOps(zkutil::Requests & ops)
 {
     checkCreated();
     ops.emplace_back(zkutil::makeRemoveRequest(path, -1));
     ops.emplace_back(zkutil::makeRemoveRequest(holder_path, -1));
 }
 
-AbandonableLockInZooKeeper::~AbandonableLockInZooKeeper()
+EphemeralLockInZooKeeper::~EphemeralLockInZooKeeper()
 {
-    if (!zookeeper || holder_path.empty())
+    if (!isCreated())
         return;
 
     try
     {
-        zookeeper->tryRemove(holder_path);
-        zookeeper->trySet(path, ""); /// It's not strictly necessary.
+        unlock();
     }
     catch (...)
     {
-        tryLogCurrentException("~AbandonableLockInZooKeeper");
+        tryLogCurrentException("~EphemeralLockInZooKeeper");
     }
 }
 
