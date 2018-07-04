@@ -69,12 +69,16 @@ private:
     /// Stores aggregation function, state, and columns to be used as function arguments
     struct AggregateDescription
     {
+        /// An aggregate function 'sumWithOverflow' or 'sumMap' for summing.
         AggregateFunctionPtr function;
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;
         MutableColumnPtr merged_column;
         std::vector<char> state;
         bool created = false;
+
+        /// In case when column has type AggregateFunction: use the aggregate function from itself instead of 'function' above.
+        bool is_agg_func_type = false;
 
         void init(const char * function_name, const DataTypes & argument_types)
         {
@@ -87,7 +91,10 @@ private:
         {
             if (created)
                 return;
-            function->create(state.data());
+            if (is_agg_func_type)
+                merged_column->insertDefault();
+            else
+                function->create(state.data());
             created = true;
         }
 
@@ -95,7 +102,8 @@ private:
         {
             if (!created)
                 return;
-            function->destroy(state.data());
+            if (!is_agg_func_type)
+                function->destroy(state.data());
             created = false;
         }
 
