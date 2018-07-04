@@ -241,7 +241,7 @@ void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t 
 void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readCSV(s, istr, settings.csv.delimiter);
+    readCSV(s, istr, settings.csv);
     deserializeFromString(function, column, s);
 }
 

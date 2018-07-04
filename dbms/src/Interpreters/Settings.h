@@ -262,6 +262,8 @@ struct Settings
     M(SettingUInt64, max_network_bandwidth_for_user, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running user queries. Zero means unlimited.")\
     M(SettingUInt64, max_network_bandwidth_for_all_users, 0, "The maximum speed of data exchange over the network in bytes per second for all concurrently running queries. Zero means unlimited.") \
     M(SettingChar, format_csv_delimiter, ',', "The character to be considered as a delimiter in CSV data. If setting with a string, a string has to have a length of 1.") \
+    M(SettingBool, format_csv_single_quote, 1, "If it is set to true, single quote is treated as string field quote character.") \
+    M(SettingBool, format_csv_double_quote, 1, "If it is set to true, double quote is treated as string field quote character.") \
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
     \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
