@@ -76,8 +76,8 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         }
         else
         {
-            bool isAggFunc = checkDataType<DataTypeAggregateFunction>(&*column.type);
-            if (!column.type->isSummable() && !isAggFunc)
+            bool is_agg_func = checkDataType<DataTypeAggregateFunction>(column.type.get());
+            if (!column.type->isSummable() && !is_agg_func)
             {
                 column_numbers_not_to_aggregate.push_back(i);
                 continue;
@@ -96,10 +96,10 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
             {
                 // Create aggregator to sum this column
                 AggregateDescription desc;
-                desc.isAggFuncType = isAggFunc;
+                desc.is_agg_func_type = is_agg_func;
                 desc.column_numbers = {i};
 
-                if (!isAggFunc)
+                if (!is_agg_func)
                 {
                     desc.init("sumWithOverflow", {column.type});
                 }
@@ -202,7 +202,7 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
         // Do not insert if the aggregation state hasn't been created
         if (desc.created)
         {
-            if (desc.isAggFuncType)
+            if (desc.is_agg_func_type)
             {
                 current_row_is_zero = false;
             }
@@ -274,7 +274,7 @@ Block SummingSortedBlockInputStream::readImpl()
     for (auto & desc : columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.isAggFuncType && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.is_agg_func_type && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -293,7 +293,7 @@ Block SummingSortedBlockInputStream::readImpl()
     /// Place aggregation results into block.
     for (auto & desc : columns_to_aggregate)
     {
-        if (!desc.isAggFuncType && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.is_agg_func_type && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
@@ -481,7 +481,7 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {
-        if (desc.isAggFuncType)
+        if (desc.is_agg_func_type)
         {
             // desc.state is not used for AggregateFunction types
             auto & col = cursor->all_columns[desc.column_numbers[0]];
