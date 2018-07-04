@@ -415,7 +415,7 @@ void DataTypeArray::serializeTextCSV(const IColumn & column, size_t row_num, Wri
 void DataTypeArray::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readCSV(s, istr, settings.csv.delimiter);
+    readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
     deserializeText(column, rb, settings);
 }
