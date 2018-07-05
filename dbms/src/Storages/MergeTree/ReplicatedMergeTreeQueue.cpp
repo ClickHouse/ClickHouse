@@ -1266,6 +1266,10 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         prev_virtual_parts = queue.virtual_parts;
     }
 
+    /// Load current quorum status.
+    auto quorum_last_part_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/last_part");
+    auto quorum_status_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/status");
+
     /// Load current inserts
     std::unordered_set<String> lock_holder_paths;
     for (const String & entry : zookeeper->getChildren(queue.zookeeper_path + "/temp"))
@@ -1317,14 +1321,15 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     queue_.pullLogsToQueue(zookeeper);
 
-    /// Load current quorum status.
-    zookeeper->tryGet(queue.zookeeper_path + "/quorum/last_part", last_quorum_part);
+    zkutil::GetResponse quorum_last_part_response = quorum_last_part_future.get();
+    if (!quorum_last_part_response.error)
+        last_quorum_part = quorum_last_part_response.data;
 
-    String quorum_status_str;
-    if (zookeeper->tryGet(queue.zookeeper_path + "/quorum/status", quorum_status_str))
+    zkutil::GetResponse quorum_status_response = quorum_status_future.get();
+    if (!quorum_status_response.error)
     {
         ReplicatedMergeTreeQuorumEntry quorum_status;
-        quorum_status.fromString(quorum_status_str);
+        quorum_status.fromString(quorum_status_response.data);
         inprogress_quorum_part = quorum_status.part_name;
     }
     else
