@@ -2062,7 +2062,10 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        {
+            restarting_thread->wakeup();
             return;
+        }
 
         queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
