@@ -3,8 +3,9 @@
 
 #include <Databases/IDatabase.h>
 
+#include <DataTypes/DataTypeFactory.h>
+
 #include <Storages/StorageDistributed.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageFactory.h>
@@ -316,10 +317,25 @@ void StorageDistributed::truncate(const ASTPtr &)
     }
 }
 
+
+namespace
+{
+    /// NOTE This is weird. Get rid of this.
+    std::map<String, String> virtual_columns =
+    {
+        {"_table", "String"},
+        {"_part", "String"},
+        {"_part_index", "UInt64"},
+        {"_sample_factor", "Float64"},
+    };
+}
+
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
-    if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
-        return { column_name, type };
+    auto it = virtual_columns.find(column_name);
+    if (it != virtual_columns.end())
+        return { it->first, DataTypeFactory::instance().get(it->second) };
 
     return getColumns().getPhysical(column_name);
 }
@@ -327,7 +343,7 @@ NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || getColumns().hasPhysical(column_name);
+    return virtual_columns.count(column_name) || getColumns().hasPhysical(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors()
