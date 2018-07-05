@@ -484,16 +484,8 @@ bool StorageMergeTree::optimize(
         MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
         std::unordered_set<String> partition_ids;
 
-        const String * prev_partition_id = nullptr;
         for (const MergeTreeData::DataPartPtr & part : data_parts)
-        {
-            const String & partition_id = part->info.partition_id;
-            if (!prev_partition_id || partition_id != *prev_partition_id)
-            {
-                prev_partition_id = &partition_id;
-                partition_ids.emplace(partition_id);
-            }
-        }
+            partition_ids.emplace(part->info.partition_id);
 
         for (const String & partition_id : partition_ids)
         {
