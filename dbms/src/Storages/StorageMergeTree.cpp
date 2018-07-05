@@ -479,11 +479,40 @@ bool StorageMergeTree::optimize(
         partition_id = data.getPartitionIDFromQuery(partition, context);
 
     String disable_reason;
-    if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate, &disable_reason))
+    if (!partition && final)
     {
-        if (context.getSettingsRef().optimize_throw_if_noop)
-            throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
-        return false;
+        MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+        std::unordered_set<String> partition_ids;
+
+        const String * prev_partition_id = nullptr;
+        for (const MergeTreeData::DataPartPtr & part : data_parts)
+        {
+            const String & partition_id = part->info.partition_id;
+            if (!prev_partition_id || partition_id != *prev_partition_id)
+            {
+                prev_partition_id = &partition_id;
+                partition_ids.emplace(partition_id);
+            }
+        }
+
+        for (const String & partition_id : partition_ids)
+        {
+            if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, true, deduplicate, &disable_reason))
+            {
+                if (context.getSettingsRef().optimize_throw_if_noop)
+                    throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+                return false;
+            }
+        }
+    }
+    else
+    {
+        if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate, &disable_reason))
+        {
+            if (context.getSettingsRef().optimize_throw_if_noop)
+                throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
+            return false;
+        }
     }
 
     return true;
