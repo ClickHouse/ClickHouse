@@ -19,6 +19,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <queue>
+#include <stddef.h>
 
 namespace DB {
 
@@ -49,8 +50,6 @@ private:
     };
 
 private:
-    UInt32 max_bins;
-
     // quantity of stored weighted-values
     UInt32 size;
 
@@ -61,9 +60,7 @@ private:
     static constexpr Mean epsilon = 1e-8;
 
     // Weighted values representation of histogram.
-    // We allow up to max_bins * 2 values stored in intermediate states
-    // Is allocated in arena, so there is no explicit management.
-    WeightedValue* points;
+    WeightedValue points[0];
 
 private:
     void sort()
@@ -78,7 +75,7 @@ private:
     /**
      * Repeatedly fuse most close values until max_bins bins left
      */
-    void compress()
+    void compress(UInt32 max_bins)
     {
         sort();
         auto newsz = size;
@@ -163,25 +160,21 @@ private:
         size = l + 1;
     }
 
-    void init(Arena* arena)
-    {
-        points = reinterpret_cast<WeightedValue*>(arena->alloc(max_bins * 2 * sizeof(WeightedValue)));
-    }
-
 public:
-    AggregateFunctionHistogramData(UInt32 max_bins)
-        : max_bins(max_bins)
-        , size(0)
+    AggregateFunctionHistogramData()
+        : size(0)
         , lower_bound(std::numeric_limits<Mean>::max())
         , upper_bound(std::numeric_limits<Mean>::lowest())
-        , points(nullptr)
     {
+        static_assert(offsetof(AggregateFunctionHistogramData, points) == sizeof(AggregateFunctionHistogramData), "points should be last member");
     }
 
-    void insertResultInto(ColumnVector<Mean>& to_lower, ColumnVector<Mean>& to_upper, ColumnVector<Weight>& to_weights) {
-        if (!points) return;
+    static size_t structSize(size_t max_bins) {
+        return sizeof(AggregateFunctionHistogramData) + max_bins * 2 * sizeof(WeightedValue);
+    }
 
-        compress();
+    void insertResultInto(ColumnVector<Mean>& to_lower, ColumnVector<Mean>& to_upper, ColumnVector<Weight>& to_weights, UInt32 max_bins) {
+        compress(max_bins);
         unique();
 
         for (size_t i = 0; i < size; i++)
@@ -196,27 +189,25 @@ public:
         }
     }
 
-    void add(Mean value, Weight weight, Arena* arena)
+    void add(Mean value, Weight weight, UInt32 max_bins)
     {
-        if (!points)
-            init(arena);
         points[size++] = {value, weight};
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
 
         if (size >= max_bins * 2)
         {
-            compress();
+            compress(max_bins);
         }
     }
 
-    void merge(const AggregateFunctionHistogramData& other, Arena* arena)
+    void merge(const AggregateFunctionHistogramData& other, UInt32 max_bins)
     {
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(lower_bound, other.upper_bound);
         for (size_t i = 0; i < other.size; i++)
         {
-            add(other.points[i].mean, other.points[i].weight, arena);
+            add(other.points[i].mean, other.points[i].weight, max_bins);
         }
     }
 
@@ -229,7 +220,7 @@ public:
         buf.write(reinterpret_cast<const char *>(points), size * sizeof(WeightedValue));
     }
 
-    void read(ReadBuffer & buf, Arena* arena)
+    void read(ReadBuffer & buf, UInt32 max_bins)
     {
         buf.read(reinterpret_cast<char *>(&lower_bound), sizeof(lower_bound));
         buf.read(reinterpret_cast<char *>(&upper_bound), sizeof(upper_bound));
@@ -238,9 +229,6 @@ public:
 
         if (size > max_bins * 2)
             throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
-
-        if (!points)
-            init(arena);
 
         buf.read(reinterpret_cast<char *>(points), size * sizeof(points[0]));
     }
@@ -288,12 +276,12 @@ public:
 
     size_t sizeOfData() const override
     {
-        return sizeof(Data);
+        return Data::structSize(max_bins);
     }
 
     void create(AggregateDataPtr place) const override
     {
-        new (place) Data(max_bins);
+        new (place) Data();
     }
 
     DataTypePtr getReturnType() const override
@@ -313,20 +301,15 @@ public:
         return std::make_shared<DataTypeArray>(tuple);
     }
 
-    bool allocatesMemoryInArena() const override
-    {
-        return true;
-    }
-
-    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         auto val = static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
-        this->data(place).add(static_cast<Data::Mean>(val), 1, arena);
+        this->data(place).add(static_cast<Data::Mean>(val), 1, max_bins);
     }
 
-    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), arena);
+        this->data(place).merge(this->data(rhs), max_bins);
     }
 
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
@@ -334,9 +317,9 @@ public:
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override
     {
-        this->data(place).read(buf, arena);
+        this->data(place).read(buf, max_bins);
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
@@ -350,7 +333,7 @@ public:
         auto & to_lower = static_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(0));
         auto & to_upper = static_cast<ColumnVector<Data::Mean> &>(to_tuple.getColumn(1));
         auto & to_weights = static_cast<ColumnVector<Data::Weight> &>(to_tuple.getColumn(2));
-        data.insertResultInto(to_lower, to_upper, to_weights);
+        data.insertResultInto(to_lower, to_upper, to_weights, max_bins);
 
         offsets_to.push_back(to_tuple.size());
     }
