@@ -1,11 +1,12 @@
-#include "AggregateFunctionHistogram.h"
-#include "AggregateFunctionFactory.h"
-#include "FactoryHelpers.h"
-#include "Helpers.h"
+#include <AggregateFunctions/AggregateFunctionHistogram.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/FactoryHelpers.h>
+#include <AggregateFunctions/Helpers.h>
 
 #include <Common/FieldVisitors.h>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -14,12 +15,13 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace {
+namespace
+{
 
 AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     if (params.size() != 1)
-        throw Exception("Function " + name + " requires bins count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Function " + name + " requires single parameter: bins count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     UInt32 bins_count = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), params[0]);
 
