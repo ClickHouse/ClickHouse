@@ -13,17 +13,22 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.mutations_r2(d Date, x UInt32, s
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE x = 1"
 
 # Insert some data
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1 VALUES ('2000-01-01', 1, 'a')"
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1 VALUES \
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1(d, x, s) VALUES \
+    ('2000-01-01', 1, 'a')"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1(d, x, s) VALUES \
     ('2000-01-01', 2, 'b'), ('2000-01-01', 3, 'c'), ('2000-01-01', 4, 'd') \
     ('2000-02-01', 2, 'b'), ('2000-02-01', 3, 'c'), ('2000-02-01', 4, 'd')"
+
+# Try some malformed queries that should fail validation.
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE nonexistent = 0" 2>/dev/null || echo "Query should fail 1"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE d = '11'" 2>/dev/null || echo "Query should fail 2"
 
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE x % 2 = 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE s = 'd'"
 
 # Insert more data
-${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1 VALUES \
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1(d, x, s) VALUES \
     ('2000-01-01', 5, 'e'), ('2000-02-01', 5, 'e')"
 
 # Wait until all mutations are done.
@@ -36,7 +41,6 @@ do
 
     if [[ $i -eq 100 ]]; then
        echo "Timed out while waiting for mutations to execute!"
-       exit 1
     fi
 done
 
