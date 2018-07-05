@@ -9,7 +9,6 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -48,22 +47,28 @@ StorageMerge::StorageMerge(
 }
 
 
+/// NOTE Structure of underlying tables as well as their set are not constant,
+///  so the results of these methods may become obsolete after the call.
+
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
-    auto type = VirtualColumnFactory::tryGetType(column_name);
-    if (type)
-        return NameAndTypePair(column_name, type);
-
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        return first_table->getColumn(column_name);
     return IStorage::getColumn(column_name);
 }
 
 bool StorageMerge::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        return first_table->hasColumn(column_name);
+    return IStorage::hasColumn(column_name);
 }
 
 
-bool StorageMerge::isRemote() const
+template <typename F>
+StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
     auto database = context.getDatabase(source_database);
     auto iterator = database->getIterator(context);
@@ -73,14 +78,21 @@ bool StorageMerge::isRemote() const
         if (table_name_regexp.match(iterator->name()))
         {
             auto & table = iterator->table();
-            if (table.get() != this && table->isRemote())
-                return true;
+            if (table.get() != this && predicate(table))
+                return table;
         }
 
         iterator->next();
     }
 
-    return false;
+    return {};
+}
+
+
+bool StorageMerge::isRemote() const
+{
+    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table->isRemote(); });
+    return first_remote_table != nullptr;
 }
 
 
