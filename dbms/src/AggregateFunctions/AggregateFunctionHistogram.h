@@ -21,7 +21,8 @@
 #include <queue>
 #include <stddef.h>
 
-namespace DB {
+namespace DB
+{
 
 namespace ErrorCodes
 {
@@ -39,11 +40,12 @@ public:
     using Weight = Float64;
 
 private:
-    struct WeightedValue {
+    struct WeightedValue
+    {
         Mean mean;
         Weight weight;
 
-        WeightedValue operator + (const WeightedValue& other)
+        WeightedValue operator+ (const WeightedValue& other)
         {
             return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
         }
@@ -66,10 +68,10 @@ private:
     void sort()
     {
         std::sort(points, points + size,
-                [](const WeightedValue& first, const WeightedValue& second)
-                {
-                    return first.mean < second.mean;
-                });
+            [](const WeightedValue & first, const WeightedValue & second)
+            {
+                return first.mean < second.mean;
+            });
     }
 
     /**
@@ -78,8 +80,9 @@ private:
     void compress(UInt32 max_bins)
     {
         sort();
-        auto newsz = size;
-        if (size <= max_bins) return;
+        auto new_size = size;
+        if (size <= max_bins)
+            return;
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
@@ -87,17 +90,20 @@ private:
         AutoArray<UInt32> next(size + 1);
         AutoArray<bool> active(size + 1, true);
         active[size] = false;
+
         auto delete_node = [&](UInt32 i)
         {
             previous[next[i]] = previous[i];
             next[previous[i]] = next[i];
             active[i] = false;
         };
-        for (size_t i = 0; i <= size; i++)
+
+        for (size_t i = 0; i <= size; ++i)
         {
             previous[i] = i - 1;
             next[i] = i + 1;
         }
+
         next[size] = 0;
         previous[0] = size;
 
@@ -108,34 +114,41 @@ private:
         std::priority_queue<QueueItem, std::vector<QueueItem>, std::greater<QueueItem>> queue;
 
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
-        for (size_t i = 0; i + 1 < size; i++)
+
+        for (size_t i = 0; i + 1 < size; ++i)
             queue.push({quality(i), i});
 
-        while (newsz > max_bins && !queue.empty())
+        while (new_size > max_bins && !queue.empty())
         {
             auto min_item = queue.top();
             queue.pop();
-            auto l = min_item.second;
-            auto r = next[l];
-            if (!active[l] || !active[r] || quality(l) > min_item.first)
+            auto left = min_item.second;
+            auto right = next[left];
+
+            if (!active[left] || !active[right] || quality(left) > min_item.first)
                 continue;
 
-            points[l] = points[l] + points[r];
+            points[left] = points[left] + points[right];
 
-            delete_node(r);
-            if (active[next[l]])
-                queue.push({quality(l), l});
-            if (active[previous[l]])
-                queue.push({quality(previous[l]), previous[l]});
+            delete_node(right);
+            if (active[next[left]])
+                queue.push({quality(left), left});
+            if (active[previous[left]])
+                queue.push({quality(previous[left]), previous[left]});
 
-            newsz--;
+            --new_size;
         }
 
-        size_t l = 0;
-        for (size_t r = 0; r < size; r++)
-            if (active[r])
-                points[l++] = points[r];
-        size = newsz;
+        size_t left = 0;
+        for (size_t right = 0; right < size; ++right)
+        {
+            if (active[right])
+            {
+                points[left] = points[right];
+                ++left;
+            }
+        }
+        size = new_size;
     }
 
     /***
@@ -144,20 +157,21 @@ private:
      */
     void unique()
     {
-        size_t l = 0;
-        for (auto r = l + 1; r < size; r++)
+        size_t left = 0;
+
+        for (auto right = left + 1; right < size; right++)
         {
-            if (points[l].mean + epsilon >= points[r].mean)
+            if (points[left].mean + epsilon >= points[right].mean)
             {
-                points[l] = points[l] + points[r];
+                points[left] = points[left] + points[right];
             }
             else
             {
-                l++;
-                points[l] = points[r];
+                ++left;
+                points[left] = points[right];
             }
         }
-        size = l + 1;
+        size = left + 1;
     }
 
 public:
@@ -169,7 +183,8 @@ public:
         static_assert(offsetof(AggregateFunctionHistogramData, points) == sizeof(AggregateFunctionHistogramData), "points should be last member");
     }
 
-    static size_t structSize(size_t max_bins) {
+    static size_t structSize(size_t max_bins)
+    {
         return sizeof(AggregateFunctionHistogramData) + max_bins * 2 * sizeof(WeightedValue);
     }
 
@@ -177,7 +192,7 @@ public:
         compress(max_bins);
         unique();
 
-        for (size_t i = 0; i < size; i++)
+        for (size_t i = 0; i < size; ++i)
         {
             to_lower.insert((i == 0) ? lower_bound : (points[i].mean + points[i - 1].mean) / 2);
             to_upper.insert((i + 1 == size) ? upper_bound : (points[i].mean + points[i + 1].mean) / 2);
@@ -191,14 +206,13 @@ public:
 
     void add(Mean value, Weight weight, UInt32 max_bins)
     {
-        points[size++] = {value, weight};
+        points[size] = {value, weight};
+        ++size;
         lower_bound = std::min(lower_bound, value);
         upper_bound = std::max(upper_bound, value);
 
         if (size >= max_bins * 2)
-        {
             compress(max_bins);
-        }
     }
 
     void merge(const AggregateFunctionHistogramData& other, UInt32 max_bins)
@@ -230,28 +244,17 @@ public:
         if (size > max_bins * 2)
             throw Exception("Too many bins", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
-        buf.read(reinterpret_cast<char *>(points), size * sizeof(points[0]));
+        buf.read(reinterpret_cast<char *>(points), size * sizeof(WeightedValue));
     }
-
 };
 
 template <typename T>
-class AggregateFunctionHistogram final: public IAggregateFunctionHelper<AggregateFunctionHistogram<T>>
+class AggregateFunctionHistogram final: public IAggregateFunctionDataHelper<AggregateFunctionHistogramData, AggregateFunctionHistogram<T>>
 {
 private:
     using Data = AggregateFunctionHistogramData;
 
-    UInt32 max_bins;
-
-    Data& data(AggregateDataPtr place) const
-    {
-        return *reinterpret_cast<Data*>(place);
-    }
-
-    const Data& data(ConstAggregateDataPtr place) const
-    {
-        return *reinterpret_cast<const Data*>(place);
-    }
+    const UInt32 max_bins;
 
 public:
     AggregateFunctionHistogram(UInt32 max_bins)
@@ -259,31 +262,10 @@ public:
     {
     }
 
-    void destroy(AggregateDataPtr place) const noexcept override
-    {
-        data(place).~Data();
-    }
-
-    bool hasTrivialDestructor() const override
-    {
-        return std::is_trivially_destructible_v<Data>;
-    }
-
-    size_t alignOfData() const override
-    {
-        return alignof(Data);
-    }
-
     size_t sizeOfData() const override
     {
         return Data::structSize(max_bins);
     }
-
-    void create(AggregateDataPtr place) const override
-    {
-        new (place) Data();
-    }
-
     DataTypePtr getReturnType() const override
     {
         DataTypes types;
@@ -296,8 +278,8 @@ public:
         types.emplace_back(mean);
         // weight
         types.emplace_back(weight);
-        auto tuple = std::make_shared<DataTypeTuple>(types);
 
+        auto tuple = std::make_shared<DataTypeTuple>(types);
         return std::make_shared<DataTypeArray>(tuple);
     }
 
