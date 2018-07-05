@@ -106,6 +106,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace ActionLocks
@@ -2914,6 +2915,9 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
 
         if (!partition)
         {
+            if (final)
+                throw Exception("FINAL flag for OPTIMIZE query on Replicated table is meaningful only with specified PARTITION", ErrorCodes::BAD_ARGUMENTS);
+
             selected = merger_mutator.selectPartsToMerge(
                 future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
         }
