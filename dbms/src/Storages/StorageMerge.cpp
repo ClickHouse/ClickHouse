@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int INCOMPATIBLE_SOURCE_TABLES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -56,12 +57,15 @@ NameAndTypePair StorageMerge::getColumn(const String & column_name) const
     if (column_name == "_table")
         return { column_name, std::make_shared<DataTypeString>() };
 
+    if (IStorage::hasColumn(column_name))
+        return IStorage::getColumn(column_name);
+
     /// virtual (and real) columns of the underlying tables
     auto first_table = getFirstTable([](auto &&) { return true; });
     if (first_table)
         return first_table->getColumn(column_name);
 
-    return IStorage::getColumn(column_name);
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 bool StorageMerge::hasColumn(const String & column_name) const
@@ -69,11 +73,14 @@ bool StorageMerge::hasColumn(const String & column_name) const
     if (column_name == "_table")
         return true;
 
+    if (IStorage::hasColumn(column_name))
+        return true;
+
     auto first_table = getFirstTable([](auto &&) { return true; });
     if (first_table)
         return first_table->hasColumn(column_name);
 
-    return IStorage::hasColumn(column_name);
+    return false;
 }
 
 
