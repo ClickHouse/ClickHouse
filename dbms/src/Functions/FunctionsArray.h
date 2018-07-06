@@ -446,8 +446,7 @@ struct ArrayIndexStringNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_ref[k] == 1)
+                if (null_map_ref[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -487,8 +486,7 @@ struct ArrayIndexStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                 }
                 else if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
@@ -524,21 +522,20 @@ struct ArrayIndexStringImpl
             for (size_t j = 0; j < array_size; ++j)
             {
                 ColumnArray::Offset string_pos = current_offset == 0 && j == 0
-                                                   ? 0
-                                                   : string_offsets[current_offset + j - 1];
+                    ? 0
+                    : string_offsets[current_offset + j - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
                 bool hit = false;
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
 
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
-                    if (null_map_item && ((*null_map_item)[i] == 1))
+                    if (null_map_item && (*null_map_item)[i])
                         hit = true;
                 }
                 else if (string_size == value_size && 0 == memcmp(&item_values[value_pos], &data[string_pos], value_size))
-                        hit = true;
+                    hit = true;
 
                 if (hit)
                 {
