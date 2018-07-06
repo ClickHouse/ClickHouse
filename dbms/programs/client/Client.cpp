@@ -54,8 +54,8 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
+#include <Proto/protoHelpers.h>
 #include <ext/scope_guard.h>
-
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -1085,6 +1085,10 @@ private:
                 onException(*packet.exception);
                 last_exception = std::move(packet.exception);
                 return false;
+
+            case Protocol::Server::CapnProto:
+                loadContext(packet.block.getColumnsWithTypeAndName()[0], context);
+                return receiveSampleBlock(out);
 
             default:
                 throw NetException("Unexpected packet from server (expected Data, got "
