@@ -58,6 +58,9 @@ private:
 
     Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
 
+    template <typename F>
+    StoragePtr getFirstTable(F && predicate) const;
+
 protected:
     StorageMerge(
         const std::string & name_,
