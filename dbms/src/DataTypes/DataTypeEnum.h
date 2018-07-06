@@ -27,7 +27,6 @@ public:
     bool haveSubtypes() const override { return false; }
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueRepresentedByInteger() const override { return true; }
-    bool isValueRepresentedByUnsignedInteger() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     bool isCategorial() const override { return true; }
