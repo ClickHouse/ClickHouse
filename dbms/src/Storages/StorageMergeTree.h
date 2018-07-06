@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeMutationEntry.h>
+#include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
@@ -73,6 +74,8 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
+    std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
+
     void drop() override;
     void truncate(const ASTPtr &) override;
 
@@ -109,7 +112,7 @@ private:
     /// For clearOldParts, clearOldTemporaryDirectories.
     AtomicStopwatch time_after_previous_cleanup;
 
-    std::mutex currently_merging_mutex;
+    mutable std::mutex currently_merging_mutex;
     MergeTreeData::DataParts currently_merging;
     std::multimap<Int64, MergeTreeMutationEntry> current_mutations_by_version;
 
