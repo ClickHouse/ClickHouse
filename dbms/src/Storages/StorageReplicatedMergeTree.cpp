@@ -106,7 +106,6 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;
-    extern const int BAD_ARGUMENTS;
 }
 
 namespace ActionLocks
@@ -2905,28 +2904,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
-        MergeTreeDataMergerMutator::FuturePart future_merged_part;
-        String disable_reason;
-        bool selected = false;
-
         auto zookeeper = getZooKeeper();
         ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
-
-        if (!partition)
-        {
-            if (final)
-                throw Exception("FINAL flag for OPTIMIZE query on Replicated table is meaningful only with specified PARTITION", ErrorCodes::BAD_ARGUMENTS);
-
-            selected = merger_mutator.selectPartsToMerge(
-                future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
-        }
-        else
-        {
-            String partition_id = data.getPartitionIDFromQuery(partition, context);
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
-        }
 
         auto handle_noop = [&] (const String & message)
         {
@@ -2935,14 +2914,50 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return false;
         };
 
-        if (!selected)
+        if (!partition && final)
         {
-            LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
-            return handle_noop(disable_reason);
-        }
+            MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+            std::unordered_set<String> partition_ids;
 
-        if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
-            return handle_noop("Can't create merge queue node in ZooKeeper");
+            for (const MergeTreeData::DataPartPtr & part : data_parts)
+                partition_ids.emplace(part->info.partition_id);
+
+            for (const String & partition_id : partition_ids)
+            {
+                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
+                if (selected &&
+                    !createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+                    return handle_noop("Can't create merge queue node in ZooKeeper");
+            }
+        }
+        else
+        {
+            MergeTreeDataMergerMutator::FuturePart future_merged_part;
+            String disable_reason;
+            bool selected = false;
+            if (!partition)
+            {
+                selected = merger_mutator.selectPartsToMerge(
+                    future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
+            }
+            else
+            {
+                String partition_id = data.getPartitionIDFromQuery(partition, context);
+                selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
+            }
+
+            if (!selected)
+            {
+                LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
+                return handle_noop(disable_reason);
+            }
+
+            if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+                return handle_noop("Can't create merge queue node in ZooKeeper");
+        }
     }
 
     /// TODO: Bad setting name for such purpose
