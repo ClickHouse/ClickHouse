@@ -159,9 +159,9 @@ MergeTreeData::MergeTreeData(
     Poco::File(full_path + "detached").createDirectory();
 
     String version_file_path = full_path + "format_version.txt";
-    auto file_exists = Poco::File(version_file_path).exists();
+    auto version_file_exists = Poco::File(version_file_path).exists();
     // When data path or file not exists, ignore the format_version check
-    if (!attach || !path_exists || !file_exists)
+    if (!attach || !path_exists || !version_file_exists)
     {
         format_version = min_format_version;
         WriteBufferFromFile buf(version_file_path);
