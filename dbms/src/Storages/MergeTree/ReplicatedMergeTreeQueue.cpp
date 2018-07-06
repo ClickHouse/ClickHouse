@@ -1266,15 +1266,19 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         prev_virtual_parts = queue.virtual_parts;
     }
 
+    /// Load current quorum status.
+    auto quorum_last_part_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/last_part");
+    auto quorum_status_future = zookeeper->asyncTryGet(queue.zookeeper_path + "/quorum/status");
+
     /// Load current inserts
-    std::unordered_set<String> abandonable_lock_holders;
+    std::unordered_set<String> lock_holder_paths;
     for (const String & entry : zookeeper->getChildren(queue.zookeeper_path + "/temp"))
     {
         if (startsWith(entry, "abandonable_lock-"))
-            abandonable_lock_holders.insert(queue.zookeeper_path + "/temp/" + entry);
+            lock_holder_paths.insert(queue.zookeeper_path + "/temp/" + entry);
     }
 
-    if (!abandonable_lock_holders.empty())
+    if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(queue.zookeeper_path + "/block_numbers");
         std::vector<std::future<zkutil::ListResponse>> lock_futures;
@@ -1310,21 +1314,22 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         for (BlockInfo & block : block_infos)
         {
             zkutil::GetResponse resp = block.contents_future.get();
-            if (!resp.error && abandonable_lock_holders.count(resp.data))
+            if (!resp.error && lock_holder_paths.count(resp.data))
                 committing_blocks[block.partition].insert(block.number);
         }
     }
 
     queue_.pullLogsToQueue(zookeeper);
 
-    /// Load current quorum status.
-    zookeeper->tryGet(queue.zookeeper_path + "/quorum/last_part", last_quorum_part);
+    zkutil::GetResponse quorum_last_part_response = quorum_last_part_future.get();
+    if (!quorum_last_part_response.error)
+        last_quorum_part = quorum_last_part_response.data;
 
-    String quorum_status_str;
-    if (zookeeper->tryGet(queue.zookeeper_path + "/quorum/status", quorum_status_str))
+    zkutil::GetResponse quorum_status_response = quorum_status_future.get();
+    if (!quorum_status_response.error)
     {
         ReplicatedMergeTreeQuorumEntry quorum_status;
-        quorum_status.fromString(quorum_status_str);
+        quorum_status.fromString(quorum_status_response.data);
         inprogress_quorum_part = quorum_status.part_name;
     }
     else
@@ -1338,7 +1343,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     /// A sketch of a proof of why this method actually works:
     ///
     /// The trickiest part is to ensure that no new parts will ever appear in the range of blocks between left and right.
-    /// Inserted parts get their block numbers by acquiring an abandonable lock (see AbandonableLockInZooKeeper.h).
+    /// Inserted parts get their block numbers by acquiring an ephemeral lock (see EphemeralLockInZooKeeper.h).
     /// These block numbers are monotonically increasing in a partition.
     ///
     /// Because there is a window between the moment the inserted part gets its block number and
