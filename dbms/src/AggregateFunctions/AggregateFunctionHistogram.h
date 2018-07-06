@@ -18,6 +18,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
+#include <math.h>
 #include <queue>
 #include <stddef.h>
 
@@ -27,6 +28,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
+    extern const int INCORRECT_DATA;
 }
 
 /**
@@ -206,6 +208,11 @@ public:
 
     void add(Mean value, Weight weight, UInt32 max_bins)
     {
+        // nans break sort and compression
+        // infs don't fit in bins partition method
+        if (isnan(value) || isinf(value))
+            throw Exception("invalid value for aggregation", ErrorCodes::INCORRECT_DATA);
+
         points[size] = {value, weight};
         ++size;
         lower_bound = std::min(lower_bound, value);
