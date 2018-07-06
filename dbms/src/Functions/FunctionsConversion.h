@@ -996,11 +996,11 @@ struct ToIntMonotonicity
         /// If type is expanding
         if (sizeof(T) > size_of_type)
         {
-            ///If convert signed -> signed or unsigned -> signed, then function is monotonic.
+            /// If convert signed -> signed or unsigned -> signed, then function is monotonic.
             if (std::is_signed_v<T> || type.isValueRepresentedByUnsignedInteger())
                 return {true, true, true};
 
-            ///If arguments from the same half, then function is monotonic.
+            /// If arguments from the same half, then function is monotonic.
             if ((left.get<Int64>() >= 0) == (right.get<Int64>() >= 0))
                 return {true, true, true};
         }
