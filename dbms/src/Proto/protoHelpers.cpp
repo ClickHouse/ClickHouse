@@ -4,18 +4,39 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn.h>
 #include <ServerMessage.capnp.h>
 
 #include <capnp/serialize.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/range/join.hpp>
-#include <common/logger_useful.h>
+#include <sstream>
 
 
 namespace DB
 {
+    template <typename ColumnT>
+    static MutableColumnPtr serializeProto(const ColumnT & column_type, capnp::MessageBuilder & message)
+    {
+        MutableColumnPtr data = column_type.createColumn();
+
+        kj::Array<capnp::word> serialized = messageToFlatArray(message);
+
+        data->insertData(reinterpret_cast<const char *>(serialized.begin()), serialized.size() * sizeof(capnp::word));
+        return data;
+    }
+
+    template <typename T>
+    typename T::Reader deserializeProto(const char * data, size_t data_size)
+    {
+        const capnp::word * ptr = reinterpret_cast<const capnp::word *>(data);
+        auto serialized = kj::arrayPtr(ptr, data_size / sizeof(capnp::word));
+
+        capnp::FlatArrayMessageReader reader(serialized);
+        return reader.getRoot<T>();
+    }
+
     ColumnWithTypeAndName storeContext(Context & context)
     {
         capnp::MallocMessageBuilder message;
@@ -76,23 +97,51 @@ namespace DB
         ColumnWithTypeAndName proto_column;
         proto_column.name = "context";
         proto_column.type = std::make_shared<DataTypeUInt64>();
-        MutableColumnPtr data = proto_column.type->createColumn();
-
-        kj::Array<capnp::word> serialized = messageToFlatArray(message);
-        data->insertData(reinterpret_cast<const char *>(serialized.begin()), serialized.size() * sizeof(capnp::word));
-
-        proto_column.column = std::move(data);
+        proto_column.column = std::move(serializeProto(*proto_column.type, message));
         return proto_column;
     }
 
-    void loadContext(const ColumnWithTypeAndName & , Context & )
+    void loadContext(const ColumnWithTypeAndName & proto_column, Context & context)
     {
-#if 0
-        kj::Array<word> messageToFlatArray(MessageBuilder& builder);
+        StringRef plain_data = proto_column.column->getDataAt(0);
+        size_t data_size = proto_column.column->byteSize();
+        Proto::Context::Reader proto_context = deserializeProto<Proto::Context>(plain_data.data, data_size);
 
-        capnp::MallocMessageBuilder message;
-        Proto::ServerMessage::Builder serverMessage = message.initRoot<Proto::ServerMessage>();
-        /// TODO
-#endif
+        // or ParserCompoundColumnDeclaration ?
+        ParserColumnDeclaration parser_defaults;
+
+        for (auto proto_database : proto_context.getDatabases())
+        {
+            String database_name = proto_database.getName().cStr();
+            if (!context.isDatabaseExist(database_name))
+            {
+                // TODO
+            }
+
+            for (auto proto_table : proto_database.getTables())
+            {
+                String table_name = proto_table.getName().cStr();
+                if (!context.isTableExist(database_name, table_name))
+                {
+                    // TODO
+                }
+
+                StoragePtr table = context.tryGetTable(database_name, table_name);
+                // TODO: throw on fail
+
+                ColumnsDescription column_description;
+                for (auto column : proto_table.getColumns())
+                {
+                    String column_name = column.getName().cStr();
+                    String expression = column.getDefault().getExpression().cStr();
+                    ColumnDefaultKind expression_kind = static_cast<ColumnDefaultKind>(column.getDefault().getKind());
+                    ASTPtr ast = parseQuery(parser_defaults, expression, expression.size());
+
+                    column_description.defaults[column_name] = ColumnDefault{expression_kind, ast};
+                }
+
+                table->setColumns(column_description);
+            }
+        }
     }
 }
