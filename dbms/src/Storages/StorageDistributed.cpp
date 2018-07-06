@@ -58,6 +58,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
     extern const int TYPE_MISMATCH;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -333,11 +334,14 @@ namespace
 
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
+    if (getColumns().hasPhysical(column_name))
+        return getColumns().getPhysical(column_name);
+
     auto it = virtual_columns.find(column_name);
     if (it != virtual_columns.end())
         return { it->first, DataTypeFactory::instance().get(it->second) };
 
-    return getColumns().getPhysical(column_name);
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 
