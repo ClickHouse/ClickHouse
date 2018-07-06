@@ -993,9 +993,17 @@ struct ToIntMonotonicity
     {
         size_t size_of_type = type.getSizeOfValueInMemory();
 
-        /// If type is expanding, then function is monotonic.
+        /// If type is expanding
         if (sizeof(T) > size_of_type)
-            return { true, true, true };
+        {
+            ///If convert signed -> signed or unsigned -> signed, then function is monotonic.
+            if (std::is_signed_v<T> || type.isValueRepresentedByUnsignedInteger())
+                return {true, true, true};
+
+            ///If arguments from the same half, then function is monotonic.
+            if ((left.get<Int64>() >= 0) == (right.get<Int64>() >= 0))
+                return {true, true, true};
+        }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
         if (checkDataType<DataTypeNumber<T>>(&type) ||
