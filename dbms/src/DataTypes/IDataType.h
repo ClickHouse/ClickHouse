@@ -307,7 +307,7 @@ public:
       */
     virtual bool isValueRepresentedByInteger() const { return false; }
 
-    /** Unsigned Integers, Enums, Date, DateTime. Not nullable.
+    /** Unsigned Integers, Date, DateTime. Not nullable.
       */
     virtual bool isValueRepresentedByUnsignedInteger() const { return false; }
 
