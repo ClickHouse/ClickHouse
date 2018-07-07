@@ -61,8 +61,6 @@ private:
     Mean lower_bound;
     Mean upper_bound;
 
-    static constexpr Mean epsilon = 1e-8;
-
     // Weighted values representation of histogram.
     WeightedValue points[0];
 
@@ -166,7 +164,9 @@ private:
 
         for (auto right = left + 1; right < size; right++)
         {
-            if (points[left].mean + epsilon >= points[right].mean)
+            // Fuse points if their text representations differ only in last digit
+            auto min_diff = 10 * (points[left].mean + points[right].mean) * std::numeric_limits<Mean>::epsilon();
+            if (points[left].mean + min_diff >= points[right].mean)
             {
                 points[left] = points[left] + points[right];
             }
