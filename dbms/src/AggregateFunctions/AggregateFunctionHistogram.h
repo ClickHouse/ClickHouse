@@ -159,6 +159,9 @@ private:
      */
     void unique()
     {
+        if (size == 0)
+            return;
+
         size_t left = 0;
 
         for (auto right = left + 1; right < size; right++)
