@@ -367,10 +367,20 @@ void read(String & s, ReadBuffer & in)
     static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
-    if (size < 0)    /// TODO Actually it means that zookeeper node has NULL value. Maybe better to treat it like empty string.
+
+    if (size == -1)
+    {
+        /// It means that zookeeper node has NULL value. We will treat it like empty string.
+        s.clear();
+        return;
+    }
+
+    if (size < 0)
         throw Exception("Negative size while reading string from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
+
     if (size > max_string_size)
         throw Exception("Too large string size while reading from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
+
     s.resize(size);
     in.read(&s[0], size);
 }
