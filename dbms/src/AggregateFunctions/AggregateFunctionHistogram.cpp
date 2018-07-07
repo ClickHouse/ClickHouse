@@ -13,6 +13,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 namespace
@@ -22,6 +23,9 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
 {
     if (params.size() != 1)
         throw Exception("Function " + name + " requires single parameter: bins count", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    if (params[0].getType() != Field::Types::UInt64)
+        throw Exception("Invalid type for bins count", ErrorCodes::UNSUPPORTED_PARAMETER);
 
     UInt32 bins_count = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), params[0]);
 
