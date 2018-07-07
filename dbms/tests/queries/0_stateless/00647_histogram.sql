@@ -6,3 +6,4 @@ WITH arrayJoin(histogram(1)(sin(number-40))) AS res SELECT round(res.1, 2), roun
 
 SELECT histogram(10)(-2);
 
+select histogramIf(3)(number, number > 11) from (select * from system.numbers limit 10);
