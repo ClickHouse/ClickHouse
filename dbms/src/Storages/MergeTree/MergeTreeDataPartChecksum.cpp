@@ -87,6 +87,14 @@ void MergeTreeDataPartChecksums::checkSizes(const String & path) const
     }
 }
 
+UInt64 MergeTreeDataPartChecksums::getTotalSizeOnDisk() const
+{
+    UInt64 res = 0;
+    for (const auto & it : files)
+        res += it.second.file_size;
+    return res;
+}
+
 bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
 {
     switch (format_version)
