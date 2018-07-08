@@ -84,6 +84,8 @@ struct MergeTreeDataPartChecksums
 
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);
+
+    UInt64 getTotalSizeOnDisk() const;
 };
 
 
