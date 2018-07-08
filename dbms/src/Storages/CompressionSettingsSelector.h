@@ -58,7 +58,7 @@ private:
                 throw Exception("Unknown compression method " + name, ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
         }
 
-        Element(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+        Element(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
         {
             min_part_size = config.getUInt64(config_prefix + ".min_part_size", 0);
             min_part_size_ratio = config.getDouble(config_prefix + ".min_part_size_ratio", 0);
@@ -80,7 +80,7 @@ private:
 public:
     CompressionSettingsSelector() {}    /// Always returns the default method.
 
-    CompressionSettingsSelector(Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
+    CompressionSettingsSelector(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
     {
         Poco::Util::AbstractConfiguration::Keys keys;
         config.keys(config_prefix, keys);

@@ -152,7 +152,7 @@ public:
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    Poco::Util::AbstractConfiguration & getConfigRef() const;
+    const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
       * The list of users is completely replaced.

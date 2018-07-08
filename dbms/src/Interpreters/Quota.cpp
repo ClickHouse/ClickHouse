@@ -23,7 +23,7 @@ namespace ErrorCodes
 
 
 template <typename Counter>
-void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+void QuotaValues<Counter>::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     queries             = config.getUInt64(config_elem + ".queries",        0);
     errors              = config.getUInt64(config_elem + ".errors",         0);
@@ -34,11 +34,12 @@ void QuotaValues<Counter>::initFromConfig(const String & config_elem, Poco::Util
     execution_time_usec = config.getUInt64(config_elem + ".execution_time", 0) * 1000000ULL;
 }
 
-template void QuotaValues<size_t>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
-template void QuotaValues<std::atomic<size_t>>::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+template void QuotaValues<size_t>::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+template void QuotaValues<std::atomic<size_t>>::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
 
-void QuotaForInterval::initFromConfig(const String & config_elem, time_t duration_, bool randomize_, time_t offset_, Poco::Util::AbstractConfiguration & config)
+void QuotaForInterval::initFromConfig(
+    const String & config_elem, time_t duration_, bool randomize_, time_t offset_, const Poco::Util::AbstractConfiguration & config)
 {
     rounded_time.store(0, std::memory_order_relaxed);
     duration = duration_;
@@ -160,7 +161,7 @@ void QuotaForInterval::check(
 }
 
 
-void QuotaForIntervals::initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
+void QuotaForIntervals::initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_elem, config_keys);
@@ -251,7 +252,7 @@ String QuotaForIntervals::toString() const
 }
 
 
-void Quota::loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng)
+void Quota::loadFromConfig(const String & config_elem, const String & name_, const Poco::Util::AbstractConfiguration & config, pcg64 & rng)
 {
     name = name_;
 
@@ -307,7 +308,7 @@ QuotaForIntervalsPtr Quota::get(const String & quota_key, const String & user_na
 }
 
 
-void Quotas::loadFromConfig(Poco::Util::AbstractConfiguration & config)
+void Quotas::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     pcg64 rng;
 

@@ -17,7 +17,7 @@ private:
     Container users;
 
 public:
-    void loadFromConfig(Poco::Util::AbstractConfiguration & config) override;
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config) override;
 
     UserPtr authorizeAndGetUser(
         const String & user_name,

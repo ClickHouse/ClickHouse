@@ -61,10 +61,13 @@ class PartLog;
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {
+    SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config);
     ~SystemLogs();
 
     std::unique_ptr<QueryLog> query_log;    /// Used to log queries.
     std::unique_ptr<PartLog> part_log;      /// Used to log operations with parts
+
+    String part_log_database;
 };
 
 
