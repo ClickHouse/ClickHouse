@@ -2904,8 +2904,6 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
-        size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
         MergeTreeDataMergerMutator::FuturePart future_merged_part;
         String disable_reason;
         bool selected = false;
@@ -2923,6 +2921,7 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         }
         else
         {
+            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
             String partition_id = data.getPartitionIDFromQuery(partition, context);
             selected = merger_mutator.selectAllPartsToMergeWithinPartition(
                 future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);

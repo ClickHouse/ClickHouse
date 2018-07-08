@@ -301,8 +301,6 @@ bool StorageMergeTree::merge(
 
     auto structure_lock = lockStructure(true, __PRETTY_FUNCTION__);
 
-    size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
     MergeTreeDataMergerMutator::FuturePart future_part;
 
     /// You must call destructor with unlocked `currently_merging_mutex`.
@@ -326,6 +324,7 @@ bool StorageMergeTree::merge(
         }
         else
         {
+            UInt64 disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
             selected = merger.selectAllPartsToMergeWithinPartition(future_part, disk_space, can_merge, partition_id, final, out_disable_reason);
         }
 
