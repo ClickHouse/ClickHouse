@@ -25,7 +25,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_JOIN_STRICTNESS;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
-    // extern const int WRONG_LOG_LEVEL;
 }
 
 template <typename IntType>
