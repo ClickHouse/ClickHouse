@@ -14,6 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int UNSUPPORTED_PARAMETER;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 namespace
@@ -28,6 +29,10 @@ AggregateFunctionPtr createAggregateFunctionHistogram(const std::string & name, 
         throw Exception("Invalid type for bins count", ErrorCodes::UNSUPPORTED_PARAMETER);
 
     UInt32 bins_count = applyVisitor(FieldVisitorConvertToNumber<UInt32>(), params[0]);
+
+    auto limit = AggregateFunctionHistogramData::bins_count_limit;
+    if (bins_count > limit)
+        throw Exception("Unsupported bins count. Should not be greater than " + std::to_string(limit), ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     if (bins_count == 0)
         throw Exception("Bin count should be positive", ErrorCodes::BAD_ARGUMENTS);
