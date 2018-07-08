@@ -296,7 +296,7 @@ struct Settings
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
       * The profile can also be set using the `set` functions, like the profile setting.
       */
-    void setProfile(const String & profile_name, Poco::Util::AbstractConfiguration & config);
+    void setProfile(const String & profile_name, const Poco::Util::AbstractConfiguration & config);
 
     /// Load settings from configuration file, at "path" prefix in configuration.
     void loadSettingsFromConfig(const String & path, const Poco::Util::AbstractConfiguration & config);

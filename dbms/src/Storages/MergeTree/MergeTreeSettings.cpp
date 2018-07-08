@@ -12,7 +12,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void MergeTreeSettings::loadFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config)
+void MergeTreeSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
     if (!config.has(config_elem))
         return;

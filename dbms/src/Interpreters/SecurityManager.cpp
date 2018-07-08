@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 using UserPtr = SecurityManager::UserPtr;
 
-void SecurityManager::loadFromConfig(Poco::Util::AbstractConfiguration & config)
+void SecurityManager::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
     Container new_users;
 

@@ -63,7 +63,7 @@ struct QuotaValues
         tuple() = std::make_tuple(0, 0, 0, 0, 0, 0, 0);
     }
 
-    void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config);
+    void initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool operator== (const QuotaValues & rhs) const
     {
@@ -109,7 +109,7 @@ struct QuotaForInterval
     QuotaForInterval() = default;
     QuotaForInterval(time_t duration_) : duration(duration_) {}
 
-    void initFromConfig(const String & config_elem, time_t duration_, bool randomize_, time_t offset_, Poco::Util::AbstractConfiguration & config);
+    void initFromConfig(const String & config_elem, time_t duration_, bool randomize_, time_t offset_, const Poco::Util::AbstractConfiguration & config);
 
     /// Increase current value.
     void addQuery() noexcept;
@@ -191,7 +191,7 @@ public:
         return cont.empty();
     }
 
-    void initFromConfig(const String & config_elem, Poco::Util::AbstractConfiguration & config, pcg64 & rng);
+    void initFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config, pcg64 & rng);
 
     /// Set maximum values (limits) from passed argument.
     /// Remove intervals that does not exist in argument. Add intervals from argument, that we don't have.
@@ -241,7 +241,7 @@ struct Quota
 
     bool keyed_by_ip = false;
 
-    void loadFromConfig(const String & config_elem, const String & name_, Poco::Util::AbstractConfiguration & config, pcg64 & rng);
+    void loadFromConfig(const String & config_elem, const String & name_, const Poco::Util::AbstractConfiguration & config, pcg64 & rng);
     QuotaForIntervalsPtr get(const String & quota_key, const String & user_name, const Poco::Net::IPAddress & ip);
 };
 
@@ -254,7 +254,7 @@ private:
     Container cont;
 
 public:
-    void loadFromConfig(Poco::Util::AbstractConfiguration & config);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config);
     QuotaForIntervalsPtr get(const String & name, const String & quota_key,
         const String & user_name, const Poco::Net::IPAddress & ip);
 };
