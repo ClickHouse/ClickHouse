@@ -53,8 +53,6 @@ protected:
     using Threads = std::vector<std::thread>;
 
     const size_t size;
-    static constexpr double sleep_seconds = 10;
-    static constexpr double sleep_seconds_random_part = 1.0;
 
     Tasks tasks;         /// Ordered in priority.
     std::mutex tasks_mutex;
@@ -91,6 +89,9 @@ protected:
     std::atomic<bool> removed {false};
 
     std::multimap<Poco::Timestamp, std::shared_ptr<BackgroundProcessingPoolTaskInfo>>::iterator iterator;
+
+    /// For exponential backoff.
+    size_t count_no_work_done = 0;
 };
 
 }
