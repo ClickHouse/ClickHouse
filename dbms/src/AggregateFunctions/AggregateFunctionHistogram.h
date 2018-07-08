@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Common/Arena.h>
-#include <Common/PODArray.h>
-#include <Common/AutoArray.h>
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
@@ -41,6 +39,8 @@ public:
     using Mean = Float64;
     using Weight = Float64;
 
+    constexpr static size_t bins_count_limit = 250;
+
 private:
     struct WeightedValue
     {
@@ -74,6 +74,36 @@ private:
             });
     }
 
+    template<typename T>
+    struct PriorityQueueStorage
+    {
+        size_t size = 0;
+        T* data_ptr;
+
+        PriorityQueueStorage(T* value)
+            : data_ptr(value)
+        {
+        }
+
+        void push_back(T val)
+        {
+            data_ptr[size] = std::move(val);
+            ++size;
+        }
+
+        void pop_back() { --size; }
+        T* begin() { return data_ptr; }
+        T* end() const { return data_ptr + size; }
+        bool empty() const { return size == 0; }
+        T& front() { return *data_ptr; }
+        const T& front() const { return *data_ptr; }
+
+        using value_type = T;
+        using reference = T&;
+        using const_reference = const T&;
+        using size_type = size_t;
+    };
+
     /**
      * Repeatedly fuse most close values until max_bins bins left
      */
@@ -86,9 +116,10 @@ private:
 
         // Maintain doubly-linked list of "active" points
         // and store neighbour pairs in priority queue by distance
-        AutoArray<UInt32> previous(size + 1);
-        AutoArray<UInt32> next(size + 1);
-        AutoArray<bool> active(size + 1, true);
+        UInt32 previous[size + 1];
+        UInt32 next[size + 1];
+        bool active[size + 1];
+        std::fill(active, active + size, true);
         active[size] = false;
 
         auto delete_node = [&](UInt32 i)
@@ -109,9 +140,14 @@ private:
 
         using QueueItem = std::pair<Mean, UInt32>;
 
-        std::vector<QueueItem> storage;
-        storage.reserve(2 * size - max_bins);
-        std::priority_queue<QueueItem, std::vector<QueueItem>, std::greater<QueueItem>> queue;
+        QueueItem storage[2 * size - max_bins];
+
+        std::priority_queue<
+            QueueItem,
+            PriorityQueueStorage<QueueItem>,
+            std::greater<QueueItem>>
+                queue{std::greater<QueueItem>(),
+                        PriorityQueueStorage<QueueItem>(storage)};
 
         auto quality = [&](UInt32 i) { return points[next[i]].mean - points[i].mean; };
 
