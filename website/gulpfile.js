@@ -23,7 +23,7 @@ var paths = {
         '!public/**/*.html'],
     reference: ['deprecated/reference_ru.html', 'deprecated/reference_en.html'],
     docs: [docsDir + '/build/docs/**/*'],
-    docstxt: ['docs/**/*.txt'],
+    docstxt: ['docs/**/*.{txt,conf}'],
     docsjson: ['docs/**/*.json'],
     docsxml: ['docs/**/*.xml'],
     docssitemap: ['sitemap.xml'],
