@@ -51,9 +51,6 @@
         <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application-palette.792431c1.css">
       {% endif %}
     {% endblock %}
-    {% block libs %}
-      <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
-    {% endblock %}
     {% block fonts %}
       {% if font != false %}
         <link rel="stylesheet" href="https://fonts.googleapis.com/css?family={{
@@ -113,19 +110,27 @@
         <div class="md-main__inner md-grid" data-md-component="container">
           {% block site_nav %}
             {% if nav %}
-              <div class="md-sidebar md-sidebar--primary" data-md-component="navigation">
+              <div class="md-sidebar md-sidebar--primary" data-md-component="{% if not config.extra.single_page %}navigation{% else %}toc{% endif %}">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
-                    {% include "partials/nav.html" %}
+                    {% if not config.extra.single_page %}
+                      {% include "partials/nav.html" %}
+                    {% else %}
+                      {% include "partials/toc.html" %}
+                    {% endif %}
                   </div>
                 </div>
               </div>
             {% endif %}
             {% if page.toc %}
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="toc">
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="{% if not config.extra.single_page %}toc{% else %}navigation{% endif %}">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
-                    {% include "partials/toc.html" %}
+                    {% if not config.extra.single_page %}
+                      {% include "partials/toc.html" %}
+                    {% else %}
+                      {% include "partials/nav.html" %}
+                    {% endif %}
                   </div>
                 </div>
               </div>
@@ -144,7 +149,11 @@
                 {% if not "\x3ch1" in page.content %}
                   <h1>{{ page.title | default(config.site_name, true)}}</h1>
                 {% endif %}
-                {{ page.content }}
+                <div id="content">
+                {% if not config.extra.single_page %}
+                  {{ page.content }}
+                {% endif %}
+                </div>
                 {% block source %}
                   {% if page and page.meta and page.meta.source %}
                     <h2 id="__source">{{ lang.t("meta.source") }}</h2>
@@ -171,6 +180,15 @@
       {% endblock %}
     </div>
     {% block scripts %}
+      {% if config.extra.single_page and page.content %}
+      <script type="text/javascript">
+            document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
+            document.getElementsByClassName('md-footer')[0].style.display = 'block';
+      </script>
+      {% endif %}
+      {% block libs %}
+        <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
+      {% endblock %}
       <script src="{{ base_url }}/assets/javascripts/application.5165553b.js"></script>
       {% if lang.t("search.language") != "en" %}
         {% set languages = lang.t("search.language").split(",") %}
