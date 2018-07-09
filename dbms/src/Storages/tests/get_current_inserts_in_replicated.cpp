@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 
 #include <ext/scope_guard.h>
 #include <pcg_random.hpp>
@@ -37,17 +37,17 @@ try
     Stopwatch total;
     Stopwatch stage;
     /// Load current inserts
-    std::unordered_set<String> abandonable_lock_holders;
+    std::unordered_set<String> lock_holder_paths;
     for (const String & entry : zookeeper->getChildren(zookeeper_path + "/temp"))
     {
         if (startsWith(entry, "abandonable_lock-"))
-            abandonable_lock_holders.insert(zookeeper_path + "/temp/" + entry);
+            lock_holder_paths.insert(zookeeper_path + "/temp/" + entry);
     }
-    std::cerr << "Stage 1 (get lock holders): " << abandonable_lock_holders.size()
+    std::cerr << "Stage 1 (get lock holders): " << lock_holder_paths.size()
               << " lock holders, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
     stage.restart();
 
-    if (!abandonable_lock_holders.empty())
+    if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(zookeeper_path + "/block_numbers");
         std::cerr << "Stage 2 (get partitions): " << partitions.size()
@@ -86,7 +86,7 @@ try
         for (BlockInfo & block : block_infos)
         {
             zkutil::GetResponse resp = block.contents_future.get();
-            if (!resp.error && abandonable_lock_holders.count(resp.data))
+            if (!resp.error && lock_holder_paths.count(resp.data))
             {
                 ++total_count;
                 current_inserts[block.partition].insert(block.number);

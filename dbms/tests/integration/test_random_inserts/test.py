@@ -134,14 +134,18 @@ def test_insert_multithreaded(started_cluster):
     # Sanity check: at least something was inserted
     assert runner.total_inserted > 0
 
-    for i in range(30): # wait for replication 3 seconds max
+    all_replicated = False
+    for i in range(50): # wait for replication 5 seconds max
         time.sleep(0.1)
 
         def get_delay(node):
             return int(node.query("SELECT absolute_delay FROM system.replicas WHERE table = 'repl_test'").rstrip())
 
         if all([get_delay(n) == 0 for n in nodes]):
+            all_replicated = True
             break
+
+    assert all_replicated
 
     actual_inserted = []
     for i, node in enumerate(nodes):

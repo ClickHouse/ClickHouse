@@ -13,33 +13,24 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/** The synchronization is primitive. Works as follows:
-  * Creates a non-ephemeral incremental node and marks it as locked (LOCKED).
-  * `unlock()` unlocks it (UNLOCKED).
-  * When the destructor is called or the session ends in ZooKeeper, it goes into the ABANDONED state.
-  * (Including when the program is halted).
-  */
-class AbandonableLockInZooKeeper : public boost::noncopyable
+/// A class that is used for locking a block number in a partition.
+/// It creates a secondary ephemeral node in `temp_path` and a main ephemeral node with `path_prefix`
+/// that references the secondary node. The reasons for this two-level scheme are historical (of course
+/// it would be simpler to allocate block numbers for all partitions in one ZK directory).
+class EphemeralLockInZooKeeper : public boost::noncopyable
 {
 public:
-    enum State
-    {
-        UNLOCKED,
-        LOCKED,
-        ABANDONED,
-    };
-
-    AbandonableLockInZooKeeper(
+    EphemeralLockInZooKeeper(
         const String & path_prefix_, const String & temp_path, zkutil::ZooKeeper & zookeeper_, zkutil::Requests * precheck_ops = nullptr);
 
-    AbandonableLockInZooKeeper() = default;
+    EphemeralLockInZooKeeper() = default;
 
-    AbandonableLockInZooKeeper(AbandonableLockInZooKeeper && rhs) noexcept
+    EphemeralLockInZooKeeper(EphemeralLockInZooKeeper && rhs) noexcept
     {
         *this = std::move(rhs);
     }
 
-    AbandonableLockInZooKeeper & operator=(AbandonableLockInZooKeeper && rhs) noexcept
+    EphemeralLockInZooKeeper & operator=(EphemeralLockInZooKeeper && rhs) noexcept
     {
         zookeeper = rhs.zookeeper;
         rhs.zookeeper = nullptr;
@@ -82,10 +73,10 @@ public:
     void checkCreated() const
     {
         if (!isCreated())
-            throw Exception("AbandonableLock is not created", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("EphemeralLock is not created", ErrorCodes::LOGICAL_ERROR);
     }
 
-    ~AbandonableLockInZooKeeper();
+    ~EphemeralLockInZooKeeper();
 
 private:
     zkutil::ZooKeeper * zookeeper = nullptr;
@@ -95,8 +86,7 @@ private:
 };
 
 
-/// Acquires block number locks in all partitions. The class is called Ephemeral- instead of Abandonable-
-/// because it creates ephemeral block nodes (there is no need to leave abandoned tombstones).
+/// Acquires block number locks in all partitions.
 class EphemeralLocksInAllPartitions
 {
 public:

@@ -288,7 +288,7 @@ void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, Wr
 
 void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr, settings.csv.delimiter); });
+    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
 

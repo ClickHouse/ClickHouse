@@ -307,6 +307,10 @@ public:
       */
     virtual bool isValueRepresentedByInteger() const { return false; }
 
+    /** Unsigned Integers, Date, DateTime. Not nullable.
+      */
+    virtual bool isValueRepresentedByUnsignedInteger() const { return false; }
+
     /** Values are unambiguously identified by contents of contiguous memory region,
       *  that can be obtained by IColumn::getDataAt method.
       * Examples: numbers, Date, DateTime, String, FixedString,
