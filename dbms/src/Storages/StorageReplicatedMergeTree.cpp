@@ -1155,7 +1155,6 @@ void StorageReplicatedMergeTree::writePartLog(
 
         if (merge_entry)
         {
-
             part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
             part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
