@@ -19,7 +19,7 @@ markdown_extensions:
 
 theme:
   name: null
-  custom_dir: 'mkdocs-material-theme'
+  custom_dir: 'tools/mkdocs-material-theme'
   language: 'en'
   feature:
     tabs: false
