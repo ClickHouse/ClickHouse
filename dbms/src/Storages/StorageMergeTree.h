@@ -120,7 +120,7 @@ private:
 
     std::atomic<bool> shutdown_called {false};
 
-    BackgroundProcessingPool::TaskHandle merge_task_handle;
+    BackgroundProcessingPool::TaskHandle background_task_handle;
 
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
@@ -129,7 +129,10 @@ private:
     bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate,
                String * out_disable_reason = nullptr);
 
-    bool mergeTask();
+    /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
+    bool tryMutatePart();
+
+    bool backgroundTask();
 
     Int64 getCurrentMutationVersion(
         const MergeTreeData::DataPartPtr & part,
