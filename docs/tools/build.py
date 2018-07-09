@@ -41,17 +41,51 @@ def build_for_lang(lang, args):
     config_path = os.path.join(args.docs_dir, 'mkdocs_%s.yml' % lang)
 
     try:
-            cfg = config.load_config(
-                config_file=config_path,
-                docs_dir=os.path.join(args.docs_dir, lang),
-                site_dir=os.path.join(args.output_dir, lang),
-                strict=True
-            )
+        theme_cfg = {
+            'name': None,
+            'custom_dir': 'mkdocs-material-theme',
+            'language': lang,
+            'feature': {
+                'tabs': False
+            },
+            'palette': {
+                'primary': 'white',
+                'accent': 'white'
+            },
+            'font': False,
+            'logo': 'images/logo.svg',
+            'favicon': 'assets/images/favicon.ico',
+            'include_search_page': False,
+            'search_index_only': True,
+            'static_templates': ['404.html'],
+            'extra': {
+                'single_page': False,
+                'search': {
+                    'language': 'en' if lang == 'en' else 'en, %s' % lang
+                }
+            }
 
-            mkdocs_build.build(cfg)
+        }
+        cfg = config.load_config(
+            config_file=config_path,
+            site_name='ClickHouse Documentation' if lang == 'en' else 'Документация ClickHouse',
+            docs_dir=os.path.join(args.docs_dir, lang),
+            site_dir=os.path.join(args.output_dir, lang),
+            strict=True,
+            theme=theme_cfg,
+            copyright='©2016–2018 Yandex LLC',
+            use_directory_urls=True,
+            repo_name='yandex/ClickHouse',
+            repo_url='https://github.com/yandex/ClickHouse/',
+            edit_uri='edit/master/docs/%s' % lang,
+            extra_css=['assets/stylesheets/custom.css'],
+            markdown_extensions=['codehilite']
+        )
 
-            if not args.skip_single_page:
-                build_single_page_version(lang, args, cfg)
+        mkdocs_build.build(cfg)
+
+        if not args.skip_single_page:
+            build_single_page_version(lang, args, cfg)
 
     except exceptions.ConfigurationError as e:
         raise SystemExit('\n' + str(e))
@@ -64,7 +98,7 @@ def build_single_page_version(lang, args, cfg):
         concatenate(lang, args.docs_dir, single_md)
 
         with temp_dir() as temp:
-            pages_key = 'ClickHouse Documentation' if lang == 'en' else 'Документация ClickHouse'
+
             cfg.load_dict({
                 'docs_dir': os.path.join(args.docs_dir, lang),
                 'site_dir': temp,
@@ -75,7 +109,7 @@ def build_single_page_version(lang, args, cfg):
                     }
                 },
                 'pages': [
-                    {pages_key: 'single.md'}
+                    {cfg.data.get('site_name'): 'single.md'}
                 ]
             })
 
