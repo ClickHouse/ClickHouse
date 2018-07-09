@@ -6,7 +6,7 @@
 
 path - относительный путь до файла от [user_files_path](../operations/server_settings/settings.md#user_files_path).
 
-format - [формат](../formats/index.md) файла.
+format - [формат](../formats/index.md#formats) файла.
 
 structure - структура таблицы в форме 'UserID UInt64, URL String'. Определяет имена и типы столбцов.
 
