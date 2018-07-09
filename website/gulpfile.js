@@ -58,7 +58,7 @@ gulp.task('reference', [], function () {
 });
 
 gulp.task('docs', [], function () {
-    run('cd ' + docsDir + '; ./build.sh');
+    run('cd ' + docsDir + '/tools; ./build.sh');
     return gulp.src(paths.docs)
         .pipe(gulp.dest(outputDir + '/../docs'))
 });
