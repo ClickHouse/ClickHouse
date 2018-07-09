@@ -64,7 +64,7 @@ def build_single_page_version(lang, args, cfg):
         concatenate(lang, args.docs_dir, single_md)
 
         with temp_dir() as temp:
-            pages_key = 'Documentation' if lang == 'en' else 'Документация'
+            pages_key = 'ClickHouse Documentation' if lang == 'en' else 'Документация ClickHouse'
             cfg.load_dict({
                 'docs_dir': os.path.join(args.docs_dir, lang),
                 'site_dir': temp,
