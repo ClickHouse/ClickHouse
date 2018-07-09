@@ -144,7 +144,11 @@
                 {% if not "\x3ch1" in page.content %}
                   <h1>{{ page.title | default(config.site_name, true)}}</h1>
                 {% endif %}
-                {{ page.content }}
+                <div id="content">
+                {% if not config.extra.single_page %}
+                  {{ page.content }}
+                {% endif %}
+                </div>
                 {% block source %}
                   {% if page and page.meta and page.meta.source %}
                     <h2 id="__source">{{ lang.t("meta.source") }}</h2>
@@ -200,5 +204,13 @@
         {% include "partials/integrations/analytics.html" %}
       {% endif %}
     {% endblock %}
+    {% if config.extra.single_page and page.content %}
+    <script src="https://yastatic.net/jquery/3.1.1/jquery.min.js"></script>
+    <script type="text/javascript" async="async">
+      $(function() {
+          $("#content").html({{ page.content|tojson|safe }});
+      });
+    </script>
+    {% endif %}
   </body>
 </html>
