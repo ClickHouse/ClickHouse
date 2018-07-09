@@ -64,6 +64,7 @@ private:
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
         void seekToMark(size_t index);
+        void seekToStart();
 
         ReadBuffer * data_buffer;
 

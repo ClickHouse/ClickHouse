@@ -12,7 +12,7 @@ public:
 
     /// Column always contains Null if it's Nullable and empty string if it's String or Nullable(String).
     /// So, size may be greater than the number of inserted unique values.
-    virtual ColumnPtr getNestedColumn() const = 0;
+    virtual const ColumnPtr & getNestedColumn() const = 0;
     /// The same as getNestedColumn, but removes null map if nested column is nullable.
     virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
 
@@ -49,21 +49,6 @@ public:
     virtual bool canContainNulls() const = 0;
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
-
-    /// Column which contains the set of necessary for serialization keys. Such that empty column after
-    /// uniqueInsertRangeFrom(column->cut(offset, limit), 0, limit) call will contain the same set of keys.
-    struct SerializableState
-    {
-        ColumnPtr column;
-        size_t offset;
-        size_t limit;
-    };
-
-    virtual SerializableState getSerializableState() const = 0;
-
-//    virtual MutableColumnPtr getInsertionPoints(const ColumnPtr & keys) const = 0;
-//
-//    virtual bool has(const char * pos, size_t length) const { return getInsertionPoint(pos, length) != size(); }
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
 
