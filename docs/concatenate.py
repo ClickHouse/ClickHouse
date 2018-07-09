@@ -68,7 +68,7 @@ for path in files_to_concatenate:
             if sharp_pos > -1:
                 return '[' + text + '](' + link[sharp_pos:] + ')'
             else:
-                print('ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
+                raise RuntimeError('ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
                 # return '['+text+'](#'+link.replace('/','-')+')'
 
     for l in file:
