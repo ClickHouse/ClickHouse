@@ -121,8 +121,10 @@ public:
         OutputStreamGetter getter;
         SubstreamPath path;
 
-        bool position_independent_encoding = true;
         size_t max_dictionary_size = 0;
+        bool use_single_dictionary_for_part = true;
+
+        bool position_independent_encoding = true;
     };
 
     struct DeserializeBinaryBulkSettings

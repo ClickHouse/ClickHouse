@@ -200,6 +200,11 @@ MergeTreeReader::Stream::Stream(
             getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
     }
 
+    /// Avoid empty buffer. May happen while reading dictionary for DataTypeWithDictionary.
+    /// For example: part has single dictionary and all marks point to the same position.
+    if (max_mark_range == 0)
+        max_mark_range = max_read_buffer_size;
+
     size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
 
     /// Estimate size of the data to be read.
@@ -329,6 +334,26 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 }
 
 
+void MergeTreeReader::Stream::seekToStart()
+{
+    try
+    {
+        if (cached_buffer)
+            cached_buffer->seek(0, 0);
+        if (non_cached_buffer)
+            non_cached_buffer->seek(0, 0);
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
+            e.addMessage("(while seeking to start of column " + path_prefix + ")");
+
+        throw;
+    }
+}
+
+
 void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
@@ -379,7 +404,12 @@ void MergeTreeReader::readData(
 
             Stream & stream = *it->second;
 
-            if (!continue_reading && !stream_for_prefix)
+            if (stream_for_prefix)
+            {
+                stream.seekToStart();
+                continue_reading = false;
+            }
+            else if (!continue_reading)
                 stream.seekToMark(from_mark);
 
             return stream.data_buffer;

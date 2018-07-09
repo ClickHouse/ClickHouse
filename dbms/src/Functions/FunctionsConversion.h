@@ -1576,7 +1576,7 @@ private:
                 if (from_with_dict)
                 {
                     auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(prev_arg_col.get());
-                    arg.column = col_with_dict->getUnique()->getNestedColumn();
+                    arg.column = col_with_dict->getDictionary().getNestedColumn();
                     arg.type = from_with_dict->getDictionaryType();
 
                     tmp_rows_count = arg.column->size();
@@ -1602,9 +1602,7 @@ private:
                 if (from_with_dict)
                 {
                     auto res_keys = std::move(res.column);
-
-                    auto idx = col_with_dict->getUnique()->uniqueInsertRangeFrom(*res_keys, 0, res_keys->size());
-                    col_with_dict->getIndexes()->insertRangeFrom(*idx->index(*res_indexes, 0), 0, res_indexes->size());
+                    col_with_dict->insertRangeFromDictionaryEncodedColumn(*res_keys, *res_indexes);
                 }
                 else
                     col_with_dict->insertRangeFromFullColumn(*res.column, 0, res.column->size());

@@ -97,9 +97,11 @@ void IMergedBlockOutputStream::writeData(
     bool skip_offsets,
     IDataType::SerializeBinaryBulkStatePtr & serialization_state)
 {
-    IDataType::SerializeBinaryBulkSettings settings;
-    settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
-    settings.max_dictionary_size = 1024;
+    auto & settings = storage.context.getSettingsRef();
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
+    serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
+    serialize_settings.max_dictionary_size = settings.max_dictionary_size;
+    serialize_settings.use_single_dictionary_for_part = settings.use_single_dictionary_for_part != 0;
 
     size_t size = column.size();
     size_t prev_mark = 0;
@@ -135,10 +137,10 @@ void IMergedBlockOutputStream::writeData(
 
                 writeIntBinary(stream.plain_hashing.count(), stream.marks);
                 writeIntBinary(stream.compressed.offset(), stream.marks);
-            }, settings.path);
+            }, serialize_settings.path);
         }
 
-        type.serializeBinaryBulkWithMultipleStreams(column, prev_mark, limit, settings, serialization_state);
+        type.serializeBinaryBulkWithMultipleStreams(column, prev_mark, limit, serialize_settings, serialization_state);
 
         /// So that instead of the marks pointing to the end of the compressed block, there were marks pointing to the beginning of the next one.
         type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
@@ -154,7 +156,7 @@ void IMergedBlockOutputStream::writeData(
                 return;
 
             column_streams[stream_name]->compressed.nextIfAtEnd();
-        }, settings.path);
+        }, serialize_settings.path);
 
         prev_mark += limit;
     }
@@ -168,7 +170,7 @@ void IMergedBlockOutputStream::writeData(
             String stream_name = IDataType::getFileNameForStream(name, substream_path);
             offset_columns.insert(stream_name);
         }
-    }, settings.path);
+    }, serialize_settings.path);
 }
 
 
@@ -296,14 +298,16 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
     /// Finish columns serialization.
-    IDataType::SerializeBinaryBulkSettings settings;
-    settings.max_dictionary_size = 1024;
+    auto & settings = storage.context.getSettingsRef();
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
+    serialize_settings.max_dictionary_size = settings.max_dictionary_size;
+    serialize_settings.use_single_dictionary_for_part = settings.use_single_dictionary_for_part != 0;
     OffsetColumns offset_columns;
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
     {
-        settings.getter = createStreamGetter(it->name, offset_columns, false);
-        it->type->serializeBinaryBulkStateSuffix(settings, serialization_states[i]);
+        serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
+        it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
     }
 
     if (!total_column_list)
@@ -550,14 +554,16 @@ void MergedColumnOnlyOutputStream::writeSuffix()
 MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums()
 {
     /// Finish columns serialization.
-    IDataType::SerializeBinaryBulkSettings settings;
-    settings.max_dictionary_size = 1024;
+    auto & settings = storage.context.getSettingsRef();
+    IDataType::SerializeBinaryBulkSettings serialize_settings;
+    serialize_settings.max_dictionary_size = settings.max_dictionary_size;
+    serialize_settings.use_single_dictionary_for_part = settings.use_single_dictionary_for_part != 0;
     OffsetColumns offset_columns;
     for (size_t i = 0; i < header.columns(); ++i)
     {
         auto & column = header.safeGetByPosition(i);
-        settings.getter = createStreamGetter(column.name, offset_columns, skip_offsets);
-        column.type->serializeBinaryBulkStateSuffix(settings, serialization_states[i]);
+        serialize_settings.getter = createStreamGetter(column.name, offset_columns, skip_offsets);
+        column.type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
     }
 
     MergeTreeData::DataPart::Checksums checksums;

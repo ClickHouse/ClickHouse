@@ -254,7 +254,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
             else
             {
                 has_with_dictionary = true;
-                column_with_dict_size = column_with_dict->getUnique()->size();
+                column_with_dict_size = column_with_dict->getDictionary().size();
                 indexes = column_with_dict->getIndexesPtr();
             }
         }
@@ -291,7 +291,7 @@ static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & ar
                                 + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
 
             ColumnPtr new_column = convert_all_to_full ? column_with_dict->convertToFullColumn()
-                                                       : column_with_dict->getUnique()->getNestedColumn();
+                                                       : column_with_dict->getDictionary().getNestedColumn();
 
             temp_block.insert({new_column, type_with_dict->getDictionaryType(), column.name});
         }
@@ -355,7 +355,6 @@ void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) con
 struct ArgumentsWithoutDictionary
 {
     ColumnsWithTypeAndName arguments;
-    DataTypePtr common_index_type;
     bool all_without_dictionary = true;
 
     explicit ArgumentsWithoutDictionary(const ColumnsWithTypeAndName & args)
@@ -372,12 +371,8 @@ struct ArgumentsWithoutDictionary
                     arguments = args;
                 }
                 arguments[i].type = arg_with_dict->getDictionaryType();
-                index_types.push_back(arg_with_dict->getIndexesType());
             }
         }
-
-        if (!all_without_dictionary)
-            common_index_type = getLeastSupertype(index_types);
     }
 };
 
@@ -387,13 +382,13 @@ DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutDictionary(const ColumnsWit
 
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
-        NullPresence null_presense = getNullPresense(arguments);
+        NullPresence null_presence = getNullPresense(arguments);
 
-        if (null_presense.has_null_constant)
+        if (null_presence.has_null_constant)
         {
             return makeNullable(std::make_shared<DataTypeNothing>());
         }
-        if (null_presense.has_nullable)
+        if (null_presence.has_nullable)
         {
             Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
@@ -479,8 +474,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
         ArgumentsWithoutDictionary arguments_without_dictionary(arguments);
         if (!arguments_without_dictionary.all_without_dictionary)
             return std::make_shared<DataTypeWithDictionary>(
-                    getReturnTypeWithoutDictionary(arguments_without_dictionary.arguments),
-                    arguments_without_dictionary.common_index_type);
+                    getReturnTypeWithoutDictionary(arguments_without_dictionary.arguments));
     }
 
     return getReturnTypeWithoutDictionary(arguments);

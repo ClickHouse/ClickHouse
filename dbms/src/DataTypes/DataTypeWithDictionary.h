@@ -9,17 +9,15 @@ class DataTypeWithDictionary : public IDataType
 {
 private:
     DataTypePtr dictionary_type;
-    DataTypePtr indexes_type;
 
 public:
-    DataTypeWithDictionary(DataTypePtr dictionary_type_, DataTypePtr indexes_type_);
+    DataTypeWithDictionary(DataTypePtr dictionary_type_);
 
     const DataTypePtr & getDictionaryType() const { return dictionary_type; }
-    const DataTypePtr & getIndexesType() const { return indexes_type; }
 
     String getName() const override
     {
-        return "WithDictionary(" + dictionary_type->getName() + ", " + indexes_type->getName() + ")";
+        return "WithDictionary(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "WithDictionary"; }
 
@@ -146,7 +144,8 @@ public:
     bool onlyNull() const override { return false; }
     bool withDictionary() const override { return true; }
 
-    static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, const IDataType & indexes_type);
+    static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
+    static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
 
 private:
 
@@ -164,14 +163,8 @@ private:
     void deserializeImpl(IColumn & column, ReadBuffer & istr,
                          DeserealizeFunctionPtr<Args ...> func, Args & ... args) const;
 
-    template <typename ColumnType, typename IndexType>
-    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type);
-
-    template <typename ColumnType>
-    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const IDataType & indexes_type);
-
-
-    friend struct CreateColumnVector;
+    template <typename Creator>
+    static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
 
 }
