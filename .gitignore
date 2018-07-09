@@ -10,10 +10,8 @@
 *.logrt
 
 /build
-/docs/en_single_page/
-/docs/ru_single_page/
-/docs/venv/
-/docs/build/
+/docs/build
+/docs/tools/venv/
 /docs/en/development/build/
 /docs/ru/development/build/
 
