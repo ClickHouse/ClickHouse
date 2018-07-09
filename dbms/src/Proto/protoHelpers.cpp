@@ -5,25 +5,30 @@
 #include <Storages/IStorage.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ParserCreateQuery.h>
+#include <Parsers/ExpressionElementParser.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn.h>
+#include <Core/Block.h>
 #include <ServerMessage.capnp.h>
 
 #include <capnp/serialize.h>
 #include <sstream>
 
+/// @sa https://capnproto.org/cxx.html
 
 namespace DB
 {
-    template <typename ColumnT>
-    static MutableColumnPtr serializeProto(const ColumnT & column_type, capnp::MessageBuilder & message)
+    static MutableColumnPtr serializeProto(capnp::MessageBuilder & message)
     {
-        MutableColumnPtr data = column_type.createColumn();
+        MutableColumnPtr data = DataTypeUInt8().createColumn();
 
         kj::Array<capnp::word> serialized = messageToFlatArray(message);
+        kj::ArrayPtr<const char> bytes = serialized.asChars();
 
-        data->insertData(reinterpret_cast<const char *>(serialized.begin()), serialized.size() * sizeof(capnp::word));
+        data->reserve(bytes.size());
+        for (size_t i = 0 ; i < bytes.size(); ++i)
+            data->insertData(&bytes[i], 1);
+
         return data;
     }
 
@@ -37,7 +42,7 @@ namespace DB
         return reader.getRoot<T>();
     }
 
-    ColumnWithTypeAndName storeContext(Context & context)
+    static ColumnWithTypeAndName storeContext(const String & column_name, Context & context)
     {
         capnp::MallocMessageBuilder message;
         Proto::Context::Builder proto_context = message.initRoot<Proto::Context>();
@@ -48,11 +53,14 @@ namespace DB
         size_t db_nomber = 0;
         for (auto & pr_db : dbs)
         {
-            const String& db_name = pr_db.first;
-            IDatabase& db = *pr_db.second;
+            const String & database_name = pr_db.first;
+            if (database_name == "system")
+                continue;
+
+            IDatabase & db = *pr_db.second;
 
             auto proto_db = proto_databases[db_nomber];
-            proto_db.setName(db_name);
+            proto_db.setName(database_name);
 
             std::unordered_map<String, StoragePtr> tables;
             DatabaseIteratorPtr it_tables = db.getIterator(context);
@@ -95,24 +103,23 @@ namespace DB
         }
 
         ColumnWithTypeAndName proto_column;
-        proto_column.name = "context";
-        proto_column.type = std::make_shared<DataTypeUInt64>();
-        proto_column.column = std::move(serializeProto(*proto_column.type, message));
+        proto_column.name = column_name;
+        proto_column.type = std::make_shared<DataTypeUInt8>();
+        proto_column.column = std::move(serializeProto(message));
         return proto_column;
     }
 
-    void loadContext(const ColumnWithTypeAndName & proto_column, Context & context)
+    static void loadContext(const ColumnWithTypeAndName & proto_column, Context & context)
     {
         StringRef plain_data = proto_column.column->getDataAt(0);
         size_t data_size = proto_column.column->byteSize();
         Proto::Context::Reader proto_context = deserializeProto<Proto::Context>(plain_data.data, data_size);
 
-        // or ParserCompoundColumnDeclaration ?
-        ParserColumnDeclaration parser_defaults;
+        ParserExpressionElement parser;
 
         for (auto proto_database : proto_context.getDatabases())
         {
-            String database_name = proto_database.getName().cStr();
+            const String & database_name = proto_database.getName().cStr();
             if (!context.isDatabaseExist(database_name))
             {
                 // TODO
@@ -135,13 +142,31 @@ namespace DB
                     String column_name = column.getName().cStr();
                     String expression = column.getDefault().getExpression().cStr();
                     ColumnDefaultKind expression_kind = static_cast<ColumnDefaultKind>(column.getDefault().getKind());
-                    ASTPtr ast = parseQuery(parser_defaults, expression, expression.size());
 
+                    ASTPtr ast = parseQuery(parser, expression, expression.size());
                     column_description.defaults[column_name] = ColumnDefault{expression_kind, ast};
                 }
 
                 table->setColumns(column_description);
             }
         }
+    }
+
+    static constexpr const char * contextColumnName()
+    {
+        return "context";
+    }
+
+    Block storeContextBlock(Context & context)
+    {
+        Block block;
+        block.insert(storeContext(contextColumnName(), context));
+        return block;
+    }
+
+    void loadContextBlock(const Block & block, Context & context)
+    {
+        const ColumnWithTypeAndName & column = block.getByName(contextColumnName());
+        loadContext(column, context);
     }
 }

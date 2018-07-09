@@ -1087,7 +1087,7 @@ private:
                 return false;
 
             case Protocol::Server::CapnProto:
-                loadContext(packet.block.getColumnsWithTypeAndName()[0], context);
+                loadContextBlock(packet.block, context);
                 return receiveSampleBlock(out);
 
             default:

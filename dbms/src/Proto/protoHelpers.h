@@ -4,8 +4,8 @@
 namespace DB
 {
     class Context;
-    struct ColumnWithTypeAndName;
+    class Block;
 
-    ColumnWithTypeAndName storeContext(Context & context);
-    void loadContext(const ColumnWithTypeAndName & proto_column, Context & context);
+    Block storeContextBlock(Context & context);
+    void loadContextBlock(const Block & block, Context & context);
 }

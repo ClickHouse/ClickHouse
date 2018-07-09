@@ -28,6 +28,8 @@
 
 #include <Common/ExternalTable.h>
 
+#include <Proto/protoHelpers.h>
+
 #include "TCPHandler.h"
 
 #include <Common/NetException.h>
@@ -309,6 +311,10 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       *  client receive exception before sending data.
       */
     state.io.out->writePrefix();
+
+    /// Send query metadata (column defaults)
+    Block meta_block = storeContextBlock(query_context);
+    sendMetadata(meta_block);
 
     /// Send block to the client - table structure.
     Block block = state.io.out->getHeader();
@@ -754,6 +760,19 @@ void TCPHandler::sendData(const Block & block)
     initBlockOutput(block);
 
     writeVarUInt(Protocol::Server::Data, *out);
+    writeStringBinary("", *out);
+
+    state.block_out->write(block);
+    state.maybe_compressed_out->next();
+    out->next();
+}
+
+
+void TCPHandler::sendMetadata(const Block & block)
+{
+    initBlockOutput(block);
+
+    writeVarUInt(Protocol::Server::CapnProto, *out);
     writeStringBinary("", *out);
 
     state.block_out->write(block);
