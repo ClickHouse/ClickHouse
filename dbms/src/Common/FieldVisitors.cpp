@@ -155,6 +155,13 @@ void FieldVisitorHash::operator() (const UInt64 & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const UInt128 & x) const
+{
+    UInt8 type = Field::Types::UInt128;
+    hash.update(type);
+    hash.update(x);
+}
+
 void FieldVisitorHash::operator() (const Int64 & x) const
 {
     UInt8 type = Field::Types::Int64;
