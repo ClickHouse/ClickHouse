@@ -194,7 +194,7 @@ template <typename Type>
 void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     std::string name;
-    readCSVString(name, istr, settings.csv.delimiter);
+    readCSVString(name, istr, settings.csv);
     static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 

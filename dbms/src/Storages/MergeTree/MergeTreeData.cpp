@@ -159,8 +159,9 @@ MergeTreeData::MergeTreeData(
     Poco::File(full_path + "detached").createDirectory();
 
     String version_file_path = full_path + "format_version.txt";
-    // When data path not exists, ignore the format_version check
-    if (!attach || !path_exists)
+    auto version_file_exists = Poco::File(version_file_path).exists();
+    // When data path or file not exists, ignore the format_version check
+    if (!attach || !path_exists || !version_file_exists)
     {
         format_version = min_format_version;
         WriteBufferFromFile buf(version_file_path);
@@ -214,19 +215,16 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
 void MergeTreeData::initPrimaryKey()
 {
-    auto addSortDescription = [](SortDescription & descr, const ASTPtr & expr_ast)
+    auto addSortColumns = [](Names & out, const ASTPtr & expr_ast)
     {
-        descr.reserve(descr.size() + expr_ast->children.size());
+        out.reserve(out.size() + expr_ast->children.size());
         for (const ASTPtr & ast : expr_ast->children)
-        {
-            String name = ast->getColumnName();
-            descr.emplace_back(name, 1, 1);
-        }
+            out.emplace_back(ast->getColumnName());
     };
 
     /// Initialize description of sorting for primary key.
-    primary_sort_descr.clear();
-    addSortDescription(primary_sort_descr, primary_expr_ast);
+    primary_sort_columns.clear();
+    addSortColumns(primary_sort_columns, primary_expr_ast);
 
     primary_expr = ExpressionAnalyzer(primary_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
 
@@ -243,10 +241,10 @@ void MergeTreeData::initPrimaryKey()
     for (size_t i = 0; i < primary_key_size; ++i)
         primary_key_data_types[i] = primary_key_sample.getByPosition(i).type;
 
-    sort_descr = primary_sort_descr;
+    sort_columns = primary_sort_columns;
     if (secondary_sort_expr_ast)
     {
-        addSortDescription(sort_descr, secondary_sort_expr_ast);
+        addSortColumns(sort_columns, secondary_sort_expr_ast);
         secondary_sort_expr = ExpressionAnalyzer(secondary_sort_expr_ast, context, nullptr, getColumns().getAllPhysical()).getActions(false);
 
         ExpressionActionsPtr projected_expr =
@@ -279,7 +277,6 @@ void MergeTreeData::initPartitionKey()
     {
         minmax_idx_columns.emplace_back(column.name);
         minmax_idx_column_types.emplace_back(column.type);
-        minmax_idx_sort_descr.emplace_back(column.name, 1, 1);
     }
 
     /// Try to find the date column in columns used by the partition key (a common case).
@@ -2282,14 +2279,14 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(MergeTreeData:
 
 bool MergeTreeData::isPrimaryOrMinMaxKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const
 {
-    String column_name = node->getColumnName();
+    const String column_name = node->getColumnName();
 
-    for (const auto & column : primary_sort_descr)
-        if (column_name == column.column_name)
+    for (const auto & name : primary_sort_columns)
+        if (column_name == name)
             return true;
 
-    for (const auto & column : minmax_idx_sort_descr)
-        if (column_name == column.column_name)
+    for (const auto & name : minmax_idx_columns)
+        if (column_name == name)
             return true;
 
     if (const ASTFunction * func = typeid_cast<const ASTFunction *>(node.get()))

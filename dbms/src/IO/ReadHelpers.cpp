@@ -2,6 +2,7 @@
 #include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
@@ -500,18 +501,19 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    char maybe_quote = *buf.position();
+    const char delimiter = settings.delimiter;
+    const char maybe_quote = *buf.position();
 
     /// Emptiness and not even in quotation marks.
     if (maybe_quote == delimiter)
         return;
 
-    if (maybe_quote == '\'' || maybe_quote == '"')
+    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
         ++buf.position();
 
@@ -575,13 +577,13 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
     }
 }
 
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
+void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    readCSVStringInto(s, buf, delimiter);
+    readCSVStringInto(s, buf, settings);
 }
 
-template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
+template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>

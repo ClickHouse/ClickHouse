@@ -1473,17 +1473,29 @@ void ExpressionAnalyzer::makeSetsForIndex()
 }
 
 
-void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name)
+void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
 
-    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
+    SizeLimits set_for_index_size_limits;
+    if (settings.use_index_for_in_with_subqueries_max_values && settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
+    {
+        /// Silently cancel creating the set for index if the specific limit has been reached.
+        set_for_index_size_limits = SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
+    }
+    else
+    {
+        /// If the limit specific for set for index is lower than general limits for set - use general limit.
+        set_for_index_size_limits = SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
+    }
+
+    SetPtr set = std::make_shared<Set>(set_for_index_size_limits, true);
 
     set->setHeader(res.in->getHeader());
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block, true))
+        if (!set->insertFromBlock(block))
             return;
     }
 
@@ -1521,7 +1533,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
                 {
                     if (settings.use_index_for_in_with_subqueries)
-                        tryMakeSetFromSubquery(arg);
+                        tryMakeSetForIndexFromSubquery(arg);
                 }
                 else
                 {
@@ -1589,7 +1601,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
             return;
         }
 
-        SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
+        SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode), false);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1711,8 +1723,8 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
                         + left_arg_type->getName() + " and " + right_arg_type->getName() + ".",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
-    set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
+    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode), create_ordered_set);
+    set->createFromAST(set_element_types, elements_ast, context);
     prepared_sets[right_arg->range] = std::move(set);
 }
 

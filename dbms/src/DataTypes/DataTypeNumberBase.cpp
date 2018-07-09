@@ -245,6 +245,12 @@ bool DataTypeNumberBase<T>::isValueRepresentedByInteger() const
     return std::is_integral_v<T>;
 }
 
+template <typename T>
+bool DataTypeNumberBase<T>::isValueRepresentedByUnsignedInteger() const
+{
+    return std::is_integral_v<T> && std::is_unsigned_v<T>;
+}
+
 
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class DataTypeNumberBase<UInt8>;
