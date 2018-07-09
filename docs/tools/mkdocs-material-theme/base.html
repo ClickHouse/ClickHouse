@@ -202,7 +202,6 @@
           {% endif %}
         {% endif %}
       {% endif %}
-      <script>app.initialize({version:"{{ mkdocs_version }}",url:{base:"{{ base_url }}"}})</script>
       {% for path in extra_javascript %}
         <script src="{{ path }}"></script>
       {% endfor %}
@@ -228,6 +227,12 @@
         ready(function () {
             document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
             document.getElementsByClassName('md-footer')[0].style.display = 'block';
+            app.initialize({
+                version: "{{ mkdocs_version }}",
+                url: {
+                    base: "{{ base_url }}"
+                }
+            });
         });
       </script>
       {% endif %}
