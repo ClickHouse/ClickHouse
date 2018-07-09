@@ -1,5 +1,5 @@
 {% import "partials/language.html" as lang with context %}
-<footer class="md-footer">
+<footer class="md-footer{% if config.extra.single_page %} md-hide{% endif %}">
   {% if page.previous_page or page.next_page %}
     <div class="md-footer-nav">
       <nav class="md-footer-nav__inner md-grid">

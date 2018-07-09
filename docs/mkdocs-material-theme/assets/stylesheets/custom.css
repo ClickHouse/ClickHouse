@@ -124,3 +124,7 @@ h1, h2, h3, .md-logo {
 .md-search-result__link {
     text-decoration: none !important;
 }
+
+.md-hide {
+    display: none;
+}
