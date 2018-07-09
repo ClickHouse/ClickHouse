@@ -14,74 +14,76 @@
 #         - For not http-links without anchor script logs an error and cuts them from the resulting single-page document.
 
 
-import codecs
 import sys
 import re
 import os
 
-if len(sys.argv) < 2:
-    print("Usage: concatenate.py language_dir")
-    print("Example: concatenate.py ru")
-    sys.exit(1)
 
-if not os.path.exists(sys.argv[1]):
-    print("Pass language_dir correctly. For example, 'ru'.")
-    sys.exit(2)
+def concatenate(lang):
+    if not os.path.exists(lang):
+        print("Pass language_dir correctly. For example, 'ru'.")
+        sys.exit(2)
 
-# Configuration
-PROJ_CONFIG = 'mkdocs_' + sys.argv[1] + '.yml'
-SINGLE_PAGE = sys.argv[1] + '_single_page/index.md'
-DOCS_DIR = sys.argv[1] + '/'
+    # Configuration
+    PROJ_CONFIG = 'mkdocs_' + lang + '.yml'
+    SINGLE_PAGE = lang + '_single_page/index.md'
+    DOCS_DIR = lang + '/'
 
-# 1. Open mkdocs.yml file and read `pages` configuration to get an ordered list of files
-cfg_file = open(PROJ_CONFIG)
+    # 1. Open mkdocs.yml file and read `pages` configuration to get an ordered list of files
+    with open(PROJ_CONFIG) as cfg_file:
+        files_to_concatenate = []
+        for l in cfg_file:
+            if '.md' in l and 'single_page' not in l:
+                path = (l[l.index(':') + 1:]).strip(" '\n")
+                files_to_concatenate.append(path)
 
-files_to_concatenate = []
+    print(str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:")
+    print(files_to_concatenate)
 
-for l in cfg_file:
-    if('.md' in l) and ('single_page' not in l):
-        path = (l[l.index(':') + 1:]).strip(" '\n")
-        files_to_concatenate.append(path)
+    # 2. Concatenate all of the files in the list
 
-print(str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:")
-print(files_to_concatenate)
+    with open(SINGLE_PAGE, 'w') as single_page_file:
 
-# 2. Concatenate all of the files in the list
+        first_file = True
 
-single_page_file = open(SINGLE_PAGE, 'w')
+        for path in files_to_concatenate:
 
-first_file = True
+            single_page_file.write('\n\n')
 
-for path in files_to_concatenate:
+            with open(DOCS_DIR + path) as f:
 
-    single_page_file.write('\n\n')
+                # function is passed into re.sub() to process links
+                def link_proc(matchObj):
+                    text, link = matchObj.group().strip('[)').split('](')
+                    if link.startswith('http'):
+                        return '[' + text + '](' + link + ')'
+                    else:
+                        sharp_pos = link.find('#')
+                        if sharp_pos > -1:
+                            return '[' + text + '](' + link[sharp_pos:] + ')'
+                        else:
+                            raise RuntimeError(
+                                'ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
+                            # return '['+text+'](#'+link.replace('/','-')+')'
 
-    file = open(DOCS_DIR + path)
+                for l in f:
+                    # Processing links in a string
+                    l = re.sub(r'\[.+?\]\(.+?\)', link_proc, l)
 
-    # function is passed into re.sub() to process links
-    def link_proc(matchObj):
-        text, link = matchObj.group().strip('[)').split('](')
-        if link.startswith('http'):
-            return '[' + text + '](' + link + ')'
-        else:
-            sharp_pos = link.find('#')
-            if sharp_pos > -1:
-                return '[' + text + '](' + link[sharp_pos:] + ')'
-            else:
-                raise RuntimeError('ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
-                # return '['+text+'](#'+link.replace('/','-')+')'
+                    # Correcting headers levels
+                    if not first_file:
+                        if l.startswith('#'):
+                            l = '#' + l
+                    else:
+                        first_file = False
 
-    for l in file:
-        # Processing links in a string
-        l = re.sub(r'\[.+?\]\(.+?\)', link_proc, l)
+                    single_page_file.write(l)
 
-        # Correcting headers levels
-        if not first_file:
-            if(l.startswith('#')):
-                l = '#' + l
-        else:
-            first_file = False
 
-        single_page_file.write(l)
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("Usage: concatenate.py language_dir")
+        print("Example: concatenate.py ru")
+        sys.exit(1)
 
-single_page_file.close()
+    concatenate(sys.argv[1])
