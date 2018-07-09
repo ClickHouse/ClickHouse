@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 # - Single-page document.
@@ -13,77 +12,60 @@
 #         - Not http-links with anchor are cutted to the anchor sign (#).
 #         - For not http-links without anchor script logs an error and cuts them from the resulting single-page document.
 
-
-import sys
+import logging
 import re
 import os
 
 
-def concatenate(lang):
-    if not os.path.exists(lang):
-        print("Pass language_dir correctly. For example, 'ru'.")
-        sys.exit(2)
+def concatenate(lang, docs_path, single_page_file):
 
-    # Configuration
-    PROJ_CONFIG = 'mkdocs_' + lang + '.yml'
-    SINGLE_PAGE = lang + '_single_page/index.md'
-    DOCS_DIR = lang + '/'
+    proj_config = os.path.join(docs_path, 'mkdocs_%s.yml' % lang)
+    lang_path = os.path.join(docs_path, lang)
 
-    # 1. Open mkdocs.yml file and read `pages` configuration to get an ordered list of files
-    with open(PROJ_CONFIG) as cfg_file:
+    with open(proj_config) as cfg_file:
         files_to_concatenate = []
         for l in cfg_file:
             if '.md' in l and 'single_page' not in l:
                 path = (l[l.index(':') + 1:]).strip(" '\n")
                 files_to_concatenate.append(path)
 
-    print(str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:")
-    print(files_to_concatenate)
+    logging.info(str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:")
+    logging.info(files_to_concatenate)
 
-    # 2. Concatenate all of the files in the list
 
-    with open(SINGLE_PAGE, 'w') as single_page_file:
+    first_file = True
 
-        first_file = True
+    for path in files_to_concatenate:
 
-        for path in files_to_concatenate:
+        single_page_file.write('\n\n')
 
-            single_page_file.write('\n\n')
+        with open(os.path.join(lang_path, path)) as f:
 
-            with open(DOCS_DIR + path) as f:
-
-                # function is passed into re.sub() to process links
-                def link_proc(matchObj):
-                    text, link = matchObj.group().strip('[)').split('](')
-                    if link.startswith('http'):
-                        return '[' + text + '](' + link + ')'
+            # function is passed into re.sub() to process links
+            def link_proc(matchObj):
+                text, link = matchObj.group().strip('[)').split('](')
+                if link.startswith('http'):
+                    return '[' + text + '](' + link + ')'
+                else:
+                    sharp_pos = link.find('#')
+                    if sharp_pos > -1:
+                        return '[' + text + '](' + link[sharp_pos:] + ')'
                     else:
-                        sharp_pos = link.find('#')
-                        if sharp_pos > -1:
-                            return '[' + text + '](' + link[sharp_pos:] + ')'
-                        else:
-                            raise RuntimeError(
-                                'ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
-                            # return '['+text+'](#'+link.replace('/','-')+')'
+                        raise RuntimeError(
+                            'ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
+                        # return '['+text+'](#'+link.replace('/','-')+')'
 
-                for l in f:
-                    # Processing links in a string
-                    l = re.sub(r'\[.+?\]\(.+?\)', link_proc, l)
+            for l in f:
+                # Processing links in a string
+                l = re.sub(r'\[.+?\]\(.+?\)', link_proc, l)
 
-                    # Correcting headers levels
-                    if not first_file:
-                        if l.startswith('#'):
-                            l = '#' + l
-                    else:
-                        first_file = False
+                # Correcting headers levels
+                if not first_file:
+                    if l.startswith('#'):
+                        l = '#' + l
+                else:
+                    first_file = False
 
-                    single_page_file.write(l)
+                single_page_file.write(l)
 
-
-if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: concatenate.py language_dir")
-        print("Example: concatenate.py ru")
-        sys.exit(1)
-
-    concatenate(sys.argv[1])
+    single_page_file.flush()

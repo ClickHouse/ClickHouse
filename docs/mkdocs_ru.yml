@@ -18,7 +18,7 @@ markdown_extensions:
 
 theme:
   name: null
-  custom_dir: 'tools/mkdocs-material-theme'
+  custom_dir: 'mkdocs-material-theme'
   language: 'ru'
   feature:
     tabs: false
