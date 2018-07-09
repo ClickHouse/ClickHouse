@@ -180,12 +180,6 @@
       {% endblock %}
     </div>
     {% block scripts %}
-      {% if config.extra.single_page and page.content %}
-      <script type="text/javascript">
-            document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
-            document.getElementsByClassName('md-footer')[0].style.display = 'block';
-      </script>
-      {% endif %}
       {% block libs %}
         <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
       {% endblock %}
@@ -218,5 +212,24 @@
         {% include "partials/integrations/analytics.html" %}
       {% endif %}
     {% endblock %}
+    {% if config.extra.single_page and page.content %}
+      <script type="text/javascript" async="async">
+        function ready(callback){
+            if (document.readyState != 'loading') {
+                callback();
+            } else if (document.addEventListener) {
+                document.addEventListener('DOMContentLoaded', callback);
+            } else document.attachEvent('onreadystatechange', function() {
+                if (document.readyState == 'complete') {
+                    callback();
+                }
+            });
+        }
+        ready(function () {
+            document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
+            document.getElementsByClassName('md-footer')[0].style.display = 'block';
+        });
+      </script>
+      {% endif %}
   </body>
 </html>
