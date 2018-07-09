@@ -4,6 +4,7 @@ copyright: ©2016–2018 Yandex LLC
 docs_dir: ru
 site_dir: build/docs/ru
 use_directory_urls: true
+strict: true
 
 repo_name: 'yandex/ClickHouse'
 repo_url: 'https://github.com/yandex/ClickHouse/'
