@@ -69,7 +69,12 @@ Block AddingDefaultsBlockInputStream::readImpl()
         for (size_t row_idx = 0; row_idx < column_read.column->size(); ++row_idx)
         {
             if (mask[row_idx])
-                column_mixed->insertFrom(*column_def.column, row_idx);
+            {
+                if (column_def.column->isColumnConst())
+                    column_mixed->insert((*column_def.column)[row_idx]);
+                else
+                    column_mixed->insertFrom(*column_def.column, row_idx);
+            }
             else
                 column_mixed->insertFrom(*column_read.column, row_idx);
         }
