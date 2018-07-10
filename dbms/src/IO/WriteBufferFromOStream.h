@@ -26,10 +26,6 @@ public:
         size_t alignment = 0);
 
     ~WriteBufferFromOStream() override;
-
-private:
-    size_t size; /// For error message
-
 };
 
 }
