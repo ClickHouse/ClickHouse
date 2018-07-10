@@ -14,7 +14,6 @@ bool ReadBufferFromIStream::nextImpl()
 {
     istr.read(internal_buffer.begin(), internal_buffer.size());
     size_t gcount = istr.gcount();
-    read_bytes += gcount;
 
     if (!gcount)
     {
@@ -22,9 +21,9 @@ bool ReadBufferFromIStream::nextImpl()
             return false;
 
         if (istr.fail())
-            throw Exception("Cannot read from istream at " + std::to_string(read_bytes), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+            throw Exception("Cannot read from istream at offset " + count(), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
 
-        throw Exception("Unexpected state of istream at " + std::to_string(read_bytes), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+        throw Exception("Unexpected state of istream at offset " + count(), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
     }
     else
         working_buffer.resize(gcount);
