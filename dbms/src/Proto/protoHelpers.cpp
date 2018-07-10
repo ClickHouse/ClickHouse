@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
+#include <Storages/TableMetadata.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -109,7 +110,7 @@ namespace DB
         return proto_column;
     }
 
-    static void loadTableMetaInfo(const ColumnWithTypeAndName & proto_column, TableMetaInfo & table_meta)
+    static void loadTableMetadata(const ColumnWithTypeAndName & proto_column, TableMetadata & table_meta)
     {
         StringRef plain_data = proto_column.column->getDataAt(0);
         size_t data_size = proto_column.column->byteSize();
@@ -154,9 +155,9 @@ namespace DB
         return block;
     }
 
-    void loadTableMetaInfo(const Block & block, TableMetaInfo & table_meta)
+    void loadTableMetadata(const Block & block, TableMetadata & table_meta)
     {
         const ColumnWithTypeAndName & column = block.getByName(contextColumnName());
-        loadTableMetaInfo(column, table_meta);
+        loadTableMetadata(column, table_meta);
     }
 }
