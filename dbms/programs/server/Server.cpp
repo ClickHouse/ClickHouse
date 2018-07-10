@@ -3,6 +3,7 @@
 #include <memory>
 #include <sys/resource.h>
 #include <errno.h>
+#include <Poco/Version.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
