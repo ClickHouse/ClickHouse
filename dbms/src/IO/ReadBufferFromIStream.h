@@ -11,6 +11,8 @@ namespace DB
 
 class ReadBufferFromIStream : public BufferWithOwnMemory<ReadBuffer>
 {
+    size_t read_bytes = 0; /// For error message
+
 private:
     std::istream & istr;
 
