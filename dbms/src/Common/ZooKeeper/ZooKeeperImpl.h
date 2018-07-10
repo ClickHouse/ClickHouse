@@ -185,6 +185,7 @@ public:
         virtual ResponsePtr makeResponse() const = 0;
 
         virtual void addRootPath(const String & /* root_path */) {}
+        virtual void removeRootPath(const String & /* root_path */) {}
         virtual String getPath() const = 0;
     };
 
@@ -258,6 +259,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -278,6 +280,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -294,6 +297,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -312,6 +316,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -333,6 +338,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -351,6 +357,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -371,6 +378,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return path; }
     };
 
@@ -387,6 +395,7 @@ public:
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
         void addRootPath(const String & root_path) override;
+        void removeRootPath(const String & root_path) override;
         String getPath() const override { return {}; }
     };
 

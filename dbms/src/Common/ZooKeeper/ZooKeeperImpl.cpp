@@ -899,6 +899,21 @@ void ZooKeeper::MultiRequest::addRootPath(const String & root_path)
         request->addRootPath(root_path);
 }
 
+void ZooKeeper::CreateRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+void ZooKeeper::RemoveRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+void ZooKeeper::ExistsRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+void ZooKeeper::GetRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+void ZooKeeper::SetRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+void ZooKeeper::ListRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+void ZooKeeper::CheckRequest::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
+
+void ZooKeeper::MultiRequest::removeRootPath(const String & root_path)
+{
+    for (auto & request : requests)
+        request->removeRootPath(root_path);
+}
+
+
 void ZooKeeper::CreateResponse::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path_created, root_path); }
 void ZooKeeper::WatchResponse::removeRootPath(const String & root_path) { ZooKeeperImpl::removeRootPath(path, root_path); }
 
@@ -976,6 +991,7 @@ void ZooKeeper::receiveEvent()
                 throw Exception("Received response for unknown xid", ZRUNTIMEINCONSISTENCY);
 
             request_info = std::move(it->second);
+            request_info.request->removeRootPath(root_path);
             operations.erase(it);
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
