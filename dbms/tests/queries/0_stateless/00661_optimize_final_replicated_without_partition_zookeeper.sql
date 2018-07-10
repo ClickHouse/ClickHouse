@@ -9,10 +9,12 @@ INSERT INTO test.partitioned_by_tuple_replica1 VALUES ('2000-01-01', 1, 'first',
 
 OPTIMIZE TABLE test.partitioned_by_tuple_replica1;
 
+SYSTEM SYNC REPLICA test.partitioned_by_tuple_replica2;
 SELECT * FROM test.partitioned_by_tuple_replica2 ORDER BY d, x, w, y;
 
 OPTIMIZE TABLE test.partitioned_by_tuple_replica1 FINAL;
 
+SYSTEM SYNC REPLICA test.partitioned_by_tuple_replica2;
 SELECT * FROM test.partitioned_by_tuple_replica2 ORDER BY d, x, w, y;
 
 DROP TABLE test.partitioned_by_tuple_replica1;
