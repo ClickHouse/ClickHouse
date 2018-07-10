@@ -885,6 +885,18 @@ ZooKeeper::ResponsePtr ZooKeeper::MultiRequest::makeResponse() const { return st
 ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { return std::make_shared<CloseResponse>(); }
 
 
+ZooKeeper::RequestPtr ZooKeeper::MultiRequest::clone() const
+{
+    auto res = std::make_shared<MultiRequest>();
+
+    res->requests.reserve(requests.size());
+    for (const auto & request : requests)
+        res->requests.emplace_back(request->clone());
+
+    return res;
+}
+
+
 void ZooKeeper::CreateRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
 void ZooKeeper::RemoveRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
 void ZooKeeper::ExistsRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
@@ -1517,7 +1529,11 @@ void ZooKeeper::multi(
     MultiCallback callback)
 {
     MultiRequest request;
-    request.requests = requests;
+
+    /// Deep copy to avoid modifying path in presence of chroot prefix.
+    request.requests.reserve(requests.size());
+    for (const auto & elem : requests)
+        request.requests.emplace_back(elem->clone());
 
     for (auto & elem : request.requests)
         if (CreateRequest * create = typeid_cast<CreateRequest *>(elem.get()))
