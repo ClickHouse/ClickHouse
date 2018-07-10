@@ -19,7 +19,8 @@ void WriteBufferFromOStream::nextImpl()
     ostr->flush();
 
     if (!ostr->good())
-        throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
+        throw Exception("Cannot write to ostream at " + std::to_string(offset()) + "/" + std::to_string(size),
+            ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
 }
 
 WriteBufferFromOStream::WriteBufferFromOStream(
@@ -27,6 +28,7 @@ WriteBufferFromOStream::WriteBufferFromOStream(
     char * existing_memory,
     size_t alignment)
     : BufferWithOwnMemory<WriteBuffer>(size, existing_memory, alignment)
+    , size{size}
 {
 }
 
@@ -36,6 +38,7 @@ WriteBufferFromOStream::WriteBufferFromOStream(
     char * existing_memory,
     size_t alignment)
     : BufferWithOwnMemory<WriteBuffer>(size, existing_memory, alignment), ostr(&ostr_)
+    , size{size}
 {
 }
 
