@@ -815,7 +815,7 @@ int32_t ZooKeeper::tryMultiNoThrow(const Requests & requests, Responses & respon
 }
 
 
-size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses) const
+size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses)
 {
     if (responses.empty())
         throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
@@ -838,10 +838,10 @@ KeeperMultiException::KeeperMultiException(int32_t code, const Requests & reques
 {
 }
 
+
 std::string KeeperMultiException::getPathForFirstFailedOp() const
 {
     return requests[failed_op_index]->getPath();
-
 }
 
 void KeeperMultiException::check(int32_t code, const Requests & requests, const Responses & responses)
