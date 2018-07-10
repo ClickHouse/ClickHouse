@@ -19,8 +19,11 @@ bool ReadBufferFromIStream::nextImpl()
     {
         if (istr.eof())
             return false;
-        else
+
+        if (istr.fail())
             throw Exception("Cannot read from istream", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+
+        throw Exception("Unexpected state of istream", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
     }
     else
         working_buffer.resize(gcount);
