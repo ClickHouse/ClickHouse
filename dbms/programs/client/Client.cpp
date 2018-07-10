@@ -55,6 +55,7 @@
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Proto/protoHelpers.h>
+#include <Storages/TableMetadata.h>
 #include <ext/scope_guard.h>
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -865,7 +866,7 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        TableMetaInfo table_meta(parsed_insert_query.database, parsed_insert_query.table);
+        TableMetadata table_meta(parsed_insert_query.database, parsed_insert_query.table);
         if (receiveSampleBlock(sample, table_meta))
         {
             /// If structure was received (thus, server has not thrown an exception),
@@ -908,7 +909,7 @@ private:
     }
 
 
-    void sendData(Block & sample, const TableMetaInfo & table_meta)
+    void sendData(Block & sample, const TableMetadata & table_meta)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -931,7 +932,7 @@ private:
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample, const TableMetaInfo & table_meta)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const TableMetadata & table_meta)
     {
         String current_format = insert_format;
         const ColumnDefaults & column_defaults = table_meta.column_defaults;
@@ -1065,7 +1066,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out, TableMetaInfo & table_meta)
+    bool receiveSampleBlock(Block & out, TableMetadata & table_meta)
     {
         Connection::Packet packet = connection->receivePacket();
 
@@ -1081,7 +1082,7 @@ private:
                 return false;
 
             case Protocol::Server::CapnProto:
-                loadTableMetaInfo(packet.block, table_meta);
+                loadTableMetadata(packet.block, table_meta);
                 return receiveSampleBlock(out, table_meta);
 
             default:
