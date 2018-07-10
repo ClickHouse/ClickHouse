@@ -865,11 +865,12 @@ private:
 
         /// Receive description of table structure.
         Block sample;
-        if (receiveSampleBlock(sample))
+        TableMetaInfo table_meta(parsed_insert_query.database, parsed_insert_query.table);
+        if (receiveSampleBlock(sample, table_meta))
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            sendData(sample);
+            sendData(sample, table_meta);
             receivePacket();
         }
     }
@@ -907,7 +908,7 @@ private:
     }
 
 
-    void sendData(Block & sample)
+    void sendData(Block & sample, const TableMetaInfo & table_meta)
     {
         /// If INSERT data must be sent.
         const ASTInsertQuery * parsed_insert_query = typeid_cast<const ASTInsertQuery *>(&*parsed_query);
@@ -918,35 +919,28 @@ private:
         {
             /// Send data contained in the query.
             ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
-            sendDataFrom(data_in, sample);
+            sendDataFrom(data_in, sample, table_meta);
         }
         else if (!is_interactive)
         {
             /// Send data read from stdin.
-            sendDataFrom(std_in, sample);
+            sendDataFrom(std_in, sample, table_meta);
         }
         else
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
     }
 
 
-    void sendDataFrom(ReadBuffer & buf, Block & sample)
+    void sendDataFrom(ReadBuffer & buf, Block & sample, const TableMetaInfo & table_meta)
     {
         String current_format = insert_format;
-        ColumnDefaults column_defaults;
+        const ColumnDefaults & column_defaults = table_meta.column_defaults;
 
         /// Data format can be specified in the INSERT query.
         if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*parsed_query))
         {
             if (!insert->format.empty())
                 current_format = insert->format;
-
-            if (context.isTableExist(insert->database, insert->table))
-            {
-                StoragePtr table = context.getTable(insert->database, insert->table);
-                if (table)
-                    column_defaults = table->getColumns().defaults;
-            }
         }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
@@ -1071,7 +1065,7 @@ private:
 
 
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
-    bool receiveSampleBlock(Block & out)
+    bool receiveSampleBlock(Block & out, TableMetaInfo & table_meta)
     {
         Connection::Packet packet = connection->receivePacket();
 
@@ -1087,8 +1081,8 @@ private:
                 return false;
 
             case Protocol::Server::CapnProto:
-                loadContextBlock(packet.block, context);
-                return receiveSampleBlock(out);
+                loadTableMetaInfo(packet.block, table_meta);
+                return receiveSampleBlock(out, table_meta);
 
             default:
                 throw NetException("Unexpected packet from server (expected Data, got "

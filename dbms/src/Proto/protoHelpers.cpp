@@ -5,7 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionElementParser.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -109,7 +109,7 @@ namespace DB
         return proto_column;
     }
 
-    static void loadContext(const ColumnWithTypeAndName & proto_column, Context & context)
+    static void loadTableMetaInfo(const ColumnWithTypeAndName & proto_column, TableMetaInfo & table_meta)
     {
         StringRef plain_data = proto_column.column->getDataAt(0);
         size_t data_size = proto_column.column->byteSize();
@@ -120,23 +120,15 @@ namespace DB
         for (auto proto_database : proto_context.getDatabases())
         {
             const String & database_name = proto_database.getName().cStr();
-            if (!context.isDatabaseExist(database_name))
-            {
-                // TODO
-            }
+            if (database_name != table_meta.database)
+                continue;
 
             for (auto proto_table : proto_database.getTables())
             {
                 String table_name = proto_table.getName().cStr();
-                if (!context.isTableExist(database_name, table_name))
-                {
-                    // TODO
-                }
+                if (table_name != table_meta.table)
+                    continue;
 
-                StoragePtr table = context.tryGetTable(database_name, table_name);
-                // TODO: throw on fail
-
-                ColumnsDescription column_description;
                 for (auto column : proto_table.getColumns())
                 {
                     String column_name = column.getName().cStr();
@@ -144,10 +136,8 @@ namespace DB
                     ColumnDefaultKind expression_kind = static_cast<ColumnDefaultKind>(column.getDefault().getKind());
 
                     ASTPtr ast = parseQuery(parser, expression, expression.size());
-                    column_description.defaults[column_name] = ColumnDefault{expression_kind, ast};
+                    table_meta.column_defaults.emplace(column_name, ColumnDefault{expression_kind, ast});
                 }
-
-                table->setColumns(column_description);
             }
         }
     }
@@ -164,9 +154,9 @@ namespace DB
         return block;
     }
 
-    void loadContextBlock(const Block & block, Context & context)
+    void loadTableMetaInfo(const Block & block, TableMetaInfo & table_meta)
     {
         const ColumnWithTypeAndName & column = block.getByName(contextColumnName());
-        loadContext(column, context);
+        loadTableMetaInfo(column, table_meta);
     }
 }
