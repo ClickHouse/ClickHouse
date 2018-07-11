@@ -122,6 +122,8 @@ private:
 
     BackgroundProcessingPool::TaskHandle background_task_handle;
 
+    void loadMutations();
+
     /** Determines what parts should be merged and merges it.
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
