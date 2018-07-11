@@ -3,13 +3,20 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Columns/FilterDescription.h>
 #include <IO/Operators.h>
-#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_MUTATION_COMMAND;
+}
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
 {
@@ -58,6 +65,30 @@ void MutationCommands::validate(const IStorage & table, const Context & context)
             default:
                 throw Exception("Bad mutation type: " + toString<int>(command.type), ErrorCodes::LOGICAL_ERROR);
         }
+    }
+}
+
+void MutationCommands::writeText(WriteBuffer & out) const
+{
+    std::stringstream commands_ss;
+    formatAST(*ast(), commands_ss, /* hilite = */ false, /* one_line = */ true);
+    out << escape << commands_ss.str();
+}
+
+void MutationCommands::readText(ReadBuffer & in)
+{
+    String commands_str;
+    in >> escape >> commands_str;
+
+    ParserAlterCommandList p_alter_commands;
+    auto commands_ast = parseQuery(
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0);
+    for (ASTAlterCommand * command_ast : typeid_cast<const ASTAlterCommandList &>(*commands_ast).commands)
+    {
+        auto command = MutationCommand::parse(command_ast);
+        if (!command)
+            throw Exception("Unknown mutation command type: " + DB::toString<int>(command_ast->type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
+        push_back(std::move(*command));
     }
 }
 

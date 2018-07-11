@@ -11,9 +11,26 @@ namespace DB
 struct MergeTreeMutationEntry
 {
     time_t create_time = 0;
-
-    Int64 block_number;
     MutationCommands commands;
+
+    String path_prefix;
+    String file_name;
+    bool is_temp = false;
+
+    Int64 block_number = 0;
+
+    /// Create a new entry and write it to a temporary file.
+    MergeTreeMutationEntry(MutationCommands commands_, const String & path_prefix_, Int64 tmp_number);
+
+    /// Commit entry and rename it to a permanent file.
+    void commit(Int64 block_number_);
+
+    void removeFile();
+
+    /// Load an existing entry.
+    MergeTreeMutationEntry(const String & path_prefix_, const String & file_name_);
+
+    ~MergeTreeMutationEntry();
 };
 
 }
