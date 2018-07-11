@@ -37,6 +37,8 @@
 #include <Functions/FunctionsDateTime.h>
 #include <Functions/FunctionHelpers.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -302,40 +304,54 @@ struct ConvertImplGenericToString
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
-template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+template <typename DataType>
+void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     readText(x, rb);
 }
 
-template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+template <>
+inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     DayNum tmp(0);
     readDateText(tmp, rb);
     x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <>
+inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     time_t tmp = 0;
     readDateTimeText(tmp, rb, *time_zone);
     x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
-{
-    UUID tmp;
-    readText(tmp, rb);
-    x = tmp;
-}
 
 template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     if constexpr (std::is_integral_v<typename DataType::FieldType>)
         return tryReadIntText(x, rb);
     else if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
-    /// NOTE Need to implement for Date and DateTime too.
+}
+
+template <>
+inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    DayNum tmp(0);
+    readDateText(tmp, rb);
+    x = tmp;
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+{
+    time_t tmp = 0;
+    readDateTimeText(tmp, rb, *time_zone);
+    x = tmp;
+    return true;
 }
 
 
@@ -475,7 +491,9 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer) && isAllRead(read_buffer);
+                    parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone) && isAllRead(read_buffer);
+
+                    DUMP(isAllRead(read_buffer));
                 }
 
                 if (!parsed)
@@ -1596,8 +1614,15 @@ private:
                 /// Perform the requested conversion.
                 wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
 
+                DUMP(tmp_block);
+
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
+
+                DUMP((*tmp_res.column)[0]);
+
                 res.column = wrapInNullable(tmp_res.column, Block({block.getByPosition(arguments[0]), tmp_res}), {0}, 1, input_rows_count);
+
+                DUMP((*res.column)[0]);
             };
         }
         else if (source_is_nullable)
