@@ -367,10 +367,20 @@ void read(String & s, ReadBuffer & in)
     static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
-    if (size < 0)    /// TODO Actually it means that zookeeper node has NULL value. Maybe better to treat it like empty string.
+
+    if (size == -1)
+    {
+        /// It means that zookeeper node has NULL value. We will treat it like empty string.
+        s.clear();
+        return;
+    }
+
+    if (size < 0)
         throw Exception("Negative size while reading string from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
+
     if (size > max_string_size)
         throw Exception("Too large string size while reading from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
+
     s.resize(size);
     in.read(&s[0], size);
 }
@@ -834,7 +844,7 @@ void ZooKeeper::receiveThread()
                 if (earliest_operation)
                     throw Exception("Operation timeout (no response) for path: " + earliest_operation->request->getPath(), ZOPERATIONTIMEOUT);
                 waited += max_wait;
-                if (waited > session_timeout.totalMicroseconds())
+                if (waited >= session_timeout.totalMicroseconds())
                     throw Exception("Nothing is received in session timeout", ZOPERATIONTIMEOUT);
 
             }
@@ -873,6 +883,18 @@ ZooKeeper::ResponsePtr ZooKeeper::ListRequest::makeResponse() const { return std
 ZooKeeper::ResponsePtr ZooKeeper::CheckRequest::makeResponse() const { return std::make_shared<CheckResponse>(); }
 ZooKeeper::ResponsePtr ZooKeeper::MultiRequest::makeResponse() const { return std::make_shared<MultiResponse>(requests); }
 ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { return std::make_shared<CloseResponse>(); }
+
+
+ZooKeeper::RequestPtr ZooKeeper::MultiRequest::clone() const
+{
+    auto res = std::make_shared<MultiRequest>();
+
+    res->requests.reserve(requests.size());
+    for (const auto & request : requests)
+        res->requests.emplace_back(request->clone());
+
+    return res;
+}
 
 
 void ZooKeeper::CreateRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
@@ -1507,7 +1529,11 @@ void ZooKeeper::multi(
     MultiCallback callback)
 {
     MultiRequest request;
-    request.requests = requests;
+
+    /// Deep copy to avoid modifying path in presence of chroot prefix.
+    request.requests.reserve(requests.size());
+    for (const auto & elem : requests)
+        request.requests.emplace_back(elem->clone());
 
     for (auto & elem : request.requests)
         if (CreateRequest * create = typeid_cast<CreateRequest *>(elem.get()))

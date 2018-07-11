@@ -46,7 +46,6 @@ void ReplicatedMergeTreeCleanupThread::run()
     }
 
     task->scheduleAfter(CLEANUP_SLEEP_MS);
-
 }
 
 

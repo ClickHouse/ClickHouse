@@ -4,7 +4,7 @@
 
 #if defined(__x86_64__)
 
-    #include <cpuid/libcpuid.h>
+    #include <libcpuid/libcpuid.h>
     #include <Common/Exception.h>
 
     namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}

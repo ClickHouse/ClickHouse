@@ -45,6 +45,11 @@ void MutationCommands::validate(const IStorage & table, const Context & context)
             case MutationCommand::DELETE:
             {
                 auto actions = ExpressionAnalyzer(command.predicate, context, {}, all_columns).getActions(true);
+
+                /// Try executing the resulting actions on the table sample block to detect malformed queries.
+                auto table_sample_block = table.getSampleBlock();
+                actions->execute(table_sample_block);
+
                 const ColumnWithTypeAndName & predicate_column = actions->getSampleBlock().getByName(
                     command.predicate->getColumnName());
                 checkColumnCanBeUsedAsFilter(predicate_column);

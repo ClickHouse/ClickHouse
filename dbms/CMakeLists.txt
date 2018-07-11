@@ -128,7 +128,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
 endif ()
 
 if (NOT ARCH_ARM)
-    set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
+    set (LINK_LIBRARIES_ONLY_ON_X86_64 ${CPUID_LIBRARY})
 endif()
 
 target_link_libraries (clickhouse_common_io

@@ -14,7 +14,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
-#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
@@ -284,6 +284,9 @@ private:
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
 
+    /// A task that marks finished mutations as done.
+    BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
+
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
@@ -412,6 +415,9 @@ private:
       */
     void mergeSelectingTask();
 
+    /// Checks if some mutations are done and marks them as done.
+    void mutationsFinalizingTask();
+
     /** Write the selected parts to merge into the log,
       * Call when merge_selecting_mutex is locked.
       * Returns false if any part is not in ZK.
@@ -454,8 +460,9 @@ private:
     void updateQuorum(const String & part_name);
 
     /// Creates new block number if block with such block_id does not exist
-    std::optional<AbandonableLockInZooKeeper> allocateBlockNumber(const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
-                                                                  const String & zookeeper_block_id_path = "");
+    std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
+        const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,
+        const String & zookeeper_block_id_path = "");
 
     /** Wait until all replicas, including this, execute the specified action from the log.
       * If replicas are added at the same time, it can not wait the added replica .

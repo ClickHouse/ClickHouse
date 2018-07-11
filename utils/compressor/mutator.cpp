@@ -106,9 +106,11 @@ static void mutate(pcg64 & generator, void * src, size_t length)
             && isAlphaASCII(pos[2]))
         {
             auto res = rand(generator, 0, 3);
-            if (res == 2)
+            if (res == 2) 
+            {
                 std::swap(pos[0], pos[1]);
-            if (res == 3)
+            }
+            else if (res == 3)
                 std::swap(pos[1], pos[2]);
 
             pos += 3;
@@ -124,7 +126,7 @@ static void mutate(pcg64 & generator, void * src, size_t length)
                 std::swap(pos[1], pos[2]);
                 std::swap(pos[0], pos[1]);
             }
-            if (res == 3)
+            else if (res == 3)
             {
                 std::swap(pos[3], pos[2]);
                 std::swap(pos[4], pos[3]);
