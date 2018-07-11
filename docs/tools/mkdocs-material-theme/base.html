@@ -270,7 +270,7 @@
                         clickmap:true,
                         trackLinks:true,
                         accurateTrackBounce:true,
-                        webvisor: {% if builder != "singlehtml" %}true{% else %}false{% endif %}
+                        webvisor: {% if not config.extra.single_page %}true{% else %}false{% endif %}
                     });
                 } catch(e) { }
             });
