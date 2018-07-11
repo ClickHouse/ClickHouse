@@ -75,7 +75,7 @@ if (ENABLE_TCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
     add_subdirectory (libtcmalloc)
 endif ()
 
-if (NOT ARCH_ARM)
+if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
