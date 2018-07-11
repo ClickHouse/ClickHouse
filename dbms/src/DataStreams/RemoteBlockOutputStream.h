@@ -35,6 +35,7 @@ private:
     String query;
     const Settings * settings;
     Block header;
+    Block metadata;
     bool finished = false;
 };
 
