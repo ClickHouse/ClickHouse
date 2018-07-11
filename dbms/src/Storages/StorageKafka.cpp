@@ -147,7 +147,7 @@ public:
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
 
-        const ColumnsDescription & columns = getColumns();
+        const ColumnsDescription & columns = storage.getColumns();
         if (!columns.defaults.empty())
             reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns.defaults, context);
     }
