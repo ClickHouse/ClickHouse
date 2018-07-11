@@ -31,8 +31,8 @@ def concatenate(lang, docs_path, single_page_file):
 
     logging.info(
         str(len(files_to_concatenate)) +
-        ' files will be concatenated into single md-file: ' +
-        ', '.join(files_to_concatenate))
+        ' files will be concatenated into single md-file.')
+    logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))
 
     first_file = True
 
