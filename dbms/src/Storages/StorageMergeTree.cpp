@@ -73,6 +73,8 @@ StorageMergeTree::StorageMergeTree(
         throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
 
     increment.set(data.getMaxBlockNumber());
+
+    loadMutations();
 }
 
 
@@ -85,7 +87,6 @@ void StorageMergeTree::startup()
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
     data.clearOldTemporaryDirectories(0);
-
 }
 
 
@@ -287,19 +288,16 @@ struct CurrentlyMergingPartsTagger
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
+    MergeTreeMutationEntry entry(commands, full_path, data.insert_increment.get());
     {
         std::lock_guard lock(currently_merging_mutex);
 
         Int64 version = increment.get();
-
-        MergeTreeMutationEntry entry;
-        entry.create_time = time(nullptr);
-        entry.block_number = version;
-        entry.commands = commands;
-
+        entry.commit(version);
         current_mutations_by_version.emplace(version, std::move(entry));
     }
 
+    LOG_INFO(log, "Added mutation: " << entry.file_name);
     background_task_handle->wake();
 }
 
@@ -331,7 +329,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
             formatAST(*command.ast, ss, false, true);
             result.push_back(MergeTreeMutationStatus
             {
-                toString(entry.block_number),
+                entry.file_name,
                 ss.str(),
                 entry.create_time,
                 block_numbers_map,
@@ -342,6 +340,28 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     }
 
     return result;
+}
+
+
+void StorageMergeTree::loadMutations()
+{
+    Poco::DirectoryIterator end;
+    for (auto it = Poco::DirectoryIterator(full_path); it != end; ++it)
+    {
+        if (startsWith(it.name(), "mutation_"))
+        {
+            MergeTreeMutationEntry entry(full_path, it.name());
+            Int64 block_number = entry.block_number;
+            current_mutations_by_version.emplace(block_number, std::move(entry));
+        }
+        else if (startsWith(it.name(), "tmp_mutation_"))
+        {
+            it->remove();
+        }
+    }
+
+    if (!current_mutations_by_version.empty())
+        increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
 
