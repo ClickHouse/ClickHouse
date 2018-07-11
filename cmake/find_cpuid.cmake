@@ -1,4 +1,6 @@
-option (USE_INTERNAL_CPUID_LIBRARY "Set to FALSE to use system cpuid library instead of bundled" ${NOT_UNBUNDLED})
+if (NOT ARCH_ARM)
+    option (USE_INTERNAL_CPUID_LIBRARY "Set to FALSE to use system cpuid library instead of bundled" ${NOT_UNBUNDLED})
+endif ()
 
 #if (USE_INTERNAL_CPUID_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/cpuid/libcpuid.h")
 #   message (WARNING "submodule contrib/libcpuid is missing. to fix try run: \n git submodule update --init --recursive")

@@ -43,7 +43,8 @@ include (cmake/arch.cmake)
 
 if (CMAKE_GENERATOR STREQUAL "Ninja")
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-color=always")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
 endif ()
 
 if (NOT MSVC)
