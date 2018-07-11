@@ -18,6 +18,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
 }
 
@@ -636,13 +638,21 @@ template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UIn
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
-void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+template <typename ReturnType>
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     char chars_year[4];
     readPODBinary(chars_year, buf);
     UInt16 year = (chars_year[0] - '0') * 1000 + (chars_year[1] - '0') * 100 + (chars_year[2] - '0') * 10 + (chars_year[3] - '0');
 
-    buf.ignore();
+    if (!buf.eof())
+        ++buf.position();
+    else if constexpr (throw_exception)
+        throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
+    else
+        return false;
 
     char chars_month[2];
     readPODBinary(chars_month, buf);
@@ -663,11 +673,18 @@ void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     }
 
     date = LocalDate(year, month, day);
+    return ReturnType(true);
 }
 
+template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
+template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+
+template <typename ReturnType>
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
     static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
 
@@ -690,7 +707,11 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
         if (remaining_size != size)
         {
             s_pos[size] = 0;
-            throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+
+            if constexpr (throw_exception)
+                throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+            else
+                return false;
         }
 
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -708,7 +729,12 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
     }
     else
         datetime = parse<time_t>(s, s_pos - s);
+
+    return ReturnType(true);
 }
+
+template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
 void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
