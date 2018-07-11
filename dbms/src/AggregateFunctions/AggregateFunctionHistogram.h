@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/Arena.h>
+#include <Common/NaNUtils.h>
 
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
@@ -74,13 +75,13 @@ private:
             });
     }
 
-    template<typename T>
+    template <typename T>
     struct PriorityQueueStorage
     {
         size_t size = 0;
-        T* data_ptr;
+        T * data_ptr;
 
-        PriorityQueueStorage(T* value)
+        PriorityQueueStorage(T * value)
             : data_ptr(value)
         {
         }
@@ -92,11 +93,11 @@ private:
         }
 
         void pop_back() { --size; }
-        T* begin() { return data_ptr; }
-        T* end() const { return data_ptr + size; }
+        T * begin() { return data_ptr; }
+        T * end() const { return data_ptr + size; }
         bool empty() const { return size == 0; }
-        T& front() { return *data_ptr; }
-        const T& front() const { return *data_ptr; }
+        T & front() { return *data_ptr; }
+        const T & front() const { return *data_ptr; }
 
         using value_type = T;
         using reference = T&;
@@ -198,7 +199,7 @@ private:
 
         size_t left = 0;
 
-        for (auto right = left + 1; right < size; right++)
+        for (auto right = left + 1; right < size; ++right)
         {
             // Fuse points if their text representations differ only in last digit
             auto min_diff = 10 * (points[left].mean + points[right].mean) * std::numeric_limits<Mean>::epsilon();
@@ -229,7 +230,8 @@ public:
         return sizeof(AggregateFunctionHistogramData) + max_bins * 2 * sizeof(WeightedValue);
     }
 
-    void insertResultInto(ColumnVector<Mean>& to_lower, ColumnVector<Mean>& to_upper, ColumnVector<Weight>& to_weights, UInt32 max_bins) {
+    void insertResultInto(ColumnVector<Mean> & to_lower, ColumnVector<Mean> & to_upper, ColumnVector<Weight> & to_weights, UInt32 max_bins)
+    {
         compress(max_bins);
         unique();
 
@@ -249,8 +251,8 @@ public:
     {
         // nans break sort and compression
         // infs don't fit in bins partition method
-        if (isnan(value) || isinf(value))
-            throw Exception("invalid value for aggregation", ErrorCodes::INCORRECT_DATA);
+        if (!isFinite(value))
+            throw Exception("Invalid value (inf or nan) for aggregation by 'histogram' function", ErrorCodes::INCORRECT_DATA);
 
         points[size] = {value, weight};
         ++size;
