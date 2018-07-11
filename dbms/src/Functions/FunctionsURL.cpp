@@ -158,7 +158,6 @@ using FunctionCutQueryStringAndFragment = FunctionStringToString<CutSubstringImp
 using FunctionExtractURLParameter = FunctionsStringSearchToString<ExtractURLParameterImpl, NameExtractURLParameter>;
 using FunctionCutURLParameter = FunctionsStringSearchToString<CutURLParameterImpl, NameCutURLParameter>;
 using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
-using FunctionExtractURLParameters = FunctionTokens<ExtractURLParametersImpl>;
 using FunctionURLHierarchy = FunctionTokens<URLHierarchyImpl>;
 using FunctionURLPathHierarchy = FunctionTokens<URLPathHierarchyImpl>;
 using FunctionExtractURLParameterNames = FunctionTokens<ExtractURLParameterNamesImpl>;

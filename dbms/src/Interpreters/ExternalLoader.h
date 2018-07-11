@@ -53,9 +53,9 @@ struct ExternalLoaderConfigSettings
 
 /** Manages user-defined objects.
 *    Monitors configuration file and automatically reloads objects in a separate thread.
-*    The monitoring thread wakes up every @check_period_sec seconds and checks
+*    The monitoring thread wakes up every 'check_period_sec' seconds and checks
 *    modification time of objects' configuration file. If said time is greater than
-*    @config_last_modified, the objects are created from scratch using configuration file,
+*    'config_last_modified', the objects are created from scratch using configuration file,
 *    possibly overriding currently existing objects with the same name (previous versions of
 *    overridden objects will live as long as there are any users retaining them).
 *
@@ -90,7 +90,7 @@ public:
     using ObjectsMap = std::unordered_map<std::string, LoadableInfo>;
 
     /// Objects will be loaded immediately and then will be updated in separate thread, each 'reload_period' seconds.
-    ExternalLoader(const Configuration & config,
+    ExternalLoader(const Configuration & config_main,
                    const ExternalLoaderUpdateSettings & update_settings,
                    const ExternalLoaderConfigSettings & config_settings,
                    std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
@@ -148,7 +148,7 @@ private:
 
     pcg64 rnd_engine{randomSeed()};
 
-    const Configuration & config;
+    const Configuration & config_main;
     const ExternalLoaderUpdateSettings & update_settings;
     const ExternalLoaderConfigSettings & config_settings;
 

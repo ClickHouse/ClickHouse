@@ -6,10 +6,12 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
@@ -23,6 +25,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageKafka.h>
 #include <Storages/StorageFactory.h>
+#include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
 
 #if __has_include(<rdkafka.h>) // maybe bundled
@@ -30,6 +33,7 @@
 #else // system
 #include <librdkafka/rdkafka.h>
 #endif
+
 
 namespace DB
 {
@@ -140,7 +144,7 @@ public:
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
-        reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     ~KafkaBlockInputStream() override
@@ -225,7 +229,11 @@ StorageKafka::StorageKafka(
     const String & format_name_, const String & schema_name_, size_t num_consumers_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), context(context_),
-    topics(topics_), brokers(brokers_), group(group_), format_name(format_name_), schema_name(schema_name_),
+    topics(context.getMacros()->expand(topics_)),
+    brokers(context.getMacros()->expand(brokers_)),
+    group(context.getMacros()->expand(group_)),
+    format_name(context.getMacros()->expand(format_name_)),
+    schema_name(context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers(), event_update()
 {
@@ -403,6 +411,15 @@ void StorageKafka::streamThread()
                 // Check if all dependencies are attached
                 auto dependencies = context.getDependencies(database_name, table_name);
                 if (dependencies.size() == 0)
+                    break;
+                // Check the dependencies are ready?
+                bool ready = true;
+                for (const auto & db_tab : dependencies)
+                {
+                    if (!context.tryGetTable(db_tab.first, db_tab.second))
+                        ready = false;
+                }
+                if (!ready)
                     break;
 
                 LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");

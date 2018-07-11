@@ -13,10 +13,11 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Dictionaries/readInvalidateQuery.h>
 
+#include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
-
 
 static const size_t max_block_size = 8192;
 

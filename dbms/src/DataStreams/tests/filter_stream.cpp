@@ -2,14 +2,14 @@
 #include <iomanip>
 
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadHelpers.h>
 
 #include <Storages/System/StorageSystemNumbers.h>
 
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/copyData.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -33,7 +33,7 @@ try
     std::string input = "SELECT number, number % 3 == 1";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     formatAST(*ast, std::cerr);
     std::cerr << std::endl;
@@ -55,19 +55,17 @@ try
     QueryProcessingStage::Enum stage;
 
     BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
-    in = std::make_shared<FilterBlockInputStream>(in, expression, 1);
+    in = std::make_shared<FilterBlockInputStream>(in, expression, "equals(modulo(number, 3), 1)");
     in = std::make_shared<LimitBlockInputStream>(in, 10, std::max(static_cast<Int64>(0), static_cast<Int64>(n) - 10));
 
     WriteBufferFromOStream ob(std::cout);
-    RowOutputStreamPtr out_ = std::make_shared<TabSeparatedRowOutputStream>(ob, expression->getSampleBlock());
-    BlockOutputStreamFromRowOutputStream out(out_, expression->getSampleBlock());
-
+    BlockOutputStreamPtr out = FormatFactory::instance().getOutput("TabSeparated", ob, expression->getSampleBlock(), context);
 
     {
         Stopwatch stopwatch;
         stopwatch.start();
 
-        copyData(*in, out);
+        copyData(*in, *out);
 
         stopwatch.stop();
         std::cout << std::fixed << std::setprecision(2)

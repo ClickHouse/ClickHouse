@@ -5,6 +5,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/FieldVisitors.h>
 #include <Common/COWPtr.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/IDataType.h>
@@ -13,19 +14,19 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Parsers/IAST.h>
 
+
 namespace DB
 {
 
 std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
 {
     stream << "IBlockInputStream(name = " << what.getName() << ")";
-    //what.dumpTree(stream); // todo: set const
     return stream;
 }
 
 std::ostream & operator<<(std::ostream & stream, const Field & what)
 {
-    stream << "Field(type = " << what.getTypeName() << ")";
+    stream << applyVisitor(FieldVisitorDump(), what);
     return stream;
 }
 
@@ -46,7 +47,6 @@ std::ostream & operator<<(std::ostream & stream, const IStorage & what)
     stream << "IStorage(name = " << what.getName() << ", tableName = " << what.getTableName() << ") {"
            << what.getColumns().getAllPhysical().toString()
            << "}";
-    // isRemote supportsSampling supportsFinal supportsPrewhere
     return stream;
 }
 
@@ -71,27 +71,10 @@ std::ostream & operator<<(std::ostream & stream, const Block & what)
     return stream;
 }
 
-
-template <typename T>
-std::ostream & printCOWPtr(std::ostream & stream, const typename COWPtr<T>::Ptr & what)
-{
-    stream << "COWPtr::Ptr(" << what.get();
-    if (what)
-        stream << ", use_count = " << what->use_count();
-    stream << ") {";
-    if (what)
-        stream << *what;
-    else
-        stream << "nullptr";
-    stream << "}";
-    return stream;
-}
-
-
 std::ostream & operator<<(std::ostream & stream, const ColumnWithTypeAndName & what)
 {
     stream << "ColumnWithTypeAndName(name = " << what.name << ", type = " << what.type << ", column = ";
-    return printCOWPtr<IColumn>(stream, what.column) << ")";
+    return dumpValue(stream, what.column) << ")";
 }
 
 std::ostream & operator<<(std::ostream & stream, const IColumn & what)
@@ -112,30 +95,11 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
     return stream;
 }
 
-std::ostream & operator<<(std::ostream & stream, const SubqueryForSet & what)
-{
-    stream << "SubqueryForSet(source = " << what.source
-    // TODO: << ", set = " <<  what.set << ", join = " <<  what.join
-    << ", table = " << what.table
-    << ")";
-    return stream;
-}
-
 std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
     stream << "IAST{";
     what.dumpTree(stream);
     stream << "}";
-    return stream;
-}
-
-std::ostream & operator<<(std::ostream & stream, const ExpressionAnalyzer & what)
-{
-    stream << "ExpressionAnalyzer{"
-           << "hasAggregation=" << what.hasAggregation()
-           << ", SubqueriesForSet=" << what.getSubqueriesForSets()
-           << ", ExternalTables=" << what.getExternalTables()
-           << "}";
     return stream;
 }
 

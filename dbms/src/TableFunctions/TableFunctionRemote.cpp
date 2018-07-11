@@ -1,4 +1,4 @@
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>

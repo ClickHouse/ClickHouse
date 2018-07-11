@@ -117,7 +117,7 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    Block getHeader() const override { return res_sample_block; };
+    Block getHeader() const override { return res_sample_block; }
 
     Block readImpl() override
     {
@@ -147,7 +147,6 @@ public:
             }
 
             /// KILL QUERY could be killed also
-            /// Probably interpreting KILL QUERIES as complete (not internal) queries is extra functionality
             if (isCancelled())
                 break;
 

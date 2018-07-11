@@ -18,6 +18,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Common/setThreadName.h>
+#include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 
 
@@ -333,7 +334,7 @@ void SystemLog<LogElement>::prepareTable()
         ParserStorage storage_parser;
         ASTPtr storage_ast = parseQuery(
             storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
-            "Storage to create table for " + LogElement::name());
+            "Storage to create table for " + LogElement::name(), 0);
         create->set(create->storage, storage_ast);
 
         InterpreterCreateQuery interpreter(create, context);

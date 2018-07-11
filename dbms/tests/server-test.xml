@@ -9,8 +9,8 @@
         <count>1</count>
         <compress>0</compress>
     </logger>
-    <listen_host>0.0.0.0</listen_host>
     <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
     <listen_try>1</listen_try>
     <http_port>58123</http_port>
     <tcp_port>59000</tcp_port>
@@ -71,6 +71,7 @@
             </shard>
         </test_shard_localhost_secure>
     </remote_servers>
+    <include_from/>
     <zookeeper incl="zookeeper-servers" optional="true" />
     <macros incl="macros" optional="true" />
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>

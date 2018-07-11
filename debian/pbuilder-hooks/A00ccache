@@ -12,5 +12,6 @@ if [ -n "$CCACHE_DIR" ]; then
     chmod -R a+rwx $CCACHE_DIR || true
 fi
 
+df -h
 ccache --show-stats
 ccache -M ${CCACHE_SIZE:=32G}

@@ -42,6 +42,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int UNKNOWN_TYPE;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
 }
 
 /** Functions that use plug-ins (external) dictionaries.
@@ -95,7 +96,7 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
@@ -108,7 +109,7 @@ private:
           * This feature is controversial and implemented specially
           *  for backward compatibility with the case in Yandex Banner System.
           */
-        if (block.rows() == 0)
+        if (input_rows_count== 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -260,13 +261,13 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (block.rows() == 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -490,13 +491,13 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (block.rows() == 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -756,13 +757,13 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (block.rows() == 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -1031,13 +1032,13 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (block.rows() == 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -1264,13 +1265,13 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (block.rows() == 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -1424,13 +1425,13 @@ private:
 
     bool isDeterministic() override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto dict_name_col = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[0]).column.get());
         if (!dict_name_col)
             throw Exception{"First argument of function " + getName() + " must be a constant string", ErrorCodes::ILLEGAL_COLUMN};
 
-        if (block.rows() == 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();

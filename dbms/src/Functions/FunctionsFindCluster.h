@@ -128,7 +128,7 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto in_untyped = block.getByPosition(arguments[0]).column.get();
         const auto centroids_array_untyped = block.getByPosition(arguments[1]).column.get();

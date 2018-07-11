@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeThreadBlockInputStream.h>
-#include <Storages/MergeTree/PKCondition.h>
+#include <Storages/MergeTree/KeyCondition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSampleRatio.h>
@@ -85,7 +85,7 @@ static Block getBlockWithPartColumn(const MergeTreeData::DataPartsVector & parts
 
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
-    const MergeTreeData::DataPartsVector & parts, const PKCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPartsVector & parts, const KeyCondition & key_condition, const Settings & settings) const
 {
     size_t full_marks_count = 0;
 
@@ -198,7 +198,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Settings & settings = context.getSettingsRef();
     SortDescription sort_descr = data.getPrimarySortDescription();
 
-    PKCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
+    KeyCondition key_condition(query_info, context, available_real_and_virtual_columns, sort_descr,
         data.getPrimaryExpression());
 
     if (settings.force_primary_key && key_condition.alwaysUnknownOrTrue())
@@ -212,7 +212,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         throw Exception(exception_message.str(), ErrorCodes::INDEX_NOT_USED);
     }
 
-    std::optional<PKCondition> minmax_idx_condition;
+    std::optional<KeyCondition> minmax_idx_condition;
     if (data.minmax_idx_expr)
     {
         minmax_idx_condition.emplace(
@@ -248,10 +248,11 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             if (part_values.find(part->name) == part_values.end())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInRange(
-                    data.minmax_idx_columns.size(),
-                    &part->minmax_idx.min_values[0], &part->minmax_idx.max_values[0],
-                    data.minmax_idx_column_types))
+            if (part->isEmpty())
+                continue;
+
+            if (minmax_idx_condition && !minmax_idx_condition->mayBeTrueInParallelogram(
+                    part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
             if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
@@ -570,8 +571,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
             prewhere_actions,
             prewhere_column,
             virt_column_names,
-            settings,
-            context);
+            settings);
     }
     else
     {
@@ -751,8 +751,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
     ExpressionActionsPtr prewhere_actions,
     const String & prewhere_column,
     const Names & virt_columns,
-    const Settings & settings,
-    const Context & context) const
+    const Settings & settings) const
 {
     const size_t max_marks_to_use_cache =
         (settings.merge_tree_max_rows_to_use_cache + data.index_granularity - 1) / data.index_granularity;
@@ -782,63 +781,43 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
         to_merge.emplace_back(std::make_shared<ExpressionBlockInputStream>(source_stream, data.getPrimaryExpression()));
     }
 
-    BlockInputStreams res;
-    if (to_merge.size() == 1)
+    BlockInputStreamPtr merged;
+
+    switch (data.merging_params.mode)
     {
-        if (data.merging_params.mode == MergeTreeData::MergingParams::Collapsing)
-        {
-            ExpressionActionsPtr sign_filter_expression;
-            String sign_filter_column;
+        case MergeTreeData::MergingParams::Ordinary:
+            merged = std::make_shared<MergingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
+            break;
 
-            createPositiveSignCondition(sign_filter_expression, sign_filter_column, context);
+        case MergeTreeData::MergingParams::Collapsing:
+            merged = std::make_shared<CollapsingFinalBlockInputStream>(
+                    to_merge, data.getSortDescription(), data.merging_params.sign_column);
+            break;
 
-            res.emplace_back(std::make_shared<FilterBlockInputStream>(to_merge[0], sign_filter_expression, sign_filter_column));
-        }
-        else
-            res = to_merge;
-    }
-    else if (to_merge.size() > 1)
-    {
-        BlockInputStreamPtr merged;
+        case MergeTreeData::MergingParams::Summing:
+            merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
+                    data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
+            break;
 
-        switch (data.merging_params.mode)
-        {
-            case MergeTreeData::MergingParams::Ordinary:
-                merged = std::make_shared<MergingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
-                break;
+        case MergeTreeData::MergingParams::Aggregating:
+            merged = std::make_shared<AggregatingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
+            break;
 
-            case MergeTreeData::MergingParams::Collapsing:
-                merged = std::make_shared<CollapsingFinalBlockInputStream>(
-                        to_merge, data.getSortDescription(), data.merging_params.sign_column);
-                break;
+        case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
+            merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
+                    data.getSortDescription(), data.merging_params.version_column, max_block_size);
+            break;
 
-            case MergeTreeData::MergingParams::Summing:
-                merged = std::make_shared<SummingSortedBlockInputStream>(to_merge,
-                        data.getSortDescription(), data.merging_params.columns_to_sum, max_block_size);
-                break;
+        case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
+            merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
+                    to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
+            break;
 
-            case MergeTreeData::MergingParams::Aggregating:
-                merged = std::make_shared<AggregatingSortedBlockInputStream>(to_merge, data.getSortDescription(), max_block_size);
-                break;
-
-            case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
-                merged = std::make_shared<ReplacingSortedBlockInputStream>(to_merge,
-                        data.getSortDescription(), data.merging_params.version_column, max_block_size);
-                break;
-
-            case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
-                merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
-                        to_merge, data.getSortDescription(), data.merging_params.sign_column, max_block_size, true);
-                break;
-
-            case MergeTreeData::MergingParams::Graphite:
-                throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
-        }
-
-        res.emplace_back(merged);
+        case MergeTreeData::MergingParams::Graphite:
+            throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
     }
 
-    return res;
+    return {merged};
 }
 
 
@@ -865,14 +844,13 @@ void MergeTreeDataSelectExecutor::createPositiveSignCondition(
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
-    const MergeTreeData::DataPart::Index & index, const PKCondition & key_condition, const Settings & settings) const
+    const MergeTreeData::DataPart::Index & index, const KeyCondition & key_condition, const Settings & settings) const
 {
-    size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
-
     MarkRanges res;
 
-    size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
     size_t marks_count = index.at(0)->size();
+    if (marks_count == 0)
+        return res;
 
     /// If index is not used.
     if (key_condition.alwaysUnknownOrTrue())
@@ -881,6 +859,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     }
     else
     {
+        size_t used_key_size = key_condition.getMaxKeyColumn() + 1;
+        size_t min_marks_for_seek = (settings.merge_tree_min_rows_for_seek + data.index_granularity - 1) / data.index_granularity;
+
         /** There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
             * At each step, take the left segment and check if it fits.
             * If fits, split it into smaller ones and put them on the stack. If not, discard it.
@@ -888,7 +869,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             */
         std::vector<MarkRange> ranges_stack{ {0, marks_count} };
 
-        /// NOTE Creating temporary Field objects to pass to PKCondition.
+        /// NOTE Creating temporary Field objects to pass to KeyCondition.
         Row index_left(used_key_size);
         Row index_right(used_key_size);
 

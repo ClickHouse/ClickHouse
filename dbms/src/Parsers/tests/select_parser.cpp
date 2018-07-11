@@ -23,7 +23,7 @@ try
         " FORMAT TabSeparated";
 
     ParserQueryWithOutput parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "");
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
 
     std::cout << "Success." << std::endl;
     formatAST(*ast, std::cerr);

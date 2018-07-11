@@ -1,6 +1,6 @@
 # system.zookeeper
 
-Allows reading data from the ZooKeeper cluster defined in the config.
+This table presents when ZooKeeper is configured. It allows reading data from the ZooKeeper cluster defined in the config.
 The query must have a 'path' equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
 
 The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
@@ -9,22 +9,21 @@ If the path specified in 'path' doesn't exist, an exception will be thrown.
 
 Columns:
 
-```text
-name String          - Name of the node.
-path String          - Path to the node.
-value String         - Value of the node.
-dataLength Int32     - Size of the value.
-numChildren Int32    - Number of children.
-czxid Int64          - ID of the transaction that created the node.
-mzxid Int64          - ID of the transaction that last changed the node.
-pzxid Int64          - ID of the transaction that last added or removed children.
-ctime DateTime       - Time of node creation.
-mtime DateTime       - Time of the last node modification.
-version Int32        - Node version - the number of times the node was changed.
-cversion Int32       - Number of added or removed children.
-aversion Int32       - Number of changes to ACL.
-ephemeralOwner Int64 - For ephemeral nodes, the ID of the session that owns this node.
-```
+- `name String` — Name of the node.
+- `path String` — Path to the node.
+- `value String` — Value of the node.
+- `dataLength Int32` — Size of the value.
+- `numChildren Int32` — Number of children.
+- `czxid Int64` — ID of the transaction that created the node.
+- `mzxid Int64` — ID of the transaction that last changed the node.
+- `pzxid Int64` — ID of the transaction that last added or removed children.
+- `ctime DateTime` — Time of node creation.
+- `mtime DateTime` — Time of the last node modification.
+- `version Int32` — Node version - the number of times the node was changed.
+- `cversion Int32` — Number of added or removed children.
+- `aversion Int32` — Number of changes to ACL.
+- `ephemeralOwner Int64` — For ephemeral nodes, the ID of the session that owns this node.
+
 
 Example:
 

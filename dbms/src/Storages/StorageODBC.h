@@ -1,17 +1,13 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-
 #include <Storages/IStorage.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+    #include <Poco/Data/SessionPool.h>
+#pragma GCC diagnostic pop
 
-namespace Poco
-{
-    namespace Data
-    {
-        class SessionPool;
-    }
-}
 
 
 namespace DB

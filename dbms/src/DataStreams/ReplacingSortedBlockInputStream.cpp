@@ -35,26 +35,14 @@ Block ReplacingSortedBlockInputStream::readImpl()
     if (finished)
         return Block();
 
-    if (children.size() == 1)
-        return children[0]->read();
-
-    Block header;
     MutableColumns merged_columns;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
 
     if (merged_columns.empty())
         return Block();
-
-    /// Additional initialization.
-    if (selected_row.empty())
-    {
-        if (!version_column.empty())
-            version_column_number = header.getPositionByName(version_column);
-    }
 
     merge(merged_columns, queue);
     return header.cloneWithColumns(std::move(merged_columns));

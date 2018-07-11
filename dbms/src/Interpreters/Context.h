@@ -6,10 +6,12 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <atomic>
 
 #include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <IO/CompressionSettings.h>
@@ -40,6 +42,7 @@ class ExternalDictionaries;
 class ExternalModels;
 class InterserverIOHandler;
 class BackgroundProcessingPool;
+class BackgroundSchedulePool;
 class MergeList;
 class Cluster;
 class Compiler;
@@ -69,6 +72,8 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 struct SystemLogs;
 using SystemLogsPtr = std::shared_ptr<SystemLogs>;
+class ActionLocksManager;
+using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
 
 /// (database name, table name)
@@ -127,20 +132,23 @@ public:
     static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
+    Context(const Context &) = default;
     ~Context();
 
     String getPath() const;
     String getTemporaryPath() const;
     String getFlagsPath() const;
+    String getUserFilesPath() const;
+
     void setPath(const String & path);
     void setTemporaryPath(const String & path);
     void setFlagsPath(const String & path);
+    void setUserFilesPath(const String & path);
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
-    ConfigurationPtr getConfig() const;
     Poco::Util::AbstractConfiguration & getConfigRef() const;
 
     /** Take the list of users, quotas and configuration profiles from this config.
@@ -155,8 +163,8 @@ public:
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
-    ClientInfo & getClientInfo() { return client_info; };
-    const ClientInfo & getClientInfo() const { return client_info; };
+    ClientInfo & getClientInfo() { return client_info; }
+    const ClientInfo & getClientInfo() const { return client_info; }
 
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();
@@ -179,6 +187,7 @@ public:
     void assertDatabaseExists(const String & database_name, bool check_database_acccess_rights = true) const;
 
     void assertDatabaseDoesntExist(const String & database_name) const;
+    void checkDatabaseAccessRights(const std::string & database_name) const;
 
     Tables getExternalTables() const;
     StoragePtr tryGetExternalTable(const String & table_name) const;
@@ -278,8 +287,8 @@ public:
     void setSessionContext(Context & context_) { session_context = &context_; }
     void setGlobalContext(Context & context_) { global_context = &context_; }
 
-    const Settings & getSettingsRef() const { return settings; };
-    Settings & getSettingsRef() { return settings; };
+    const Settings & getSettingsRef() const { return settings; }
+    Settings & getSettingsRef() { return settings; }
 
 
     void setProgressCallback(ProgressCallback callback);
@@ -300,8 +309,8 @@ public:
     MergeList & getMergeList();
     const MergeList & getMergeList() const;
 
-    void setZooKeeper(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
     /// If the current session is expired at the time of the call, synchronously creates and returns a new session with the startNewSession() call.
+    /// If no ZooKeeper configured, throws an exception.
     std::shared_ptr<zkutil::ZooKeeper> getZooKeeper() const;
     /// Has ready or expired ZooKeeper
     bool hasZooKeeper() const;
@@ -325,6 +334,7 @@ public:
     void dropCaches() const;
 
     BackgroundProcessingPool & getBackgroundPool();
+    BackgroundSchedulePool & getSchedulePool();
 
     void setDDLWorker(std::shared_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
@@ -367,6 +377,8 @@ public:
 
     void shutdown();
 
+    ActionLocksManagerPtr getActionLocksManager();
+
     enum class ApplicationType
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
@@ -389,12 +401,16 @@ public:
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
 
+    using getSampleBlockCacheType = std::unordered_map<std::string, Block>;
+    mutable Context::getSampleBlockCacheType get_sample_block_cache;
+    getSampleBlockCacheType & getSampleBlockCache() const;
+
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
       * NOTE: This method should always be called when the `shared->mutex` mutex is acquired.
       */
-    void checkDatabaseAccessRights(const std::string & database_name) const;
+    void checkDatabaseAccessRightsImpl(const std::string & database_name) const;
 
     EmbeddedDictionaries & getEmbeddedDictionariesImpl(bool throw_on_error) const;
     ExternalDictionaries & getExternalDictionariesImpl(bool throw_on_error) const;

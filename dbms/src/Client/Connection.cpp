@@ -17,13 +17,14 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/DNSResolver.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
-
 
 namespace CurrentMetrics
 {
@@ -41,6 +42,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -56,7 +58,7 @@ void Connection::connect()
 
         if (static_cast<bool>(secure))
         {
-#if Poco_NetSSL_FOUND
+#if USE_POCO_NETSSL
             socket = std::make_unique<Poco::Net::SecureStreamSocket>();
 #else
             throw Exception{"tcp_secure protocol is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
@@ -66,7 +68,10 @@ void Connection::connect()
         {
             socket = std::make_unique<Poco::Net::StreamSocket>();
         }
-        socket->connect(resolved_address, timeouts.connection_timeout);
+
+        current_resolved_address = DNSResolver::instance().resolveAddress(host, port);
+
+        socket->connect(current_resolved_address, timeouts.connection_timeout);
         socket->setReceiveTimeout(timeouts.receive_timeout);
         socket->setSendTimeout(timeouts.send_timeout);
         socket->setNoDelay(true);
@@ -117,7 +122,27 @@ void Connection::disconnect()
 
 void Connection::sendHello()
 {
-    //LOG_TRACE(log_wrapper.get(), "Sending hello");
+    /** Disallow control characters in user controlled parameters
+      *  to mitigate the possibility of SSRF.
+      * The user may do server side requests with 'remote' table function.
+      * Malicious user with full r/w access to ClickHouse
+      *  may use 'remote' table function to forge requests
+      *  to another services in the network other than ClickHouse (examples: SMTP).
+      * Limiting number of possible characters in user-controlled part of handshake
+      *  will mitigate this possibility but doesn't solve it completely.
+      */
+    auto has_control_character = [](const std::string & s)
+    {
+        for (auto c : s)
+            if (isControlASCII(c))
+                return true;
+        return false;
+    };
+
+    if (has_control_character(default_database)
+        || has_control_character(user)
+        || has_control_character(password))
+        throw Exception("Parameters 'default_database', 'user' and 'password' must not contain ASCII control characters", ErrorCodes::BAD_ARGUMENTS);
 
     writeVarUInt(Protocol::Client::Hello, *out);
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
@@ -234,7 +259,7 @@ bool Connection::ping()
 {
     // LOG_TRACE(log_wrapper.get(), "Ping");
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
     try
     {
         UInt64 pong = 0;
@@ -274,7 +299,7 @@ TablesStatusResponse Connection::getTablesStatus(const TablesStatusRequest & req
     if (!connected)
         connect();
 
-    TimeoutSetter timeout_setter(*socket, sync_request_timeout);
+    TimeoutSetter timeout_setter(*socket, sync_request_timeout, true);
 
     writeVarUInt(Protocol::Client::TablesStatusRequest, *out);
     request.write(*out, server_revision);
@@ -462,6 +487,14 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
+Poco::Net::SocketAddress Connection::getResolvedAddress() const
+{
+    if (connected)
+        return current_resolved_address;
+
+    return DNSResolver::instance().resolveAddress(host, port);
+}
+
 
 bool Connection::poll(size_t timeout_microseconds)
 {
@@ -571,6 +604,7 @@ void Connection::initBlockInput()
 
 void Connection::setDescription()
 {
+    auto resolved_address = getResolvedAddress();
     description = host + ":" + toString(resolved_address.port());
     auto ip_address =  resolved_address.host().toString();
 
@@ -610,7 +644,7 @@ void Connection::fillBlockExtraInfo(BlockExtraInfo & info) const
 {
     info.is_valid = true;
     info.host = host;
-    info.resolved_address = resolved_address.toString();
+    info.resolved_address = getResolvedAddress().toString();
     info.port = port;
     info.user = user;
 }

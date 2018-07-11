@@ -67,7 +67,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-To get a list of databases, use the [ SHOW DATABASES]( query./../query_language/queries.md#query_language_queries_show_databases).
+To get a list of databases, use the [SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases).
 
 **Example**
 
@@ -328,6 +328,28 @@ Keys:
 </logger>
 ```
 
+Also, logging to syslog is possible. Configuration example:
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname> 
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+Keys:
+- user_syslog - activation key, turning on syslog logging.
+- address - host[:port] of syslogd. If not specified, local one would be used.
+- hostname - optional, source host of logs
+- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility), 
+in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.). 
+Default values: when ``address`` is specified, then ``LOG_USER``, otherwise - ``LOG_DAEMON``
+- format - message format. Possible values are - ``bsd`` and ``syslog``
+
 <a name="server_settings-macros"></a>
 
 ## macros
@@ -348,7 +370,7 @@ For more information, see the section "[Creating replicated tables](../../table_
 
 ## mark_cache_size
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) family.
+Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) engines.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -450,7 +472,7 @@ Keys for server/client settings:
 - verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `` true``, `` false``.  |
-- cipherList - Поддерживаемые OpenSSL-шифры. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
+- cipherList – Supported OpenSSL encryptions. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
 - cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `` true``, `` false``.
 - sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended, since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
 - sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
@@ -655,6 +677,16 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ```xml
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
+```
+
+## user_files_path
+
+A catalog with user files. Used in a [file()](../../table_functions/file.md#table_functions-file) table function.
+
+**Example**
+
+```xml
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
 <a name="server_settings-users_config"></a>

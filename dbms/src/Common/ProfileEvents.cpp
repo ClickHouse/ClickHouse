@@ -43,6 +43,7 @@
     M(ObsoleteReplicatedParts) \
     M(ReplicatedPartMerges) \
     M(ReplicatedPartFetchesOfMerged) \
+    M(ReplicatedPartMutations) \
     M(ReplicatedPartChecks) \
     M(ReplicatedPartChecksFailed) \
     M(ReplicatedDataLoss) \
@@ -56,14 +57,20 @@
     \
     M(ZooKeeperInit) \
     M(ZooKeeperTransactions) \
-    M(ZooKeeperGetChildren) \
+    M(ZooKeeperList) \
     M(ZooKeeperCreate) \
     M(ZooKeeperRemove) \
     M(ZooKeeperExists) \
     M(ZooKeeperGet) \
     M(ZooKeeperSet) \
     M(ZooKeeperMulti) \
+    M(ZooKeeperCheck) \
+    M(ZooKeeperClose) \
+    M(ZooKeeperWatchResponse) \
     M(ZooKeeperExceptions) \
+    M(ZooKeeperWaitMicroseconds) \
+    M(ZooKeeperBytesSent) \
+    M(ZooKeeperBytesReceived) \
     \
     M(DistributedConnectionFailTry) \
     M(DistributedConnectionMissingTable) \
@@ -72,6 +79,8 @@
     \
     M(CompileAttempt) \
     M(CompileSuccess) \
+    \
+    M(CompileFunction) \
     \
     M(ExternalSortWritePart) \
     M(ExternalSortMerge) \
@@ -127,12 +136,15 @@
     \
     M(DistributedSyncInsertionTimeoutExceeded) \
     M(DataAfterMergeDiffersFromReplica) \
+    M(DataAfterMutationDiffersFromReplica) \
     M(PolygonsAddedToPool) \
     M(PolygonsInPoolAllocatedBytes) \
     M(RWLockAcquiredReadLocks) \
     M(RWLockAcquiredWriteLocks) \
     M(RWLockReadersWaitMilliseconds) \
-    M(RWLockWritersWaitMilliseconds)
+    M(RWLockWritersWaitMilliseconds) \
+    \
+    M(NetworkErrors)
 
 namespace ProfileEvents
 {

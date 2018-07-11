@@ -23,7 +23,7 @@ public:
     bool deduplicate;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return "OptimizeQuery_" + database + "_" + table + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : ""); };
+    String getID() const override { return "OptimizeQuery_" + database + "_" + table + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : ""); }
 
     ASTPtr clone() const override
     {

@@ -58,7 +58,7 @@ std::pair<String, StoragePtr> createTableFromDefinition(
     const String & description_for_error_message)
 {
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message);
+    ASTPtr ast = parseQuery(parser, definition.data(), definition.data() + definition.size(), description_for_error_message, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.attach = true;
@@ -148,7 +148,7 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
-    for (const auto & kv: tables_snapshot)
+    for (const auto & kv : tables_snapshot)
     {
         kv.second->shutdown();
     }

@@ -31,7 +31,7 @@ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```bash
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server-common
+sudo apt-get install clickhouse-client clickhouse-server
 ```
 
 Также можно скачать и установить пакеты вручную, отсюда: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
@@ -48,8 +48,8 @@ ClickHouse содержит настройки ограничения досту
 Также вы можете использовать программы без установки пакетов.
 
 ```text
-Client: dbms/src/Client/
-Server: dbms/src/Server/
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 Для сервера создаёте директории с данными, например:
@@ -62,7 +62,7 @@ Server: dbms/src/Server/
 (Настраивается в конфиге сервера.)
 Сделайте chown под нужного пользователя.
 
-Обратите внимание на путь к логам в конфиге сервера (src/dbms/src/Server/config.xml).
+Обратите внимание на путь к логам в конфиге сервера (src/dbms/programs/server/config.xml).
 
 ### Другие методы установки
 

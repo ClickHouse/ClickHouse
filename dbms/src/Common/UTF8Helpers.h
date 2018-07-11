@@ -7,6 +7,7 @@
 #include <emmintrin.h>
 #endif
 
+
 namespace DB
 {
 
@@ -55,27 +56,18 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     const auto end = data + size;
 
 #if __SSE2__
-    const auto bytes_sse = sizeof(__m128i);
-    const auto src_end_sse = (data + size) - (size % bytes_sse);
+    constexpr auto bytes_sse = sizeof(__m128i);
+    const auto src_end_sse = data + size / bytes_sse * bytes_sse;
 
-    const auto align_sse = _mm_set1_epi8(0x40);
-    const auto upper_bound = _mm_set1_epi8(0xBF);
+    const auto threshold = _mm_set1_epi8(0xBF);
 
     for (; data < src_end_sse; data += bytes_sse)
-    {
-        const auto chars = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data));
-
-        ///Align to zero for the solve two case
-        const auto align_res = _mm_adds_epu8(chars, align_sse);
-        const auto less_than_and_equals = _mm_cmpeq_epi8(_mm_min_epu8(align_res, upper_bound), align_res);
-
-        res += __builtin_popcount(_mm_movemask_epi8(less_than_and_equals));
-    }
-
+        res += __builtin_popcount(_mm_movemask_epi8(
+            _mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)), threshold)));
 #endif
 
     for (; data < end; ++data) /// Skip UTF-8 continuation bytes.
-        res += (*data <= 0x7F || *data >= 0xC0);
+        res += static_cast<Int8>(*data) > static_cast<Int8>(0xBF);
 
     return res;
 }

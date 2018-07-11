@@ -122,9 +122,6 @@ public:
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    /// How many rows are already written.
-    size_t getRowsCount() const { return rows_count; }
-
 private:
     void init();
 
@@ -150,6 +147,7 @@ private:
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
+    /// skip_offsets: used when ALTERing columns if we know that array offsets are not altered.
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
 

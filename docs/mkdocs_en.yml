@@ -12,6 +12,7 @@ edit_uri: 'edit/master/docs/en'
 extra_css:
   - assets/stylesheets/custom.css
 
+
 markdown_extensions:
   - codehilite
 
@@ -96,6 +97,7 @@ pages:
   - 'View': 'table_engines/view.md'
   - 'MaterializedView': 'table_engines/materializedview.md'
   - 'Kafka': 'table_engines/kafka.md'
+  - 'MySQL': 'table_engines/mysql.md'
   - 'External data for query processing': 'table_engines/external_data.md'
 
 - 'System tables':
@@ -121,9 +123,10 @@ pages:
 
 - 'Table functions':
   - 'Introduction': 'table_functions/index.md'
-  - 'remote': 'table_functions/remote.md'
+  - 'file': 'table_functions/file.md'
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
+  - 'remote': 'table_functions/remote.md'
 
 - 'Formats':
   - 'Introduction': 'formats/index.md'
@@ -212,7 +215,7 @@ pages:
 - 'Dictionaries':
   - 'Introduction': 'dicts/index.md'
   - 'External dictionaries':
-    - 'External dictionaries': 'dicts/external_dicts.md'
+    - 'General desription': 'dicts/external_dicts.md'
     - 'Configuring an external dictionary': 'dicts/external_dicts_dict.md'
     - 'Storing dictionaries in memory': 'dicts/external_dicts_dict_layout.md'
     - 'Dictionary updates': 'dicts/external_dicts_dict_lifetime.md'
@@ -220,8 +223,8 @@ pages:
     - 'Dictionary key and fields': 'dicts/external_dicts_dict_structure.md'
   - 'Internal dictionaries': 'dicts/internal_dicts.md'
 
-- 'Operation':
-#  - 'Operation': 'operations/index.md'
+- 'Operations':
+  - 'Operations': 'operations/index.md'
   - 'Access rights': 'operations/access_rights.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
@@ -235,7 +238,7 @@ pages:
     - 'Settings': 'operations/settings/settings.md'
     - 'Settings profiles': 'operations/settings/settings_profiles.md'
 
-- 'Utilites':
+- 'Utilities':
   - 'Introduction': 'utils/index.md'
   - 'clickhouse-copier': 'utils/clickhouse-copier.md'
   - 'clickhouse-local': 'utils/clickhouse-local.md'

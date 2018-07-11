@@ -10,6 +10,8 @@
 #include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/Context.h>
+
 
 namespace Poco
 {
@@ -127,7 +129,7 @@ private:
 
     size_t remote_jobs_count = 0;
     size_t local_jobs_count = 0;
-    
+
     std::atomic<unsigned> finished_jobs_count{0};
 
     Poco::Logger * log;

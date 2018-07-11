@@ -12,7 +12,6 @@
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/ParallelAggregatingBlockInputStream.h>
 #include <DataStreams/DistinctBlockInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/TotalsHavingBlockInputStream.h>
 #include <DataStreams/copyData.h>
@@ -45,11 +44,6 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event SelectQuery;
-}
 
 namespace DB
 {
@@ -104,8 +98,6 @@ InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 void InterpreterSelectQuery::init(const Names & required_result_column_names)
 {
-    ProfileEvents::increment(ProfileEvents::SelectQuery);
-
     if (!context.hasQueryContext())
         context.setQueryContext(context);
 
@@ -630,8 +622,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;
 
-    query_analyzer->makeSetsForIndex();
-
     /// Initialize the initial data streams to which the query transforms are superimposed. Table or subquery or prepared input?
     if (!pipeline.streams.empty())
     {
@@ -656,6 +646,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         /// If necessary, we request more sources than the number of threads - to distribute the work evenly over the threads.
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
+
+        query_analyzer->makeSetsForIndex();
 
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
@@ -687,19 +679,26 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             stream->addTableLock(table_lock);
         });
 
-        /** Set the limits and quota for reading data, the speed and time of the query.
-          *  Such restrictions are checked on the initiating server of the request, and not on remote servers.
-          *  Because the initiating server has a summary of the execution of the request on all servers.
-          */
-        if (to_stage == QueryProcessingStage::Complete)
+        /// Set the limits and quota for reading data, the speed and time of the query.
         {
             IProfilingBlockInputStream::LocalLimits limits;
             limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
             limits.size_limits = SizeLimits(settings.max_rows_to_read, settings.max_bytes_to_read, settings.read_overflow_mode);
             limits.max_execution_time = settings.max_execution_time;
             limits.timeout_overflow_mode = settings.timeout_overflow_mode;
-            limits.min_execution_speed = settings.min_execution_speed;
-            limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+
+            /** Quota and minimal speed restrictions are checked on the initiating server of the request, and not on remote servers,
+              *  because the initiating server has a summary of the execution of the request on all servers.
+              *
+              * But limits on data size to read and maximum execution time are reasonable to check both on initiator and
+              *  additionally on each remote server, because these limits are checked per block of data processed,
+              *  and remote servers may process way more blocks of data than are received by initiator.
+              */
+            if (to_stage == QueryProcessingStage::Complete)
+            {
+                limits.min_execution_speed = settings.min_execution_speed;
+                limits.timeout_before_checking_execution_speed = settings.timeout_before_checking_execution_speed;
+            }
 
             QuotaForIntervals & quota = context.getQuota();
 
@@ -708,7 +707,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(stream.get()))
                 {
                     p_stream->setLimits(limits);
-                    p_stream->setQuota(quota);
+
+                    if (to_stage == QueryProcessingStage::Complete)
+                        p_stream->setQuota(quota);
                 }
             });
         }
@@ -1005,11 +1006,7 @@ void InterpreterSelectQuery::executeDistinct(Pipeline & pipeline, bool before_or
         pipeline.transform([&](auto & stream)
         {
             SizeLimits limits(settings.max_rows_in_distinct, settings.max_bytes_in_distinct, settings.distinct_overflow_mode);
-
-            if (stream->isGroupedOutput())
-                stream = std::make_shared<DistinctSortedBlockInputStream>(stream, limits, limit_for_distinct, columns);
-            else
-                stream = std::make_shared<DistinctBlockInputStream>(stream, limits, limit_for_distinct, columns);
+            stream = std::make_shared<DistinctBlockInputStream>(stream, limits, limit_for_distinct, columns);
         });
     }
 }
