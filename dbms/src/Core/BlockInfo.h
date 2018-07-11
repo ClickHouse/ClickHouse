@@ -45,22 +45,24 @@ struct BlockInfo
     void read(ReadBuffer & in);
 };
 
-/// Block extention to support delayed defaults.
-/// It's expected that it would be lots unset defaults or none.
-/// NOTE It's possible to make better solution for sparse values.
+/// Block extention to support delayed defaults. Used in AddingDefaultsBlockInputStream to replace type defauls set by RowInputStream
+/// with column defaults.
 class BlockDelayedDefaults
 {
 public:
-    using BitMask = std::vector<bool>;
-    using MaskById = std::unordered_map<size_t, BitMask>;
+    using RowsBitMask = std::vector<bool>; /// a bit per row for a column
 
-    const BitMask & getColumnBitmask(size_t column_idx) const;
+    const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
     void setBit(size_t column_idx, size_t row_idx);
     bool empty() const { return columns_defaults.empty(); }
     size_t size() const { return columns_defaults.size(); }
 
 private:
-    MaskById columns_defaults;
+    using RowsMaskByColumnId = std::unordered_map<size_t, RowsBitMask>;
+
+    /// If columns_defaults[column_id][row_id] is true related value in Block should be replaced with column default.
+    /// It could contain less columns and rows then related block.
+    RowsMaskByColumnId columns_defaults;
 };
 
 }

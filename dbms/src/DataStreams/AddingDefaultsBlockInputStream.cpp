@@ -63,25 +63,28 @@ Block AddingDefaultsBlockInputStream::readImpl()
         if (column_read.column->size() != column_def.column->size())
             throw Exception("Mismach column sizes while adding defaults", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
-        const BlockDelayedDefaults::BitMask & mask = delayed_defaults.getColumnBitmask(block_column_position);
-        MutableColumnPtr column_mixed = column_read.column->cloneEmpty();
-
-        for (size_t row_idx = 0; row_idx < column_read.column->size(); ++row_idx)
+        const auto & defaults_mask = delayed_defaults.getDefaultsBitmask(block_column_position);
+        if (!defaults_mask.empty())
         {
-            if (mask[row_idx])
-            {
-                if (column_def.column->isColumnConst())
-                    column_mixed->insert((*column_def.column)[row_idx]);
-                else
-                    column_mixed->insertFrom(*column_def.column, row_idx);
-            }
-            else
-                column_mixed->insertFrom(*column_read.column, row_idx);
-        }
+            MutableColumnPtr column_mixed = column_read.column->cloneEmpty();
 
-        ColumnWithTypeAndName mix = column_read.cloneEmpty();
-        mix.column = std::move(column_mixed);
-        mixed_columns.emplace_back(std::move(mix));
+            for (size_t row_idx = 0; row_idx < column_read.column->size(); ++row_idx)
+            {
+                if (defaults_mask[row_idx])
+                {
+                    if (column_def.column->isColumnConst())
+                        column_mixed->insert((*column_def.column)[row_idx]);
+                    else
+                        column_mixed->insertFrom(*column_def.column, row_idx);
+                }
+                else
+                    column_mixed->insertFrom(*column_read.column, row_idx);
+            }
+
+            ColumnWithTypeAndName mix = column_read.cloneEmpty();
+            mix.column = std::move(column_mixed);
+            mixed_columns.emplace_back(std::move(mix));
+        }
     }
 
     for (auto & column : mixed_columns)
