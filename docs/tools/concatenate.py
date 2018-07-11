@@ -29,9 +29,10 @@ def concatenate(lang, docs_path, single_page_file):
                 path = (l[l.index(':') + 1:]).strip(" '\n")
                 files_to_concatenate.append(path)
 
-    logging.info(str(len(files_to_concatenate)) + " files will be concatenated into single md-file.\nFiles:")
-    logging.info(files_to_concatenate)
-
+    logging.info(
+        str(len(files_to_concatenate)) +
+        ' files will be concatenated into single md-file: ' +
+        ', '.join(files_to_concatenate))
 
     first_file = True
 
@@ -52,8 +53,8 @@ def concatenate(lang, docs_path, single_page_file):
                         return '[' + text + '](' + link[sharp_pos:] + ')'
                     else:
                         raise RuntimeError(
-                            'ERROR: Link [' + text + '](' + link + ') in file ' + path + ' has no anchor. Please provide it.')
-                        # return '['+text+'](#'+link.replace('/','-')+')'
+                            'ERROR: Link [' + text + '](' + link + ') in file ' +
+                            path + ' has no anchor. Please provide it.')
 
             for l in f:
                 # Processing links in a string
