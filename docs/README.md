@@ -9,7 +9,7 @@ Master branch is then asynchronously published to ClickHouse official website:
 * In English: https://clickhouse.yandex/docs/en/
 * In Russian: https://clickhouse.yandex/docs/ru/
 
-Infrastructure to build Markdown to documentation resides in [tools](tools) folder, it has it's own [README.md](tools/README.md) with more details.
+Infrastructure to build Markdown to documentation website resides in [tools](tools) folder, it has it's own [README.md](tools/README.md) with more details.
 
 # How to write content for ClickHouse documentation?
 
@@ -25,6 +25,7 @@ ClickHouse can be directly used by all sorts of either analysts and engineers, s
 * If documentation section consists of many similar items, like functions or operators, try to order them from more generic (usable by wider audience) to more specific (to some usecases or application types). If several items are intended to be mostly used together, keep them together in documentation too.
 * Try to avoid slang, use the most common and specific terms for everythings. If some terms are used as synonyms, state this explicitly.
 * All functionality descriptions should be accompanied by examples. At least very basic ones, but real world examples are welcome too.
+* Debatable topics like politics, religion, racial and so on are strictly prohibited in either documentation, examples, comments and code.
 * People tend to get temporary stuck with some specific words or phrases, usually auxiliary, for a shord period of time. So they get repeated over and over in small part of content, which looks weird when reading. It is easy to fix this by reading your text again before publishing, also you can use this opportunity to fix mistypes and lost punctuation.
 * Try to avoid naming the reader in text, it is not strictly prohibited though.
 
