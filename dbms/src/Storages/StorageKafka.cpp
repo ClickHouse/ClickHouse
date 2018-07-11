@@ -15,6 +15,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -145,6 +146,10 @@ public:
         LOG_TRACE(storage.log, "Creating formatted reader");
         read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+
+        const ColumnsDescription & columns = getColumns();
+        if (!columns.defaults.empty())
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, columns.defaults, context);
     }
 
     ~KafkaBlockInputStream() override

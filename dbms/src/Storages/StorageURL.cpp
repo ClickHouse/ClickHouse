@@ -13,6 +13,7 @@
 
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
 
@@ -135,14 +136,19 @@ BlockInputStreams StorageURL::read(
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<StorageURLBlockInputStream>(
+    BlockInputStreamPtr block_input = std::make_shared<StorageURLBlockInputStream>(
         uri,
         format_name,
         getName(),
         getSampleBlock(),
         context,
         max_block_size,
-        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};
+        ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()));
+
+    const ColumnsDescription & columns = getColumns();
+    if (columns.defaults.empty())
+        return {block_input};
+    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, columns.defaults, context)};
 }
 
 void StorageURL::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
