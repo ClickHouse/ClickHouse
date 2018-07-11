@@ -47,9 +47,11 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
     TableMetadata table_meta(ast_insert_query->database, ast_insert_query->table);
     table_meta.loadFromContext(context);
 
-    BlockInputStreamPtr block_input =
-        context.getInputFormat(format, *input_buffer_contacenated, streams.out->getHeader(), context.getSettings().max_insert_block_size);
-    res_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input, table_meta.column_defaults, context);
+    res_stream = context.getInputFormat(
+        format, *input_buffer_contacenated, streams.out->getHeader(), context.getSettings().max_insert_block_size);
+
+    if (!table_meta.column_defaults.empty())
+        res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, table_meta.column_defaults, context);
 }
 
 }
