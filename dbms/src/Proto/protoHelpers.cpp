@@ -6,7 +6,7 @@
 #include <Storages/TableMetadata.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
@@ -116,7 +116,7 @@ namespace DB
         size_t data_size = proto_column.column->byteSize();
         Proto::Context::Reader proto_context = deserializeProto<Proto::Context>(plain_data.data, data_size);
 
-        ParserExpressionElement parser;
+        ParserTernaryOperatorExpression parser;
 
         for (auto proto_database : proto_context.getDatabases())
         {

@@ -6,7 +6,10 @@ CREATE TABLE IF NOT EXISTS test.defaults
     y UInt32,
     a UInt32 DEFAULT x + y,
     b Float32 DEFAULT log(1 + x + y),
-    c UInt32 DEFAULT 42
+    c UInt32 DEFAULT 42,
+    d DEFAULT x + y,
+    e MATERIALIZED x + y,
+    f ALIAS x + y
 ) ENGINE = Memory;
 
 INSERT INTO test.defaults FORMAT JSONEachRow {"x":1, "y":1};
