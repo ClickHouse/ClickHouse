@@ -43,7 +43,11 @@ Block AddingDefaultsBlockInputStream::readImpl()
 
     Block evaluate_block{res};
     for (const auto & column : column_defaults)
-        evaluate_block.erase(column.first);
+    {
+        /// column_defaults contain aliases that could be ommited in evaluate_block
+        if (evaluate_block.has(column.first))
+            evaluate_block.erase(column.first);
+    }
 
     evaluateMissingDefaultsUnsafe(evaluate_block, header.getNamesAndTypesList(), column_defaults, context);
 
