@@ -313,8 +313,12 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     state.io.out->writePrefix();
 
     /// Send query metadata (column defaults)
-    Block meta_block = storeContextBlock(query_context);
-    sendMetadata(meta_block);
+    if (global_settings.insert_sample_with_metadata &&
+        query_context.getSettingsRef().insert_sample_with_metadata)
+    {
+        Block meta_block = storeContextBlock(query_context);
+        sendMetadata(meta_block);
+    }
 
     /// Send block to the client - table structure.
     Block block = state.io.out->getHeader();

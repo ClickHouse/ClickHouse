@@ -4,10 +4,9 @@ CREATE TABLE IF NOT EXISTS test.defaults
 (
     x UInt32,
     y UInt32,
-    a UInt32 DEFAULT x + y,
+    a DEFAULT x + y,
     b Float32 DEFAULT log(1 + x + y),
     c UInt32 DEFAULT 42,
-    d DEFAULT x + y,
     e MATERIALIZED x + y,
     f ALIAS x + y
 ) ENGINE = Memory;
