@@ -136,8 +136,11 @@ namespace DB
                     String expression = column.getDefault().getExpression().cStr();
                     ColumnDefaultKind expression_kind = static_cast<ColumnDefaultKind>(column.getDefault().getKind());
 
-                    ASTPtr ast = parseQuery(parser, expression, expression.size());
-                    table_meta.column_defaults.emplace(column_name, ColumnDefault{expression_kind, ast});
+                    if (expression_kind == ColumnDefaultKind::Default)
+                    {
+                        ASTPtr ast = parseQuery(parser, expression, expression.size());
+                        table_meta.column_defaults.emplace(column_name, ColumnDefault{expression_kind, ast});
+                    }
                 }
             }
         }
