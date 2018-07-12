@@ -987,30 +987,48 @@ void ZooKeeper::receiveEvent()
             if (it == operations.end())
                 throw Exception("Received response for unknown xid", ZRUNTIMEINCONSISTENCY);
 
+            /// After this point, we must invoke callback, that we've grabbed from 'operations'.
+            /// Invariant: all callbacks are invoked either in case of success or in case of error.
+            /// (all callbacks in 'operations' are guaranteed to be invoked)
+
             request_info = std::move(it->second);
             operations.erase(it);
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        response = request_info.request->makeResponse();
-
         auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
-    if (err)
-        response->error = err;
-    else
+    try
     {
-        response->readImpl(*in);
-        response->removeRootPath(root_path);
+        if (!response)
+            response = request_info.request->makeResponse();
+
+        if (err)
+            response->error = err;
+        else
+        {
+            response->readImpl(*in);
+            response->removeRootPath(root_path);
+        }
+
+        int32_t actual_length = in->count() - count_before_event;
+        if (length != actual_length)
+            throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        response->error = ZMARSHALLINGERROR;
+        if (request_info.callback)
+            request_info.callback(*response);
+
+        throw;
     }
 
-    int32_t actual_length = in->count() - count_before_event;
-    if (length != actual_length)
-        throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
-
-    /// NOTE: Exception in callback will propagate to receiveThread and will lead to session expiration. This is Ok.
+    /// Exception in callback will propagate to receiveThread and will lead to session expiration. This is Ok.
 
     if (request_info.callback)
         request_info.callback(*response);
