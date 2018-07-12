@@ -48,7 +48,8 @@ static Poco::Net::IPAddress toIPv6(const Poco::Net::IPAddress addr)
 }
 
 
-/// IP-address or subnet mask. Example: 213.180.204.3 or 10.0.0.1/8 or 2a02:6b8::3 or 2a02:6b8::3/64.
+/// IP-address or subnet mask. Example: 213.180.204.3 or 10.0.0.1/8 or
+/// 2a02:6b8::3 or 2a02:6b8::3/64.
 class IPAddressPattern : public IAddressPattern
 {
 private:
@@ -69,15 +70,25 @@ public:
         else
         {
             String addr(str, 0, pos - str.c_str());
-            UInt8 prefix_bits_ = parse<UInt8>(pos + 1);
-
+            String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
+            UInt8 prefix_bits_;
+            if (isDigits(str_mask))
+            {
+                prefix_bits_ = parse<UInt8>(pos + 1);
+            }
+            else
+            {
+                Poco::Net::IPAddress ip_mask(str_mask);
+                prefix_bits_ = ip_mask.prefixLength();
+            }
             construct(Poco::Net::IPAddress(addr), prefix_bits_);
         }
     }
 
     bool contains(const Poco::Net::IPAddress & addr) const override
     {
-        return prefixBitsEquals(reinterpret_cast<const char *>(toIPv6(addr).addr()), reinterpret_cast<const char *>(mask_address.addr()), prefix_bits);
+        return prefixBitsEquals(
+            reinterpret_cast<const char *>(toIPv6(addr).addr()), reinterpret_cast<const char *>(mask_address.addr()), prefix_bits);
     }
 
 private:
@@ -87,12 +98,10 @@ private:
         prefix_bits = 128;
     }
 
-    void construct(const Poco::Net::IPAddress & mask_address_, UInt8 prefix_bits_)
+    void construct(const Poco::Net::IPAddress & mask_address_, UInt8 & prefix_bits_)
     {
         mask_address = toIPv6(mask_address_);
-        prefix_bits = mask_address_.family() == Poco::Net::IPAddress::IPv4
-            ? prefix_bits_ + 96
-            : prefix_bits_;
+        prefix_bits = mask_address_.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits_ + 96 : prefix_bits_;
     }
 
     static bool prefixBitsEquals(const char * lhs, const char * rhs, UInt8 prefix_bits)
@@ -102,7 +111,12 @@ private:
 
         return 0 == memcmp(lhs, rhs, prefix_bytes)
             && (remaining_bits % 8 == 0
-                 || (lhs[prefix_bytes] >> (8 - remaining_bits)) == (rhs[prefix_bytes] >> (8 - remaining_bits)));
+            || (lhs[prefix_bytes] >> (8 - remaining_bits)) == (rhs[prefix_bytes] >> (8 - remaining_bits)));
+    }
+
+    bool isDigits(const std::string & str)
+    {
+        return str.find_first_not_of("0123456789") == std::string::npos;
     }
 };
 
