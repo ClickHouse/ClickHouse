@@ -73,7 +73,7 @@ public:
             mask_address = toIPv6(Poco::Net::IPAddress(addr));
 
             String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
-            if (isDigits(str_mask))
+            if (isDigit(str_mask))
             {
                 UInt8 prefix_bits = parse<UInt8>(pos + 1);
                 construct(prefix_bits);
@@ -103,23 +103,22 @@ private:
         subnet_mask = Poco::Net::IPAddress(prefix_bits, Poco::Net::IPAddress::IPv6);
     }
 
-    static bool prefixBitsEquals(
-        const Poco::Net::IPAddress & ip_address, const Poco::Net::IPAddress & net_address, const Poco::Net::IPAddress & mask)
+    static bool prefixBitsEquals(const Poco::Net::IPAddress & ip_address, const Poco::Net::IPAddress & net_address, const Poco::Net::IPAddress & mask)
     {
         return ((toIPv6(ip_address) & mask) == (toIPv6(net_address) & mask));
     }
 
-    bool isDigits(const std::string & str)
+    static bool isDigit(const std::string & str)
     {
         return std::all_of(str.begin(), str.end(), isNumericASCII);
     }
 
-    Poco::Net::IPAddress netmaskToIPv6(Poco::Net::IPAddress mask)
+    static Poco::Net::IPAddress netmaskToIPv6(Poco::Net::IPAddress mask)
     {
         if (mask.family() == Poco::Net::IPAddress::IPv6)
             return mask;
 
-        return Poco::Net::IPAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF::") | toIPv6(mask);
+        return Poco::Net::IPAddress(96, Poco::Net::IPAddress::IPv6) | toIPv6(mask);
     }
 };
 
