@@ -33,17 +33,13 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const
         if (!header)
             throw Exception("Logical error: empty block received as table structure", ErrorCodes::LOGICAL_ERROR);
     }
-    else if (Protocol::Server::CapnProto == packet.type)
-    {
-        metadata = packet.block;
-    }
     else if (Protocol::Server::Exception == packet.type)
     {
         packet.exception->rethrow();
         return;
     }
     else
-        throw NetException("Unexpected packet from server (expected Data, CapnProto or Exception, got "
+        throw NetException("Unexpected packet from server (expected Data or Exception, got "
             + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
 }
 

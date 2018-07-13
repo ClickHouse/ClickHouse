@@ -936,18 +936,16 @@ private:
     void sendDataFrom(ReadBuffer & buf, Block & sample, const TableMetadata & table_meta)
     {
         String current_format = insert_format;
-        const ColumnDefaults & column_defaults = table_meta.column_defaults;
 
         /// Data format can be specified in the INSERT query.
         if (ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*parsed_query))
-        {
             if (!insert->format.empty())
                 current_format = insert->format;
-        }
 
         BlockInputStreamPtr block_input = context.getInputFormat(
             current_format, buf, sample, insert_format_max_block_size);
 
+        const ColumnDefaults & column_defaults = table_meta.column_defaults;
         if (!column_defaults.empty())
             block_input = std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context);
         BlockInputStreamPtr async_block_input = std::make_shared<AsynchronousBlockInputStream>(block_input);
