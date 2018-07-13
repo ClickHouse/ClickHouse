@@ -243,7 +243,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
 bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FuturePart & future_part,
-    size_t available_disk_space,
+    size_t & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
@@ -306,6 +306,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
 
     LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     future_part.assign(std::move(parts));
+    available_disk_space -= required_disk_space;
     return true;
 }
 
@@ -549,7 +550,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    const SortDescription sort_desc = data.getSortDescription();
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
@@ -611,6 +611,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             src_streams.emplace_back(std::move(input));
     }
 
+    Names sort_columns = data.getSortColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    Block header = src_streams.at(0)->getHeader();
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
     ///  that is going in insertion order.
@@ -620,38 +629,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Summing:
             merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
             merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE);
             break;
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Graphite:
             merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE,
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE,
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
-                    src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
             break;
 
         default:
@@ -927,12 +936,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          * When M > N parts could be replaced?
          * - new block was added in ReplicatedMergeTreeBlockOutputStream;
          * - it was added to working dataset in memory and renamed on filesystem;
-         * - but ZooKeeper transaction that add its to reference dataset in ZK and unlocks AbandonableLock is failed;
+         * - but ZooKeeper transaction that adds it to reference dataset in ZK failed;
          * - and it is failed due to connection loss, so we don't rollback working dataset in memory,
          *   because we don't know if the part was added to ZK or not
          *   (see ReplicatedMergeTreeBlockOutputStream)
-         * - then method selectPartsToMerge selects a range and see, that AbandonableLock for this part is abandoned,
-         *   and so, it is possible to merge a range skipping this part.
+         * - then method selectPartsToMerge selects a range and sees, that EphemeralLock for the block in this part is unlocked,
+         *   and so it is possible to merge a range skipping this part.
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */
