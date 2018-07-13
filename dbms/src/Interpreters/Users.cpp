@@ -48,15 +48,15 @@ static Poco::Net::IPAddress toIPv6(const Poco::Net::IPAddress addr)
 }
 
 
-/// IP-address or subnet mask. Example: 213.180.204.3 or 10.0.0.1/8 or
-/// 2a02:6b8::3 or 2a02:6b8::3/64.
+/// IP-address or subnet mask. Example: 213.180.204.3 or 10.0.0.1/8 or 312.234.1.1/255.255.255.255
+/// 2a02:6b8::3 or 2a02:6b8::3/64 or 2a02:6b8::3/ffff:ffff:ffff:ffff:ffff:ffff::
 class IPAddressPattern : public IAddressPattern
 {
 private:
     /// Address of mask. Always transformed to IPv6.
     Poco::Net::IPAddress mask_address;
-    /// Number of bits in mask.
-    UInt8 prefix_bits;
+    /// Mask of net (ip form). Always transformed to IPv6.
+    Poco::Net::IPAddress ip_mask;
 
 public:
     explicit IPAddressPattern(const String & str)
@@ -71,50 +71,43 @@ public:
         {
             String addr(str, 0, pos - str.c_str());
             String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
-            UInt8 prefix_bits_;
             if (isDigits(str_mask))
             {
-                prefix_bits_ = parse<UInt8>(pos + 1);
+                UInt8 prefix_bits = parse<UInt8>(pos + 1);
+                construct(Poco::Net::IPAddress(addr), prefix_bits);
             }
             else
             {
-                Poco::Net::IPAddress ip_mask(str_mask);
-                prefix_bits_ = ip_mask.prefixLength();
+                ip_mask = toIPv6(Poco::Net::IPAddress(str_mask));
             }
-            construct(Poco::Net::IPAddress(addr), prefix_bits_);
         }
     }
 
     bool contains(const Poco::Net::IPAddress & addr) const override
     {
-        return prefixBitsEquals(
-            reinterpret_cast<const char *>(toIPv6(addr).addr()), reinterpret_cast<const char *>(mask_address.addr()), prefix_bits);
+        return prefixBitsEquals(addr, mask_address, ip_mask);
     }
 
 private:
     void construct(const Poco::Net::IPAddress & mask_address_)
     {
-        mask_address = toIPv6(mask_address_);
-        prefix_bits = 128;
+        mask_address = mask_address_;
+        ip_mask = Poco::Net::IPAddress(128, Poco::Net::IPAddress::IPv6);
     }
 
-    void construct(const Poco::Net::IPAddress & mask_address_, UInt8 & prefix_bits_)
+    void construct(const Poco::Net::IPAddress & mask_address_, UInt8 prefix_bits_)
     {
         mask_address = toIPv6(mask_address_);
         prefix_bits = mask_address_.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits_ + 96 : prefix_bits_;
+        ip_mask = Poco::Net::IPAddress(prefix_bits_, Poco::Net::IPAddress::IPv6);
     }
 
-    static bool prefixBitsEquals(const char * lhs, const char * rhs, UInt8 prefix_bits)
+    static bool prefixBitsEquals(const Poco::Net::IPAddress & ip, const Poco::Net::IPAddress & address, const Poco::Net::IPAddress & mask)
     {
-        UInt8 prefix_bytes = prefix_bits / 8;
-        UInt8 remaining_bits = prefix_bits % 8;
-
-        return 0 == memcmp(lhs, rhs, prefix_bytes)
-            && (remaining_bits % 8 == 0
-            || (lhs[prefix_bytes] >> (8 - remaining_bits)) == (rhs[prefix_bytes] >> (8 - remaining_bits)));
+        return ((toIPv6(ip) & toIPv6(mask)) == (toIPv6(address) & toIPv6(mask)));
     }
 
-    bool isDigits(const std::string & str)
+    bool isDigit(const std::string & str)
     {
         return str.find_first_not_of("0123456789") == std::string::npos;
     }
