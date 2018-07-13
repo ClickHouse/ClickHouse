@@ -71,14 +71,14 @@ public:
         {
             String addr(str, 0, pos - str.c_str());
             String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
-            if (isDigits(str_mask))
+            if (isDigit(str_mask))
             {
                 UInt8 prefix_bits = parse<UInt8>(pos + 1);
                 construct(Poco::Net::IPAddress(addr), prefix_bits);
             }
             else
             {
-                ip_mask = toIPv6(Poco::Net::IPAddress(str_mask));
+                ip_mask = Poco::Net::IPAddress(str_mask);
             }
         }
     }
@@ -91,14 +91,14 @@ public:
 private:
     void construct(const Poco::Net::IPAddress & mask_address_)
     {
-        mask_address = mask_address_;
+        mask_address = toIPv6(mask_address_);
         ip_mask = Poco::Net::IPAddress(128, Poco::Net::IPAddress::IPv6);
     }
 
     void construct(const Poco::Net::IPAddress & mask_address_, UInt8 prefix_bits_)
     {
         mask_address = toIPv6(mask_address_);
-        prefix_bits = mask_address_.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits_ + 96 : prefix_bits_;
+        prefix_bits_ = mask_address_.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits_ + 96 : prefix_bits_;
         ip_mask = Poco::Net::IPAddress(prefix_bits_, Poco::Net::IPAddress::IPv6);
     }
 
@@ -112,7 +112,6 @@ private:
         return str.find_first_not_of("0123456789") == std::string::npos;
     }
 };
-
 
 /// Check that address equals to one of hostname addresses.
 class HostExactPattern : public IAddressPattern
