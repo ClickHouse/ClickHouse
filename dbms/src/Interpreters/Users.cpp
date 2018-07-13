@@ -71,7 +71,7 @@ public:
         {
             String addr(str, 0, pos - str.c_str());
             String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
-            if (isDigit(str_mask))
+            if (isDigits(str_mask))
             {
                 UInt8 prefix_bits = parse<UInt8>(pos + 1);
                 construct(Poco::Net::IPAddress(addr), prefix_bits);
@@ -107,7 +107,7 @@ private:
         return ((toIPv6(ip) & mask) == (toIPv6(address) & mask));
     }
 
-    bool isDigit(const std::string & str)
+    bool isDigits(const std::string & str)
     {
         return std::all_of(str.begin(), str.end(), isNumericASCII);
     }
