@@ -76,8 +76,13 @@ a:link, a:visited {
 	color: #000 !important;
 }
 
+.md-nav__link[data-md-state='blur'] {
+    color: #888 !important;
+}
+
+
 .md-nav__link:hover, .md-nav__link:active {
-	color: #08f  !important;
+    color: #08f !important;
     text-decoration: none;
 }
 
@@ -118,4 +123,8 @@ h1, h2, h3, .md-logo {
 
 .md-search-result__link {
     text-decoration: none !important;
+}
+
+.md-hide {
+    display: none;
 }

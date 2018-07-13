@@ -204,7 +204,7 @@ private:
 
     static bool hasNull(const PaddedPODArray<UInt8> & null_map, size_t i)
     {
-        return null_map[i] == 1;
+        return null_map[i];
     }
 
     /// Both function arguments are ordinary.
@@ -287,7 +287,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                 }
                 else if (compare(data[current_offset + j], value, i))
@@ -324,7 +324,7 @@ private:
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                     if (hasNull(null_map_item, i))
                         hit = true;
@@ -394,11 +394,6 @@ struct ArrayIndexNumNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -407,7 +402,7 @@ struct ArrayIndexNumNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_ref[current_offset + j] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -433,11 +428,6 @@ struct ArrayIndexStringNullImpl
         const auto size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -446,8 +436,7 @@ struct ArrayIndexStringNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_ref[k] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -487,8 +476,7 @@ struct ArrayIndexStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                 }
                 else if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
@@ -524,21 +512,20 @@ struct ArrayIndexStringImpl
             for (size_t j = 0; j < array_size; ++j)
             {
                 ColumnArray::Offset string_pos = current_offset == 0 && j == 0
-                                                   ? 0
-                                                   : string_offsets[current_offset + j - 1];
+                    ? 0
+                    : string_offsets[current_offset + j - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
                 bool hit = false;
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
 
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
-                    if (null_map_item && ((*null_map_item)[i] == 1))
+                    if (null_map_item && (*null_map_item)[i])
                         hit = true;
                 }
                 else if (string_size == value_size && 0 == memcmp(&item_values[value_pos], &data[string_pos], value_size))
-                        hit = true;
+                    hit = true;
 
                 if (hit)
                 {
@@ -638,7 +625,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                 }
                 else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
@@ -674,9 +661,9 @@ private:
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
-                    if (null_map_item[i] == 1)
+                    if (null_map_item[i])
                         hit = true;
                 }
                 else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
@@ -724,11 +711,6 @@ struct ArrayIndexGenericNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -737,7 +719,7 @@ struct ArrayIndexGenericNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_ref[current_offset + j] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -931,7 +913,7 @@ private:
 
                     if (arr[i].isNull())
                     {
-                        if (null_map && ((*null_map)[row] == 1))
+                        if (null_map && (*null_map)[row])
                             hit = true;
                     }
                     else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
