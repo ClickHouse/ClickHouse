@@ -1021,6 +1021,10 @@ void ZooKeeper::receiveEvent()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
 
+        /// Unrecoverable. Don't leave incorrect state in memory.
+        if (!response)
+            std::terminate();
+
         response->error = ZMARSHALLINGERROR;
         if (request_info.callback)
             request_info.callback(*response);
