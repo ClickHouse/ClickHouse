@@ -64,7 +64,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         throw Exception("Unknown compression method: " + toString(method), ErrorCodes::UNKNOWN_COMPRESSION_METHOD);
 
     if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
-        throw Exception("Too large size_compressed=" + toString(size_compressed) + ". Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+        throw Exception("Too large size_compressed: " + toString(size_compressed) + ". Most likely corrupted data.", ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed + sizeof(checksum));
 
@@ -83,13 +83,14 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
         compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
     }
 
-    if (!disable_checksum) {
+    if (!disable_checksum)
+    {
         auto checksum_calculated = CityHash_v1_0_2::CityHash128(compressed_buffer, size_compressed);
         if (checksum != checksum_calculated)
             throw Exception("Checksum doesn't match: corrupted data."
-                " received=" + getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second)
-                + ", calculated=" + getHexUIntLowercase(checksum_calculated.first) + getHexUIntLowercase(checksum_calculated.second)
-                + ", size=" + toString(size_compressed),
+                " Reference: " + getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second)
+                + ". Actual: " + getHexUIntLowercase(checksum_calculated.first) + getHexUIntLowercase(checksum_calculated.second)
+                + ". Size of compressed block: " + toString(size_compressed) + ".",
                 ErrorCodes::CHECKSUM_DOESNT_MATCH);
     }
 
