@@ -1,5 +1,9 @@
 option (ENABLE_CAPNP "Enable Cap'n Proto" ${NOT_MSVC})
 
+unset (USE_CAPNP CACHE)
+unset (USE_INTERNAL_CAPNP_LIBRARY CACHE)
+unset (MISSING_INTERNAL_CAPNP_LIBRARY CACHE)
+
 if (ENABLE_CAPNP)
     # cmake 3.5.1 bug:
     # capnproto uses this cmake feature:

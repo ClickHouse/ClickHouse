@@ -312,6 +312,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
       */
     state.io.out->writePrefix();
 
+#if USE_CAPNP
     /// Send query metadata (column defaults)
     if (global_settings.insert_sample_with_metadata &&
         query_context.getSettingsRef().insert_sample_with_metadata)
@@ -319,6 +320,7 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
         Block meta_block = storeContextBlock(query_context);
         sendMetadata(meta_block);
     }
+#endif
 
     /// Send block to the client - table structure.
     Block block = state.io.out->getHeader();
