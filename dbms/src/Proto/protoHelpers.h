@@ -1,4 +1,5 @@
 #pragma once
+#if USE_CAPNP
 
 namespace DB
 {
@@ -9,3 +10,5 @@ namespace DB
     Block storeContextBlock(Context & context);
     void loadTableMetadata(const Block & block, TableMetadata & table_meta);
 }
+
+#endif

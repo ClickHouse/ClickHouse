@@ -1082,7 +1082,9 @@ private:
                 return false;
 
             case Protocol::Server::CapnProto:
+#if USE_CAPNP
                 loadTableMetadata(packet.block, table_meta);
+#endif
                 return receiveSampleBlock(out, table_meta);
 
             default:

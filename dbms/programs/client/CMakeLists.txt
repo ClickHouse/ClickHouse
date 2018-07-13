@@ -1,5 +1,5 @@
 add_library (clickhouse-client-lib Client.cpp)
-target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions clickhouse_proto
+target_link_libraries (clickhouse-client-lib clickhouse_functions clickhouse_aggregate_functions ${PROTO_LIB}
     ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-client-lib SYSTEM PRIVATE ${READLINE_INCLUDE_DIR})
 
