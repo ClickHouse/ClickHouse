@@ -49,7 +49,7 @@ static Poco::Net::IPAddress toIPv6(const Poco::Net::IPAddress addr)
 
 
 /// IP-address or subnet mask. Example: 213.180.204.3 or 10.0.0.1/8 or 312.234.1.1/255.255.255.0
-/// 2a02:6b8::3 or 2a02:6b8::3/64 or 2a02:6b8::3/ffff:ffff:ffff:ffff::
+/// 2a02:6b8::3 or 2a02:6b8::3/64 or 2a02:6b8::3/FFFF:FFFF:FFFF:FFFF::
 class IPAddressPattern : public IAddressPattern
 {
 private:
@@ -70,11 +70,13 @@ public:
         else
         {
             String addr(str, 0, pos - str.c_str());
+            mask_address = toIPv6(Poco::Net::IPAddress(addr));
+
             String str_mask(str, addr.length() + 1, str.length() - addr.length() - 1);
             if (isDigits(str_mask))
             {
                 UInt8 prefix_bits = parse<UInt8>(pos + 1);
-                construct(Poco::Net::IPAddress(addr), prefix_bits);
+                construct(prefix_bits);
             }
             else
             {
@@ -95,16 +97,16 @@ private:
         subnet_mask = Poco::Net::IPAddress(128, Poco::Net::IPAddress::IPv6);
     }
 
-    void construct(const Poco::Net::IPAddress & mask_address_, UInt8 prefix_bits)
+    void construct(UInt8 prefix_bits)
     {
-        mask_address = toIPv6(mask_address_);
-        prefix_bits = mask_address_.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits + 96 : prefix_bits;
+        prefix_bits = mask_address.family() == Poco::Net::IPAddress::IPv4 ? prefix_bits + 96 : prefix_bits;
         subnet_mask = Poco::Net::IPAddress(prefix_bits, Poco::Net::IPAddress::IPv6);
     }
 
-    static bool prefixBitsEquals(const Poco::Net::IPAddress & ip, const Poco::Net::IPAddress & address, const Poco::Net::IPAddress & mask)
+    static bool prefixBitsEquals(
+        const Poco::Net::IPAddress & ip_address, const Poco::Net::IPAddress & net_address, const Poco::Net::IPAddress & mask)
     {
-        return ((toIPv6(ip) & mask) == (toIPv6(address) & mask));
+        return ((toIPv6(ip_address) & mask) == (toIPv6(net_address) & mask));
     }
 
     bool isDigits(const std::string & str)
@@ -117,7 +119,7 @@ private:
         if (mask.family() == Poco::Net::IPAddress::IPv6)
             return mask;
 
-        return Poco::Net::IPAddress("ffff:ffff:ffff:ffff:" + mask.toString());
+        return Poco::Net::IPAddress("FFFF:FFFF:FFFF:FFFF:FFFF:FFFF::") | toIPv6(mask);
     }
 };
 
