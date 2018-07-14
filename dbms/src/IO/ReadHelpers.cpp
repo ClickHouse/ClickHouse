@@ -257,7 +257,7 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 
     auto error = [](const char * message, int code)
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throw Exception(message, code);
         return ReturnType(false);
     };
@@ -595,7 +595,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 
     auto error = [](const char * message, int code)
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throw Exception(message, code);
         return ReturnType(false);
     };
@@ -643,34 +643,58 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    char chars_year[4];
-    readPODBinary(chars_year, buf);
-    UInt16 year = (chars_year[0] - '0') * 1000 + (chars_year[1] - '0') * 100 + (chars_year[2] - '0') * 10 + (chars_year[3] - '0');
-
-    if (!buf.eof())
-        ++buf.position();
-    else if constexpr (throw_exception)
-        throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
-    else
-        return false;
-
-    char chars_month[2];
-    readPODBinary(chars_month, buf);
-    UInt8 month = chars_month[0] - '0';
-    if (isNumericASCII(chars_month[1]))
+    auto error = []
     {
-        month = month * 10 + chars_month[1] - '0';
-        buf.ignore();
-    }
+        if constexpr (throw_exception)
+            throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
+        return ReturnType(false);
+    };
 
-    char char_day;
-    readChar(char_day, buf);
-    UInt8 day = char_day - '0';
-    if (!buf.eof() && isNumericASCII(*buf.position()))
+    auto ignore_delimiter = [&]
     {
-        day = day * 10 + *buf.position() - '0';
-        ++buf.position();
-    }
+        if (!buf.eof())
+        {
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
+    auto append_digit = [&](auto & x)
+    {
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            x = x * 10 + (*buf.position() - '0');
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
+    UInt16 year = 0;
+    if (!append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year))
+        return error();
+
+    if (!ignore_delimiter())
+        return error();
+
+    UInt8 month = 0;
+    if (!append_digit(month))
+        return error();
+    append_digit(month);
+
+    if (!ignore_delimiter())
+        return error();
+
+    UInt8 day = 0;
+    if (!append_digit(day))
+        return error();
+    append_digit(day);
 
     date = LocalDate(year, month, day);
     return ReturnType(true);
@@ -728,7 +752,23 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
             datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
     }
     else
-        datetime = parse<time_t>(s, s_pos - s);
+    {
+        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
+        if (s_pos - s >= 5 && s_pos - s <= 10)
+        {
+            /// Not very efficient.
+            datetime = 0;
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                datetime = datetime * 10 + *digit_pos - '0';
+        }
+        else
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+            else
+                return false;
+        }
+    }
 
     return ReturnType(true);
 }
