@@ -1,7 +1,7 @@
 # This strings autochanged from release_lib.sh:
-set(VERSION_DESCRIBE v1.1.54392-testing)
-set(VERSION_REVISION 54392)
-set(VERSION_GITHASH b3b41c96610f2013154b38365128680a8d304cbb)
+set(VERSION_DESCRIBE v1.1.54394-testing)
+set(VERSION_REVISION 54394)
+set(VERSION_GITHASH 875ea0f4eaa3592f1fe628b6a1150d91b04ad574)
 # end of autochange
 
 set (VERSION_MAJOR 1)
