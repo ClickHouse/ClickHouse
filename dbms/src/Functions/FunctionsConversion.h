@@ -37,8 +37,6 @@
 #include <Functions/FunctionsDateTime.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -340,7 +338,8 @@ template <>
 inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     DayNum tmp(0);
-    readDateText(tmp, rb);
+    if (!tryReadDateText(tmp, rb))
+        return false;
     x = tmp;
     return true;
 }
@@ -349,7 +348,8 @@ template <>
 inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     time_t tmp = 0;
-    readDateTimeText(tmp, rb, *time_zone);
+    if (!tryReadDateTimeText(tmp, rb, *time_zone))
+        return false;
     x = tmp;
     return true;
 }
@@ -492,8 +492,6 @@ struct ConvertThroughParsing
                 else
                 {
                     parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone) && isAllRead(read_buffer);
-
-                    DUMP(isAllRead(read_buffer));
                 }
 
                 if (!parsed)
@@ -1614,15 +1612,9 @@ private:
                 /// Perform the requested conversion.
                 wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
 
-                DUMP(tmp_block);
-
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
 
-                DUMP((*tmp_res.column)[0]);
-
                 res.column = wrapInNullable(tmp_res.column, Block({block.getByPosition(arguments[0]), tmp_res}), {0}, 1, input_rows_count);
-
-                DUMP((*res.column)[0]);
             };
         }
         else if (source_is_nullable)

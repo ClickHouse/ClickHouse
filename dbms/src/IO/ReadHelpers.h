@@ -468,8 +468,6 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 template <typename ReturnType = void>
 inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
-    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-
     /// Optimistic path, when whole value is in buffer.
     if (buf.position() + 10 <= buf.buffer().end())
     {
@@ -510,11 +508,32 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
 
     if constexpr (throw_exception)
         readDateTextImpl<ReturnType>(local_date, buf);
-    else if constexpr (!readDateTextImpl<ReturnType>(local_date, buf))
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
         return false;
 
     date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
     return ReturnType(true);
+}
+
+
+inline void readDateText(LocalDate & date, ReadBuffer & buf)
+{
+    readDateTextImpl<void>(date, buf);
+}
+
+inline void readDateText(DayNum & date, ReadBuffer & buf)
+{
+    readDateTextImpl<void>(date, buf);
+}
+
+inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
+{
+    return readDateTextImpl<bool>(date, buf);
+}
+
+inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
+{
+    return readDateTextImpl<bool>(date, buf);
 }
 
 
@@ -576,16 +595,20 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            return readIntTextImpl<ReturnType>(datetime, buf);
+            return readIntTextImpl<time_t, ReturnType>(datetime, buf);
     }
     else
-        return readDateTimeTextFallback(datetime, buf, date_lut);
+        return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
 }
 
-template <typename ReturnType = void>
-inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf)
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    return readDateTimeTextImpl<ReturnType>(datetime, buf, DateLUT::instance());
+    readDateTimeTextImpl<void>(datetime, buf, date_lut);
+}
+
+inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
