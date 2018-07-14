@@ -26,9 +26,6 @@ $ curl 'http://localhost:8123/?query=SELECT%201'
 $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 1
 
-$ GET 'http://localhost:8123/?query=SELECT 1'
-1
-
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
 Connection: Close
