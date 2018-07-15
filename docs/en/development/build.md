@@ -34,7 +34,7 @@ sudo apt-get install gcc-7 g++-7
 
 ### Install from sources
 
-Look at [https://github.com/yandex/ClickHouse/blob/master/utils/prepare-environment/install-gcc.sh]
+Look at [https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh](build-gcc-from-sources.sh)
 
 ## Use GCC 7 for builds
 
