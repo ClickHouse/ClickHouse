@@ -7,7 +7,7 @@ namespace DB
     class Context;
     class Block;
 
-    /// Addition information for query that could not be get from sample block
+    /// Additional information for query that could not be get from sample block
     struct TableMetadata
     {
         TableMetadata(const String & database_, const String & table_)
