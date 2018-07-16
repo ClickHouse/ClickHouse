@@ -19,7 +19,8 @@ void WriteBufferFromOStream::nextImpl()
     ostr->flush();
 
     if (!ostr->good())
-        throw Exception("Cannot write to ostream", ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
+        throw Exception("Cannot write to ostream at offset " + std::to_string(count()),
+            ErrorCodes::CANNOT_WRITE_TO_OSTREAM);
 }
 
 WriteBufferFromOStream::WriteBufferFromOStream(
