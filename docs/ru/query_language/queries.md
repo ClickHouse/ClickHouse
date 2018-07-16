@@ -619,7 +619,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 Если [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
 
-В INSERT можно передавать данные любого [формата](../formats/index.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
+В INSERT можно передавать данные любого [формата](../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
 ```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set

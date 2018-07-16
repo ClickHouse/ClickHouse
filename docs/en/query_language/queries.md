@@ -615,7 +615,7 @@ The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case
 
 If [strict_insert_defaults=1](../operations/settings/settings.md#settings-strict_insert_defaults), columns that do not have `DEFAULT` defined must be listed in the query.
 
-Data can be passed to the INSERT in any [format](../formats/index.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
+Data can be passed to the INSERT in any [format](../interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
 ```sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set

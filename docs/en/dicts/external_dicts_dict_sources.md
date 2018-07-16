@@ -52,7 +52,7 @@ Example of settings:
 Setting fields:
 
 - `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in "[Formats](../formats/index.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
@@ -74,7 +74,7 @@ Example of settings:
 Setting fields:
 
 - `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` – The file format. All the formats described in "[Formats](../formats/index.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-http"></a>
 
@@ -98,7 +98,7 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in "[Formats](../formats/index.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-odbc"></a>
 

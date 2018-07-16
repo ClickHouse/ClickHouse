@@ -27,6 +27,7 @@ pages:
   - 'Родной интерфейс (TCP)': 'interfaces/tcp.md'
   - 'Библиотеки от сторонних разработчиков': 'interfaces/third-party_client_libraries.md'
   - 'Визуальные интерфейсы от сторонних разработчиков': 'interfaces/third-party_gui.md'
+  - 'Форматы входных и выходных данных': 'interfaces/formats.md'
 
 - 'Язык запросов':
 #  - 'Язык запросов': 'query_language/index.md'
@@ -66,32 +67,6 @@ pages:
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
   - 'remote': 'table_functions/remote.md'
-
-- 'Форматы':
-  - 'Введение': 'formats/index.md'
-  - 'TabSeparated': 'formats/tabseparated.md'
-  - 'TabSeparatedRaw': 'formats/tabseparatedraw.md'
-  - 'TabSeparatedWithNames': 'formats/tabseparatedwithnames.md'
-  - 'TabSeparatedWithNamesAndTypes': 'formats/tabseparatedwithnamesandtypes.md'
-  - 'CSV': 'formats/csv.md'
-  - 'CSVWithNames': 'formats/csvwithnames.md'
-  - 'Values': 'formats/values.md'
-  - 'Vertical': 'formats/vertical.md'
-  - 'VerticalRaw': 'formats/verticalraw.md'
-  - 'JSON': 'formats/json.md'
-  - 'JSONCompact': 'formats/jsoncompact.md'
-  - 'JSONEachRow': 'formats/jsoneachrow.md'
-  - 'TSKV': 'formats/tskv.md'
-  - 'Pretty': 'formats/pretty.md'
-  - 'PrettyCompact': 'formats/prettycompact.md'
-  - 'PrettyCompactMonoBlock': 'formats/prettycompactmonoblock.md'
-  - 'PrettyNoEscapes': 'formats/prettynoescapes.md'
-  - 'PrettySpace': 'formats/prettyspace.md'
-  - 'RowBinary': 'formats/rowbinary.md'
-  - 'Native': 'formats/native.md'
-  - 'Null': 'formats/null.md'
-  - 'XML': 'formats/xml.md'
-  - 'CapnProto': 'formats/capnproto.md'
 
 - 'Типы данных':
   - 'Введение': 'data_types/index.md'

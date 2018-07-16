@@ -130,7 +130,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## format_schema_path
 
-Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../formats/capnproto.md#format_capnproto).
+Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#format_capnproto).
 
 **Пример**
 
