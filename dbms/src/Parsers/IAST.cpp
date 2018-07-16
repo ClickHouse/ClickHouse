@@ -127,7 +127,6 @@ void IAST::FormatSettings::writeIdentifier(const String & name, WriteBuffer & ou
                 writeProbablyDoubleQuotedString(name, out);
             break;
         }
-        case
     }
 }
 
