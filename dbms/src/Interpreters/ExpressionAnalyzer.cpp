@@ -168,13 +168,13 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const NamesAndTypesList & source_columns_,
     const Names & required_result_columns_,
     size_t subquery_depth_,
-    bool do_global_,
+    bool dry_run_,
     const SubqueriesForSets & subqueries_for_set_)
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_),
     source_columns(source_columns_), required_result_columns(required_result_columns_.begin(), required_result_columns_.end()),
     storage(storage_),
-    do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
+    dry_run(dry_run_), subqueries_for_sets(subqueries_for_set_)
 {
     select_query = typeid_cast<ASTSelectQuery *>(ast.get());
 
@@ -613,7 +613,8 @@ void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables()
     findExternalTables(ast);
 
     /// Converts GLOBAL subqueries to external tables; Puts them into the external_tables dictionary: name -> StoragePtr.
-    initGlobalSubqueries(ast);
+    if (!dry_run)
+        initGlobalSubqueries(ast);
 }
 
 
@@ -630,14 +631,13 @@ void ExpressionAnalyzer::initGlobalSubqueries(ASTPtr & ast)
     if (ASTFunction * node = typeid_cast<ASTFunction *>(ast.get()))
     {
         /// For GLOBAL IN.
-        if (do_global && (node->name == "globalIn" || node->name == "globalNotIn"))
+        if (node->name == "globalIn" || node->name == "globalNotIn")
             addExternalStorage(node->arguments->children.at(1));
     }
     else if (ASTTablesInSelectQueryElement * node = typeid_cast<ASTTablesInSelectQueryElement *>(ast.get()))
     {
         /// For GLOBAL JOIN.
-        if (do_global && node->table_join
-            && static_cast<const ASTTableJoin &>(*node->table_join).locality == ASTTableJoin::Locality::Global)
+        if (node->table_join && static_cast<const ASTTableJoin &>(*node->table_join).locality == ASTTableJoin::Locality::Global)
             addExternalStorage(node->table_expression);
     }
 }

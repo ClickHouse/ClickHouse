@@ -145,7 +145,7 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
         table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
 
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, context, storage, source_columns, required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, context, storage, source_columns, required_result_column_names, subquery_depth, only_analyze);
 
     if (!only_analyze)
     {

@@ -104,7 +104,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
     bool done_with_table = !subquery.table;
 
     if (done_with_set && done_with_join && done_with_table)
-        throw Exception("Logical error: nothing to do with subquery", ErrorCodes::LOGICAL_ERROR);
+        return;
 
     if (table_out)
         table_out->writePrefix();
