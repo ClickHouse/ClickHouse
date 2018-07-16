@@ -149,5 +149,9 @@ if (USE_INTERNAL_POCO_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_LLVM_LIBRARY)
+    # ld: unknown option: --color-diagnostics
+    if (APPLE AND COMPILER_GCC)
+        set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+    endif ()
     add_subdirectory (llvm/llvm)
 endif ()
