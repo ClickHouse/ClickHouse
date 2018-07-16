@@ -18,6 +18,7 @@ namespace DB
         const String & table;
         ColumnDefaults column_defaults;
 
-        void loadFromContext(const Context & context);
+        bool loadFromContext(const Context & context);
+        bool hasDefaults() const { return !column_defaults.empty(); }
     };
 }
