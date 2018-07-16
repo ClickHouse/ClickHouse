@@ -6,7 +6,7 @@
 
 path - a relative path to a file from [user_files_path](../operations/server_settings/settings.md#user_files_path).
 
-format - file [format](../formats/index.md#formats).
+format - file [format](../interfaces/formats.md#formats).
 
 structure -  table structure in 'UserID UInt64, URL String' format. Determines column names and types.
 

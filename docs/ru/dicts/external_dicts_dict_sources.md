@@ -52,7 +52,7 @@
 Поля настройки:
 
 -   `path` - Абсолютный путь к файлу.
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../formats/index.md#formats)".
+-   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../interfaces/formats.md#formats)".
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
@@ -74,7 +74,7 @@
 Поля настройки:
 
 -   `command` - Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../formats/index.md#formats)".
+-   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../interfaces/formats.md#formats)".
 
 <a name="dicts-external_dicts_dict_sources-http"></a>
 
@@ -98,7 +98,7 @@
 Поля настройки:
 
 -   `url` - URL источника.
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../formats/index.md#formats)".
+-   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../interfaces/formats.md#formats)".
 
 <a name="dicts-external_dicts_dict_sources-odbc"></a>
 

@@ -130,7 +130,7 @@ The default is ` true`.
 
 ## format_schema_path
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../formats/capnproto.md#format_capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#format_capnproto) format.
 
 **Example**
 
