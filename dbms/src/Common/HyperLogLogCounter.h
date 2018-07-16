@@ -287,12 +287,13 @@ private:
     /// Size of counter's rank in bits.
     static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get();
 
-private:
-    using Value_t = UInt64;
+    using Value = UInt64;
     using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
 
 public:
-    void insert(Value_t value)
+    using value_type = Value;
+
+    void insert(Value value)
     {
         HashValueType hash = getHash(value);
 
@@ -413,7 +414,7 @@ private:
         return zeros_plus_one;
     }
 
-    inline HashValueType getHash(Value_t key) const
+    inline HashValueType getHash(Value key) const
     {
         return Hash::operator()(key);
     }

@@ -425,7 +425,7 @@ Int64 MergeTreeData::getMaxBlockNumber()
 
     Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
-        max_block_num = std::max(max_block_num, part->info.max_block);
+        max_block_num = std::max({max_block_num, part->info.max_block, part->info.mutation});
 
     return max_block_num;
 }
