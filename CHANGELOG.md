@@ -72,6 +72,7 @@
 ## Backward incompatible changes:
 
 * Removed escaping in `Vertical` and `Pretty*` formats and deleted the `VerticalRaw` format.
+* If servers with version 1.1.54388 (or newer) and servers with older version are used simultaneously in distributed query and the query has `cast(x, 'Type')` expression in the form without `AS` keyword and with `cast` not in uppercase, then the exception with message like `Not found column cast(0, 'UInt8') in block` will be thrown. Solution: update server on all cluster nodes.
 
 # ClickHouse release 1.1.54385, 2018-06-01
 
