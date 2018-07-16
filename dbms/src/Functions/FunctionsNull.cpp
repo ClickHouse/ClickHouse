@@ -287,10 +287,12 @@ void FunctionIfNull::executeImpl(Block & block, const ColumnNumbers & arguments,
 
 /// Implementation of nullIf.
 
-FunctionPtr FunctionNullIf::create(const Context & )
+FunctionPtr FunctionNullIf::create(const Context & context)
 {
-    return std::make_shared<FunctionNullIf>();
+    return std::make_shared<FunctionNullIf>(context);
 }
+
+FunctionNullIf::FunctionNullIf(const Context & context) : context(context) {}
 
 std::string FunctionNullIf::getName() const
 {
@@ -311,7 +313,7 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
     size_t res_pos = temp_block.columns();
     temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
 
-    FunctionEquals{}.execute(temp_block, {arguments[0], arguments[1]}, res_pos, input_rows_count);
+    FunctionEquals{context}.execute(temp_block, {arguments[0], arguments[1]}, res_pos, input_rows_count);
 
     /// Argument corresponding to the NULL value.
     size_t null_pos = temp_block.columns();
