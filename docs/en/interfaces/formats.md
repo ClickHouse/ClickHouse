@@ -1,8 +1,36 @@
 <a name="formats"></a>
 
-# Formats
+# Input and output formats
 
 The format determines how data is returned to you after SELECTs (how it is written and formatted by the server), and how it is accepted for INSERTs (how it is read and parsed by the server).
+
+See the table below for the list of supported formats for either kinds of queries.
+
+Format | INSERT | SELECT
+-------|--------|--------
+[TabSeparated](formats.md#tabseparated) | ✔ | ✔ |
+[TabSeparatedRaw](formats.md#tabseparatedraw)  | ✗ | ✔ |
+[TabSeparatedWithNames](formats.md#tabseparatedwithnames) | ✔ | ✔ |
+[TabSeparatedWithNamesAndTypes](formats.md#tabseparatedwithnamesandtypes) | ✔ | ✔ |
+[CSV](formats.md#csv) | ✔ | ✔ |
+[CSVWithNames](formats.md#csvwithnames) | ✔ | ✔ |
+[Values](formats.md#values) | ✔ | ✔ |
+[Vertical](formats.md#vertical) | ✗ | ✔ |
+[VerticalRaw](formats.md#verticalraw) | ✗ | ✔ |
+[JSON](formats.md#json) | ✗ | ✔ |
+[JSONCompact](formats.md#jsoncompact) | ✗ | ✔ |
+[JSONEachRow](formats.md#jsoneachrow) | ✔ | ✔ |
+[TSKV](formats.md#tskv) | ✔ | ✔ |
+[Pretty](formats.md#pretty) | ✗ | ✔ |
+[PrettyCompact](formats.md#prettycompact) | ✗ | ✔ |
+[PrettyCompactMonoBlock](formats.md#prettycompactmonoblock) | ✗ | ✔ |
+[PrettyNoEscapes](formats.md#prettynoescapes) | ✗ | ✔ |
+[PrettySpace](formats.md#prettyspace) | ✗ | ✔ |
+[RowBinary](formats.md#rowbinary) | ✔ | ✔ |
+[Native](formats.md#native) | ✔ | ✔ |
+[Null](formats.md#null) | ✗ | ✔ |
+[XML](formats.md#xml) | ✗ | ✔ |
+[CapnProto](formats.md#capnproto) | ✔ | ✔ |
 
 <a name="format_capnproto"></a>
 
