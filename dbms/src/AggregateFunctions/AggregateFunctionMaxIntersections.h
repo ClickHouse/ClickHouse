@@ -137,7 +137,10 @@ public:
         /// const_cast because we will sort the array
         auto & array = const_cast<typename MaxIntersectionsData<PointType>::Array &>(this->data(place).value);
 
-        std::sort(array.begin(), array.end(), [](const auto & a, const auto & b) { return a.first < b.first; });
+        std::sort(array.begin(), array.end(), [](const auto & a, const auto & b) {
+            return (a.first < b.first) ||                           //sort by position ascending
+                   ((a.first == b.first) && (a.second < b.second)); //sort by weight ascending
+        });
 
         for (const auto & point_weight : array)
         {
