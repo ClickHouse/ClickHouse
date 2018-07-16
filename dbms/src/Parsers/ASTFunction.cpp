@@ -11,7 +11,12 @@ namespace DB
 
 void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    writeString(name, ostr);
+    auto name_upper = Poco::toUpper(name);
+    // Fix compatibility in distributed tables with pre-v1.1.54387 versions
+    if (name_upper == "CAST")
+        writeString(name_upper, ostr);
+    else
+        writeString(name, ostr);
 
     if (parameters)
     {
