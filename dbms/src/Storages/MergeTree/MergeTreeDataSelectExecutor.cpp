@@ -25,6 +25,7 @@ namespace std
         static constexpr int radix = 2;
         static constexpr int digits = 128;
         static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
+        static constexpr __uint128_t max () { return __uint128_t(0) - 1; } // used in boost 1.68.0+
     };
 }
 #endif

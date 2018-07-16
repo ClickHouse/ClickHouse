@@ -30,7 +30,9 @@
     - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 - .NET
-    - [ClickHouse-Net](https://github.com/killwort/ClickHouse-Net)
+    - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+    - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
+    - [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 - C++
     - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
 - Elixir
