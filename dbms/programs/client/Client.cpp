@@ -16,6 +16,7 @@
 #include <common/readline_use.h>
 #include <common/find_first_symbols.h>
 #include <common/SetTerminalEcho.h>
+#include <Common/config.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>

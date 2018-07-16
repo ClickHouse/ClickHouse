@@ -74,7 +74,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
 
             for (size_t row_idx = 0; row_idx < column_read.column->size(); ++row_idx)
             {
-                if (defaults_mask[row_idx])
+                if (row_idx < defaults_mask.size() && defaults_mask[row_idx])
                 {
                     if (column_def.column->isColumnConst())
                         column_mixed->insert((*column_def.column)[row_idx]);
