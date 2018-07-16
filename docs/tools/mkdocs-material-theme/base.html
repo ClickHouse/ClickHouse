@@ -51,9 +51,6 @@
         <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application-palette.792431c1.css">
       {% endif %}
     {% endblock %}
-    {% block libs %}
-      <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
-    {% endblock %}
     {% block fonts %}
       {% if font != false %}
         <link rel="stylesheet" href="https://fonts.googleapis.com/css?family={{
@@ -113,19 +110,27 @@
         <div class="md-main__inner md-grid" data-md-component="container">
           {% block site_nav %}
             {% if nav %}
-              <div class="md-sidebar md-sidebar--primary" data-md-component="navigation">
+              <div class="md-sidebar md-sidebar--primary" data-md-component="{% if not config.extra.single_page %}navigation{% else %}toc{% endif %}">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
-                    {% include "partials/nav.html" %}
+                    {% if not config.extra.single_page %}
+                      {% include "partials/nav.html" %}
+                    {% else %}
+                      {% include "partials/toc.html" %}
+                    {% endif %}
                   </div>
                 </div>
               </div>
             {% endif %}
             {% if page.toc %}
-              <div class="md-sidebar md-sidebar--secondary" data-md-component="toc">
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="{% if not config.extra.single_page %}toc{% else %}navigation{% endif %}">
                 <div class="md-sidebar__scrollwrap">
                   <div class="md-sidebar__inner">
-                    {% include "partials/toc.html" %}
+                    {% if not config.extra.single_page %}
+                      {% include "partials/toc.html" %}
+                    {% else %}
+                      {% include "partials/nav.html" %}
+                    {% endif %}
                   </div>
                 </div>
               </div>
@@ -144,7 +149,11 @@
                 {% if not "\x3ch1" in page.content %}
                   <h1>{{ page.title | default(config.site_name, true)}}</h1>
                 {% endif %}
-                {{ page.content }}
+                <div id="content">
+                {% if not config.extra.single_page %}
+                  {{ page.content }}
+                {% endif %}
+                </div>
                 {% block source %}
                   {% if page and page.meta and page.meta.source %}
                     <h2 id="__source">{{ lang.t("meta.source") }}</h2>
@@ -171,6 +180,9 @@
       {% endblock %}
     </div>
     {% block scripts %}
+      {% block libs %}
+        <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
+      {% endblock %}
       <script src="{{ base_url }}/assets/javascripts/application.5165553b.js"></script>
       {% if lang.t("search.language") != "en" %}
         {% set languages = lang.t("search.language").split(",") %}
@@ -190,7 +202,6 @@
           {% endif %}
         {% endif %}
       {% endif %}
-      <script>app.initialize({version:"{{ mkdocs_version }}",url:{base:"{{ base_url }}"}})</script>
       {% for path in extra_javascript %}
         <script src="{{ path }}"></script>
       {% endfor %}
@@ -200,5 +211,83 @@
         {% include "partials/integrations/analytics.html" %}
       {% endif %}
     {% endblock %}
+
+    <script type="text/javascript">
+      function ready(callback){
+          if (document.readyState != 'loading') {
+              callback();
+          } else if (document.addEventListener) {
+              document.addEventListener('DOMContentLoaded', callback);
+          } else document.attachEvent('onreadystatechange', function() {
+              if (document.readyState == 'complete') {
+                  callback();
+              }
+          });
+      }
+      function drawLanguageSwitch() {
+          var url, text, title;
+          if (window.location.pathname.indexOf('/ru/') >= 0) {
+            url = window.location.pathname.replace('/ru/', '/en/');
+            text = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"30\" viewBox=\"0,0 25,15\" style=\"border:1px solid #eee;margin: .8rem 0 0 -1.25rem;\">\n" +
+                "<rect width=\"25\" height=\"15\" fill=\"#00247d\"></rect>\n" +
+                "<path d=\"M 0,0 L 25,15 M 25,0 L 0,15\" stroke=\"#fff\" stroke-width=\"3\"></path>\n" +
+                "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#fff\" stroke-width=\"5\"></path>\n" +
+                "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#cf142b\" stroke-width=\"3\"></path>\n" +
+                "</svg>";
+            title = "Switch to English"
+          } else {
+            url = window.location.pathname.replace('/en/', '/ru/');
+            text = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 6\" width=\"50\" height=\"30\" style=\"border: 1px solid #eee;margin: .8rem 0 0 -1.25rem\">\n" +
+                "<rect fill=\"#fff\" width=\"10\" height=\"3\"></rect>\n" +
+                "<rect fill=\"#d52b1e\" y=\"3\" width=\"10\" height=\"3\"></rect>\n" +
+                "<rect fill=\"#0039a6\" y=\"2\" width=\"10\" height=\"2\"></rect>\n" +
+                "</svg>";
+            title = "Переключить на русский язык"
+          }
+          document.getElementById("md-language-switch").innerHTML = '<a href="' + url + '" title="' + title + '" class="md-flex__ellipsis md-header-nav__title">' + text + '</a>';
+      }
+      ready(function () {
+          {% if config.extra.single_page and page.content %}
+          document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
+          document.getElementsByClassName('md-footer')[0].style.display = 'block';
+          {% endif %}
+          drawLanguageSwitch();
+          app.initialize({
+              version: "{{ mkdocs_version }}",
+              url: {
+                  base: "{{ base_url }}"
+              }
+          });
+      });
+    </script>
+    <!-- Yandex.Metrika counter -->
+    <script type="text/javascript">
+        (function (d, w, c) {
+            (w[c] = w[c] || []).push(function() {
+                try {
+                    w.yaCounter18343495 = new Ya.Metrika2({
+                        id:18343495,
+                        clickmap:true,
+                        trackLinks:true,
+                        accurateTrackBounce:true,
+                        webvisor: {% if not config.extra.single_page %}true{% else %}false{% endif %}
+                    });
+                } catch(e) { }
+            });
+            var n = d.getElementsByTagName("script")[0],
+                s = d.createElement("script"),
+                f = function () { n.parentNode.insertBefore(s, n); };
+            s.type = "text/javascript";
+            s.async = true;
+            s.src = "https://mc.yandex.ru/metrika/tag.js";
+            if (w.opera == "[object Opera]") {
+                d.addEventListener("DOMContentLoaded", f, false);
+            } else { f(); }
+        })(document, window, "yandex_metrika_callbacks2");
+    </script>
+    <noscript>
+        <div><img src="https://mc.yandex.ru/watch/18343495" style="position:absolute; left:-9999px;" alt=""/></div>
+    </noscript>
+    <!-- /Yandex.Metrika counter -->
   </body>
 </html>

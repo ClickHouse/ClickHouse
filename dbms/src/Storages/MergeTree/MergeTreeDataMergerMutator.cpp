@@ -243,7 +243,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
 bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FuturePart & future_part,
-    size_t available_disk_space,
+    size_t & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
@@ -306,6 +306,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
 
     LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     future_part.assign(std::move(parts));
+    available_disk_space -= required_disk_space;
     return true;
 }
 
