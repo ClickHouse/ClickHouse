@@ -44,6 +44,8 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -647,11 +649,11 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        query_analyzer->makeSetsForIndex();
-
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
         query_info.sets = query_analyzer->getPreparedSets();
+
+        DUMP(query_info.sets);
 
         /// PREWHERE optimization
         {

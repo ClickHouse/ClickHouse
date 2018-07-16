@@ -168,10 +168,6 @@ public:
       */
     const Tables & getExternalTables() const { return external_tables; }
 
-    /// Create Set-s that we can from IN section to use the index on them.
-    void makeSetsForIndex();
-
-
 private:
     ASTPtr ast;
     ASTSelectQuery * select_query;
@@ -276,7 +272,7 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    void makeSet(const ASTFunction * node, const Block & sample_block);
+    void makeSet(const ASTFunction * node, const Block & sample_block, bool may_benefit_for_index);
 
     /// Adds a list of ALIAS columns from the table.
     void addAliasColumns();
@@ -340,14 +336,6 @@ private:
       * If create_ordered_set = true - create a data structure suitable for using the index.
       */
     void makeExplicitSet(const ASTFunction * node, const Block & sample_block, bool create_ordered_set);
-
-    /**
-      * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
-      * The set will not be created if its size hits the limit.
-      */
-    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
-
-    void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
 
     /** Translate qualified names such as db.table.column, table.column, table_alias.column
       *  to unqualified names. This is done in a poor transitional way:
