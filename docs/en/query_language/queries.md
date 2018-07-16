@@ -440,7 +440,7 @@ Possible values: `0` – do not wait; `1` – only wait for own execution (defau
 
 Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
 
-The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently only Replicated table engines are supported (support for unreplicated MergeTree engines will be added shortly).
+The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently *MergeTree table engines are supported (both replicated and unreplicated).
 
 Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 
@@ -458,7 +458,7 @@ For *MergeTree tables mutations execute by rewriting whole data parts. There is 
 
 Mutations are totally ordered by their creation order and are applied to each part in that order. Mutations are also partially ordered with INSERTs - data that was inserted into the table before the mutation was submitted will be mutated and data that was inserted after that will not be mutated. Note that mutations do not block INSERTs in any way.
 
-For Replicated tables a mutation query returns immediately after the mutation entry is added to ZooKeeper. The mutation itself executes asynchronously. To track the progress of mutations you can use the `system.mutations` table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted.
+A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the `system.mutations` table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted.
 
 #### system.mutations table
 
@@ -466,17 +466,17 @@ The table contains information about mutations of MergeTree tables and their pro
 
 **database**, **table** - The name of the database and table to which the mutation was applied.
 
-**mutation_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper.
+**mutation_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
 
 **command** - The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
 **create_time** - When this mutation command was submitted for execution.
 
-**block_numbers.partition_id**, **block_numbers.number** - A Nested structure that for each partition contains the block number that was acquired by the mutation (in each partition only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated).
+**block_numbers.partition_id**, **block_numbers.number** - A Nested column. For mutations of replicated tables contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). Because in non-replicated tables blocks numbers in all partitions form a single sequence, for mutatations of non-replicated tables the column will contain one record with a single block number acquired by the mutation.
 
 **parts_to_do** - The number of data parts that need to be mutated for the mutation to finish.
 
-**is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that the mutation is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
+**is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
 
 ## SHOW DATABASES
 

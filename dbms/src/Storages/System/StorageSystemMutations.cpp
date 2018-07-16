@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataStreams/OneBlockInputStream.h>
+#include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
@@ -42,17 +43,24 @@ BlockInputStreams StorageSystemMutations::read(
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    /// Collect a set of replicated tables.
-    std::map<String, std::map<String, StoragePtr>> replicated_tables;
+    /// Collect a set of *MergeTree tables.
+    std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
     for (const auto & db : context.getDatabases())
+    {
         for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                replicated_tables[db.first][iterator->name()] = iterator->table();
+        {
+            if (dynamic_cast<const StorageMergeTree *>(iterator->table().get())
+                || dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+            {
+                merge_tree_tables[db.first][iterator->name()] = iterator->table();
+            }
+        }
+    }
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
 
-    for (auto & db : replicated_tables)
+    for (auto & db : merge_tree_tables)
     {
         for (auto & table : db.second)
         {
@@ -87,11 +95,16 @@ BlockInputStreams StorageSystemMutations::read(
         auto database = (*col_database)[i_storage].safeGet<String>();
         auto table = (*col_table)[i_storage].safeGet<String>();
 
-        std::vector<MergeTreeMutationStatus> states =
-            dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table])
-                .getMutationsStatus();
+        std::vector<MergeTreeMutationStatus> statuses;
+        {
+            const IStorage * storage = merge_tree_tables[database][table].get();
+            if (const auto * merge_tree = dynamic_cast<const StorageMergeTree *>(storage))
+                statuses = merge_tree->getMutationsStatus();
+            else if (const auto * replicated = dynamic_cast<const StorageReplicatedMergeTree *>(storage))
+                statuses = replicated->getMutationsStatus();
+        }
 
-        for (const MergeTreeMutationStatus & status : states)
+        for (const MergeTreeMutationStatus & status : statuses)
         {
             Array block_partition_ids;
             block_partition_ids.reserve(status.block_numbers.size());
