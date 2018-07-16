@@ -60,27 +60,6 @@ pages:
   - 'MySQL': 'table_engines/mysql.md'
   - 'External data for query processing': 'table_engines/external_data.md'
 
-- 'System tables':
-  - 'Introduction': 'system_tables/index.md'
-  - 'system.one': 'system_tables/system.one.md'
-  - 'system.numbers': 'system_tables/system.numbers.md'
-  - 'system.numbers_mt': 'system_tables/system.numbers_mt.md'
-  - 'system.databases': 'system_tables/system.databases.md'
-  - 'system.tables': 'system_tables/system.tables.md'
-  - 'system.columns': 'system_tables/system.columns.md'
-  - 'system.parts': 'system_tables/system.parts.md'
-  - 'system.processes': 'system_tables/system.processes.md'
-  - 'system.merges': 'system_tables/system.merges.md'
-  - 'system.events': 'system_tables/system.events.md'
-  - 'system.metrics': 'system_tables/system.metrics.md'
-  - 'system.asynchronous_metrics': 'system_tables/system.asynchronous_metrics.md'
-  - 'system.replicas': 'system_tables/system.replicas.md'
-  - 'system.dictionaries': 'system_tables/system.dictionaries.md'
-  - 'system.clusters': 'system_tables/system.clusters.md'
-  - 'system.functions': 'system_tables/system.functions.md'
-  - 'system.settings': 'system_tables/system.settings.md'
-  - 'system.zookeeper': 'system_tables/system.zookeeper.md'
-
 - 'Table functions':
   - 'Introduction': 'table_functions/index.md'
   - 'file': 'table_functions/file.md'
@@ -188,6 +167,7 @@ pages:
   - 'Access rights': 'operations/access_rights.md'
   - 'Configuration files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
+  - 'System tables': 'operations/system_tables.md'
   - 'Usage recommendations': 'operations/tips.md'
   - 'Server configuration parameters':
     - 'Introduction': 'operations/server_settings/index.md'
