@@ -27,7 +27,7 @@ pages:
   - 'Native interface (TCP)': 'interfaces/tcp.md'
   - 'Libraries from third-party developers': 'interfaces/third-party_client_libraries.md'
   - 'Visual interfaces from third-party developers': 'interfaces/third-party_gui.md'
-  - 'Formats': 'interfaces/formats.md'
+  - 'Input and output formats': 'interfaces/formats.md'
 
 - 'Query language':
 #  - 'Query language': 'query_language/index.md'
