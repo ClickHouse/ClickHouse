@@ -11,6 +11,7 @@
 
 /build
 /docs/build
+/docs/edit
 /docs/tools/venv/
 /docs/en/development/build/
 /docs/ru/development/build/
@@ -238,3 +239,5 @@ node_modules
 public
 website/docs
 website/presentations
+.DS_Store
+*/.DS_Store
