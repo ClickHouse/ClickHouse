@@ -314,7 +314,8 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
 
 #if USE_CAPNP
     /// Send query metadata (column defaults)
-    if (global_settings.insert_sample_with_metadata &&
+    if (client_revision >= DBMS_MIN_REVISION_WITH_PROTO_METADATA &&
+        global_settings.insert_sample_with_metadata &&
         query_context.getSettingsRef().insert_sample_with_metadata)
     {
         Block meta_block = storeContextBlock(query_context);

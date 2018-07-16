@@ -160,7 +160,11 @@ namespace DB
 
     void loadTableMetadata(const Block & block, TableMetadata & table_meta)
     {
-        const ColumnWithTypeAndName & column = block.getByName(contextColumnName());
-        loadTableMetadata(column, table_meta);
+        /// select metadata type by column name
+        if (block.has(contextColumnName()))
+        {
+            const ColumnWithTypeAndName & column = block.getByName(contextColumnName());
+            loadTableMetadata(column, table_meta);
+        }
     }
 }
