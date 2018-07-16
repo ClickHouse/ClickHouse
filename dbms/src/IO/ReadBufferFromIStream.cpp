@@ -21,9 +21,9 @@ bool ReadBufferFromIStream::nextImpl()
             return false;
 
         if (istr.fail())
-            throw Exception("Cannot read from istream", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+            throw Exception("Cannot read from istream at offset " + std::to_string(count()), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
 
-        throw Exception("Unexpected state of istream", ErrorCodes::CANNOT_READ_FROM_ISTREAM);
+        throw Exception("Unexpected state of istream at offset " + std::to_string(count()), ErrorCodes::CANNOT_READ_FROM_ISTREAM);
     }
     else
         working_buffer.resize(gcount);
