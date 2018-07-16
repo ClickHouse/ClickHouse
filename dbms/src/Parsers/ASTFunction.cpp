@@ -4,6 +4,7 @@
 #include <Parsers/ASTWithAlias.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <Poco/String.h>
 
 
 namespace DB
