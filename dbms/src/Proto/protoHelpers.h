@@ -7,7 +7,7 @@ namespace DB
     class Block;
     class TableMetadata;
 
-    Block storeContextBlock(Context & context);
+    Block storeTableMetadata(const TableMetadata & table_meta);
     void loadTableMetadata(const Block & block, TableMetadata & table_meta);
 }
 

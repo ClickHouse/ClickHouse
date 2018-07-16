@@ -25,6 +25,7 @@
 
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <Storages/TableMetadata.h>
 
 #include <Common/ExternalTable.h>
 
@@ -313,13 +314,16 @@ void TCPHandler::processInsertQuery(const Settings & global_settings)
     state.io.out->writePrefix();
 
 #if USE_CAPNP
-    /// Send query metadata (column defaults)
+    /// Send table metadata (column defaults)
     if (client_revision >= DBMS_MIN_REVISION_WITH_PROTO_METADATA &&
-        global_settings.insert_sample_with_metadata &&
         query_context.getSettingsRef().insert_sample_with_metadata)
     {
-        Block meta_block = storeContextBlock(query_context);
-        sendMetadata(meta_block);
+        TableMetadata table_meta(query_context.getCurrentDatabase(), query_context.getCurrentTable());
+        if (table_meta.loadFromContext(query_context) && table_meta.hasDefaults())
+        {
+            Block meta_block = storeTableMetadata(table_meta);
+            sendMetadata(meta_block);
+        }
     }
 #endif
 

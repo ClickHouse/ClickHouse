@@ -200,6 +200,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         res = interpreter->execute();
+        if (InterpreterInsertQuery * insertInterpreter = typeid_cast<InterpreterInsertQuery *>(&*interpreter))
+        {
+            String database;
+            String table_name;
+            insertInterpreter->getDatabaseTable(database, table_name);
+            if (!database.empty())
+                context.setCurrentTable(database, table_name);
+        }
 
         /// Delayed initialization of query streams (required for KILL QUERY purposes)
         if (process_list_entry)

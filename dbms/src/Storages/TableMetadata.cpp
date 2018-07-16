@@ -5,13 +5,14 @@
 
 namespace DB
 {
-    void TableMetadata::loadFromContext(const Context & context)
+    bool TableMetadata::loadFromContext(const Context & context)
     {
         if (!context.isTableExist(database, table))
-            return;
+            return false;
 
         StoragePtr storage = context.getTable(database, table);
         const ColumnsDescription & table_columns = storage->getColumns();
         column_defaults = table_columns.defaults;
+        return true;
     }
 }

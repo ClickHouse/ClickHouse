@@ -1003,6 +1003,12 @@ String Context::getCurrentDatabase() const
 }
 
 
+String Context::getCurrentTable() const
+{
+    return current_table;
+}
+
+
 String Context::getCurrentQueryId() const
 {
     return client_info.current_query_id;
@@ -1014,6 +1020,15 @@ void Context::setCurrentDatabase(const String & name)
     auto lock = getLock();
     assertDatabaseExists(name);
     current_database = name;
+}
+
+
+void Context::setCurrentTable(const String & database, const String & table)
+{
+    auto lock = getLock();
+    assertTableExists(database, table);
+    current_database = database;
+    current_table = table;
 }
 
 

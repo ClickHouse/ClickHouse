@@ -33,6 +33,7 @@ namespace DB
         return data;
     }
 
+
     template <typename T>
     typename T::Reader deserializeProto(const char * data, size_t data_size)
     {
@@ -43,78 +44,45 @@ namespace DB
         return reader.getRoot<T>();
     }
 
-    static ColumnWithTypeAndName storeContext(const String & column_name, Context & context)
+
+    static MutableColumnPtr storeTableMeta(const TableMetadata & meta)
     {
         capnp::MallocMessageBuilder message;
         Proto::Context::Builder proto_context = message.initRoot<Proto::Context>();
 
-        Databases dbs = context.getDatabases();
-        auto proto_databases = proto_context.initDatabases(dbs.size());
+        auto proto_databases = proto_context.initDatabases(1);
+        auto proto_db = proto_databases[0];
+        proto_db.setName(meta.database);
 
-        size_t db_nomber = 0;
-        for (auto & pr_db : dbs)
+        auto proto_db_tables = proto_db.initTables(1);
+        auto proto_table = proto_db_tables[0];
+        proto_table.setName(meta.table);
+
+        auto proto_columns = proto_table.initColumns(meta.column_defaults.size());
+
+        size_t column_no = 0;
+        for (const auto & pr_column : meta.column_defaults)
         {
-            const String & database_name = pr_db.first;
-            if (database_name == "system")
-                continue;
+            const String & column_name = pr_column.first;
+            const ColumnDefault & def = pr_column.second;
+            std::stringstream ss;
+            ss << def.expression;
 
-            IDatabase & db = *pr_db.second;
+            auto current_column = proto_columns[column_no];
+            current_column.setName(column_name);
+            current_column.getDefault().setKind(static_cast<UInt16>(def.kind));
+            current_column.getDefault().setExpression(ss.str());
 
-            auto proto_db = proto_databases[db_nomber];
-            proto_db.setName(database_name);
-
-            std::unordered_map<String, StoragePtr> tables;
-            DatabaseIteratorPtr it_tables = db.getIterator(context);
-            while (it_tables->isValid())
-            {
-                tables[it_tables->name()] = it_tables->table();
-                it_tables->next();
-            }
-
-            auto proto_tables = proto_db.initTables(tables.size());
-            size_t table_no = 0;
-            for (const auto & pr_table : tables)
-            {
-                auto current_table = proto_tables[table_no];
-                current_table.setName(pr_table.first);
-
-                const ColumnsDescription & columns = pr_table.second->getColumns();
-                auto proto_columns = current_table.initColumns(columns.defaults.size());
-
-                size_t column_no = 0;
-                for (const auto& pr_column : columns.defaults)
-                {
-                    const String & column_name = pr_column.first;
-                    const ColumnDefault & def = pr_column.second;
-                    std::stringstream ss;
-                    ss << def.expression;
-
-                    auto current_column = proto_columns[column_no];
-                    current_column.setName(column_name);
-                    current_column.getDefault().setKind(static_cast<UInt16>(def.kind));
-                    current_column.getDefault().setExpression(ss.str());
-
-                    ++column_no;
-                }
-
-                ++table_no;
-            }
-
-            ++db_nomber;
+            ++column_no;
         }
 
-        ColumnWithTypeAndName proto_column;
-        proto_column.name = column_name;
-        proto_column.type = std::make_shared<DataTypeUInt8>();
-        proto_column.column = std::move(serializeProto(message));
-        return proto_column;
+        return serializeProto(message);
     }
 
-    static void loadTableMetadata(const ColumnWithTypeAndName & proto_column, TableMetadata & table_meta)
+
+    static void loadTableMeta(const char * data, size_t data_size, TableMetadata & table_meta)
     {
-        StringRef plain_data = proto_column.column->getDataAt(0);
-        size_t data_size = proto_column.column->byteSize();
-        Proto::Context::Reader proto_context = deserializeProto<Proto::Context>(plain_data.data, data_size);
+        Proto::Context::Reader proto_context = deserializeProto<Proto::Context>(data, data_size);
 
         ParserTernaryOperatorExpression parser;
 
@@ -146,25 +114,33 @@ namespace DB
         }
     }
 
-    static constexpr const char * contextColumnName()
+
+    static constexpr const char * tableMetaColumnName()
     {
-        return "context";
+        return "tableMeta";
     }
 
-    Block storeContextBlock(Context & context)
+
+    Block storeTableMetadata(const TableMetadata & table_meta)
     {
+        ColumnWithTypeAndName proto_column;
+        proto_column.name = tableMetaColumnName();
+        proto_column.type = std::make_shared<DataTypeUInt8>();
+        proto_column.column = std::move(storeTableMeta(table_meta));
+
         Block block;
-        block.insert(storeContext(contextColumnName(), context));
+        block.insert(std::move(proto_column));
         return block;
     }
+
 
     void loadTableMetadata(const Block & block, TableMetadata & table_meta)
     {
         /// select metadata type by column name
-        if (block.has(contextColumnName()))
+        if (block.has(tableMetaColumnName()))
         {
-            const ColumnWithTypeAndName & column = block.getByName(contextColumnName());
-            loadTableMetadata(column, table_meta);
+            const ColumnWithTypeAndName & column = block.getByName(tableMetaColumnName());
+            loadTableMeta(column.column->getDataAt(0).data, column.column->byteSize(), table_meta);
         }
     }
 }

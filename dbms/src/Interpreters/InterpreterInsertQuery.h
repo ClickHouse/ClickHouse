@@ -24,6 +24,8 @@ public:
       */
     BlockIO execute() override;
 
+    void getDatabaseTable(String & database, String & table) const;
+
 private:
     StoragePtr getTable(const ASTInsertQuery & query);
     Block getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table);
