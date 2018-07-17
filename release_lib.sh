@@ -90,8 +90,8 @@ function gen_revision_author {
                 -e "s/set(VERSION_STRING [^) ]*/set(VERSION_STRING $VERSION_STRING/g;" \
                 dbms/cmake/version.cmake
 
-            gen_changelog "$VERSION_REVISION" "" "$AUTHOR" ""
-            git commit -m "$auto_message [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog
+            gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog
             git push
 
             # Second tag for correct version information in version.cmake inside tag
