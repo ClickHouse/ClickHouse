@@ -124,6 +124,8 @@ END
 
 ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL`.
 
+<a name="operator-is-null"></a>
+
 ### IS NULL
 
 - Для значений типа [Nullable](../data_types/nullable.md#data_type-nullable) оператор `IS NULL` возвращает:
@@ -144,6 +146,8 @@ WHERE isNull(y)
 
 1 rows in set. Elapsed: 0.002 sec.
 ```
+
+<a name="operator-is-not-null"></a>
 
 ### IS NOT NULL
 
