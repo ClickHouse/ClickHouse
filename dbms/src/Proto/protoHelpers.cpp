@@ -19,6 +19,13 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
     static MutableColumnPtr serializeProto(capnp::MessageBuilder & message)
     {
         MutableColumnPtr data = DataTypeUInt8().createColumn();
@@ -34,19 +41,29 @@ namespace DB
     }
 
 
+    ///
     template <typename T>
-    typename T::Reader deserializeProto(const char * data, size_t data_size)
+    class ProtoDeserializer
     {
-        const capnp::word * ptr = reinterpret_cast<const capnp::word *>(data);
-        auto serialized = kj::arrayPtr(ptr, data_size / sizeof(capnp::word));
+    public:
+        ProtoDeserializer(const char * data, size_t data_size)
+        :   serialized(kj::arrayPtr(reinterpret_cast<const capnp::word *>(data), data_size / sizeof(capnp::word))),
+            reader(serialized)
+        {}
 
-        capnp::FlatArrayMessageReader reader(serialized);
-        return reader.getRoot<T>();
-    }
+        typename T::Reader getReader() { return reader.getRoot<T>(); }
+
+    private:
+        kj::ArrayPtr<const capnp::word> serialized;
+        capnp::FlatArrayMessageReader reader;
+    };
 
 
     static MutableColumnPtr storeTableMeta(const TableMetadata & meta)
     {
+        if (meta.database.empty() || meta.table.empty())
+            throw Exception("storeTableMeta: table is not set", ErrorCodes::LOGICAL_ERROR);
+
         capnp::MallocMessageBuilder message;
         Proto::Context::Builder proto_context = message.initRoot<Proto::Context>();
 
@@ -82,7 +99,11 @@ namespace DB
 
     static void loadTableMeta(const char * data, size_t data_size, TableMetadata & table_meta)
     {
-        Proto::Context::Reader proto_context = deserializeProto<Proto::Context>(data, data_size);
+        if (data == nullptr || data_size == 0)
+            throw Exception("loadTableMeta: empty metadata column", ErrorCodes::LOGICAL_ERROR);
+
+        ProtoDeserializer<Proto::Context> deserializer(data, data_size);
+        Proto::Context::Reader proto_context = deserializer.getReader();
 
         ParserTernaryOperatorExpression parser;
 
@@ -140,7 +161,8 @@ namespace DB
         if (block.has(tableMetaColumnName()))
         {
             const ColumnWithTypeAndName & column = block.getByName(tableMetaColumnName());
-            loadTableMeta(column.column->getDataAt(0).data, column.column->byteSize(), table_meta);
+            StringRef raw_data = column.column->getRawData();
+            loadTableMeta(raw_data.data, raw_data.size, table_meta);
         }
     }
 }
