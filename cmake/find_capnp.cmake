@@ -42,7 +42,7 @@ if (ENABLE_CAPNP)
         set (CAPNP_LIBRARY capnpc)
         set (USE_CAPNP 1)
         set (CAPNP_BIN_PATH ${ClickHouse_BINARY_DIR}/contrib/capnproto/c++/src/capnp)
-        set (CAPNP_BIN_TARGET capnp_tool)
+        set (CAPNP_BIN_TARGETS capnp_tool capnpc_cpp capnpc_capnp)
     endif ()
 endif ()
 
