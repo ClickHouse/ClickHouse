@@ -63,23 +63,23 @@ namespace ErrorCodes
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
     const Context & context_,
-    const Names & required_result_column_names_,
+    const Names & required_result_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
-    const BlockInputStreamPtr & input,
-    bool only_analyze)
-    : query_ptr(query_ptr_->clone())    /// Note: the query is cloned because it will be modified during analysis.
-    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
-    , context(context_)
-    , to_stage(to_stage_)
-    , subquery_depth(subquery_depth_)
-    , only_analyze(only_analyze)
-    , input(input)
-    , log(&Logger::get("InterpreterSelectQuery"))
+    bool only_analyze_)
+    : InterpreterSelectQuery(query_ptr_, context_, nullptr, nullptr, required_result_column_names, to_stage_, subquery_depth_, only_analyze_)
 {
-    init(required_result_column_names_);
 }
 
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    const Context & context_,
+    const BlockInputStreamPtr & input_,
+    QueryProcessingStage::Enum to_stage_,
+    bool only_analyze_)
+    : InterpreterSelectQuery(query_ptr_, context_, input_, nullptr, Names{}, to_stage_, 0, only_analyze_)
+{
+}
 
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
@@ -99,8 +99,24 @@ static Context getSubqueryContext(const Context & context)
     return subquery_context;
 }
 
-
-void InterpreterSelectQuery::init(const Names & required_result_column_names)
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    const Context & context_,
+    const BlockInputStreamPtr & input_,
+    const StoragePtr & storage_,
+    const Names & required_result_column_names,
+    QueryProcessingStage::Enum to_stage_,
+    size_t subquery_depth_,
+    bool only_analyze_)
+    : query_ptr(query_ptr_->clone())    /// Note: the query is cloned because it will be modified during analysis.
+    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
+    , context(context_)
+    , to_stage(to_stage_)
+    , subquery_depth(subquery_depth_)
+    , only_analyze(only_analyze_)
+    , storage(storage_)
+    , input(input_)
+    , log(&Logger::get("InterpreterSelectQuery"))
 {
     if (!context.hasQueryContext())
         context.setQueryContext(context);
