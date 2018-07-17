@@ -51,8 +51,7 @@ Block AddingDefaultsBlockInputStream::readImpl()
 
     evaluateMissingDefaultsUnsafe(evaluate_block, header.getNamesAndTypesList(), column_defaults, context);
 
-    ColumnsWithTypeAndName mixed_columns;
-    mixed_columns.reserve(std::min(column_defaults.size(), delayed_defaults.size()));
+    std::unordered_map<size_t, MutableColumnPtr> mixed_columns;
 
     for (const ColumnWithTypeAndName & column_def : evaluate_block)
     {
@@ -85,16 +84,21 @@ Block AddingDefaultsBlockInputStream::readImpl()
                     column_mixed->insertFrom(*column_read.column, row_idx);
             }
 
-            ColumnWithTypeAndName mix = column_read.cloneEmpty();
-            mix.column = std::move(column_mixed);
-            mixed_columns.emplace_back(std::move(mix));
+            mixed_columns.emplace(std::make_pair(block_column_position, std::move(column_mixed)));
         }
     }
 
-    for (auto & column : mixed_columns)
+    if (!mixed_columns.empty())
     {
-        res.erase(column.name);
-        res.insert(std::move(column));
+        /// replace columns saving block structure
+        MutableColumns mutation = res.mutateColumns();
+        for (size_t position = 0; position < mutation.size(); ++position)
+        {
+            auto it = mixed_columns.find(position);
+            if (it != mixed_columns.end())
+                mutation[position] = std::move(it->second);
+        }
+        res.setColumns(std::move(mutation));
     }
 
     return res;
