@@ -529,8 +529,8 @@ void TCPHandler::sendHello()
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-        writeVarUInt(DBMS_VERSION_PATCH, *out);
+    /*if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+        writeVarUInt(DBMS_VERSION_PATCH, *out);*/
     out->next();
 }
 
