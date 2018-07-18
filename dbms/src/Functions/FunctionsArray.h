@@ -1249,6 +1249,12 @@ private:
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col,
         ColumnNullable * nullable_res_col);
+
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets);
 };
 
 

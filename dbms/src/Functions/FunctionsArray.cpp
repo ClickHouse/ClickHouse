@@ -1062,9 +1062,7 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
             || executeNumber<Float32>(first_array, first_null_map, res_values)
             || executeNumber<Float64>(first_array, first_null_map, res_values)
             || executeString(first_array, first_null_map, res_values)))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            executeHashed(*offsets, original_data_columns, res_values);
     }
     else
     {
@@ -1307,6 +1305,9 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();
+    
+    ColumnRawPtrs original_data_columns;
+    original_data_columns.push_back(&src_data);
 
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
@@ -1332,19 +1333,17 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     }
 
     if (!(executeNumber<UInt8>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<UInt16>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<UInt32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<UInt64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<Int8>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<Int16>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<Int32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<Int64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<Float32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeNumber<Float64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-            || executeString(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)))
-        throw Exception(
-            "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function " + getName(),
-            ErrorCodes::ILLEGAL_COLUMN);
+        || executeNumber<UInt16>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<UInt32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<UInt64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<Int8>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<Int16>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<Int32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<Int64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<Float32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeNumber<Float64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
+        || executeString(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)))
+        executeHashed(offsets, original_data_columns, *inner_res_col, res_offsets);
 
     block.getByPosition(result).column = std::move(res_ptr);
 }
@@ -1489,6 +1488,38 @@ bool FunctionArrayDistinct::executeString(const IColumn & src_data,
     return true;
 }
 
+void FunctionArrayDistinct::executeHashed(
+    const ColumnArray::Offsets & offsets,
+    const ColumnRawPtrs & columns,
+    IColumn & res_data_col,
+    ColumnArray::Offsets & res_offsets)
+{
+    size_t count = columns.size();
+
+    using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+
+    Set set;
+    size_t prev_off = 0;
+    for (size_t i = 0; i < offsets.size(); ++i)
+    {
+        set.clear();
+        size_t off = offsets[i];
+        for (size_t j = prev_off; j < off; ++j)
+        {
+            auto  hash = hash128(j, count, columns);
+            if (set.find(hash) == set.end())
+            {
+                set.insert(hash);
+                res_data_col.insertFrom(*columns[0], j);
+            }
+        }
+        
+        res_offsets.emplace_back(set.size() + prev_off);
+        prev_off = off;
+    }
+}
+
 /// Implementation of FunctionArrayEnumerateUniq.
 
 FunctionPtr FunctionArrayEnumerateUniq::create(const Context &)
@@ -1551,13 +1582,15 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         auto * array_data = &array->getData();
+        /*
         if (auto * tuple_column = checkAndGetColumn<ColumnTuple>(array_data))
         {
             for (const auto & element : tuple_column->getColumns())
                 data_columns.push_back(element.get());
         }
-        else
-            data_columns.push_back(array_data);
+        else*/
+            
+        data_columns.push_back(array_data);
     }
 
     size_t num_columns = data_columns.size();
@@ -1600,9 +1633,7 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
             || executeNumber<Float32>(first_array, first_null_map, res_values)
             || executeNumber<Float64>(first_array, first_null_map, res_values)
             || executeString (first_array, first_null_map, res_values)))
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                    + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+            executeHashed(*offsets, original_data_columns, res_values);
     }
     else
     {
@@ -1790,7 +1821,6 @@ void FunctionArrayEnumerateUniq::executeHashed(
         prev_off = off;
     }
 }
-
 /// Implementation of FunctionEmptyArrayToSingle.
 
 FunctionPtr FunctionEmptyArrayToSingle::create(const Context &) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
