@@ -245,7 +245,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 
 InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run)
 {
-    DUMP("analyzeExpressions", only_analyze);
+    DUMP("analyzeExpressions", only_analyze, dry_run);
     DUMP(queryToString(query_ptr));
 
     AnalysisResult res;
@@ -672,6 +672,9 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         }
 
         pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
+
+        if (pipeline.streams.empty())
+            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
 
         pipeline.transform([&](auto & stream)
         {
