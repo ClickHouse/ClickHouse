@@ -127,7 +127,7 @@ This is similar to the DUAL table found in other DBMSs.
 
 ## system.parts
 
-Contains information about parts of a table in the [MergeTree](../table_engines/mergetree.md#table_engines-mergetree) family.
+Contains information about parts of a table in the [MergeTree](../operations/table_engines/mergetree.md#table_engines-mergetree) family.
 
 Each row describes one part of the data.
 
