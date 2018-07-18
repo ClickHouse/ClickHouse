@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
@@ -18,11 +20,12 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/ApplyingMutationsBlockInputStream.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
@@ -811,6 +814,67 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 }
 
 
+static BlockInputStreamPtr createInputStreamWithMutatedData(
+    const StoragePtr & storage, std::vector<MutationCommand> commands, const Context & context)
+{
+    auto select = std::make_shared<ASTSelectQuery>();
+
+    select->select_expression_list = std::make_shared<ASTExpressionList>();
+    select->children.push_back(select->select_expression_list);
+    select->select_expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+
+    /// For all commands that are in front of the list and are DELETE commands, we can push them down
+    /// to the SELECT statement and remove them from commands.
+
+    auto deletes_end = commands.begin();
+    for (; deletes_end != commands.end(); ++deletes_end)
+    {
+        if (deletes_end->type != MutationCommand::DELETE)
+            break;
+    }
+
+    std::vector<ASTPtr> predicates;
+    for (auto it = commands.begin(); it != deletes_end; ++it)
+    {
+        auto predicate = std::make_shared<ASTFunction>();
+        predicate->name = "not";
+        predicate->arguments = std::make_shared<ASTExpressionList>();
+        predicate->arguments->children.push_back(it->predicate);
+        predicate->children.push_back(predicate->arguments);
+        predicates.push_back(predicate);
+    }
+
+    commands.erase(commands.begin(), deletes_end);
+
+    if (!predicates.empty())
+    {
+        ASTPtr where_expression;
+        if (predicates.size() == 1)
+            where_expression = predicates[0];
+        else
+        {
+            auto coalesced_predicates = std::make_shared<ASTFunction>();
+            coalesced_predicates->name = "and";
+            coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+            coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+            coalesced_predicates->arguments->children = predicates;
+
+            where_expression = std::move(coalesced_predicates);
+        }
+        select->where_expression = where_expression;
+        select->children.push_back(where_expression);
+    }
+
+    InterpreterSelectQuery interpreter_select(select, context, storage);
+    BlockInputStreamPtr in = interpreter_select.execute().in;
+
+    if (!commands.empty())
+        in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
+
+    return in;
+}
+
+
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FuturePart & future_part,
     const std::vector<MutationCommand> & commands,
@@ -835,20 +899,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
-    Poco::File(new_part_tmp_path).createDirectories();
+    auto storage_from_part = StorageFromMergeTreeDataPart::create(source_part);
 
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+    auto context_for_reading = context;
+    context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_for_reading.getSettingsRef().max_threads = 1;
 
-    BlockInputStreamPtr in = std::make_shared<MergeTreeBlockInputStream>(
-        data, source_part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, all_columns.getNames(),
-        MarkRanges(1, MarkRange(0, source_part->marks_count)),
-        false, nullptr, String(), true, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
-
-    in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
+    auto in = createInputStreamWithMutatedData(storage_from_part, commands, context_for_reading);
 
     if (data.hasPrimaryKey())
         in = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
+
+    Poco::File(new_part_tmp_path).createDirectories();
+
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
     auto compression_settings = context.chooseCompressionSettings(
         source_part->bytes_on_disk,
