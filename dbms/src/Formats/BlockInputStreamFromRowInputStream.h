@@ -4,6 +4,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/IRowInputStream.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -25,7 +26,13 @@ public:
         const FormatSettings & settings);
 
     void readPrefix() override { row_input->readPrefix(); }
-    void readSuffix() override { row_input->readSuffix(); }
+    void readSuffix() override
+    {
+        Logger * log = &Logger::get("BlockInputStreamFromRowInputStream");
+        LOG_TRACE(log, "Skipped " << num_errors << " rows while reading the input stream");
+
+        row_input->readSuffix();
+    }
 
     String getName() const override { return "BlockInputStreamFromRowInputStream"; }
 

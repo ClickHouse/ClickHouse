@@ -98,6 +98,22 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
     writeChar(x ? '1' : '0', buf);
 }
 
+template <typename T>
+inline size_t writeFloatTextFastPath(T x, char * buffer, int len)
+{
+    using Converter = DoubleConverter<false>;
+    double_conversion::StringBuilder builder{buffer, len};
+
+    bool result = false;
+    if constexpr (std::is_same_v<T, double>)
+        result = Converter::instance().ToShortest(x, &builder);
+    else
+        result = Converter::instance().ToShortestSingle(x, &builder);
+
+    if (!result)
+        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+    return builder.position();
+}
 
 template <typename T>
 inline void writeFloatText(T x, WriteBuffer & buf)
@@ -105,6 +121,11 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
 
     using Converter = DoubleConverter<false>;
+    if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
+    {
+        buf.position() += writeFloatTextFastPath(x, buf.position(), Converter::MAX_REPRESENTATION_LENGTH);
+        return;
+    }
 
     Converter::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
@@ -118,7 +139,6 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     if (!result)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-    /// TODO Excessive copy. Use optimistic path if buffer have enough bytes.
     buf.write(buffer, builder.position());
 }
 
