@@ -52,6 +52,8 @@ private:
         m_hour = date_lut.toHour(time);
         m_minute = date_lut.toMinute(time);
         m_second = date_lut.toSecond(time);
+
+        (void)pad;  /// Suppress unused private field warning.
     }
 
     void init(const char * s, size_t length)
@@ -66,6 +68,8 @@ private:
         m_hour = (s[11] - '0') * 10 + (s[12] - '0');
         m_minute = (s[14] - '0') * 10 + (s[15] - '0');
         m_second = (s[17] - '0') * 10 + (s[18] - '0');
+
+        (void)pad;
     }
 
 public:
@@ -88,7 +92,7 @@ public:
         init(s.data(), s.size());
     }
 
-    LocalDateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0), pad(0)
+    LocalDateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0)
     {
     }
 
