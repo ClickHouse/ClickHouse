@@ -52,9 +52,11 @@ pages:
 
 - 'SQL язык запросов':
   - 'hidden': 'query_language/index.md'
-  - 'Запросы': 'query_language/queries.md'
-  - 'Синтаксис': 'query_language/syntax.md'
-  - 'Операторы': 'query_language/operators.md'
+  - 'SELECT': 'query_language/select.md'
+  - 'INSERT INTO': 'query_language/insert_into.md'
+  - 'CREATE': 'query_language/create.md'
+  - 'ALTER': 'query_language/alter.md'
+  - 'Прочие виды запросов': 'query_language/misc.md'
   - 'Функции':
     - 'Введение': 'query_language/functions/index.md'
     - 'Арифметические функции': 'query_language/functions/arithmetic_functions.md'
@@ -106,6 +108,8 @@ pages:
       - 'Источники внешних словарей': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Ключ и поля словаря': 'query_language/dicts/external_dicts_dict_structure.md'
     - 'Встроенные словари': 'query_language/dicts/internal_dicts.md'
+  - 'Операторы': 'query_language/operators.md'
+  - 'Общий синтаксис': 'query_language/syntax.md'
   
 
 - 'Эксплуатация':

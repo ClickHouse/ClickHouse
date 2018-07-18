@@ -52,9 +52,11 @@ pages:
 
 - 'SQL query language':
   - 'hidden': 'query_language/index.md'
-  - 'Queries': 'query_language/queries.md'
-  - 'Syntax': 'query_language/syntax.md'
-  - 'Operators': 'query_language/operators.md'
+  - 'SELECT': 'query_language/select.md'
+  - 'INSERT INTO': 'query_language/insert_into.md'
+  - 'CREATE': 'query_language/create.md'
+  - 'ALTER': 'query_language/alter.md'
+  - 'Other kinds of queries': 'query_language/misc.md'
   - 'Functions':
     - 'Introduction': 'query_language/functions/index.md'
     - 'Arithmetic functions': 'query_language/functions/arithmetic_functions.md'
@@ -104,6 +106,8 @@ pages:
       - 'Sources of external dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Dictionary key and fields': 'query_language/dicts/external_dicts_dict_structure.md'
     - 'Internal dictionaries': 'query_language/dicts/internal_dicts.md'
+  - 'Operators': 'query_language/operators.md'
+  - 'General syntax': 'query_language/syntax.md'
   
 - 'Operations':
   - 'Operations': 'operations/index.md'
