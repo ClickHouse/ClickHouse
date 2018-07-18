@@ -77,10 +77,16 @@ Block ITableDeclaration::getSampleBlockForColumns(const Names & column_names) co
     for (const auto & name : column_names)
     {
         auto it = columns_map.find(name);
-        if (it == columns_map.end())
-            throw Exception("There is no column " + backQuoteIfNeed(name) + " in table");
-
-        res.insert({ it->second->createColumn(), it->second, it->first });
+        if (it != columns_map.end())
+        {
+            res.insert({ it->second->createColumn(), it->second, it->first });
+        }
+        else
+        {
+            /// Virtual columns.
+            NameAndTypePair elem = getColumn(name);
+            res.insert({ elem.type->createColumn(), elem.type, elem.name });
+        }
     }
 
     return res;
