@@ -1582,14 +1582,6 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
                 ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
         auto * array_data = &array->getData();
-        /*
-        if (auto * tuple_column = checkAndGetColumn<ColumnTuple>(array_data))
-        {
-            for (const auto & element : tuple_column->getColumns())
-                data_columns.push_back(element.get());
-        }
-        else*/
-            
         data_columns.push_back(array_data);
     }
 
