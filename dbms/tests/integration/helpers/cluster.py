@@ -49,17 +49,18 @@ class ClickHouseCluster:
         self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
+        self.base_kafka_cmd = []
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
         self.with_mysql = False
+        self.with_kafka = False
         
         self.docker_client = None
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False, with_mysql=False,
-        clickhouse_path_dir=None, hostname=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, hostname=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -77,7 +78,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
+            self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -92,6 +93,12 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+
+        if with_kafka and not self.with_kafka:
+            self.with_kafka = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
+            self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
 
         return instance
 
@@ -134,6 +141,9 @@ class ClickHouseCluster:
 
         if self.with_mysql and self.base_mysql_cmd:
             subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
+
+        if self.with_kafka and self.base_kafka_cmd:
+            subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
 
         # Uncomment for debugging
         #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
@@ -214,7 +224,7 @@ services:
 class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
-            with_zookeeper, zookeeper_config_path, with_mysql, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -234,6 +244,7 @@ class ClickHouseInstance:
         self.server_bin_path = server_bin_path
 
         self.with_mysql = with_mysql
+        self.with_kafka = with_kafka
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
@@ -283,9 +294,10 @@ class ClickHouseInstance:
             deadline = start_time + timeout
 
         while True:
-            status = self.get_docker_handle().status
+            handle = self.get_docker_handle()
+            status = handle.status;
             if status == 'exited':
-                raise Exception("Instance `{}' failed to start. Container status: {}".format(self.name, status))
+                raise Exception("Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status, handle.logs()))
 
             current_time = time.time()
             time_left = deadline - current_time
@@ -374,6 +386,9 @@ class ClickHouseInstance:
 
         if self.with_mysql:
             depends_on.append("mysql1")
+
+        if self.with_kafka:
+            depends_on.append("kafka1")
 
         if self.with_zookeeper:
             depends_on.append("zoo1")
