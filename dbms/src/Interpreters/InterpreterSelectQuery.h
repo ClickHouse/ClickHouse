@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
@@ -16,6 +18,7 @@ namespace DB
 class ExpressionAnalyzer;
 class ASTSelectQuery;
 struct SubqueryForSet;
+class InterpreterSelectWithUnionQuery;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -191,6 +194,9 @@ private:
     Block source_header;
     /// Structure of query result.
     Block result_header;
+
+    /// The subquery interpreter, if the subquery
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;

@@ -114,7 +114,21 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
     {
         /// Read from subquery.
-        source_header = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context);
+        /** There are no limits on the maximum size of the result for the subquery.
+          *  Since the result of the query is not the result of the entire query.
+          */
+        Context subquery_context = context;
+        Settings subquery_settings = context.getSettings();
+        subquery_settings.max_result_rows = 0;
+        subquery_settings.max_result_bytes = 0;
+        /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
+        subquery_settings.extremes = 0;
+        subquery_context.setSettings(subquery_settings);
+
+        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+            table_expression, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+
+        source_header = interpreter_subquery->getSampleBlock();
     }
     else if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
     {
@@ -153,6 +167,13 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
         for (const auto & it : query_analyzer->getExternalTables())
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
+    }
+
+    if (interpreter_subquery)
+    {
+        /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
+        if (query_analyzer->hasAggregation())
+            interpreter_subquery->ignoreWithTotals();
     }
 
     required_columns = query_analyzer->getRequiredSourceColumns();
@@ -555,31 +576,6 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
         }
-    }
-
-    /// The subquery interpreter, if the subquery
-    std::optional<InterpreterSelectWithUnionQuery> interpreter_subquery;
-
-    auto query_table = query.table();
-    if (query_table && typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
-    {
-        /** There are no limits on the maximum size of the result for the subquery.
-            *  Since the result of the query is not the result of the entire query.
-            */
-        Context subquery_context = context;
-        Settings subquery_settings = context.getSettings();
-        subquery_settings.max_result_rows = 0;
-        subquery_settings.max_result_bytes = 0;
-        /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-        subquery_settings.extremes = 0;
-        subquery_context.setSettings(subquery_settings);
-
-        interpreter_subquery.emplace(
-            query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
-
-        /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
-        if (query_analyzer->hasAggregation())
-            interpreter_subquery->ignoreWithTotals();
     }
 
     const Settings & settings = context.getSettingsRef();
