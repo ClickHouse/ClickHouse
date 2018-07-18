@@ -90,7 +90,12 @@ pages:
     - 'Справочник функций': 'query_language/agg_functions/reference.md'
     - 'Комбинаторы агрегатных функций': 'query_language/agg_functions/combinators.md'
     - 'Параметрические агрегатные функции': 'query_language/agg_functions/parametric_functions.md'
-  
+  - 'Табличные функции':
+    - 'Введение': 'query_language/table_functions/index.md'
+    - 'file': 'query_language/table_functions/file.md'
+    - 'merge': 'query_language/table_functions/merge.md'
+    - 'numbers': 'query_language/table_functions/numbers.md'
+    - 'remote': 'query_language/table_functions/remote.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
@@ -102,12 +107,6 @@ pages:
       - 'Ключ и поля словаря': 'query_language/dicts/external_dicts_dict_structure.md'
     - 'Встроенные словари': 'query_language/dicts/internal_dicts.md'
   
-  - 'Табличные функции':
-    - 'Введение': 'query_language/table_functions/index.md'
-    - 'file': 'query_language/table_functions/file.md'
-    - 'merge': 'query_language/table_functions/merge.md'
-    - 'numbers': 'query_language/table_functions/numbers.md'
-    - 'remote': 'query_language/table_functions/remote.md'
 
 - 'Эксплуатация':
 #  - 'Эксплуатация': 'operations/index.md'
