@@ -11,7 +11,7 @@ pages:
 
 - 'Getting started':
   - 'Deploying and running': 'getting_started/index.md'
-  - 'Testing data':
+  - 'Example datasets':
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi data': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
