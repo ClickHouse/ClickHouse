@@ -56,7 +56,7 @@ SELECT count() FROM table WHERE ((EventDate >= toDate('2014-01-01') AND EventDat
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-Чтобы проверить, сможет ли ClickHouse использовать индекс при выполнении запроса, используйте настройки [force_index_by_date](../operations/settings/settings.md#settings-settings-force_index_by_date) и [force_primary_key](../operations/settings/settings.md#settings-settings-force_primary_key).
+Чтобы проверить, сможет ли ClickHouse использовать индекс при выполнении запроса, используйте настройки [force_index_by_date](../settings/settings.md#settings-settings-force_index_by_date) и [force_primary_key](../settings/settings.md#settings-settings-force_primary_key).
 
 Индекс по дате обеспечивает чтение только кусков, содержащих даты из нужного диапазона. При этом кусок данных может содержать данные за многие даты (до целого месяца), а в пределах одного куска данные лежат упорядоченными по первичному ключу, который может не содержать дату в качестве первого столбца. В связи с этим, при использовании запроса с указанием условия только на дату, но не на префикс первичного ключа, будет читаться данных больше, чем за одну дату.
 

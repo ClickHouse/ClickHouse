@@ -361,7 +361,7 @@ Example of settings:
 
 Setting fields:
 
-- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../table_engines/distributed.md#table_engines-distributed) table and enter it in subsequent configurations.
+- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../operations/table_engines/distributed.md#table_engines-distributed) table and enter it in subsequent configurations.
 - `port` – The port on the ClickHouse server.
 - `user` – Name of the ClickHouse user.
 - `password` – Password of the ClickHouse user.

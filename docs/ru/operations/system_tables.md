@@ -120,7 +120,7 @@ default_expression String - выражение для значения по ум
 То есть, это - аналог таблицы DUAL, которую можно найти в других СУБД.
 # system.parts
 
-Содержит информацию о кусках таблиц семейства [MergeTree](../table_engines/mergetree.md#table_engines-mergetree).
+Содержит информацию о кусках таблиц семейства [MergeTree](../operations/table_engines/mergetree.md#table_engines-mergetree).
 
 Каждая строка описывает один кусок данных.
 

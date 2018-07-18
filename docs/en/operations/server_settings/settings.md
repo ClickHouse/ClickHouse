@@ -179,7 +179,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more information, see [GraphiteMergeTree](../../table_engines/graphitemergetree.md#table_engines-graphitemergetree).
+For more information, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
 
 **Example**
 
@@ -358,7 +358,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section "[Creating replicated tables](../../table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
+For more information, see the section "[Creating replicated tables](../../operations/table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
 
 **Example**
 
@@ -370,7 +370,7 @@ For more information, see the section "[Creating replicated tables](../../table_
 
 ## mark_cache_size
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) engines.
+Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) engines.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -426,7 +426,7 @@ We recommend using this option in Mac OS X, since the ` getrlimit()` function re
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) type table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) type table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the ` <clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -444,7 +444,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree
 
-Fine tuning for tables in the [ MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) family.
+Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) family.
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -521,7 +521,7 @@ Keys for server/client settings:
 
 ## part_log
 
-Logging events that are associated with [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) data. For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) data. For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
@@ -541,7 +541,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 **Example**
@@ -585,7 +585,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
-- partition_by – Sets a [custom partitioning key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -607,7 +607,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 
 Configuration of clusters used by the Distributed table engine.
 
-For more information, see the section "[Table engines/Distributed](../../table_engines/distributed.md#table_engines-distributed)".
+For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md#table_engines-distributed)".
 
 **Example**
 
@@ -667,7 +667,7 @@ The end slash is mandatory.
 
 ## uncompressed_cache_size
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) family.
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache) is enabled.
 
@@ -716,7 +716,7 @@ ClickHouse uses ZooKeeper for storing replica metadata when using replicated tab
 
 This parameter can be omitted if replicated tables are not used.
 
-For more information, see the section "[Replication](../../table_engines/replication.md#table_engines-replication)".
+For more information, see the section "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
 
 **Example**
 
