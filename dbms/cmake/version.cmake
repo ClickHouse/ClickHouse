@@ -18,7 +18,8 @@ if (VERSION_EXTRA)
     string(CONCAT VERSION_STRING ${VERSION_STRING} "." ${VERSION_EXTRA})
 endif ()
 
-set (VERSION_FULL "${PROJECT_NAME} ${VERSION_STRING}")
+set (VERSION_NAME "${PROJECT_NAME}")
+set (VERSION_FULL "${VERSION_NAME} ${VERSION_STRING}")
 
 if (APPLE)
     # dirty hack: ld: malformed 64-bit a.b.c.d.e version number: 1.1.54160

@@ -1,36 +1,27 @@
+#include "TCPHandler.h"
+
 #include <iomanip>
-
 #include <Poco/Net/NetException.h>
-
-#include <Common/ClickHouseRevision.h>
-
-#include <Common/Stopwatch.h>
-
 #include <IO/Progress.h>
-
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/CompressionSettings.h>
-
 #include <IO/copyData.h>
-
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/TablesStatus.h>
-
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-
+#include <Common/ClickHouseRevision.h>
+#include <Common/Stopwatch.h>
 #include <Common/ExternalTable.h>
-
-#include "TCPHandler.h"
-
 #include <Common/NetException.h>
+#include <Common/config_version.h>
 #include <ext/scope_guard.h>
 
 
