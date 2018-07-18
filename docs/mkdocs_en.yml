@@ -167,3 +167,4 @@ pages:
   - 'How to run ClickHouse tests': 'development/tests.md'
 
 - 'Roadmap': 'roadmap.md'
+- 'Changelog': 'changelog.md'
