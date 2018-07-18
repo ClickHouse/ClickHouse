@@ -1,4 +1,4 @@
-# Query language
+# SQL dialect
 
 * [SELECT](select.md#select)
 * [INSERT INTO](insert_into.md#queries-insert)
