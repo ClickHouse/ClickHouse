@@ -136,10 +136,7 @@ void * ClickHouseDictionary_v3_loadAll(void * data_ptr, ClickHouseLibrary::CStri
     return static_cast<void *>(&ptr->ctable);
 }
 
-void * ClickHouseDictionary_v3_loadKeys(void * data_ptr,
-    ClickHouseLibrary::CStrings * settings,
-    ClickHouseLibrary::CStrings * columns,
-    const ClickHouseLibrary::VectorUInt64 * requested_rows)
+void * ClickHouseDictionary_v3_loadKeys(void * data_ptr, ClickHouseLibrary::CStrings * settings, ClickHouseLibrary::Table * requested_keys)
 {
     auto ptr = static_cast<DataHolder *>(data_ptr);
     LOG(ptr->lib->log, "loadKeys lib call ptr=" << data_ptr << " => " << ptr);
@@ -151,20 +148,11 @@ void * ClickHouseDictionary_v3_loadKeys(void * data_ptr,
             LOG(ptr->lib->log, "setting " << i << " :" << settings->data[i]);
         }
     }
-    if (columns)
+    if (requested_keys)
     {
-        LOG(ptr->lib->log, "columns passed:" << columns->size);
-        for (size_t i = 0; i < columns->size; ++i)
-        {
-            LOG(ptr->lib->log, "col " << i << " :" << columns->data[i]);
-        }
-    }
-    if (requested_rows)
-    {
-        LOG(ptr->lib->log, "requested_rows passed: " << requested_rows->size);
-        for (size_t i = 0; i < requested_rows->size; ++i)
-        {
-            LOG(ptr->lib->log, "id " << i << " :" << requested_rows->data[i]);
+        LOG(ptr->lib->log, "requested_keys columns passed: " << requested_keys->size);
+        for (size_t i = 0; i < requested_keys->size; ++i) {
+            LOG(ptr->lib->log, "requested_keys at column " << i << " passed: " << requested_keys->data[i].size);
         }
     }
 
