@@ -1,4 +1,4 @@
-# Язык запросов
+# Диалект SQL
 
 * [SELECT](select.md#select)
 * [INSERT INTO](insert_into.md#queries-insert)
