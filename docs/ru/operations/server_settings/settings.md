@@ -100,7 +100,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 -   Указывается абсолютным или относительно конфигурационного файла сервера.
 -   Может содержать wildcard-ы \* и ?.
 
-Смотрите также "[Внешние словари](../../dicts/external_dicts.md#dicts-external_dicts)".
+Смотрите также "[Внешние словари](../../query_language/dicts/external_dicts.md#dicts-external_dicts)".
 
 **Пример**
 
@@ -685,7 +685,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 
 ## user_files_path
 
-Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../table_functions/file.md#table_functions-file).
+Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../query_language/table_functions/file.md#table_functions-file).
 
 **Пример**
 

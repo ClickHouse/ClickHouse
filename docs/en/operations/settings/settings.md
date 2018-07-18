@@ -12,7 +12,7 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Used only if a distributed table is used in the FROM clause.
-- Not used for a table-valued [ remote](../../table_functions/remote.md#table_functions-remote) function.
+- Not used for a table-valued [ remote](../../query_language/table_functions/remote.md#table_functions-remote) function.
 
 The possible values ​​are:
 

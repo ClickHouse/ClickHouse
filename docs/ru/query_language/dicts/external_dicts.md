@@ -9,9 +9,9 @@ ClickHouse:
 -   Полностью или частично хранит словари в оперативной памяти.
 -   Периодически обновляет их и динамически подгружает отсутствующие значения. Т.е. словари можно подгружать динамически.
 
-Конфигурация внешних словарей находится в одном или нескольких файлах. Путь к конфигурации указывается в параметре [dictionaries_config](../operations/server_settings/settings.md#server_settings-dictionaries_config).
+Конфигурация внешних словарей находится в одном или нескольких файлах. Путь к конфигурации указывается в параметре [dictionaries_config](../../operations/server_settings/settings.md#server_settings-dictionaries_config).
 
-Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries_lazy_load](../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load).
+Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries_lazy_load](../../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load).
 
 Конфигурационный файл словарей имеет вид:
 
