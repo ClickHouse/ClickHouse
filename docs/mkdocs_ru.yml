@@ -208,6 +208,7 @@ pages:
   - 'Функции для реализации оператора IN.': 'functions/in_functions.md'
   - 'Функция arrayJoin': 'functions/array_join.md'
   - 'Функции для работы с географическими координатами': 'functions/geo.md'
+  - 'Функции для работы с Nullable-агрументами': 'functions/functions_for_nulls.md'
 
 - 'Агрегатные функции':
   - 'Введение': 'agg_functions/index.md'
