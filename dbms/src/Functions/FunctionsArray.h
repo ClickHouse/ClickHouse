@@ -1236,20 +1236,20 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(const IColumn & src_data,
+    bool executeNumber(
+        const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
-        const ColumnNullable * nullable_col,
-        ColumnNullable * nullable_res_col);
+        const ColumnNullable * nullable_col);
 
-    bool executeString(const IColumn & src_data,
+    bool executeString(
+        const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
-        const ColumnNullable * nullable_col,
-        ColumnNullable * nullable_res_col);
-
+        const ColumnNullable * nullable_col);
+    
     void executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,

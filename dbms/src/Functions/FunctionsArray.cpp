@@ -1289,8 +1289,10 @@ DataTypePtr FunctionArrayDistinct::getReturnTypeImpl(const DataTypes & arguments
         throw Exception("All arguments for function " + getName() + " must be arrays but argument " + 
         " has type " + arguments[0]->getName() + ".",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-    return arguments[0];
+        
+    auto nested_type = removeNullable(array_type->getNestedType());
+        
+    return std::make_shared<DataTypeArray>(nested_type);
 }
 
 void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
@@ -1313,37 +1315,31 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
     const ColumnNullable * nullable_col = nullptr;
-    ColumnNullable * nullable_res_col = nullptr;
 
     const IColumn * inner_col;
-    IColumn * inner_res_col;
 
     if (src_data.isColumnNullable())
     {
         nullable_col = static_cast<const ColumnNullable *>(&src_data);
         inner_col = &nullable_col->getNestedColumn();
-
-        nullable_res_col = static_cast<ColumnNullable *>(&res_data);
-        inner_res_col = &nullable_res_col->getNestedColumn();
     }
     else
     {
         inner_col = &src_data;
-        inner_res_col = &res_data;
     }
 
-    if (!(executeNumber<UInt8>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<UInt16>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<UInt32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<UInt64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<Int8>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<Int16>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<Int32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<Int64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<Float32>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeNumber<Float64>(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)
-        || executeString(*inner_col, offsets, *inner_res_col, res_offsets, nullable_col, nullable_res_col)))
-        executeHashed(offsets, original_data_columns, *inner_res_col, res_offsets);
+    if (!(executeNumber<UInt8>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<UInt16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<UInt32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<UInt64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int8>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
+        executeHashed(offsets, original_data_columns, res_data, res_offsets);
 
     block.getByPosition(result).column = std::move(res_ptr);
 }
@@ -1353,8 +1349,7 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
     const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     ColumnArray::Offsets & res_offsets,
-    const ColumnNullable * nullable_col,
-    ColumnNullable * nullable_res_col)
+    const ColumnNullable * nullable_col)
 {
     const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
@@ -1367,12 +1362,10 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
     PaddedPODArray<T> & res_data = typeid_cast<ColumnVector<T> &>(res_data_col).getData();
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
-    PaddedPODArray<UInt8> * res_null_map = nullptr;
 
     if (nullable_col)
     {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
-        res_null_map = &static_cast<ColumnUInt8 *>(&nullable_res_col->getNullMapColumn())->getData();
     }
 
     using Set = ClearableHashSet<T,
@@ -1385,44 +1378,28 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
     for (size_t i = 0; i < src_offsets.size(); ++i)
     {
         set.clear();
-        bool found_null = false;
         size_t off = src_offsets[i];
         for (size_t j = prev_off; j < off; ++j)
         {
-            if (nullable_col && ((*src_null_map)[j] == 1 && !found_null))
-            {
-                found_null = true;
-                res_null_map->emplace_back(1);
-                res_data.emplace_back(values[j]);
-            }
-            else if ((set.find(values[j]) == set.end()) && (!nullable_col || (*src_null_map)[j] == 0))
+            if ((set.find(values[j]) == set.end()) && (!nullable_col || (*src_null_map)[j] == 0))
             {
                 res_data.emplace_back(values[j]);
                 set.insert(values[j]);
-                if (nullable_col)
-                    res_null_map->emplace_back(0);
             }
         }
 
-        size_t offset_length = set.size();
-
-        if (found_null)
-        {
-            ++offset_length;
-        }
-
-        res_offsets.emplace_back(offset_length + prev_off);
+        res_offsets.emplace_back(set.size() + prev_off);
         prev_off = off;
     }
     return true;
 }
 
-bool FunctionArrayDistinct::executeString(const IColumn & src_data,
+bool FunctionArrayDistinct::executeString(
+    const IColumn & src_data,
     const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     ColumnArray::Offsets & res_offsets,
-    const ColumnNullable * nullable_col,
-    ColumnNullable * nullable_res_col)
+    const ColumnNullable * nullable_col)
 {
     const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data);
 
@@ -1439,11 +1416,10 @@ bool FunctionArrayDistinct::executeString(const IColumn & src_data,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
-    PaddedPODArray<UInt8> * res_null_map = nullptr;
+    
     if (nullable_col)
     {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
-        res_null_map = &static_cast<ColumnUInt8 *>(&nullable_res_col->getNullMapColumn())->getData();
     }
 
     Set set;
@@ -1451,38 +1427,19 @@ bool FunctionArrayDistinct::executeString(const IColumn & src_data,
     for (size_t i = 0; i < src_offsets.size(); ++i)
     {
         set.clear();
-        bool found_null = false;
         size_t off = src_offsets[i];
         for (size_t j = prev_off; j < off; ++j)
         {
             StringRef str_ref = src_data_concrete->getDataAt(j);
 
-            if (nullable_col && ((*src_null_map)[j] == 1 && !found_null))
+            if (set.find(str_ref) == set.end() && (!nullable_col || (*src_null_map)[j] == 0))
             {
-                found_null = true;
-                res_null_map->emplace_back(1);
+                set.insert(str_ref);
                 res_data_column_string.insertData(str_ref.data, str_ref.size);
             }
-            else
-            {
-                if (set.find(str_ref) == set.end() && (!nullable_col || (*src_null_map)[j] == 0))
-                {
-                    set.insert(str_ref);
-                    res_data_column_string.insertData(str_ref.data, str_ref.size);
-                    if (nullable_col)
-                        res_null_map->emplace_back(0);
-                }
-            }
         }
 
-        size_t offset_length = set.size();
-
-        if (found_null)
-        {
-            ++offset_length;
-        }
-
-        res_offsets.emplace_back(offset_length + prev_off);
+        res_offsets.emplace_back(set.size() + prev_off);
         prev_off = off;
     }
     return true;
