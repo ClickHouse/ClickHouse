@@ -63,6 +63,7 @@
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Core/iostream_debug_helpers.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -2255,6 +2256,8 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 }
             }
         }
+
+        DUMP(argument_names, getColumnName(), queryToString(ast));
 
         if (arguments_present)
         {
