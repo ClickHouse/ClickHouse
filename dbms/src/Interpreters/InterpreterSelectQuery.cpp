@@ -26,6 +26,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/queryToString.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -43,6 +44,8 @@
 #include <Core/Field.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
+
+#include <Core/iostream_debug_helpers.h>
 
 
 namespace DB
@@ -81,23 +84,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 }
 
 
-InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
-    : query_ptr(query_ptr_->clone())
-    , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
-    , context(context_)
-    , to_stage(QueryProcessingStage::Complete)
-    , subquery_depth(0)
-    , only_analyze(true)
-    , log(&Logger::get("InterpreterSelectQuery"))
-{
-    init({});
-}
-
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
 void InterpreterSelectQuery::init(const Names & required_result_column_names)
 {
+    DUMP("init", only_analyze);
+    DUMP(queryToString(query_ptr));
+
     if (!context.hasQueryContext())
         context.setQueryContext(context);
 
@@ -111,17 +105,16 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     max_streams = settings.max_threads;
 
     const auto & table_expression = query.table();
-    NamesAndTypesList source_columns;
 
     if (input)
     {
         /// Read from prepared input.
-        source_columns = input->getHeader().getNamesAndTypesList();
+        subquery_header = input->getHeader();
     }
     else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
     {
         /// Read from subquery.
-        source_columns = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context).getNamesAndTypesList();
+        subquery_header = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context);
     }
     else if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
     {
@@ -143,7 +136,7 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
         table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
 
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, context, storage, source_columns, required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, context, storage, subquery_header.getNamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
 
     if (!only_analyze)
     {
@@ -160,6 +153,13 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
         for (const auto & it : query_analyzer->getExternalTables())
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
+    }
+
+    /// Calculate structure of the result.
+    {
+        Pipeline pipeline;
+        executeImpl(pipeline, input, true);
+        result_header = pipeline.firstStream()->getHeader();
     }
 }
 
@@ -194,23 +194,21 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
 
 Block InterpreterSelectQuery::getSampleBlock()
 {
-    Pipeline pipeline;
-    executeImpl(pipeline, input, true);
-    auto res = pipeline.firstStream()->getHeader();
-    return res;
+    return result_header;
 }
 
 
 Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_)
 {
-    return InterpreterSelectQuery(OnlyAnalyzeTag(), query_ptr_, context_).getSampleBlock();
+    DUMP("static getSampleBlock");
+    return InterpreterSelectQuery(query_ptr_, context_, {}, QueryProcessingStage::Complete, 0, nullptr, true).getSampleBlock();
 }
 
 
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, false);
+    executeImpl(pipeline, input, only_analyze);
     executeUnion(pipeline);
 
     BlockIO res;
@@ -221,13 +219,15 @@ BlockIO InterpreterSelectQuery::execute()
 BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 {
     Pipeline pipeline;
-    executeImpl(pipeline, input, false);
+    executeImpl(pipeline, input, only_analyze);
     return pipeline.streams;
 }
 
 
 InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
 {
+    DUMP("analyzeExpressions", only_analyze);
+
     AnalysisResult res;
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
@@ -315,6 +315,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
 void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run)
 {
+    DUMP("executeImpl", dry_run, only_analyze);
+
     if (input)
         pipeline.streams.push_back(input);
 
@@ -504,6 +506,8 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run)
 {
+    DUMP("executeFetchColumns", dry_run, only_analyze);
+
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
 
@@ -547,28 +551,35 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     }
 
     /// The subquery interpreter, if the subquery
-    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
+    std::optional<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     auto query_table = query.table();
     if (query_table && typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
     {
-        /** There are no limits on the maximum size of the result for the subquery.
-         *  Since the result of the query is not the result of the entire query.
-         */
-        Context subquery_context = context;
-        Settings subquery_settings = context.getSettings();
-        subquery_settings.max_result_rows = 0;
-        subquery_settings.max_result_bytes = 0;
-        /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-        subquery_settings.extremes = 0;
-        subquery_context.setSettings(subquery_settings);
+        if (dry_run)
+        {
+            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(subquery_header));
+        }
+        else
+        {
+            /** There are no limits on the maximum size of the result for the subquery.
+              *  Since the result of the query is not the result of the entire query.
+              */
+            Context subquery_context = context;
+            Settings subquery_settings = context.getSettings();
+            subquery_settings.max_result_rows = 0;
+            subquery_settings.max_result_bytes = 0;
+            /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
+            subquery_settings.extremes = 0;
+            subquery_context.setSettings(subquery_settings);
 
-        interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
+            interpreter_subquery.emplace(
+                query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1, dry_run);
 
-        /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
-        if (query_analyzer->hasAggregation())
-            interpreter_subquery->ignoreWithTotals();
+            /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
+            if (query_analyzer->hasAggregation())
+                interpreter_subquery->ignoreWithTotals();
+        }
     }
 
     const Settings & settings = context.getSettingsRef();
@@ -630,11 +641,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else if (interpreter_subquery)
     {
         /// Subquery.
-
-        if (!dry_run)
-            pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
-        else
-            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(interpreter_subquery->getSampleBlock()));
+        pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
     }
     else if (storage)
     {
@@ -647,7 +654,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        query_analyzer->makeSetsForIndex();
+        if (!dry_run)
+            query_analyzer->makeSetsForIndex();
 
         SelectQueryInfo query_info;
         query_info.query = query_ptr;

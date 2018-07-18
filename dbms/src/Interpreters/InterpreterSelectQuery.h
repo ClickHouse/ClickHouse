@@ -103,12 +103,6 @@ private:
         }
     };
 
-    struct OnlyAnalyzeTag {};
-    InterpreterSelectQuery(
-        OnlyAnalyzeTag,
-        const ASTPtr & query_ptr_,
-        const Context & context_);
-
     void init(const Names & required_result_column_names);
 
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
@@ -194,6 +188,11 @@ private:
 
     /// The object was created only for query analysis.
     bool only_analyze = false;
+
+    /// Structure of query source if it is a subquery.
+    Block subquery_header;
+    /// Structure of query result.
+    Block result_header;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
