@@ -198,13 +198,6 @@ Block InterpreterSelectQuery::getSampleBlock()
 }
 
 
-Block InterpreterSelectQuery::getSampleBlock(const ASTPtr & query_ptr_, const Context & context_)
-{
-    DUMP("static getSampleBlock");
-    return InterpreterSelectQuery(query_ptr_, context_, {}, QueryProcessingStage::Complete, 0, nullptr, true).getSampleBlock();
-}
-
-
 BlockIO InterpreterSelectQuery::execute()
 {
     Pipeline pipeline;
@@ -227,6 +220,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
 {
     DUMP("analyzeExpressions", only_analyze);
+    DUMP(queryToString(query_ptr));
 
     AnalysisResult res;
 
@@ -316,6 +310,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run)
 {
     DUMP("executeImpl", dry_run, only_analyze);
+    DUMP(queryToString(query_ptr));
 
     if (input)
         pipeline.streams.push_back(input);
@@ -507,6 +502,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run)
 {
     DUMP("executeFetchColumns", dry_run, only_analyze);
+    DUMP(queryToString(query_ptr));
 
     /// List of columns to read to execute the query.
     Names required_columns = query_analyzer->getRequiredSourceColumns();
