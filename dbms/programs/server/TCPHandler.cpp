@@ -498,10 +498,12 @@ void TCPHandler::receiveHello()
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+
+/*    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
         readVarUInt(client_version_patch, *in);
     else
         client_version_patch = client_revision;
+*/
 
     LOG_DEBUG(log, "Connected " << client_name
         << " version " << client_version_major
