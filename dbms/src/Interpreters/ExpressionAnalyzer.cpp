@@ -62,6 +62,8 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <DataTypes/DataTypeTuple.h>
 
+#include <Core/iostream_debug_helpers.h>
+
 
 namespace DB
 {
@@ -1500,6 +1502,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     }
 
     prepared_sets[subquery_or_table_name->range] = std::move(set);
+    DUMP("Created set for index");
 }
 
 
@@ -2071,6 +2074,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ColumnWithTypeAndName fake_column;
                     fake_column.name = projection_manipulator->getColumnName(getColumnName());
                     fake_column.type = std::make_shared<DataTypeUInt8>();
+                    fake_column.column = fake_column.type->createColumn();
                     actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
                                    projection_manipulator);

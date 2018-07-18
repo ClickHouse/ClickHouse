@@ -322,8 +322,6 @@ size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std
 
 void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
 {
-//    std::cerr << "executing: " << toString() << std::endl;
-
     size_t input_rows_count = getInputRowsCount(block, input_rows_counts);
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)

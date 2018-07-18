@@ -109,12 +109,12 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     if (input)
     {
         /// Read from prepared input.
-        subquery_header = input->getHeader();
+        source_header = input->getHeader();
     }
     else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
     {
         /// Read from subquery.
-        subquery_header = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context);
+        source_header = InterpreterSelectWithUnionQuery::getSampleBlock(table_expression, context);
     }
     else if (table_expression && typeid_cast<const ASTFunction *>(table_expression.get()))
     {
@@ -136,7 +136,7 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
         table_lock = storage->lockStructure(false, __PRETTY_FUNCTION__);
 
     query_analyzer = std::make_unique<ExpressionAnalyzer>(
-        query_ptr, context, storage, subquery_header.getNamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
+        query_ptr, context, storage, source_header.getNamesAndTypesList(), required_result_column_names, subquery_depth, !only_analyze);
 
     if (!only_analyze)
     {
@@ -154,6 +154,11 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
     }
+
+    required_columns = query_analyzer->getRequiredSourceColumns();
+
+    if (storage)
+        source_header = storage->getSampleBlockForColumns(required_columns);
 
     /// Calculate structure of the result.
     {
@@ -217,7 +222,7 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 }
 
 
-InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage)
+InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run)
 {
     DUMP("analyzeExpressions", only_analyze);
     DUMP(queryToString(query_ptr));
@@ -241,16 +246,16 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
         res.need_aggregate = query_analyzer->hasAggregation();
 
-        query_analyzer->appendArrayJoin(chain, !res.first_stage);
+        query_analyzer->appendArrayJoin(chain, dry_run || !res.first_stage);
 
-        if (query_analyzer->appendJoin(chain, !res.first_stage))
+        if (query_analyzer->appendJoin(chain, dry_run || !res.first_stage))
         {
             res.has_join = true;
             res.before_join = chain.getLastActions();
             chain.addStep();
         }
 
-        if (query_analyzer->appendWhere(chain, !res.first_stage))
+        if (query_analyzer->appendWhere(chain, dry_run || !res.first_stage))
         {
             res.has_where = true;
             res.before_where = chain.getLastActions();
@@ -259,14 +264,14 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
         if (res.need_aggregate)
         {
-            query_analyzer->appendGroupBy(chain, !res.first_stage);
-            query_analyzer->appendAggregateFunctionsArguments(chain, !res.first_stage);
+            query_analyzer->appendGroupBy(chain, dry_run || !res.first_stage);
+            query_analyzer->appendAggregateFunctionsArguments(chain, dry_run || !res.first_stage);
             res.before_aggregation = chain.getLastActions();
 
             chain.finalize();
             chain.clear();
 
-            if (query_analyzer->appendHaving(chain, !res.second_stage))
+            if (query_analyzer->appendHaving(chain, dry_run || !res.second_stage))
             {
                 res.has_having = true;
                 res.before_having = chain.getLastActions();
@@ -275,13 +280,13 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         }
 
         /// If there is aggregation, we execute expressions in SELECT and ORDER BY on the initiating server, otherwise on the source servers.
-        query_analyzer->appendSelect(chain, res.need_aggregate ? !res.second_stage : !res.first_stage);
+        query_analyzer->appendSelect(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.selected_columns = chain.getLastStep().required_output;
-        res.has_order_by = query_analyzer->appendOrderBy(chain, res.need_aggregate ? !res.second_stage : !res.first_stage);
+        res.has_order_by = query_analyzer->appendOrderBy(chain, dry_run || (res.need_aggregate ? !res.second_stage : !res.first_stage));
         res.before_order_and_select = chain.getLastActions();
         chain.addStep();
 
-        if (query_analyzer->appendLimitBy(chain, !res.second_stage))
+        if (query_analyzer->appendLimitBy(chain, dry_run || !res.second_stage))
         {
             res.has_limit_by = true;
             res.before_limit_by = chain.getLastActions();
@@ -325,16 +330,25 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
      *  then perform the remaining operations with one resulting stream.
      */
 
-    /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-    QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline, dry_run);
+    AnalysisResult expressions;
 
-    if (from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState)
-        throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    if (dry_run)
+    {
+        pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
+        expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true);
+    }
+    else
+    {
+        /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
+        QueryProcessingStage::Enum from_stage = executeFetchColumns(pipeline);
 
-    if (!dry_run)
+        if (from_stage == QueryProcessingStage::WithMergeableState && to_stage == QueryProcessingStage::WithMergeableState)
+            throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
 
-    AnalysisResult expressions = analyzeExpressions(from_stage);
+        expressions = analyzeExpressions(from_stage, false);
+    }
 
     const Settings & settings = context.getSettingsRef();
 
@@ -499,13 +513,10 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
     }
 }
 
-QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline, bool dry_run)
+QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline)
 {
-    DUMP("executeFetchColumns", dry_run, only_analyze);
+    DUMP("executeFetchColumns", only_analyze);
     DUMP(queryToString(query_ptr));
-
-    /// List of columns to read to execute the query.
-    Names required_columns = query_analyzer->getRequiredSourceColumns();
 
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
@@ -552,37 +563,30 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     auto query_table = query.table();
     if (query_table && typeid_cast<ASTSelectWithUnionQuery *>(query_table.get()))
     {
-        if (dry_run)
-        {
-            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(subquery_header));
-        }
-        else
-        {
-            /** There are no limits on the maximum size of the result for the subquery.
-              *  Since the result of the query is not the result of the entire query.
-              */
-            Context subquery_context = context;
-            Settings subquery_settings = context.getSettings();
-            subquery_settings.max_result_rows = 0;
-            subquery_settings.max_result_bytes = 0;
-            /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-            subquery_settings.extremes = 0;
-            subquery_context.setSettings(subquery_settings);
+        /** There are no limits on the maximum size of the result for the subquery.
+            *  Since the result of the query is not the result of the entire query.
+            */
+        Context subquery_context = context;
+        Settings subquery_settings = context.getSettings();
+        subquery_settings.max_result_rows = 0;
+        subquery_settings.max_result_bytes = 0;
+        /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
+        subquery_settings.extremes = 0;
+        subquery_context.setSettings(subquery_settings);
 
-            interpreter_subquery.emplace(
-                query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1, dry_run);
+        interpreter_subquery.emplace(
+            query_table, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1);
 
-            /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
-            if (query_analyzer->hasAggregation())
-                interpreter_subquery->ignoreWithTotals();
-        }
+        /// If there is an aggregation in the outer query, WITH TOTALS is ignored in the subquery.
+        if (query_analyzer->hasAggregation())
+            interpreter_subquery->ignoreWithTotals();
     }
 
     const Settings & settings = context.getSettingsRef();
 
     /// Limitation on the number of columns to read.
     /// It's not applied in 'dry_run' mode, because the query could be analyzed without removal of unnecessary columns.
-    if (!dry_run && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
+    if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
         throw Exception("Limit for number of columns to read exceeded. "
             "Requested: " + toString(required_columns.size())
             + ", maximum: " + settings.max_columns_to_read.toString(),
@@ -650,8 +654,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
         if (max_streams > 1 && !is_remote)
             max_streams *= settings.max_streams_to_max_threads_ratio;
 
-        if (!dry_run)
-            query_analyzer->makeSetsForIndex();
+        query_analyzer->makeSetsForIndex();
 
         SelectQueryInfo query_info;
         query_info.query = query_ptr;
@@ -672,11 +675,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
                 optimize_prewhere(*merge_tree);
         }
 
-        if (!dry_run)
-            pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
-
-        if (pipeline.streams.empty())
-            pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(storage->getSampleBlockForColumns(required_columns)));
+        pipeline.streams = storage->read(required_columns, query_info, context, from_stage, max_block_size, max_streams);
 
         pipeline.transform([&](auto & stream)
         {

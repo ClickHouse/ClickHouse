@@ -132,7 +132,7 @@ private:
         SubqueriesForSets subqueries_for_sets;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
@@ -145,7 +145,7 @@ private:
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run);
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -185,8 +185,10 @@ private:
     /// The object was created only for query analysis.
     bool only_analyze = false;
 
-    /// Structure of query source if it is a subquery.
-    Block subquery_header;
+    /// List of columns to read to execute the query.
+    Names required_columns;
+    /// Structure of query source (table, subquery, etc).
+    Block source_header;
     /// Structure of query result.
     Block result_header;
 
