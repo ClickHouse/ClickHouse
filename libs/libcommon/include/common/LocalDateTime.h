@@ -27,7 +27,7 @@ private:
 
     /// For struct to fill 8 bytes and for safe invocation of memcmp.
     /// NOTE We may use attribute packed instead, but it is less portable.
-    unsigned char pad [[maybe_unused]] = 0;
+    unsigned char pad = 0;
 
     void init(time_t time)
     {
@@ -88,7 +88,7 @@ public:
         init(s.data(), s.size());
     }
 
-    LocalDateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0)
+    LocalDateTime() : m_year(0), m_month(0), m_day(0), m_hour(0), m_minute(0), m_second(0), pad(0)
     {
     }
 
