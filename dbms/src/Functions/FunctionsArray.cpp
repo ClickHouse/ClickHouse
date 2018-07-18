@@ -1821,6 +1821,7 @@ void FunctionArrayEnumerateUniq::executeHashed(
         prev_off = off;
     }
 }
+
 /// Implementation of FunctionEmptyArrayToSingle.
 
 FunctionPtr FunctionEmptyArrayToSingle::create(const Context &) { return std::make_shared<FunctionEmptyArrayToSingle>(); }
