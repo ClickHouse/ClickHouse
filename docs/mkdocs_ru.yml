@@ -50,7 +50,7 @@ pages:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
 
-- 'Язык запросов':
+- 'SQL язык запросов':
 #  - 'Язык запросов': 'query_language/index.md'
   - 'Запросы': 'query_language/queries.md'
   - 'Синтаксис': 'query_language/syntax.md'
