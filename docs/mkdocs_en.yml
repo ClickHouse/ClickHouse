@@ -29,6 +29,27 @@ pages:
   - 'Visual interfaces from third-party developers': 'interfaces/third-party_gui.md'
   - 'Input and output formats': 'interfaces/formats.md'
 
+- 'Data types':
+  - 'Introduction': 'data_types/index.md'
+  - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
+  - 'Float32, Float64': 'data_types/float.md'
+  - 'Boolean values': 'data_types/boolean.md'
+  - 'String': 'data_types/string.md'
+  - 'FixedString(N)': 'data_types/fixedstring.md'
+  - 'Date': 'data_types/date.md'
+  - 'DateTime': 'data_types/datetime.md'
+  - 'Enum': 'data_types/enum.md'
+  - 'Array(T)': 'data_types/array.md'
+  - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
+  - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+  - 'Nested data structures':
+#  - 'Вложенные структуры данных': 'data_types/nested_data_structures/index.md'
+    - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
+  - 'Special data types':
+#  - 'Служебные типы данных': 'data_types/special_data_types/index.md'
+    - 'Expression': 'data_types/special_data_types/expression.md'
+    - 'Set': 'data_types/special_data_types/set.md'
+
 - 'Query language':
 #  - 'Query language': 'query_language/index.md'
   - 'Queries': 'query_language/queries.md'
@@ -67,27 +88,6 @@ pages:
   - 'merge': 'table_functions/merge.md'
   - 'numbers': 'table_functions/numbers.md'
   - 'remote': 'table_functions/remote.md'
-
-- 'Data types':
-  - 'Introduction': 'data_types/index.md'
-  - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
-  - 'Float32, Float64': 'data_types/float.md'
-  - 'Boolean values': 'data_types/boolean.md'
-  - 'String': 'data_types/string.md'
-  - 'FixedString(N)': 'data_types/fixedstring.md'
-  - 'Date': 'data_types/date.md'
-  - 'DateTime': 'data_types/datetime.md'
-  - 'Enum': 'data_types/enum.md'
-  - 'Array(T)': 'data_types/array.md'
-  - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
-  - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
-  - 'Nested data structures':
-#  - 'Вложенные структуры данных': 'data_types/nested_data_structures/index.md'
-    - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
-  - 'Special data types':
-#  - 'Служебные типы данных': 'data_types/special_data_types/index.md'
-    - 'Expression': 'data_types/special_data_types/expression.md'
-    - 'Set': 'data_types/special_data_types/set.md'
 
 - 'Operators': 'operators/index.md'
 
