@@ -242,7 +242,7 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about ClickHouse data types, read the section "[Data types](../data_types/index.md#data_types)".
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about ClickHouse data types, read the section "[Data types](../../data_types/index.md#data_types)".
 
 **Example**
 
@@ -267,7 +267,7 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about ClickHouse data types, read the section "[Data types](../data_types/index.md#data_types)".
+- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about ClickHouse data types, read the section "[Data types](../../data_types/index.md#data_types)".
 
 **Example**
 

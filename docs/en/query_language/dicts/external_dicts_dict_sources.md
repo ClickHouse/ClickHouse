@@ -52,7 +52,7 @@ Example of settings:
 Setting fields:
 
 - `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in "[Formats](../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
@@ -74,7 +74,7 @@ Example of settings:
 Setting fields:
 
 - `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` – The file format. All the formats described in "[Formats](../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-http"></a>
 
@@ -93,12 +93,12 @@ Example of settings:
 </source>
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../operations/server_settings/settings.md#server_settings-openSSL) in the server configuration.
+In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../operations/server_settings/settings.md#server_settings-openSSL) in the server configuration.
 
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in "[Formats](../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-odbc"></a>
 
@@ -361,7 +361,7 @@ Example of settings:
 
 Setting fields:
 
-- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../operations/table_engines/distributed.md#table_engines-distributed) table and enter it in subsequent configurations.
+- `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../operations/table_engines/distributed.md#table_engines-distributed) table and enter it in subsequent configurations.
 - `port` – The port on the ClickHouse server.
 - `user` – Name of the ClickHouse user.
 - `password` – Password of the ClickHouse user.

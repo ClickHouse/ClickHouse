@@ -35,7 +35,7 @@ anyHeavy(column)
 
 **Пример**
 
-Возьмем набор данных [OnTime](../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
+Возьмем набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем произвольное часто встречающееся значение в столбце `AirlineID`.
 
 ```sql
 SELECT anyHeavy(AirlineID) AS res
@@ -336,7 +336,7 @@ topK(N)(column)
 
 **Пример**
 
-Возьмем набор данных [OnTime](../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
+Возьмем набор данных [OnTime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime) и выберем 3 наиболее часто встречающихся значения в столбце `AirlineID`.
 
 ```sql
 SELECT topK(3)(AirlineID) AS res

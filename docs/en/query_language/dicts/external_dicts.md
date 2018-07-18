@@ -9,9 +9,9 @@ ClickHouse:
 > - Fully or partially stores dictionaries in RAM.
 - Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
 
-The configuration of external dictionaries is located in one or more files. The path to the configuration is specified in the [dictionaries_config](../operations/server_settings/settings.md#server_settings-dictionaries_config) parameter.
+The configuration of external dictionaries is located in one or more files. The path to the configuration is specified in the [dictionaries_config](../../operations/server_settings/settings.md#server_settings-dictionaries_config) parameter.
 
-Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load) setting.
+Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server_settings/settings.md#server_settings-dictionaries_lazy_load) setting.
 
 The dictionary config file has the following format:
 

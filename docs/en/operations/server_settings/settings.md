@@ -100,7 +100,7 @@ Path:
 - Specify the absolute path or the path relative to the server config file.
 - The path can contain wildcards \* and ?.
 
-See also "[External dictionaries](../../dicts/external_dicts.md#dicts-external_dicts)".
+See also "[External dictionaries](../../query_language/dicts/external_dicts.md#dicts-external_dicts)".
 
 **Example**
 
@@ -681,7 +681,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ## user_files_path
 
-A catalog with user files. Used in a [file()](../../table_functions/file.md#table_functions-file) table function.
+A catalog with user files. Used in a [file()](../../query_language/table_functions/file.md#table_functions-file) table function.
 
 **Example**
 
