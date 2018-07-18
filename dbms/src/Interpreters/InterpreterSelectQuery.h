@@ -60,6 +60,14 @@ public:
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         bool only_analyze_ = false);
 
+    /// Read data not from the table specified in the query, but from the specified `storage_`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const StoragePtr & storage_,
+        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+        bool only_analyze_ = false);
+
     ~InterpreterSelectQuery() override;
 
     /// Execute a query. Get the stream of blocks to read.
