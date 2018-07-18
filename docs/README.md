@@ -2,7 +2,7 @@
 
 Basically ClickHouse uses "documentation as code" approach, so you can edit Markdown files in this folder from GitHub web interface or fork ClickHouse repository, edit, commit, push and open pull request.
 
-At the moment documentation is bilingual in English and Russian, so it's better to try keeping languages in sync if you can, but it's not strictly required as there are people watching over this. If you add new article, you should also add it to `mkdocs_{en,ru}.yaml` file with pages index.
+At the moment documentation is bilingual in English and Russian, so it's better to try keeping languages in sync if you can, but it's not strictly required as there are people watching over this. If you add new article, you should also add it to `toc_{en,ru}.yaml` file with pages index.
 
 Master branch is then asynchronously published to ClickHouse official website:
 
