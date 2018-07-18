@@ -498,11 +498,16 @@ void TCPHandler::receiveHello()
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
     readStringBinary(password, *in);
+    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+        readVarUInt(client_version_patch, *in);
+    else
+        client_version_patch = client_revision;
 
     LOG_DEBUG(log, "Connected " << client_name
         << " version " << client_version_major
         << "." << client_version_minor
-        << "." << client_revision
+        << "." << client_version_patch
+        << ", revision: " << client_revision
         << (!default_database.empty() ? ", database: " + default_database : "")
         << (!user.empty() ? ", user: " + user : "")
         << ".");
@@ -519,13 +524,11 @@ void TCPHandler::sendHello()
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     writeVarUInt(ClickHouseRevision::get(), *out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-    {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
-    }
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-    {
         writeStringBinary(server_display_name, *out);
-    }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+        writeVarUInt(DBMS_VERSION_PATCH, *out);
     out->next();
 }
 
@@ -598,6 +601,7 @@ void TCPHandler::receiveQuery()
             client_info.client_name = client_name;
             client_info.client_version_major = client_version_major;
             client_info.client_version_minor = client_version_minor;
+            client_info.client_version_patch = client_version_patch;
             client_info.client_revision = client_revision;
         }
 
