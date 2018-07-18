@@ -4,7 +4,7 @@
 
 ## distributed_product_mode
 
-Changes the behavior of [distributed subqueries](../../query_language/queries.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
+Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
 
 ClickHouse applies the configuration if the subqueries on any level have a distributed table that exists on the local server and has more than one shard.
 

@@ -15,7 +15,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data is replicated for `INSERT` and `ALTER` queries (see the description of the [ALTER](../../query_language/queries.md#query_language_queries_alter) query).
+Compressed data is replicated for `INSERT` and `ALTER` queries (see the description of the [ALTER](../../query_language/alter.md#query_language_queries_alter) query).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 

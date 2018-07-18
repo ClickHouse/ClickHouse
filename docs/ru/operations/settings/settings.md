@@ -4,7 +4,7 @@
 
 ## distributed_product_mode
 
-Изменяет поведение [распределенных подзапросов](../../query_language/queries.md#queries-distributed-subrequests).
+Изменяет поведение [распределенных подзапросов](../../query_language/select.md#queries-distributed-subrequests).
 
 ClickHouse применяет настройку в тех случаях, когда запрос содержит произведение распределённых таблиц, т.е. когда запрос к распределенной таблице содержит не-GLOBAL подзапрос к также распределенной таблице.
 
