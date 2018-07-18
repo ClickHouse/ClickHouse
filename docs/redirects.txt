@@ -20,7 +20,7 @@ system_tables/system.zookeeper.md operations/system_tables.md
 formats/capnproto.md formats/interfaces.md
 formats/csv.md formats/interfaces.md
 formats/csvwithnames.md formats/interfaces.md
-formats/index.md formats/interfaces.md
+formats.md formats/interfaces.md
 formats/json.md formats/interfaces.md
 formats/jsoncompact.md formats/interfaces.md
 formats/jsoneachrow.md formats/interfaces.md
@@ -41,3 +41,6 @@ formats/values.md formats/interfaces.md
 formats/vertical.md formats/interfaces.md
 formats/verticalraw.md formats/interfaces.md
 formats/xml.md formats/interfaces.md
+utils/clickhouse-copier.md operations/utils/clickhouse-copier.md
+utils/clickhouse-local.md operations/utils/clickhouse-local.md
+utils.md operations/utils.md

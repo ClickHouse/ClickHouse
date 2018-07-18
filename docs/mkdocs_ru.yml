@@ -153,11 +153,10 @@ pages:
     - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
     - 'Настройки': 'operations/settings/settings.md'
     - 'Профили настроек': 'operations/settings/settings_profiles.md'
-
-- 'Утилиты':
-  - 'Введение': 'utils/index.md'
-  - 'clickhouse-copier': 'utils/clickhouse-copier.md'
-  - 'clickhouse-local': 'utils/clickhouse-local.md'
+  - 'Утилиты':
+    - 'Введение': 'operations/utils/index.md'
+    - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
+    - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
 - 'ClickHouse Development':
 #  - 'ClickHouse Development': 'development/index.md'

@@ -61,7 +61,7 @@ SELECT * FROM file_engine_table
 
 ## Использование движка в clickhouse-local
 
-В [clickhouse-local](../utils/clickhouse-local.md#utils-clickhouse-local) движок в качестве параметра принимает не только формат, но и путь к файлу. В том числе можно указать стандартные потоки ввода/вывода цифровым или буквенным обозначением `0` или `stdin`, `1` или `stdout`.
+В [clickhouse-local](../operations/utils/clickhouse-local.md#utils-clickhouse-local) движок в качестве параметра принимает не только формат, но и путь к файлу. В том числе можно указать стандартные потоки ввода/вывода цифровым или буквенным обозначением `0` или `stdin`, `1` или `stdout`.
 
 **Пример:**
 
