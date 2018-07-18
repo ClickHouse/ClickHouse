@@ -50,7 +50,7 @@ pages:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
 
-- 'Query language':
+- 'SQL query language':
 #  - 'Query language': 'query_language/index.md'
   - 'Queries': 'query_language/queries.md'
   - 'Syntax': 'query_language/syntax.md'
