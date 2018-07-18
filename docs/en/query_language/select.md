@@ -1,6 +1,6 @@
 # SELECT queries syntax
 
-`SELECT` performs data retieval.
+`SELECT` performs data retrieval.
 
 ```sql
 SELECT [DISTINCT] expr_list
