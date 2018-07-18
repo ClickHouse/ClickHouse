@@ -2,7 +2,7 @@ pages:
 - 'ClickHouse': 'index.md'
 
 - 'Introduction':
-#  - 'Введение': 'introduction/index.md'
+  - 'hidden': 'introduction/index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
@@ -43,15 +43,15 @@ pages:
   - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
   - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
   - 'Nested data structures':
-#  - 'Вложенные структуры данных': 'data_types/nested_data_structures/index.md'
+    - 'hidden': 'data_types/nested_data_structures/index.md'
     - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
   - 'Special data types':
-#  - 'Служебные типы данных': 'data_types/special_data_types/index.md'
+    - 'hidden': 'data_types/special_data_types/index.md'
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
 
 - 'SQL query language':
-#  - 'Query language': 'query_language/index.md'
+  - 'hidden': 'query_language/index.md'
   - 'Queries': 'query_language/queries.md'
   - 'Syntax': 'query_language/syntax.md'
   - 'Operators': 'query_language/operators.md'
@@ -157,7 +157,7 @@ pages:
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
 - 'ClickHouse Development':
-#  - 'ClickHouse Development': 'development/index.md'
+  - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'
   - 'How to build ClickHouse on Mac OS X': 'development/build_osx.md'

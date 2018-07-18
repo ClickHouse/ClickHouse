@@ -2,7 +2,7 @@ pages:
 - 'ClickHouse': 'index.md'
 
 - 'Введение':
-#  - 'Введение': 'introduction/index.md'
+  - 'hidden': 'introduction/index.md'
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
   - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
@@ -43,15 +43,15 @@ pages:
   - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
   - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
   - 'Вложенные структуры данных':
-#  - 'Вложенные структуры данных': 'data_types/nested_data_structures/index.md'
+    - 'hidden': 'data_types/nested_data_structures/index.md'
     - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
   - 'Служебные типы данных':
-#  - 'Служебные типы данных': 'data_types/special_data_types/index.md'
+    - 'hidden': 'data_types/special_data_types/index.md'
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
 
 - 'SQL язык запросов':
-#  - 'Язык запросов': 'query_language/index.md'
+  - 'hidden': 'query_language/index.md'
   - 'Запросы': 'query_language/queries.md'
   - 'Синтаксис': 'query_language/syntax.md'
   - 'Операторы': 'query_language/operators.md'
@@ -109,7 +109,7 @@ pages:
   
 
 - 'Эксплуатация':
-#  - 'Эксплуатация': 'operations/index.md'
+  - 'hidden': 'operations/index.md'
   - 'Движки таблиц':
     - 'Введение': 'operations/table_engines/index.md'
     - 'Семейство MergeTree':
@@ -158,13 +158,13 @@ pages:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'ClickHouse Development':
-#  - 'ClickHouse Development': 'development/index.md'
+- 'Разработка ClickHouse':
+  - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
-  - 'How to build ClickHouse on Linux': 'development/build.md'
-  - 'How to build ClickHouse on Mac OS X': 'development/build_osx.md'
+  - 'Как собрать ClickHouse на Linux': 'development/build.md'
+  - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как писать код на C++': 'development/style.md'
-  - 'How to run ClickHouse tests': 'development/tests.md'
+  - 'Как запустить тесты': 'development/tests.md'
 
 - 'Roadmap': 'roadmap.md'
 - 'Changelog': 'changelog.md'
