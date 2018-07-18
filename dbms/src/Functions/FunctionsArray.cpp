@@ -1286,20 +1286,11 @@ String FunctionArrayDistinct::getName() const
 
 DataTypePtr FunctionArrayDistinct::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    if (arguments.size() == 0)
-        throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
-                + ", should be at least 1.",
-            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-    for (size_t i = 0; i < arguments.size(); ++i)
-    {
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[i].get());
-        if (!array_type)
-            throw Exception("All arguments for function " + getName() + " must be arrays but argument " + toString(i + 1) + " has type "
-                    + arguments[i]->getName()
-                    + ".",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+    if (!array_type)
+        throw Exception("All arguments for function " + getName() + " must be arrays but argument " + 
+        " has type " + arguments[0]->getName() + ".",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return arguments[0];
 }
@@ -1308,17 +1299,6 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
 {
     ColumnPtr array_ptr = block.getByPosition(arguments[0]).column;
     const ColumnArray * array = checkAndGetColumn<ColumnArray>(array_ptr.get());
-    if (!array)
-    {
-        const ColumnConst * const_array = checkAndGetColumnConst<ColumnArray>(block.getByPosition(arguments[0]).column.get());
-        if (!const_array)
-            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of " + toString(1)
-                    + " argument of function "
-                    + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
-        array_ptr = const_array->convertToFullColumn();
-        array = static_cast<const ColumnArray *>(array_ptr.get());
-    }
 
     const auto & return_type = block.getByPosition(result).type;
 
@@ -1416,7 +1396,7 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
                 res_null_map->emplace_back(1);
                 res_data.emplace_back(values[j]);
             }
-            else if ((set.find(values[j]) == set.end()) && (*src_null_map)[j] == 0)
+            else if ((set.find(values[j]) == set.end()) && (!nullable_col || (*src_null_map)[j] == 0))
             {
                 res_data.emplace_back(values[j]);
                 set.insert(values[j]);
@@ -1429,7 +1409,7 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
 
         if (found_null)
         {
-            offset_length++;
+            ++offset_length;
         }
 
         res_offsets.emplace_back(offset_length + prev_off);
@@ -1486,7 +1466,7 @@ bool FunctionArrayDistinct::executeString(const IColumn & src_data,
             }
             else
             {
-                if (set.find(str_ref) == set.end() && (*src_null_map)[j] == 0)
+                if (set.find(str_ref) == set.end() && (!nullable_col || (*src_null_map)[j] == 0))
                 {
                     set.insert(str_ref);
                     res_data_column_string.insertData(str_ref.data, str_ref.size);
@@ -1500,7 +1480,7 @@ bool FunctionArrayDistinct::executeString(const IColumn & src_data,
 
         if (found_null)
         {
-            offset_length++;
+            ++offset_length;
         }
 
         res_offsets.emplace_back(offset_length + prev_off);

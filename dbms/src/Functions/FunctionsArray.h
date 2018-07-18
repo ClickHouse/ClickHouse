@@ -1212,7 +1212,7 @@ private:
 };
 
 
-///Find different ellements in an arrray.
+/// Find different elements in an array.
 class FunctionArrayDistinct : public IFunction
 {
 public:
@@ -1221,7 +1221,7 @@ public:
 
     String getName() const override;
 
-    bool isVariadic() const override { return true; }
+    bool isVariadic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
