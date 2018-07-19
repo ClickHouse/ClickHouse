@@ -227,6 +227,8 @@ To force proper style of your code, you can use `clang-format`. File `.clang-for
 
 Alternatively you can try `uncrustify` tool to reformat your code. Configuration is in `uncrustify.cfg` in the sources root. It is less tested than `clang-format`.
 
+`CLion` has its own code formatter that has to be tuned for our code style.
+
 
 ## Metrica B2B Tests
 
