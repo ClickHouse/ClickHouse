@@ -78,6 +78,11 @@ protected:
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
 
+    /** True if function can be called on default arguments (include Nullable's) and won't throw.
+      * Counterexample: modulo(0, 0)
+      */
+    virtual bool canBeExecutedOnDefaultArguments() const { return true; }
+
 private:
     bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
                                            size_t input_rows_count);
@@ -306,6 +311,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return false; }
     bool useDefaultImplementationForColumnsWithDictionary() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
+    bool canBeExecutedOnDefaultArguments() const override { return true; }
 
     using PreparedFunctionImpl::execute;
     using FunctionBuilderImpl::getReturnTypeImpl;
@@ -386,6 +392,7 @@ protected:
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForColumnsWithDictionary() const final { return function->useDefaultImplementationForColumnsWithDictionary(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
+    bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
 
 private:
     std::shared_ptr<IFunction> function;

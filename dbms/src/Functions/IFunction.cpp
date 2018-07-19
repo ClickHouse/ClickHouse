@@ -238,7 +238,8 @@ void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, co
     executeImpl(block, args, result, input_rows_count);
 }
 
-static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Block & block, const ColumnNumbers & args)
+static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Block & block, const ColumnNumbers & args, 
+                                                                             bool can_be_executed_on_default_arguments)
 {
     size_t num_rows = 0;
     ColumnPtr indexes;
@@ -272,7 +273,14 @@ static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Blo
                 throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
                                 ErrorCodes::LOGICAL_ERROR);
 
-            column.column = column_with_dict->getDictionary().getNestedColumn();
+            if (can_be_executed_on_default_arguments)
+                column.column = column_with_dict->getDictionary().getNestedColumn();
+            else
+            {
+                auto dict_encoded = column_with_dict->getMinimalDictionaryEncodedColumn(0, column_with_dict->size());
+                column.column = dict_encoded.dictionary;
+                indexes = dict_encoded.indexes;
+            }
             column.type = type_with_dict->getDictionaryType();
         }
     }
@@ -311,7 +319,8 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
         if (res.type->withDictionary())
         {
-            ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(block_without_dicts, args);
+            ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
+                    block_without_dicts, args, canBeExecutedOnDefaultArguments());
 
             executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
 
