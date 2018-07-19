@@ -174,22 +174,22 @@ For production builds, gcc is used (it still generates slightly more efficient c
 
 ## Sanitizers
 
-Address sanitizer.
+**Address sanitizer**.
 We run functional tests under ASan on per-commit basis.
 
-Valgrind (Memcheck).
+**Valgrind (Memcheck)**.
 We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
 
-Thread sanitizer.
+**Thread sanitizer**.
 We run functional tests under TSan. ClickHouse must pass all tests. Run under TSan is not automated and performed only occasionally.
 
-Memory sanitizer.
+**Memory sanitizer**.
 Currently we still don't use MSan.
 
-Undefined behaviour sanitizer.
+**Undefined behaviour sanitizer.**
 We still don't use UBSan. The only thing to fix is unaligned placement of structs in Arena during aggregation. This is totally fine, we only have to force alignment under UBSan.
 
-Debug allocator.
+**Debug allocator.**
 You can enable debug version of `tcmalloc` with `DEBUG_TCMALLOC` CMake option. We run tests with debug allocator on per-commit basis.
 
 You will find some additional details in `dbms/tests/instructions/sanitizers.txt`.
