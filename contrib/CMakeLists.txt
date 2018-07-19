@@ -155,3 +155,7 @@ if (USE_INTERNAL_LLVM_LIBRARY)
     endif ()
     add_subdirectory (llvm/llvm)
 endif ()
+
+if (USE_LIBSIMD)
+    add_subdirectory (libsimd)
+endif ()

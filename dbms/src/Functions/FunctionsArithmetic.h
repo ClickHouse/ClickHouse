@@ -20,6 +20,10 @@
 #include <common/intExp.h>
 #include <boost/integer/common_factor.hpp>
 
+#if USE_LIBSIMD
+#include <simd.h>
+#endif
+
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -46,30 +50,55 @@ namespace ErrorCodes
   * Etc.
   */
 
+template <typename A, typename B, typename Op, typename ResultType>
+struct ExtendedOperation
+{
+    static inline ResultType apply(A a, B b)
+    {
+        return Op::template apply<ResultType>(a, b);
+    }
+
+    static inline void apply(const A * a, const B * b, ResultType * c, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+            c[i] = apply(a[i], b[i]);
+    }
+
+    static inline void apply(const A * a, B b, ResultType * c, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+            c[i] = apply(a[i], b);
+    }
+
+    static inline void apply(A a, const B * b, ResultType * c, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+            c[i] = apply(a, b[i]);
+    }
+};
+
 template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
 struct BinaryOperationImplBase
 {
     using ResultType = ResultType_;
+    using ExtendedOp = ExtendedOperation<A, B, Op, ResultType>;
 
     static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(a[i], b[i]);
+        ExtendedOp::apply(a.data(), b.data(), c.data(), size);
     }
 
     static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c)
     {
         size_t size = a.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(a[i], b);
+        ExtendedOp::apply(a.data(), b, c.data(), size);
     }
 
     static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c)
     {
         size_t size = b.size();
-        for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(a, b[i]);
+        ExtendedOp::apply(a, b.data(), c.data(), size);
     }
 
     static ResultType constant_constant(A a, B b)
@@ -125,7 +154,6 @@ struct PlusImpl
 #endif
 };
 
-
 template <typename A, typename B>
 struct MultiplyImpl
 {
@@ -167,6 +195,32 @@ struct MinusImpl
     }
 #endif
 };
+
+#if USE_LIBSIMD
+template <typename T>
+struct ExtendedOperation<T, T, PlusImpl<T, T>, T>
+{
+    static inline void apply(const T * a, const T * b, T * c, size_t size) { simd::add(a, b, c, size); }
+    static inline void apply(const T * a, T b, T * c, size_t size) { simd::addC(a, b, c, size); }
+    static inline void apply(T a, const T * b, T * c, size_t size) { simd::addC(b, a, c, size); }
+};
+
+template <typename T>
+struct ExtendedOperation<T, T, MultiplyImpl<T, T>, T>
+{
+    static inline void apply(const T * a, const T * b, T * c, size_t size) { simd::mul(a, b, c, size); }
+    static inline void apply(const T * a, T b, T * c, size_t size) { simd::mulC(a, b, c, size); }
+    static inline void apply(T a, const T * b, T * c, size_t size) { simd::mulC(b, a, c, size); }
+};
+
+template <typename T>
+struct ExtendedOperation<T, T, MinusImpl<T, T>, T>
+{
+    static inline void apply(const T * a, const T * b, T * c, size_t size) { simd::sub(a, b, c, size); }
+    static inline void apply(const T * a, T b, T * c, size_t size) { simd::subC(a, b, c, size); }
+    static inline void apply(T a, const T * b, T * c, size_t size) { simd::subCRev(b, a, c, size); }
+};
+#endif
 
 template <typename A, typename B>
 struct DivideFloatingImpl
