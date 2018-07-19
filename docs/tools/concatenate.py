@@ -19,7 +19,7 @@ import os
 
 def concatenate(lang, docs_path, single_page_file):
 
-    proj_config = os.path.join(docs_path, 'mkdocs_%s.yml' % lang)
+    proj_config = os.path.join(docs_path, 'toc_%s.yml' % lang)
     lang_path = os.path.join(docs_path, lang)
 
     with open(proj_config) as cfg_file:
