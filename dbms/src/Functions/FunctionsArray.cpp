@@ -1286,8 +1286,8 @@ DataTypePtr FunctionArrayDistinct::getReturnTypeImpl(const DataTypes & arguments
 {
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
-        throw Exception("All arguments for function " + getName() + " must be arrays but argument " + 
-        " has type " + arguments[0]->getName() + ".",
+        throw Exception("Argument for function " + getName() + " must be array but it " 
+            " has type " + arguments[0]->getName() + ".",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         
     auto nested_type = removeNullable(array_type->getNestedType());
@@ -1464,7 +1464,7 @@ void FunctionArrayDistinct::executeHashed(
         size_t off = offsets[i];
         for (size_t j = prev_off; j < off; ++j)
         {
-            auto  hash = hash128(j, count, columns);
+            auto hash = hash128(j, count, columns);
             if (set.find(hash) == set.end())
             {
                 set.insert(hash);
