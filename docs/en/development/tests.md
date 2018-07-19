@@ -158,7 +158,7 @@ For example, build with system packages is bad practice, because we cannot guara
 Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
 
 
-## Testing for protocol compatibility
+## Testing For Protocol Compatibility
 
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
 
