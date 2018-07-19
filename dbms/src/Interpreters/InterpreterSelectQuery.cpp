@@ -631,8 +631,13 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
         /// If we need less number of columns that subquery have - update the interpreter.
         if (required_columns.size() < source_header.columns())
+        {
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                 query.table(), getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+
+            if (query_analyzer->hasAggregation())
+                interpreter_subquery->ignoreWithTotals();
+        }
 
         pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
     }
