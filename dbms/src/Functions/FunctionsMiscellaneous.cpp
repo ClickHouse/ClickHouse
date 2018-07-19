@@ -1848,9 +1848,13 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        if (arguments[0]->withDictionary())
+            return arguments[0];
+
         return std::make_shared<DataTypeWithDictionary>(arguments[0]);
     }
 
@@ -1859,9 +1863,15 @@ public:
         auto arg_num = arguments[0];
         const auto & arg = block.getByPosition(arg_num);
         auto & res = block.getByPosition(result);
-        auto column = res.type->createColumn();
-        typeid_cast<ColumnWithDictionary &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
-        res.column = std::move(column);
+
+        if (arg.type->withDictionary())
+            res.column = arg.column;
+        else
+        {
+            auto column = res.type->createColumn();
+            typeid_cast<ColumnWithDictionary &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
+            res.column = std::move(column);
+        }
     }
 };
 
