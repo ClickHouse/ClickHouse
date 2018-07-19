@@ -45,8 +45,6 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 
-#include <Core/iostream_debug_helpers.h>
-
 
 namespace DB
 {
@@ -105,9 +103,6 @@ static Context getSubqueryContext(const Context & context)
 
 void InterpreterSelectQuery::init(const Names & required_result_column_names)
 {
-    DUMP("init", only_analyze);
-    DUMP(queryToString(query_ptr));
-
     if (!context.hasQueryContext())
         context.setQueryContext(context);
 
@@ -250,9 +245,6 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
 
 InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run)
 {
-    DUMP("analyzeExpressions", only_analyze, dry_run);
-    DUMP(queryToString(query_ptr));
-
     AnalysisResult res;
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
@@ -340,9 +332,6 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
 void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run)
 {
-    DUMP("executeImpl", dry_run, only_analyze);
-    DUMP(queryToString(query_ptr));
-
     if (input)
         pipeline.streams.push_back(input);
 
@@ -541,9 +530,6 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline & pipeline)
 {
-    DUMP("executeFetchColumns", only_analyze);
-    DUMP(queryToString(query_ptr));
-
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
     /// Are ALIAS columns required for query execution?
