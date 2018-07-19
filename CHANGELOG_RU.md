@@ -5,7 +5,7 @@
 ### Новые возможности:
 * Возможность отправки запроса в формате `multipart/form-data` (в поле `query`), что полезно, если при этом также отправляются внешние данные для обработки запроса ([Ольга Хвостикова](https://github.com/yandex/ClickHouse/pull/2490)).
 * Добавлена возможность включить или отключить обработку одинарных или двойных кавычек при чтении данных в формате CSV. Это задаётся настройками `format_csv_allow_single_quotes` и `format_csv_allow_double_quotes` ([Amos Bird](https://github.com/yandex/ClickHouse/pull/2574))
-* Возможность использования `OPTIMIZE TABLE ... FINAL` без указания партиции ([Amos Bird 1](https://github.com/yandex/ClickHouse/pull/2599), [2][https://github.com/yandex/ClickHouse/pull/2600])
+* Возможность использования `OPTIMIZE TABLE ... FINAL` без указания партиции ([Amos Bird 1](https://github.com/yandex/ClickHouse/pull/2599), [2](https://github.com/yandex/ClickHouse/pull/2600))
 
 ### Улучшения:
 * Увеличена производительность, уменьшено потребление памяти, добавлен корректный учёт потребления памяти, при использовании оператора IN в случае, когда для его работы может использоваться индекс таблицы ([#2584](https://github.com/yandex/ClickHouse/pull/2584)).
