@@ -87,6 +87,22 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
+/** There are no limits on the maximum size of the result for the subquery.
+  *  Since the result of the query is not the result of the entire query.
+  */
+static Context getSubqueryContext(const Context & context)
+{
+    Context subquery_context = context;
+    Settings subquery_settings = context.getSettings();
+    subquery_settings.max_result_rows = 0;
+    subquery_settings.max_result_bytes = 0;
+    /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
+    subquery_settings.extremes = 0;
+    subquery_context.setSettings(subquery_settings);
+    return subquery_context;
+}
+
+
 void InterpreterSelectQuery::init(const Names & required_result_column_names)
 {
     DUMP("init", only_analyze);
@@ -114,19 +130,8 @@ void InterpreterSelectQuery::init(const Names & required_result_column_names)
     else if (table_expression && typeid_cast<const ASTSelectWithUnionQuery *>(table_expression.get()))
     {
         /// Read from subquery.
-        /** There are no limits on the maximum size of the result for the subquery.
-          *  Since the result of the query is not the result of the entire query.
-          */
-        Context subquery_context = context;
-        Settings subquery_settings = context.getSettings();
-        subquery_settings.max_result_rows = 0;
-        subquery_settings.max_result_bytes = 0;
-        /// The calculation of extremes does not make sense and is not necessary (if you do it, then the extremes of the subquery can be taken for whole query).
-        subquery_settings.extremes = 0;
-        subquery_context.setSettings(subquery_settings);
-
         interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-            table_expression, subquery_context, required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+            table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
 
         source_header = interpreter_subquery->getSampleBlock();
     }
@@ -581,8 +586,8 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     const Settings & settings = context.getSettingsRef();
 
     /// Limitation on the number of columns to read.
-    /// It's not applied in 'dry_run' mode, because the query could be analyzed without removal of unnecessary columns.
-    if (settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
+    /// It's not applied in 'only_analyze' mode, because the query could be analyzed without removal of unnecessary columns.
+    if (!only_analyze && settings.max_columns_to_read && required_columns.size() > settings.max_columns_to_read)
         throw Exception("Limit for number of columns to read exceeded. "
             "Requested: " + toString(required_columns.size())
             + ", maximum: " + settings.max_columns_to_read.toString(),
@@ -637,6 +642,12 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
     else if (interpreter_subquery)
     {
         /// Subquery.
+
+        /// If we need less number of columns that subquery have - update the interpreter.
+        if (required_columns.size() < source_header.columns())
+            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+                query.table(), getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+
         pipeline.streams = interpreter_subquery->executeWithMultipleStreams();
     }
     else if (storage)
