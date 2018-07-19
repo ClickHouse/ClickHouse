@@ -300,6 +300,17 @@ void ColumnWithDictionary::compactIfSharedDictionary()
 }
 
 
+ColumnWithDictionary::DictionaryEncodedColumn
+ColumnWithDictionary::getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const
+{
+    MutableColumnPtr sub_indexes = (*std::move(idx.getPositions()->cut(offset, limit))).mutate();
+    auto indexes_map = mapUniqueIndex(*sub_indexes);
+    auto sub_keys = getDictionary().getNestedColumn()->index(*indexes_map, 0);
+
+    return {std::move(sub_keys), std::move(sub_indexes)};
+}
+
+
 ColumnWithDictionary::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
 ColumnWithDictionary::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))

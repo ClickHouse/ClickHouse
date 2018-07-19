@@ -135,6 +135,7 @@ public:
     bool isFixedAndContiguous() const override { return getDictionary().isFixedAndContiguous(); }
     size_t sizeOfValueIfFixed() const override { return getDictionary().sizeOfValueIfFixed(); }
     bool isNumeric() const override { return getDictionary().isNumeric(); }
+    bool withDictionary() const override { return true; }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique->assumeMutable()); }
@@ -155,7 +156,13 @@ public:
     /// Cut + compact.
     MutablePtr cutAndCompact(size_t start, size_t length) const;
 
-    bool withDictionary() const override { return true; }
+    struct DictionaryEncodedColumn
+    {
+        ColumnPtr dictionary;
+        ColumnPtr indexes;
+    };
+
+    DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const;
 
     class Index
     {
