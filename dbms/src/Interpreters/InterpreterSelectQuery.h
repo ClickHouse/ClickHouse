@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
@@ -16,6 +18,7 @@ namespace DB
 class ExpressionAnalyzer;
 class ASTSelectQuery;
 struct SubqueryForSet;
+class InterpreterSelectWithUnionQuery;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -63,10 +66,6 @@ public:
 
     Block getSampleBlock();
 
-    static Block getSampleBlock(
-        const ASTPtr & query_ptr_,
-        const Context & context_);
-
     void ignoreWithTotals();
 
 private:
@@ -103,12 +102,6 @@ private:
         }
     };
 
-    struct OnlyAnalyzeTag {};
-    InterpreterSelectQuery(
-        OnlyAnalyzeTag,
-        const ASTPtr & query_ptr_,
-        const Context & context_);
-
     void init(const Names & required_result_column_names);
 
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
@@ -142,7 +135,7 @@ private:
         SubqueriesForSets subqueries_for_sets;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
@@ -155,7 +148,7 @@ private:
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run);
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -194,6 +187,16 @@ private:
 
     /// The object was created only for query analysis.
     bool only_analyze = false;
+
+    /// List of columns to read to execute the query.
+    Names required_columns;
+    /// Structure of query source (table, subquery, etc).
+    Block source_header;
+    /// Structure of query result.
+    Block result_header;
+
+    /// The subquery interpreter, if the subquery
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;

@@ -2427,8 +2427,6 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
     std::vector<const IColumn *> aggregate_arguments_vec(num_arguments_columns);
     const ColumnArray::Offsets * offsets = nullptr;
 
-    bool is_const = true;
-
     for (size_t i = 0; i < num_arguments_columns; ++i)
     {
         const IColumn * col = block.getByPosition(arguments[i + 1]).column.get();
@@ -2437,7 +2435,6 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         {
             aggregate_arguments_vec[i] = &arr->getData();
             offsets_i = &arr->getOffsets();
-            is_const = false;
         }
         else if (const ColumnConst * const_arr = checkAndGetColumnConst<ColumnArray>(col))
         {
@@ -2493,14 +2490,7 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         current_offset = next_offset;
     }
 
-    if (!is_const)
-    {
-        block.getByPosition(result).column = std::move(result_holder);
-    }
-    else
-    {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(rows, res_col[0]);
-    }
+    block.getByPosition(result).column = std::move(result_holder);
 }
 
 /// Implementation of FunctionArrayConcat.
