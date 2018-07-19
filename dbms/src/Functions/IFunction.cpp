@@ -238,105 +238,103 @@ void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, co
     executeImpl(block, args, result, input_rows_count);
 }
 
-static Block removeColumnsWithDictionary(Block & block, const ColumnNumbers & args, size_t result, ColumnPtr & indexes)
+static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Block & block, const ColumnNumbers & args)
 {
-    bool has_with_dictionary = false;
-    bool convert_all_to_full = false;
-    size_t column_with_dict_size = 0;
+    size_t num_rows = 0;
+    ColumnPtr indexes;
 
-    for (auto & arg : args)
+    for (auto arg : args)
     {
-        const auto & column = block.getByPosition(arg).column;
-        if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.get()))
+        ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
         {
-            if (has_with_dictionary)
-                convert_all_to_full = true;
-            else
-            {
-                has_with_dictionary = true;
-                column_with_dict_size = column_with_dict->getDictionary().size();
-                indexes = column_with_dict->getIndexesPtr();
-            }
+            if (indexes)
+                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+
+            indexes = column_with_dict->getIndexesPtr();
+            num_rows = column_with_dict->getDictionary().size();
         }
-        else if (!checkColumn<ColumnConst>(column.get()))
-            convert_all_to_full = true;
     }
 
-    if (!has_with_dictionary || convert_all_to_full)
-        indexes = nullptr;
+    if (!indexes)
+        throw Exception("Expected column with dictionary for any function argument.", ErrorCodes::LOGICAL_ERROR);
 
-    if (!has_with_dictionary)
-        return {};
-
-    Block temp_block;
-    temp_block.insert(block.getByPosition(result));
+    for (auto arg : args)
     {
-        auto & column = temp_block.getByPosition(0);
-        auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
-        if (!type_with_dict)
-            throw Exception("Return type of function which has argument WithDictionary must be WithDictionary, got"
-                            + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
+        ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+            column.column = column_const->cloneResized(num_rows);
+        else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        {
+            auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
 
-        column.type = type_with_dict->getDictionaryType();
+            if (!type_with_dict)
+                throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
+
+            column.column = column_with_dict->getDictionary().getNestedColumn();
+            column.type = type_with_dict->getDictionaryType();
+        }
     }
 
-    for (auto & arg : args)
+    return indexes;
+}
+
+static void convertColumnsWithDictionaryToFull(Block & block, const ColumnNumbers & args)
+{
+    for (auto arg : args)
     {
-        auto & column = block.getByPosition(arg);
+        ColumnWithTypeAndName & column = block.getByPosition(arg);
         if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
         {
             auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
+
             if (!type_with_dict)
-                throw Exception("Column with dictionary must have type WithDictionary, but has"
-                                + column.type->getName(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
 
-            ColumnPtr new_column = convert_all_to_full ? column_with_dict->convertToFullColumn()
-                                                       : column_with_dict->getDictionary().getNestedColumn();
-
-            temp_block.insert({new_column, type_with_dict->getDictionaryType(), column.name});
+            column.column = column_with_dict->convertToFullColumn();
+            column.type = type_with_dict->getDictionaryType();
         }
-        else if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
-            temp_block.insert({column_const->cloneResized(column_with_dict_size), column.type, column.name});
-        else if (convert_all_to_full)
-            temp_block.insert(column);
-        else
-            throw Exception("Expected ColumnWithDictionary or ColumnConst, got" + column.column->getName(),
-                            ErrorCodes::LOGICAL_ERROR);
     }
-
-    return temp_block;
 }
 
 void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
-        ColumnPtr indexes;
-        Block temp_block = removeColumnsWithDictionary(block, args, result, indexes);
-        if (temp_block)
+        auto & res = block.safeGetByPosition(result);
+        Block block_without_dicts = block.cloneEmpty();
+
+        for (auto arg : args)
+            block_without_dicts.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
+
+        if (res.type->withDictionary())
         {
-            ColumnNumbers temp_numbers(args.size());
-            for (size_t i = 0; i < args.size(); ++i)
-                temp_numbers[i] = i + 1;
+            ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(block_without_dicts, args);
 
-            executeWithoutColumnsWithDictionary(temp_block, temp_numbers, 0, input_rows_count);
-            auto & temp_res_col = temp_block.getByPosition(0).column;
-            auto & res_col = block.getByPosition(result);
-            auto col_wit_dict_ptr = res_col.type->createColumn();
+            executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
 
-            auto * col_with_dict = typeid_cast<ColumnWithDictionary *>(col_wit_dict_ptr.get());
-            if (!col_with_dict)
-                throw Exception("Expected ColumnWithDictionary, got" + res_col.column->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
+            auto res_column = res.type->createColumn();
+            auto * column_with_dictionary = typeid_cast<ColumnWithDictionary *>(res_column.get());
 
-            col_with_dict->insertRangeFromFullColumn(*temp_res_col, 0, temp_res_col->size());
-            res_col.column = indexes ? col_with_dict->index(*indexes, 0)
-                                     : std::move(col_wit_dict_ptr);
-            return;
+            if (!column_with_dictionary)
+                throw Exception("Expected ColumnWithDictionary, got" + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
+
+            const auto & keys = block_without_dicts.safeGetByPosition(result).column;
+            column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
+
+            res.column = std::move(res_column);
+        }
+        else
+        {
+            convertColumnsWithDictionaryToFull(block_without_dicts, args);
+            executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
+            res.column = block_without_dicts.safeGetByPosition(result).column;
         }
     }
-
-    executeWithoutColumnsWithDictionary(block, args, result, input_rows_count);
+    else
+        executeWithoutColumnsWithDictionary(block, args, result, input_rows_count);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
@@ -351,30 +349,6 @@ void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) con
                         + toString(number_of_arguments) + ", should be " + toString(expected_number_of_arguments),
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
-
-struct ArgumentsWithoutDictionary
-{
-    ColumnsWithTypeAndName arguments;
-    bool all_without_dictionary = true;
-
-    explicit ArgumentsWithoutDictionary(const ColumnsWithTypeAndName & args)
-    {
-        DataTypes index_types;
-        for (size_t i = 0; i < args.size(); ++i)
-        {
-            const auto & arg = args[i];
-            if (auto * arg_with_dict = typeid_cast<const DataTypeWithDictionary*>(arg.type.get()))
-            {
-                if (all_without_dictionary)
-                {
-                    all_without_dictionary = false;
-                    arguments = args;
-                }
-                arguments[i].type = arg_with_dict->getDictionaryType();
-            }
-        }
-    }
-};
 
 DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutDictionary(const ColumnsWithTypeAndName & arguments) const
 {
@@ -471,10 +445,32 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
-        ArgumentsWithoutDictionary arguments_without_dictionary(arguments);
-        if (!arguments_without_dictionary.all_without_dictionary)
-            return std::make_shared<DataTypeWithDictionary>(
-                    getReturnTypeWithoutDictionary(arguments_without_dictionary.arguments));
+        bool has_type_with_dictionary = false;
+        bool can_run_function_on_dictionary = true;
+
+        ColumnsWithTypeAndName args_without_dictionary(arguments);
+
+        for (ColumnWithTypeAndName & arg : args_without_dictionary)
+        {
+            if (arg.column && arg.column->isColumnConst())
+                continue;
+
+            if (auto * type_with_dictionary = typeid_cast<const DataTypeWithDictionary *>(arg.type.get()))
+            {
+                if (has_type_with_dictionary)
+                    can_run_function_on_dictionary = false;
+
+                has_type_with_dictionary = true;
+                arg.type = type_with_dictionary->getDictionaryType();
+            }
+            else
+                can_run_function_on_dictionary = false;
+        }
+
+        if (has_type_with_dictionary && can_run_function_on_dictionary)
+            return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
+        else
+            return getReturnTypeWithoutDictionary(args_without_dictionary);
     }
 
     return getReturnTypeWithoutDictionary(arguments);

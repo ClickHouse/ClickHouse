@@ -94,8 +94,9 @@ struct  KeysSerializationVersion
 struct IndexesSerializationType
 {
     using SerializationType = UInt64;
-    static constexpr UInt64 NeedGlobalDictionaryBit = 1u << 8u;
-    static constexpr UInt64 HasAdditionalKeysBit = 1u << 9u;
+    static constexpr SerializationType NeedGlobalDictionaryBit = 1u << 8u;
+    static constexpr SerializationType HasAdditionalKeysBit = 1u << 9u;
+    static constexpr SerializationType NeedUpdateDictionary = 1u << 10u;
 
     enum Type
     {
@@ -108,10 +109,11 @@ struct IndexesSerializationType
     Type type;
     bool has_additional_keys;
     bool need_global_dictionary;
+    bool need_update_dictionary;
 
     static constexpr SerializationType resetFlags(SerializationType type)
     {
-        return type & (~(HasAdditionalKeysBit | NeedGlobalDictionaryBit));
+        return type & (~(HasAdditionalKeysBit | NeedGlobalDictionaryBit | NeedUpdateDictionary));
     }
 
     static void checkType(SerializationType type)
@@ -130,6 +132,8 @@ struct IndexesSerializationType
             val |= HasAdditionalKeysBit;
         if (need_global_dictionary)
             val |= NeedGlobalDictionaryBit;
+        if (need_update_dictionary)
+            val |= NeedUpdateDictionary;
         writeIntBinary(val, buffer);
     }
 
@@ -140,11 +144,17 @@ struct IndexesSerializationType
         checkType(val);
         has_additional_keys = (val & HasAdditionalKeysBit) != 0;
         need_global_dictionary = (val & NeedGlobalDictionaryBit) != 0;
+        need_update_dictionary = (val & NeedUpdateDictionary) != 0;
         type = static_cast<Type>(resetFlags(val));
     }
 
-    IndexesSerializationType(const IColumn & column, bool has_additional_keys, bool need_global_dictionary)
-        : has_additional_keys(has_additional_keys), need_global_dictionary(need_global_dictionary)
+    IndexesSerializationType(const IColumn & column,
+                             bool has_additional_keys,
+                             bool need_global_dictionary,
+                             bool enumerate_dictionaries)
+        : has_additional_keys(has_additional_keys)
+        , need_global_dictionary(need_global_dictionary)
+        , need_update_dictionary(enumerate_dictionaries)
     {
         if (typeid_cast<const ColumnUInt8 *>(&column))
             type = TUInt8;
@@ -181,11 +191,7 @@ struct SerializeStateWithDictionary : public IDataType::SerializeBinaryBulkState
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr global_dictionary;
 
-    explicit SerializeStateWithDictionary(
-        UInt64 key_version,
-        MutableColumnUniquePtr && column_unique)
-        : key_version(key_version)
-        , global_dictionary(std::move(column_unique)) {}
+    explicit SerializeStateWithDictionary(UInt64 key_version) : key_version(key_version) {}
 };
 
 struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkState
@@ -247,8 +253,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
 
     writeIntBinary(key_version, *stream);
 
-    auto column_unique = createColumnUnique(*dictionary_type);
-    state = std::make_shared<SerializeStateWithDictionary>(key_version, std::move(column_unique));
+    state = std::make_shared<SerializeStateWithDictionary>(key_version);
 }
 
 void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
@@ -273,6 +278,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
+        state_with_dictionary->global_dictionary = nullptr;
     }
 }
 
@@ -408,6 +414,10 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     auto & global_dictionary = state_with_dictionary->global_dictionary;
     KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
+    bool need_update_dictionary = global_dictionary == nullptr;
+    if (need_update_dictionary)
+        global_dictionary = createColumnUnique(*dictionary_type);
+
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
@@ -445,7 +455,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     bool need_write_dictionary = !settings.use_single_dictionary_for_part
                                  && global_dictionary->size() >= settings.max_dictionary_size;
 
-    IndexesSerializationType index_version(*positions, need_additional_keys, need_dictionary);
+    IndexesSerializationType index_version(*positions, need_additional_keys, need_dictionary, need_update_dictionary);
     index_version.serialize(*indexes_stream);
 
     if (need_write_dictionary)
@@ -454,7 +464,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *keys_stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
-        state_with_dictionary->global_dictionary = createColumnUnique(*dictionary_type);
+        state_with_dictionary->global_dictionary = nullptr;
     }
 
     if (need_additional_keys)
@@ -577,9 +587,12 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
             if (indexes_stream->eof())
                 break;
 
-            state_with_dictionary->index_type.deserialize(*indexes_stream);
+            auto & index_type = state_with_dictionary->index_type;
+            auto & global_dictionary = state_with_dictionary->global_dictionary;
 
-            if (state_with_dictionary->index_type.need_global_dictionary && !state_with_dictionary->global_dictionary)
+            index_type.deserialize(*indexes_stream);
+
+            if (index_type.need_global_dictionary && (!global_dictionary || index_type.need_update_dictionary))
                 readDictionary();
 
             if (state_with_dictionary->index_type.has_additional_keys)
