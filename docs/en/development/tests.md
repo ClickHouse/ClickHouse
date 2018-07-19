@@ -53,7 +53,7 @@ If you want to improve performance of ClickHouse in some scenario, and if improv
 Performance tests are not run on per-commit basis. Results of performance tests are not collected and we compare them manually.
 
 
-## Test tools and scripts
+## Test Tools And Scripts
 
 Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `dbms/src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
