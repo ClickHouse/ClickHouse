@@ -2071,6 +2071,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ColumnWithTypeAndName fake_column;
                     fake_column.name = projection_manipulator->getColumnName(getColumnName());
                     fake_column.type = std::make_shared<DataTypeUInt8>();
+                    fake_column.column = fake_column.type->createColumn();
                     actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
                                    projection_manipulator);
