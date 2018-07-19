@@ -62,9 +62,6 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <DataTypes/DataTypeTuple.h>
 
-#include <Core/iostream_debug_helpers.h>
-#include <Parsers/queryToString.h>
-
 
 namespace DB
 {
@@ -1503,7 +1500,6 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
     }
 
     prepared_sets[subquery_or_table_name->range] = std::move(set);
-    DUMP("Created set for index");
 }
 
 
@@ -2256,8 +2252,6 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 }
             }
         }
-
-        DUMP(argument_names, getColumnName(), queryToString(ast));
 
         if (arguments_present)
         {
