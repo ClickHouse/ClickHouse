@@ -47,7 +47,7 @@ namespace
     }
     ASTPtr createFakeEnumCreationAst()
     {
-        String fakename = "e";
+        String fakename{"e"};
         ASTPtr name = std::make_shared<ASTLiteral>(Field(fakename.c_str(), fakename.size()));
         ASTPtr value = std::make_shared<ASTLiteral>(Field(UInt64(1)));
         ASTPtr ast_func = makeASTFunction("equals", name, value);
