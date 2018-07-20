@@ -495,8 +495,10 @@ void ColumnWithDictionary::Index::insertPositionsRange(const IColumn & column, s
     checkSizeOfType();
 }
 
-void ColumnWithDictionary::Index::check(size_t max_dictionary_size)
+void ColumnWithDictionary::Index::check(size_t /*max_dictionary_size*/)
 {
+    /// TODO: remove
+    /*
     auto check = [&](auto cur_type)
     {
         using CurIndexType = decltype(cur_type);
@@ -514,6 +516,7 @@ void ColumnWithDictionary::Index::check(size_t max_dictionary_size)
     };
 
     callForType(std::move(check), size_of_type);
+     */
 }
 
 void ColumnWithDictionary::Index::checkSizeOfType()
