@@ -1,27 +1,30 @@
 # What is ClickHouse?
 
-ClickHouse is a columnar DBMS for OLAP.
+ClickHouse is a columnar database management system (DBMS) for online analytical processing (OLAP).
 
 In a "normal" row-oriented DBMS, data is stored in this order:
 
-```text
-5123456789123456789     1       Eurobasket - Greece - Bosnia and Herzegovina - example.com      1       2011-09-01 01:03:02     6274717   1294101174      11409   612345678912345678      0       33      6       http://www.example.com/basketball/team/123/match/456789.html http://www.example.com/basketball/team/123/match/987654.html       0       1366    768     32      10      3183      0       0       13      0\0     1       1       0       0                       2011142 -1      0               0       01321     613     660     2011-09-01 08:01:17     0       0       0       0       utf-8   1466    0       0       0       5678901234567890123               277789954       0       0       0       0       0
-5234985259563631958     0       Consulting, Tax assessment, Accounting, Law       1       2011-09-01 01:03:02     6320881   2111222333      213     6458937489576391093     0       3       2       http://www.example.ru/         0       800     600       16      10      2       153.1   0       0       10      63      1       1       0       0                       2111678 000       0       588     368     240     2011-09-01 01:03:17     4       0       60310   0       windows-1251    1466    0       000               778899001       0       0       0       0       0
-...
-```
+| Row | WatchID             | JavaEnable | Title              | GoodEvent | EventTime           |
+| --- | ------------------- | ---------- | ------------------ | --------- | ------------------- |
+| #0  | 5385521489354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+| #1  | 5385521490329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+| #2  | 5385521489953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+| #N  | ...                 | ...        | ...                | ...       | ...                 |
 
 In order words, all the values related to a row are stored next to each other.
 Examples of a row-oriented DBMS are MySQL, Postgres, MS SQL Server, and others.
 
 In a column-oriented DBMS, data is stored like this:
 
-```text
-WatchID:    5385521489354350662     5385521490329509958     5385521489953706054     5385521490476781638     5385521490583269446     5385521490218868806     5385521491437850694   5385521491090174022      5385521490792669254     5385521490420695110     5385521491532181574     5385521491559694406     5385521491459625030     5385521492275175494   5385521492781318214      5385521492710027334     5385521492955615302     5385521493708759110     5385521494506434630     5385521493104611398
-JavaEnable: 1       0       1       0       0       0       1       0       1       1       1       1       1       1       0       1       0       0       1       1
-Title:      Yandex  Announcements - Investor Relations - Yandex     Yandex — Contact us — Moscow    Yandex — Mission        Ru      Yandex — History — History of Yandex    Yandex Financial Releases - Investor Relations - Yandex Yandex — Locations      Yandex Board of Directors - Corporate Governance - Yandex       Yandex — Technologies
-GoodEvent:  1       1       1       1       1       1       1       1       1       1       1       1       1       1       1       1       1       1       1       1
-EventTime:  2016-05-18 05:19:20     2016-05-18 08:10:20     2016-05-18 07:38:00     2016-05-18 01:13:08     2016-05-18 00:04:06     2016-05-18 04:21:30     2016-05-18 00:34:16     2016-05-18 07:35:49     2016-05-18 11:41:59     2016-05-18 01:13:32
-```
+
+| Row:        | #0                  | #1                  | #2                  | #N                  |
+| ----------- | ------------------- | ------------------- | ------------------- | ------------------- |
+| WatchID:    | 5385521489354350662 | 5385521490329509958 | 5385521489953706054 | ...                 |
+| JavaEnable: | 1                   | 0                   | 1                   | ...                 |
+| Title:      | Investor Relations  | Contact us          | Mission             | ...                 |
+| GoodEvent:  | 1                   | 1                   | 1                   | ...                 |
+| EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...                 |
+
 
 These examples only show the order that data is arranged in.
 The values from different columns are stored separately, and data from the same column is stored together.
@@ -33,7 +36,7 @@ The data access scenario refers to what queries are made, how often, and in what
 
 The higher the load on the system, the more important it is to customize the system to the scenario, and the more specific this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one of the scenarios.
 
-We'll say that the following is true for the OLAP (online analytical processing) scenario:
+We'll say that the following is true for the OLAP scenario:
 
 - The vast majority of requests are for read access.
 - Data is updated in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
