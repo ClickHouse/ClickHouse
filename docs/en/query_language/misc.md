@@ -175,6 +175,9 @@ Supported only by `*MergeTree` engines, in which this query initializes a non-sc
 If you specify a `PARTITION`, only the specified partition will be optimized.
 If you specify `FINAL`, optimization will be performed even when all the data is already in one part.
 
+!!! warning
+    OPTIMIZE can't fix the "Too many parts" error.
+
 ## KILL QUERY
 
 ```sql

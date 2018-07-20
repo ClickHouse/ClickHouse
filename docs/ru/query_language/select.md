@@ -724,11 +724,8 @@ ORDER BY EventDate ASC
 
 Существует два варианта IN-ов с подзапросами (аналогично для JOIN-ов): обычный `IN` / `JOIN` и `GLOBAL IN` / `GLOBAL JOIN`. Они отличаются способом выполнения при распределённой обработке запроса.
 
-<div class="admonition attention">
-
-Помните, что алгоритмы, описанные ниже, могут работать иначе в зависимости от [настройки](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode`.
-
-</div>
+!!! attention
+    Помните, что алгоритмы, описанные ниже, могут работать иначе в зависимости от [настройки](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode`.
 
 При использовании обычного IN-а, запрос отправляется на удалённые серверы, и на каждом из них выполняются подзапросы в секциях `IN` / `JOIN`.
 
