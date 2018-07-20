@@ -1477,18 +1477,7 @@ void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_
 {
     BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
 
-    SizeLimits set_for_index_size_limits;
-    if (settings.use_index_for_in_with_subqueries_max_values && settings.use_index_for_in_with_subqueries_max_values < settings.max_rows_in_set)
-    {
-        /// Silently cancel creating the set for index if the specific limit has been reached.
-        set_for_index_size_limits = SizeLimits(settings.use_index_for_in_with_subqueries_max_values, settings.max_bytes_in_set, OverflowMode::BREAK);
-    }
-    else
-    {
-        /// If the limit specific for set for index is lower than general limits for set - use general limit.
-        set_for_index_size_limits = SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
-    }
-
+    SizeLimits set_for_index_size_limits = SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
     SetPtr set = std::make_shared<Set>(set_for_index_size_limits, true);
 
     set->setHeader(res.in->getHeader());
@@ -2071,6 +2060,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ColumnWithTypeAndName fake_column;
                     fake_column.name = projection_manipulator->getColumnName(getColumnName());
                     fake_column.type = std::make_shared<DataTypeUInt8>();
+                    fake_column.column = fake_column.type->createColumn();
                     actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
                                    projection_manipulator);

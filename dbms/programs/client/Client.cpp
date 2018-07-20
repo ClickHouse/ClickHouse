@@ -28,6 +28,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -1316,10 +1317,7 @@ private:
 
     void showClientVersion()
     {
-        std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-            << "." << DBMS_VERSION_MINOR
-            << "." << ClickHouseRevision::get()
-            << "." << std::endl;
+        std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
     }
 
 public:

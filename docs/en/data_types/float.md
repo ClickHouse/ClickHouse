@@ -66,5 +66,5 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-See the rules for ` NaN` sorting in the section [ORDER BY clause](../query_language/queries.md#query_language-queries-order_by).
+See the rules for ` NaN` sorting in the section [ORDER BY clause](../query_language/select.md#query_language-queries-order_by).
 

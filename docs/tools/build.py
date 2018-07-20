@@ -38,7 +38,7 @@ def autoremoved_file(path):
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
 
-    config_path = os.path.join(args.docs_dir, 'mkdocs_%s.yml' % lang)
+    config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
 
     try:
         theme_cfg = {
