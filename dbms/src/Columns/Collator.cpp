@@ -87,3 +87,14 @@ const std::string & Collator::getLocale() const
 {
     return locale;
 }
+
+std::vector<std::string> Collator::getAvailableCollations()
+{
+    std::vector<std::string> result;
+#if USE_ICU
+    size_t available_locales_count = ucol_countAvailable();
+    for (size_t i = 0; i < available_locales_count; ++i)
+        result.push_back(ucol_getAvailable(i));
+#endif
+    return result;
+}
