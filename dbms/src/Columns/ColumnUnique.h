@@ -223,7 +223,7 @@ void ColumnUnique<ColumnType>::buildIndex()
         return;
 
     auto column = getRawColumnPtr();
-    index = std::make_unique<IndexMapType>();
+    index = std::make_unique<IndexMapType>(column_holder->size());
 
     for (auto row : ext::range(numSpecialValues(), column->size()))
     {
