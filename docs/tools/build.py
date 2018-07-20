@@ -79,7 +79,11 @@ def build_for_lang(lang, args):
             repo_url='https://github.com/yandex/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
-            markdown_extensions=['codehilite']
+            markdown_extensions=[
+                'admonition',
+                'attr_list',
+                'codehilite'
+            ]
         )
 
         mkdocs_build.build(cfg)
