@@ -44,7 +44,7 @@ public:
     /// Register a simple data type, that have no parameters.
     void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
-    DataTypesDictionary getAllDataTypes() const {
+    const DataTypesDictionary & getAllDataTypes() const {
         return data_types;
     }
 
