@@ -150,6 +150,13 @@ namespace detail
     }
 
 
+    inline void writeLeadingMinus(WriteBuffer & buf)
+    {
+        buf.nextIfAtEnd();
+        *buf.position() = '-';
+        ++buf.position();
+    }
+
     /** Wrapper for signed numbers.
       */
     template <typename T>
@@ -172,19 +179,39 @@ namespace detail
         if (x < 0)
         {
             x = -x;
-            buf.nextIfAtEnd();
-            *buf.position() = '-';
-            ++buf.position();
+            writeLeadingMinus(buf);
         }
 
         writeUIntText(static_cast<std::make_unsigned_t<T>>(x), buf);
     }
 
+    inline void writeSIntText(__int128 x, WriteBuffer & buf)
+    {
+        if (unlikely((x - 1) == 0))
+        {
+            buf.write("-170141183460469231731687303715884105728", 40);
+            return;
+        }
+
+        if (x < 0)
+        {
+            x = -x;
+            writeLeadingMinus(buf);
+        }
+
+        writeUIntText(static_cast<unsigned __int128>(x), buf);
+    }
 }
 
 
 template <typename T>
 std::enable_if_t<std::is_signed_v<T>, void> writeIntText(T x, WriteBuffer & buf)
+{
+    detail::writeSIntText(x, buf);
+}
+
+template <typename T>
+std::enable_if_t<std::is_same_v<T, Int128>, void> writeIntText(T x, WriteBuffer & buf)
 {
     detail::writeSIntText(x, buf);
 }

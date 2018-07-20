@@ -552,6 +552,77 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 }
 
 
+/// TODO: negative scales, trailing zeroes
+template <typename T>
+void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, int scale)
+{
+    x = 0;
+    int sign = 1;
+    bool after_point = false;
+
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    if (!buf.eof())
+    {
+        switch (*buf.position())
+        {
+            case '-':
+                sign = -1;
+                [[fallthrough]];
+            case '+':
+                ++buf.position();
+                break;
+        }
+    }
+
+    while (!buf.eof())
+    {
+        if (!precision || scale < 0)
+            throw Exception("Cannot read decimal value", ErrorCodes::CANNOT_PARSE_NUMBER);
+
+        const char & byte = *buf.position();
+        switch (byte)
+        {
+            case '.':
+                after_point = true;
+                break;
+            case '1': [[fallthrough]];
+            case '2': [[fallthrough]];
+            case '3': [[fallthrough]];
+            case '4': [[fallthrough]];
+            case '5': [[fallthrough]];
+            case '6': [[fallthrough]];
+            case '7': [[fallthrough]];
+            case '8': [[fallthrough]];
+            case '9':
+                if (unlikely(sign))
+                {
+                    x = sign * (byte - '0');
+                    sign = 0; /// no more leading zeroes
+                    break;
+                }
+                [[fallthrough]];
+            case '0':
+            {
+                if (likely(sign == 0))
+                {
+                    --precision;
+                    x = x * 10 + (byte - '0');
+                }
+                if (after_point)
+                    --scale;
+                break;
+            }
+
+            default:
+                return;
+        }
+        ++buf.position();
+    }
+}
+
+
 template <typename T> void readFloatTextPrecise(T & x, ReadBuffer & in) { readFloatTextPreciseImpl<T, void>(x, in); }
 template <typename T> bool tryReadFloatTextPrecise(T & x, ReadBuffer & in) { return readFloatTextPreciseImpl<T, bool>(x, in); }
 

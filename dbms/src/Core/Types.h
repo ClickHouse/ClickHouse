@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include <Poco/Types.h>
+#include <cstdint>
 
 
 namespace DB
@@ -12,15 +12,16 @@ namespace DB
 
 struct Null {};
 
-using UInt8 = Poco::UInt8;
-using UInt16 = Poco::UInt16;
-using UInt32 = Poco::UInt32;
-using UInt64 = Poco::UInt64;
+using UInt8 = uint8_t;
+using UInt16 = uint16_t;
+using UInt32 = uint32_t;
+using UInt64 = uint64_t;
 
-using Int8 = Poco::Int8;
-using Int16 = Poco::Int16;
-using Int32 = Poco::Int32;
-using Int64 = Poco::Int64;
+using Int8 = int8_t;
+using Int16 = int16_t;
+using Int32 = int32_t;
+using Int64 = int64_t;
+using Int128 = __int128;
 
 using Float32 = float;
 using Float64 = double;
@@ -53,6 +54,7 @@ template <> struct TypeName<Int8>    { static const char * get() { return "Int8"
 template <> struct TypeName<Int16>   { static const char * get() { return "Int16";   } };
 template <> struct TypeName<Int32>   { static const char * get() { return "Int32";   } };
 template <> struct TypeName<Int64>   { static const char * get() { return "Int64";   } };
+template <> struct TypeName<Int128>  { static const char * get() { return "Int128";   } };
 template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
