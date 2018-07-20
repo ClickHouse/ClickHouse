@@ -110,7 +110,7 @@ pages:
   - 'General syntax': 'query_language/syntax.md'
   
 - 'Operations':
-  - 'Operations': 'operations/index.md'
+  - 'hidden': 'operations/index.md'
   - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
     - 'MergeTree family':
