@@ -19,7 +19,7 @@ public:
 
     static std::vector<String> getColumnNames()
     {
-        return {"name", "description"};
+        return {"name", "type"};
     }
 
 };
