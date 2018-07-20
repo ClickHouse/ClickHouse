@@ -22,6 +22,10 @@ public:
     /// Example: if the name is 'avgIf', it will return combinator -If.
     AggregateFunctionCombinatorPtr tryFindSuffix(const std::string & name) const;
 
+    std::unordered_map<std::string, AggregateFunctionCombinatorPtr> getAllAggregateFunctionCombinators() const {
+        return dict;
+    }
+
 private:
     std::unordered_map<std::string, AggregateFunctionCombinatorPtr> dict;
 };
