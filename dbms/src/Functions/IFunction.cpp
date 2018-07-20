@@ -313,8 +313,9 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         for (auto arg : args)
             block_without_dicts.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
 
-        if (res.type->withDictionary())
+        if (auto * res_type_with_dict = typeid_cast<const DataTypeWithDictionary *>(res.type.get()))
         {
+            block_without_dicts.safeGetByPosition(result).type = res_type_with_dict->getDictionaryType();
             ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
                     block_without_dicts, args, canBeExecutedOnDefaultArguments());
 
