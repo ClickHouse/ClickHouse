@@ -7,7 +7,12 @@
 
 namespace DB
 {
+
 class Context;
+
+
+/** Base class for system tables whose all columns have String type.
+  */
 template <typename Self>
 class IStorageSystemWithStringColumns : public IStorage
 {
@@ -15,7 +20,7 @@ protected:
     virtual void fillData(MutableColumns & res_columns) const = 0;
 
 public:
-    IStorageSystemWithStringColumns (const String & name_) : name(name_)
+    IStorageSystemWithStringColumns(const String & name_) : name(name_)
     {
         auto names = Self::getColumnNames();
         NamesAndTypesList name_list;
@@ -41,13 +46,15 @@ public:
         check(column_names);
         processed_stage = QueryProcessingStage::FetchColumns;
 
-        MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
+        Block sample_block = getSampleBlock();
+        MutableColumns res_columns = sample_block.cloneEmptyColumns();
         fillData(res_columns);
 
-        return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
+        return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(sample_block.cloneWithColumns(std::move(res_columns))));
     }
 
 private:
     const String name;
 };
+
 }
