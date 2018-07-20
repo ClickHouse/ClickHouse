@@ -1,10 +1,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 namespace DB
 {
 
-class ASTKillQueryQuery : public ASTQueryWithOutput
+class ASTKillQueryQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 {
 public:
     ASTPtr where_expression;    // expression to filter processes from system.processes table
@@ -22,6 +23,8 @@ public:
     String getID() const override;
 
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &new_database) const override;
 };
 
 }
