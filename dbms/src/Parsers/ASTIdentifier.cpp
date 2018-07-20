@@ -13,7 +13,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
         settings.ostr << (settings.hilite ? hilite_identifier : "");
 
         WriteBufferFromOStream wb(settings.ostr, 32);
-        writeProbablyBackQuotedString(name, wb);
+        settings.writeIdentifier(name, wb);
         wb.next();
 
         settings.ostr << (settings.hilite ? hilite_none : "");
@@ -35,6 +35,11 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     {
         format_element(name);
     }
+}
+
+void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
+{
+    writeString(name, ostr);
 }
 
 }

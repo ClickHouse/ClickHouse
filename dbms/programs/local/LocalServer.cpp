@@ -17,6 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -355,10 +356,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-        << "." << DBMS_VERSION_MINOR
-        << "." << ClickHouseRevision::get()
-        << "." << std::endl;
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
 }
 
 std::string LocalServer::getHelpHeader() const

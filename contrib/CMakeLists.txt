@@ -75,7 +75,7 @@ if (ENABLE_TCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
     add_subdirectory (libtcmalloc)
 endif ()
 
-if (NOT ARCH_ARM)
+if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
@@ -149,5 +149,9 @@ if (USE_INTERNAL_POCO_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_LLVM_LIBRARY)
+    # ld: unknown option: --color-diagnostics
+    if (APPLE AND COMPILER_GCC)
+        set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+    endif ()
     add_subdirectory (llvm/llvm)
 endif ()

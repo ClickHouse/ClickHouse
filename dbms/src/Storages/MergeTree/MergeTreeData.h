@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/SortDescription.h>
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -480,11 +479,11 @@ public:
         broken_part_callback(name);
     }
 
-    bool hasPrimaryKey() const { return !primary_sort_descr.empty(); }
+    bool hasPrimaryKey() const { return !primary_sort_columns.empty(); }
     ExpressionActionsPtr getPrimaryExpression() const { return primary_expr; }
     ExpressionActionsPtr getSecondarySortExpression() const { return secondary_sort_expr; } /// may return nullptr
-    SortDescription getPrimarySortDescription() const { return primary_sort_descr; }
-    SortDescription getSortDescription() const { return sort_descr; }
+    Names getPrimarySortColumns() const { return primary_sort_columns; }
+    Names getSortColumns() const { return sort_columns; }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
     MutableDataPartPtr loadPartAndFixMetadata(const String & relative_path);
@@ -555,7 +554,6 @@ public:
     Names minmax_idx_columns;
     DataTypes minmax_idx_column_types;
     Int64 minmax_idx_date_column_pos = -1; /// In a common case minmax index includes a date column.
-    SortDescription minmax_idx_sort_descr; /// For use with KeyCondition.
 
     /// Limiting parallel sends per one table, used in DataPartsExchange
     std::atomic_uint current_table_sends {0};
@@ -576,10 +574,10 @@ private:
     ExpressionActionsPtr primary_expr;
     /// Additional expression for sorting (of rows with the same primary keys).
     ExpressionActionsPtr secondary_sort_expr;
-    /// Sort description for primary key. Is the prefix of sort_descr.
-    SortDescription primary_sort_descr;
-    /// Sort description for primary key + secondary sorting columns.
-    SortDescription sort_descr;
+    /// Names of columns for primary key. Is the prefix of sort_columns.
+    Names primary_sort_columns;
+    /// Names of columns for primary key + secondary sorting columns.
+    Names sort_columns;
 
     String database_name;
     String table_name;

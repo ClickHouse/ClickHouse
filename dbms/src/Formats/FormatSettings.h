@@ -24,6 +24,8 @@ struct FormatSettings
     struct CSV
     {
         char delimiter = ',';
+        bool allow_single_quotes = true;
+        bool allow_double_quotes = true;
     };
 
     CSV csv;

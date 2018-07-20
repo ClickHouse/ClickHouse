@@ -270,6 +270,10 @@ void TinyLogBlockOutputStream::writeSuffix()
         return;
     done = true;
 
+    /// If nothing was written - leave the table in initial state.
+    if (streams.empty())
+        return;
+
     WrittenStreams written_streams;
     IDataType::SerializeBinaryBulkSettings settings;
     for (const auto & column : getHeader())

@@ -1,9 +1,5 @@
 #pragma once
 
-#define DBMS_NAME "ClickHouse"
-#define DBMS_VERSION_MAJOR 1
-#define DBMS_VERSION_MINOR 1
-
 #define DBMS_DEFAULT_HOST "localhost"
 #define DBMS_DEFAULT_PORT 9000
 #define DBMS_DEFAULT_SECURE_PORT 9440
@@ -18,13 +14,6 @@
 
 /// The size of the I/O buffer by default.
 #define DBMS_DEFAULT_BUFFER_SIZE 1048576ULL
-
-/// When writing data, a buffer of `max_compress_block_size` size is allocated for compression. When the buffer overflows or if into the buffer
-/// more or equal data is written than `min_compress_block_size`, then with the next mark, the data will also compressed
-/// As a result, for small columns (numbers 1-8 bytes), with index_granularity = 8192, the block size will be 64 KB.
-/// And for large columns (Title - string ~100 bytes), the block size will be ~819 KB. Due to this, the compression ratio almost does not get worse.
-#define DEFAULT_MIN_COMPRESS_BLOCK_SIZE 65536
-#define DEFAULT_MAX_COMPRESS_BLOCK_SIZE 1048576
 
 /** Which blocks by default read the data (by number of rows).
   * Smaller values give better cache locality, less consumption of RAM, but more overhead to process the query.
@@ -43,17 +32,12 @@
   */
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
-#define DEFAULT_MAX_QUERY_SIZE 262144
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
-#define DEFAULT_MAX_DISTRIBUTED_CONNECTIONS 1024
-#define DEFAULT_INTERACTIVE_DELAY 100000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
 /// too short a period can cause errors to disappear immediately after creation.
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_DECREASE_ERROR_PERIOD (2 * DBMS_DEFAULT_SEND_TIMEOUT_SEC)
-#define DEFAULT_QUERIES_QUEUE_WAIT_TIME_MS 5000 /// Maximum waiting time in the request queue.
-#define DBMS_DEFAULT_BACKGROUND_POOL_SIZE 16
 
 #define DBMS_MIN_REVISION_WITH_CLIENT_INFO 54032
 #define DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE 54058
@@ -64,8 +48,6 @@
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
-
-#define DBMS_DISTRIBUTED_DIRECTORY_MONITOR_SLEEP_TIME_MS 100
 
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
