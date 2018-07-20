@@ -15,6 +15,10 @@ namespace DB
   */
 class AggregateFunctionCombinatorFactory final: public ext::singleton<AggregateFunctionCombinatorFactory>
 {
+private:
+    using Dict = std::unordered_map<std::string, AggregateFunctionCombinatorPtr>;
+    Dict dict;
+
 public:
     /// Not thread safe. You must register before using tryGet.
     void registerCombinator(const AggregateFunctionCombinatorPtr & value);
@@ -26,10 +30,6 @@ public:
     {
         return dict;
     }
-
-private:
-    using Dict = std::unordered_map<std::string, AggregateFunctionCombinatorPtr>;
-    Dict dict;
 };
 
 }
