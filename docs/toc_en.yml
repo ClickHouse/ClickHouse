@@ -1,8 +1,6 @@
 pages:
-- 'ClickHouse': 'index.md'
-
 - 'Introduction':
-  - 'hidden': 'introduction/index.md'
+  - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
@@ -108,7 +106,7 @@ pages:
     - 'Internal dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'General syntax': 'query_language/syntax.md'
-  
+
 - 'Operations':
   - 'hidden': 'operations/index.md'
   - 'Table engines':
