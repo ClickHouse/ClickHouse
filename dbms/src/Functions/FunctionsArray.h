@@ -46,6 +46,8 @@ namespace ErrorCodes
   * arrayUniq(arr) - counts the number of different elements in the array,
   * arrayUniq(arr1, arr2, ...) - counts the number of different tuples from the elements in the corresponding positions in several arrays.
   *
+  * arrayDistinct(arr) - retrun different elements in an array
+  *
   * arrayEnumerateUniq(arr)
   *  - outputs an array parallel (having same size) to this, where for each element specified
   *  how many times this element was encountered before (including this element) among elements with the same value.
@@ -204,7 +206,7 @@ private:
 
     static bool hasNull(const PaddedPODArray<UInt8> & null_map, size_t i)
     {
-        return null_map[i] == 1;
+        return null_map[i];
     }
 
     /// Both function arguments are ordinary.
@@ -287,7 +289,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                 }
                 else if (compare(data[current_offset + j], value, i))
@@ -324,7 +326,7 @@ private:
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                     if (hasNull(null_map_item, i))
                         hit = true;
@@ -394,11 +396,6 @@ struct ArrayIndexNumNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -407,7 +404,7 @@ struct ArrayIndexNumNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_ref[current_offset + j] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -433,11 +430,6 @@ struct ArrayIndexStringNullImpl
         const auto size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -446,8 +438,7 @@ struct ArrayIndexStringNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_ref[k] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -487,8 +478,7 @@ struct ArrayIndexStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                 }
                 else if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
@@ -524,21 +514,20 @@ struct ArrayIndexStringImpl
             for (size_t j = 0; j < array_size; ++j)
             {
                 ColumnArray::Offset string_pos = current_offset == 0 && j == 0
-                                                   ? 0
-                                                   : string_offsets[current_offset + j - 1];
+                    ? 0
+                    : string_offsets[current_offset + j - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
                 bool hit = false;
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
 
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
-                    if (null_map_item && ((*null_map_item)[i] == 1))
+                    if (null_map_item && (*null_map_item)[i])
                         hit = true;
                 }
                 else if (string_size == value_size && 0 == memcmp(&item_values[value_pos], &data[string_pos], value_size))
-                        hit = true;
+                    hit = true;
 
                 if (hit)
                 {
@@ -638,7 +627,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                 }
                 else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
@@ -674,9 +663,9 @@ private:
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
-                    if (null_map_item[i] == 1)
+                    if (null_map_item[i])
                         hit = true;
                 }
                 else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
@@ -724,11 +713,6 @@ struct ArrayIndexGenericNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -737,7 +721,7 @@ struct ArrayIndexGenericNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_ref[current_offset + j] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -931,7 +915,7 @@ private:
 
                     if (arr[i].isNull())
                     {
-                        if (null_map && ((*null_map)[row] == 1))
+                        if (null_map && (*null_map)[row])
                             hit = true;
                     }
                     else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
@@ -1228,6 +1212,52 @@ private:
 };
 
 
+/// Find different elements in an array.
+class FunctionArrayDistinct : public IFunction
+{
+public:
+    static constexpr auto name = "arrayDistinct";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+
+private:
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+
+    template <typename T>
+    bool executeNumber(
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+
+    bool executeString(
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+    
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets);
+};
+
+
 class FunctionArrayEnumerateUniq : public IFunction
 {
 public:
@@ -1401,6 +1431,9 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 

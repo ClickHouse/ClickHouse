@@ -9,6 +9,8 @@ namespace DB
 
 class IStorage;
 class Context;
+class WriteBuffer;
+class ReadBuffer;
 
 struct MutationCommand
 {
@@ -33,6 +35,9 @@ public:
     std::shared_ptr<ASTAlterCommandList> ast() const;
 
     void validate(const IStorage & table, const Context & context) const;
+
+    void writeText(WriteBuffer & out) const;
+    void readText(ReadBuffer & in);
 };
 
 }

@@ -42,13 +42,14 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled = true;
 
-    if (!executing)
-    {
-        if (delayed)
-            pool.cancelDelayedTask(shared_from_this(), lock);
+    if (delayed)
+        pool.cancelDelayedTask(shared_from_this(), lock);
 
+    /// If the task is not executing at the moment, enqueue it for immediate execution.
+    /// But if it is currently executing, do nothing because it will be enqueued
+    /// at the end of the execute() method.
+    if (!executing)
         pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
-    }
 
     return true;
 }
@@ -117,13 +118,12 @@ void BackgroundSchedulePool::TaskInfo::execute()
         executing = false;
 
         /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
-		/// on the queue. We don't call the function again here because this way all tasks
-		/// will have their chance to execute
+        /// on the queue. We don't call the function again here because this way all tasks
+        /// will have their chance to execute
 
         if (scheduled)
             pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     }
-
 }
 
 zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()

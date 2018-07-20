@@ -85,17 +85,18 @@ void Connection::connect(const char* db,
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Set timeouts.
-    if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, reinterpret_cast<const char *>(&timeout)))
+    if (mysql_options(driver.get(), MYSQL_OPT_CONNECT_TIMEOUT, &timeout))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    if (mysql_options(driver.get(), MYSQL_OPT_READ_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
+    if (mysql_options(driver.get(), MYSQL_OPT_READ_TIMEOUT, &rw_timeout))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, reinterpret_cast<const char *>(&rw_timeout)))
+    if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, &rw_timeout))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Enables ability to use query LOAD DATA LOCAL INFILE with servers were compiled without --enable-local-infile option.
-    if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, nullptr))
+    /// Disable LOAD DATA LOCAL INFILE because it is insecure.
+    unsigned enable_local_infile = 0;
+    if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Specifies particular ssl key and certificate if it needs

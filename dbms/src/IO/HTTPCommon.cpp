@@ -3,6 +3,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/config.h>
+#include <Poco/Version.h>
 #if USE_POCO_NETSSL
 #include <Poco/Net/AcceptCertificateHandler.h>
 #include <Poco/Net/Context.h>
@@ -76,7 +77,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & 
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000
     session->setTimeout(timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout);
 #else
-    session->setTimeout(timeouts.connection_timeout);
+    session->setTimeout(std::max({timeouts.connection_timeout, timeouts.send_timeout, timeouts.receive_timeout}));
 #endif
 
     return session;

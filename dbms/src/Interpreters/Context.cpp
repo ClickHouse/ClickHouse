@@ -191,7 +191,7 @@ struct ContextShared
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
-        : runtime_components_factory(std::move(runtime_components_factory_))
+        : runtime_components_factory(std::move(runtime_components_factory_)), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -1731,9 +1731,9 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
-Context::getSampleBlockCacheType & Context::getSampleBlockCache() const
+Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
-    return getQueryContext().get_sample_block_cache;
+    return getQueryContext().sample_block_cache;
 }
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()

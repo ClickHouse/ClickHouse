@@ -102,7 +102,7 @@ void DataTypeFixedString::deserializeBinaryBulk(IColumn & column, ReadBuffer & i
     size_t read_bytes = istr.readBig(reinterpret_cast<char *>(&data[initial_size]), max_bytes);
 
     if (read_bytes % n != 0)
-        throw Exception("Cannot read all data of type FixedString",
+        throw Exception("Cannot read all data of type FixedString. Bytes read:" + toString(read_bytes) + ". String size:" + toString(n) + ".",
             ErrorCodes::CANNOT_READ_ALL_DATA);
 
     data.resize(initial_size + read_bytes);
@@ -197,7 +197,7 @@ void DataTypeFixedString::serializeTextCSV(const IColumn & column, size_t row_nu
 
 void DataTypeFixedString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(*this, column, [&istr, delimiter = settings.csv.delimiter](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr, delimiter); });
+    read(*this, column, [&istr, &csv = settings.csv](ColumnFixedString::Chars_t & data) { readCSVStringInto(data, istr, csv); });
 }
 
 
