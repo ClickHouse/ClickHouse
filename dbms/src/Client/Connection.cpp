@@ -19,6 +19,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 
 #include <Common/config.h>
