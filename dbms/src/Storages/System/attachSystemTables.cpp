@@ -4,6 +4,7 @@
 #include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
+#include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemDatabases.h>
@@ -50,6 +51,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("table_functions", StorageSystemTableFunctions::create("table_functions"));
     system_database.attachTable("aggregate_function_combinators", StorageSystemAggregateFunctionCombinators::create("aggregate_function_combinators"));
     system_database.attachTable("data_type_families", StorageSystemDataTypeFamilies::create("data_type_families"));
+    system_database.attachTable("collations", StorageSystemCollations::create("collations"));
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)
