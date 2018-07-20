@@ -11,8 +11,10 @@ In a "normal" row-oriented DBMS, data is stored in this order:
 | #2  | 5385521489953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
 | #N  | ...                 | ...        | ...                | ...       | ...                 |
 
-In order words, all the values related to a row are stored next to each other.
-Examples of a row-oriented DBMS are MySQL, Postgres, MS SQL Server, and others.
+In order words, all the values related to a row are physically stored next to each other.
+
+Examples of a row-oriented DBMSs are MySQL, Postgres and MS SQL Server.
+{: .grey }
 
 In a column-oriented DBMS, data is stored like this:
 
@@ -29,7 +31,8 @@ In a column-oriented DBMS, data is stored like this:
 These examples only show the order that data is arranged in.
 The values from different columns are stored separately, and data from the same column is stored together.
 
-Examples of column-oriented DBMSs: `Vertica`, `Paraccel (Actian Matrix) (Amazon Redshift)`, `Sybase IQ`, `Exasol`, `Infobright`, `InfiniDB`, `MonetDB (VectorWise) (Actian Vector)`, `LucidDB`, `SAP HANA`, `Google Dremel`, `Google PowerDrill`, `Druid`, `kdb+`, and so on.
+Examples of column-oriented DBMSs: Vertica, Paraccel (Actian Matrix, Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise, Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, kdb+.
+{: .grey }
 
 Different orders for storing data are better suited to different scenarios.
 The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
@@ -66,7 +69,7 @@ For example, the query "count the number of records for each advertising platfor
 Example:
 
 ```bash
-milovidov@hostname:~$ clickhouse-client
+$ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.52053.
