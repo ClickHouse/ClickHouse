@@ -133,3 +133,7 @@ h1, h2, h3, .md-logo {
 	background: #efefef;
 	padding-top: 0.5rem;
 }
+
+.grey {
+	color: #666;
+}
