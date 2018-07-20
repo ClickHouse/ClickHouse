@@ -6,6 +6,9 @@ add_library (apple_rt
     include/port/clock.h
 )
 target_include_directories (apple_rt PUBLIC ${COMMON_INCLUDE_DIR})
+if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
+    target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
+endif ()
 
 add_library (common ${SPLIT_SHARED}
     src/DateLUT.cpp
