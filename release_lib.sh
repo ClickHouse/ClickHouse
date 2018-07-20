@@ -15,7 +15,7 @@ function get_version {
     VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
     VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
     VERSION_PREFIX="${VERSION_PREFIX:-v}"
-    VERSION_POSTFIX="${VERSION_POSTFIX:--testing}"
+    VERSION_POSTFIX="${VERSION_POSTFIX:-+testing}"
 
     gen_version_string
 }
