@@ -34,35 +34,47 @@ The values from different columns are stored separately, and data from the same 
 Examples of column-oriented DBMSs: Vertica, Paraccel (Actian Matrix, Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise, Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, kdb+.
 {: .grey }
 
-Different orders for storing data are better suited to different scenarios.
-The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
+Different orders for storing data are better suited to different scenarios. The data access scenario refers to which queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and writing data; the size of the actively used dataset and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 
-The higher the load on the system, the more important it is to customize the system to the scenario, and the more specific this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one of the scenarios.
+The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-We'll say that the following is true for the OLAP scenario:
+## Key properties of OLAP scenario
 
 - The vast majority of requests are for read access.
-- Data is updated in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
+- Data is ingested in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
 - Data is added to the DB but is not modified.
 - For reads, quite a large number of rows are extracted from the DB, but only a small subset of columns.
-- Tables are "wide," meaning they contain a large number of columns.
-- Queries are relatively rare (usually hundreds of queries per server or less per second).
+- Tables are "wide", meaning they contain a large number of columns.
+- Queries are relatively rare (usually hundreds of queries per second per server or less).
 - For simple queries, latencies around 50 ms are allowed.
 - Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
 - Requires high throughput when processing a single query (up to billions of rows per second per server).
-- There are no transactions.
+- Transactions are not necessary.
 - Low requirements for data consistency.
 - There is one large table per query. All tables are small, except for one.
-- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated. The result fits in a single server's RAM.
+- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server's RAM.
 
-It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Elliptics for analytics, you will get very poor performance compared to OLAP databases.
+It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
 
-Columnar-oriented databases are better suited to OLAP scenarios (at least 100 times better in processing speed for most queries), for the following reasons:
+## Reasons why columnar databases are better suited for OLAP scenario
 
-1. For I/O.
-2. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
-3. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
-4. Due to the reduced I/O, more data fits in the system cache.
+Column-oriented databases are better suited to OLAP scenarios (at least 100 times better in processing speed for most queries). The reasons for that are explained below in detail, but it's easier to be demonstrated visually:
+
+**Row oriented**
+
+![Row oriented](images/row_oriented.gif#)
+
+**Column oriented**
+
+![Column oriented](images/column_oriented.gif#)
+
+See the difference? Read further to learn why this happens.
+
+### Input/output
+
+1. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
+2. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
+3. Due to the reduced I/O, more data fits in the system cache.
 
 For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
 
@@ -112,7 +124,7 @@ LIMIT 20
 :)
 ```
 
-2. For CPU.
+### CPU
 
 Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU.
 It makes sense to both store data in columns and process it, when possible, by columns.
