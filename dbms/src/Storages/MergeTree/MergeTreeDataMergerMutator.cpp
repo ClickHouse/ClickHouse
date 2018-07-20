@@ -954,24 +954,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
-        data, future_part.name, future_part.part_info);
-    new_data_part->is_temp = true;
-
     if (!isStorageTouchedByMutation(storage_from_source_part, commands, context_for_reading))
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
-
-        new_data_part->relative_path = "tmp_copy_" + future_part.name;
-        localBackup(source_part->getFullPath(), new_data_part->getFullPath());
-        new_data_part->loadColumnsChecksumsIndexes(false, false);
-        new_data_part->modification_time = time(nullptr);
-        return new_data_part;
+        return data.cloneAndLoadDataPart(source_part, "tmp_clone_", future_part.part_info);
     }
     else
         LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
+    MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
+        data, future_part.name, future_part.part_info);
     new_data_part->relative_path = "tmp_mut_" + future_part.name;
+    new_data_part->is_temp = true;
+
     String new_part_tmp_path = new_data_part->getFullPath();
 
     auto in = createInputStreamWithMutatedData(storage_from_source_part, commands, context_for_reading);
