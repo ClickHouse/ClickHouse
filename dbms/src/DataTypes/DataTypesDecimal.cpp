@@ -1,0 +1,173 @@
+#include <type_traits>
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnVector.h>
+//#include <Columns/ColumnConst.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <IO/readFloatText.h>
+//#include <Formats/FormatSettings.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTLiteral.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
+
+
+//
+
+template <typename T>
+std::string DataTypeDecimal<T>::getName() const
+{
+    std::stringstream ss;
+    ss << "Decimal(" << precision << ", " << scale << ")";
+    return ss.str();
+}
+
+template <typename T>
+bool DataTypeDecimal<T>::equals(const IDataType &) const
+{
+    return false; // TODO
+}
+
+template <typename T>
+void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    const T & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+
+    // FIXME: scale
+    writeIntText(value, ostr);
+    writeChar('.', ostr);
+    writeIntText(0, ostr);
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+{
+    T x;
+    readDecimalText(istr, x, precision, scale);
+    static_cast<ColumnVector<T> &>(column).getData().push_back(x);
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
+{
+    /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
+    typename ColumnVector<T>::value_type x = get<FieldType>(field);
+    writeBinary(x, ostr);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+{
+    writeBinary(static_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
+{
+    const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
+
+    size_t size = x.size();
+
+    if (limit == 0 || offset + limit > size)
+        limit = size - offset;
+
+    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
+}
+
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
+{
+    typename ColumnVector<T>::value_type x;
+    readBinary(x, istr);
+    field = FieldType(x);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
+{
+    typename ColumnVector<T>::value_type x;
+    readBinary(x, istr);
+    static_cast<ColumnVector<T> &>(column).getData().push_back(x);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double ) const
+{
+    typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
+    size_t initial_size = x.size();
+    x.resize(initial_size + limit);
+    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::value_type) * limit);
+    x.resize(initial_size + size / sizeof(typename ColumnVector<T>::value_type));
+}
+
+
+template <typename T>
+Field DataTypeDecimal<T>::getDefault() const
+{
+    return FieldType();
+}
+
+
+template <typename T>
+MutableColumnPtr DataTypeDecimal<T>::createColumn() const
+{
+    return ColumnVector<T>::create();
+}
+
+
+//
+
+static DataTypePtr create(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.size() != 2)
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    const ASTLiteral * precision = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+    const ASTLiteral * scale = typeid_cast<const ASTLiteral *>(arguments->children[1].get());
+
+    if (!precision || precision->value.getType() != Field::Types::UInt64 ||
+        !scale || !(scale->value.getType() == Field::Types::Int64 || scale->value.getType() == Field::Types::UInt64))
+        throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    UInt64 precision_value = precision->value.get<UInt64>();
+    Int64 scale_value = scale->value.get<Int64>();
+
+    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Int128>())
+        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (scale_value < 0 || static_cast<UInt64>(scale_value) > precision_value)
+        throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (precision_value <= maxDecimalPrecision<Int32>())
+        return std::make_shared<DataTypeDecimal9>(precision_value, scale_value);
+    else if (precision_value <= maxDecimalPrecision<Int64>())
+        return std::make_shared<DataTypeDecimal18>(precision_value, scale_value);
+    return std::make_shared<DataTypeDecimal38>(precision_value, scale_value);
+}
+
+
+void registerDataTypeDecimal(DataTypeFactory & factory)
+{
+    factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
+}
+
+/// Explicit template instantiations.
+template class DataTypeDecimal<Int32>;
+template class DataTypeDecimal<Int64>;
+template class DataTypeDecimal<Int128>;
+
+}
