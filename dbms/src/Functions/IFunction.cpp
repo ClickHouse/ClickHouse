@@ -308,7 +308,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
     if (useDefaultImplementationForColumnsWithDictionary())
     {
         auto & res = block.safeGetByPosition(result);
-        Block block_without_dicts = block.cloneEmpty();
+        Block block_without_dicts = block.cloneWithoutColumns();
 
         for (auto arg : args)
             block_without_dicts.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
@@ -334,7 +334,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         else
         {
             convertColumnsWithDictionaryToFull(block_without_dicts, args);
-            executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
+            executeWithoutColumnsWithDictionary(block_without_dicts, args, result, input_rows_count);
             res.column = block_without_dicts.safeGetByPosition(result).column;
         }
     }
