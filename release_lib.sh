@@ -44,7 +44,7 @@ function gen_revision_author {
             if [ "$TYPE" == "major" ]; then
                 VERSION_REVISION=$(($VERSION_REVISION + 1))
                 VERSION_MAJOR=$(($VERSION_MAJOR + 1))
-                VERSION_MINOR=0
+                VERSION_MINOR=1
                 VERSION_PATCH=0
             elif [ "$TYPE" == "minor" ] || [ "$TYPE" == "" ]; then
                 VERSION_REVISION=$(($VERSION_REVISION + 1))
