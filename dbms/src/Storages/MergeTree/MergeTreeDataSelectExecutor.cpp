@@ -25,6 +25,7 @@ namespace std
         static constexpr int radix = 2;
         static constexpr int digits = 128;
         static constexpr __uint128_t min () { return 0; } // used in boost 1.65.1+
+        static constexpr __uint128_t max () { return __uint128_t(0) - 1; } // used in boost 1.68.0+
     };
 }
 #endif
@@ -139,9 +140,22 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const unsigned num_streams,
     Int64 max_block_number_to_read) const
 {
-    size_t part_index = 0;
+    return readFromParts(
+        data.getDataPartsVector(), column_names_to_return, query_info, context, processed_stage,
+        max_block_size, num_streams, max_block_number_to_read);
+}
 
-    MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
+BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
+    MergeTreeData::DataPartsVector parts,
+    const Names & column_names_to_return,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum & processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams,
+    Int64 max_block_number_to_read) const
+{
+    size_t part_index = 0;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.

@@ -323,22 +323,24 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
         if (current_key.empty())    /// The first key encountered.
         {
-            setPrimaryKeyRef(current_key, current);
             key_differs = true;
+            current_row_is_zero = true;
         }
         else
             key_differs = next_key != current_key;
 
-        /// if there are enough rows and the last one is calculated completely
-        if (key_differs && merged_rows >= max_block_size)
-            return;
-
-        queue.pop();
-
         if (key_differs)
         {
-            /// Write the data for the previous group.
-            insertCurrentRowIfNeeded(merged_columns, false);
+            if (!current_key.empty())
+                /// Write the data for the previous group.
+                insertCurrentRowIfNeeded(merged_columns, false);
+
+            if (merged_rows >= max_block_size)
+            {
+                /// The block is now full and the last row is calculated completely.
+                current_key.reset();
+                return;
+            }
 
             current_key.swap(next_key);
 
@@ -374,6 +376,8 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
                 if (mergeMap(desc, current_row, current))
                     current_row_is_zero = false;
         }
+
+        queue.pop();
 
         if (!current->isLast())
         {
@@ -481,6 +485,9 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_to_aggregate)
     {
+        if (!desc.created)
+            throw Exception("Logical error in SummingSortedBlockInputStream, there are no description", ErrorCodes::LOGICAL_ERROR);
+
         if (desc.is_agg_func_type)
         {
             // desc.state is not used for AggregateFunction types
@@ -489,9 +496,6 @@ void SummingSortedBlockInputStream::addRow(SortCursor & cursor)
         }
         else
         {
-            if (!desc.created)
-                throw Exception("Logical error in SummingSortedBlockInputStream, there are no description", ErrorCodes::LOGICAL_ERROR);
-
             // Specialized case for unary functions
             if (desc.column_numbers.size() == 1)
             {

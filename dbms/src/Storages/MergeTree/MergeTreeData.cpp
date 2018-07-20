@@ -425,7 +425,7 @@ Int64 MergeTreeData::getMaxBlockNumber()
 
     Int64 max_block_num = 0;
     for (const DataPartPtr & part : data_parts_by_info)
-        max_block_num = std::max(max_block_num, part->info.max_block);
+        max_block_num = std::max({max_block_num, part->info.max_block, part->info.mutation});
 
     return max_block_num;
 }
@@ -2356,9 +2356,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
 {
     String dst_part_name;
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
-        else
-            dst_part_name = dst_part_info.getPartName();
+        dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
+    else
+        dst_part_name = dst_part_info.getPartName();
 
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 

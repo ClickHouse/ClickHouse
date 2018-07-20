@@ -144,6 +144,7 @@ target_link_libraries (clickhouse_common_io
     ${EXECINFO_LIBRARY}
     ${ELF_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
+    apple_rt
     ${CMAKE_DL_LIBS}
 )
 

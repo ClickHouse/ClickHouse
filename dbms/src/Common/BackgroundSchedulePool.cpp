@@ -118,8 +118,8 @@ void BackgroundSchedulePool::TaskInfo::execute()
         executing = false;
 
         /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
-		/// on the queue. We don't call the function again here because this way all tasks
-		/// will have their chance to execute
+        /// on the queue. We don't call the function again here because this way all tasks
+        /// will have their chance to execute
 
         if (scheduled)
             pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));

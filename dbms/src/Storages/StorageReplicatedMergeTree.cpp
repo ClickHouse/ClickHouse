@@ -1155,7 +1155,6 @@ void StorageReplicatedMergeTree::writePartLog(
 
         if (merge_entry)
         {
-
             part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
             part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
@@ -4084,7 +4083,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
             const String & path_created =
                 static_cast<const zkutil::CreateResponse *>(responses[1].get())->path_created;
             entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-            LOG_TRACE(log, "Created mutation with id " << entry.znode_name);
+            LOG_TRACE(log, "Created mutation with ID " << entry.znode_name);
             break;
         }
         else if (rc == ZooKeeperImpl::ZooKeeper::ZBADVERSION)

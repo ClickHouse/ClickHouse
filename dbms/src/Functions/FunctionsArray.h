@@ -46,6 +46,8 @@ namespace ErrorCodes
   * arrayUniq(arr) - counts the number of different elements in the array,
   * arrayUniq(arr1, arr2, ...) - counts the number of different tuples from the elements in the corresponding positions in several arrays.
   *
+  * arrayDistinct(arr) - retrun different elements in an array
+  *
   * arrayEnumerateUniq(arr)
   *  - outputs an array parallel (having same size) to this, where for each element specified
   *  how many times this element was encountered before (including this element) among elements with the same value.
@@ -1210,6 +1212,52 @@ private:
 };
 
 
+/// Find different elements in an array.
+class FunctionArrayDistinct : public IFunction
+{
+public:
+    static constexpr auto name = "arrayDistinct";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+
+private:
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+
+    template <typename T>
+    bool executeNumber(
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+
+    bool executeString(
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+    
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets);
+};
+
+
 class FunctionArrayEnumerateUniq : public IFunction
 {
 public:
@@ -1383,6 +1431,9 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 

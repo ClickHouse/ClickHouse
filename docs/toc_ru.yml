@@ -1,0 +1,173 @@
+pages:
+
+- 'Введение':
+  - 'Обзор': 'index.md'
+  - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
+  - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
+  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
+  - 'Возможные глупые вопросы': 'introduction/possible_silly_questions.md'
+  - 'Производительность': 'introduction/performance.md'
+
+- 'Начало работы':
+  - 'Установка и запуск': 'getting_started/index.md'
+  - 'Тестовые наборы данных':
+    - 'OnTime': 'getting_started/example_datasets/ontime.md'
+    - 'Данные о такси в Нью-Йорке': 'getting_started/example_datasets/nyc_taxi.md'
+    - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
+    - 'WikiStat': 'getting_started/example_datasets/wikistat.md'
+    - 'Терабайт логов кликов от Criteo': 'getting_started/example_datasets/criteo.md'
+    - 'Схема «Звезда»': 'getting_started/example_datasets/star_schema.md'
+
+- 'Интерфейсы':
+  - 'Введение': 'interfaces/index.md'
+  - 'Клиент командной строки': 'interfaces/cli.md'
+  - 'HTTP-интерфейс': 'interfaces/http_interface.md'
+  - 'JDBC-драйвер': 'interfaces/jdbc.md'
+  - 'Родной интерфейс (TCP)': 'interfaces/tcp.md'
+  - 'Библиотеки от сторонних разработчиков': 'interfaces/third-party_client_libraries.md'
+  - 'Визуальные интерфейсы от сторонних разработчиков': 'interfaces/third-party_gui.md'
+  - 'Форматы входных и выходных данных': 'interfaces/formats.md'
+
+- 'Типы данных':
+  - 'Введение': 'data_types/index.md'
+  - 'UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64': 'data_types/int_uint.md'
+  - 'Float32, Float64': 'data_types/float.md'
+  - 'Булевы значения': 'data_types/boolean.md'
+  - 'String': 'data_types/string.md'
+  - 'FixedString(N)': 'data_types/fixedstring.md'
+  - 'Date': 'data_types/date.md'
+  - 'DateTime': 'data_types/datetime.md'
+  - 'Enum': 'data_types/enum.md'
+  - 'Array(T)': 'data_types/array.md'
+  - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
+  - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+  - 'Вложенные структуры данных':
+    - 'hidden': 'data_types/nested_data_structures/index.md'
+    - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
+  - 'Служебные типы данных':
+    - 'hidden': 'data_types/special_data_types/index.md'
+    - 'Expression': 'data_types/special_data_types/expression.md'
+    - 'Set': 'data_types/special_data_types/set.md'
+
+- 'Справка по SQL':
+  - 'hidden': 'query_language/index.md'
+  - 'SELECT': 'query_language/select.md'
+  - 'INSERT INTO': 'query_language/insert_into.md'
+  - 'CREATE': 'query_language/create.md'
+  - 'ALTER': 'query_language/alter.md'
+  - 'Прочие виды запросов': 'query_language/misc.md'
+  - 'Функции':
+    - 'Введение': 'query_language/functions/index.md'
+    - 'Арифметические функции': 'query_language/functions/arithmetic_functions.md'
+    - 'Функции сравнения': 'query_language/functions/comparison_functions.md'
+    - 'Логические функции': 'query_language/functions/logical_functions.md'
+    - 'Функции преобразования типов': 'query_language/functions/type_conversion_functions.md'
+    - 'Функции для работы с датами и временем': 'query_language/functions/date_time_functions.md'
+    - 'Функции для работы со строками': 'query_language/functions/string_functions.md'
+    - 'Функции поиска в строках': 'query_language/functions/string_search_functions.md'
+    - 'Функции поиска и замены в строках': 'query_language/functions/string_replace_functions.md'
+    - 'Условные функции': 'query_language/functions/conditional_functions.md'
+    - 'Математические функции': 'query_language/functions/math_functions.md'
+    - 'Функции округления': 'query_language/functions/rounding_functions.md'
+    - 'Функции по работе с массивами': 'query_language/functions/array_functions.md'
+    - 'Функции разбиения и слияния строк и массивов': 'query_language/functions/splitting_merging_functions.md'
+    - 'Битовые функции': 'query_language/functions/bit_functions.md'
+    - 'Функции хэширования': 'query_language/functions/hash_functions.md'
+    - 'Функции генерации псевдослучайных чисел': 'query_language/functions/random_functions.md'
+    - 'Функции кодирования': 'query_language/functions/encoding_functions.md'
+    - 'Функции для работы с URL': 'query_language/functions/url_functions.md'
+    - 'Функции для работы с IP-адресами': 'query_language/functions/ip_address_functions.md'
+    - 'Функции для работы с JSON.': 'query_language/functions/json_functions.md'
+    - 'Функции высшего порядка': 'query_language/functions/higher_order_functions.md'
+    - 'Прочие функции': 'query_language/functions/other_functions.md'
+    - 'Функции для работы с внешними словарями': 'query_language/functions/ext_dict_functions.md'
+    - 'Функции для работы со словарями Яндекс.Метрики': 'query_language/functions/ym_dict_functions.md'
+    - 'Функции для реализации оператора IN.': 'query_language/functions/in_functions.md'
+    - 'Функция arrayJoin': 'query_language/functions/array_join.md'
+    - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
+
+  - 'Агрегатные функции':
+    - 'Введение': 'query_language/agg_functions/index.md'
+    - 'Справочник функций': 'query_language/agg_functions/reference.md'
+    - 'Комбинаторы агрегатных функций': 'query_language/agg_functions/combinators.md'
+    - 'Параметрические агрегатные функции': 'query_language/agg_functions/parametric_functions.md'
+  - 'Табличные функции':
+    - 'Введение': 'query_language/table_functions/index.md'
+    - 'file': 'query_language/table_functions/file.md'
+    - 'merge': 'query_language/table_functions/merge.md'
+    - 'numbers': 'query_language/table_functions/numbers.md'
+    - 'remote': 'query_language/table_functions/remote.md'
+  - 'Словари':
+    - 'Введение': 'query_language/dicts/index.md'
+    - 'Внешние словари':
+      - 'Общее описание': 'query_language/dicts/external_dicts.md'
+      - 'Настройка внешнего словаря': 'query_language/dicts/external_dicts_dict.md'
+      - 'Хранение словарей в памяти': 'query_language/dicts/external_dicts_dict_layout.md'
+      - 'Обновление словарей': 'query_language/dicts/external_dicts_dict_lifetime.md'
+      - 'Источники внешних словарей': 'query_language/dicts/external_dicts_dict_sources.md'
+      - 'Ключ и поля словаря': 'query_language/dicts/external_dicts_dict_structure.md'
+    - 'Встроенные словари': 'query_language/dicts/internal_dicts.md'
+  - 'Операторы': 'query_language/operators.md'
+  - 'Общий синтаксис': 'query_language/syntax.md'
+
+
+- 'Эксплуатация':
+  - 'hidden': 'operations/index.md'
+  - 'Движки таблиц':
+    - 'Введение': 'operations/table_engines/index.md'
+    - 'Семейство MergeTree':
+      - 'MergeTree': 'operations/table_engines/mergetree.md'
+      - 'Репликация данных': 'operations/table_engines/replication.md'
+      - 'Произвольный ключ партиционирования': 'operations/table_engines/custom_partitioning_key.md'
+      - 'ReplacingMergeTree': 'operations/table_engines/replacingmergetree.md'
+      - 'SummingMergeTree': 'operations/table_engines/summingmergetree.md'
+      - 'AggregatingMergeTree': 'operations/table_engines/aggregatingmergetree.md'
+      - 'CollapsingMergeTree': 'operations/table_engines/collapsingmergetree.md'
+      - 'GraphiteMergeTree': 'operations/table_engines/graphitemergetree.md'
+    - 'Для небольших объемов данных':
+      - 'TinyLog': 'operations/table_engines/tinylog.md'
+      - 'Log': 'operations/table_engines/log.md'
+      - 'Memory': 'operations/table_engines/memory.md'
+      - 'Buffer': 'operations/table_engines/buffer.md'
+      - 'Внешние данные': 'operations/table_engines/external_data.md'
+    - 'Особые':
+      - 'Distributed': 'operations/table_engines/distributed.md'
+      - 'Dictionary': 'operations/table_engines/dictionary.md'
+      - 'Merge': 'operations/table_engines/merge.md'
+      - 'File': 'operations/table_engines/file.md'
+      - 'Null': 'operations/table_engines/null.md'
+      - 'Set': 'operations/table_engines/set.md'
+      - 'Join': 'operations/table_engines/join.md'
+      - 'View': 'operations/table_engines/view.md'
+      - 'MaterializedView': 'operations/table_engines/materializedview.md'
+    - 'Интеграции':
+      - 'Kafka': 'operations/table_engines/kafka.md'
+      - 'MySQL': 'operations/table_engines/mysql.md'
+  - 'Права доступа': 'operations/access_rights.md'
+  - 'Конфигурационные файлы': 'operations/configuration_files.md'
+  - 'Квоты': 'operations/quotas.md'
+  - 'Системные таблицы': 'operations/system_tables.md'
+  - 'Советы по эксплуатации': 'operations/tips.md'
+  - 'Конфигурационные параметры сервера':
+    - 'Введение': 'operations/server_settings/index.md'
+    - 'Серверные настройки': 'operations/server_settings/settings.md'
+  - 'Настройки':
+    - 'Введение': 'operations/settings/index.md'
+    - 'Ограничения на сложность запроса': 'operations/settings/query_complexity.md'
+    - 'Настройки': 'operations/settings/settings.md'
+    - 'Профили настроек': 'operations/settings/settings_profiles.md'
+  - 'Утилиты':
+    - 'Введение': 'operations/utils/index.md'
+    - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
+    - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
+
+- 'Разработка':
+  - 'hidden': 'development/index.md'
+  - 'Overview of ClickHouse architecture': 'development/architecture.md'
+  - 'Как собрать ClickHouse на Linux': 'development/build.md'
+  - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
+  - 'Как писать код на C++': 'development/style.md'
+  - 'Как запустить тесты': 'development/tests.md'
+
+- 'Roadmap': 'roadmap.md'
+- 'Changelog': 'changelog.md'
