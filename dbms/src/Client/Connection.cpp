@@ -179,8 +179,10 @@ void Connection::receiveHello()
             readStringBinary(server_timezone, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
             readStringBinary(server_display_name, *in);
-        // TODO: If we will broke protocol - add this field:
-        // readVarUInt(server_version_patch, *in);
+        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+            readVarUInt(server_version_patch, *in);
+        else
+            server_version_patch = server_revision;
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();

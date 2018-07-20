@@ -24,7 +24,6 @@
 #include <Common/config_version.h>
 #include <ext/scope_guard.h>
 
-
 namespace DB
 {
 
@@ -501,8 +500,6 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
-
-
     LOG_DEBUG(log, "Connected " << client_name
         << " version " << client_version_major
         << "." << client_version_minor
@@ -522,13 +519,13 @@ void TCPHandler::sendHello()
     writeStringBinary(DBMS_NAME, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
-    // TODO: If we will broke protocol - add this field:
-    // writeVarUInt(DBMS_VERSION_PATCH, *out);
     writeVarUInt(ClickHouseRevision::get(), *out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
         writeStringBinary(server_display_name, *out);
+    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+        writeVarUInt(DBMS_VERSION_PATCH, *out);
     out->next();
 }
 
