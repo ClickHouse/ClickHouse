@@ -2356,9 +2356,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
 {
     String dst_part_name;
     if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
-        else
-            dst_part_name = dst_part_info.getPartName();
+        dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
+    else
+        dst_part_name = dst_part_info.getPartName();
 
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
