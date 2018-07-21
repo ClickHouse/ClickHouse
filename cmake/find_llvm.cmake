@@ -25,7 +25,7 @@ if (ENABLE_EMBEDDED_COMPILER)
         endif ()
 
         if (LLVM_FOUND)
-            find_library (LLD_LIBRARY_TEST lldCOFF PATHS ${LLVM_LIBRARY_DIRS})
+            find_library (LLD_LIBRARY_TEST lldCore PATHS ${LLVM_LIBRARY_DIRS})
             find_path (LLD_INCLUDE_DIR_TEST NAMES lld/Common/Driver.h PATHS ${LLVM_INCLUDE_DIRS})
             if (NOT LLD_LIBRARY_TEST OR NOT LLD_INCLUDE_DIR_TEST)
                 set (LLVM_FOUND 0)
