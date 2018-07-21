@@ -2,6 +2,8 @@
     #include <emmintrin.h>
 #endif
 
+#include <boost/preprocessor/repetition/repeat.hpp>
+
 #include <Columns/IColumn.h>
 
 
@@ -20,31 +22,36 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
     const Int8 * pos = reinterpret_cast<const Int8 *>(&filt[0]);
     const Int8 * end = pos + filt.size();
 
+    switch (filt.size() % 64)
+    {
+        do {
+            case 0:
+            {
 #if __SSE2__ && __POPCNT__
-    const __m128i zero16 = _mm_setzero_si128();
-    const Int8 * end64 = pos + filt.size() / 64 * 64;
-
-    for (; pos < end64; pos += 64)
-        count += __builtin_popcountll(
-            static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
-                zero16)))
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
-                zero16))) << 16)
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
-                zero16))) << 32)
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
-                zero16))) << 48));
-
-    /// TODO Add duff device for tail?
+                const __m128i zero16 = _mm_setzero_si128();
+                for (; pos < end; pos += 64)
+                    count += __builtin_popcountll(
+                        static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                            _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos)),
+                            zero16)))
+                        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                            _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 16)),
+                            zero16))) << 16)
+                        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                            _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 32)),
+                            zero16))) << 32)
+                        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
+                            _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos + 48)),
+                            zero16))) << 48));
+                return count;
 #endif
-
-    for (; pos < end; ++pos)
-        count += *pos > 0;
-
+                count += *pos++ > 0;
+            }
+#define CASE(z, n, stmt) case (63 - n): stmt
+            BOOST_PP_REPEAT(63, CASE, {count += *pos++ > 0;})
+#undef CASE
+        } while (pos < end);
+    }
     return count;
 }
 
@@ -65,32 +72,36 @@ bool memoryIsZero(const void * data, size_t size)
     const Int8 * pos = reinterpret_cast<const Int8 *>(data);
     const Int8 * end = pos + size;
 
+    switch (size % 64)
+    {
+        do {
+            case 0:
+            {
 #if __SSE2__
-    const __m128 zero16 = _mm_setzero_ps();
-    const Int8 * end64 = pos + size / 64 * 64;
-
-    for (; pos < end64; pos += 64)
-        if (_mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos)),
-                zero16))
-            | _mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 16)),
-                zero16))
-            | _mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 32)),
-                zero16))
-            | _mm_movemask_ps(_mm_cmpneq_ps(
-                _mm_loadu_ps(reinterpret_cast<const float *>(pos + 48)),
-                zero16)))
-            return false;
-
-    /// TODO Add duff device for tail?
+                const __m128 zero16 = _mm_setzero_ps();
+                for (; pos < end; pos += 64)
+                    if (_mm_movemask_ps(_mm_cmpneq_ps(
+                            _mm_loadu_ps(reinterpret_cast<const float *>(pos)),
+                            zero16))
+                        | _mm_movemask_ps(_mm_cmpneq_ps(
+                            _mm_loadu_ps(reinterpret_cast<const float *>(pos + 16)),
+                            zero16))
+                        | _mm_movemask_ps(_mm_cmpneq_ps(
+                            _mm_loadu_ps(reinterpret_cast<const float *>(pos + 32)),
+                            zero16))
+                        | _mm_movemask_ps(_mm_cmpneq_ps(
+                            _mm_loadu_ps(reinterpret_cast<const float *>(pos + 48)),
+                            zero16)))
+                        return false;
+                return true;
 #endif
-
-    for (; pos < end; ++pos)
-        if (*pos)
-            return false;
-
+                if (*pos++) return false;
+            }
+#define CASE(z, n, stmt) case (63 - n): stmt
+            BOOST_PP_REPEAT(63, CASE, {if (*pos++) return false;})
+#undef CASE
+        } while (pos < end);
+    }
     return true;
 }
 
