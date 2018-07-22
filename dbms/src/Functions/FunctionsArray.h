@@ -1011,7 +1011,7 @@ public:
             DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
             DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
-            if (!(observed_type0->isNumber() && observed_type1->isNumber())
+            if (!((observed_type0->isNumber() || observed_type0->isValueRepresentedByNumber()) && observed_type1->isNumber())
                 && !observed_type0->equals(*observed_type1))
                 throw Exception("Types of array and 2nd argument of function "
                     + getName() + " must be identical up to nullability. Passed: "
