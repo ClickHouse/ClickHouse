@@ -3,7 +3,6 @@ option (USE_INTERNAL_BOOST_LIBRARY "Set to FALSE to use system boost library ins
 # Test random file existing in all package variants
 if (USE_INTERNAL_BOOST_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/libs/system/src/error_code.cpp")
    message (FATAL_ERROR "submodules in contrib/boost is missing. to fix try run: \n git submodule update --init --recursive")
-   set (USE_INTERNAL_BOOST_LIBRARY 0)
 endif ()
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
