@@ -1,9 +1,7 @@
 option (USE_INTERNAL_CCTZ_LIBRARY "Set to FALSE to use system cctz library instead of bundled" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_CCTZ_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cctz/include/cctz/time_zone.h")
-   message (WARNING "submodule contrib/cctz is missing. to fix try run: \n git submodule update --init --recursive")
-   set (MISSING_INTERNAL_CCTZ_LIBRARY 1)
-   set (USE_INTERNAL_CCTZ_LIBRARY 0)
+   message (FATAL_ERROR "submodule contrib/cctz is missing. to fix try run: \n git submodule update --init --recursive")
 endif ()
 
 if (NOT USE_INTERNAL_CCTZ_LIBRARY)

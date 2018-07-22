@@ -3,8 +3,7 @@ option (USE_INTERNAL_LLVM_LIBRARY "Use bundled or system LLVM library. Default: 
 
 if (ENABLE_EMBEDDED_COMPILER)
     if (USE_INTERNAL_LLVM_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
-        message (WARNING "submodule contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
-        set (USE_INTERNAL_LLVM_LIBRARY 0)
+        message (FATAL_ERROR "submodule contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
     endif ()
 
     if (NOT USE_INTERNAL_LLVM_LIBRARY)

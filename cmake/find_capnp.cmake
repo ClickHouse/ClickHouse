@@ -17,10 +17,8 @@ if (ENABLE_CAPNP)
 
     if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++/CMakeLists.txt")
        if (USE_INTERNAL_CAPNP_LIBRARY)
-           message (WARNING "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init --recursive")
+           message (FATAL_ERROR "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init --recursive")
        endif ()
-       set (USE_INTERNAL_CAPNP_LIBRARY 0)
-       set (MISSING_INTERNAL_CAPNP_LIBRARY 1)
     endif ()
 
     if (NOT USE_INTERNAL_CAPNP_LIBRARY)

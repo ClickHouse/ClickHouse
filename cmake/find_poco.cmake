@@ -2,9 +2,8 @@ option (USE_INTERNAL_POCO_LIBRARY "Set to FALSE to use system poco library inste
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/CMakeLists.txt")
    if (USE_INTERNAL_POCO_LIBRARY)
-      message (WARNING "submodule contrib/poco is missing. to fix try run: \n git submodule update --init --recursive")
+      message (FATAL_ERROR "submodule contrib/poco is missing. to fix try run: \n git submodule update --init --recursive")
    endif ()
-   set (USE_INTERNAL_POCO_LIBRARY 0)
    set (MISSING_INTERNAL_POCO_LIBRARY 1)
 endif ()
 
