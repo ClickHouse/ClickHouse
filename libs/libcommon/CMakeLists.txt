@@ -60,10 +60,6 @@ add_library (common ${SPLIT_SHARED}
 # When testing for memory leaks, dont link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
-    if (NOT JEMALLOC_FOUND)
-        message (FATAL_ERROR "USE_JEMALLOC is set but the library was not found")
-    endif ()
-
     message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
 elseif (USE_TCMALLOC)
