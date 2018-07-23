@@ -2877,8 +2877,6 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
     }
     else if (table_join.on_expression)
     {
-        auto & on_expression = typeid_cast<ASTExpressionList &>(*table_join.on_expression);
-
         const auto supported_syntax =
                 "\nSupported syntax: JOIN ON [table.]column = [table.]column [AND [table.]column = [table.]column ...]";
         auto throwSyntaxException = [&](const String & msg)
