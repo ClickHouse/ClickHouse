@@ -99,7 +99,8 @@ void DataTypeFactory::registerDataType(const String & family_name, Creator creat
             ErrorCodes::LOGICAL_ERROR);
 }
 
-void DataTypeFactory::registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness) {
+void DataTypeFactory::registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness)
+{
     String real_type_dict_name;
     if (data_types.count(real_name))
         real_type_dict_name = real_name;
@@ -161,7 +162,8 @@ const String & DataTypeFactory::aliasTo(const String & name) const
 }
 
 
-bool DataTypeFactory::isAlias(const String & name) const {
+bool DataTypeFactory::isAlias(const String & name) const
+{
     return aliases.count(name) || case_insensitive_aliases.count(name);
 }
 
