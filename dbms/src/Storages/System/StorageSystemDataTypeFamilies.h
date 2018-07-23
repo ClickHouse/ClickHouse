@@ -27,6 +27,7 @@ public:
             {"name", std::make_shared<DataTypeString>()},
             {"case_insensivie", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
             {"alias_to", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+            {"size_in_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>())},
             {"parametric", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
             {"have_subtypes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
             {"cannot_be_stored_in_tables", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
