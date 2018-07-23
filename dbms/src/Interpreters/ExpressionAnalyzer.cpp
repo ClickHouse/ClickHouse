@@ -2890,8 +2890,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
             if (!func_equals || func_equals->name != "equals")
                 throwSyntaxException("Expected equals expression, got " + queryToString(expr));
 
-            String left_name = func_equals->children.at(0)->getAliasOrColumnName();
-            String right_name = func_equals->children.at(1)->getAliasOrColumnName();
+            String left_name = func_equals->arguments->children.at(0)->getAliasOrColumnName();
+            String right_name = func_equals->arguments->children.at(1)->getAliasOrColumnName();
             add_name_to_join_keys(join_key_names_left, left_name, "in JOIN ON expression for left table");
             add_name_to_join_keys(join_key_names_right, right_name, "in JOIN ON expression for right table");
         };
