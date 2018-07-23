@@ -1,13 +1,17 @@
 #include <Databases/IDatabase.h>
 #include <Storages/System/attachSystemTables.h>
 
+#include <Storages/System/StorageSystemAggregateFunctionCombinators.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
+#include <Storages/System/StorageSystemCollations.h>
 #include <Storages/System/StorageSystemClusters.h>
 #include <Storages/System/StorageSystemColumns.h>
 #include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/System/StorageSystemDataTypeFamilies.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/System/StorageSystemEvents.h>
+#include <Storages/System/StorageSystemFormats.h>
 #include <Storages/System/StorageSystemFunctions.h>
 #include <Storages/System/StorageSystemGraphite.h>
 #include <Storages/System/StorageSystemMacros.h>
@@ -23,6 +27,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
+#include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 
@@ -42,6 +47,11 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("events", StorageSystemEvents::create("events"));
     system_database.attachTable("settings", StorageSystemSettings::create("settings"));
     system_database.attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
+    system_database.attachTable("formats", StorageSystemFormats::create("formats"));
+    system_database.attachTable("table_functions", StorageSystemTableFunctions::create("table_functions"));
+    system_database.attachTable("aggregate_function_combinators", StorageSystemAggregateFunctionCombinators::create("aggregate_function_combinators"));
+    system_database.attachTable("data_type_families", StorageSystemDataTypeFamilies::create("data_type_families"));
+    system_database.attachTable("collations", StorageSystemCollations::create("collations"));
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)

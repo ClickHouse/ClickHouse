@@ -377,6 +377,7 @@ namespace ErrorCodes
     extern const int CANNOT_STAT = 400;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME = 401;
     extern const int CANNOT_IOSETUP = 402;
+    extern const int INVALID_JOIN_ON_EXPRESSION = 403;
 
 
     extern const int KEEPER_EXCEPTION = 999;

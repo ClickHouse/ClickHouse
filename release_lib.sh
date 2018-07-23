@@ -15,7 +15,7 @@ function get_version {
     VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
     VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
     VERSION_PREFIX="${VERSION_PREFIX:-v}"
-    VERSION_POSTFIX="${VERSION_POSTFIX:--testing}"
+    VERSION_POSTFIX_TAG="${VERSION_POSTFIX:--testing}"
 
     gen_version_string
 }
@@ -60,7 +60,7 @@ function gen_revision_author {
 
             gen_version_string
 
-            git_tag_grep=`git tag | grep "$VERSION_PREFIX$VERSION_STRING$VERSION_POSTFIX"`
+            git_tag_grep=`git tag | grep "$VERSION_PREFIX$VERSION_STRING$VERSION_POSTFIX_TAG"`
             if [ "$git_tag_grep" == "" ]; then
                 succeeded=1
             fi
@@ -73,7 +73,7 @@ function gen_revision_author {
         auto_message="Auto version update to"
         git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
         if [ "$git_log_grep" == "" ]; then
-            tag="$VERSION_PREFIX$VERSION_STRING$VERSION_POSTFIX"
+            tag="$VERSION_PREFIX$VERSION_STRING$VERSION_POSTFIX_TAG"
 
             # First tag for correct git describe
             echo -e "\nTrying to create tag: $tag"
