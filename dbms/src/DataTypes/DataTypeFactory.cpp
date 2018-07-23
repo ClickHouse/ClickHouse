@@ -139,7 +139,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
 std::vector<String> DataTypeFactory::getAllDataTypeNames() const
 {
     std::vector<String> result;
-    auto getter = [] (const auto& pair) { return pair.first; };
+    auto getter = [] (const auto & pair) { return pair.first; };
     std::transform(data_types.begin(), data_types.end(), std::back_inserter(result), getter);
     std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
     return result;
