@@ -43,9 +43,8 @@ cd ..
 
 If you intend to run clickhouse-server, make sure to increase the system's maxfiles variable.
 
-<div class="admonition info">
-Note: you'll need to use sudo.
-</div>
+!!! info "Note"
+    You'll need to use sudo.
 
 To do so, create the following file:
 

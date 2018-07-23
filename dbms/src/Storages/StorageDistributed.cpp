@@ -213,7 +213,7 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
         header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());

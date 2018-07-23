@@ -24,9 +24,8 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md#queries-attach) it to table information with matching name, so you can query data from that file.
 
-<div class="admonition warning">
-Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
-</div>
+!!! warning
+    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
 **Example:**
 

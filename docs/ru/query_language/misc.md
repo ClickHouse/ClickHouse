@@ -174,9 +174,8 @@ OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
 Если указан `PARTITION`, то оптимизация будет производиться только для указаной партиции.
 Если указан `FINAL`, то оптимизация будет производиться даже когда все данные уже лежат в одном куске.
 
-<div class="admonition warning">
-Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
-</div>
+!!! warning "Внимание"
+    Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
 
 ## KILL QUERY
 

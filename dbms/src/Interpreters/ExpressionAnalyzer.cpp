@@ -215,7 +215,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
 
-    /// Remove unneeded columns according to 'required_source_columns'.
+    /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.

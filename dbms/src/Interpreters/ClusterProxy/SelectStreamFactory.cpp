@@ -44,7 +44,7 @@ namespace
 
 BlockInputStreamPtr createLocalStream(const ASTPtr & query_ast, const Context & context, QueryProcessingStage::Enum processed_stage)
 {
-    InterpreterSelectQuery interpreter{query_ast, context, {}, processed_stage};
+    InterpreterSelectQuery interpreter{query_ast, context, Names{}, processed_stage};
     BlockInputStreamPtr stream = interpreter.execute().in;
 
     /** Materialization is needed, since from remote servers the constants come materialized.
