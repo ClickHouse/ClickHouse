@@ -2896,7 +2896,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
             add_name_to_join_keys(join_key_names_right, right_name, "in JOIN ON expression for right table");
         };
 
-        auto * func = typeid_cast<const ASTFunction *>(table_join.on_expression);
+        auto * func = typeid_cast<const ASTFunction *>(table_join.on_expression.get());
         if (func && func->name == "and")
         {
             for (auto expr : func->children)
