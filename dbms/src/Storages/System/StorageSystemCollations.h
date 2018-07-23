@@ -1,26 +1,28 @@
 #pragma once
-#include <Storages/System/IStorageSystemWithStringColumns.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 #include <ext/shared_ptr_helper.h>
 
 namespace DB
 {
 class StorageSystemCollations : public ext::shared_ptr_helper<StorageSystemCollations>,
-                                public IStorageSystemWithStringColumns<StorageSystemCollations>
+                                public IStorageSystemOneBlock<StorageSystemCollations>
 {
 protected:
     void fillData(MutableColumns & res_columns) const override;
 
 public:
-    using IStorageSystemWithStringColumns::IStorageSystemWithStringColumns;
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
     std::string getName() const override
     {
         return "SystemTableCollations";
     }
 
-    static std::vector<String> getColumnNames()
+    static NamesAndTypesList getNamesAndTypes()
     {
-        return {"name"};
+        return {
+            {"name", std::make_shared<DataTypeString>()},
+        };
     }
 };
 }

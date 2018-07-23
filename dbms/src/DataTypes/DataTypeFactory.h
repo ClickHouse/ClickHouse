@@ -25,6 +25,7 @@ private:
     using Creator = std::function<DataTypePtr(const ASTPtr & parameters)>;
     using SimpleCreator = std::function<DataTypePtr()>;
     using DataTypesDictionary = std::unordered_map<String, Creator>;
+    using AliasMap = std::unordered_map<String, String>; // alias -> original type
 
 public:
     DataTypePtr get(const String & full_name) const;
@@ -44,16 +45,30 @@ public:
     /// Register a simple data type, that have no parameters.
     void registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness = CaseSensitive);
 
-    const DataTypesDictionary & getAllDataTypes() const
-    {
-        return data_types;
-    }
+    /** Register additional name for datatype.
+     * real_name datatype have to be already registered.
+     */
+    void registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive);
+
+    std::vector<String> getAllDataTypeNames() const;
+
+    bool isCaseInsensitive(const String & name) const;
+
+    const String & aliasTo(const String & name) const;
+
+    bool isAlias(const String & name) const;
 
 private:
     DataTypesDictionary data_types;
 
     /// Case insensitive data types will be additionally added here with lowercased name.
     DataTypesDictionary case_insensitive_data_types;
+
+    /// Alias map to data_types from previous two maps
+    AliasMap aliases;
+
+    /// Case insensitive aliases
+    AliasMap case_insensitive_aliases;
 
     DataTypeFactory();
     friend class ext::singleton<DataTypeFactory>;

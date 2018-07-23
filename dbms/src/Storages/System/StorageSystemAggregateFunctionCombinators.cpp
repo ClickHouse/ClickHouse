@@ -9,6 +9,10 @@ void StorageSystemAggregateFunctionCombinators::fillData(MutableColumns & res_co
     for (const auto & pair : combinators)
     {
         res_columns[0]->insert(pair.first);
+        if (pair.first != "Null")
+            res_columns[1]->insert(UInt64(0));
+        else
+            res_columns[1]->insert(UInt64(1));
     }
 }
 }
