@@ -118,7 +118,7 @@ void DataTypeFactory::registerAlias(const String & alias_name, const String & re
         if(!case_insensitive_aliases.emplace(alias_name_lowercase, real_type_dict_name).second)
             throw Exception("DataTypeFactory: case insensitive alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 
-    if(!aliases.emplace(alias_name, real_type_dict_name).second)
+    if (!aliases.emplace(alias_name, real_type_dict_name).second)
         throw Exception("DataTypeFactory: alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
