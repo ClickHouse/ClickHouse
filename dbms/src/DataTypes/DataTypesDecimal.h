@@ -1,9 +1,15 @@
 #pragma once
+#include <common/likely.h>
 #include <DataTypes/IDataType.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ARGUMENT_OUT_OF_BOUND;
+}
 
 ///
 class DataTypeSimpleSerialization : public IDataType
@@ -52,6 +58,13 @@ class DataTypeSimpleSerialization : public IDataType
 };
 
 
+static constexpr size_t minDecimalPrecision() { return 1; }
+template <typename T> static constexpr size_t maxDecimalPrecision();
+template <> constexpr size_t maxDecimalPrecision<Int32>() { return 9; }
+template <> constexpr size_t maxDecimalPrecision<Int64>() { return 18; }
+template <> constexpr size_t maxDecimalPrecision<Int128>() { return 38; }
+
+
 /// Implements Decimal(P, S), where P is precision, S is scale.
 /// Maximum precisions for underlying types are:
 /// Int32    9
@@ -60,6 +73,8 @@ class DataTypeSimpleSerialization : public IDataType
 /// Operation between two decimals leads to Decimal(P, S), where
 ///     P is one of (9, 18, 38); equals to the maximum precision for the biggest underlying type of operands.
 ///     S is maximum scale of operands.
+///
+/// NOTE: It's possible to set scale as a template parameter then most of functions become static.
 template <typename T>
 class DataTypeDecimal final : public DataTypeSimpleSerialization
 {
@@ -69,10 +84,15 @@ public:
 
     static constexpr bool is_parametric = true;
 
-    DataTypeDecimal(UInt32 precision_, Int32 scale_)
+    DataTypeDecimal(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
         scale(scale_)
-    {}
+    {
+        if (unlikely(precision < 1 || precision > maxDecimalPrecision<T>()))
+            throw Exception("Precision is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        if (unlikely(scale < 0 || static_cast<UInt32>(scale) > maxDecimalPrecision<T>()))
+            throw Exception("Scale is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    }
 
     const char * getFamilyName() const override { return "Decimal"; }
     std::string getName() const override;
@@ -114,20 +134,59 @@ public:
     bool isInteger() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
 
+    /// Decimal specific
+
+    UInt32 getPrecision() const { return precision; }
+    UInt32 getScale() const { return scale; }
+    T getScaleMultiplier() const { return getScaleMultiplier(scale); }
+
+    T wholePart(T x) const
+    {
+        if (scale == 0)
+            return x;
+        return x / scale;
+    }
+
+    T fractionalPart(T x) const
+    {
+        if (scale == 0)
+            return 0;
+        if (x < 0)
+            x *= -1;
+        return x % scale;
+    }
+
+    T maxWholeValue() const { return getScaleMultiplier(maxDecimalPrecision<T>() - scale) - 1; }
+
+    bool canStoreWhole(T x) const
+    {
+        T max = maxWholeValue();
+        if (x > max || x < -max)
+            return false;
+        return true;
+    }
+
 private:
-    UInt32 precision;
-    Int32 scale; /// TODO: should we support scales out of [0, precision]?
+    const UInt32 precision;
+    const UInt32 scale; /// TODO: should we support scales out of [0, precision]?
+
+    static T getScaleMultiplier(UInt32 scale);
 };
 
 
-using DataTypeDecimal9 = DataTypeDecimal<Int32>;
-using DataTypeDecimal18 = DataTypeDecimal<Int64>;
-using DataTypeDecimal38 = DataTypeDecimal<Int128>;
+template <typename T, typename U>
+typename std::enable_if_t<(sizeof(T) >= sizeof(U)), const DataTypeDecimal<T>>
+decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty)
+{
+    return DataTypeDecimal<T>(maxDecimalPrecision<T>(), max(tx.getScale(), ty.getScale()));
+}
 
-static constexpr size_t minDecimalPrecision() { return 1; }
-template <typename T> static constexpr size_t maxDecimalPrecision();
-template <> constexpr size_t maxDecimalPrecision<Int32>() { return 9; }
-template <> constexpr size_t maxDecimalPrecision<Int64>() { return 18; }
-template <> constexpr size_t maxDecimalPrecision<Int128>() { return 38; }
+template <typename T, typename U>
+typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DataTypeDecimal<U>>
+decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty)
+{
+    return DataTypeDecimal<U>(maxDecimalPrecision<U>(), max(tx.getScale(), ty.getScale()));
+}
+
 
 }

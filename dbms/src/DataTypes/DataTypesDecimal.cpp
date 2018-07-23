@@ -33,9 +33,9 @@ std::string DataTypeDecimal<T>::getName() const
 }
 
 template <typename T>
-bool DataTypeDecimal<T>::equals(const IDataType &) const
+bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
-    return false; // TODO
+    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
 }
 
 template <typename T>
@@ -43,10 +43,9 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 {
     const T & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
 
-    // FIXME: scale
-    writeIntText(value, ostr);
+    writeIntText(wholePart(value), ostr);
     writeChar('.', ostr);
-    writeIntText(0, ostr);
+    writeIntText(fractionalPart(value), ostr);
 }
 
 
@@ -54,7 +53,9 @@ template <typename T>
 void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
-    readDecimalText(istr, x, precision, scale);
+    UInt32 unread_scale = scale;
+    readDecimalText(istr, x, precision, unread_scale);
+    x *= getScaleMultiplier(unread_scale);
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
@@ -153,10 +154,10 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (precision_value <= maxDecimalPrecision<Int32>())
-        return std::make_shared<DataTypeDecimal9>(precision_value, scale_value);
+        return std::make_shared<DataTypeDecimal<Int32>>(precision_value, scale_value);
     else if (precision_value <= maxDecimalPrecision<Int64>())
-        return std::make_shared<DataTypeDecimal18>(precision_value, scale_value);
-    return std::make_shared<DataTypeDecimal38>(precision_value, scale_value);
+        return std::make_shared<DataTypeDecimal<Int64>>(precision_value, scale_value);
+    return std::make_shared<DataTypeDecimal<Int128>>(precision_value, scale_value);
 }
 
 
@@ -164,6 +165,100 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 {
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
 }
+
+
+template <>
+Int32 DataTypeDecimal<Int32>::getScaleMultiplier(UInt32 scale_)
+{
+    static const Int32 values[] = {
+        1,
+        10,
+        100,
+        1000,
+        10000,
+        100000,
+        1000000,
+        10000000,
+        100000000,
+        1000000000
+    };
+    return values[scale_];
+}
+
+template <>
+Int64 DataTypeDecimal<Int64>::getScaleMultiplier(UInt32 scale_)
+{
+    static const Int64 values[] = {
+        1ll,
+        10ll,
+        100ll,
+        1000ll,
+        10000ll,
+        100000ll,
+        1000000ll,
+        10000000ll,
+        100000000ll,
+        1000000000ll,
+        10000000000ll,
+        100000000000ll,
+        1000000000000ll,
+        10000000000000ll,
+        100000000000000ll,
+        1000000000000000ll,
+        10000000000000000ll,
+        100000000000000000ll,
+        1000000000000000000ll
+    };
+    return values[scale_];
+}
+
+template <>
+Int128 DataTypeDecimal<Int128>::getScaleMultiplier(UInt32 scale_)
+{
+    static const Int128 values[] = {
+        static_cast<Int128>(1ll),
+        static_cast<Int128>(10ll),
+        static_cast<Int128>(100ll),
+        static_cast<Int128>(1000ll),
+        static_cast<Int128>(10000ll),
+        static_cast<Int128>(100000ll),
+        static_cast<Int128>(1000000ll),
+        static_cast<Int128>(10000000ll),
+        static_cast<Int128>(100000000ll),
+        static_cast<Int128>(1000000000ll),
+        static_cast<Int128>(10000000000ll),
+        static_cast<Int128>(100000000000ll),
+        static_cast<Int128>(1000000000000ll),
+        static_cast<Int128>(10000000000000ll),
+        static_cast<Int128>(100000000000000ll),
+        static_cast<Int128>(1000000000000000ll),
+        static_cast<Int128>(10000000000000000ll),
+        static_cast<Int128>(100000000000000000ll),
+        static_cast<Int128>(1000000000000000000ll),
+        static_cast<Int128>(1000000000000000000ll) * 10ll,
+        static_cast<Int128>(1000000000000000000ll) * 100ll,
+        static_cast<Int128>(1000000000000000000ll) * 1000ll,
+        static_cast<Int128>(1000000000000000000ll) * 10000ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000ll,
+        static_cast<Int128>(1000000000000000000ll) * 1000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 10000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 1000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 10000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 1000000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 10000000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 1000000000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 10000000000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll * 10ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll * 100ll,
+        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll * 1000ll
+    };
+    return values[scale_];
+}
+
 
 /// Explicit template instantiations.
 template class DataTypeDecimal<Int32>;
