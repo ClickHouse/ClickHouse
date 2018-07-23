@@ -26,7 +26,7 @@ if (ENABLE_EMBEDDED_COMPILER)
 
         if (LLVM_FOUND)
             find_library (LLD_LIBRARY_TEST lldCore PATHS ${LLVM_LIBRARY_DIRS})
-            find_path (LLD_INCLUDE_DIR_TEST NAMES lld/Common/AbsoluteAtom.h PATHS ${LLVM_INCLUDE_DIRS})
+            find_path (LLD_INCLUDE_DIR_TEST NAMES lld/Core/AbsoluteAtom.h PATHS ${LLVM_INCLUDE_DIRS})
             if (NOT LLD_LIBRARY_TEST OR NOT LLD_INCLUDE_DIR_TEST)
                 set (LLVM_FOUND 0)
                 message(WARNING "liblld (${LLD_LIBRARY_TEST}, ${LLD_INCLUDE_DIR_TEST}) not found in ${LLVM_INCLUDE_DIRS} ${LLVM_LIBRARY_DIRS}. Disabling internal compiler.")
