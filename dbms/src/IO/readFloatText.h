@@ -552,12 +552,13 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 }
 
 
-/// TODO: negative scales, trailing zeroes
 template <typename T>
-void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, int scale)
+inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale)
 {
     x = 0;
     int sign = 1;
+    bool leading_zeores = true;
+    bool trailing_zeores = false;
     bool after_point = false;
 
     if (buf.eof())
@@ -578,14 +579,13 @@ void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, int scale)
 
     while (!buf.eof())
     {
-        if (!precision || scale < 0)
-            throw Exception("Cannot read decimal value", ErrorCodes::CANNOT_PARSE_NUMBER);
-
         const char & byte = *buf.position();
         switch (byte)
         {
             case '.':
                 after_point = true;
+                if (scale == 0)
+                    trailing_zeores = true;
                 break;
             case '1': [[fallthrough]];
             case '2': [[fallthrough]];
@@ -596,30 +596,36 @@ void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, int scale)
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
-                if (unlikely(sign))
-                {
-                    x = sign * (byte - '0');
-                    sign = 0; /// no more leading zeroes
-                    break;
-                }
+                leading_zeores = false;
+                if (trailing_zeores || precision == 0)
+                    throw Exception("Cannot read decimal value", ErrorCodes::CANNOT_PARSE_NUMBER);
                 [[fallthrough]];
             case '0':
             {
-                if (likely(sign == 0))
+                /// ignore leading and trailing zeroes
+                if (likely(!leading_zeores && !trailing_zeores))
                 {
+                    if (precision == 0 || precision < scale)
+                        throw Exception("Cannot read decimal value", ErrorCodes::CANNOT_PARSE_NUMBER);
                     --precision;
                     x = x * 10 + (byte - '0');
                 }
                 if (after_point)
+                {
                     --scale;
+                    if (scale == 0)
+                        trailing_zeores = true;
+                }
                 break;
             }
 
             default:
+                x *= sign;
                 return;
         }
         ++buf.position();
     }
+    x *= sign;
 }
 
 
