@@ -38,9 +38,6 @@ public:
      * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
      *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
-     * input
-     * - if given - read not from the table specified in the query, but from prepared source.
-     *
      * required_result_column_names
      * - don't calculate all columns except the specified ones from the query
      *  - it is used to remove calculation (and reading) of unnecessary columns from subqueries.
@@ -53,8 +50,23 @@ public:
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        const BlockInputStreamPtr & input = nullptr,
-        bool only_analyze = false);
+        bool only_analyze_ = false);
+
+    /// Read data not from the table specified in the query, but from the prepared source `input`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const BlockInputStreamPtr & input_,
+        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+        bool only_analyze_ = false);
+
+    /// Read data not from the table specified in the query, but from the specified `storage_`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const StoragePtr & storage_,
+        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+        bool only_analyze_ = false);
 
     ~InterpreterSelectQuery() override;
 
@@ -69,6 +81,17 @@ public:
     void ignoreWithTotals();
 
 private:
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const BlockInputStreamPtr & input_,
+        const StoragePtr & storage_,
+        const Names & required_result_column_names,
+        QueryProcessingStage::Enum to_stage_,
+        size_t subquery_depth_,
+        bool only_analyze_);
+
+
     struct Pipeline
     {
         /** Streams of data.
@@ -101,8 +124,6 @@ private:
             return streams.size() + (stream_with_non_joined_data ? 1 : 0) > 1;
         }
     };
-
-    void init(const Names & required_result_column_names);
 
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
@@ -179,7 +200,7 @@ private:
     ASTSelectQuery & query;
     Context context;
     QueryProcessingStage::Enum to_stage;
-    size_t subquery_depth;
+    size_t subquery_depth = 0;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
