@@ -245,8 +245,6 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
-    include (${ClickHouse_SOURCE_DIR}/cmake/find_gtest.cmake)
-
     if (USE_INTERNAL_GTEST_LIBRARY)
         # Google Test from sources
         add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
