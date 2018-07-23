@@ -231,7 +231,7 @@ void registerDataTypeFixedString(DataTypeFactory & factory)
     factory.registerDataType("FixedString", create);
 
     /// Compatibility alias.
-    factory.registerDataType("BINARY", create, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BINARY", "FixedString", DataTypeFactory::CaseInsensitive);
 }
 
 }

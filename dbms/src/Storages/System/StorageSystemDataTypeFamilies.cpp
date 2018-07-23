@@ -12,39 +12,37 @@ namespace DB
 {
 namespace
 {
-    String getPropertiesAsString(const DataTypePtr data_type)
+    void setTypePropertries(const DataTypePtr data_type, MutableColumns & res_columns)
     {
-        std::vector<std::string> properties;
-        if (data_type->isParametric())
-            properties.push_back("parametric");
-        if (data_type->haveSubtypes())
-            properties.push_back("have_subtypes");
-        if (data_type->cannotBeStoredInTables())
-            properties.push_back("cannot_be_stored_in_tables");
-        if (data_type->isComparable())
-            properties.push_back("comparable");
-        if (data_type->canBeComparedWithCollation())
-            properties.push_back("can_be_compared_with_collation");
-        if (data_type->canBeUsedAsVersion())
-            properties.push_back("can_be_used_as_version");
-        if (data_type->isSummable())
-            properties.push_back("summable");
-        if (data_type->canBeUsedInBitOperations())
-            properties.push_back("can_be_used_in_bit_operations");
-        if (data_type->canBeUsedInBooleanContext())
-            properties.push_back("can_be_used_in_boolean_context");
-        if (data_type->isValueRepresentedByNumber())
-            properties.push_back("value_represented_by_number");
-        if (data_type->isCategorial())
-            properties.push_back("categorial");
-        if (data_type->isNullable())
-            properties.push_back("nullable");
-        if (data_type->onlyNull())
-            properties.push_back("only_null");
-        if (data_type->canBeInsideNullable())
-            properties.push_back("can_be_inside_nullable");
-        return boost::algorithm::join(properties, ",");
+        res_columns[3]->insert(UInt64(data_type->isParametric()));
+        res_columns[4]->insert(UInt64(data_type->haveSubtypes()));
+        res_columns[5]->insert(UInt64(data_type->cannotBeStoredInTables()));
+        res_columns[6]->insert(UInt64(data_type->isComparable()));
+        res_columns[7]->insert(UInt64(data_type->canBeComparedWithCollation()));
+        res_columns[8]->insert(UInt64(data_type->canBeUsedAsVersion()));
+        res_columns[9]->insert(UInt64(data_type->isSummable()));
+        res_columns[10]->insert(UInt64(data_type->canBeUsedInBitOperations()));
+        res_columns[11]->insert(UInt64(data_type->canBeUsedInBooleanContext()));
+        res_columns[12]->insert(UInt64(data_type->isCategorial()));
+        res_columns[13]->insert(UInt64(data_type->isNullable()));
+        res_columns[14]->insert(UInt64(data_type->onlyNull()));
+        res_columns[15]->insert(UInt64(data_type->canBeInsideNullable()));
     }
+
+    void setComplexTypeProperties(const String & name, MutableColumns & res_columns)
+    {
+        res_columns[3]->insert(UInt64(1)); //complex types are always parametric
+        if (name == "AggregateFunction")
+            res_columns[4]->insert(UInt64(0));
+        else if (name == "Tuple")
+            res_columns[4]->insert(Null());
+        else
+            res_columns[4]->insert(UInt64(1));
+
+        for (size_t i = 5; i < StorageSystemDataTypeFamilies::getNamesAndTypes().size(); ++i)
+            res_columns[i]->insert(Null());
+    }
+
     ASTPtr createFakeEnumCreationAst()
     {
         String fakename{"e"};
@@ -56,35 +54,46 @@ namespace
         clone->children.push_back(ast_func);
         return clone;
     }
+
+    ASTPtr createFakeFixedStringAst()
+    {
+        ASTPtr result = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+        auto clone = result->clone();
+        clone->children.clear();
+        clone->children.push_back(result);
+        return clone;
+    }
 }
 
 void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns) const
 {
     const auto & factory = DataTypeFactory::instance();
-    const auto & data_types = factory.getAllDataTypes();
-    for (const auto & pair : data_types)
+    auto names = factory.getAllDataTypeNames();
+    for (const auto & name : names)
     {
-        res_columns[0]->insert(pair.first);
+        res_columns[0]->insert(name);
+        res_columns[1]->insert(UInt64(factory.isCaseInsensitive(name)));
+
+        if (factory.isAlias(name))
+            res_columns[2]->insert(factory.aliasTo(name));
+        else
+            res_columns[2]->insert(String(""));
 
         try
         {
             DataTypePtr type_ptr;
-            //special case with enum, because it has arguments but it's properties doesn't
-            //depend on arguments
-            if (boost::starts_with(pair.first, "Enum"))
-            {
-                type_ptr = factory.get(pair.first, createFakeEnumCreationAst());
-            }
+            // hardcoded cases for simple parametric types
+            if (boost::starts_with(name, "Enum"))
+                type_ptr = factory.get(name, createFakeEnumCreationAst());
+            else if (name == "FixedString" || name == "BINARY")
+                type_ptr = factory.get(name, createFakeFixedStringAst());
             else
-            {
-                type_ptr = factory.get(pair.first);
-            }
-
-            res_columns[1]->insert(getPropertiesAsString(type_ptr));
+                type_ptr = factory.get(name);
+            setTypePropertries(type_ptr, res_columns);
         }
         catch (Exception & ex)
         {
-            res_columns[1]->insert(String{"depends_on_arguments"});
+            setComplexTypeProperties(name, res_columns);
         }
     }
 }

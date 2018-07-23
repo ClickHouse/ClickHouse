@@ -14,21 +14,15 @@ class Context;
 /** Base class for system tables whose all columns have String type.
   */
 template <typename Self>
-class IStorageSystemWithStringColumns : public IStorage
+class IStorageSystemOneBlock : public IStorage
 {
 protected:
     virtual void fillData(MutableColumns & res_columns) const = 0;
 
 public:
-    IStorageSystemWithStringColumns(const String & name_) : name(name_)
+    IStorageSystemOneBlock(const String & name_) : name(name_)
     {
-        auto names = Self::getColumnNames();
-        NamesAndTypesList name_list;
-        for (const auto & name : names)
-        {
-            name_list.push_back(NameAndTypePair{name, std::make_shared<DataTypeString>()});
-        }
-        setColumns(ColumnsDescription(name_list));
+        setColumns(ColumnsDescription(Self::getNamesAndTypes()));
     }
 
     std::string getTableName() const override
