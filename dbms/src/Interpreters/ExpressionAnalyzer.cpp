@@ -61,6 +61,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -89,6 +90,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
     extern const int TYPE_MISMATCH;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
 
@@ -2856,21 +2858,52 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
         nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
     }
 
+    auto add_name_to_join_keys = [](Names & join_keys, const String & name, const char * where)
+    {
+        if (join_keys.end() == std::find(join_keys.begin(), join_keys.end(), name))
+            join_keys.push_back(name);
+        else
+            throw Exception("Duplicate column " + name + " " + where, ErrorCodes::DUPLICATE_COLUMN);
+    };
+
     if (table_join.using_expression_list)
     {
         auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
         for (const auto & key : keys.children)
         {
-            if (join_key_names_left.end() == std::find(join_key_names_left.begin(), join_key_names_left.end(), key->getColumnName()))
-                join_key_names_left.push_back(key->getColumnName());
-            else
-                throw Exception("Duplicate column " + key->getColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
-
-            if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), key->getAliasOrColumnName()))
-                join_key_names_right.push_back(key->getAliasOrColumnName());
-            else
-                throw Exception("Duplicate column " + key->getAliasOrColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
+            add_name_to_join_keys(join_key_names_left, key->getColumnName(), "in USING list");
+            add_name_to_join_keys(join_key_names_right, key->getAliasOrColumnName(), "in USING list");
         }
+    }
+    else if (table_join.on_expression)
+    {
+        const auto supported_syntax =
+                "\nSupported syntax: JOIN ON [table.]column = [table.]column [AND [table.]column = [table.]column ...]";
+        auto throwSyntaxException = [&](const String & msg)
+        {
+            throw Exception("Invalid expression for JOIN ON. " + msg + supported_syntax, ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        };
+
+        auto add_columns_from_equals_expr = [&](const ASTPtr & expr)
+        {
+            auto * func_equals = typeid_cast<const ASTFunction *>(expr.get());
+            if (!func_equals || func_equals->name != "equals")
+                throwSyntaxException("Expected equals expression, got " + queryToString(expr));
+
+            String left_name = func_equals->arguments->children.at(0)->getAliasOrColumnName();
+            String right_name = func_equals->arguments->children.at(1)->getAliasOrColumnName();
+            add_name_to_join_keys(join_key_names_left, left_name, "in JOIN ON expression for left table");
+            add_name_to_join_keys(join_key_names_right, right_name, "in JOIN ON expression for right table");
+        };
+
+        auto * func = typeid_cast<const ASTFunction *>(table_join.on_expression.get());
+        if (func && func->name == "and")
+        {
+            for (auto expr : func->children)
+                add_columns_from_equals_expr(expr);
+        }
+        else
+            add_columns_from_equals_expr(table_join.on_expression);
     }
 
     for (const auto i : ext::range(0, nested_result_sample.columns()))
