@@ -144,7 +144,7 @@ public:
     {
         if (scale == 0)
             return x;
-        return x / scale;
+        return x / getScaleMultiplier();
     }
 
     T fractionalPart(T x) const
@@ -153,7 +153,7 @@ public:
             return 0;
         if (x < 0)
             x *= -1;
-        return x % scale;
+        return x % getScaleMultiplier();
     }
 
     T maxWholeValue() const { return getScaleMultiplier(maxDecimalPrecision<T>() - scale) - 1; }
