@@ -59,9 +59,7 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     
     if (auto table_func_ptr = typeid_cast<ASTFunction *>(node.get()))
         if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
-        {
             return node;
-        }
         
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
