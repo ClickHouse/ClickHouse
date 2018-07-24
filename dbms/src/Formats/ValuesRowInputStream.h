@@ -28,7 +28,7 @@ public:
 private:
     ReadBuffer & istr;
     Block header;
-    std::unique_ptr<Context> context;
+    std::unique_ptr<Context> context;   /// pimpl
     const FormatSettings format_settings;
 };
 
