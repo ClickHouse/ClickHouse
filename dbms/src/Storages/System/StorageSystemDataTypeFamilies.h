@@ -1,10 +1,8 @@
 #pragma once
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Storages/System/IStorageSystemOneBlock.h>
 #include <ext/shared_ptr_helper.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
+
 namespace DB
 {
 
