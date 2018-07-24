@@ -7,6 +7,7 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 

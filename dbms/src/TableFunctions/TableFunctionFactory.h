@@ -45,7 +45,6 @@ public:
         
     bool isTableFunctionName(const std::string & name) const;
 
-private:
     const TableFunctions & getAllTableFunctions() const {
         return functions;
     }
