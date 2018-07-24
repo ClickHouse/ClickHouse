@@ -2899,7 +2899,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
         auto * func = typeid_cast<const ASTFunction *>(table_join.on_expression.get());
         if (func && func->name == "and")
         {
-            for (auto expr : func->children)
+            for (auto expr : func->arguments->children)
                 add_columns_from_equals_expr(expr);
         }
         else
@@ -2909,7 +2909,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
     for (const auto i : ext::range(0, nested_result_sample.columns()))
     {
         const auto & col = nested_result_sample.safeGetByPosition(i);
-        if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), col.name)
+        if (join_key_names_left.end() == std::find(join_key_names_left.begin(), join_key_names_left.end(), col.name)
             && !joined_columns.count(col.name)) /// Duplicate columns in the subquery for JOIN do not make sense.
         {
             joined_columns.insert(col.name);
