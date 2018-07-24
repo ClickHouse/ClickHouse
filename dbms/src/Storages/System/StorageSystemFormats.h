@@ -10,23 +10,16 @@ namespace DB
 class StorageSystemFormats : public ext::shared_ptr_helper<StorageSystemFormats>, public IStorageSystemOneBlock<StorageSystemFormats>
 {
 protected:
-    void fillData(MutableColumns & res_columns) const override;
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 
-public:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
+public:
 
     std::string getName() const override
     {
         return "SystemFormats";
     }
 
-    static NamesAndTypesList getNamesAndTypes()
-    {
-        return {
-            {"name", std::make_shared<DataTypeString>()},
-            {"is_input", std::make_shared<DataTypeUInt8>()},
-            {"is_output", std::make_shared<DataTypeUInt8>()},
-        };
-    }
+    static NamesAndTypesList getNamesAndTypes();
 };
 }

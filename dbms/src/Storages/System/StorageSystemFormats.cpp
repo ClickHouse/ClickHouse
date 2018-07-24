@@ -3,7 +3,17 @@
 
 namespace DB
 {
-void StorageSystemFormats::fillData(MutableColumns & res_columns) const
+
+NamesAndTypesList StorageSystemFormats::getNamesAndTypes()
+{
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"is_input", std::make_shared<DataTypeUInt8>()},
+        {"is_output", std::make_shared<DataTypeUInt8>()},
+    };
+}
+
+void StorageSystemFormats::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     const auto & formats = FormatFactory::instance().getAllFormats();
     for (const auto & pair : formats)
@@ -16,4 +26,5 @@ void StorageSystemFormats::fillData(MutableColumns & res_columns) const
         res_columns[2]->insert(has_output_format);
     }
 }
+
 }
