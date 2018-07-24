@@ -13,7 +13,7 @@ class Context;
 /** Implements `functions`system table, which allows you to get a list
   * all normal and aggregate functions.
   */
- class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFunctions>, public IStorageSystemOneBlock<StorageSystemFunctions>
+class StorageSystemFunctions : public ext::shared_ptr_helper<StorageSystemFunctions>, public IStorageSystemOneBlock<StorageSystemFunctions>
 {
 public:
     std::string getName() const override { return "SystemFunctions"; }
