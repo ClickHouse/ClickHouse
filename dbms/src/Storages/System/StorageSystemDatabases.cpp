@@ -1,4 +1,5 @@
 #include <Databases/IDatabase.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemDatabases.h>
 

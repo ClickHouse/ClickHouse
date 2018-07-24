@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeString.h>
 #include <ext/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 

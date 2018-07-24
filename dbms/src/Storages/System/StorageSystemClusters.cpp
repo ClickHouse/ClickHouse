@@ -1,7 +1,9 @@
+#include <Common/DNSResolver.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemClusters.h>
-#include <Common/DNSResolver.h>
 
 namespace DB
 {
