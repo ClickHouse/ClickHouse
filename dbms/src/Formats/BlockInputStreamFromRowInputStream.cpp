@@ -1,6 +1,7 @@
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -126,6 +127,18 @@ Block BlockInputStreamFromRowInputStream::readImpl()
         return {};
 
     return sample.cloneWithColumns(std::move(columns));
+}
+
+
+void BlockInputStreamFromRowInputStream::readSuffix()
+{
+    if (allow_errors_num > 0 || allow_errors_ratio > 0)
+    {
+        Logger * log = &Logger::get("BlockInputStreamFromRowInputStream");
+        LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
+    }
+
+    row_input->readSuffix();
 }
 
 }
