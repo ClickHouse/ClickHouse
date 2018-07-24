@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
 
