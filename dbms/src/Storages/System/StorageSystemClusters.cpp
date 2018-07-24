@@ -7,6 +7,7 @@
 
 namespace DB
 {
+
 NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
 {
     return {
@@ -25,7 +26,8 @@ NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
 
 void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info, const Cluster::Address & address) {
+    auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info, const Cluster::Address & address)
+    {
         size_t i = 0;
         res_columns[i++]->insert(cluster_name);
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.shard_num));

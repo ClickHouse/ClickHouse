@@ -15,7 +15,8 @@
 namespace DB
 {
 
-NamesAndTypesList StorageSystemColumns::getNamesAndTypes() {
+NamesAndTypesList StorageSystemColumns::getNamesAndTypes()
+{
     return {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
