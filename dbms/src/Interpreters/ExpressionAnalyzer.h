@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Parsers/StringRange.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {
@@ -307,6 +308,9 @@ private:
 
     void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack,
                         ProjectionManipulatorPtr projection_manipulator);
+
+    /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
+    void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 

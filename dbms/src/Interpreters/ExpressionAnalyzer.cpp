@@ -1815,16 +1815,15 @@ const Block & ScopeStack::getSampleBlock() const
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions)
 {
     ScopeStack scopes(actions, settings);
+
     ProjectionManipulatorPtr projection_manipulator;
     if (!isThereArrayJoin(ast) && settings.enable_conditional_computation && !only_consts)
-    {
         projection_manipulator = std::make_shared<ConditionalTree>(scopes, context);
-    }
     else
-    {
         projection_manipulator = std::make_shared<DefaultProjectionManipulator>(scopes);
-    }
+
     getActionsImpl(ast, no_subqueries, only_consts, scopes, projection_manipulator);
+
     actions = scopes.popLevel();
 }
 
@@ -1981,6 +1980,48 @@ bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
         }
         return false;
     }
+}
+
+void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, bool only_consts,
+                                                ExpressionActionsPtr & actions)
+{
+    ScopeStack scopes(actions, settings);
+
+    ProjectionManipulatorPtr projection_manipulator;
+    if (!isThereArrayJoin(ast) && settings.enable_conditional_computation && !only_consts)
+        projection_manipulator = std::make_shared<ConditionalTree>(scopes, context);
+    else
+        projection_manipulator = std::make_shared<DefaultProjectionManipulator>(scopes);
+
+    if (table_join.using_expression_list)
+        getActionsImpl(table_join.using_expression_list, no_subqueries, only_consts, scopes, projection_manipulator);
+    else if (table_join.on_expression)
+    {
+        std::function<void(const ASTPtr &)> get_actions;
+        get_actions = [&](const ASTPtr & ast)
+        {
+            bool key_expr = false;
+
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(ast.get()))
+            {
+                auto column_name = ast_function->getColumnName();
+                key_expr = join_key_names_left.end()
+                           != std::find(join_key_names_left.begin(), join_key_names_left.end(), column_name);
+            }
+
+            if (key_expr)
+                getActionsImpl(ast, no_subqueries, only_consts, scopes, projection_manipulator);
+            else
+            {
+                for (auto & child : ast->children)
+                    get_actions(child);
+            }
+        };
+
+        get_actions(table_join.on_expression);
+    }
+
+    actions = scopes.popLevel();
 }
 
 void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack,
@@ -2434,8 +2475,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     const ASTTableJoin & join_params = static_cast<const ASTTableJoin &>(*join_element.table_join);
     const ASTTableExpression & table_to_join = static_cast<const ASTTableExpression &>(*join_element.table_expression);
 
-    if (join_params.using_expression_list)
-        getRootActions(join_params.using_expression_list, only_types, false, step.actions);
+    getActionsFromJoinKeys(join_params, only_types, false, step.actions);
 
     /// Two JOINs are not supported with the same subquery, but different USINGs.
     auto join_hash = join_element.getTreeHash();
