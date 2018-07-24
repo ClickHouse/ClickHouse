@@ -1,41 +1,28 @@
-#include <Storages/System/StorageSystemFunctions.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Storages/System/StorageSystemFunctions.h>
 
 
 namespace DB
 {
 
-StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
-        { "name",         std::make_shared<DataTypeString>() },
-        { "is_aggregate", std::make_shared<DataTypeUInt8>()  },
-    }));
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"is_aggregate", std::make_shared<DataTypeUInt8>()},
+    };
 }
 
-
-BlockInputStreams StorageSystemFunctions::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context &,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     const auto & functions = FunctionFactory::instance().functions;
     for (const auto & it : functions)
     {
@@ -49,8 +36,6 @@ BlockInputStreams StorageSystemFunctions::read(
         res_columns[0]->insert(it.first);
         res_columns[1]->insert(UInt64(1));
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

@@ -115,10 +115,10 @@ void DataTypeFactory::registerAlias(const String & alias_name, const String & re
         throw Exception("DataTypeFactory: the alias name " + alias_name + " is already registered as datatype", ErrorCodes::LOGICAL_ERROR);
 
     if (case_sensitiveness == CaseInsensitive)
-        if(!case_insensitive_aliases.emplace(alias_name_lowercase, real_type_dict_name).second)
+        if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_type_dict_name).second)
             throw Exception("DataTypeFactory: case insensitive alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 
-    if(!aliases.emplace(alias_name, real_type_dict_name).second)
+    if (!aliases.emplace(alias_name, real_type_dict_name).second)
         throw Exception("DataTypeFactory: alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
@@ -139,7 +139,7 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
 std::vector<String> DataTypeFactory::getAllDataTypeNames() const
 {
     std::vector<String> result;
-    auto getter = [] (const auto& pair) { return pair.first; };
+    auto getter = [] (const auto & pair) { return pair.first; };
     std::transform(data_types.begin(), data_types.end(), std::back_inserter(result), getter);
     std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
     return result;
