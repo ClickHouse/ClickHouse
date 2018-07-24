@@ -3,6 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/typeid_cast.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
