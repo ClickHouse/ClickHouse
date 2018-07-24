@@ -356,7 +356,7 @@ void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
 }
 
 
-void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
+void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name, ASTPtr table_function_ptr)
 {
     ASTTableExpression * table_expression = getFirstTableExpression(*this);
 
@@ -372,19 +372,25 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         children.emplace_back(tables_list);
         table_expression = table_expr.get();
     }
-
-    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
-
-    if (!database_name.empty())
-    {
-        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
-
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
-        table_expression->database_and_table_name->children = {database, table};
+    
+    if (table_function_ptr) {
+        table_expression->table_function = table_function_ptr;
+        table_expression->database_and_table_name = nullptr;
     }
     else
     {
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+        ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+        if (!database_name.empty())
+        {
+            ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
+
+            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
+            table_expression->database_and_table_name->children = {database, table};
+        }
+        else
+        {
+            table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+        }
     }
 }
 

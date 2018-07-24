@@ -196,8 +196,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     String cluster_name;
     String cluster_description;
-    String remote_database;
-    String remote_table;
+    String remote_database = "";
+    String remote_table = "";
+    ASTPtr remote_table_function_ptr = nullptr;
     String username;
     String password;
 
@@ -230,24 +231,38 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     ++arg_num;
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-    remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
-    ++arg_num;
-
-    size_t dot = remote_database.find('.');
-    if (dot != String::npos)
+    
+    auto table_function = static_cast<ASTFunction *>(args[arg_num].get());
+    
+    if (TableFunctionFactory::instance().isTableFunctionName(table_function->name))
     {
-        /// NOTE Bad - do not support identifiers in backquotes.
-        remote_table = remote_database.substr(dot + 1);
-        remote_database = remote_database.substr(0, dot);
-    }
-    else
-    {
-        if (arg_num >= args.size())
-            throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-        remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
+        remote_table_function_ptr = args[arg_num];
         ++arg_num;
+    }
+    else {
+        remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
+        
+        ++arg_num;
+
+        size_t dot = remote_database.find('.');
+        if (dot != String::npos)
+        {
+            /// NOTE Bad - do not support identifiers in backquotes.
+            remote_table = remote_database.substr(dot + 1);
+            remote_database = remote_database.substr(0, dot);
+        }
+        else
+        {
+            if (arg_num >= args.size())
+                throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            else
+            {
+                args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
+                remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
+                remote_database = remote_database;
+                ++arg_num;
+            }
+        }
     }
 
     /// Username and password parameters are prohibited in cluster version of the function
@@ -301,15 +316,15 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     auto res = StorageDistributed::createWithOwnCluster(
         getName(),
-        getStructureOfRemoteTable(*cluster, remote_database, remote_table, context),
+        getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr),
         remote_database,
         remote_table,
+        remote_table_function_ptr,
         cluster,
         context);
     res->startup();
     return res;
 }
-
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_)
     : name(name_)

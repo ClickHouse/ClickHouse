@@ -51,13 +51,18 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
-{
+{   
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
-
+    
+    if (auto table_func_ptr = typeid_cast<ASTFunction *>(node.get()))
+        if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
+        {
+            return node;
+        }
+        
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
-
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {

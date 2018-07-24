@@ -47,6 +47,8 @@ public:
       */
     std::vector<Entry> getMany(const Settings * settings, PoolMode pool_mode);
 
+    std::vector<TryResult> getManyForTableFunc(const Settings * settings, PoolMode pool_mode);
+
     using Base = PoolWithFailoverBase<IConnectionPool>;
     using TryResult = Base::TryResult;
 
