@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Storages/System/StorageSystemFormats.h>
 

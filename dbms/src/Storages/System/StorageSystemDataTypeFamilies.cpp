@@ -1,5 +1,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemDataTypeFamilies.h>
 
 namespace DB
@@ -9,8 +11,8 @@ NamesAndTypesList StorageSystemDataTypeFamilies::getNamesAndTypes()
 {
     return {
         {"name", std::make_shared<DataTypeString>()},
-        {"case_insensivie", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>())},
-        {"alias_to", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
+        {"case_insensivie", std::make_shared<DataTypeUInt8>()},
+        {"alias_to", std::make_shared<DataTypeString>()},
     };
 }
 
