@@ -35,7 +35,8 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     };
 }
 
-void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const {
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
+{
     const auto & external_dictionaries = context.getExternalDictionaries();
     auto objects_map = external_dictionaries.getObjectsMap();
     const auto & dictionaries = objects_map.get();
