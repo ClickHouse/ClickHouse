@@ -39,10 +39,7 @@ TableFunctionPtr TableFunctionFactory::get(
 
 bool TableFunctionFactory::isTableFunctionName(const std::string & name) const
 {
-    if (functions.count(name))
-        return true;
-    else 
-        return false;
+    return functions.count(name);
 }
 
 }
