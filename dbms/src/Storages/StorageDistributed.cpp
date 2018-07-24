@@ -249,7 +249,7 @@ BlockInputStreams StorageDistributed::read(
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
-
+  
     Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
     
     if (remote_table_function_ptr)
@@ -257,7 +257,7 @@ BlockInputStreams StorageDistributed::read(
         ClusterProxy::SelectStreamFactory select_stream_factory(
             header, processed_stage, remote_table_function_ptr, context.getExternalTables());
         return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, settings);
+          select_stream_factory, cluster, modified_query_ast, context, settings);
     }
     else
     {

@@ -22,6 +22,8 @@ public:
 
     Block getSampleBlock() const;
     Block getSampleBlockNonMaterialized() const;
+
+    /// Including virtual and alias columns.
     Block getSampleBlockForColumns(const Names & column_names) const;
 
     /** Verify that all the requested names are in the table and are set correctly.

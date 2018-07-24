@@ -311,6 +311,7 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
     part_data_versions.reserve(data_parts.size());
     for (const auto & part : data_parts)
         part_data_versions.push_back(part->info.getDataVersion());
+    std::sort(part_data_versions.begin(), part_data_versions.end());
 
     std::vector<MergeTreeMutationStatus> result;
     for (const auto & kv : current_mutations_by_version)

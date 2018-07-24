@@ -15,6 +15,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/FieldVisitors.h>
+#include <Common/config_version.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -1867,9 +1868,7 @@ public:
 
 std::string FunctionVersion::getVersion() const
 {
-    std::ostringstream os;
-    os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
-    return os.str();
+    return VERSION_STRING;
 }
 
 
