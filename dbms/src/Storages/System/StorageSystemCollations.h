@@ -4,25 +4,19 @@
 
 namespace DB
 {
+
 class StorageSystemCollations : public ext::shared_ptr_helper<StorageSystemCollations>,
                                 public IStorageSystemOneBlock<StorageSystemCollations>
 {
 protected:
-    void fillData(MutableColumns & res_columns) const override;
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 
-public:
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
+public:
 
-    std::string getName() const override
-    {
-        return "SystemTableCollations";
-    }
+    std::string getName() const override { return "SystemTableCollations"; }
 
-    static NamesAndTypesList getNamesAndTypes()
-    {
-        return {
-            {"name", std::make_shared<DataTypeString>()},
-        };
-    }
+    static NamesAndTypesList getNamesAndTypes();
 };
+
 }
