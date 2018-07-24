@@ -42,6 +42,8 @@ public:
         const std::string & name,
         const Context & context) const;
 
+    bool isTableFunctionName(const std::string & name) const;
+
 private:
     using TableFunctions = std::unordered_map<std::string, Creator>;
 
