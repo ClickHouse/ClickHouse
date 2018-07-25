@@ -60,6 +60,7 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
+                'opposite_lang': 'en' if lang == 'ru' else 'ru',
                 'search': {
                     'language': 'en' if lang == 'en' else 'en, %s' % lang
                 }
@@ -108,6 +109,7 @@ def build_single_page_version(lang, args, cfg):
                 'site_dir': temp,
                 'extra': {
                     'single_page': True,
+                    'opposite_lang': 'en' if lang == 'ru' else 'ru',
                     'search': {
                         'language': 'en, ru'
                     }
