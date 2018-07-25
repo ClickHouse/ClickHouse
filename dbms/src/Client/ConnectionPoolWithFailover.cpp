@@ -83,7 +83,7 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Se
     return entries;
 }
 
-std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyForTableFunc(const Settings * settings, PoolMode pool_mode)
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyForTableFunction(const Settings * settings, PoolMode pool_mode)
 {
     TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
     {
