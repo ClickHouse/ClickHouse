@@ -30,6 +30,10 @@ if (ENABLE_MYSQL)
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIBRARIES))
         set (USE_MYSQL 1)
         set (MYSQLXX_LIBRARY mysqlxx)
+        if (APPLE)
+            # /usr/local/include/mysql/mysql_com.h:1011:10: fatal error: mysql/udf_registration_types.h: No such file or directory
+            set(MYSQL_INCLUDE_DIR ${MYSQL_INCLUDE_DIR} ${MYSQL_INCLUDE_DIR}/mysql)
+        endif ()
     endif ()
 endif ()
 

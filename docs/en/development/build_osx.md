@@ -12,7 +12,7 @@ With appropriate changes, it should also work on any other Linux distribution.
 ## Install required compilers, tools, and libraries
 
 ```bash
-brew install cmake ninja gcc icu4c mysql openssl unixodbc libtool gettext readline
+brew install cmake ninja gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline
 ```
 
 ## Checkout ClickHouse sources
