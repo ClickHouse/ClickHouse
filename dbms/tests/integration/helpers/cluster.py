@@ -60,7 +60,7 @@ class ClickHouseCluster:
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, hostname=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, hostname=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -77,7 +77,7 @@ class ClickHouseCluster:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
         instance = ClickHouseInstance(
-            self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper,
+            self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
 
         self.instances[name] = instance
@@ -223,7 +223,7 @@ services:
 
 class ClickHouseInstance:
     def __init__(
-            self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
+            self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
 
         self.name = name
@@ -236,7 +236,7 @@ class ClickHouseInstance:
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
-        self.macroses = macroses if macroses is not None else {}
+        self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
 
@@ -352,11 +352,11 @@ class ClickHouseInstance:
 
         shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
 
-        # Generate and write macroses file
-        macroses = self.macroses.copy()
-        macroses['instance'] = self.name
+        # Generate and write macros file
+        macros = self.macros.copy()
+        macros['instance'] = self.name
         with open(p.join(config_d_dir, 'macros.xml'), 'w') as macros_config:
-            macros_config.write(self.dict_to_xml({"macros" : macroses}))
+            macros_config.write(self.dict_to_xml({"macros" : macros}))
 
         # Put ZooKeeper config
         if self.with_zookeeper:
