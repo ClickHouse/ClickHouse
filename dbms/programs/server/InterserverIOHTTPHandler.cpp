@@ -29,14 +29,20 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
-    /// NOTE: You can do authentication here if you need to.
+    const auto & config = server.config();
+
+    if (config.has("interserver_http_credentials.user")) {
+        String user = config.getString("interserver_http_credentials.user");
+        String password = config.getString("interserver_http_credentials.password", "");
+        Poco::Net::HTTPCredentials creds(user, password);
+        creds.authenticate(request, response);
+    }
 
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
     ReadBufferFromIStream body(request.stream());
 
-    const auto & config = server.config();
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
