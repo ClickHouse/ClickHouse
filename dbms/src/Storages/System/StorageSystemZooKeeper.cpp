@@ -16,7 +16,8 @@ namespace DB
 {
 
 
-NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes() {
+NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
+{
     return {
         { "name",           std::make_shared<DataTypeString>() },
         { "value",          std::make_shared<DataTypeString>() },

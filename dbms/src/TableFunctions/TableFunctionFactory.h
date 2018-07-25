@@ -43,7 +43,8 @@ public:
         const std::string & name,
         const Context & context) const;
 
-    const TableFunctions & getAllTableFunctions() const {
+    const TableFunctions & getAllTableFunctions() const
+    {
         return functions;
     }
 

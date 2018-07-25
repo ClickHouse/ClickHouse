@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 #include <ext/shared_ptr_helper.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB

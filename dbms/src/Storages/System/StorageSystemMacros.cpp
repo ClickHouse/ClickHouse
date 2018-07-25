@@ -1,6 +1,6 @@
+#include <Common/Macros.h>
 #include <Interpreters/Context.h>
 #include <Storages/System/StorageSystemMacros.h>
-#include <Common/Macros.h>
 
 
 namespace DB
