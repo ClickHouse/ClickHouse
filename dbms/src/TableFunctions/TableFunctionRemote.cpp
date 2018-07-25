@@ -317,14 +317,14 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
     
    StoragePtr res = remote_table_function_ptr ?
-        res = StorageDistributed::createWithOwnCluster(
+        StorageDistributed::createWithOwnCluster(
             getName(),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         
-        : res = StorageDistributed::createWithOwnCluster(
+        : StorageDistributed::createWithOwnCluster(
             getName(),
             structure_remote_table,
             remote_database,
