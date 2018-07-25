@@ -81,18 +81,12 @@ void SelectStreamFactory::createForShard(
         res.emplace_back(createLocalStream(query_ast, context, processed_stage));
     };
 
-    auto emplace_remote_stream_for_database = [&]()
+    auto emplace_remote_stream = [&]()
     {
         auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, header, context, nullptr, throttler, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
-        stream->setMainTable(main_table);
-        res.emplace_back(std::move(stream));
-    };
-    
-    auto emplace_remote_stream_for_func = [&]()
-    {
-        auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, header, context, nullptr, throttler, external_tables, processed_stage);
-        stream->setPoolMode(PoolMode::GET_MANY);
+        if (!table_func_ptr)
+            stream->setMainTable(main_table);
         res.emplace_back(std::move(stream));
     };
 
@@ -119,10 +113,7 @@ void SelectStreamFactory::createForShard(
                         "There is no table " << main_table.database << "." << main_table.table
                         << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
 
-                if (table_func_ptr)
-                    emplace_remote_stream_for_func();
-                else
-                    emplace_remote_stream_for_database();
+                emplace_remote_stream();
                 return;
             }
             else
@@ -170,10 +161,7 @@ void SelectStreamFactory::createForShard(
             if (shard_info.pool)
             {
                 /// If we cannot fallback, then we cannot use local replica. Try our luck with remote replicas.
-                if (table_func_ptr)
-                    emplace_remote_stream_for_func();
-                else
-                    emplace_remote_stream_for_database();
+                emplace_remote_stream();
                 return;
             }
             else
@@ -203,7 +191,7 @@ void SelectStreamFactory::createForShard(
             try
             {
                 if (table_func_ptr)
-                    try_results  = pool->getManyForTableFunc(&context.getSettingsRef(), PoolMode::GET_MANY);
+                    try_results  = pool->getManyForTableFunction(&context.getSettingsRef(), PoolMode::GET_MANY);
                 else
                     try_results = pool->getManyChecked(&context.getSettingsRef(), PoolMode::GET_MANY, main_table);
             }
@@ -241,10 +229,7 @@ void SelectStreamFactory::createForShard(
         res.emplace_back(std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream));
     }
     else
-        if (table_func_ptr)
-            emplace_remote_stream_for_func();
-        else
-            emplace_remote_stream_for_database();
+        emplace_remote_stream();
 }
 
 }

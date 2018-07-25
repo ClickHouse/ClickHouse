@@ -13,12 +13,14 @@ namespace ClusterProxy
 class SelectStreamFactory final : public IStreamFactory
 {
 public:
+    /// Database in a query.
     SelectStreamFactory(
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,
         QualifiedTableName main_table_,
         const Tables & external_tables);
     
+    /// TableFunction in a query.
     SelectStreamFactory(
         const Block & header_,
         QueryProcessingStage::Enum processed_stage_,

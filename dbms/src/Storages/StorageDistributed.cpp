@@ -65,12 +65,15 @@ namespace ErrorCodes
 namespace
 {
 
-/// select query has database and table names as AST pointers
-/// Creates a copy of query, changes database and table names.
+/// select query has database, table and table function names as AST pointers
+/// Creates a copy of query, changes database, table and table function names.
 ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table, ASTPtr table_function_ptr = nullptr)
 {
     auto modified_query_ast = query->clone();
-    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table, table_function_ptr);
+    if (table_function_ptr)
+        typeid_cast<ASTSelectQuery &>(*modified_query_ast).addTableFunction(table_function_ptr);
+    else
+        typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -154,7 +157,7 @@ StorageDistributed::StorageDistributed(
     bool attach)
     : IStorage{columns_},
     table_name(table_name_),
-    remote_database(remote_database_), remote_table(remote_table_), remote_table_function_ptr(nullptr),
+    remote_database(remote_database_), remote_table(remote_table_),
     context(context_), cluster_name(context.getMacros()->expand(cluster_name_)), has_sharding_key(sharding_key_),
       sharding_key_expr(sharding_key_ ? ExpressionAnalyzer(sharding_key_, context, nullptr, getColumns().getAllPhysical()).getActions(false) : nullptr),
     sharding_key_column_name(sharding_key_ ? sharding_key_->getColumnName() : String{}),
@@ -174,15 +177,13 @@ StorageDistributed::StorageDistributed(
     const String & database_name,
     const String & table_name_,
     const ColumnsDescription & columns_,
-    const String & remote_database_,
-    const String & remote_table_,
     ASTPtr remote_table_function_ptr_,
     const String & cluster_name_,
     const Context & context_,
     const ASTPtr & sharding_key_,
     const String & data_path_,
     bool attach)
-    : StorageDistributed(database_name, table_name_, columns_, remote_database_, remote_table_, cluster_name_, context_, sharding_key_, data_path_, attach)
+    : StorageDistributed(database_name, table_name_, columns_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
 {
         remote_table_function_ptr = remote_table_function_ptr_;
 }
@@ -208,14 +209,12 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 StoragePtr StorageDistributed::createWithOwnCluster(
     const std::string & table_name_,
     const ColumnsDescription & columns_,
-    const String & remote_database_,       /// database on remote servers.
-    const String & remote_table_,          /// The name of the table on the remote servers.
-    ASTPtr remote_table_function_ptr_,     /// Table function ptr.
+    ASTPtr & remote_table_function_ptr_,
     ClusterPtr & owned_cluster_,
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, table_name_, columns_, remote_database_, remote_table_, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
+        String{}, table_name_, columns_, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
 
     res->owned_cluster = owned_cluster_;
 
@@ -249,23 +248,17 @@ BlockInputStreams StorageDistributed::read(
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
-  
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
+
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
     
-    if (remote_table_function_ptr)
-    {
-        ClusterProxy::SelectStreamFactory select_stream_factory(
-            header, processed_stage, remote_table_function_ptr, context.getExternalTables());
-        return ClusterProxy::executeQuery(
-          select_stream_factory, cluster, modified_query_ast, context, settings);
-    }
-    else
-    {
-        ClusterProxy::SelectStreamFactory select_stream_factory(
+    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr ?
+        ClusterProxy::SelectStreamFactory(
+            header, processed_stage, remote_table_function_ptr, context.getExternalTables())
+        : ClusterProxy::SelectStreamFactory(
             header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
-        return ClusterProxy::executeQuery(
+    
+    return ClusterProxy::executeQuery(
         select_stream_factory, cluster, modified_query_ast, context, settings);
-    }
 }
 
 
