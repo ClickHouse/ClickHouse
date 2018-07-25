@@ -1250,7 +1250,7 @@ private:
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
-    
+
     void executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,
