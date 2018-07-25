@@ -21,7 +21,6 @@ using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
-using Int128 = __int128;
 
 using Float32 = float;
 using Float64 = double;
@@ -54,7 +53,6 @@ template <> struct TypeName<Int8>    { static const char * get() { return "Int8"
 template <> struct TypeName<Int16>   { static const char * get() { return "Int16";   } };
 template <> struct TypeName<Int32>   { static const char * get() { return "Int32";   } };
 template <> struct TypeName<Int64>   { static const char * get() { return "Int64";   } };
-template <> struct TypeName<Int128>  { static const char * get() { return "Int128";   } };
 template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
@@ -64,3 +62,39 @@ template <> struct TypeName<String>  { static const char * get() { return "Strin
 using Strings = std::vector<String>;
 
 }
+
+#if 1 /// __int128
+namespace DB
+{
+
+using Int128 = __int128;
+template <> constexpr bool IsNumber<Int128> = true;
+template <> struct TypeName<Int128>  { static const char * get() { return "Int128";  } };
+
+}
+
+namespace std
+{
+
+template <> struct is_signed<__int128>
+{
+    static constexpr bool value = true;
+};
+
+template <> struct is_unsigned<__int128>
+{
+    static constexpr bool value = false;
+};
+
+template <> struct is_integral<__int128>
+{
+    static constexpr bool value = true;
+};
+
+template <> struct is_arithmetic<__int128>
+{
+    static constexpr bool value = true;
+};
+
+}
+#endif

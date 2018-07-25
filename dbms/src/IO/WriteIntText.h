@@ -185,6 +185,7 @@ namespace detail
         writeUIntText(static_cast<std::make_unsigned_t<T>>(x), buf);
     }
 
+#if 1
     inline void writeSIntText(__int128 x, WriteBuffer & buf)
     {
         if (unlikely((x - 1) == 0))
@@ -201,6 +202,7 @@ namespace detail
 
         writeUIntText(static_cast<unsigned __int128>(x), buf);
     }
+#endif
 }
 
 
@@ -208,13 +210,9 @@ template <typename T>
 std::enable_if_t<std::is_signed_v<T>, void> writeIntText(T x, WriteBuffer & buf)
 {
     detail::writeSIntText(x, buf);
+
 }
 
-template <typename T>
-std::enable_if_t<std::is_same_v<T, Int128>, void> writeIntText(T x, WriteBuffer & buf)
-{
-    detail::writeSIntText(x, buf);
-}
 
 template <typename T>
 std::enable_if_t<std::is_unsigned_v<T>, void> writeIntText(T x, WriteBuffer & buf)

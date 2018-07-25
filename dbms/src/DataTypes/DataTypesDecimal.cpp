@@ -2,7 +2,6 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <Columns/ColumnVector.h>
 //#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -35,13 +34,15 @@ std::string DataTypeDecimal<T>::getName() const
 template <typename T>
 bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 {
-    return typeid(rhs) == typeid(*this) && getName() == rhs.getName();
+    if (auto * ptype = typeid_cast<const DataTypeDecimal<T> *>(&rhs))
+        return scale == ptype->getScale();
+    return false;
 }
 
 template <typename T>
 void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const T & value = static_cast<const ColumnVector<T> &>(column).getData()[row_num];
+    const T & value = static_cast<const ColumnType &>(column).getData()[row_num];
 
     writeIntText(wholePart(value), ostr);
     writeChar('.', ostr);
@@ -56,42 +57,42 @@ void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, co
     UInt32 unread_scale = scale;
     readDecimalText(istr, x, precision, unread_scale);
     x *= getScaleMultiplier(unread_scale);
-    static_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    /// ColumnVector<T>::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnVector<T>::value_type x = get<FieldType>(field);
+    /// ColumnType::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
+    typename ColumnType::value_type x = get<FieldType>(field);
     writeBinary(x, ostr);
 }
 
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    writeBinary(static_cast<const ColumnVector<T> &>(column).getData()[row_num], ostr);
+    writeBinary(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
 }
 
 template <typename T>
 void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
 {
-    const typename ColumnVector<T>::Container & x = typeid_cast<const ColumnVector<T> &>(column).getData();
+    const typename ColumnType::Container & x = typeid_cast<const ColumnType &>(column).getData();
 
     size_t size = x.size();
 
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnVector<T>::value_type) * limit);
+    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnType::value_type) * limit);
 }
 
 
 template <typename T>
 void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    typename ColumnVector<T>::value_type x;
+    typename ColumnType::value_type x;
     readBinary(x, istr);
     field = FieldType(x);
 }
@@ -99,19 +100,19 @@ void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) con
 template <typename T>
 void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    typename ColumnVector<T>::value_type x;
+    typename ColumnType::value_type x;
     readBinary(x, istr);
-    static_cast<ColumnVector<T> &>(column).getData().push_back(x);
+    static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
 template <typename T>
 void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double ) const
 {
-    typename ColumnVector<T>::Container & x = typeid_cast<ColumnVector<T> &>(column).getData();
+    typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnVector<T>::value_type) * limit);
-    x.resize(initial_size + size / sizeof(typename ColumnVector<T>::value_type));
+    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnType::value_type) * limit);
+    x.resize(initial_size + size / sizeof(typename ColumnType::value_type));
 }
 
 
@@ -125,7 +126,7 @@ Field DataTypeDecimal<T>::getDefault() const
 template <typename T>
 MutableColumnPtr DataTypeDecimal<T>::createColumn() const
 {
-    return ColumnVector<T>::create();
+    return ColumnType::create();
 }
 
 
