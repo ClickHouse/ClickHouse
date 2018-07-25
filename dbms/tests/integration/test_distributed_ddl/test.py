@@ -72,7 +72,7 @@ def init_cluster(cluster):
             cluster.add_instance(
                 'ch{}'.format(i+1),
                 config_dir="configs",
-                macroses={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
+                macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
                 with_zookeeper=True)
 
         cluster.start()
