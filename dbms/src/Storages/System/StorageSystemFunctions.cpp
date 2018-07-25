@@ -29,7 +29,7 @@ NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
     return {
         {"name", std::make_shared<DataTypeString>()},
         {"is_aggregate", std::make_shared<DataTypeUInt8>()},
-        {"case_insensivie", std::make_shared<DataTypeUInt8>()},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
         {"alias_to", std::make_shared<DataTypeString>()},
     };
 }
