@@ -42,7 +42,7 @@ public:
         CaseInsensitive
     };
 
-    /** Register additional name for creater
+    /** Register additional name for creator
      * real_name have to be already registered.
      */
     void registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness = CaseSensitive)
