@@ -1,6 +1,7 @@
+#include <Common/config_build.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/Settings.h>
 #include <Storages/System/StorageSystemBuildOptions.h>
-#include <Common/config_build.h>
 
 namespace DB
 {

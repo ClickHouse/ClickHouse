@@ -1,4 +1,6 @@
 #include <Common/ProfileEvents.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Storages/System/StorageSystemEvents.h>
 
 namespace DB

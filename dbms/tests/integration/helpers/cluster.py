@@ -206,6 +206,7 @@ services:
             -  server
             -  --config-file=/etc/clickhouse-server/config.xml
             -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
+            -  --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
         depends_on: {depends_on}
 '''
 
