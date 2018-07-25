@@ -196,9 +196,9 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     String cluster_name;
     String cluster_description;
-    String remote_database = "";
-    String remote_table = "";
-    ASTPtr remote_table_function_ptr = nullptr;
+    String remote_database;
+    String remote_table;
+    ASTPtr remote_table_function_ptr;
     String username;
     String password;
 
@@ -232,7 +232,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
     
-    auto table_function = static_cast<ASTFunction *>(args[arg_num].get());
+    const auto table_function = static_cast<ASTFunction *>(args[arg_num].get());
     
     if (TableFunctionFactory::instance().isTableFunctionName(table_function->name))
     {
@@ -314,14 +314,24 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         cluster = std::make_shared<Cluster>(context.getSettings(), names, username, password, context.getTCPPort(), false);
     }
 
-    auto res = StorageDistributed::createWithOwnCluster(
-        getName(),
-        getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr),
-        remote_database,
-        remote_table,
-        remote_table_function_ptr,
-        cluster,
-        context);
+    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
+    
+   StoragePtr res = remote_table_function_ptr ?
+        res = StorageDistributed::createWithOwnCluster(
+            getName(),
+            structure_remote_table,
+            remote_table_function_ptr,
+            cluster,
+            context)
+        
+        : res = StorageDistributed::createWithOwnCluster(
+            getName(),
+            structure_remote_table,
+            remote_database,
+            remote_table,
+            cluster,
+            context);
+
     res->startup();
     return res;
 }

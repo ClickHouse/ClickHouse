@@ -40,7 +40,7 @@ ColumnsDescription getStructureOfRemoteTable(
             return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
         }
 
-        auto table_func_name = table_func_ptr->getAliasOrColumnName();
+        auto table_func_name = queryToString(table_func_ptr);
         query = "DESC TABLE " + table_func_name;
     }
     else
@@ -63,7 +63,7 @@ ColumnsDescription getStructureOfRemoteTable(
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     ParserExpression expr_parser;
-    
+
     while (Block current = input->read())
     {
         ColumnPtr name = current.getByName("name").column;
