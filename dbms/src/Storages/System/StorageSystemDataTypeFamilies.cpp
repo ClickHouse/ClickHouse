@@ -19,7 +19,7 @@ NamesAndTypesList StorageSystemDataTypeFamilies::getNamesAndTypes()
 void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     const auto & factory = DataTypeFactory::instance();
-    auto names = factory.getAllDataTypeNames();
+    auto names = factory.getAllRegisteredNames();
     for (const auto & name : names)
     {
         res_columns[0]->insert(name);
