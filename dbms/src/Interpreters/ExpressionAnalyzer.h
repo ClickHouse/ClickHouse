@@ -87,6 +87,13 @@ struct ScopeStack
     const Block & getSampleBlock() const;
 };
 
+struct DatabaseAndTableWithAlias
+{
+    String database_name;
+    String table_name;
+    String alias;
+};
+
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
@@ -219,6 +226,8 @@ private:
       */
     Names join_key_names_left;
     Names join_key_names_right;
+    ASTs join_key_asts_left;
+    ASTs join_key_asts_right;
 
     NamesAndTypesList columns_added_by_join;
 
@@ -253,6 +262,8 @@ private:
     /** Find the columns that are obtained by JOIN.
       */
     void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
+    /// Parse JOIN ON expression and collect ASTs for joined columns.
+    void collectJoinedColumnsFromJoinOnExpr();
 
     /** Create a dictionary of aliases.
       */
@@ -358,7 +369,7 @@ private:
       *  only one ("main") table is supported. Ambiguity is not detected or resolved.
       */
     void translateQualifiedNames();
-    void translateQualifiedNamesImpl(ASTPtr & node, const String & database_name, const String & table_name, const String & alias);
+    void translateQualifiedNamesImpl(ASTPtr & node, const DatabaseAndTableWithAlias & table_names);
 
     /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
