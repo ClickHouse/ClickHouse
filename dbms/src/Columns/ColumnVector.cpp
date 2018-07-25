@@ -30,29 +30,29 @@ namespace ErrorCodes
 }
 
 
-template <typename T>
-StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+template <typename T, bool _s>
+StringRef ColumnVector<T, _s>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto pos = arena.allocContinue(sizeof(T), begin);
     memcpy(pos, &data[n], sizeof(T));
     return StringRef(pos, sizeof(T));
 }
 
-template <typename T>
-const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
+template <typename T, bool _s>
+const char * ColumnVector<T, _s>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(*reinterpret_cast<const T *>(pos));
     return pos + sizeof(T);
 }
 
-template <typename T>
-void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
+template <typename T, bool _s>
+void ColumnVector<T, _s>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
 }
 
-template <typename T>
-struct ColumnVector<T>::less
+template <typename T, bool _s>
+struct ColumnVector<T, _s>::less
 {
     const Self & parent;
     int nan_direction_hint;
@@ -60,8 +60,8 @@ struct ColumnVector<T>::less
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
-template <typename T>
-struct ColumnVector<T>::greater
+template <typename T, bool _s>
+struct ColumnVector<T, _s>::greater
 {
     const Self & parent;
     int nan_direction_hint;
@@ -69,8 +69,8 @@ struct ColumnVector<T>::greater
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
-template <typename T>
-void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+template <typename T, bool _s>
+void ColumnVector<T, _s>::getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
     size_t s = data.size();
     res.resize(s);
@@ -96,14 +96,14 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
     }
 }
 
-template <typename T>
-const char * ColumnVector<T>::getFamilyName() const
+template <typename T, bool _s>
+const char * ColumnVector<T, _s>::getFamilyName() const
 {
     return TypeName<T>::get();
 }
 
-template <typename T>
-MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
+template <typename T, bool _s>
+MutableColumnPtr ColumnVector<T, _s>::cloneResized(size_t size) const
 {
     auto res = this->create();
 
@@ -122,14 +122,14 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     return std::move(res);
 }
 
-template <typename T>
-UInt64 ColumnVector<T>::get64(size_t n) const
+template <typename T, bool _s>
+UInt64 ColumnVector<T, _s>::get64(size_t n) const
 {
     return ext::bit_cast<UInt64>(data[n]);
 }
 
-template <typename T>
-void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+template <typename T, bool _s>
+void ColumnVector<T, _s>::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
     const ColumnVector & src_vec = static_cast<const ColumnVector &>(src);
 
@@ -145,8 +145,8 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     memcpy(&data[old_size], &src_vec.data[start], length * sizeof(data[0]));
 }
 
-template <typename T>
-ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+template <typename T, bool _s>
+ColumnPtr ColumnVector<T, _s>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
     if (size != filt.size())
@@ -209,8 +209,8 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     return std::move(res);
 }
 
-template <typename T>
-ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+template <typename T, bool _s>
+ColumnPtr ColumnVector<T, _s>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = data.size();
 
@@ -230,8 +230,8 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
     return std::move(res);
 }
 
-template <typename T>
-ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
+template <typename T, bool _s>
+ColumnPtr ColumnVector<T, _s>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
@@ -257,14 +257,14 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
     return std::move(res);
 }
 
-template <typename T>
-void ColumnVector<T>::gather(ColumnGathererStream & gatherer)
+template <typename T, bool _s>
+void ColumnVector<T, _s>::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
 }
 
-template <typename T>
-void ColumnVector<T>::getExtremes(Field & min, Field & max) const
+template <typename T, bool _s>
+void ColumnVector<T, _s>::getExtremes(Field & min, Field & max) const
 {
     size_t size = data.size();
 
@@ -310,16 +310,20 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.
-template class ColumnVector<UInt8>;
-template class ColumnVector<UInt16>;
-template class ColumnVector<UInt32>;
-template class ColumnVector<UInt64>;
-template class ColumnVector<UInt128>;
-template class ColumnVector<Int8>;
-template class ColumnVector<Int16>;
-template class ColumnVector<Int32>;
-template class ColumnVector<Int64>;
-template class ColumnVector<Int128>;
-template class ColumnVector<Float32>;
-template class ColumnVector<Float64>;
+template class ColumnVector<UInt8, true>;
+template class ColumnVector<UInt16, true>;
+template class ColumnVector<UInt32, true>;
+template class ColumnVector<UInt64, true>;
+template class ColumnVector<UInt128, true>;
+template class ColumnVector<Int8, true>;
+template class ColumnVector<Int16, true>;
+template class ColumnVector<Int32, true>;
+template class ColumnVector<Int64, true>;
+template class ColumnVector<Int128, true>;
+template class ColumnVector<Float32, true>;
+template class ColumnVector<Float64, true>;
+
+template class ColumnVector<Int32, false>;
+template class ColumnVector<Int64, false>;
+template class ColumnVector<Int128, false>;
 }

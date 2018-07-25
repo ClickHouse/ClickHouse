@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
@@ -39,7 +40,7 @@ namespace DB
   * The comparison functions always return 0 or 1 (UInt8).
   *
   * You can compare the following types:
-  * - numbers;
+  * - numbers and decimals;
   * - strings and fixed strings;
   * - dates;
   * - datetimes;
@@ -185,6 +186,174 @@ struct NumComparisonImpl
     static void constant_constant(A a, B b, UInt8 & c)
     {
         c = Op::apply(a, b);
+    }
+};
+
+///
+template <typename A, typename B, typename Op>
+class DecimalComparison
+{
+public:
+    static bool apply(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        Shift shift;
+        if (!allowed(col_left, col_right, shift))
+            return false;
+
+        if (ColumnPtr c_res = apply(col_left, col_right, shift))
+        {
+            block.getByPosition(result).column = std::move(c_res);
+            return true;
+        }
+        return false;
+    }
+
+private:
+    struct Shift
+    {
+        Int128 a = 1;
+        Int128 b = 1;
+    };
+
+    /// @returns false if either of decimals has another type.
+    static bool allowed(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, Shift & shift)
+    {
+        const DataTypePtr & left_type = col_left.type;
+        const DataTypePtr & right_type = col_right.type;
+
+        if (const DataTypeDecimal<A> * decimal0 = checkDecimal<A>(*left_type))
+        {
+            if (const DataTypeDecimal<B> * decimal1 = checkDecimal<B>(*right_type))
+            {
+                shift.a = decimal0->scaleFactor(decimalResultType(*decimal0, *decimal1));
+                shift.b = decimal1->scaleFactor(decimalResultType(*decimal0, *decimal1));
+            }
+            else if (notDecimalButComparableToDecimal(*right_type))
+                shift.b = decimal0->getScaleMultiplier();
+            else
+                return false;
+        }
+        else if (const DataTypeDecimal<B> * decimal1 = checkDecimal<B>(*right_type))
+        {
+            if (!notDecimalButComparableToDecimal(*left_type))
+                shift.a = decimal1->getScaleMultiplier();
+            else
+                return false;
+        }
+        else
+            return false;
+
+        return true;
+    }
+
+    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, const Shift & shift)
+    {
+        const ColumnPtr & c0 = col_left.column;
+        const ColumnPtr & c1 = col_right.column;
+        bool c0_const = c0->isColumnConst();
+        bool c1_const = c1->isColumnConst();
+
+        if (c0_const && c1_const)
+        {
+            const ColumnConst * c0_const = checkAndGetColumnConst<ColumnVector<A>>(c0.get());
+            const ColumnConst * c1_const = checkAndGetColumnConst<ColumnVector<B>>(c1.get());
+
+            UInt8 res = apply(c0_const->template getValue<A>(), c1_const->template getValue<B>(), shift);
+            return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
+        }
+
+        auto c_res = ColumnUInt8::create();
+        ColumnUInt8::Container & vec_res = c_res->getData();
+        vec_res.resize(c0->size());
+
+        if (c0_const)
+        {
+            const ColumnConst * c0_const = checkAndGetColumnConst<ColumnVector<A>>(c0.get());
+            if (const ColumnVector<B> * c1_vec = checkAndGetColumn<ColumnVector<B>>(c1.get()))
+                constant_vector(c0_const->template getValue<A>(), c1_vec->getData(), vec_res, shift);
+            else if (const ColumnVector<B, false> * c1_vec = checkAndGetColumn<ColumnVector<B, false>>(c1.get()))
+                constant_vector(c0_const->template getValue<A>(), c1_vec->getData(), vec_res, shift);
+        }
+        else if (c1_const)
+        {
+            const ColumnConst * c1_const = checkAndGetColumnConst<ColumnVector<B>>(c1.get());
+            if (const ColumnVector<A> * c0_vec = checkAndGetColumn<ColumnVector<A>>(c0.get()))
+                vector_constant(c0_vec->getData(), c1_const->template getValue<B>(), vec_res, shift);
+            else if (const ColumnVector<A, false> * c0_vec = checkAndGetColumn<ColumnVector<A, false>>(c0.get()))
+                vector_constant(c0_vec->getData(), c1_const->template getValue<B>(), vec_res, shift);
+        }
+        else
+        {
+            if (const ColumnVector<A> * c0_vec = checkAndGetColumn<ColumnVector<A>>(c0.get()))
+            {
+                if (const ColumnVector<B> * c1_vec = checkAndGetColumn<ColumnVector<B>>(c1.get()))
+                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                else if (const ColumnVector<B, false> * c1_vec = checkAndGetColumn<ColumnVector<B, false>>(c1.get()))
+                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+            }
+            else if (const ColumnVector<A, false> * c0_vec = checkAndGetColumn<ColumnVector<A, false>>(c0.get()))
+            {
+                if (const ColumnVector<B> * c1_vec = checkAndGetColumn<ColumnVector<B>>(c1.get()))
+                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                else if (const ColumnVector<B, false> * c1_vec = checkAndGetColumn<ColumnVector<B, false>>(c1.get()))
+                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+            }
+        }
+
+        return c_res;
+    }
+
+    static NO_INLINE UInt8 apply(A a, B b, const Shift & shift)
+    {
+        return Op::apply(a * shift.a, b * shift.b);
+    }
+
+    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c,
+                                        const Shift & shift)
+    {
+        size_t size = a.size();
+        const A * a_pos = &a[0];
+        const B * b_pos = &b[0];
+        UInt8 * c_pos = &c[0];
+        const A * a_end = a_pos + size;
+
+        while (a_pos < a_end)
+        {
+            *c_pos = apply(*a_pos, *b_pos, shift);
+            ++a_pos;
+            ++b_pos;
+            ++c_pos;
+        }
+    }
+
+    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c, const Shift & shift)
+    {
+        size_t size = a.size();
+        const A * a_pos = &a[0];
+        UInt8 * c_pos = &c[0];
+        const A * a_end = a_pos + size;
+
+        while (a_pos < a_end)
+        {
+            *c_pos = apply(*a_pos, b, shift);
+            ++a_pos;
+            ++c_pos;
+        }
+    }
+
+    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c, const Shift & shift)
+    {
+        size_t size = b.size();
+        const B * b_pos = &b[0];
+        UInt8 * c_pos = &c[0];
+        const B * b_end = b_pos + size;
+
+        while (b_pos < b_end)
+        {
+            *c_pos = apply(a, *b_pos, shift);
+            ++b_pos;
+            ++c_pos;
+        }
     }
 };
 
@@ -696,6 +865,7 @@ private:
                 || executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int128>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
@@ -715,6 +885,7 @@ private:
                 || executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Int128>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
@@ -725,6 +896,28 @@ private:
         }
 
         return false;
+    }
+
+
+    bool executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        if (DecimalComparison<Int32, Int32, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+            DecimalComparison<Int32, Int64, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+            DecimalComparison<Int32, Int128, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+
+            DecimalComparison<Int64, Int32, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+            DecimalComparison<Int64, Int64, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+            DecimalComparison<Int64, Int128, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+
+            DecimalComparison<Int128, Int32, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+            DecimalComparison<Int128, Int64, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+            DecimalComparison<Int128, Int128, Op<Int128, Int128>>::apply(block, result, col_left, col_right))
+        {
+            return true;
+        }
+
+        throw Exception("Not implemented " + getName() + " between " + col_left.type->getName() + " and " + col_right.type->getName(),
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
@@ -1172,6 +1365,8 @@ public:
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
+        const DataTypePtr & left_type = col_with_type_and_name_left.type;
+        const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
@@ -1187,26 +1382,35 @@ public:
                 || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int128>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
+        else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
+        else if (isDecimal(*left_type) || isDecimal(*right_type))
+        {
+            if (!comparableToDecimal(*left_type) || !comparableToDecimal(*right_type))
+                throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            executeDecimal(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
         }
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
         {
         }
-        else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))
+        else if (left_type->equals(*right_type))
         {
             executeGenericIdenticalTypes(block, result, col_left_untyped, col_right_untyped);
         }
         else if (executeDateOrDateTimeOrEnumOrUUIDWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
-                col_with_type_and_name_left.type, col_with_type_and_name_right.type,
+                left_type, right_type,
                 left_is_num, input_rows_count))
         {
         }

@@ -76,7 +76,7 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 template <typename From, typename To>
 static Field convertIntToDecimalTypeImpl(const Field & from, const To & type)
 {
-    using FieldType = typename NearestFieldType<typename To::UnderlyingType>::Type;
+    using FieldType = typename To::FieldType;
 
     From value = from.get<From>();
     if (!type.canStoreWhole(value))
@@ -150,12 +150,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
         if (typeid_cast<const DataTypeInt64 *>(&type)) return convertNumericType<Int64>(src, type);
         if (typeid_cast<const DataTypeFloat32 *>(&type)) return convertNumericType<Float32>(src, type);
         if (typeid_cast<const DataTypeFloat64 *>(&type)) return convertNumericType<Float64>(src, type);
-        if (typeid_cast<const DataTypeDecimal<Int32> *>(&type))
-            return convertIntToDecimalType(src, typeid_cast<const DataTypeDecimal<Int32> &>(type));
-        if (typeid_cast<const DataTypeDecimal<Int64> *>(&type))
-            return convertIntToDecimalType(src, typeid_cast<const DataTypeDecimal<Int64> &>(type));
-        if (typeid_cast<const DataTypeDecimal<Int128> *>(&type))
-            return convertIntToDecimalType(src, typeid_cast<const DataTypeDecimal<Int128> &>(type));
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int32> *>(&type)) return convertIntToDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int64> *>(&type)) return convertIntToDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int128> *>(&type)) return convertIntToDecimalType(src, *ptype);
 
         const bool is_date = typeid_cast<const DataTypeDate *>(&type);
         bool is_datetime = false;
