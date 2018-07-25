@@ -5,6 +5,7 @@ if (ENABLE_MYSQL)
         "/usr/local/opt/mysql/lib"
         "/usr/local/lib"
         "/usr/local/lib64"
+        "/usr/local/lib/mariadb" # macos brew mariadb-connector-c
         "/usr/mysql/lib"
         "/usr/mysql/lib64"
         "/usr/lib"
@@ -18,12 +19,12 @@ if (ENABLE_MYSQL)
         "/usr/local/include"
         "/usr/include")
 
-    find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h PATHS ${MYSQL_INCLUDE_PATHS} PATH_SUFFIXES mysql)
+    find_path (MYSQL_INCLUDE_DIR NAMES mysql/mysql.h mariadb/mysql.h PATHS ${MYSQL_INCLUDE_PATHS} PATH_SUFFIXES mysql)
 
     if (USE_STATIC_LIBRARIES)
         find_library (STATIC_MYSQLCLIENT_LIB NAMES mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS} PATH_SUFFIXES mysql)
     else ()
-        find_library (MYSQLCLIENT_LIBRARIES NAMES mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS} PATH_SUFFIXES mysql)
+        find_library (MYSQLCLIENT_LIBRARIES NAMES mariadb mariadbclient mysqlclient PATHS ${MYSQL_LIB_PATHS} PATH_SUFFIXES mysql)
     endif ()
 
     if (MYSQL_INCLUDE_DIR AND (STATIC_MYSQLCLIENT_LIB OR MYSQLCLIENT_LIBRARIES))
