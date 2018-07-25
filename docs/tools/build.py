@@ -109,7 +109,6 @@ def build_single_page_version(lang, args, cfg):
                 'site_dir': temp,
                 'extra': {
                     'single_page': True,
-                    'lang': lang,
                     'opposite_lang': 'en' if lang == 'ru' else 'ru',
                     'search': {
                         'language': 'en, ru'
