@@ -62,6 +62,8 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 
 namespace DB
@@ -172,7 +174,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const SubqueriesForSets & subqueries_for_set_)
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_),
-    source_columns(source_columns_), required_result_columns(required_result_columns_.begin(), required_result_columns_.end()),
+    source_columns(source_columns_),
     storage(storage_),
     do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
 {
@@ -216,6 +218,9 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
+
+    /// Substitute aliases for required_result_columns and create set with their names.
+    required_result_columns = createRequiredResultColumnsMap(required_result_columns_);
 
     /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
@@ -968,6 +973,25 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
         subquery->prefer_alias_to_column_name = true;
         aliases[alias] = ast;
     }
+}
+
+
+NameToNameSetMap ExpressionAnalyzer::createRequiredResultColumnsMap(const Names & required_result_columns)
+{
+    NameToNameSetMap map;
+    ParserExpression parser;
+
+    for (const auto & column : required_result_columns)
+    {
+        /// TODO: it's better to change type of required_result_columns to ASTs
+        auto expr = parseQuery(parser, column, 0);
+        SetOfASTs tmp_set;
+        MapOfASTs tmp_map;
+        normalizeTreeImpl(expr, tmp_map, tmp_set, "", 0);
+        map[expr->getColumnName()].insert(column);
+    }
+
+    return map;
 }
 
 
@@ -2754,11 +2778,23 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     ASTs asts = select_query->select_expression_list->children;
     for (size_t i = 0; i < asts.size(); ++i)
     {
-        String result_name = asts[i]->getAliasOrColumnName();
-        if (required_result_columns.empty() || required_result_columns.count(result_name))
+        String result_name = asts[i]->getColumnName();
+        if (required_result_columns.empty())
         {
-            result_columns.emplace_back(asts[i]->getColumnName(), result_name);
+            result_columns.emplace_back(result_name, asts[i]->getAliasOrColumnName());
             step.required_output.push_back(result_columns.back().second);
+        }
+        else
+        {
+            auto iter = required_result_columns.find(result_name);
+            if (iter != required_result_columns.end())
+            {
+                for (const auto & original_name : iter->second)
+                {
+                    result_columns.emplace_back(result_name, original_name);
+                    step.required_output.push_back(result_columns.back().second);
+                }
+            }
         }
     }
 
@@ -3280,7 +3316,7 @@ void ExpressionAnalyzer::removeUnneededColumnsFromSelectClause()
 
     elements.erase(std::remove_if(elements.begin(), elements.end(), [this](const auto & node)
     {
-        return !required_result_columns.count(node->getAliasOrColumnName()) && !hasArrayJoin(node);
+        return !required_result_columns.count(node->getColumnName()) && !hasArrayJoin(node);
     }), elements.end());
 }
 
