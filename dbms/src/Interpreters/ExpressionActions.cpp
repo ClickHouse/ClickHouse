@@ -158,7 +158,7 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join
 
 void ExpressionAction::prepare(Block & sample_block)
 {
-//    std::cerr << "preparing: " << toString() << std::endl;
+    // std::cerr << "preparing: " << toString() << std::endl;
 
     /** Constant expressions should be evaluated, and put the result in sample_block.
       */
@@ -322,8 +322,6 @@ size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std
 
 void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
 {
-//    std::cerr << "executing: " << toString() << std::endl;
-
     size_t input_rows_count = getInputRowsCount(block, input_rows_counts);
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)

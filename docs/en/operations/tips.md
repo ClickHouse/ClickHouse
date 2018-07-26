@@ -113,6 +113,10 @@ With the default settings, ZooKeeper is a time bomb:
 
 This bomb must be defused.
 
+If you want to move data between different ZooKeeper clusters, never move it by hand-written script, because it will produce wrong data for sequential nodes. Never use "zkcopy" tool, by the same reason: https://github.com/ksprojects/zkcopy/issues/15
+
+If you want to split ZooKeeper cluster, proper way is to increase number of replicas and then reconfigure it as two independent clusters.
+
 The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
 
 zoo.cfg:

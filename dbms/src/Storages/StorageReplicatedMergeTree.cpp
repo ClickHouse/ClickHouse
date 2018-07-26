@@ -1155,7 +1155,6 @@ void StorageReplicatedMergeTree::writePartLog(
 
         if (merge_entry)
         {
-
             part_log_elem.rows_read = (*merge_entry)->bytes_read_uncompressed;
             part_log_elem.bytes_read_uncompressed = (*merge_entry)->bytes_read_uncompressed;
 
@@ -2062,7 +2061,10 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        {
+            restarting_thread->wakeup();
             return;
+        }
 
         queue_updating_task->scheduleAfter(QUEUE_UPDATE_ERROR_SLEEP_MS);
     }
@@ -2279,14 +2281,20 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
     bool deduplicate,
     ReplicatedMergeTreeLogEntryData * out_log_entry)
 {
-    bool all_in_zk = true;
+    std::vector<std::future<zkutil::ExistsResponse>> exists_futures;
+    exists_futures.reserve(parts.size());
     for (const auto & part : parts)
+        exists_futures.emplace_back(zookeeper->asyncExists(replica_path + "/parts/" + part->name));
+
+    bool all_in_zk = true;
+    for (size_t i = 0; i < parts.size(); ++i)
     {
         /// If there is no information about part in ZK, we will not merge it.
-        if (!zookeeper->exists(replica_path + "/parts/" + part->name))
+        if (exists_futures[i].get().error == ZooKeeperImpl::ZooKeeper::ZNONODE)
         {
             all_in_zk = false;
 
+            const auto & part = parts[i];
             if (part->modification_time + MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER < time(nullptr))
             {
                 LOG_WARNING(log, "Part " << part->name << " (that was selected for merge)"
@@ -2297,6 +2305,7 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
             }
         }
     }
+
     if (!all_in_zk)
         return false;
 
@@ -2312,16 +2321,6 @@ bool StorageReplicatedMergeTree::createLogEntryToMergeParts(
 
     String path_created = zookeeper->create(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential);
     entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-
-    const String & partition_id = parts[0]->info.partition_id;
-    for (size_t i = 0; i + 1 < parts.size(); ++i)
-    {
-        /// Remove the unnecessary entries about non-existent blocks.
-        for (Int64 number = parts[i]->info.max_block + 1; number <= parts[i + 1]->info.min_block - 1; ++number)
-        {
-            zookeeper->tryRemove(zookeeper_path + "/block_numbers/" + partition_id + "/block-" + padIndex(number));
-        }
-    }
 
     if (out_log_entry)
         *out_log_entry = entry;
@@ -2904,25 +2903,8 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
         std::lock_guard<std::mutex> merge_selecting_lock(merge_selecting_mutex);
 
         size_t disk_space = DiskSpaceMonitor::getUnreservedFreeSpace(full_path);
-
-        MergeTreeDataMergerMutator::FuturePart future_merged_part;
-        String disable_reason;
-        bool selected = false;
-
         auto zookeeper = getZooKeeper();
         ReplicatedMergeTreeMergePredicate can_merge = queue.getMergePredicate(zookeeper);
-
-        if (!partition)
-        {
-            selected = merger_mutator.selectPartsToMerge(
-                future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
-        }
-        else
-        {
-            String partition_id = data.getPartitionIDFromQuery(partition, context);
-            selected = merger_mutator.selectAllPartsToMergeWithinPartition(
-                future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
-        }
 
         auto handle_noop = [&] (const String & message)
         {
@@ -2931,14 +2913,50 @@ bool StorageReplicatedMergeTree::optimize(const ASTPtr & query, const ASTPtr & p
             return false;
         };
 
-        if (!selected)
+        if (!partition && final)
         {
-            LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
-            return handle_noop(disable_reason);
-        }
+            MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
+            std::unordered_set<String> partition_ids;
 
-        if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
-            return handle_noop("Can't create merge queue node in ZooKeeper");
+            for (const MergeTreeData::DataPartPtr & part : data_parts)
+                partition_ids.emplace(part->info.partition_id);
+
+            for (const String & partition_id : partition_ids)
+            {
+                MergeTreeDataMergerMutator::FuturePart future_merged_part;
+                bool selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_merged_part, disk_space, can_merge, partition_id, true, nullptr);
+                if (selected &&
+                    !createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+                    return handle_noop("Can't create merge queue node in ZooKeeper");
+            }
+        }
+        else
+        {
+            MergeTreeDataMergerMutator::FuturePart future_merged_part;
+            String disable_reason;
+            bool selected = false;
+            if (!partition)
+            {
+                selected = merger_mutator.selectPartsToMerge(
+                    future_merged_part, true, data.settings.max_bytes_to_merge_at_max_space_in_pool, can_merge, &disable_reason);
+            }
+            else
+            {
+                String partition_id = data.getPartitionIDFromQuery(partition, context);
+                selected = merger_mutator.selectAllPartsToMergeWithinPartition(
+                    future_merged_part, disk_space, can_merge, partition_id, final, &disable_reason);
+            }
+
+            if (!selected)
+            {
+                LOG_INFO(log, "Cannot select parts for optimization" + (disable_reason.empty() ? "" : ": " + disable_reason));
+                return handle_noop(disable_reason);
+            }
+
+            if (!createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate, &merge_entry))
+                return handle_noop("Can't create merge queue node in ZooKeeper");
+        }
     }
 
     /// TODO: Bad setting name for such purpose
@@ -3404,7 +3422,7 @@ bool StorageReplicatedMergeTree::existsNodeCached(const std::string & path)
 }
 
 
-std::optional<AbandonableLockInZooKeeper>
+std::optional<EphemeralLockInZooKeeper>
 StorageReplicatedMergeTree::allocateBlockNumber(
     const String & partition_id, zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_block_id_path)
 {
@@ -3434,11 +3452,11 @@ StorageReplicatedMergeTree::allocateBlockNumber(
             zkutil::KeeperMultiException::check(code, ops, responses);
     }
 
-    AbandonableLockInZooKeeper lock;
+    EphemeralLockInZooKeeper lock;
     /// 2 RTT
     try
     {
-        lock = AbandonableLockInZooKeeper(
+        lock = EphemeralLockInZooKeeper(
             partition_path + "/block-", zookeeper_path + "/temp", *zookeeper, &deduplication_check_ops);
     }
     catch (const zkutil::KeeperMultiException & e)
@@ -4065,7 +4083,7 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
             const String & path_created =
                 static_cast<const zkutil::CreateResponse *>(responses[1].get())->path_created;
             entry.znode_name = path_created.substr(path_created.find_last_of('/') + 1);
-            LOG_TRACE(log, "Created mutation with id " << entry.znode_name);
+            LOG_TRACE(log, "Created mutation with ID " << entry.znode_name);
             break;
         }
         else if (rc == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
@@ -4375,7 +4393,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     MergeTreeData::MutableDataPartsVector dst_parts;
     Strings block_id_paths;
     Strings part_checksums;
-    std::vector<AbandonableLockInZooKeeper> abandonable_locks;
+    std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
 
     LOG_DEBUG(log, "Cloning " << src_all_parts.size() << " parts");
 
@@ -4431,7 +4449,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         src_parts.emplace_back(src_part);
         dst_parts.emplace_back(dst_part);
-        abandonable_locks.emplace_back(std::move(*lock));
+        ephemeral_locks.emplace_back(std::move(*lock));
         block_id_paths.emplace_back(block_id_path);
         part_checksums.emplace_back(hash_hex);
     }
@@ -4472,7 +4490,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
         for (size_t i = 0; i < dst_parts.size(); ++i)
         {
             getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
-            abandonable_locks[i].getUnlockOps(ops);
+            ephemeral_locks[i].getUnlockOps(ops);
 
             if (ops.size() > zkutil::MULTI_BATCH_SIZE)
             {
@@ -4513,7 +4531,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     String log_znode_path = dynamic_cast<const zkutil::CreateResponse &>(*op_results.back()).path_created;
     entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-    for (auto & lock : abandonable_locks)
+    for (auto & lock : ephemeral_locks)
         lock.assumeUnlocked();
 
     /// Forcibly remove replaced parts from ZooKeeper

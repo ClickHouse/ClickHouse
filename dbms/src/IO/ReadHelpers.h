@@ -20,6 +20,8 @@
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
 
+#include <Formats/FormatSettings.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/VarInt.h>
@@ -244,7 +246,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     x = 0;
     if (buf.eof())
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throwReadAfterEOF();
         else
             return ReturnType(false);
@@ -261,7 +263,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                     negative = true;
                 else
                 {
-                    if (throw_exception)
+                    if constexpr (throw_exception)
                         throw Exception("Unsigned type must not contain '-' symbol", ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
@@ -398,7 +400,8 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
 
 /** Read string in CSV format.
   * Parsing rules:
-  * - string could be placed in quotes; quotes could be single: ' or double: ";
+  * - string could be placed in quotes; quotes could be single: ' if FormatSettings::CSV::allow_single_quotes is true
+  *   or double: " if FormatSettings::CSV::allow_double_quotes is true;
   * - or string could be unquoted - this is determined by first character;
   * - if string is unquoted, then it is read until next delimiter,
   *   either until end of line (CR or LF),
@@ -407,7 +410,7 @@ void readStringUntilEOF(String & s, ReadBuffer & buf);
   * - if string is in quotes, then it will be read until closing quote,
   *   but sequences of two consecutive quotes are parsed as single quote inside string;
   */
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter);
+void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 /// Read and append result to array of characters.
@@ -430,7 +433,7 @@ template <typename Vector>
 void readStringUntilEOFInto(Vector & s, ReadBuffer & buf);
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter);
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 /// ReturnType is either bool or void. If bool, the function will return false instead of throwing an exception.
 template <typename Vector, typename ReturnType = void>
@@ -456,12 +459,14 @@ template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 
 
-void readDateTextFallback(LocalDate & date, ReadBuffer & buf);
+template <typename ReturnType>
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf);
 
 /// In YYYY-MM-DD format.
 /// For convenience, Month and Day parts can have single digit instead of two digits.
 /// Any separators other than '-' are supported.
-inline void readDateText(LocalDate & date, ReadBuffer & buf)
+template <typename ReturnType = void>
+inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
 {
     /// Optimistic path, when whole value is in buffer.
     if (buf.position() + 10 <= buf.buffer().end())
@@ -488,16 +493,47 @@ inline void readDateText(LocalDate & date, ReadBuffer & buf)
             buf.position() += 1;
 
         date = LocalDate(year, month, day);
+        return ReturnType(true);
     }
     else
-        readDateTextFallback(date, buf);
+        return readDateTextFallback<ReturnType>(date, buf);
+}
+
+template <typename ReturnType = void>
+inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    LocalDate local_date;
+
+    if constexpr (throw_exception)
+        readDateTextImpl<ReturnType>(local_date, buf);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf))
+        return false;
+
+    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    return ReturnType(true);
+}
+
+
+inline void readDateText(LocalDate & date, ReadBuffer & buf)
+{
+    readDateTextImpl<void>(date, buf);
 }
 
 inline void readDateText(DayNum & date, ReadBuffer & buf)
 {
-    LocalDate local_date;
-    readDateText(local_date, buf);
-    date = DateLUT::instance().makeDayNum(local_date.year(), local_date.month(), local_date.day());
+    readDateTextImpl<void>(date, buf);
+}
+
+inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf)
+{
+    return readDateTextImpl<bool>(date, buf);
+}
+
+inline bool tryReadDateText(DayNum & date, ReadBuffer & buf)
+{
+    return readDateTextImpl<bool>(date, buf);
 }
 
 
@@ -520,12 +556,14 @@ template <typename T>
 inline T parse(const char * data, size_t size);
 
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
+template <typename ReturnType = void>
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
 
 /** In YYYY-MM-DD hh:mm:ss format, according to specified time zone.
   * As an exception, also supported parsing of unix timestamp in form of decimal number.
   */
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+template <typename ReturnType = void>
+inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
     /** Read 10 characters, that could represent unix timestamp.
       * Only unix timestamp of 5-10 characters is supported.
@@ -553,18 +591,24 @@ inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTI
                 datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
 
             buf.position() += 19;
+            return ReturnType(true);
         }
         else
             /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-            readIntText(datetime, buf);
+            return readIntTextImpl<time_t, ReturnType>(datetime, buf);
     }
     else
-        readDateTimeTextFallback(datetime, buf, date_lut);
+        return readDateTimeTextFallback<ReturnType>(datetime, buf, date_lut);
 }
 
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf)
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
 {
-    readDateTimeText(datetime, buf, DateLUT::instance());
+    readDateTimeTextImpl<void>(datetime, buf, date_lut);
+}
+
+inline bool tryReadDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    return readDateTimeTextImpl<bool>(datetime, buf, date_lut);
 }
 
 inline void readDateTimeText(LocalDateTime & datetime, ReadBuffer & buf)
@@ -596,7 +640,6 @@ inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf);
 inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(LocalDateTime & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
 /// Generic methods to read value in text tab-separated format.
@@ -688,7 +731,7 @@ template <typename T>
 inline std::enable_if_t<std::is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
-inline void readCSV(String & x, ReadBuffer & buf, const char delimiter = ',') { readCSVString(x, buf, delimiter); }
+inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }

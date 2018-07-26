@@ -3,8 +3,9 @@
 
 #include <Databases/IDatabase.h>
 
+#include <DataTypes/DataTypeFactory.h>
+
 #include <Storages/StorageDistributed.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Storages/Distributed/DistributedBlockOutputStream.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Storages/StorageFactory.h>
@@ -57,6 +58,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
     extern const int TYPE_MISMATCH;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -211,7 +213,7 @@ BlockInputStreams StorageDistributed::read(
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table);
 
-    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, processed_stage).getSampleBlock());
+    Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
 
     ClusterProxy::SelectStreamFactory select_stream_factory(
         header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
@@ -316,18 +318,36 @@ void StorageDistributed::truncate(const ASTPtr &)
     }
 }
 
+
+namespace
+{
+    /// NOTE This is weird. Get rid of this.
+    std::map<String, String> virtual_columns =
+    {
+        {"_table", "String"},
+        {"_part", "String"},
+        {"_part_index", "UInt64"},
+        {"_sample_factor", "Float64"},
+    };
+}
+
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
-    if (const auto & type = VirtualColumnFactory::tryGetType(column_name))
-        return { column_name, type };
+    if (getColumns().hasPhysical(column_name))
+        return getColumns().getPhysical(column_name);
 
-    return getColumns().getPhysical(column_name);
+    auto it = virtual_columns.find(column_name);
+    if (it != virtual_columns.end())
+        return { it->first, DataTypeFactory::instance().get(it->second) };
+
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 
 bool StorageDistributed::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || getColumns().hasPhysical(column_name);
+    return virtual_columns.count(column_name) || getColumns().hasPhysical(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors()

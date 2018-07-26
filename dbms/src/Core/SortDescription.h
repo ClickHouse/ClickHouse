@@ -26,9 +26,6 @@ struct SortColumnDescription
 
     SortColumnDescription(const std::string & column_name_, int direction_, int nulls_direction_, const std::shared_ptr<Collator> & collator_ = nullptr)
         : column_name(column_name_), column_number(0), direction(direction_), nulls_direction(nulls_direction_), collator(collator_) {}
-
-    /// For IBlockInputStream.
-    std::string getID() const;
 };
 
 /// Description of the sorting rule for several columns.

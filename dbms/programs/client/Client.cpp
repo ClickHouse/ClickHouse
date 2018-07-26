@@ -28,6 +28,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -374,7 +375,6 @@ private:
             echo_queries = config().getBool("echo", false);
         }
 
-        connection_parameters = ConnectionParameters(config());
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -492,6 +492,8 @@ private:
 
     void connect()
     {
+        connection_parameters = ConnectionParameters(config());
+
         if (is_interactive)
             std::cout << "Connecting to "
                 << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at " : "")
@@ -1315,10 +1317,7 @@ private:
 
     void showClientVersion()
     {
-        std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-            << "." << DBMS_VERSION_MINOR
-            << "." << ClickHouseRevision::get()
-            << "." << std::endl;
+        std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
     }
 
 public:

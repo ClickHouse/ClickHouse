@@ -302,40 +302,64 @@ struct ConvertImplGenericToString
 
 /** Conversion of strings to numbers, dates, datetimes: through parsing.
   */
-template <typename DataType> void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+template <typename DataType>
+void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     readText(x, rb);
 }
 
-template <> inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+template <>
+inline void parseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     DayNum tmp(0);
     readDateText(tmp, rb);
     x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+template <>
+inline void parseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
 {
     time_t tmp = 0;
     readDateTimeText(tmp, rb, *time_zone);
     x = tmp;
 }
 
-template <> inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+template <>
+inline void parseImpl<DataTypeUUID>(DataTypeUUID::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     UUID tmp;
     readText(tmp, rb);
     x = tmp;
 }
 
+
 template <typename DataType>
-bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb)
+bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
 {
     if constexpr (std::is_integral_v<typename DataType::FieldType>)
         return tryReadIntText(x, rb);
     else if constexpr (std::is_floating_point_v<typename DataType::FieldType>)
         return tryReadFloatText(x, rb);
-    /// NOTE Need to implement for Date and DateTime too.
+}
+
+template <>
+inline bool tryParseImpl<DataTypeDate>(DataTypeDate::FieldType & x, ReadBuffer & rb, const DateLUTImpl *)
+{
+    DayNum tmp(0);
+    if (!tryReadDateText(tmp, rb))
+        return false;
+    x = tmp;
+    return true;
+}
+
+template <>
+inline bool tryParseImpl<DataTypeDateTime>(DataTypeDateTime::FieldType & x, ReadBuffer & rb, const DateLUTImpl * time_zone)
+{
+    time_t tmp = 0;
+    if (!tryReadDateTimeText(tmp, rb, *time_zone))
+        return false;
+    x = tmp;
+    return true;
 }
 
 
@@ -475,7 +499,7 @@ struct ConvertThroughParsing
                 }
                 else
                 {
-                    parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer) && isAllRead(read_buffer);
+                    parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone) && isAllRead(read_buffer);
                 }
 
                 if (!parsed)
@@ -861,14 +885,11 @@ public:
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
 
         if (checkAndGetDataType<DataTypeString>(from_type))
-            ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(block,
-                                                                                                           arguments,
-                                                                                                           result, input_rows_count);
+            ConvertThroughParsing<DataTypeString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                block, arguments, result, input_rows_count);
         else if (checkAndGetDataType<DataTypeFixedString>(from_type))
-            ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(block,
-                                                                                                                arguments,
-                                                                                                                result,
-                                                                                                                input_rows_count);
+            ConvertThroughParsing<DataTypeFixedString, ToDataType, Name, exception_mode, parsing_mode>::execute(
+                block, arguments, result, input_rows_count);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName()
                 + ". Only String or FixedString argument is accepted for try-conversion function. For other arguments, use function without 'orZero' or 'orNull'.",
@@ -993,9 +1014,17 @@ struct ToIntMonotonicity
     {
         size_t size_of_type = type.getSizeOfValueInMemory();
 
-        /// If type is expanding, then function is monotonic.
+        /// If type is expanding
         if (sizeof(T) > size_of_type)
-            return { true, true, true };
+        {
+            /// If convert signed -> signed or unsigned -> signed, then function is monotonic.
+            if (std::is_signed_v<T> || type.isValueRepresentedByUnsignedInteger())
+                return {true, true, true};
+
+            /// If arguments from the same half, then function is monotonic.
+            if ((left.get<Int64>() >= 0) == (right.get<Int64>() >= 0))
+                return {true, true, true};
+        }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
         if (checkDataType<DataTypeNumber<T>>(&type) ||
@@ -1223,6 +1252,9 @@ private:
     const char * name;
 };
 
+
+struct NameCast { static constexpr auto name = "CAST"; };
+
 class FunctionCast final : public IFunctionBase
 {
 public:
@@ -1266,11 +1298,33 @@ private:
     DataTypePtr return_type;
 
     template <typename DataType>
-    WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const) const
+    WrapperType createWrapper(const DataTypePtr & from_type, const DataType * const, bool requested_result_is_nullable) const
     {
-        using FunctionType = typename FunctionTo<DataType>::Type;
+        FunctionPtr function;
 
-        auto function = FunctionType::create(context);
+        if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
+        {
+            /// In case when converting to Nullable type, we apply different parsing rule,
+            /// that will not throw an exception but return NULL in case of malformed input.
+            function = FunctionConvertFromString<DataType, NameCast, ConvertFromStringExceptionMode::Null>::create(context);
+        }
+        else
+            function = FunctionTo<DataType>::Type::create(context);
+
+        /// Check conversion using underlying function
+        {
+            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
+        }
+
+        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        {
+            function->execute(block, arguments, result, input_rows_count);
+        };
+    }
+
+    WrapperType createStringWrapper(const DataTypePtr & from_type) const
+    {
+        FunctionPtr function = FunctionToString::create(context);
 
         /// Check conversion using underlying function
         {
@@ -1522,24 +1576,16 @@ private:
         };
     }
 
-    /// Actions to be taken when performing a conversion.
-    struct NullableConversion
-    {
-        bool source_is_nullable = false;
-        bool result_is_nullable = false;
-    };
-
     WrapperType prepare(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
         /// Determine whether pre-processing and/or post-processing must take place during conversion.
 
-        NullableConversion nullable_conversion;
-        nullable_conversion.source_is_nullable = from_type->isNullable();
-        nullable_conversion.result_is_nullable = to_type->isNullable();
+        bool source_is_nullable = from_type->isNullable();
+        bool result_is_nullable = to_type->isNullable();
 
         if (from_type->onlyNull())
         {
-            if (!nullable_conversion.result_is_nullable)
+            if (!result_is_nullable)
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
@@ -1549,14 +1595,12 @@ private:
             };
         }
 
-        DataTypePtr from_inner_type = removeNullable(from_type);
-        DataTypePtr to_inner_type = removeNullable(to_type);
+        auto wrapper = prepareImpl(removeNullable(from_type), removeNullable(to_type), result_is_nullable);
 
-        auto wrapper = prepareImpl(from_inner_type, to_inner_type);
-
-        if (nullable_conversion.result_is_nullable)
+        if (result_is_nullable)
         {
-            return [wrapper, nullable_conversion] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+            return [wrapper, source_is_nullable]
+                (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
             {
                 /// Create a temporary block on which to perform the operation.
                 auto & res = block.getByPosition(result);
@@ -1565,7 +1609,7 @@ private:
                 const auto & nested_type = nullable_type.getNestedType();
 
                 Block tmp_block;
-                if (nullable_conversion.source_is_nullable)
+                if (source_is_nullable)
                     tmp_block = createBlockWithNestedColumns(block, arguments);
                 else
                     tmp_block = block;
@@ -1576,29 +1620,12 @@ private:
                 /// Perform the requested conversion.
                 wrapper(tmp_block, arguments, tmp_res_index, input_rows_count);
 
-                /// Wrap the result into a nullable column.
-                ColumnPtr null_map;
-
-                if (nullable_conversion.source_is_nullable)
-                {
-                    /// This is a conversion from a nullable to a nullable type.
-                    /// So we just keep the null map of the input argument.
-                    const auto & col = block.getByPosition(arguments[0]).column;
-                    const auto & nullable_col = static_cast<const ColumnNullable &>(*col);
-                    null_map = nullable_col.getNullMapColumnPtr();
-                }
-                else
-                {
-                    /// This is a conversion from an ordinary type to a nullable type.
-                    /// So we create a trivial null map.
-                    null_map = ColumnUInt8::create(input_rows_count, 0);
-                }
-
                 const auto & tmp_res = tmp_block.getByPosition(tmp_res_index);
-                res.column = ColumnNullable::create(tmp_res.column, null_map);
+
+                res.column = wrapInNullable(tmp_res.column, Block({block.getByPosition(arguments[0]), tmp_res}), {0}, 1, input_rows_count);
             };
         }
-        else if (nullable_conversion.source_is_nullable)
+        else if (source_is_nullable)
         {
             /// Conversion from Nullable to non-Nullable.
 
@@ -1624,38 +1651,39 @@ private:
             return wrapper;
     }
 
-    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type) const
+    /// 'from_type' and 'to_type' are nested types in case of Nullable. 'requested_result_is_nullable' is true if CAST to Nullable type is requested.
+    WrapperType prepareImpl(const DataTypePtr & from_type, const DataTypePtr & to_type, bool requested_result_is_nullable) const
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
         else if (checkDataType<DataTypeNothing>(from_type.get()))
             return createNothingWrapper(to_type.get());
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt8>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt16>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt32>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeUInt64>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt8>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt16>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt32>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeInt64>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat32>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeFloat64>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeDate>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeDateTime>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createWrapper(from_type, to_actual_type, requested_result_is_nullable);
         else if (const auto to_actual_type = checkAndGetDataType<DataTypeString>(to_type.get()))
-            return createWrapper(from_type, to_actual_type);
+            return createStringWrapper(from_type);
         else if (const auto type_fixed_string = checkAndGetDataType<DataTypeFixedString>(to_type.get()))
             return createFixedStringWrapper(from_type, type_fixed_string->getN());
         else if (const auto type_array = checkAndGetDataType<DataTypeArray>(to_type.get()))

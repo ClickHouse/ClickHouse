@@ -71,7 +71,7 @@ public:
       */
     bool selectAllPartsToMergeWithinPartition(
         FuturePart & future_part,
-        size_t available_disk_space,
+        size_t & available_disk_space,
         const AllowedMergingPredicate & can_merge,
         const String & partition_id,
         bool final,
@@ -92,6 +92,7 @@ public:
         MergeListEntry & merge_entry,
         size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplication);
 
+    /// Mutate a single data part with the specified commands. Will create and return a temporary part.
     MergeTreeData::MutableDataPartPtr mutatePartToTemporaryPart(
         const FuturePart & future_part,
         const std::vector<MutationCommand> & commands,

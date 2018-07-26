@@ -1,0 +1,44 @@
+<nav class="md-nav md-nav--primary" data-md-level="0">
+  {% if not config.extra.single_page %}
+  <label class="md-nav__title md-nav__title--site" for="drawer">
+    {{ config.site_name }}
+  </label>
+
+  <ul class="md-nav__list" data-md-scrollfix>
+    {% for nav_item in nav %}
+      {% set path = "nav-" + loop.index | string %}
+      {% set level = 1 %}
+      {% include "partials/nav-item.html" %}
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <ul id="md-extra-nav" class="md-nav__list" data-md-scrollfix>
+    <li class="md-nav__item md-nav__item--active">
+      {% if config.theme.language == 'ru' %}
+        {% if config.extra.single_page %}
+          <a href="{{ base_url }}" class="md-nav__link md-nav__link--active">Многостраничная версия</a>
+        {% else %}
+          <a href="{{ base_url }}/single/" class="md-nav__link md-nav__link--active">Одностраничная версия</a>
+        {% endif %}
+      {% else %}
+        {% if config.extra.single_page %}
+          <a href="{{ base_url }}" class="md-nav__link md-nav__link--active">Multi page version</a>
+        {% else %}
+          <a href="{{ base_url }}/single/" class="md-nav__link md-nav__link--active">Single page version</a>
+        {% endif %}
+      {% endif %}
+    </li>
+    {% if config.repo_url %}
+    <li class="md-nav__item md-nav__item--active">
+      <a href="{{ config.repo_url }}" rel="external nofollow" target="_blank" class="md-nav__link">
+        {% if config.theme.language == 'ru' %}
+          Исходники ClickHouse
+        {% else %}
+          ClickHouse sources
+        {% endif %}
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>

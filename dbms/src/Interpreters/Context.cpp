@@ -1731,9 +1731,9 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
-Context::getSampleBlockCacheType & Context::getSampleBlockCache() const
+Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
-    return getQueryContext().get_sample_block_cache;
+    return getQueryContext().sample_block_cache;
 }
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
