@@ -5,5 +5,5 @@ INSERT INTO FUNCTION remote('127.0.0.1', test.remote_test) VALUES(2);
 INSERT INTO FUNCTION remote('127.0.0.1', test.remote_test) VALUES(3);
 INSERT INTO FUNCTION remote('127.0.0.1', test.remote_test) VALUES(4);
 SELECT COUNT(*) FROM remote('127.0.0.1', test.remote_test);
-SELECT count(*) FROM remote('127.0.0.{1,2}', merge(default, '^remote_test'));
+SELECT count(*) FROM remote('127.0.0.{1,2}', merge(test, '^remote_test'));
 DROP TABLE test.remote_test;
