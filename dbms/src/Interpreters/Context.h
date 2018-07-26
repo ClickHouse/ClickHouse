@@ -249,6 +249,11 @@ public:
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
     std::pair<String, UInt16> getInterserverIOAddress() const;
+
+    // Credentials which server will use to communicate with others
+    void setInterverserCredentials(const String & user, const String & password);
+    std::pair<String, String> getInterserverCredentials() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
