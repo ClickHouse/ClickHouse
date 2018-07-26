@@ -8,29 +8,29 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 
 Формат | INSERT | SELECT
 -------|--------|--------
-[TabSeparated](formats.md#tabseparated) | ✔ | ✔ |
-[TabSeparatedRaw](formats.md#tabseparatedraw)  | ✗ | ✔ |
-[TabSeparatedWithNames](formats.md#tabseparatedwithnames) | ✔ | ✔ |
-[TabSeparatedWithNamesAndTypes](formats.md#tabseparatedwithnamesandtypes) | ✔ | ✔ |
-[CSV](formats.md#csv) | ✔ | ✔ |
-[CSVWithNames](formats.md#csvwithnames) | ✔ | ✔ |
-[Values](formats.md#values) | ✔ | ✔ |
-[Vertical](formats.md#vertical) | ✗ | ✔ |
-[VerticalRaw](formats.md#verticalraw) | ✗ | ✔ |
-[JSON](formats.md#json) | ✗ | ✔ |
-[JSONCompact](formats.md#jsoncompact) | ✗ | ✔ |
-[JSONEachRow](formats.md#jsoneachrow) | ✔ | ✔ |
-[TSKV](formats.md#tskv) | ✔ | ✔ |
-[Pretty](formats.md#pretty) | ✗ | ✔ |
-[PrettyCompact](formats.md#prettycompact) | ✗ | ✔ |
-[PrettyCompactMonoBlock](formats.md#prettycompactmonoblock) | ✗ | ✔ |
-[PrettyNoEscapes](formats.md#prettynoescapes) | ✗ | ✔ |
-[PrettySpace](formats.md#prettyspace) | ✗ | ✔ |
-[RowBinary](formats.md#rowbinary) | ✔ | ✔ |
-[Native](formats.md#native) | ✔ | ✔ |
-[Null](formats.md#null) | ✗ | ✔ |
-[XML](formats.md#xml) | ✗ | ✔ |
-[CapnProto](formats.md#capnproto) | ✔ | ✔ |
+[TabSeparated](#tabseparated) | ✔ | ✔ |
+[TabSeparatedRaw](#tabseparatedraw)  | ✗ | ✔ |
+[TabSeparatedWithNames](#tabseparatedwithnames) | ✔ | ✔ |
+[TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes) | ✔ | ✔ |
+[CSV](#csv) | ✔ | ✔ |
+[CSVWithNames](#csvwithnames) | ✔ | ✔ |
+[Values](#values) | ✔ | ✔ |
+[Vertical](#vertical) | ✗ | ✔ |
+[VerticalRaw](#verticalraw) | ✗ | ✔ |
+[JSON](#json) | ✗ | ✔ |
+[JSONCompact](#jsoncompact) | ✗ | ✔ |
+[JSONEachRow](#jsoneachrow) | ✔ | ✔ |
+[TSKV](#tskv) | ✔ | ✔ |
+[Pretty](#pretty) | ✗ | ✔ |
+[PrettyCompact](#prettycompact) | ✗ | ✔ |
+[PrettyCompactMonoBlock](#prettycompactmonoblock) | ✗ | ✔ |
+[PrettyNoEscapes](#prettynoescapes) | ✗ | ✔ |
+[PrettySpace](#prettyspace) | ✗ | ✔ |
+[RowBinary](#rowbinary) | ✔ | ✔ |
+[Native](#native) | ✔ | ✔ |
+[Null](#null) | ✗ | ✔ |
+[XML](#xml) | ✗ | ✔ |
+[CapnProto](#capnproto) | ✔ | ✔ |
 
 <a name="format_capnproto"></a>
 
@@ -309,7 +309,7 @@ Extremes:
 
 ## PrettyCompactMonoBlock
 
-Отличается от [PrettyCompact](formats.md#prettycompact) тем, что строки (до 10 000 штук) буферизуются и затем выводятся в виде одной таблицы, а не по блокам.
+Отличается от [PrettyCompact](#prettycompact) тем, что строки (до 10 000 штук) буферизуются и затем выводятся в виде одной таблицы, а не по блокам.
 <a name="prettynoescapes"></a>
 
 ## PrettyNoEscapes
@@ -335,7 +335,7 @@ watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyC
 
 ## PrettySpace
 
-Отличается от [PrettyCompact](formats.md#prettycompact) тем, что вместо сетки используется пустое пространство (пробелы).
+Отличается от [PrettyCompact](#prettycompact) тем, что вместо сетки используется пустое пространство (пробелы).
 <a name="rowbinary"></a>
 
 ## RowBinary
@@ -482,7 +482,7 @@ x=1	y=\N
 
 ## Values
 
-Выводит каждую строку в скобках. Строки разделены запятыми. После последней строки запятой нет. Значения внутри скобок также разделены запятыми. Числа выводятся в десятичном виде без кавычек. Массивы выводятся в квадратных скобках. Строки, даты, даты-с-временем выводятся в кавычках. Правила экранирования и особенности парсинга аналогичны формату [TabSeparated](tabseparated). При форматировании, лишние пробелы не ставятся, а при парсинге - допустимы и пропускаются (за исключением пробелов внутри значений типа массив, которые недопустимы). [NULL](../query_language/syntax.md#null-literal) представляется как `NULL`.
+Выводит каждую строку в скобках. Строки разделены запятыми. После последней строки запятой нет. Значения внутри скобок также разделены запятыми. Числа выводятся в десятичном виде без кавычек. Массивы выводятся в квадратных скобках. Строки, даты, даты-с-временем выводятся в кавычках. Правила экранирования и особенности парсинга аналогичны формату [TabSeparated](#tabseparated). При форматировании, лишние пробелы не ставятся, а при парсинге - допустимы и пропускаются (за исключением пробелов внутри значений типа массив, которые недопустимы). [NULL](../query_language/syntax.md#null-literal) представляется как `NULL`.
 
 Минимальный набор символов, которых вам необходимо экранировать при передаче в Values формате: одинарная кавычка и обратный слеш.
 

@@ -352,6 +352,6 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 ## join_use_nulls {: #settings-join_use_nulls}
 
-Влияет на поведение [JOIN](../../query_language/queries.md#query_language-join).
+Влияет на поведение [JOIN](../../query_language/select.md#query_language-join).
 
 При `join_use_nulls=1` `JOIN` ведёт себя как в стандартном SQL, т.е. если при слиянии возникают пустые ячейки, то тип соответствующего поля преобразуется к [Nullable](../../data_types/nullable.md#data_type-nullable), а пустые ячейки заполняются значениями [NULL](../../query_language/syntax.md#null-literal).
