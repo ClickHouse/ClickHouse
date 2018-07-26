@@ -144,6 +144,7 @@ class ClickHouseCluster:
 
         if self.with_kafka and self.base_kafka_cmd:
             subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
+            self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
         # Uncomment for debugging
         #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
