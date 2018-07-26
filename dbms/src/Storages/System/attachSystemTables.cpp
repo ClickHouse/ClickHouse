@@ -27,6 +27,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
+#include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
@@ -52,6 +53,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("aggregate_function_combinators", StorageSystemAggregateFunctionCombinators::create("aggregate_function_combinators"));
     system_database.attachTable("data_type_families", StorageSystemDataTypeFamilies::create("data_type_families"));
     system_database.attachTable("collations", StorageSystemCollations::create("collations"));
+    system_database.attachTable("table_engines", StorageSystemTableEngines::create("table_engines"));
 }
 
 void attachSystemTablesServer(IDatabase & system_database, bool has_zookeeper)

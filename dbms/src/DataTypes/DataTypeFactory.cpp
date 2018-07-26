@@ -51,8 +51,10 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-DataTypePtr DataTypeFactory::get(const String & family_name, const ASTPtr & parameters) const
+DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
+    String family_name = getAliasToOrName(family_name_param);
+
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
@@ -67,11 +69,6 @@ DataTypePtr DataTypeFactory::get(const String & family_name, const ASTPtr & para
             return it->second(parameters);
     }
 
-    if (auto it = aliases.find(family_name); it != aliases.end())
-        return get(it->second, parameters);
-    else if (auto it = case_insensitive_aliases.find(family_name_lowercase); it != case_insensitive_aliases.end())
-        return get(it->second, parameters);
-
     throw Exception("Unknown data type family: " + family_name, ErrorCodes::UNKNOWN_TYPE);
 }
 
@@ -84,7 +81,7 @@ void DataTypeFactory::registerDataType(const String & family_name, Creator creat
 
     String family_name_lowercase = Poco::toLower(family_name);
 
-    if (aliases.count(family_name) || case_insensitive_aliases.count(family_name_lowercase))
+    if (isAlias(family_name) || isAlias(family_name_lowercase))
         throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
                         ErrorCodes::LOGICAL_ERROR);
 
@@ -99,29 +96,6 @@ void DataTypeFactory::registerDataType(const String & family_name, Creator creat
             ErrorCodes::LOGICAL_ERROR);
 }
 
-void DataTypeFactory::registerAlias(const String & alias_name, const String & real_name, CaseSensitiveness case_sensitiveness)
-{
-    String real_type_dict_name;
-    if (data_types.count(real_name))
-        real_type_dict_name = real_name;
-    else if (auto type_name_lowercase = Poco::toLower(real_name); case_insensitive_data_types.count(type_name_lowercase))
-        real_type_dict_name = type_name_lowercase;
-    else
-        throw Exception("DataTypeFactory: can't create alias '" + alias_name + "' the data type family '" + real_name + "' is not registered", ErrorCodes::LOGICAL_ERROR);
-
-    String alias_name_lowercase = Poco::toLower(alias_name);
-
-    if (data_types.count(alias_name) || case_insensitive_data_types.count(alias_name_lowercase))
-        throw Exception("DataTypeFactory: the alias name " + alias_name + " is already registered as datatype", ErrorCodes::LOGICAL_ERROR);
-
-    if (case_sensitiveness == CaseInsensitive)
-        if (!case_insensitive_aliases.emplace(alias_name_lowercase, real_type_dict_name).second)
-            throw Exception("DataTypeFactory: case insensitive alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
-
-    if (!aliases.emplace(alias_name, real_type_dict_name).second)
-        throw Exception("DataTypeFactory: alias name '" + alias_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
-}
-
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
     if (creator == nullptr)
@@ -134,37 +108,6 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
             throw Exception("Data type " + name + " cannot have arguments", ErrorCodes::DATA_TYPE_CANNOT_HAVE_ARGUMENTS);
         return creator();
     }, case_sensitiveness);
-}
-
-std::vector<String> DataTypeFactory::getAllDataTypeNames() const
-{
-    std::vector<String> result;
-    auto getter = [] (const auto & pair) { return pair.first; };
-    std::transform(data_types.begin(), data_types.end(), std::back_inserter(result), getter);
-    std::transform(aliases.begin(), aliases.end(), std::back_inserter(result), getter);
-    return result;
-}
-
-bool DataTypeFactory::isCaseInsensitive(const String & name) const
-{
-    String name_lowercase = Poco::toLower(name);
-    return case_insensitive_data_types.count(name_lowercase) || case_insensitive_aliases.count(name_lowercase);
-}
-
-const String & DataTypeFactory::aliasTo(const String & name) const
-{
-    if (auto it = aliases.find(name); it != aliases.end())
-        return it->second;
-    else if (auto it = case_insensitive_aliases.find(Poco::toLower(name)); it != case_insensitive_aliases.end())
-        return it->second;
-
-    throw Exception("DataTypeFactory: the data type '" + name + "' is not alias", ErrorCodes::LOGICAL_ERROR);
-}
-
-
-bool DataTypeFactory::isAlias(const String & name) const
-{
-    return aliases.count(name) || case_insensitive_aliases.count(name);
 }
 
 void registerDataTypeNumbers(DataTypeFactory & factory);

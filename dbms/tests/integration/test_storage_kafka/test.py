@@ -23,7 +23,7 @@ def started_cluster():
         yield cluster
 
     finally:
-        cluster.shutdown()
+        cluster.shutdown(False)
 
 def test_kafka_json(started_cluster):
     instance.query('''
@@ -51,3 +51,8 @@ CREATE TABLE test.kafka (key UInt64, value UInt64)
     with open(p.join(p.dirname(__file__), 'test_kafka_json.reference')) as reference:
         assert TSV(result) == TSV(reference)
     instance.query('DROP TABLE test.kafka')
+
+if __name__ == '__main__':
+    cluster.start()
+    raw_input("Cluster created, press any key to destroy...")
+    cluster.shutdown()

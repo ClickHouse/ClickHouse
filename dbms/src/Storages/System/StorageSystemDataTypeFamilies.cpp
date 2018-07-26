@@ -11,7 +11,7 @@ NamesAndTypesList StorageSystemDataTypeFamilies::getNamesAndTypes()
 {
     return {
         {"name", std::make_shared<DataTypeString>()},
-        {"case_insensivie", std::make_shared<DataTypeUInt8>()},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
         {"alias_to", std::make_shared<DataTypeString>()},
     };
 }
@@ -19,7 +19,7 @@ NamesAndTypesList StorageSystemDataTypeFamilies::getNamesAndTypes()
 void StorageSystemDataTypeFamilies::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     const auto & factory = DataTypeFactory::instance();
-    auto names = factory.getAllDataTypeNames();
+    auto names = factory.getAllRegisteredNames();
     for (const auto & name : names)
     {
         res_columns[0]->insert(name);
