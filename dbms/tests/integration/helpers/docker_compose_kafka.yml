@@ -22,3 +22,13 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
     depends_on:
       - kafka_zookeeper
+
+  dns-proxy-server:
+    image: defreitas/dns-proxy-server
+    hostname: dns.mageddo
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/resolv.conf:/etc/resolv.conf
+    ports:
+      - 5380:5380
+    network_mode: bridge
