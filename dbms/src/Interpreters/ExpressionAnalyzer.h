@@ -89,9 +89,15 @@ struct ScopeStack
 
 struct DatabaseAndTableWithAlias
 {
-    String database_name;
-    String table_name;
+    String database;
+    String table;
     String alias;
+
+    /// "alias." or "database.table." if alias is empty
+    String getQualifiedNamePrefix() const;
+
+    /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
+    void makeQualifiedName(const ASTPtr & ast) const;
 };
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
@@ -228,6 +234,7 @@ private:
     Names join_key_names_right;
     ASTs join_key_asts_left;
     ASTs join_key_asts_right;
+    NameSet duplicate_columns_from_joined_table;
 
     NamesAndTypesList columns_added_by_join;
 
@@ -372,7 +379,7 @@ private:
       *  only one ("main") table is supported. Ambiguity is not detected or resolved.
       */
     void translateQualifiedNames();
-    void translateQualifiedNamesImpl(ASTPtr & node, const DatabaseAndTableWithAlias & table_names);
+    void translateQualifiedNamesImpl(ASTPtr & node, const std::vector<DatabaseAndTableWithAlias> & tables);
 
     /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.
