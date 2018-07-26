@@ -448,9 +448,9 @@ LIMIT 10
 
 Результат выражения должен иметь тип `UInt8`.
 
-ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../table_engines/index.md#table_engines).
+ClickHouse использует в выражении индексы, если это позволяет [движок таблицы](../operations/table_engines/index.md#table_engines).
 
-Если в секции необходимо проверить [NULL](syntax.md#null-literal), то используйте операторы [IS NULL](../operators/index.md#operator-is-null) и [IS NOT NULL](../operators/index.md#operator-is-not-null), а также соответствующие функции `isNull` и `isNotNull`. В противном случае выражение будет считаться всегда не выполненным.
+Если в секции необходимо проверить [NULL](syntax.md#null-literal), то используйте операторы [IS NULL](operators.md#operator-is-null) и [IS NOT NULL](operators.md#operator-is-not-null), а также соответствующие функции `isNull` и `isNotNull`. В противном случае выражение будет считаться всегда не выполненным.
 
 Пример проверки на `NULL`:
 

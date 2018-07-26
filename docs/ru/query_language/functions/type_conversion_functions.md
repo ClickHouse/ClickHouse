@@ -114,7 +114,7 @@ SELECT
 
 Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
 
-Поддержано преобразование к типу [Nullable](../data_types/nullable.md#data_type-nullable) и обратно. Пример:
+Поддержано преобразование к типу [Nullable](../../data_types/nullable.md#data_type-nullable) и обратно. Пример:
 
 ```
 SELECT toTypeName(x) FROM t_null
