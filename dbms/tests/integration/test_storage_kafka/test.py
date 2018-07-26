@@ -23,7 +23,7 @@ def started_cluster():
         yield cluster
 
     finally:
-        cluster.shutdown()
+        cluster.shutdown(False)
 
 def test_kafka_json(started_cluster):
     instance.query('''
