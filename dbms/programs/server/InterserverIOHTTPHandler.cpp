@@ -58,14 +58,12 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
-
     String endpoint_name = params.get("endpoint");
     bool compress = params.get("compress") == "true";
 
     ReadBufferFromIStream body(request.stream());
 
     const auto & config = server.config();
-
     unsigned keep_alive_timeout = config.getUInt("keep_alive_timeout", 10);
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
