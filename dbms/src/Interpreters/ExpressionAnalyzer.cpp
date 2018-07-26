@@ -708,7 +708,7 @@ static std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const AST
 
 
 static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_source_columns)
+    const ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_source_columns, ASTPtr select_expression_list = nullptr)
 {
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
     const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(subquery_or_table_name.get());
@@ -744,20 +744,24 @@ static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_query = std::make_shared<ASTSelectQuery>();
         select_with_union_query->list_of_selects->children.push_back(select_query);
 
-        const auto select_expression_list = std::make_shared<ASTExpressionList>();
-        select_query->select_expression_list = select_expression_list;
-        select_query->children.emplace_back(select_query->select_expression_list);
-
-        /// get columns list for target table
         auto database_table = getDatabaseAndTableNameFromIdentifier(*table);
-        const auto & storage = context.getTable(database_table.first, database_table.second);
-        const auto & columns = storage->getColumns().ordinary;
-        select_expression_list->children.reserve(columns.size());
 
-        /// manually substitute column names in place of asterisk
-        for (const auto & column : columns)
-            select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+        if (!select_expression_list)
+        {
+            select_expression_list = std::make_shared<ASTExpressionList>();
 
+            /// get columns list for target table
+            const auto & storage = context.getTable(database_table.first, database_table.second);
+            const auto & columns = storage->getColumns().ordinary;
+            select_expression_list->children.reserve(columns.size());
+
+            /// manually substitute column names in place of asterisk
+            for (const auto & column : columns)
+                select_expression_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+        }
+
+        select_query->select_expression_list = std::move(select_expression_list);
+        select_query->children.emplace_back(select_query->select_expression_list);
         select_query->replaceDatabaseAndTable(database_table.first, database_table.second);
     }
     else
@@ -2554,13 +2558,42 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
           */
         if (!subquery_for_set.source)
         {
+            ASTPtr select_expression_list;
+
             ASTPtr table;
             if (table_to_join.database_and_table_name)
+            {
                 table = table_to_join.database_and_table_name;
-            else
-                table = table_to_join.subquery;
 
-            auto interpreter = interpretSubquery(table, context, subquery_depth, required_joined_columns);
+                /// Create custom expression list with join keys from right table.
+                select_expression_list = std::make_shared<ASTExpressionList>();
+                for (const auto & join_right_key : join_key_asts_right)
+                    select_expression_list->children.emplace_back(join_right_key);
+            }
+            else
+            {
+                table = table_to_join.subquery->clone();
+
+                ASTSubquery * subquery = typeid_cast<ASTSubquery *>(table.get());
+                if (!subquery)
+                    throw Exception("Expected ASTSubquery as joined subquery.", ErrorCodes::LOGICAL_ERROR);
+
+                const auto & query_ptr = subquery->children.at(0);
+                ASTSelectWithUnionQuery * select_with_union = typeid_cast<ASTSelectWithUnionQuery *>(query_ptr.get());
+                if (!select_with_union)
+                    throw Exception("Expected ASTSelectWithUnionQuery as joined subquery.", ErrorCodes::LOGICAL_ERROR);
+
+                const auto & first_select = select_with_union->list_of_selects->children.at(0);
+                ASTSelectQuery * select_query = typeid_cast<ASTSelectQuery *>(first_select.get());
+                if (!select_query)
+                    throw Exception("Expected ASTSelectQuery as joined subquery.", ErrorCodes::LOGICAL_ERROR);
+
+                /// Append right join keys to subquery expression list. Duplicate expressions will be removed further.
+                for (auto & expr : join_key_asts_right)
+                    select_query->select_expression_list->children.emplace_back(expr);
+            }
+
+            auto interpreter = interpretSubquery(table, context, subquery_depth, required_joined_columns, select_expression_list);
             subquery_for_set.source = std::make_shared<LazyBlockInputStream>(
                 interpreter->getSampleBlock(),
                 [interpreter]() mutable { return interpreter->execute().in; });
