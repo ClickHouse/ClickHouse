@@ -1,3 +1,4 @@
+#include <Poco/Net/HTTPCredentials.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 
@@ -31,7 +32,8 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     const auto & config = server.config();
 
-    if (config.has("interserver_http_credentials.user")) {
+    if (config.has("interserver_http_credentials.user"))
+    {
         String user = config.getString("interserver_http_credentials.user");
         String password = config.getString("interserver_http_credentials.password", "");
         Poco::Net::HTTPCredentials creds(user, password);
