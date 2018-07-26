@@ -236,7 +236,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         String password = config().getString("interserver_http_credentials.password", "");
 
         if (user.empty())
-            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCode::NO_ELEMENTS_IN_CONFIG);
+            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
         global_context->setInterverserCredentials(user, password);
     }
