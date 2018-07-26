@@ -2354,12 +2354,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
                                                                       const String & tmp_part_prefix,
                                                                       const MergeTreePartInfo & dst_part_info)
 {
-    String dst_part_name;
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
-    else
-        dst_part_name = dst_part_info.getPartName();
-
+    String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     Poco::Path dst_part_absolute_path = Poco::Path(full_path + tmp_dst_part_name).absolute();

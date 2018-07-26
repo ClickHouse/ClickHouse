@@ -39,9 +39,9 @@ public:
       */
     void check(const NamesAndTypesList & columns, const Names & column_names) const;
 
-    /** Check that the data block for the record contains all the columns of the table with the correct types,
+    /** Check that the data block contains all the columns of the table with the correct types,
       *  contains only the columns of the table, and all the columns are different.
-      * If need_all, still checks that all the columns of the table are in the block.
+      * If need_all, checks that all the columns of the table are in the block.
       */
     void check(const Block & block, bool need_all = false) const;
 

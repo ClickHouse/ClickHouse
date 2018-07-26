@@ -78,9 +78,9 @@ See the difference? Read further to learn why this happens.
 
 For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
 
-Example:
-
-```bash
+<details><summary>Example</summary>
+<p>
+<pre>
 $ clickhouse-client
 ClickHouse client version 0.0.52053.
 Connecting to localhost:9000.
@@ -122,7 +122,9 @@ LIMIT 20
 20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
 
 :)
-```
+</pre>
+</p>
+</details>
 
 ### CPU
 
