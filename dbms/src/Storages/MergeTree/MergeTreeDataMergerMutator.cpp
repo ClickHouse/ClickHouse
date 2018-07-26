@@ -5,6 +5,8 @@
 #include <Storages/MergeTree/SimpleMergeSelector.h>
 #include <Storages/MergeTree/AllMergeSelector.h>
 #include <Storages/MergeTree/MergeList.h>
+#include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
@@ -18,14 +20,16 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/ApplyingMutationsBlockInputStream.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Storages/MergeTree/BackgroundProcessingPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
+#include <Common/localBackup.h>
 
 #include <Poco/File.h>
 
@@ -243,7 +247,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
 
 bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
     FuturePart & future_part,
-    size_t available_disk_space,
+    size_t & available_disk_space,
     const AllowedMergingPredicate & can_merge,
     const String & partition_id,
     bool final,
@@ -306,6 +310,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
 
     LOG_DEBUG(log, "Selected " << parts.size() << " parts from " << parts.front()->name << " to " << parts.back()->name);
     future_part.assign(std::move(parts));
+    available_disk_space -= required_disk_space;
     return true;
 }
 
@@ -549,7 +554,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     Names all_column_names = data.getColumns().getNamesOfPhysical();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-    const SortDescription sort_desc = data.getSortDescription();
 
     NamesAndTypesList gathering_columns, merging_columns;
     Names gathering_column_names, merging_column_names;
@@ -611,6 +615,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             src_streams.emplace_back(std::move(input));
     }
 
+    Names sort_columns = data.getSortColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    Block header = src_streams.at(0)->getHeader();
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
     ///  that is going in insertion order.
@@ -620,38 +633,38 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE, 0, rows_sources_write_buf.get(), true);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
             merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Summing:
             merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, data.merging_params.columns_to_sum, DEFAULT_MERGE_BLOCK_SIZE);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
             merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE);
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE);
             break;
 
         case MergeTreeData::MergingParams::Replacing:
             merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_desc, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.version_column, DEFAULT_MERGE_BLOCK_SIZE, rows_sources_write_buf.get());
             break;
 
         case MergeTreeData::MergingParams::Graphite:
             merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
-                src_streams, sort_desc, DEFAULT_MERGE_BLOCK_SIZE,
+                src_streams, sort_description, DEFAULT_MERGE_BLOCK_SIZE,
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
             merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
-                    src_streams, sort_desc, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
+                src_streams, sort_description, data.merging_params.sign_column, DEFAULT_MERGE_BLOCK_SIZE, false, rows_sources_write_buf.get());
             break;
 
         default:
@@ -802,6 +815,124 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 }
 
 
+static bool isStorageTouchedByMutation(
+    const StoragePtr & storage, const std::vector<MutationCommand> & commands, const Context & context)
+{
+    if (commands.empty())
+        return false;
+
+    for (const MutationCommand & command : commands)
+    {
+        if (!command.predicate) /// The command touches all rows.
+            return true;
+    }
+
+    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
+    /// The result is tne number of affected rows.
+
+    auto select = std::make_shared<ASTSelectQuery>();
+
+    select->select_expression_list = std::make_shared<ASTExpressionList>();
+    select->children.push_back(select->select_expression_list);
+    auto count_func = std::make_shared<ASTFunction>();
+    count_func->name = "count";
+    count_func->arguments = std::make_shared<ASTExpressionList>();
+    select->select_expression_list->children.push_back(count_func);
+
+    if (commands.size() == 1)
+        select->where_expression = commands[0].predicate;
+    else
+    {
+        auto coalesced_predicates = std::make_shared<ASTFunction>();
+        coalesced_predicates->name = "or";
+        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+
+        for (const MutationCommand & command : commands)
+            coalesced_predicates->arguments->children.push_back(command.predicate);
+
+        select->where_expression = std::move(coalesced_predicates);
+    }
+    select->children.push_back(select->where_expression);
+
+    auto context_copy = context;
+    context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_copy.getSettingsRef().max_threads = 1;
+
+    InterpreterSelectQuery interpreter_select(select, context_copy, storage, QueryProcessingStage::Complete);
+    BlockInputStreamPtr in = interpreter_select.execute().in;
+
+    Block block = in->read();
+    if (!block.rows())
+        return false;
+    else if (block.rows() != 1)
+        throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
+            ErrorCodes::LOGICAL_ERROR);
+
+    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
+    return count != 0;
+}
+
+static BlockInputStreamPtr createInputStreamWithMutatedData(
+    const StoragePtr & storage, std::vector<MutationCommand> commands, const Context & context)
+{
+    auto select = std::make_shared<ASTSelectQuery>();
+
+    select->select_expression_list = std::make_shared<ASTExpressionList>();
+    select->children.push_back(select->select_expression_list);
+    select->select_expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+
+    /// For all commands that are in front of the list and are DELETE commands, we can push them down
+    /// to the SELECT statement and remove them from commands.
+
+    auto deletes_end = commands.begin();
+    for (; deletes_end != commands.end(); ++deletes_end)
+    {
+        if (deletes_end->type != MutationCommand::DELETE)
+            break;
+    }
+
+    std::vector<ASTPtr> predicates;
+    for (auto it = commands.begin(); it != deletes_end; ++it)
+    {
+        auto predicate = std::make_shared<ASTFunction>();
+        predicate->name = "not";
+        predicate->arguments = std::make_shared<ASTExpressionList>();
+        predicate->arguments->children.push_back(it->predicate);
+        predicate->children.push_back(predicate->arguments);
+        predicates.push_back(predicate);
+    }
+
+    commands.erase(commands.begin(), deletes_end);
+
+    if (!predicates.empty())
+    {
+        ASTPtr where_expression;
+        if (predicates.size() == 1)
+            where_expression = predicates[0];
+        else
+        {
+            auto coalesced_predicates = std::make_shared<ASTFunction>();
+            coalesced_predicates->name = "and";
+            coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
+            coalesced_predicates->children.push_back(coalesced_predicates->arguments);
+            coalesced_predicates->arguments->children = predicates;
+
+            where_expression = std::move(coalesced_predicates);
+        }
+        select->where_expression = where_expression;
+        select->children.push_back(where_expression);
+    }
+
+    InterpreterSelectQuery interpreter_select(select, context, storage);
+    BlockInputStreamPtr in = interpreter_select.execute().in;
+
+    if (!commands.empty())
+        in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
+
+    return in;
+}
+
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FuturePart & future_part,
     const std::vector<MutationCommand> & commands,
@@ -817,7 +948,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     CurrentMetrics::Increment num_mutations{CurrentMetrics::PartMutation};
 
     const auto & source_part = future_part.parts[0];
-    LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
+    auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
+
+    auto context_for_reading = context;
+    context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
+    context_for_reading.getSettingsRef().max_threads = 1;
+
+    if (!isStorageTouchedByMutation(storage_from_source_part, commands, context_for_reading))
+    {
+        LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
+        return data.cloneAndLoadDataPart(source_part, "tmp_clone_", future_part.part_info);
+    }
+    else
+        LOG_TRACE(log, "Mutating part " << source_part->name << " to mutation version " << future_part.part_info.mutation);
 
     MergeTreeData::MutableDataPartPtr new_data_part = std::make_shared<MergeTreeData::DataPart>(
         data, future_part.name, future_part.part_info);
@@ -826,20 +969,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
-    Poco::File(new_part_tmp_path).createDirectories();
-
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-
-    BlockInputStreamPtr in = std::make_shared<MergeTreeBlockInputStream>(
-        data, source_part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, all_columns.getNames(),
-        MarkRanges(1, MarkRange(0, source_part->marks_count)),
-        false, nullptr, String(), true, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
-
-    in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
+    auto in = createInputStreamWithMutatedData(storage_from_source_part, commands, context_for_reading);
 
     if (data.hasPrimaryKey())
         in = std::make_shared<MaterializingBlockInputStream>(
             std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
+
+    Poco::File(new_part_tmp_path).createDirectories();
+
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
     auto compression_settings = context.chooseCompressionSettings(
         source_part->bytes_on_disk,
@@ -927,12 +1065,12 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
          * When M > N parts could be replaced?
          * - new block was added in ReplicatedMergeTreeBlockOutputStream;
          * - it was added to working dataset in memory and renamed on filesystem;
-         * - but ZooKeeper transaction that add its to reference dataset in ZK and unlocks AbandonableLock is failed;
+         * - but ZooKeeper transaction that adds it to reference dataset in ZK failed;
          * - and it is failed due to connection loss, so we don't rollback working dataset in memory,
          *   because we don't know if the part was added to ZK or not
          *   (see ReplicatedMergeTreeBlockOutputStream)
-         * - then method selectPartsToMerge selects a range and see, that AbandonableLock for this part is abandoned,
-         *   and so, it is possible to merge a range skipping this part.
+         * - then method selectPartsToMerge selects a range and sees, that EphemeralLock for the block in this part is unlocked,
+         *   and so it is possible to merge a range skipping this part.
          *   (NOTE: Merging with part that is not in ZK is not possible, see checks in 'createLogEntryToMergeParts'.)
          * - and after merge, this part will be removed in addition to parts that was merged.
          */

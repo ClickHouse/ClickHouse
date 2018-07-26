@@ -62,12 +62,19 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
 {
     rd_kafka_t * consumer;
     rd_kafka_message_t * current;
+    bool current_pending;
     Poco::Logger * log;
     size_t read_messages;
+    char row_delimiter;
 
     bool nextImpl() override
     {
-        reset();
+        if (current_pending)
+        {
+            BufferBase::set(reinterpret_cast<char *>(current->payload), current->len, 0);
+            current_pending = false;
+            return true;
+        }
 
         // Process next buffered message
         rd_kafka_message_t * msg = rd_kafka_consumer_poll(consumer, READ_POLL_MS);
@@ -88,13 +95,24 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
             rd_kafka_message_destroy(msg);
             return nextImpl();
         }
+        ++read_messages;
+
+        // Now we've received a new message. Check if we need to produce a delimiter
+        if (row_delimiter != '\0' && current != nullptr)
+        {
+            BufferBase::set(&row_delimiter, 1, 0);
+            reset();
+            current = msg;
+            current_pending = true;
+            return true;
+        }
 
         // Consume message and mark the topic/partition offset
-        // The offsets will be committed in the insertSuffix() method after the block is completed
-        // If an exception is thrown before that would occur, the client will rejoin without comitting offsets
-        BufferBase::set(reinterpret_cast<char *>(msg->payload), msg->len, 0);
+        // The offsets will be committed in the readSuffix() method after the block is completed
+        // If an exception is thrown before that would occur, the client will rejoin without committing offsets
+        reset();
         current = msg;
-        ++read_messages;
+        BufferBase::set(reinterpret_cast<char *>(current->payload), current->len, 0);
         return true;
     }
 
@@ -108,8 +126,11 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
     }
 
 public:
-    ReadBufferFromKafkaConsumer(rd_kafka_t * consumer_, Poco::Logger * log_)
-        : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr), log(log_), read_messages(0) {}
+    ReadBufferFromKafkaConsumer(rd_kafka_t * consumer_, Poco::Logger * log_, char row_delimiter_)
+        : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr),
+        current_pending(false), log(log_), read_messages(0), row_delimiter(row_delimiter_) {
+        LOG_TRACE(log, "row delimiter is :" << row_delimiter);
+    }
 
     ~ReadBufferFromKafkaConsumer() { reset(); }
 
@@ -143,7 +164,7 @@ public:
 
         // Create a formatted reader on Kafka messages
         LOG_TRACE(storage.log, "Creating formatted reader");
-        read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log);
+        read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log, storage.row_delimiter);
         reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
@@ -226,13 +247,14 @@ StorageKafka::StorageKafka(
     Context & context_,
     const ColumnsDescription & columns_,
     const String & brokers_, const String & group_, const Names & topics_,
-    const String & format_name_, const String & schema_name_, size_t num_consumers_)
+    const String & format_name_, char row_delimiter_, const String & schema_name_, size_t num_consumers_)
     : IStorage{columns_},
     table_name(table_name_), database_name(database_name_), context(context_),
     topics(context.getMacros()->expand(topics_)),
     brokers(context.getMacros()->expand(brokers_)),
     group(context.getMacros()->expand(group_)),
     format_name(context.getMacros()->expand(format_name_)),
+    row_delimiter(row_delimiter_),
     schema_name(context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
     semaphore(0, num_consumers_), mutex(), consumers(), event_update()
@@ -552,10 +574,10 @@ void registerStorageKafka(StorageFactory & factory)
           * - Schema (optional, if the format supports it)
           */
 
-        if (engine_args.size() < 3 || engine_args.size() > 6)
+        if (engine_args.size() < 3 || engine_args.size() > 7)
             throw Exception(
-                "Storage Kafka requires 3-6 parameters"
-                " - Kafka broker list, list of topics to consume, consumer group ID, message format, schema, number of consumers",
+                "Storage Kafka requires 3-7 parameters"
+                " - Kafka broker list, list of topics to consume, consumer group ID, message format, row delimiter, schema, number of consumers",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         String brokers;
@@ -569,13 +591,33 @@ void registerStorageKafka(StorageFactory & factory)
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
         engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
 
-        // Parse format schema if supported (optional)
-        String schema;
+        // Parse row delimiter (optional)
+        char row_delimiter = '\0';
         if (engine_args.size() >= 5)
         {
             engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
 
             auto ast = typeid_cast<const ASTLiteral *>(engine_args[4].get());
+            String arg;
+            if (ast && ast->value.getType() == Field::Types::String)
+                arg = safeGet<String>(ast->value);
+            else
+                throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
+            if (arg.size() > 1)
+                throw Exception("Row delimiter must be a char", ErrorCodes::BAD_ARGUMENTS);
+            else if (arg.size() == 0)
+                row_delimiter = '\0';
+            else
+                row_delimiter = arg[0];
+        }
+
+        // Parse format schema if supported (optional)
+        String schema;
+        if (engine_args.size() >= 6)
+        {
+            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
+
+            auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
             if (ast && ast->value.getType() == Field::Types::String)
                 schema = safeGet<String>(ast->value);
             else
@@ -584,9 +626,9 @@ void registerStorageKafka(StorageFactory & factory)
 
         // Parse number of consumers (optional)
         UInt64 num_consumers = 1;
-        if (engine_args.size() >= 6)
+        if (engine_args.size() >= 7)
         {
-            auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
+            auto ast = typeid_cast<const ASTLiteral *>(engine_args[6].get());
             if (ast && ast->value.getType() == Field::Types::UInt64)
                 num_consumers = safeGet<UInt64>(ast->value);
             else
@@ -613,7 +655,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         return StorageKafka::create(
             args.table_name, args.database_name, args.context, args.columns,
-            brokers, group, topics, format, schema, num_consumers);
+            brokers, group, topics, format, row_delimiter, schema, num_consumers);
     });
 }
 

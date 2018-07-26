@@ -10,12 +10,13 @@
 *.logrt
 
 /build
-/docs/en_single_page/
-/docs/ru_single_page/
-/docs/venv/
-/docs/build/
+/docs/build
+/docs/edit
+/docs/tools/venv/
 /docs/en/development/build/
 /docs/ru/development/build/
+/docs/en/single.md
+/docs/ru/single.md
 
 # callgrind files
 callgrind.out.*
@@ -240,3 +241,5 @@ node_modules
 public
 website/docs
 website/presentations
+.DS_Store
+*/.DS_Store

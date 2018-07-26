@@ -3,6 +3,7 @@
 #include <memory>
 #include <sys/resource.h>
 #include <errno.h>
+#include <Poco/Version.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
@@ -341,7 +342,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         Poco::ThreadPool server_pool(3, config().getUInt("max_connections", 1024));
         Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
-        http_params->setTimeout(settings.receive_timeout);
+        http_params->setTimeout(settings.http_receive_timeout);
         http_params->setKeepAliveTimeout(keep_alive_timeout);
 
         std::vector<std::unique_ptr<Poco::Net::TCPServer>> servers;

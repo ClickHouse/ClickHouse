@@ -15,6 +15,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/FieldVisitors.h>
+#include <Common/config_version.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -33,6 +34,7 @@
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -1468,7 +1470,7 @@ private:
     /// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
 
     template <typename Src, typename Dst>
-    static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst)
+    static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
     {
         size_t size = src.size();
         dst.resize(size);
@@ -1478,13 +1480,26 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        dst[0] = is_first_line_zero ? 0 : src[0];
-        Src prev = src[0];
-        for (size_t i = 1; i < size; ++i)
+        Src prev;
+        bool has_prev_value = false;
+
+        for (size_t i = 0; i < size; ++i)
         {
-            auto cur = src[i];
-            dst[i] = static_cast<Dst>(cur) - prev;
-            prev = cur;
+            if (null_map && (*null_map)[i])
+                continue;
+
+            if (!has_prev_value)
+            {
+                dst[i] = is_first_line_zero ? 0 : src[i];
+                prev = src[i];
+                has_prev_value = true;
+            }
+            else
+            {
+                auto cur = src[i];
+                dst[i] = static_cast<Dst>(cur) - prev;
+                prev = cur;
+            }
         }
     }
 
@@ -1547,13 +1562,18 @@ public:
         return false;
     }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
-        dispatchForSourceType(*arguments[0], [&](auto field_type_tag)
+        dispatchForSourceType(*removeNullable(arguments[0]), [&](auto field_type_tag)
         {
             res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
         });
+
+        if (arguments[0]->isNullable())
+            res = makeNullable(res);
 
         return res;
     }
@@ -1570,16 +1590,29 @@ public:
             return;
         }
 
-        auto res_column = res_type->createColumn();
+        auto res_column = removeNullable(res_type)->createColumn();
+        auto * src_column = src.column.get();
+        ColumnPtr null_map_column = nullptr;
+        const NullMap * null_map = nullptr;
+        if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
+        {
+            src_column = &nullable_column->getNestedColumn();
+            null_map_column = nullable_column->getNullMapColumnPtr();
+            null_map = &nullable_column->getNullMapData();
+        }
 
-        dispatchForSourceType(*src.type, [&](auto field_type_tag)
+        dispatchForSourceType(*removeNullable(src.type), [&](auto field_type_tag)
         {
             using SrcFieldType = decltype(field_type_tag);
-            process(static_cast<const ColumnVector<SrcFieldType> &>(*src.column).getData(),
-                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData());
+
+            process(static_cast<const ColumnVector<SrcFieldType> &>(*src_column).getData(),
+                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
         });
 
-        block.getByPosition(result).column = std::move(res_column);
+        if (null_map_column)
+            block.getByPosition(result).column = ColumnNullable::create(std::move(res_column), null_map_column);
+        else
+            block.getByPosition(result).column = std::move(res_column);
     }
 };
 
@@ -1835,9 +1868,7 @@ public:
 
 std::string FunctionVersion::getVersion() const
 {
-    std::ostringstream os;
-    os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
-    return os.str();
+    return VERSION_STRING;
 }
 
 

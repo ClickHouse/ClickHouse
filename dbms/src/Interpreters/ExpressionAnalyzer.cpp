@@ -61,6 +61,7 @@
 #include <DataTypes/DataTypeFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -89,6 +90,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
     extern const int TYPE_MISMATCH;
+    extern const int INVALID_JOIN_ON_EXPRESSION;
 }
 
 
@@ -215,7 +217,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
 
-    /// Remove unneeded columns according to 'required_source_columns'.
+    /// Remove unneeded columns according to 'required_result_columns'.
     /// Leave all selected columns in case of DISTINCT; columns that contain arrayJoin function inside.
     /// Must be after 'normalizeTree' (after expanding aliases, for aliases not get lost)
     ///  and before 'executeScalarSubqueries', 'analyzeAggregation', etc. to avoid excessive calculations.
@@ -1473,17 +1475,18 @@ void ExpressionAnalyzer::makeSetsForIndex()
 }
 
 
-void ExpressionAnalyzer::tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name)
+void ExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name)
 {
     BlockIO res = interpretSubquery(subquery_or_table_name, context, subquery_depth + 1, {})->execute();
 
-    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
+    SizeLimits set_for_index_size_limits = SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode);
+    SetPtr set = std::make_shared<Set>(set_for_index_size_limits, true);
 
     set->setHeader(res.in->getHeader());
     while (Block block = res.in->read())
     {
         /// If the limits have been exceeded, give up and let the default subquery processing actions take place.
-        if (!set->insertFromBlock(block, true))
+        if (!set->insertFromBlock(block))
             return;
     }
 
@@ -1521,7 +1524,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                 if (typeid_cast<ASTSubquery *>(arg.get()) || typeid_cast<ASTIdentifier *>(arg.get()))
                 {
                     if (settings.use_index_for_in_with_subqueries)
-                        tryMakeSetFromSubquery(arg);
+                        tryMakeSetForIndexFromSubquery(arg);
                 }
                 else
                 {
@@ -1589,7 +1592,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
             return;
         }
 
-        SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
+        SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode), false);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
@@ -1711,8 +1714,8 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
                         + left_arg_type->getName() + " and " + right_arg_type->getName() + ".",
                         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode));
-    set->createFromAST(set_element_types, elements_ast, context, create_ordered_set);
+    SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode), create_ordered_set);
+    set->createFromAST(set_element_types, elements_ast, context);
     prepared_sets[right_arg->range] = std::move(set);
 }
 
@@ -2059,6 +2062,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                     ColumnWithTypeAndName fake_column;
                     fake_column.name = projection_manipulator->getColumnName(getColumnName());
                     fake_column.type = std::make_shared<DataTypeUInt8>();
+                    fake_column.column = fake_column.type->createColumn();
                     actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
                     getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
                                    projection_manipulator);
@@ -2854,21 +2858,52 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns, NamesAnd
         nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
     }
 
+    auto add_name_to_join_keys = [](Names & join_keys, const String & name, const char * where)
+    {
+        if (join_keys.end() == std::find(join_keys.begin(), join_keys.end(), name))
+            join_keys.push_back(name);
+        else
+            throw Exception("Duplicate column " + name + " " + where, ErrorCodes::DUPLICATE_COLUMN);
+    };
+
     if (table_join.using_expression_list)
     {
         auto & keys = typeid_cast<ASTExpressionList &>(*table_join.using_expression_list);
         for (const auto & key : keys.children)
         {
-            if (join_key_names_left.end() == std::find(join_key_names_left.begin(), join_key_names_left.end(), key->getColumnName()))
-                join_key_names_left.push_back(key->getColumnName());
-            else
-                throw Exception("Duplicate column " + key->getColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
-
-            if (join_key_names_right.end() == std::find(join_key_names_right.begin(), join_key_names_right.end(), key->getAliasOrColumnName()))
-                join_key_names_right.push_back(key->getAliasOrColumnName());
-            else
-                throw Exception("Duplicate column " + key->getAliasOrColumnName() + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
+            add_name_to_join_keys(join_key_names_left, key->getColumnName(), "in USING list");
+            add_name_to_join_keys(join_key_names_right, key->getAliasOrColumnName(), "in USING list");
         }
+    }
+    else if (table_join.on_expression)
+    {
+        const auto supported_syntax =
+                "\nSupported syntax: JOIN ON [table.]column = [table.]column [AND [table.]column = [table.]column ...]";
+        auto throwSyntaxException = [&](const String & msg)
+        {
+            throw Exception("Invalid expression for JOIN ON. " + msg + supported_syntax, ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+        };
+
+        auto add_columns_from_equals_expr = [&](const ASTPtr & expr)
+        {
+            auto * func_equals = typeid_cast<const ASTFunction *>(expr.get());
+            if (!func_equals || func_equals->name != "equals")
+                throwSyntaxException("Expected equals expression, got " + queryToString(expr));
+
+            String left_name = func_equals->arguments->children.at(0)->getAliasOrColumnName();
+            String right_name = func_equals->arguments->children.at(1)->getAliasOrColumnName();
+            add_name_to_join_keys(join_key_names_left, left_name, "in JOIN ON expression for left table");
+            add_name_to_join_keys(join_key_names_right, right_name, "in JOIN ON expression for right table");
+        };
+
+        auto * func = typeid_cast<const ASTFunction *>(table_join.on_expression.get());
+        if (func && func->name == "and")
+        {
+            for (auto expr : func->children)
+                add_columns_from_equals_expr(expr);
+        }
+        else
+            add_columns_from_equals_expr(table_join.on_expression);
     }
 
     for (const auto i : ext::range(0, nested_result_sample.columns()))

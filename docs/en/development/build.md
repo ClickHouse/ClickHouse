@@ -34,7 +34,7 @@ sudo apt-get install gcc-7 g++-7
 
 ### Install from sources
 
-Look at [https://github.com/yandex/ClickHouse/blob/master/utils/prepare-environment/install-gcc.sh]
+Look at [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 7 for builds
 
@@ -79,7 +79,7 @@ Install the most recent version of Clang.
 
 Clang is embedded into the ClickHouse package and used at runtime. The minimum version is 5.0. It is optional.
 
-To install clang, see `utils/prepare-environment/install-clang.sh`
+To install clang, see  [ci/build-clang-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-clang-from-sources.sh)
 
 You may also build ClickHouse with Clang for development purposes.
 For production releases, GCC is used.
