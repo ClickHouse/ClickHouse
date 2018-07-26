@@ -230,13 +230,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
         global_context->setInterserverIOAddress(this_host, port);
     }
 
-    if (config().has("interserver_http_credentials.user"))
+    if (config().has("interserver_http_credentials"))
     {
         String user = config().getString("interserver_http_credentials.user", "");
         String password = config().getString("interserver_http_credentials.password", "");
 
         if (user.empty())
-            throw Exception("Empty interserver_http_credentials user can't be empty");
+            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCode::NO_ELEMENTS_IN_CONFIG);
 
         global_context->setInterverserCredentials(user, password);
     }
