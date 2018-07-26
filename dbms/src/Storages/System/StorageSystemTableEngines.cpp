@@ -13,9 +13,9 @@ NamesAndTypesList StorageSystemTableEngines::getNamesAndTypes()
 void StorageSystemTableEngines::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     const auto & storages = StorageFactory::instance().getAllStorages();
-    for (const auto & [name, creator] : storages)
+    for (const auto & pair : storages)
     {
-        res_columns[0]->insert(name);
+        res_columns[0]->insert(pair.first);
     }
 }
 
