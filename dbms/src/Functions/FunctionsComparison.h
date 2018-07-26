@@ -190,17 +190,35 @@ struct NumComparisonImpl
 };
 
 ///
+inline bool allowDecimalComparison(const IDataType & left_type, const IDataType & right_type)
+{
+    if (isDecimal(left_type))
+    {
+        if (isDecimal(right_type) || notDecimalButComparableToDecimal(right_type))
+            return true;
+    }
+    else if (notDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
+        return true;
+    return false;
+}
+
+///
 template <typename A, typename B, typename Op>
 class DecimalComparison
 {
 public:
+    DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        if (!apply(block, result, col_left, col_right))
+            throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
     static bool apply(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        Shift shift;
-        if (!allowed(col_left, col_right, shift))
-            return false;
+        Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-        if (ColumnPtr c_res = apply(col_left, col_right, shift))
+        if (ColumnPtr c_res = apply(col_left.column, col_right.column, shift))
         {
             block.getByPosition(result).column = std::move(c_res);
             return true;
@@ -215,41 +233,58 @@ private:
         Int128 b = 1;
     };
 
-    /// @returns false if either of decimals has another type.
-    static bool allowed(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, Shift & shift)
+    template <typename T, typename U>
+    static std::enable_if_t<decimalTrait<T>() && decimalTrait<U>(), Shift>
+    getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
-        const DataTypePtr & left_type = col_left.type;
-        const DataTypePtr & right_type = col_right.type;
+        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
+        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
 
-        if (const DataTypeDecimal<A> * decimal0 = checkDecimal<A>(*left_type))
+        Shift shift;
+        if (decimal0 && decimal1)
         {
-            if (const DataTypeDecimal<B> * decimal1 = checkDecimal<B>(*right_type))
-            {
-                shift.a = decimal0->scaleFactor(decimalResultType(*decimal0, *decimal1));
-                shift.b = decimal1->scaleFactor(decimalResultType(*decimal0, *decimal1));
-            }
-            else if (notDecimalButComparableToDecimal(*right_type))
-                shift.b = decimal0->getScaleMultiplier();
-            else
-                return false;
+            shift.a = decimal0->scaleFactor(decimalResultType(*decimal0, *decimal1));
+            shift.b = decimal1->scaleFactor(decimalResultType(*decimal0, *decimal1));
         }
-        else if (const DataTypeDecimal<B> * decimal1 = checkDecimal<B>(*right_type))
-        {
-            if (!notDecimalButComparableToDecimal(*left_type))
-                shift.a = decimal1->getScaleMultiplier();
-            else
-                return false;
-        }
-        else
-            return false;
+        else if (decimal0)
+            shift.b = decimal0->getScaleMultiplier();
+        else if (decimal1)
+            shift.a = decimal1->getScaleMultiplier();
 
-        return true;
+        return shift;
     }
 
-    static ColumnPtr apply(const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right, const Shift & shift)
+    template <typename T, typename U>
+    static std::enable_if_t<decimalTrait<T>() && !decimalTrait<U>(), Shift>
+    getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
-        const ColumnPtr & c0 = col_left.column;
-        const ColumnPtr & c1 = col_right.column;
+        Shift shift;
+        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
+        if (decimal0)
+            shift.b = decimal0->getScaleMultiplier();
+        return shift;
+    }
+
+    template <typename T, typename U>
+    static std::enable_if_t<!decimalTrait<T>() && decimalTrait<U>(), Shift>
+    getScales(const DataTypePtr &, const DataTypePtr & right_type)
+    {
+        Shift shift;
+        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
+        if (decimal1)
+            shift.a = decimal1->getScaleMultiplier();
+        return shift;
+    }
+
+    template <typename T, typename U>
+    static std::enable_if_t<!decimalTrait<T>() && !decimalTrait<U>(), Shift>
+    getScales(const DataTypePtr &, const DataTypePtr &)
+    {
+        return Shift{0, 0};
+    }
+
+    static ColumnPtr apply(const ColumnPtr & c0, const ColumnPtr & c1, const Shift & shift)
+    {
         bool c0_const = c0->isColumnConst();
         bool c1_const = c1->isColumnConst();
 
@@ -898,26 +933,14 @@ private:
         return false;
     }
 
-
-    bool executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        if (DecimalComparison<Int32, Int32, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-            DecimalComparison<Int32, Int64, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-            DecimalComparison<Int32, Int128, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
+        size_t left_number = col_left.type->getTypeNumber();
+        size_t right_number = col_right.type->getTypeNumber();
 
-            DecimalComparison<Int64, Int32, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-            DecimalComparison<Int64, Int64, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-            DecimalComparison<Int64, Int128, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-
-            DecimalComparison<Int128, Int32, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-            DecimalComparison<Int128, Int64, Op<Int128, Int128>>::apply(block, result, col_left, col_right) ||
-            DecimalComparison<Int128, Int128, Op<Int128, Int128>>::apply(block, result, col_left, col_right))
-        {
-            return true;
-        }
-
-        throw Exception("Not implemented " + getName() + " between " + col_left.type->getName() + " and " + col_right.type->getName(),
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (!callByNumber<DecimalComparison, Op<Int128, Int128>>(left_number, right_number, block, result, col_left, col_right))
+            throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
     }
 
     bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
@@ -1395,7 +1418,7 @@ public:
         }
         else if (isDecimal(*left_type) || isDecimal(*right_type))
         {
-            if (!comparableToDecimal(*left_type) || !comparableToDecimal(*right_type))
+            if (!allowDecimalComparison(*left_type, *right_type))
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

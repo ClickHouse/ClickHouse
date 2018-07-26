@@ -46,7 +46,8 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
 
     writeIntText(wholePart(value), ostr);
     writeChar('.', ostr);
-    writeIntText(fractionalPart(value), ostr);
+    if (scale)
+        writeIntText(fractionalPart(value), ostr);
 }
 
 

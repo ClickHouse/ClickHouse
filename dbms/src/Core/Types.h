@@ -57,6 +57,21 @@ template <> struct TypeName<Float32> { static const char * get() { return "Float
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
 
+template <typename T> struct TypeNumber;
+
+/// 0 reserved for types without number
+template <> struct TypeNumber<UInt8>    { static constexpr const size_t value = 1;  };
+template <> struct TypeNumber<UInt16>   { static constexpr const size_t value = 2;  };
+template <> struct TypeNumber<UInt32>   { static constexpr const size_t value = 3;  };
+template <> struct TypeNumber<UInt64>   { static constexpr const size_t value = 4;  };
+/// 5 reserved for TypeNumber<UInt128>
+template <> struct TypeNumber<Float32>  { static constexpr const size_t value = 7;  };
+template <> struct TypeNumber<Float64>  { static constexpr const size_t value = 8;  };
+template <> struct TypeNumber<Int8>     { static constexpr const size_t value = 9;  };
+template <> struct TypeNumber<Int16>    { static constexpr const size_t value = 10; };
+template <> struct TypeNumber<Int32>    { static constexpr const size_t value = 11; };
+template <> struct TypeNumber<Int64>    { static constexpr const size_t value = 12; };
+/// 13 reserved for TypeNumber<Int128>
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
@@ -70,6 +85,7 @@ namespace DB
 using Int128 = __int128;
 template <> constexpr bool IsNumber<Int128> = true;
 template <> struct TypeName<Int128>  { static const char * get() { return "Int128";  } };
+template <> struct TypeNumber<Int128>   { static constexpr const size_t value = 13; };
 
 }
 
