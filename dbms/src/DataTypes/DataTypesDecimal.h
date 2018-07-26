@@ -71,10 +71,17 @@ enum class DecimalPrecision
 
 
 static constexpr size_t minDecimalPrecision() { return 1; }
-template <typename T> static constexpr size_t maxDecimalPrecision();
+template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
 template <> constexpr size_t maxDecimalPrecision<Int32>() { return 9; }
 template <> constexpr size_t maxDecimalPrecision<Int64>() { return 18; }
 template <> constexpr size_t maxDecimalPrecision<Int128>() { return 38; }
+
+
+template <typename T>
+inline constexpr bool decimalTrait() { return false; }
+template <> constexpr bool decimalTrait<Int32>() { return true; }
+template <> constexpr bool decimalTrait<Int64>() { return true; }
+template <> constexpr bool decimalTrait<Int128>() { return true; }
 
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
@@ -109,6 +116,7 @@ public:
 
     const char * getFamilyName() const override { return "Decimal"; }
     std::string getName() const override;
+    size_t getTypeNumber() const override { return TypeNumber<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -181,7 +189,8 @@ public:
 
     /// @returns multiplier for T to become UnderlyingType of result_type with correct scale
     template <typename R>
-    R scaleFactor(const DataTypeDecimal<R> & result_type) const
+    std::enable_if_t<decimalTrait<T>() && decimalTrait<R>(), R>
+    scaleFactor(const DataTypeDecimal<R> & result_type) const
     {
         if (getScale() > result_type.getScale())
             throw Exception("Decimal result's scale is less then argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
