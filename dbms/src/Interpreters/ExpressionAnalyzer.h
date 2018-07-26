@@ -192,9 +192,9 @@ private:
       */
     NamesAndTypesList source_columns;
 
-    /** If non-empty, ignore all expressions in  not from this list.
-      */
-    NameSet required_result_columns;
+    /// If non-empty, ignore all expressions in  not from this list.
+    /// Map columns with substituted aliases to original names.
+    NameToNameSetMap required_result_columns;
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
@@ -274,6 +274,9 @@ private:
       */
     void normalizeTree();
     void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
+
+    /// Substitute aliases for required_result_columns and create map with their new to original names.
+    NameToNameSetMap createRequiredResultColumnsMap(const Names & required_result_columns);
 
     ///    Eliminates injective function calls and constant expressions from group by statement
     void optimizeGroupBy();
