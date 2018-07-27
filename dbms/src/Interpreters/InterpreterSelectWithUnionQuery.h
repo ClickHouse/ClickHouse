@@ -21,7 +21,8 @@ public:
         const Context & context_,
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
-        size_t subquery_depth_ = 0);
+        size_t subquery_depth_ = 0,
+        bool only_analyze = false);
 
     ~InterpreterSelectWithUnionQuery();
 

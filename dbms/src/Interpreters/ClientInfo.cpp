@@ -6,6 +6,7 @@
 #include <Core/Defines.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <port/unistd.h>
 
 

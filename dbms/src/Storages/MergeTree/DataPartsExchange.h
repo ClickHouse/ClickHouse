@@ -54,6 +54,8 @@ public:
         const String & host,
         int port,
         const ConnectionTimeouts & timeouts,
+        const String & user,
+        const String & password,
         bool to_detached = false,
         const String & tmp_prefix_ = "");
 
