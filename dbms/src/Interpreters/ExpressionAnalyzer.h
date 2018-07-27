@@ -237,6 +237,8 @@ private:
     NameSet duplicate_columns_from_joined_table;
 
     NamesAndTypesList columns_added_by_join;
+    /// Such columns will be copied from left join keys during join.
+    NameSet columns_added_by_join_from_right_keys;
 
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;

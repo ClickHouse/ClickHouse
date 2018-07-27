@@ -30,11 +30,12 @@ namespace ErrorCodes
 }
 
 
-Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
-    const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+Join::Join(const Names & key_names_left_, const Names & key_names_right_, const NameSet & needed_key_names_right_,
+    bool use_nulls_, const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
     : kind(kind_), strictness(strictness_),
     key_names_left(key_names_left_),
     key_names_right(key_names_right_),
+    needed_key_names_right(needed_key_names_right_),
     use_nulls(use_nulls_),
     log(&Logger::get("Join")),
     limits(limits)
@@ -783,7 +784,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         auto & right_name = key_names_right[i];
         auto & left_name = key_names_left[i];
 
-        if (!block.has(right_name) && block.has(left_name))
+        if (needed_key_names_right.count(right_name) && !block.has(right_name))
         {
             const auto & col = block.getByName(left_name);
             block.insert({col.column, col.type, right_name});
