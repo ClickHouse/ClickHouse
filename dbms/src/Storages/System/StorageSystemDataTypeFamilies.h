@@ -1,25 +1,23 @@
 #pragma once
-#include <Storages/System/IStorageSystemWithStringColumns.h>
+
 #include <ext/shared_ptr_helper.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
+
 namespace DB
 {
+
 class StorageSystemDataTypeFamilies : public ext::shared_ptr_helper<StorageSystemDataTypeFamilies>,
-                                      public IStorageSystemWithStringColumns<StorageSystemDataTypeFamilies>
+                                      public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
 {
 protected:
-    void fillData(MutableColumns & res_columns) const override;
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
 
 public:
-    using IStorageSystemWithStringColumns::IStorageSystemWithStringColumns;
+    std::string getName() const override { return "SystemTableDataTypeFamilies"; }
 
-    std::string getName() const override
-    {
-        return "SystemTableDataTypeFamilies";
-    }
-
-    static std::vector<String> getColumnNames()
-    {
-        return {"name", "properties"};
-    }
+    static NamesAndTypesList getNamesAndTypes();
 };
+
 }

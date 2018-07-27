@@ -64,6 +64,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB

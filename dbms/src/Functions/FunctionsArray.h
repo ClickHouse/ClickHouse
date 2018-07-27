@@ -1011,10 +1011,11 @@ public:
             DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
             DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
-            if (!(observed_type0->isNumber() && observed_type1->isNumber())
+            /// We also support arrays of Enum type (that are represented by number) to search numeric values.
+            if (!(observed_type0->isValueRepresentedByNumber() && observed_type1->isNumber())
                 && !observed_type0->equals(*observed_type1))
                 throw Exception("Types of array and 2nd argument of function "
-                    + getName() + " must be identical up to nullability. Passed: "
+                    + getName() + " must be identical up to nullability or numeric types or Enum and numeric type. Passed: "
                     + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -1249,7 +1250,7 @@ private:
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
-    
+
     void executeHashed(
         const ColumnArray::Offsets & offsets,
         const ColumnRawPtrs & columns,

@@ -11,7 +11,7 @@ After executing an ATTACH query, the server will know about the existence of the
 If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
 
 ```sql
-ATTACH TABLE [IF NOT EXISTS] [db.]name
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
@@ -39,7 +39,7 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 Deletes information about the 'name' table from the server. The server stops knowing about the table's existence.
 
 ```sql
-DETACH TABLE [IF EXISTS] [db.]name
+DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 This does not delete the table's data or metadata. On the next server launch, the server will read the metadata and find out about the table again.
@@ -167,7 +167,7 @@ To make settings that persist after a server restart, you can only use the serve
 ## OPTIMIZE
 
 ```sql
-OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
 Asks the table engine to do something for optimization.
@@ -181,7 +181,7 @@ If you specify `FINAL`, optimization will be performed even when all the data is
 ## KILL QUERY
 
 ```sql
-KILL QUERY
+KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
   [FORMAT format]

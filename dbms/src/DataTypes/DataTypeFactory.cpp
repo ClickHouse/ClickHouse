@@ -51,16 +51,19 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-DataTypePtr DataTypeFactory::get(const String & family_name, const ASTPtr & parameters) const
+DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
+    String family_name = getAliasToOrName(family_name_param);
+
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
             return it->second(parameters);
     }
 
+    String family_name_lowercase = Poco::toLower(family_name);
+
     {
-        String family_name_lowercase = Poco::toLower(family_name);
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
             return it->second(parameters);
@@ -76,18 +79,22 @@ void DataTypeFactory::registerDataType(const String & family_name, Creator creat
         throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
+    String family_name_lowercase = Poco::toLower(family_name);
+
+    if (isAlias(family_name) || isAlias(family_name_lowercase))
+        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
+                        ErrorCodes::LOGICAL_ERROR);
+
     if (!data_types.emplace(family_name, creator).second)
         throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
-    String family_name_lowercase = Poco::toLower(family_name);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception("DataTypeFactory: the case insensitive data type family name '" + family_name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 }
-
 
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
@@ -102,7 +109,6 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
         return creator();
     }, case_sensitiveness);
 }
-
 
 void registerDataTypeNumbers(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
