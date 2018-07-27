@@ -198,7 +198,7 @@ private:
       */
     NamesAndTypesList source_columns;
 
-    /// If non-empty, ignore all expressions in  not from this list.
+    /// If non-empty, ignore all expressions in not from this map keys.
     /// Map columns with substituted aliases to original names.
     NameToNameSetMap required_result_columns;
 

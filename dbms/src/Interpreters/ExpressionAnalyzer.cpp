@@ -357,6 +357,7 @@ void ExpressionAnalyzer::translateQualifiedNames()
 }
 
 
+/// Get the number of components of identifier which are correspond to 'alias.', 'table.' or 'databas.table.' from names.
 static size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
                                                                      const DatabaseAndTableWithAlias & names)
 {
@@ -391,6 +392,8 @@ static size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTId
 }
 
 
+/// Checks that ast is ASTIdentifier and remove num_qualifiers_to_strip components from left.
+/// Example: 'database.table.name' -> (num_qualifiers_to_strip = 2) -> 'name'.
 static void stripIdentifier(ASTPtr & ast, size_t num_qualifiers_to_strip)
 {
     ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(ast.get());
@@ -777,8 +780,10 @@ static std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const AST
 }
 
 
+/// If ast is ordinary table and select_expression_list is not nullptr will use it instead of list of all columns.
 static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
-    const ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth, const Names & required_source_columns, ASTPtr select_expression_list = nullptr)
+    const ASTPtr & subquery_or_table_name, const Context & context, size_t subquery_depth,
+    const Names & required_source_columns, ASTPtr select_expression_list = nullptr)
 {
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
     const ASTSubquery * subquery = typeid_cast<const ASTSubquery *>(subquery_or_table_name.get());
@@ -3080,6 +3085,8 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
             {
                 auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
                 auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
+
+                /// Assume that component from definite table if num_components is greater than for the other table.
                 if (left_num_components > right_num_components)
                     return {identifier, nullptr};
                 if (left_num_components < right_num_components)
