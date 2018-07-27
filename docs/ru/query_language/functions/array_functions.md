@@ -282,8 +282,6 @@ SELECT arrayPushBack(['a'], 'b') AS res
 └───────────┘
 ```
 
-
-
 ## arrayPushFront
 
 Добавляет один элемент в начало массива.
