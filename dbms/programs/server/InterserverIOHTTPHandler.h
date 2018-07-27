@@ -34,6 +34,8 @@ private:
     CurrentMetrics::Increment metric_increment{CurrentMetrics::InterserverConnection};
 
     void processQuery(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response);
+
+    std::pair<String, bool> checkAuthentication(Poco::Net::HTTPServerRequest & request) const;
 };
 
 }
