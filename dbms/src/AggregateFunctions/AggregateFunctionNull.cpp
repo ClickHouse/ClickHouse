@@ -18,6 +18,8 @@ class AggregateFunctionCombinatorNull final : public IAggregateFunctionCombinato
 public:
     String getName() const override { return "Null"; }
 
+    bool isForInternalUsageOnly() const override { return true; }
+
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         size_t size = arguments.size();

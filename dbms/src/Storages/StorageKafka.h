@@ -75,6 +75,9 @@ private:
     const String brokers;
     const String group;
     const String format_name;
+    // Optional row delimiter for generating char delimited stream
+    // in order to make various input stream parsers happy.
+    char row_delimiter;
     const String schema_name;
      /// Total number of consumers
     size_t num_consumers;
@@ -109,7 +112,7 @@ protected:
         Context & context_,
         const ColumnsDescription & columns_,
         const String & brokers_, const String & group_, const Names & topics_,
-        const String & format_name_, const String & schema_name_, size_t num_consumers_);
+        const String & format_name_, char row_delimiter_, const String & schema_name_, size_t num_consumers_);
 };
 
 }

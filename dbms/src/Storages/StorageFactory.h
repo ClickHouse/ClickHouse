@@ -53,6 +53,11 @@ public:
     /// No locking, you must register all engines before usage of get.
     void registerStorage(const std::string & name, Creator creator);
 
+    const auto & getAllStorages() const
+    {
+        return storages;
+    }
+
 private:
     using Storages = std::unordered_map<std::string, Creator>;
     Storages storages;
