@@ -5,6 +5,7 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
+#include <murmurhash2.h>
 
 #include <Poco/ByteOrder.h>
 
@@ -140,6 +141,23 @@ struct SipHash64Impl
     static UInt64 apply(const char * begin, size_t size)
     {
         return sipHash64(begin, size);
+    }
+};
+
+
+struct MurmurHash2Impl
+{
+    static UInt64 apply(const char * begin  , size_t size)
+    {
+        return MurmurHash64A(begin, size, 0ULL);
+    }
+};
+
+struct MurmurHash3Impl
+{
+    static UInt64 apply(const char * begin  , size_t size)
+    {
+        return MurmurHash64A(begin, size, 0ULL);
     }
 };
 
@@ -796,6 +814,7 @@ struct NameHalfMD5   { static constexpr auto name = "halfMD5"; };
 struct NameSipHash64 { static constexpr auto name = "sipHash64"; };
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
+struct NameMurMurHash2 { static constexpr auto name = "murmurHash2"; };
 
 struct ImplCityHash64
 {
@@ -848,5 +867,5 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
-
+using MurMurHash2 = FunctionStringHash64<MurmurHash2Impl, NameMurMurHash2>;
 }
