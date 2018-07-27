@@ -177,7 +177,6 @@ private:
 };
 
 
-///
 class Client : public Poco::Util::Application
 {
 public:
