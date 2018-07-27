@@ -89,6 +89,95 @@ namespace ErrorCodes
 }
 
 
+/// Checks expected server and client error codes in testmode.
+/// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
+class TestHint
+{
+public:
+    TestHint(bool enabled_, const String & query)
+    :   enabled(enabled_),
+        server_error(0),
+        client_error(0)
+    {
+        if (!enabled_)
+            return;
+
+        size_t pos = query.find("--");
+        if (pos != String::npos && query.find("--", pos + 2) != String::npos)
+            return; /// It's not last comment. Hint belongs to commented query.
+
+        if (pos != String::npos)
+        {
+            pos = query.find('{', pos + 2);
+            if (pos != String::npos)
+            {
+                String hint = query.substr(pos + 1);
+                pos = hint.find('}');
+                hint.resize(pos);
+                parse(hint);
+            }
+        }
+    }
+
+    void checkActual(int actual_server_error, int actual_client_error,
+                     bool & got_exception, std::unique_ptr<Exception> & last_exception) const
+    {
+        if (!enabled)
+            return;
+
+        if (allErrorsExpected(actual_server_error, actual_client_error))
+        {
+            got_exception = false;
+            last_exception.reset();
+        }
+
+        if (lostExpectedError(actual_server_error, actual_client_error))
+        {
+            std::cerr << "Success when error expected. It expects server error "
+                << server_error << ", client error " << client_error << "." << std::endl;
+            got_exception = true;
+        }
+    }
+
+    int serverError() const { return server_error; }
+    int clientError() const { return client_error; }
+
+private:
+    bool enabled;
+    int server_error;
+    int client_error;
+
+    void parse(const String & hint)
+    {
+        std::stringstream ss;
+        ss << hint;
+        while (!ss.eof())
+        {
+            String item;
+            ss >> item;
+            if (item.empty())
+                break;
+
+            if (item == "serverError")
+                ss >> server_error;
+            else if (item == "clientError")
+                ss >> client_error;
+        }
+    }
+
+    bool allErrorsExpected(int actual_server_error, int actual_client_error) const
+    {
+        return (server_error == actual_server_error) && (client_error == actual_client_error);
+    }
+
+    bool lostExpectedError(int actual_server_error, int actual_client_error) const
+    {
+        return (server_error && !actual_server_error) || (client_error && !actual_client_error);
+    }
+};
+
+
+///
 class Client : public Poco::Util::Application
 {
 public:
@@ -157,6 +246,10 @@ private:
 
     /// If the last query resulted in exception.
     bool got_exception = false;
+    int expected_server_error = 0;
+    int expected_client_error = 0;
+    int actual_server_error = 0;
+    int actual_client_error = 0;
     String server_version;
     String server_display_name;
 
@@ -617,10 +710,14 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    std::cerr << std::endl
-                        << "Exception on client:" << std::endl
-                        << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                        << std::endl;
+                    actual_client_error = e.code();
+                    if (!actual_client_error || actual_client_error != expected_client_error)
+                    {
+                        std::cerr << std::endl
+                            << "Exception on client:" << std::endl
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
+                            << std::endl;
+                    }
 
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
@@ -659,6 +756,7 @@ private:
     bool process(const String & text)
     {
         const auto ignore_error = config().getBool("ignore-error", false);
+        const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
             /// Several queries separated by ';'.
@@ -702,6 +800,10 @@ private:
                 while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
+                TestHint test_hint(test_mode, query);
+                expected_client_error = test_hint.clientError();
+                expected_server_error = test_hint.serverError();
+
                 try
                 {
                     if (!processSingleQuery(query, ast) && !ignore_error)
@@ -709,9 +811,12 @@ private:
                 }
                 catch (...)
                 {
+                    actual_client_error = getCurrentExceptionCode();
                     std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
                     got_exception = true;
                 }
+
+                test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception);
 
                 if (got_exception && !ignore_error)
                 {
@@ -1286,6 +1391,14 @@ private:
         resetOutput();
         got_exception = true;
 
+        actual_server_error = e.code();
+        if (expected_server_error)
+        {
+            if (actual_server_error == expected_server_error)
+                return;
+            std::cerr << "Expected error code: " << expected_server_error << " but got: " << actual_server_error << "." << std::endl;
+        }
+
         std::string text = e.displayText();
 
         auto embedded_stack_trace_pos = text.find("Stack trace");
@@ -1411,7 +1524,8 @@ public:
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("ignore-error", "Do not stop processing in multiquery mode")
+            ("testmode,T", "enable test hints in comments")
+            ("ignore-error", "do not stop processing in multiquery mode")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
@@ -1517,6 +1631,8 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
+        if (options.count("testmode"))
+            config().setBool("testmode", true);
         if (options.count("ignore-error"))
             config().setBool("ignore-error", true);
         if (options.count("format"))
