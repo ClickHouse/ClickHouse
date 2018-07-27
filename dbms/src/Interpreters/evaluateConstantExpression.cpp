@@ -3,6 +3,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
@@ -10,6 +11,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Common/typeid_cast.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -52,12 +54,18 @@ std::pair<Field, std::shared_ptr<const IDataType>> evaluateConstantExpression(co
 
 ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & context)
 {
+    /// Branch with string in qery.
     if (typeid_cast<const ASTLiteral *>(node.get()))
         return node;
-
+    
+    /// Branch with TableFunction in query.
+    if (auto table_func_ptr = typeid_cast<ASTFunction *>(node.get()))
+        if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
+            
+            return node;
+        
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
-
 
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context)
 {

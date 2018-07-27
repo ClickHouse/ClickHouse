@@ -224,34 +224,11 @@
               }
           });
       }
-      function drawLanguageSwitch() {
-          var url, text, title;
-          if (window.location.pathname.indexOf('/ru/') >= 0) {
-            url = window.location.pathname.replace('/ru/', '/en/');
-            text = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"30\" viewBox=\"0,0 25,15\" style=\"border:1px solid #eee;margin: .8rem 0 0 -1.25rem;\">\n" +
-                "<rect width=\"25\" height=\"15\" fill=\"#00247d\"></rect>\n" +
-                "<path d=\"M 0,0 L 25,15 M 25,0 L 0,15\" stroke=\"#fff\" stroke-width=\"3\"></path>\n" +
-                "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#fff\" stroke-width=\"5\"></path>\n" +
-                "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#cf142b\" stroke-width=\"3\"></path>\n" +
-                "</svg>";
-            title = "Switch to English"
-          } else {
-            url = window.location.pathname.replace('/en/', '/ru/');
-            text = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 6\" width=\"50\" height=\"30\" style=\"border: 1px solid #eee;margin: .8rem 0 0 -1.25rem\">\n" +
-                "<rect fill=\"#fff\" width=\"10\" height=\"3\"></rect>\n" +
-                "<rect fill=\"#d52b1e\" y=\"3\" width=\"10\" height=\"3\"></rect>\n" +
-                "<rect fill=\"#0039a6\" y=\"2\" width=\"10\" height=\"2\"></rect>\n" +
-                "</svg>";
-            title = "Переключить на русский язык"
-          }
-          document.getElementById("md-language-switch").innerHTML = '<a href="' + url + '" title="' + title + '" class="md-flex__ellipsis md-header-nav__title">' + text + '</a>';
-      }
       ready(function () {
           {% if config.extra.single_page and page.content %}
           document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
           document.getElementsByClassName('md-footer')[0].style.display = 'block';
           {% endif %}
-          drawLanguageSwitch();
           app.initialize({
               version: "{{ mkdocs_version }}",
               url: {

@@ -3,7 +3,13 @@
 #include <TableFunctions/TableFunctionFactory.h>
 namespace DB
 {
-void StorageSystemTableFunctions::fillData(MutableColumns & res_columns) const
+
+NamesAndTypesList StorageSystemTableFunctions::getNamesAndTypes()
+{
+    return {{"name", std::make_shared<DataTypeString>()}};
+}
+
+void StorageSystemTableFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
     const auto & functions = TableFunctionFactory::instance().getAllTableFunctions();
     for (const auto & pair : functions)
@@ -11,4 +17,5 @@ void StorageSystemTableFunctions::fillData(MutableColumns & res_columns) const
         res_columns[0]->insert(pair.first);
     }
 }
+
 }

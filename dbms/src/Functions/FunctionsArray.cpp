@@ -1286,12 +1286,12 @@ DataTypePtr FunctionArrayDistinct::getReturnTypeImpl(const DataTypes & arguments
 {
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
-        throw Exception("Argument for function " + getName() + " must be array but it " 
+        throw Exception("Argument for function " + getName() + " must be array but it "
             " has type " + arguments[0]->getName() + ".",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        
+
     auto nested_type = removeNullable(array_type->getNestedType());
-        
+
     return std::make_shared<DataTypeArray>(nested_type);
 }
 
@@ -1307,7 +1307,7 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
 
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();
-    
+
     ColumnRawPtrs original_data_columns;
     original_data_columns.push_back(&src_data);
 
@@ -1416,7 +1416,7 @@ bool FunctionArrayDistinct::executeString(
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(StringRef)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
-    
+
     if (nullable_col)
     {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
@@ -1471,7 +1471,7 @@ void FunctionArrayDistinct::executeHashed(
                 res_data_col.insertFrom(*columns[0], j);
             }
         }
-        
+
         res_offsets.emplace_back(set.size() + prev_off);
         prev_off = off;
     }
