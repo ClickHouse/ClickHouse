@@ -103,7 +103,8 @@ static ElementIdentifier getElementIdentifier(Node * element)
     {
         const Node * node = attrs->item(i);
         std::string name = node->nodeName();
-        if (name == "replace" || name == "remove" || name == "incl" || name == "from_zk")
+        if (name == "replace" || name == "remove" ||
+            std::count(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name) > 0)
             continue;
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
@@ -267,12 +268,13 @@ void ConfigProcessor::doIncludesRecursive(
         return;
     }
 
+    std::vector<const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
-    const Node * incl_attribute = attributes->getNamedItem("incl");
-    const Node * from_zk_attribute = attributes->getNamedItem("from_zk");
+    for (const auto & attr_name : SUBSTITUTION_ATTRS)
+        attr_nodes.push_back(attributes->getNamedItem(attr_name));
 
-    if (incl_attribute && from_zk_attribute)
-        throw Poco::Exception("both incl and from_zk attributes set for element <" + node->nodeName() + ">");
+    if (std::count(attr_nodes.begin(), attr_nodes.end(), nullptr) < 2)
+        throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
@@ -296,8 +298,8 @@ void ConfigProcessor::doIncludesRecursive(
         {
             Element & element = dynamic_cast<Element &>(*node);
 
-            element.removeAttribute("incl");
-            element.removeAttribute("from_zk");
+            for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                element.removeAttribute(attr_name);
 
             if (replace)
             {
@@ -324,16 +326,19 @@ void ConfigProcessor::doIncludesRecursive(
         }
     };
 
-    auto get_incl_node = [&](const std::string & name)
+    if (attr_nodes[0]) // we have include subst
     {
-        return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
-    };
-    if (incl_attribute)
-        process_include(incl_attribute, get_incl_node, "Include not found: ");
+        auto get_incl_node = [&](const std::string & name)
+        {
+            return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
+        };
 
-    if (from_zk_attribute)
+        process_include(attr_nodes[0], get_incl_node, "Include not found: ");
+    }
+
+    if (attr_nodes[1]) /// we have zookeeper subst
     {
-        contributing_zk_paths.insert(from_zk_attribute->getNodeValue());
+        contributing_zk_paths.insert(attr_nodes[1]->getNodeValue());
 
         if (zk_node_cache)
         {
@@ -349,9 +354,28 @@ void ConfigProcessor::doIncludesRecursive(
                 return getRootNode(zk_document.get());
             };
 
-            process_include(from_zk_attribute, get_zk_node, "Could not get ZooKeeper node: ");
+            process_include(attr_nodes[1], get_zk_node, "Could not get ZooKeeper node: ");
         }
     }
+
+    if (attr_nodes[2]) /// we have env subst
+    {
+        XMLDocumentPtr env_document;
+        auto get_env_node = [&](const std::string & name) -> const Node *
+        {
+            std::string value = std::getenv(name.c_str());
+            if (value.empty())
+                return nullptr;
+
+            env_document = dom_parser.parseString("<from_env>" + value + "</from_env>");
+
+            return getRootNode(env_document.get());
+        };
+
+        process_include(attr_nodes[2], get_env_node, "Env variable is not set: ");
+
+    }
+
 
     if (included_something)
         doIncludesRecursive(config, include_from, node, zk_node_cache, contributing_zk_paths);
