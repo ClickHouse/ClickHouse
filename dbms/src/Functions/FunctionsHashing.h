@@ -615,19 +615,12 @@ public:
 };
 
 
-/** Why we need MurmurHash2?
-*   MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash. 
-*   Usually there is no reason to use MurmurHash.
-*   It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it 
-*   in ClickHouse as is. For example, it is needed to reproduce the behaviour 
-*   for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
-*/
 template <typename Impl>
-class FunctionMurmurHash : public IFunction
+class FunctionStringHash32 : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMurmurHash>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash32>(); }
 
     String getName() const override { return name; }
 
@@ -777,6 +770,13 @@ private:
     }
 };
 
+/** Why we need MurmurHash2?
+*   MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash. 
+*   Usually there is no reason to use MurmurHash.
+*   It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it 
+*   in ClickHouse as is. For example, it is needed to reproduce the behaviour 
+*   for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+*/
 struct MurmurHash2Impl
 {
     static constexpr auto name = "murmurHash2";
@@ -969,7 +969,6 @@ struct NameHalfMD5   { static constexpr auto name = "halfMD5"; };
 struct NameSipHash64 { static constexpr auto name = "sipHash64"; };
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
-struct NameMurMurHash2 { static constexpr auto name = "murmurHash2"; };
 
 struct ImplCityHash64
 {
@@ -1022,5 +1021,5 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
-using MurmurHash2 = FunctionMurmurHash<MurmurHash2Impl>;
+using MurmurHash2 = FunctionStringHash32<MurmurHash2Impl>;
 }
