@@ -1,8 +1,6 @@
 pages:
-- 'ClickHouse': 'index.md'
-
 - 'Introduction':
-  - 'hidden': 'introduction/index.md'
+  - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
@@ -50,7 +48,7 @@ pages:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
 
-- 'SQL dialect':
+- 'SQL reference':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
@@ -108,9 +106,9 @@ pages:
     - 'Internal dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'General syntax': 'query_language/syntax.md'
-  
+
 - 'Operations':
-  - 'Operations': 'operations/index.md'
+  - 'hidden': 'operations/index.md'
   - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
     - 'MergeTree family':
@@ -160,7 +158,7 @@ pages:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'ClickHouse Development':
+- 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'

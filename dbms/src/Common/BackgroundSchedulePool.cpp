@@ -128,7 +128,8 @@ void BackgroundSchedulePool::TaskInfo::execute()
 
 zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
 {
-     return [t=shared_from_this()](const ZooKeeperImpl::ZooKeeper::WatchResponse &) {
+     return [t = shared_from_this()](const ZooKeeperImpl::ZooKeeper::WatchResponse &)
+     {
          t->schedule();
      };
 }

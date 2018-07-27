@@ -109,6 +109,8 @@ struct ContextShared
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
+    String interserver_io_user;
+    String interserver_io_password;
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
@@ -1376,6 +1378,17 @@ void Context::setInterserverIOAddress(const String & host, UInt16 port)
 {
     shared->interserver_io_host = host;
     shared->interserver_io_port = port;
+}
+
+void Context::setInterverserCredentials(const String & user, const String & password)
+{
+    shared->interserver_io_user = user;
+    shared->interserver_io_password = password;
+}
+
+std::pair<String, String> Context::getInterserverCredentials() const
+{
+    return { shared->interserver_io_user, shared->interserver_io_password };
 }
 
 
