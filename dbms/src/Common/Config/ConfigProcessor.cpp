@@ -373,9 +373,7 @@ void ConfigProcessor::doIncludesRecursive(
         };
 
         process_include(attr_nodes[2], get_env_node, "Env variable is not set: ");
-
     }
-
 
     if (included_something)
         doIncludesRecursive(config, include_from, node, zk_node_cache, contributing_zk_paths);
