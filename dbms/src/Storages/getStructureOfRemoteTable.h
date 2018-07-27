@@ -1,6 +1,8 @@
 #pragma once
 
 #include <Storages/ColumnsDescription.h>
+#include <Parsers/IAST.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -15,6 +17,7 @@ ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const std::string & database,
     const std::string & table,
-    const Context & context);
+    const Context & context,
+    const ASTPtr & table_func_ptr = nullptr);
 
 }

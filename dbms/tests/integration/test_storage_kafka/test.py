@@ -6,8 +6,8 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
-from kafka import KafkaProducer
 import json
+import subprocess
 
 
 
@@ -23,7 +23,17 @@ def started_cluster():
         yield cluster
 
     finally:
-        cluster.shutdown(False)
+        cluster.shutdown()
+
+def kafka_is_available(started_cluster):
+    p = subprocess.Popen(('docker', 'exec', '-i', started_cluster.kafka_docker_id, '/usr/bin/kafka-broker-api-versions', '--bootstrap-server', 'PLAINTEXT://localhost:9092'), stdout=subprocess.PIPE)
+    streamdata = p.communicate()[0]
+    return p.returncode == 0
+
+def kafka_produce(started_cluster, topic, messages):
+    p = subprocess.Popen(('docker', 'exec', '-i', started_cluster.kafka_docker_id, '/usr/bin/kafka-console-producer', '--broker-list', 'localhost:9092', '--topic', topic), stdin=subprocess.PIPE)
+    p.communicate(messages)
+    p.stdin.close()
 
 def test_kafka_json(started_cluster):
     instance.query('''
@@ -34,18 +44,18 @@ CREATE TABLE test.kafka (key UInt64, value UInt64)
 
     retries = 0
     while True:
-        try:
-            producer = KafkaProducer()
+        if kafka_is_available(started_cluster):
             break
-        except:
+        else:
             retries += 1
             if retries > 50:
-                raise
+                raise 'Cannot connect to kafka.'
             print("Waiting for kafka to be available...")
             time.sleep(1)
+    messages = ''
     for i in xrange(50):
-        producer.send('json', json.dumps({'key': i, 'value': i}))
-    producer.flush()
+        messages += json.dumps({'key': i, 'value': i}) + '\n'
+    kafka_produce(started_cluster, 'json', messages)
     time.sleep(3)
     result = instance.query('SELECT * FROM test.kafka;')
     with open(p.join(p.dirname(__file__), 'test_kafka_json.reference')) as reference:
