@@ -128,8 +128,9 @@ class ReadBufferFromKafkaConsumer : public ReadBuffer
 public:
     ReadBufferFromKafkaConsumer(rd_kafka_t * consumer_, Poco::Logger * log_, char row_delimiter_)
         : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr),
-        current_pending(false), log(log_), read_messages(0), row_delimiter(row_delimiter_) {
-        LOG_TRACE(log, "row delimiter is :" << row_delimiter);
+        current_pending(false), log(log_), read_messages(0), row_delimiter(row_delimiter_)
+    {
+        LOG_TRACE(log, "Row delimiter is: " << row_delimiter);
     }
 
     ~ReadBufferFromKafkaConsumer() { reset(); }

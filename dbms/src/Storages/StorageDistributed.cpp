@@ -244,19 +244,19 @@ BlockInputStreams StorageDistributed::read(
         processed_stage = result_size == 1
             ? QueryProcessingStage::Complete
             : QueryProcessingStage::WithMergeableState;
-            
+
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
-    
+
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr ?
         ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
-    
+
     return ClusterProxy::executeQuery(
         select_stream_factory, cluster, modified_query_ast, context, settings);
 }
