@@ -153,14 +153,6 @@ struct MurmurHash2Impl
     }
 };
 
-struct MurmurHash3Impl
-{
-    static UInt64 apply(const char * begin  , size_t size)
-    {
-        return MurmurHash64A(begin, size, 0ULL);
-    }
-};
-
 struct SipHash128Impl
 {
     static constexpr auto name = "sipHash128";
