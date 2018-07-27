@@ -47,6 +47,7 @@ public:
     bool final() const;
     void setDatabaseIfNeeded(const String & database_name);
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
+    void addTableFunction(ASTPtr & table_function_ptr);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
