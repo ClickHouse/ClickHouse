@@ -20,7 +20,15 @@ from .client import Client, CommandRequest
 
 
 HELPERS_DIR = p.dirname(__file__)
+DEFAULT_ENV_NAME = 'env_file'
 
+
+def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
+    full_path = os.path.join(path, fname)
+    with open(full_path, 'w') as f:
+        for var, value in variables.items():
+            f.write("=".join([var, value]) + "\n")
+    return full_path
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -55,12 +63,12 @@ class ClickHouseCluster:
         self.with_zookeeper = False
         self.with_mysql = False
         self.with_kafka = False
-        
+
         self.docker_client = None
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, hostname=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, hostname=None, env_variables={}):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -78,7 +86,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
+            self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname, env_variables=env_variables)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -87,7 +95,7 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
-        
+
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
@@ -219,13 +227,15 @@ services:
             -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
             -  --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
         depends_on: {depends_on}
+        env_file:
+            - {env_file}
 '''
 
 
 class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None, env_variables={}):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -249,6 +259,7 @@ class ClickHouseInstance:
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
+        self.env_variables = env_variables
 
         self.docker_client = None
         self.ip_address = None
@@ -396,6 +407,8 @@ class ClickHouseInstance:
             depends_on.append("zoo2")
             depends_on.append("zoo3")
 
+        env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
+
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
                 name=self.name,
@@ -406,7 +419,8 @@ class ClickHouseInstance:
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
                 logs_dir=logs_dir,
-                depends_on=str(depends_on)))
+                depends_on=str(depends_on),
+                env_file=env_file))
 
 
     def destroy_dir(self):
