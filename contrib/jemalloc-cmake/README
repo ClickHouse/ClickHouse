@@ -1,0 +1,3 @@
+This is the modified version of https://github.com/jemalloc/jemalloc-cmake, revision abeb19f8493feb67a2a8f121ea9bab1829f8d3fb
+It allows to integrate JEMalloc to CMake project.
+
