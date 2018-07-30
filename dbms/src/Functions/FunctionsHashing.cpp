@@ -20,6 +20,7 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionIntHash32>();
     factory.registerFunction<FunctionIntHash64>();
     factory.registerFunction<FunctionURLHash>();
+    factory.registerFunction<FunctionMurmurHash2>();
 }
 
 template <>
