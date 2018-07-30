@@ -5,6 +5,7 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
+#include <murmurhash2.h>
 
 #include <Poco/ByteOrder.h>
 
@@ -142,6 +143,7 @@ struct SipHash64Impl
         return sipHash64(begin, size);
     }
 };
+
 
 struct SipHash128Impl
 {
@@ -365,7 +367,6 @@ UInt64 toInteger<Float32>(Float32 x);
 
 template <>
 UInt64 toInteger<Float64>(Float64 x);
-
 
 /** We use hash functions called CityHash, FarmHash, MetroHash.
   * In this regard, this template is named with the words `NeighborhoodHash`.
@@ -614,6 +615,120 @@ public:
 };
 
 
+template <typename Impl>
+class FunctionStringHash32 : public IFunction
+{
+public:
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash32>(); }
+
+    String getName() const override { return name; }
+
+    bool isVariadic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & /* arguments */) const override { return std::make_shared<DataTypeUInt32>(); }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        auto col_to = ColumnUInt32::create(input_rows_count);
+        ColumnUInt32::Container & vec_to = col_to->getData();
+
+        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
+        const IDataType * from_type = col.type.get();
+        const IColumn * icolumn = col.column.get();
+
+        if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt32>(from_type)) executeIntType<UInt32>(icolumn, vec_to);
+        else if (checkDataType<DataTypeUInt64>(from_type)) executeIntType<UInt64>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt8>(from_type)) executeIntType<Int8>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt16>(from_type)) executeIntType<Int16>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt32>(from_type)) executeIntType<Int32>(icolumn, vec_to);
+        else if (checkDataType<DataTypeInt64>(from_type)) executeIntType<Int64>(icolumn, vec_to);
+        else if (checkDataType<DataTypeEnum8>(from_type)) executeIntType<Int8>(icolumn, vec_to);
+        else if (checkDataType<DataTypeEnum16>(from_type)) executeIntType<Int16>(icolumn, vec_to);
+        else if (checkDataType<DataTypeDate>(from_type)) executeIntType<UInt16>(icolumn, vec_to);
+        else if (checkDataType<DataTypeDateTime>(from_type)) executeIntType<UInt32>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFloat32>(from_type)) executeIntType<Float32>(icolumn, vec_to);
+        else if (checkDataType<DataTypeFloat64>(from_type)) executeIntType<Float64>(icolumn, vec_to);
+        else if (checkDataType<DataTypeString>(from_type)) executeString(icolumn, vec_to);
+        else if (checkDataType<DataTypeFixedString>(from_type)) executeString(icolumn, vec_to);
+        else
+            throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        block.getByPosition(result).column = std::move(col_to);
+    }
+private:
+    template <typename FromType>
+    void executeIntType(const IColumn * column, ColumnUInt32::Container & vec_to)
+    {
+        if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
+        {
+            const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
+            size_t size = vec_from.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                vec_to[i] = Impl::Hash32(reinterpret_cast<const char *>(&vec_from[i]), sizeof(FromType));
+            }
+        }
+        else
+            throw Exception("Illegal column " + column->getName()
+                + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    void executeString(const IColumn * column, ColumnUInt32::Container & vec_to)
+    {
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
+        {
+            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
+            size_t size = offsets.size();
+            for (size_t i = 0; i < size; ++i)
+            {
+                vec_to[i] = Impl::Hash32(
+                    reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
+                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+            }
+        }
+        else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
+        {
+            const typename ColumnString::Chars_t & data = col_from->getChars();
+            size_t n = col_from->getN();
+            size_t size = data.size() / n;
+            for (size_t i = 0; i < size; ++i)
+                vec_to[i] = Impl::Hash32(reinterpret_cast<const char *>(&data[i * n]), n);
+        }
+        else
+            throw Exception("Illegal column " + column->getName()
+                    + " of first argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+
+/** Why we need MurmurHash2?
+  * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
+  * Usually there is no reason to use MurmurHash.
+  * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
+  * in ClickHouse as is. For example, it is needed to reproduce the behaviour
+  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+  */
+struct MurmurHash2Impl
+{
+    static constexpr auto name = "murmurHash2_32";
+    static UInt32 Hash32(const char * data, const size_t size)
+    {
+        return MurmurHash2(data, size, 0);
+    }
+};
+
+
 struct URLHashImpl
 {
     static UInt64 apply(const char * data, const size_t size)
@@ -848,5 +963,5 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
-
+using FunctionMurmurHash2 = FunctionStringHash32<MurmurHash2Impl>;
 }
