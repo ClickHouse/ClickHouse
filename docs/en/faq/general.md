@@ -1,4 +1,4 @@
-# Questions you were afraid to ask
+# General questions
 
 ## Why not use something like MapReduce?
 
