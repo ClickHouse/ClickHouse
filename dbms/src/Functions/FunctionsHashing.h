@@ -708,23 +708,23 @@ private:
             throw Exception("Illegal column " + column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
-    }  
+    }
 };
 
 
 /** Why we need MurmurHash2?
-*   MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash. 
-*   Usually there is no reason to use MurmurHash.
-*   It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it 
-*   in ClickHouse as is. For example, it is needed to reproduce the behaviour 
-*   for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
-*/
+  * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
+  * Usually there is no reason to use MurmurHash.
+  * It is needed for the cases when you already have MurmurHash in some applications and you want to reproduce it
+  * in ClickHouse as is. For example, it is needed to reproduce the behaviour
+  * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
+  */
 struct MurmurHash2Impl
 {
     static constexpr auto name = "murmurHash2_32";
-    static UInt32 Hash32(const char * data, const size_t size) 
+    static UInt32 Hash32(const char * data, const size_t size)
     {
-        return MurmurHash2(data, size, 0);  
+        return MurmurHash2(data, size, 0);
     }
 };
 
