@@ -131,13 +131,13 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 }
 
 
-void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_losted_replicas, String min_record)
+void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String min_record)
 {
     auto zookeeper = storage.getZooKeeper();
     
     zkutil::Requests ops;
     
-    for (auto pair : log_pointers_losted_replicas)
+    for (auto pair : log_pointers_lost_replicas)
     {
         if ("log-" + padIndex(pair.second) <= min_record)
             ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + pair.first + "/is_lost", "",
@@ -145,9 +145,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<Strin
     }
     
     zkutil::Responses responses;
-    auto code = zookeeper->tryMulti(ops, responses);
-    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw zkutil::KeeperException(code);
+    auto code = zookeeper->multi(ops, responses);
 }
 
 
