@@ -372,9 +372,9 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         children.emplace_back(tables_list);
         table_expression = table_expr.get();
     }
-    
+
     ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
-    
+
     if (!database_name.empty())
     {
         ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
@@ -405,7 +405,7 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
         children.emplace_back(tables_list);
         table_expression = table_expr.get();
     }
-    
+
     table_expression->table_function = table_function_ptr;
     table_expression->database_and_table_name = nullptr;
 }

@@ -4,9 +4,8 @@ pages:
   - 'Обзор': 'index.md'
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
-  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
-  - 'Возможные глупые вопросы': 'introduction/possible_silly_questions.md'
   - 'Производительность': 'introduction/performance.md'
+  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
 
 - 'Начало работы':
   - 'Установка и запуск': 'getting_started/index.md'
@@ -165,6 +164,9 @@ pages:
     - 'Введение': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
+
+- 'F.A.Q.':
+  - 'Общие вопросы': 'faq/general.md'
 
 - 'Разработка':
   - 'hidden': 'development/index.md'
