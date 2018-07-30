@@ -115,3 +115,4 @@ table_functions/merge.md query_language/table_functions/merge.md
 table_functions/numbers.md query_language/table_functions/numbers.md
 table_functions/remote.md query_language/table_functions/remote.md
 query_language/queries.md query_language.md
+introduction/possible_silly_questions.md faq/general.md
