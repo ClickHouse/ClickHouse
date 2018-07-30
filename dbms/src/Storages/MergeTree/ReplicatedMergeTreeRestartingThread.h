@@ -25,22 +25,12 @@ public:
     ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreeRestartingThread();
 
-    void wakeup()
-    {
-        wakeup_event.set();
-        task->schedule();
-    }
-
-    Poco::Event & getWakeupEvent()
-    {
-        return wakeup_event;
-    }
+    void wakeup() { task->schedule(); }
 
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
     Logger * log;
-    Poco::Event wakeup_event;
     std::atomic<bool> need_stop {false};
 
     /// The random data we wrote into `/replicas/me/is_active`.
