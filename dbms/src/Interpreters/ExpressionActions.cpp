@@ -148,7 +148,8 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_,
+                                                const Names & join_key_names_left,
                                                 const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;

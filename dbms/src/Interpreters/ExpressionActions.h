@@ -34,11 +34,14 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
+class ExpressionActions;
 
 /** Action on the block.
   */
 struct ExpressionAction
 {
+private:
+    using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 public:
     enum Type
     {
