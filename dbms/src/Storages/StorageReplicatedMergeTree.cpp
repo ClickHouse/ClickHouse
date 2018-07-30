@@ -215,7 +215,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()), queue(*this),
     fetcher(data),
-    shutdown_event(false), part_check_thread(*this),
+    cleanup_thread(*this), alter_thread(*this), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
     if (path_.empty())
@@ -1653,7 +1653,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// We want to remove dropped parts from disk as soon as possible
     /// To be removed a partition should have zero refcount, therefore call the cleanup thread at exit
     parts_to_remove.clear();
-    cleanup_thread->schedule();
+    cleanup_thread.wakeup();
 }
 
 
@@ -2034,7 +2034,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
     res_parts.clear();
     parts_to_remove.clear();
-    cleanup_thread->schedule();
+    cleanup_thread.wakeup();
 
     return true;
 }
@@ -2042,10 +2042,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
 void StorageReplicatedMergeTree::queueUpdatingTask()
 {
-    //most probably this check is not relevant
-    if (shutdown_called)
-        return;
-
     if (!queue_update_in_progress)
     {
         last_queue_update_start_time.store(time(nullptr));
@@ -2668,7 +2664,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
-        cleanup_thread->schedule();
+        cleanup_thread.wakeup();
         return false;
     }
 
@@ -2791,11 +2787,7 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    if (restarting_thread)
-    {
-        restarting_thread->stop();
-        restarting_thread.reset();
-    }
+    restarting_thread.reset();
 
     if (data_parts_exchange_endpoint_holder)
     {
@@ -3030,7 +3022,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     {
         LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
 
-        while (!shutdown_called)
+        while (!partial_shutdown_called)
         {
             /// Replica could be inactive.
             if (!getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
@@ -3095,7 +3087,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             }
         }
 
-        if (shutdown_called)
+        if (partial_shutdown_called)
             throw Exception("Alter is not finished because table shutdown was called. Alter will be done after table restart.",
                 ErrorCodes::UNFINISHED);
 
@@ -4541,7 +4533,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
     /// Speedup removing of replaced parts from filesystem
     parts_to_remove.clear();
-    cleanup_thread->schedule();
+    cleanup_thread.wakeup();
 
     /// If necessary, wait until the operation is performed on all replicas.
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
@@ -4644,7 +4636,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
         if (cond_reached)
             break;
 
-        if (shutdown_called)
+        if (partial_shutdown_called)
             throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
     }
 
