@@ -624,9 +624,7 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return true; }
-
-    size_t getNumberOfArguments() const override { return 0; }
+    size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /* arguments */) const override { return std::make_shared<DataTypeUInt32>(); }
 
@@ -639,20 +637,13 @@ public:
 
         ColumnUInt32::Container & vec_to = col_to->getData();
 
-        if (arguments.empty())
-        {
-            /// Constant random number from /dev/urandom is used as a hash value of empty list of arguments.
-            vec_to.assign(rows, static_cast<UInt32>(0xe28dbde7fe22e41c));
-        }
-
         /// The function supports arbitary number of arguments of arbitary types.
 
         for (size_t i = 0; i < arguments.size(); ++i)
         {
             const ColumnWithTypeAndName & col = block.getByPosition(arguments[i]);
-            executeForArgument(col.type.get(), col.column.get(), vec_to);
+            executeAny(col.type.get(), col.column.get(), vec_to);
         }
-
         block.getByPosition(result).column = std::move(col_to);
     }
 private:
@@ -688,15 +679,7 @@ private:
             const typename ColumnVector<FromType>::Container & vec_from = col_from->getData();
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
-            {
-                vec_to[i] = IntHash32Impl::apply(toInteger(vec_from[i]));
-            }
-        }
-        else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
-        {
-            size_t size = vec_to.size();
-            for (size_t i = 0; i < size; ++i)
-                vec_to[i] = IntHash32Impl::apply(toInteger(col_from->template getValue<FromType>()));
+                vec_to[i] = Impl::Hash32(reinterpret_cast<const char *>(&vec_from[i]), sizeof(FromType));
         }
         else
             throw Exception("Illegal column " + column->getName()
@@ -727,47 +710,11 @@ private:
             for (size_t i = 0; i < size; ++i)
                 vec_to[i] = Impl::Hash32(reinterpret_cast<const char *>(&data[i * n]), n);
         }
-        else if (const ColumnConst * col_from = checkAndGetColumnConstStringOrFixedString(column))
-        {
-            String value = col_from->getValue<String>().data();
-            const size_t size = vec_to.size();
-            for (size_t i = 0; i < size; ++i)
-                vec_to[i] = Impl::Hash32(value.data(), value.size());
-        }
         else
             throw Exception("Illegal column " + column->getName()
                     + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
     }  
-
-    /// Flattening of tuples.
-    void executeForArgument(const IDataType * type, const IColumn * column, ColumnUInt32::Container & vec_to)
-    {
-        /// Flattening of tuples.
-        if (const ColumnTuple * tuple = typeid_cast<const ColumnTuple *>(column))
-        {
-            const Columns & tuple_columns = tuple->getColumns();
-            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
-            size_t tuple_size = tuple_columns.size();
-            for (size_t i = 0; i < tuple_size; ++i)
-                executeForArgument(tuple_types[i].get(), tuple_columns[i].get(), vec_to);
-        }
-        else if (const ColumnTuple * tuple = checkAndGetColumnConstData<ColumnTuple>(column))
-        {
-            const Columns & tuple_columns = tuple->getColumns();
-            const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*type).getElements();
-            size_t tuple_size = tuple_columns.size();
-            for (size_t i = 0; i < tuple_size; ++i)
-            {
-                auto tmp = ColumnConst::create(tuple_columns[i], column->size());
-                executeForArgument(tuple_types[i].get(), tmp.get(), vec_to);
-            }
-        }
-        else
-        {
-            executeAny(type, column, vec_to);
-        }
-    }
 };
 
 /** Why we need MurmurHash2?
