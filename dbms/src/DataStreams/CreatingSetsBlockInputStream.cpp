@@ -125,6 +125,7 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_join)
         {
+            subquery.joined_block_actions->execute(block);
             if (!subquery.join->insertFromBlock(block))
                 done_with_join = true;
         }

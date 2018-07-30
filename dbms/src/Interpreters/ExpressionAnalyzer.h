@@ -52,6 +52,7 @@ struct SubqueryForSet
     /// If set, build it from result.
     SetPtr set;
     JoinPtr join;
+    ExpressionActionsPtr joined_block_actions;
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
@@ -198,9 +199,9 @@ private:
       */
     NamesAndTypesList source_columns;
 
-    /// If non-empty, ignore all expressions in not from this map keys.
-    /// Map columns with substituted aliases to original names.
-    NameToNameSetMap required_result_columns;
+    /** If non-empty, ignore all expressions in  not from this list.
+      */
+    NameSet required_result_columns;
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
@@ -221,24 +222,43 @@ private:
 
     PreparedSets prepared_sets;
 
-    /// NOTE: So far, only one JOIN per query is supported.
+    struct AnalyzedJoin
+    {
 
-    /** Query of the form `SELECT expr(x) AS FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
-      * The join is made by column k.
-      * During the JOIN,
-      *  - in the "right" table, it will be available by alias `k`, since `Project` action for the subquery was executed.
-      *  - in the "left" table, it will be accessible by the name `expr(x)`, since `Project` action has not been executed yet.
-      * You must remember both of these options.
-      */
-    Names join_key_names_left;
-    Names join_key_names_right;
-    ASTs join_key_asts_left;
-    ASTs join_key_asts_right;
-    NameSet duplicate_columns_from_joined_table;
+        /// NOTE: So far, only one JOIN per query is supported.
 
-    NamesAndTypesList columns_added_by_join;
-    /// Such columns will be copied from left join keys during join.
-    NameSet columns_added_by_join_from_right_keys;
+        /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
+          * The join is made by column k.
+          * During the JOIN,
+          *  - in the "right" table, it will be available by alias `k`, since `Project` action for the subquery was executed.
+          *  - in the "left" table, it will be accessible by the name `expr(x)`, since `Project` action has not been executed yet.
+          * You must remember both of these options.
+          *
+          * Query of the form `SELECT ... from t1 ANY LEFT JOIN (SELECT ... from t2) ON expr(t1 columns) = expr(t2 columns)`
+          *     to the subquery will be added expression `expr(t2 columns)`.
+          * It's possible to use name `expr(t2 columns)`.
+          */
+        Names key_names_left;
+        Names key_names_right;
+        ASTs key_asts_left;
+        ASTs key_asts_right;
+
+        /// This columns will be renamed to alias.column or database.table.column
+        NameSet duplicate_columns_from_joined_table;
+        /// All columns which can be read from right table.
+        NamesAndTypesList columns_from_joined_table;
+        /// Columns which will be added to block, possible including some columns from right join key.
+        NamesAndTypesList columns_added_by_join;
+        /// Such columns will be copied from left join keys during join.
+        NameSet columns_added_by_join_from_right_keys;
+        /// Actions which need to be calculated on joined block.
+        ExpressionActionsPtr joined_block_actions;
+
+        void createJoinedBlockActions(const ASTTablesInSelectQueryElement & join,
+                                      const Context & context);
+    };
+
+    AnalyzedJoin analyzed_join;
 
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
@@ -270,7 +290,7 @@ private:
 
     /** Find the columns that are obtained by JOIN.
       */
-    void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
+    void collectJoinedColumns(NameSet & joined_columns);
     /// Parse JOIN ON expression and collect ASTs for joined columns.
     void collectJoinedColumnsFromJoinOnExpr();
 
@@ -283,9 +303,6 @@ private:
       */
     void normalizeTree();
     void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
-
-    /// Substitute aliases for required_result_columns and create map with their new to original names.
-    NameToNameSetMap createRequiredResultColumnsMap(const Names & required_result_columns);
 
     ///    Eliminates injective function calls and constant expressions from group by statement
     void optimizeGroupBy();
