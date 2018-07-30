@@ -721,7 +721,7 @@ private:
 */
 struct MurmurHash2Impl
 {
-    static constexpr auto name = "murmurHash2";
+    static constexpr auto name = "murmurHash2_32";
     static UInt32 Hash32(const char * data, const size_t size) 
     {
         return MurmurHash2(data, size, 0);  
