@@ -111,6 +111,7 @@ struct ContextShared
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_io_user;
     String interserver_io_password;
+    String interserver_scheme;                              /// http or https
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
@@ -1380,7 +1381,16 @@ void Context::setInterserverIOAddress(const String & host, UInt16 port)
     shared->interserver_io_port = port;
 }
 
-void Context::setInterverserCredentials(const String & user, const String & password)
+std::pair<String, UInt16> Context::getInterserverIOAddress() const
+{
+    if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
+        throw Exception("Parameter 'interserver_http(s)_port' required for replication is not specified in configuration file.",
+                        ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    return { shared->interserver_io_host, shared->interserver_io_port };
+}
+
+void Context::setInterserverCredentials(const String & user, const String & password)
 {
     shared->interserver_io_user = user;
     shared->interserver_io_password = password;
@@ -1391,14 +1401,14 @@ std::pair<String, String> Context::getInterserverCredentials() const
     return { shared->interserver_io_user, shared->interserver_io_password };
 }
 
-
-std::pair<String, UInt16> Context::getInterserverIOAddress() const
+void Context::setInterserverScheme(const String & scheme)
 {
-    if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
-        throw Exception("Parameter 'interserver_http_port' required for replication is not specified in configuration file.",
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    shared->interserver_scheme = scheme;
+}
 
-    return { shared->interserver_io_host, shared->interserver_io_port };
+String Context::getInterserverScheme() const
+{
+    return shared->interserver_scheme;
 }
 
 UInt16 Context::getTCPPort() const
