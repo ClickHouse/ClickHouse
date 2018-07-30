@@ -265,8 +265,9 @@ private:
 
     /// Do I need to complete background threads (except restarting_thread)?
     std::atomic<bool> partial_shutdown_called {false};
+
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
-    Poco::Event partial_shutdown_event {Poco::Event::EVENT_MANUALRESET};
+    Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
