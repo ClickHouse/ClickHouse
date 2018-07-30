@@ -74,7 +74,7 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 
 
 template <typename From, typename To>
-static Field convertIntToDecimalTypeImpl(const Field & from, const To & type)
+static Field convertIntToDecimalType(const Field & from, const To & type)
 {
     using FieldType = typename To::FieldType;
 
@@ -86,13 +86,27 @@ static Field convertIntToDecimalTypeImpl(const Field & from, const To & type)
     return Field(FieldType(scaled_value));
 }
 
+
+template <typename T>
+static Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+{
+    using FieldType = typename DataTypeDecimal<T>::FieldType;
+
+    const String & str_value = from.get<String>();
+    T value = type.parseFromString(str_value);
+    return Field(FieldType(value));
+}
+
+
 template <typename To>
-static Field convertIntToDecimalType(const Field & from, const To & type)
+static Field convertDecimalType(const Field & from, const To & type)
 {
     if (from.getType() == Field::Types::UInt64)
-        return convertIntToDecimalTypeImpl<UInt64>(from, type);
+        return convertIntToDecimalType<UInt64>(from, type);
     if (from.getType() == Field::Types::Int64)
-        return convertIntToDecimalTypeImpl<Int64>(from, type);
+        return convertIntToDecimalType<Int64>(from, type);
+    if (from.getType() == Field::Types::String)
+        return convertStringToDecimalType(from, type);
 
     throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
         + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
@@ -150,9 +164,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
         if (typeid_cast<const DataTypeInt64 *>(&type)) return convertNumericType<Int64>(src, type);
         if (typeid_cast<const DataTypeFloat32 *>(&type)) return convertNumericType<Float32>(src, type);
         if (typeid_cast<const DataTypeFloat64 *>(&type)) return convertNumericType<Float64>(src, type);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int32> *>(&type)) return convertIntToDecimalType(src, *ptype);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int64> *>(&type)) return convertIntToDecimalType(src, *ptype);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int128> *>(&type)) return convertIntToDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int32> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int64> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int128> *>(&type)) return convertDecimalType(src, *ptype);
 
         const bool is_date = typeid_cast<const DataTypeDate *>(&type);
         bool is_datetime = false;
