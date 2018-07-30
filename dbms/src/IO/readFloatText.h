@@ -96,6 +96,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_NUMBER;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -553,7 +554,7 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 
 
 template <typename T>
-inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale)
+inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale, bool digits_only = false)
 {
     x = 0;
     int sign = 1;
@@ -598,28 +599,30 @@ inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, uns
             case '9':
                 leading_zeores = false;
                 if (trailing_zeores || precision == 0)
-                    throw Exception("Cannot read decimal value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    throw Exception("Cannot read decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
                 [[fallthrough]];
             case '0':
             {
                 /// ignore leading and trailing zeroes
                 if (likely(!leading_zeores && !trailing_zeores))
                 {
-                    if (precision == 0 || precision < scale)
-                        throw Exception("Cannot read decimal value", ErrorCodes::CANNOT_PARSE_NUMBER);
+                    if (precision == 0 || precision < scale || ((precision == scale) && !after_point))
+                        throw Exception("Cannot read decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
                     --precision;
                     x = x * 10 + (byte - '0');
                 }
-                if (after_point)
+                if (after_point && scale)
                 {
                     --scale;
-                    if (scale == 0)
+                    if (!scale)
                         trailing_zeores = true;
                 }
                 break;
             }
 
             default:
+                if (digits_only)
+                    throw Exception("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
                 x *= sign;
                 return;
         }

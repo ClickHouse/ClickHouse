@@ -188,7 +188,7 @@ namespace detail
 #if 1
     inline void writeSIntText(__int128 x, WriteBuffer & buf)
     {
-        if (unlikely((x - 1) == 0))
+        if (unlikely((x - 1) > x))
         {
             buf.write("-170141183460469231731687303715884105728", 40);
             return;

@@ -42,12 +42,22 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 template <typename T>
 void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const T & value = static_cast<const ColumnType &>(column).getData()[row_num];
+    T value = static_cast<const ColumnType &>(column).getData()[row_num];
+    if (value < 0)
+    {
+        value *= -1;
+        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
+    }
 
     writeIntText(wholePart(value), ostr);
-    writeChar('.', ostr);
     if (scale)
-        writeIntText(fractionalPart(value), ostr);
+    {
+        writeChar('.', ostr);
+        String str_fractional(scale, '0');
+        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= 10)
+            str_fractional[pos] += value % 10;
+        ostr.write(str_fractional.data(), scale);
+    }
 }
 
 
@@ -59,6 +69,18 @@ void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, co
     readDecimalText(istr, x, precision, unread_scale);
     x *= getScaleMultiplier(unread_scale);
     static_cast<ColumnType &>(column).getData().push_back(x);
+}
+
+
+template <typename T>
+T DataTypeDecimal<T>::parseFromString(const String & str) const
+{
+    ReadBufferFromMemory buf(str.data(), str.size());
+    T x;
+    UInt32 unread_scale = scale;
+    readDecimalText(buf, x, precision, unread_scale, true);
+    x *= getScaleMultiplier(unread_scale);
+    return x;
 }
 
 
@@ -166,6 +188,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
 }
 
 

@@ -198,6 +198,8 @@ public:
         return DataTypeDecimal<R>::getScaleMultiplier(scale_delta);
     }
 
+    T parseFromString(const String & str) const;
+
 private:
     const UInt32 precision;
     const UInt32 scale; /// TODO: should we support scales out of [0, precision]?
