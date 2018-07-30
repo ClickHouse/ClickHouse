@@ -36,12 +36,6 @@ public:
         return wakeup_event;
     }
 
-    void stop()
-    {
-        need_stop = true;
-        wakeup_event.set();
-    }
-
 private:
     StorageReplicatedMergeTree & storage;
     String log_name;
@@ -59,7 +53,6 @@ private:
     bool startup_completed = false;
 
     void run();
-    void completeShutdown();
 
     /// Start or stop background threads. Used for partial reinitialization when re-creating a session in ZooKeeper.
     bool tryStartup(); /// Returns false if ZooKeeper is not available.
