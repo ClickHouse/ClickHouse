@@ -6,4 +6,12 @@ SELECT murmurHash2_32('foo');
 SELECT murmurHash2_32(CAST('bar' AS FixedString(3)));
 SELECT murmurHash2_32(x) FROM (SELECT CAST(1 AS Enum8('a' = 1, 'b' = 2)) as x);
 
+SELECT murmurHash2_32('');
+SELECT murmurHash2_32('\x01');
+SELECT murmurHash2_32('\x02\0');
+SELECT murmurHash2_32('\x03\0\0');
+SELECT murmurHash2_32(1);
+SELECT murmurHash2_32(toUInt16(2));
 
+SELECT murmurHash2_32(2) = bitXor(toUInt32(0x5bd1e995 * bitXor(toUInt32(3 * 0x5bd1e995) AS a, bitShiftRight(a, 13))) AS b, bitShiftRight(b, 15));
+SELECT murmurHash2_32('\x02') = bitXor(toUInt32(0x5bd1e995 * bitXor(toUInt32(3 * 0x5bd1e995) AS a, bitShiftRight(a, 13))) AS b, bitShiftRight(b, 15));
