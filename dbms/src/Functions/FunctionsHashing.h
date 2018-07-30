@@ -30,6 +30,7 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <ext/range.h>
+#include <ext/bit_cast.h>
 
 
 namespace DB
@@ -215,10 +216,15 @@ public:
             size_t size = offsets.size();
             vec_to.resize(size);
 
+            ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
+            {
                 vec_to[i] = Impl::apply(
-                    reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
-                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+                    reinterpret_cast<const char *>(&data[current_offset]),
+                    offsets[i] - current_offset - 1);
+
+                current_offset = offsets[i];
+            }
 
             block.getByPosition(result).column = std::move(col_to);
         }
@@ -267,11 +273,16 @@ public:
             const auto size = offsets.size();
             chars_to.resize(size * Impl::length);
 
+            ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
+            {
                 Impl::apply(
-                    reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
-                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]),
+                    reinterpret_cast<const char *>(&data[current_offset]),
+                    offsets[i] - current_offset - 1,
                     &chars_to[i * Impl::length]);
+
+                current_offset = offsets[i];
+            }
 
             block.getByPosition(result).column = std::move(col_to);
         }
@@ -356,18 +367,6 @@ public:
 };
 
 
-template <typename T>
-static UInt64 toInteger(T x)
-{
-    return x;
-}
-
-template <>
-UInt64 toInteger<Float32>(Float32 x);
-
-template <>
-UInt64 toInteger<Float64>(Float64 x);
-
 /** We use hash functions called CityHash, FarmHash, MetroHash.
   * In this regard, this template is named with the words `NeighborhoodHash`.
   */
@@ -388,7 +387,7 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                UInt64 h = IntHash64Impl::apply(toInteger(vec_from[i]));
+                UInt64 h = IntHash64Impl::apply(ext::bit_cast<UInt64>(vec_from[i]));
                 if (first)
                     vec_to[i] = h;
                 else
@@ -397,7 +396,7 @@ private:
         }
         else if (auto col_from = checkAndGetColumnConst<ColumnVector<FromType>>(column))
         {
-            const UInt64 hash = IntHash64Impl::apply(toInteger(col_from->template getValue<FromType>()));
+            const UInt64 hash = IntHash64Impl::apply(ext::bit_cast<UInt64>(col_from->template getValue<FromType>()));
             size_t size = vec_to.size();
             if (first)
             {
@@ -424,15 +423,19 @@ private:
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
 
+            ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 const UInt64 h = Impl::Hash64(
-                    reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
-                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+                    reinterpret_cast<const char *>(&data[current_offset]),
+                    offsets[i] - current_offset - 1);
+
                 if (first)
                     vec_to[i] = h;
                 else
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
+
+                current_offset = offsets[i];
             }
         }
         else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
@@ -440,6 +443,7 @@ private:
             const typename ColumnString::Chars_t & data = col_from->getChars();
             size_t n = col_from->getN();
             size_t size = data.size() / n;
+
             for (size_t i = 0; i < size; ++i)
             {
                 const UInt64 h = Impl::Hash64(reinterpret_cast<const char *>(&data[i * n]), n);
@@ -454,6 +458,7 @@ private:
             String value = col_from->getValue<String>().data();
             const UInt64 hash = Impl::Hash64(value.data(), value.size());
             const size_t size = vec_to.size();
+
             if (first)
             {
                 vec_to.assign(size, hash);
@@ -488,19 +493,21 @@ private:
 
             const size_t size = offsets.size();
 
+            ColumnArray::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                const size_t begin = i == 0 ? 0 : offsets[i - 1];
-                const size_t end = offsets[i];
+                ColumnArray::Offset next_offset = offsets[i];
 
-                UInt64 h = IntHash64Impl::apply(end - begin);
+                UInt64 h = IntHash64Impl::apply(next_offset - current_offset);
                 if (first)
                     vec_to[i] = h;
                 else
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], h));
 
-                for (size_t j = begin; j < end; ++j)
+                for (size_t j = current_offset; j < next_offset; ++j)
                     vec_to[i] = Impl::Hash128to64(typename Impl::uint128_t(vec_to[i], vec_temp[j]));
+
+                current_offset = offsets[i];
             }
         }
         else if (const ColumnConst * col_from = checkAndGetColumnConst<ColumnArray>(column))
@@ -689,11 +696,15 @@ private:
             const typename ColumnString::Chars_t & data = col_from->getChars();
             const typename ColumnString::Offsets & offsets = col_from->getOffsets();
             size_t size = offsets.size();
+
+            ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 vec_to[i] = Impl::Hash32(
-                    reinterpret_cast<const char *>(&data[i == 0 ? 0 : offsets[i - 1]]),
-                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+                    reinterpret_cast<const char *>(&data[current_offset]),
+                    offsets[i] - current_offset - 1);
+
+                current_offset = offsets[i];
             }
         }
         else if (const ColumnFixedString * col_from = checkAndGetColumn<ColumnFixedString>(column))
@@ -863,10 +874,15 @@ private:
             const auto & offsets = col_from->getOffsets();
             auto & out = col_to->getData();
 
-            for (const auto i : ext::range(0, size))
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
                 out[i] = URLHashImpl::apply(
-                    reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
-                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+                    reinterpret_cast<const char *>(&chars[current_offset]),
+                    offsets[i] - current_offset - 1);
+
+                current_offset = offsets[i];
+            }
 
             block.getByPosition(result).column = std::move(col_to);
         }
@@ -893,10 +909,16 @@ private:
             const auto & offsets = col_from->getOffsets();
             auto & out = col_to->getData();
 
-            for (const auto i : ext::range(0, size))
-                out[i] = URLHierarchyHashImpl::apply(level,
-                    reinterpret_cast<const char *>(&chars[i == 0 ? 0 : offsets[i - 1]]),
-                    i == 0 ? offsets[i] - 1 : (offsets[i] - 1 - offsets[i - 1]));
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                out[i] = URLHierarchyHashImpl::apply(
+                    level,
+                    reinterpret_cast<const char *>(&chars[current_offset]),
+                    offsets[i] - current_offset - 1);
+
+                current_offset = offsets[i];
+            }
 
             block.getByPosition(result).column = std::move(col_to);
         }
