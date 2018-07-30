@@ -97,6 +97,7 @@ pages:
     - 'merge': 'query_language/table_functions/merge.md'
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
+    - 'url': 'query_language/table_functions/url.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
@@ -138,6 +139,7 @@ pages:
       - 'Null': 'operations/table_engines/null.md'
       - 'Set': 'operations/table_engines/set.md'
       - 'Join': 'operations/table_engines/join.md'
+      - 'URL': 'operations/table_engines/url.md'
       - 'View': 'operations/table_engines/view.md'
       - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Интеграции':

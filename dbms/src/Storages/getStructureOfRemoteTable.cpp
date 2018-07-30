@@ -29,14 +29,14 @@ ColumnsDescription getStructureOfRemoteTable(
 {
     /// Send to the first any remote shard.
     const auto & shard_info = cluster.getAnyShardInfo();
-    
+
     String query;
 
     if (table_func_ptr)
     {
         if (shard_info.isLocal())
         {
-            auto table_function = static_cast<ASTFunction *>(table_func_ptr.get());
+            auto table_function = static_cast<const ASTFunction *>(table_func_ptr.get());
             return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
         }
 

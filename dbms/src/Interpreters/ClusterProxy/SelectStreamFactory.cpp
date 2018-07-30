@@ -93,16 +93,16 @@ void SelectStreamFactory::createForShard(
     if (shard_info.isLocal())
     {
         StoragePtr main_table_storage;
-        
+
         if (table_func_ptr)
         {
-            auto table_function = static_cast<ASTFunction *>(table_func_ptr.get());
+            auto table_function = static_cast<const ASTFunction *>(table_func_ptr.get());
             main_table_storage = TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context);
         }
-        else 
+        else
             main_table_storage = context.tryGetTable(main_table.database, main_table.table);
-        
-        
+
+
         if (!main_table_storage) /// Table is absent on a local server.
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
