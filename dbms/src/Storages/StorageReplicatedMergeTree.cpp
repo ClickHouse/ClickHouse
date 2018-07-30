@@ -215,7 +215,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()), queue(*this),
     fetcher(data),
-    shutdown_event(false),
     cleanup_thread(*this), alter_thread(*this), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
@@ -2043,10 +2042,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
 void StorageReplicatedMergeTree::queueUpdatingTask()
 {
-    //most probably this check is not relevant
-    if (shutdown_called)
-        return;
-
     if (!queue_update_in_progress)
     {
         last_queue_update_start_time.store(time(nullptr));
@@ -3027,7 +3022,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     {
         LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
 
-        while (!shutdown_called)
+        while (!partial_shutdown_called)
         {
             /// Replica could be inactive.
             if (!getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
@@ -3092,7 +3087,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             }
         }
 
-        if (shutdown_called)
+        if (partial_shutdown_called)
             throw Exception("Alter is not finished because table shutdown was called. Alter will be done after table restart.",
                 ErrorCodes::UNFINISHED);
 
@@ -4641,7 +4636,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
         if (cond_reached)
             break;
 
-        if (shutdown_called)
+        if (partial_shutdown_called)
             throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
     }
 

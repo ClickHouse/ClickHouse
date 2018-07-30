@@ -204,8 +204,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
 
-        storage.shutdown_called = false;
-        storage.shutdown_event.reset();
+        storage.partial_shutdown_called = false;
+        storage.partial_shutdown_event.reset();
 
         storage.queue_updating_task->activate();
         storage.queue_updating_task->schedule();
@@ -349,8 +349,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 {
     ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
 
-    storage.shutdown_called = true;
-    storage.shutdown_event.set();
+    storage.partial_shutdown_called = true;
+    storage.partial_shutdown_event.set();
     storage.alter_query_event->set();
     storage.replica_is_active_node = nullptr;
 
