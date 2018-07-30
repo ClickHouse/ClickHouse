@@ -113,3 +113,21 @@ SELECT
 ```
 
 Преобразование в FixedString(N) работает только для аргументов типа String или FixedString(N).
+
+Поддержано преобразование к типу [Nullable](../../data_types/nullable.md#data_type-nullable) и обратно. Пример:
+
+```
+SELECT toTypeName(x) FROM t_null
+
+┌─toTypeName(x)─┐
+│ Int8          │
+│ Int8          │
+└───────────────┘
+
+SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
+
+┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
+│ Nullable(UInt16)                        │
+│ Nullable(UInt16)                        │
+└─────────────────────────────────────────┘
+```

@@ -264,8 +264,10 @@ private:
     Poco::Event startup_event;
 
     /// Do I need to complete background threads (except restarting_thread)?
-    std::atomic<bool> shutdown_called {false};
-    Poco::Event shutdown_event;
+    std::atomic<bool> partial_shutdown_called {false};
+
+    /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
+    Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
@@ -283,24 +285,23 @@ private:
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
+    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
+    std::mutex merge_selecting_mutex;
 
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
 
-    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
-    std::mutex merge_selecting_mutex;
-
     /// A thread that removes old parts, log entries, and blocks.
-    std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
-
-    /// A thread that processes reconnection to ZooKeeper when the session expires.
-    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
+    ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     /// A thread monitoring changes to the column list in ZooKeeper and updating the parts in accordance with these changes.
-    std::unique_ptr<ReplicatedMergeTreeAlterThread> alter_thread;
+    ReplicatedMergeTreeAlterThread alter_thread;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
+
+    /// A thread that processes reconnection to ZooKeeper when the session expires.
+    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
