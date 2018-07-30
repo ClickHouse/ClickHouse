@@ -24,7 +24,15 @@ class ReplicatedMergeTreeCleanupThread
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    void schedule() { task->schedule(); }
+    void start()
+    {
+        task->activate();
+        task->schedule();
+    }
+
+    void wakeup() { task->schedule(); }
+
+    void stop() { task->deactivate(); }
 
 private:
     StorageReplicatedMergeTree & storage;

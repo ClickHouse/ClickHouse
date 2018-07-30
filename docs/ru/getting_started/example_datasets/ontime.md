@@ -2,15 +2,6 @@
 
 # OnTime
 
-Данный тест производительности был создан Вадимом Ткаченко, см:
-
--   <https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/>
--   <https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/>
--   <https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/>
--   <https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/>
--   <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
--   <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
-
 Скачивание данных:
 
 ```bash
@@ -316,3 +307,12 @@ SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCit
 
 SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
 ```
+
+Данный тест производительности был создан Вадимом Ткаченко, статьи по теме:
+
+-   <https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/>
+-   <https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/>
+-   <https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/>
+-   <https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/>
+-   <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
+-   <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
