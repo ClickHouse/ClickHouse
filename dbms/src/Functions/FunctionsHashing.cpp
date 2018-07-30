@@ -23,20 +23,4 @@ void registerFunctionsHashing(FunctionFactory & factory)
     factory.registerFunction<FunctionMurmurHash2>();
 }
 
-template <>
-UInt64 toInteger<Float32>(Float32 x)
-{
-    UInt32 res;
-    memcpy(&res, &x, sizeof(x));
-    return res;
-}
-
-template <>
-UInt64 toInteger<Float64>(Float64 x)
-{
-    UInt64 res;
-    memcpy(&res, &x, sizeof(x));
-    return res;
-}
-
 }
