@@ -963,5 +963,5 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
-using MurmurHash2 = FunctionStringHash32<MurmurHash2Impl>;
+using FunctionMurmurHash2 = FunctionStringHash32<MurmurHash2Impl>;
 }
