@@ -80,12 +80,24 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
     UInt64 min_pointer = std::numeric_limits<UInt64>::max();
+
+    std::unordered_map<String, UInt64> log_pointers_losted_replicas;
+    
     for (const String & replica : replicas)
     {
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
-        if (pointer.empty())
+        if (pointer.empty()) {
             return;
-        min_pointer = std::min(min_pointer, parse<UInt64>(pointer));
+        }
+        
+        UInt32 log_pointer = parse<UInt64>(pointer);
+        
+        /// Check status of replica (active or not).
+        /// If replica is not active, we will save it's log_pointer.
+        if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
+            min_pointer = std::min(min_pointer, log_pointer);
+        else
+            log_pointers_losted_replicas[replica] = log_pointer;
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
@@ -95,6 +107,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.replicated_logs_to_keep.value), entries.end());
     /// We will not touch records that are no less than `min_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
+    /// We will mark lost replicas.
+    markLostReplicas(log_pointers_losted_replicas, *(--entries.end()));
 
     if (entries.empty())
         return;
@@ -114,6 +128,26 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     }
 
     LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
+}
+
+
+void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_losted_replicas, String min_record)
+{
+    auto zookeeper = storage.getZooKeeper();
+    
+    zkutil::Requests ops;
+    
+    for (auto pair : log_pointers_losted_replicas)
+    {
+        if ("log-" + padIndex(pair.second) <= min_record)
+            ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + pair.first + "/is_lost", "",
+                zkutil::CreateMode::Persistent));
+    }
+    
+    zkutil::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
+    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+        throw zkutil::KeeperException(code);
 }
 
 

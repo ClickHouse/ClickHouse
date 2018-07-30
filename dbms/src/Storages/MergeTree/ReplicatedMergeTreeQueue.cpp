@@ -360,6 +360,13 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
+    if (zookeeper->exists(replica_path + "/is_lost"))
+    {
+        restartLostReplica(zookeeper);
+        
+        zookeeper->remove(replica_path + "/is_lost", -1);
+    }
+
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -495,6 +502,105 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
         if (storage.queue_task_handle)
             storage.queue_task_handle->wake();
     }
+}
+
+
+/** If necessary, restore a part, replica itself adds a record for its receipt.
+  * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
+  * For these purposes, it makes sense to use creation time of missing part
+  *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
+  */
+static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name)
+{
+    time_t res = 0;
+
+    /// We get creation time of part, if it still exists (was not merged, for example).
+    zkutil::Stat stat;
+    String unused;
+    if (zookeeper->tryGet(replica_path + "/parts/" + part_name, unused, &stat))
+        res = stat.ctime / 1000;
+
+    return res;
+}
+
+
+void ReplicatedMergeTreeQueue::restartLostReplica(zkutil::ZooKeeperPtr zookeeper)
+{
+    LOG_INFO(log, "Restart Lost replica " << replica_path);
+    
+    String source_replica;
+    
+    for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
+    {
+        if (!zookeeper->exists(zookeeper_path + "/replicas/" + replica_name + "/is_lost"))
+            source_replica = replica_name;
+    }
+    
+    String source_path = zookeeper_path + "/replicas/" + source_replica;
+
+    /** If the reference/master replica is not yet fully created, let's wait.
+        * NOTE: If something went wrong while creating it, we can hang around forever.
+        *    You can create an ephemeral node at the time of creation to make sure that the replica is created, and not abandoned.
+        *    The same can be done for the table. You can automatically delete a replica/table node,
+        *     if you see that it was not created up to the end, and the one who created it died.
+        */
+    while (!zookeeper->exists(source_path + "/columns"))
+    {
+        LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
+
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
+        if (zookeeper->exists(source_path + "/columns", nullptr, event))
+        {
+            LOG_WARNING(log, "Oops, a watch has leaked");
+            break;
+        }
+
+        event->wait();
+    }
+
+    /// The order of the following three actions is important. Entries in the log can be duplicated, but they can not be lost.
+
+    /// Copy reference to the log from `reference/master` replica.
+    zookeeper->set(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"));
+
+    /// Let's remember the queue of the reference/master replica.
+    Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
+    std::sort(source_queue_names.begin(), source_queue_names.end());
+    Strings source_queue;
+    for (const String & entry_name : source_queue_names)
+    {
+        String entry;
+        if (!zookeeper->tryGet(source_path + "/queue/" + entry_name, entry))
+            continue;
+        source_queue.push_back(entry);
+    }
+    
+    /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
+    Strings parts = zookeeper->getChildren(source_path + "/parts");
+    ActiveDataPartSet active_parts_set(current_parts.getFormatVersion(), parts);
+
+    Strings active_parts = active_parts_set.getParts();
+    for (const String & name : active_parts)
+    {
+        LogEntry log_entry;
+        log_entry.type = LogEntry::GET_PART;
+        log_entry.source_replica = source_replica;
+        log_entry.new_part_name = name;
+        log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
+
+        zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+    }
+    LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
+
+    /// Add content of the reference/master replica queue to the queue.
+    for (const String & entry : source_queue)
+    {
+        zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
+    }
+
+    /// It will then be loaded into the queue variable in `queue.initialize` method.
+
+    LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
 }
 
 
