@@ -19,7 +19,7 @@ public:
         QueryProcessingStage::Enum processed_stage_,
         QualifiedTableName main_table_,
         const Tables & external_tables);
-    
+
     /// TableFunction in a query.
     SelectStreamFactory(
         const Block & header_,
