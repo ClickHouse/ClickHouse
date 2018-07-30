@@ -81,7 +81,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
     UInt64 min_pointer = std::numeric_limits<UInt64>::max();
 
-    std::unordered_map<String, UInt64> log_pointers_losted_replicas;
+    std::unordered_map<String, UInt64> log_pointers_lost_replicas;
     
     for (const String & replica : replicas)
     {
@@ -97,7 +97,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
             min_pointer = std::min(min_pointer, log_pointer);
         else
-            log_pointers_losted_replicas[replica] = log_pointer;
+            log_pointers_lost_replicas[replica] = log_pointer;
     }
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
@@ -108,7 +108,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// We will not touch records that are no less than `min_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
     /// We will mark lost replicas.
-    markLostReplicas(log_pointers_losted_replicas, *(--entries.end()));
+    markLostReplicas(log_pointers_lost_replicas, *(--entries.end()));
 
     if (entries.empty())
         return;
