@@ -52,7 +52,10 @@ struct SubqueryForSet
     /// If set, build it from result.
     SetPtr set;
     JoinPtr join;
+    /// Apply this actions to joined block.
     ExpressionActionsPtr joined_block_actions;
+    /// Rename column from joined block from this list.
+    NamesWithAliases joined_block_aliases;
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
@@ -243,19 +246,33 @@ private:
         ASTs key_asts_left;
         ASTs key_asts_right;
 
-        /// This columns will be renamed to alias.column or database.table.column
-        NameSet duplicate_columns_from_joined_table;
-        /// All columns which can be read from right table.
+        struct JoinedColumn
+        {
+            /// Column will be joined to block.
+            NameAndTypePair name_and_type;
+            /// original column name from joined source.
+            String original_name;
+
+            JoinedColumn(const NameAndTypePair & name_and_type_, const String & original_name_)
+                    : name_and_type(name_and_type_), original_name(original_name_) {}
+        };
+
+        using JoinedColumnsList = std::list<JoinedColumn>;
+
+        /// All columns which can be read from joined table.
         NamesAndTypesList columns_from_joined_table;
+        /// Columns which will be used in query to the joined query.
+        Names required_columns_from_joined_table;
         /// Columns which will be added to block, possible including some columns from right join key.
-        NamesAndTypesList columns_added_by_join;
+        JoinedColumnsList columns_added_by_join;
         /// Such columns will be copied from left join keys during join.
         NameSet columns_added_by_join_from_right_keys;
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions;
 
-        void createJoinedBlockActions(const ASTTablesInSelectQueryElement & join,
-                                      const Context & context);
+        void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
+
+        NamesAndTypesList getColumnsAddedByJoin() const;
     };
 
     AnalyzedJoin analyzed_join;
