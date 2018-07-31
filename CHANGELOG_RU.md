@@ -8,6 +8,7 @@
 * Добавлены системные таблицы `formats`, `data_type_families`, `aggregate_function_combinators`, `table_functions`, `table_engines`, `collations` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
 
 ### Улучшения:
+* Настройка `use_minimalistic_checksums_in_zookeeper` таблиц семейства `ReplicatedMergeTree` включена по-умолчанию. Эта настройка была добавлена в версии 1.1.54378, 2018-04-16. Установка версий, более старых чем 1.1.54378, становится невозможной.
 * Запросы `KILL` и `OPTIMIZE` теперь работают для `Distributed` запросов и таблиц [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
 
 ### Исправление ошибок:
