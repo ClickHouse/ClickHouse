@@ -150,12 +150,11 @@ void Connection::sendHello()
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(ClickHouseRevision::get(), *out);
     writeStringBinary(default_database, *out);
     writeStringBinary(user, *out);
     writeStringBinary(password, *out);
-    // TODO: If we will broke protocol - add this field:
-    // writeVarUInt(DBMS_VERSION_PATCH, *out);
 
     out->next();
 }
