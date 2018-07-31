@@ -20,7 +20,6 @@ ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicated
     , log(&Logger::get(log_name))
 {
     task = storage_.context.getSchedulePool().createTask(log_name, [this]{ run(); });
-    task->schedule();
 }
 
 void ReplicatedMergeTreeAlterThread::run()
