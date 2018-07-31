@@ -1,17 +1,17 @@
 ## ClickHouse release 18.4.0, 2018-07-28
 
 ### Новые возможности:
-* Добавлена возможность использования табличной функции в качестве аргумента `remote` [#2708](https://github.com/yandex/ClickHouse/pull/2708).
+* Добавлена возможность использования табличной функции вместо таблицы в качестве аргумента табличной функции `remote` и `cluster` [#2708](https://github.com/yandex/ClickHouse/pull/2708).
 * Поддержка `HTTP Basic` аутентификации в протоколе репликации [#2727](https://github.com/yandex/ClickHouse/pull/2727).
-* Добавлена возможность работы с массивами перечислимых значений `Enum` [Maxim Khrisanfov](https://github.com/yandex/ClickHouse/pull/2699).
-* Поддержка произвольных разделителей строк для движка таблиц `Kafka` [Amos Bird](https://github.com/yandex/ClickHouse/pull/2701).
+* В функции `has` добавлена возможность поиска по массиву значений типа `Enum` по числовому значению [Maxim Khrisanfov](https://github.com/yandex/ClickHouse/pull/2699).
+* Поддержка добавления произвольных разделителей сообщений в процессе чтения из `Kafka` [Amos Bird](https://github.com/yandex/ClickHouse/pull/2701).
+* Добавлены системные таблицы `formats`, `data_type_families`, `aggregate_function_combinators`, `table_functions`, `table_engines`, `collations` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
 
 ### Улучшения:
-* Добавлены системные таблицы `formats`, `data_type_families`, `aggregate_function_combinators`, `table_functions`, `table_engines` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
 * Запросы `KILL` и `OPTIMIZE` теперь работают для `Distributed` запросов и таблиц [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
 
 ### Исправление ошибок:
-* Исправлена ошибка сегментирования в функции windowFunnel [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2735).
+* Исправлена ошибка в функции `windowFunnel` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2735).
 
 
 ## ClickHouse release 18.1.0, 2018-07-23
