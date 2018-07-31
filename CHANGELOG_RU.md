@@ -9,7 +9,7 @@
 
 ### Улучшения:
 * Настройка `use_minimalistic_checksums_in_zookeeper` таблиц семейства `ReplicatedMergeTree` включена по-умолчанию. Эта настройка была добавлена в версии 1.1.54378, 2018-04-16. Установка версий, более старых чем 1.1.54378, становится невозможной.
-* Запросы `KILL` и `OPTIMIZE` теперь работают для `Distributed` запросов и таблиц [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
+* Поддерживается запуск запросов `KILL` и `OPTIMIZE` с указанием `ON CLUSTER` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
 
 ### Исправление ошибок:
 * Исправлена ошибка `Column ... is not under aggregate function and not in GROUP BY` в случае агрегации по выражению с оператором IN. Ошибка появилась в версии 18.1.0. ([bbdd780b](https://github.com/yandex/ClickHouse/commit/bbdd780be0be06a0f336775941cdd536878dd2c2))
