@@ -1,7 +1,7 @@
 ## ClickHouse release 18.5.1, 2018-07-31
 
 ### Новые возможности:
-* Добавлена функция хеширования `murmurHash2` [#2756](https://github.com/yandex/ClickHouse/pull/2756).
+* Добавлена функция хеширования `murmurHash2_32` [#2756](https://github.com/yandex/ClickHouse/pull/2756).
 
 ### Улучшения:
 * Добавлена возможность указывать значения в конфигурационных файлах из переменных окружения с помощью атрибута `from_env` [#2741](https://github.com/yandex/ClickHouse/pull/2741).
