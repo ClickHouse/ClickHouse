@@ -30,7 +30,7 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     ///
     /// https://docs.microsoft.com/en-us/sql/odbc/reference/syntax/sqldriverconnect-function?view=sql-server-2017#comments
 
-    /// unixODBC have fixed size buffers on stack and has buffer overflow bugs.
+    /// unixODBC has fixed size buffers on stack and has buffer overflow bugs.
     /// We will limit string sizes to small values.
 
     static constexpr size_t MAX_ELEMENT_SIZE = 100;
