@@ -34,3 +34,6 @@ Code: 404, e.displayText() = DB::Exception: ODBC connection string has forbidden
 Code: 404, e.displayText() = DB::Exception: ODBC connection string has forbidden parameter, e.what() = DB::Exception
 Code: 404, e.displayText() = DB::Exception: Duplicate parameter found in ODBC connection string, e.what() = DB::Exception
 Code: 404, e.displayText() = DB::Exception: ODBC connection string parameter name doesn't begin with valid identifier character, e.what() = DB::Exception
+DSN={myconnection};
+DSN={myconnection};DATABASE={my_db};HOST={127.0.0.1};PORT={5432};PWD={password};UID={username};
+DSN={MSSQL};PWD={test};UID={test};
