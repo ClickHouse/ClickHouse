@@ -86,9 +86,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     for (const String & replica : replicas)
     {
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
-        if (pointer.empty()) {
+        if (pointer.empty())
             return;
-        }
         
         UInt32 log_pointer = parse<UInt64>(pointer);
         
