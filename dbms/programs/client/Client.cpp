@@ -86,6 +86,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -119,16 +120,20 @@ public:
         }
     }
 
-    void checkActual(int actual_server_error, int actual_client_error,
+    /// @returns true if it's possible to continue without reconnect
+    bool checkActual(int & actual_server_error, int & actual_client_error,
                      bool & got_exception, std::unique_ptr<Exception> & last_exception) const
     {
         if (!enabled)
-            return;
+            return true;
 
         if (allErrorsExpected(actual_server_error, actual_client_error))
         {
             got_exception = false;
             last_exception.reset();
+            actual_server_error = 0;
+            actual_client_error = 0;
+            return false;
         }
 
         if (lostExpectedError(actual_server_error, actual_client_error))
@@ -136,7 +141,11 @@ public:
             std::cerr << "Success when error expected. It expects server error "
                 << server_error << ", client error " << client_error << "." << std::endl;
             got_exception = true;
+            last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::LOGICAL_ERROR); /// return error to OS
+            return false;
         }
+
+        return true;
     }
 
     int serverError() const { return server_error; }
@@ -167,7 +176,7 @@ private:
 
     bool allErrorsExpected(int actual_server_error, int actual_client_error) const
     {
-        return (server_error == actual_server_error) && (client_error == actual_client_error);
+        return (server_error || client_error) && (server_error == actual_server_error) && (client_error == actual_client_error);
     }
 
     bool lostExpectedError(int actual_server_error, int actual_client_error) const
@@ -811,11 +820,13 @@ private:
                 catch (...)
                 {
                     actual_client_error = getCurrentExceptionCode();
-                    std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    if (!actual_client_error || actual_client_error != expected_client_error)
+                        std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
                     got_exception = true;
                 }
 
-                test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception);
+                if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
+                    connection->forceConnected();
 
                 if (got_exception && !ignore_error)
                 {
