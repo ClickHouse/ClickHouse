@@ -1504,6 +1504,216 @@ public:
     }
 };
 
+/** formatDateTime(time, 'pattern')
+  * Performs formatting of time, according to provided pattern
+  */
+class FunctionFormatDateTime : public IFunction
+{
+public:
+    static constexpr auto name = "formatDateTime";
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); };
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!checkDataType<DataTypeString>(arguments[1].get()))
+            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    {
+        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+
+        String pattern = pattern_column->getValue<String>();
+
+        std::vector<std::function<void (String &, UInt32, DateLUTImpl)>> instructions = {};
+
+        parsePattern(pattern, instructions);
+
+        auto times = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+
+        auto res_column = ColumnString::create();
+        const ColumnUInt32::Container & vec = times->getData();
+        res_column->reserve(vec.size());
+
+        if (const_times) {
+            throw Exception("Constant times are not supported yet");
+        }
+
+        const DateLUTImpl & time_zone = DateLUT::instance();
+
+        for(size_t i = 0; i < input_rows_count; ++i)
+        {
+            UInt32 date_time_value = vec[i];
+
+            String formatted_string = "";
+
+            for(auto & instruction : instructions) {
+                instruction(formatted_string, date_time_value, time_zone);
+            }
+
+            res_column->insertData(formatted_string.data(), formatted_string.length());
+        }
+
+        block.getByPosition(result).column = std::move(res_column);
+
+    }
+
+    void parsePattern(String & pattern, std::vector<std::function<void (String &, UInt32, DateLUTImpl)>> & instructions)
+    {
+        unsigned long last_pos = 0;
+        for (unsigned long s = 0; s < pattern.length(); s++) {
+            if(pattern[s] == '%')
+            {
+                if (last_pos > 0)
+                {
+                    instructions.push_back(
+                            [last_pos, s, &pattern](auto & receiver, auto , DateLUTImpl ) {
+                                receiver.append(pattern, last_pos - 1, 1 + s - last_pos);
+                            }
+                    );
+                    last_pos = 0;
+                }
+
+                if (++s == pattern.length()) {
+                    throw Exception("Sign '%' is last in pattern, if you need it, use '%%'");
+                }
+
+                switch(pattern[s])
+                {
+                    // Day of the month, zero-padded (01-31)
+                    case 'd':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+                                    auto day = ToHourImpl::execute(date_or_ts, time_zone);
+
+                                    if (day < 10) {
+                                        receiver.append("0");
+                                    }
+
+                                    receiver.append(toString(day));
+                                }
+                        );
+                        break;
+
+                        // Four digits year
+                    case 'G':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+                                    receiver.append(toString(ToYearImpl::execute(date_or_ts, time_zone)));
+                                }
+                        );
+
+                        break;
+
+                        // Hour in 24h format (00-23)
+                    case 'H':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+
+                                    UInt8 x = ToHourImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10) {
+                                        receiver.append("0");
+                                    }
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                        // Month as a decimal number (01-12)
+                    case 'm':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+
+                                    UInt8 x = ToMonthImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10) {
+                                        receiver.append("0");
+                                    }
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                        // Minute (00-59)
+                    case 'M':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+
+                                    UInt8 x = ToMinuteImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10) {
+                                        receiver.append("0");
+                                    }
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                        // Seconds
+                    case 'S':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+
+                                    UInt8 x = ToSecondImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10) {
+                                        receiver.append("0");
+                                    }
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+
+                    case '%':
+                        instructions.push_back(
+                                [](auto & receiver, auto , DateLUTImpl ) {
+                                    receiver.append("%");
+                                }
+                        );
+                        break;
+
+                    default:
+                        throw Exception(
+                                "Wrong pattern '" + pattern + "', unexpected symbol '" + pattern[s] + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                }
+            }
+            else {
+                if (last_pos == 0) {
+                    last_pos = s + 1;
+                }
+            }
+        }
+
+        if (last_pos > 0)
+        {
+            auto s = pattern.length();
+            instructions.push_back(
+                    [last_pos, s, &pattern](auto & receiver, auto , DateLUTImpl ) {
+                        receiver.append(pattern, last_pos - 1, 1 + s - last_pos);
+                    }
+            );
+        }
+    }
+};
+
 
 using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearImpl>;
 using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQuarterImpl>;
