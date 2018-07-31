@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 std::string validateODBCConnectionString(const std::string & connection_string)
 {
-    /// Connection string is the list of name, value pairs.
+    /// Connection string is a list of name, value pairs.
     /// name and value are separated by '='.
     /// names are case insensitive.
     /// name=value pairs are sepated by ';'.
