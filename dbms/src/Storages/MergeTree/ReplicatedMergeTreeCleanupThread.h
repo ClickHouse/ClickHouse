@@ -41,7 +41,7 @@ private:
 
     /// We don't want to keep logs for inactive replicas.
     /// We mark these replicas as lost.
-    void markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String min_record);
+    void markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String remove_border);
 
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();

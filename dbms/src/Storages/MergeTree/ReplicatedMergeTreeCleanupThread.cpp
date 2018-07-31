@@ -107,11 +107,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.replicated_logs_to_keep.value), entries.end());
     /// We will not touch records that are no less than `min_pointer`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
-    /// We will mark lost replicas.
-    markLostReplicas(log_pointers_lost_replicas, *(--entries.end()));
 
     if (entries.empty())
         return;
+
+    /// We will mark lost replicas.
+    markLostReplicas(log_pointers_losted_replicas, entries.back());
 
     zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
@@ -131,7 +132,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 }
 
 
-void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String min_record)
+void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String remove_border)
 {
     auto zookeeper = storage.getZooKeeper();
     
@@ -139,7 +140,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<Strin
     
     for (auto pair : log_pointers_lost_replicas)
     {
-        if ("log-" + padIndex(pair.second) <= min_record)
+        if ("log-" + padIndex(pair.second) <= remove_border)
             ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + pair.first + "/is_lost", "",
                 zkutil::CreateMode::Persistent));
     }
