@@ -264,6 +264,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
             /// for each loadable object defined in xml config
             for (const auto & key : keys)
             {
+                LOG_WARNING(log, "EXT LOADABLE NAME: " + config->getString(key + "." + config_settings.external_name););
                 std::string name;
 
                 if (!startsWith(key, config_settings.external_config))

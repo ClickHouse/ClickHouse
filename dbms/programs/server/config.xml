@@ -191,7 +191,7 @@
 
 
     <!-- Reloading interval for embedded dictionaries, in seconds. Default: 3600. -->
-    <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+    <builtin_dictionaries_reload_interval>10</builtin_dictionaries_reload_interval>
 
 
     <!-- Maximum session timeout, in seconds. Default: 3600. -->
@@ -282,7 +282,7 @@
     <!-- Configuration of external dictionaries. See:
          https://clickhouse.yandex/docs/en/dicts/external_dicts/
     -->
-    <dictionaries_config>*_dictionary.xml</dictionaries_config>
+    <dictionaries_config>/home/ap11/ClickHouse/dbms/programs/server/dictionary.xml</dictionaries_config>
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
