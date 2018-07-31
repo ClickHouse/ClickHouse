@@ -1,5 +1,11 @@
-if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-deprecated-declarations -Wno-non-virtual-dtor -std=c++1z")
+# Third-party libraries may have substandard code.
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -std=c++1z")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
 endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)
@@ -43,6 +49,10 @@ endif ()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind)
+endif ()
+
+if (USE_INTERNAL_MURMURHASH2_LIBRARY)
+    add_subdirectory (libmurmurhash2)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
