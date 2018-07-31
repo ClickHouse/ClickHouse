@@ -131,7 +131,7 @@ public:
 
     String getName() const override { return "GraphiteRollupSorted"; }
 
-    ~GraphiteRollupSortedBlockInputStream()
+    ~GraphiteRollupSortedBlockInputStream() override
     {
         if (aggregate_state_created)
             current_pattern->function->destroy(place_for_aggregate_state.data());

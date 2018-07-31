@@ -15,6 +15,10 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/getLeastSupertype.h>
+
+#include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
@@ -53,12 +57,26 @@ template <typename A, typename B> struct EqualsOp
     using SymmetricOp = EqualsOp<B, A>;
 
     static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y); /// qNaNs always compare false
+    }
+#endif
 };
 
 template <typename A, typename B> struct NotEqualsOp
 {
     using SymmetricOp = NotEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOp;
@@ -67,12 +85,26 @@ template <typename A, typename B> struct LessOp
 {
     using SymmetricOp = GreaterOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLT(x, y) : b.CreateICmpULT(x, y)) : b.CreateFCmpOLT(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOp
 {
     using SymmetricOp = LessOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGT(x, y) : b.CreateICmpUGT(x, y)) : b.CreateFCmpOGT(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp;
@@ -81,12 +113,26 @@ template <typename A, typename B> struct LessOrEqualsOp
 {
     using SymmetricOp = GreaterOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLE(x, y) : b.CreateICmpULE(x, y)) : b.CreateFCmpOLE(x, y);
+    }
+#endif
 };
 
 template <typename A, typename B> struct GreaterOrEqualsOp
 {
     using SymmetricOp = LessOrEqualsOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
+
+#if USE_EMBEDDED_COMPILER
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGE(x, y) : b.CreateICmpUGE(x, y)) : b.CreateFCmpOGE(x, y);
+    }
+#endif
 };
 
 
@@ -575,9 +621,12 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionComparison>(); };
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
+    FunctionComparison(const Context & context) : context(context) {}
 
 private:
+    const Context & context;
+
     template <typename T0, typename T1>
     bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
     {
@@ -756,9 +805,9 @@ private:
         }
     }
 
-    void executeDateOrDateTimeOrEnumWithConstString(
+    bool executeDateOrDateTimeOrEnumOrUUIDWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
-        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num)
+        const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, size_t input_rows_count)
     {
         /// This is no longer very special case - comparing dates, datetimes, and enumerations with a string constant.
         const IColumn * column_string_untyped = !left_is_num ? col_left_untyped : col_right_untyped;
@@ -779,22 +828,19 @@ private:
 
         const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
-            throw Exception{
-                "Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
-                    + " of arguments of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            return false;
 
         StringRef string_value = column_string->getDataAt(0);
 
         if (is_date)
         {
-            DayNum_t date;
+            DayNum date;
             ReadBufferFromMemory in(string_value.data, string_value.size);
             readDateText(date, in);
             if (!in.eof())
                 throw Exception("String is too long for Date: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(block.rows(), UInt64(date));
+            ColumnPtr parsed_const_date_holder = DataTypeDate().createColumnConst(input_rows_count, UInt64(date));
             const ColumnConst * parsed_const_date = static_cast<const ColumnConst *>(parsed_const_date_holder.get());
             executeNumLeftType<DataTypeDate::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date,
@@ -808,7 +854,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + string_value.toString());
 
-            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(block.rows(), UInt64(date_time));
+            ColumnPtr parsed_const_date_time_holder = DataTypeDateTime().createColumnConst(input_rows_count, UInt64(date_time));
             const ColumnConst * parsed_const_date_time = static_cast<const ColumnConst *>(parsed_const_date_time_holder.get());
             executeNumLeftType<DataTypeDateTime::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_date_time,
@@ -822,7 +868,7 @@ private:
             if (!in.eof())
                 throw Exception("String is too long for UUID: " + string_value.toString());
 
-            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(block.rows(), UInt128(uuid));
+            ColumnPtr parsed_const_uuid_holder = DataTypeUUID().createColumnConst(input_rows_count, UInt128(uuid));
             const ColumnConst * parsed_const_uuid = static_cast<const ColumnConst *>(parsed_const_uuid_holder.get());
             executeNumLeftType<DataTypeUUID::FieldType>(block, result,
                 left_is_num ? col_left_untyped : parsed_const_uuid,
@@ -831,29 +877,32 @@ private:
 
         else if (is_enum8)
             executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
-                number_type, left_is_num);
+                number_type, left_is_num, input_rows_count);
         else if (is_enum16)
             executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
-                number_type, left_is_num);
+                number_type, left_is_num, input_rows_count);
+
+        return true;
     }
 
     /// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
     template <typename EnumType>
     void executeEnumWithConstString(
         Block & block, const size_t result, const IColumn * column_number, const ColumnConst * column_string,
-        const IDataType * type_untyped, const bool left_is_num)
+        const IDataType * type_untyped, const bool left_is_num, size_t input_rows_count)
     {
         const auto type = static_cast<const EnumType *>(type_untyped);
 
         const Field x = nearestFieldType(type->getValue(column_string->getValue<String>()));
-        const auto enum_col = type->createColumnConst(block.rows(), x);
+        const auto enum_col = type->createColumnConst(input_rows_count, x);
 
         executeNumLeftType<typename EnumType::FieldType>(block, result,
             left_is_num ? column_number : enum_col.get(),
             left_is_num ? enum_col.get() : column_number);
     }
 
-    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
+    void executeTuple(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1,
+                          size_t input_rows_count)
     {
         /** We will lexicographically compare the tuples. This is done as follows:
           * x == y : x1 == y1 && x2 == y2 ...
@@ -902,15 +951,18 @@ private:
             y[i].column = y_columns[i];
         }
 
-        executeTupleImpl(block, result, x, y, tuple_size);
+        executeTupleImpl(block, result, x, y, tuple_size, input_rows_count);
     }
 
-    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size);
+    void executeTupleImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                              const ColumnsWithTypeAndName & y, size_t tuple_size,
+                              size_t input_rows_count);
 
     template <typename ComparisonFunction, typename ConvolutionFunction>
-    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+    void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
+                                      size_t tuple_size, size_t input_rows_count)
     {
-        ComparisonFunction func_compare;
+        ComparisonFunction func_compare(context);
         ConvolutionFunction func_convolution;
 
         Block tmp_block;
@@ -921,7 +973,7 @@ private:
 
             /// Comparison of the elements.
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2);
+            func_compare.execute(tmp_block, {i * 3, i * 3 + 1}, i * 3 + 2, input_rows_count);
         }
 
         /// Logical convolution.
@@ -931,18 +983,19 @@ private:
         for (size_t i = 0; i < tuple_size; ++i)
             convolution_args[i] = i * 3 + 2;
 
-        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3);
+        func_convolution.execute(tmp_block, convolution_args, tuple_size * 3, input_rows_count);
         block.getByPosition(result).column = tmp_block.getByPosition(tuple_size * 3).column;
     }
 
     template <typename HeadComparisonFunction, typename TailComparisonFunction>
-    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y, size_t tuple_size)
+    void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
+                                         const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count)
     {
-        HeadComparisonFunction func_compare_head;
-        TailComparisonFunction func_compare_tail;
+        HeadComparisonFunction func_compare_head(context);
+        TailComparisonFunction func_compare_tail(context);
         FunctionAnd func_and;
         FunctionOr func_or;
-        FunctionComparison<EqualsOp, NameEquals> func_equals;
+        FunctionComparison<EqualsOp, NameEquals> func_equals(context);
 
         Block tmp_block;
 
@@ -956,14 +1009,14 @@ private:
 
             if (i + 1 != tuple_size)
             {
-                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
+                func_compare_head.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
 
                 tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3);
+                func_equals.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 3, input_rows_count);
 
             }
             else
-                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2);
+                func_compare_tail.execute(tmp_block, {i * 4, i * 4 + 1}, i * 4 + 2, input_rows_count);
         }
 
         /// Combination. Complex code - make a drawing. It can be replaced by a recursive comparison of tuples.
@@ -971,16 +1024,16 @@ private:
         while (i > 0)
         {
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_and.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 3 },  tmp_block.columns() - 1);
+            func_and.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 3}, tmp_block.columns() - 1, input_rows_count);
             tmp_block.insert({ nullptr, std::make_shared<DataTypeUInt8>(), "" });
-            func_or.execute(tmp_block, { tmp_block.columns() - 2, (i - 1) * 4 + 2 },  tmp_block.columns() - 1);
+            func_or.execute(tmp_block, {tmp_block.columns() - 2, (i - 1) * 4 + 2}, tmp_block.columns() - 1, input_rows_count);
             --i;
         }
 
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
     }
 
-    void executeGeneric(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
+    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
         bool c0_const = c0->isColumnConst();
         bool c1_const = c1->isColumnConst();
@@ -1006,6 +1059,16 @@ private:
 
             block.getByPosition(result).column = std::move(c_res);
         }
+    }
+
+    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
+    {
+        DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
+
+        ColumnPtr c0_converted = castColumn(c0, common_type, context);
+        ColumnPtr c1_converted = castColumn(c1, common_type, context);
+
+        executeGenericIdenticalTypes(block, result, c0_converted.get(), c1_converted.get());
     }
 
 public:
@@ -1077,8 +1140,17 @@ public:
             || (left_is_string && right_is_enum)
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
-            throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
-                " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            try
+            {
+                getLeastSupertype(arguments);
+            }
+            catch (const Exception &)
+            {
+                throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
+                    " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+        }
 
         if (left_tuple && right_tuple)
         {
@@ -1094,7 +1166,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & col_with_type_and_name_left = block.getByPosition(arguments[0]);
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
@@ -1122,17 +1194,62 @@ public:
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
-            executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
+        {
+            executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
-            ;
+        {
+        }
         else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))
-            executeGeneric(block, result, col_left_untyped, col_right_untyped);
-        else
-            executeDateOrDateTimeOrEnumWithConstString(
+        {
+            executeGenericIdenticalTypes(block, result, col_left_untyped, col_right_untyped);
+        }
+        else if (executeDateOrDateTimeOrEnumOrUUIDWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
-                left_is_num);
+                left_is_num, input_rows_count))
+        {
+        }
+        else
+        {
+            executeGeneric(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
+        }
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & types) const override
+    {
+        auto isBigInteger = &typeIsEither<DataTypeInt64, DataTypeUInt64, DataTypeUUID>;
+        auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
+        if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
+            return false; /// TODO: implement (double, int_N where N > double's mantissa width)
+        return types[0]->isValueRepresentedByNumber() && types[1]->isValueRepresentedByNumber();
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+        auto * x = values[0]();
+        auto * y = values[1]();
+        if (!types[0]->equals(*types[1]))
+        {
+            llvm::Type * common;
+            if (x->getType()->isIntegerTy() && y->getType()->isIntegerTy())
+                common = b.getIntNTy(std::max(
+                    /// if one integer has a sign bit, make sure the other does as well. llvm generates optimal code
+                    /// (e.g. uses overflow flag on x86) for (word size + 1)-bit integer operations.
+                    x->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[0]) && typeIsSigned(*types[1])),
+                    y->getType()->getIntegerBitWidth() + (!typeIsSigned(*types[1]) && typeIsSigned(*types[0]))));
+            else
+                /// (double, float) or (double, int_N where N <= double's mantissa width) -> double
+                common = b.getDoubleTy();
+            x = nativeCast(b, types[0], x, common);
+            y = nativeCast(b, types[1], y, common);
+        }
+        auto * result = Op<int, int>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
+        return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
+    }
+#endif
 };
 
 

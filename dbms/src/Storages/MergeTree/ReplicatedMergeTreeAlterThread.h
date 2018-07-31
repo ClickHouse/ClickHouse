@@ -1,6 +1,7 @@
 #pragma once
 
 #include <thread>
+#include <Common/BackgroundSchedulePool.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Core/Types.h>
 #include <common/logger_useful.h>
@@ -22,24 +23,21 @@ class ReplicatedMergeTreeAlterThread
 public:
     ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_);
 
-    ~ReplicatedMergeTreeAlterThread()
+    void start()
     {
-        need_stop = true;
-        wakeup_event->set();
-        if (thread.joinable())
-            thread.join();
+        task->activate();
+        task->schedule();
     }
+
+    void stop() { task->deactivate(); }
 
 private:
     void run();
 
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-
-    zkutil::EventPtr wakeup_event { std::make_shared<Poco::Event>() };
-    std::atomic<bool> need_stop { false };
-
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
 };
 
 }

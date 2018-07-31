@@ -26,7 +26,7 @@ public:
     Kind kind;
 
     ASTIdentifier(const String & name_, const Kind kind_ = Column)
-        : name(name_), kind(kind_) {}
+        : name(name_), kind(kind_) { range = StringRange(name.data(), name.data() + name.size()); }
 
     /** Get the text that identifies this element. */
     String getID() const override { return "Identifier_" + name; }
@@ -40,7 +40,7 @@ public:
 
 protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
-    String getColumnNameImpl() const override { return name; }
+    void appendColumnNameImpl(WriteBuffer & ostr) const override;
 };
 
 }

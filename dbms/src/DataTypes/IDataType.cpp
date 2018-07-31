@@ -74,7 +74,7 @@ String IDataType::getFileNameForStream(const String & column_name, const IDataTy
     String nested_table_name = Nested::extractTableName(column_name);
 
     bool is_sizes_of_nested_type =
-        path.size() == 1    /// Nested structure may have arrays as nested elements (so effectively we have multidimentional arrays).
+        path.size() == 1    /// Nested structure may have arrays as nested elements (so effectively we have multidimensional arrays).
                             /// Sizes of arrays are shared only at first level.
         && path[0].type == IDataType::Substream::ArraySizes
         && nested_table_name != column_name;

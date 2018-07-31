@@ -19,9 +19,7 @@
 #include <Common/randomSeed.h>
 #include <common/ThreadPool.h>
 #include <Common/Stopwatch.h>
-#ifdef __APPLE__
-#include <common/apple_rt.h>
-#endif
+#include <port/clock.h>
 
 using DB::throwFromErrno;
 

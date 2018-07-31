@@ -47,7 +47,7 @@ public:
     KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses);
 
 private:
-    size_t getFailedOpIndex(int32_t code, const Responses & responses) const;
+    static size_t getFailedOpIndex(int32_t code, const Responses & responses);
 };
 
 };

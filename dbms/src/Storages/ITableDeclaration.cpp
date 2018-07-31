@@ -69,10 +69,24 @@ Block ITableDeclaration::getSampleBlockForColumns(const Names & column_names) co
 {
     Block res;
 
+    NamesAndTypesList all_columns = getColumns().getAll();
+    std::unordered_map<String, DataTypePtr> columns_map;
+    for (const auto & elem : all_columns)
+        columns_map.emplace(elem.name, elem.type);
+
     for (const auto & name : column_names)
     {
-        auto col = getColumn(name);
-        res.insert({ col.type->createColumn(), col.type, name });
+        auto it = columns_map.find(name);
+        if (it != columns_map.end())
+        {
+            res.insert({ it->second->createColumn(), it->second, it->first });
+        }
+        else
+        {
+            /// Virtual columns.
+            NameAndTypePair elem = getColumn(name);
+            res.insert({ elem.type->createColumn(), elem.type, elem.name });
+        }
     }
 
     return res;
@@ -92,7 +106,7 @@ static std::string listOfColumns(const NamesAndTypesList & available_columns)
 }
 
 
-using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+using NamesAndTypesMap = GOOGLE_NAMESPACE::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
 
 static NamesAndTypesMap & getColumnsMapImpl(NamesAndTypesMap & res) { return res; }
 
@@ -127,7 +141,7 @@ void ITableDeclaration::check(const Names & column_names) const
 
     const auto columns_map = getColumnsMap(available_columns);
 
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+    using UniqueStrings = GOOGLE_NAMESPACE::dense_hash_set<StringRef, StringRefHash>;
     UniqueStrings unique_names;
     unique_names.set_empty_key(StringRef());
 
@@ -150,7 +164,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns) const
     const NamesAndTypesList & available_columns = getColumns().getAllPhysical();
     const auto columns_map = getColumnsMap(available_columns);
 
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+    using UniqueStrings = GOOGLE_NAMESPACE::dense_hash_set<StringRef, StringRefHash>;
     UniqueStrings unique_names;
     unique_names.set_empty_key(StringRef());
 
@@ -183,7 +197,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const 
         throw Exception("Empty list of columns queried. There are columns: " + listOfColumns(available_columns),
             ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED);
 
-    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+    using UniqueStrings = GOOGLE_NAMESPACE::dense_hash_set<StringRef, StringRefHash>;
     UniqueStrings unique_names;
     unique_names.set_empty_key(StringRef());
 
@@ -198,7 +212,7 @@ void ITableDeclaration::check(const NamesAndTypesList & provided_columns, const 
             throw Exception("There is no column with name " + name + ". There are columns: "
                 + listOfColumns(available_columns), ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
-        if (it->second->getName() != jt->second->getName())
+        if (!it->second->equals(*jt->second))
             throw Exception("Type mismatch for column " + name + ". Column has type "
                 + jt->second->getName() + ", got type " + it->second->getName(), ErrorCodes::TYPE_MISMATCH);
 

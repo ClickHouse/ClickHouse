@@ -1,4 +1,3 @@
-
 add_library (mysqlxx ${SPLIT_SHARED}
     src/Connection.cpp
     src/Exception.cpp
@@ -33,10 +32,13 @@ target_include_directories (mysqlxx PUBLIC include)
 set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
 if (USE_MYSQL)
-    target_include_directories (mysqlxx PRIVATE ${MYSQL_INCLUDE_DIR})
+    target_include_directories (mysqlxx SYSTEM PRIVATE ${MYSQL_INCLUDE_DIR})
 endif ()
 
-if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
+if (APPLE)
+    find_library (ICONV_LIBRARY iconv)
+    set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIBRARIES} ${STATIC_MYSQLCLIENT_LIB} ${ICONV_LIBRARY})
+elseif (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
     set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
     add_custom_command (
         OUTPUT ${MYSQLCLIENT_LIB}
@@ -49,7 +51,7 @@ if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
 endif ()
 
 target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIBRARIES} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
-target_include_directories (mysqlxx PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

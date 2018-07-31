@@ -43,6 +43,7 @@
     M(ObsoleteReplicatedParts) \
     M(ReplicatedPartMerges) \
     M(ReplicatedPartFetchesOfMerged) \
+    M(ReplicatedPartMutations) \
     M(ReplicatedPartChecks) \
     M(ReplicatedPartChecksFailed) \
     M(ReplicatedDataLoss) \
@@ -78,6 +79,8 @@
     \
     M(CompileAttempt) \
     M(CompileSuccess) \
+    \
+    M(CompileFunction) \
     \
     M(ExternalSortWritePart) \
     M(ExternalSortMerge) \
@@ -133,12 +136,15 @@
     \
     M(DistributedSyncInsertionTimeoutExceeded) \
     M(DataAfterMergeDiffersFromReplica) \
+    M(DataAfterMutationDiffersFromReplica) \
     M(PolygonsAddedToPool) \
     M(PolygonsInPoolAllocatedBytes) \
     M(RWLockAcquiredReadLocks) \
     M(RWLockAcquiredWriteLocks) \
     M(RWLockReadersWaitMilliseconds) \
-    M(RWLockWritersWaitMilliseconds)
+    M(RWLockWritersWaitMilliseconds) \
+    \
+    M(NetworkErrors)
 
 namespace ProfileEvents
 {

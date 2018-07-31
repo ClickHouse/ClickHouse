@@ -5,22 +5,23 @@ Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake3 | cmake,
                ninja-build,
-               gcc-7, g++-7,
+               gcc-7 [amd64 i386] | gcc-8 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386],
+               clang-6.0 [arm64 armhf] | clang-5.0 [arm64 armhf] | clang-7 [arm64 armhf],
                libc6-dev,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
                libltdl-dev,
                libreadline-dev,
-               libssl-dev,
+               libssl1.0-dev | libssl-dev,
                unixodbc-dev
 Standards-Version: 3.9.8
 
 Package: clickhouse-client
-Architecture: any
+Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}) | clickhouse-server-base (= ${binary:Version})
 Replaces: clickhouse-compressor
 Conflicts: clickhouse-compressor
-Description: Client binary for clickhouse
+Description: Client binary for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
@@ -31,18 +32,18 @@ Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, tzdata
 Replaces: clickhouse-server-base
 Provides: clickhouse-server-base
-Description: Common files for clickhouse
+Description: Common files for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
  This package provides common files for both clickhouse server and client
 
 Package: clickhouse-server
-Architecture: any
+Architecture: all
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-common-static (= ${binary:Version}), adduser
 Replaces: clickhouse-server-common, clickhouse-server-base
 Provides: clickhouse-server-common
-Description: Server binary for clickhouse
+Description: Server binary for ClickHouse
  Yandex ClickHouse is a column-oriented database management system
  that allows generating analytical data reports in real time.
  .
@@ -60,9 +61,9 @@ Description: debugging symbols for clickhouse-common-static
 
 Package: clickhouse-test
 Priority: optional
-Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl
-Description: Clickhouse tests
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-client, bash, expect, python, python-lxml, python-termcolor, python-requests, curl, perl, sudo, openssl, netcat-openbsd, telnet
+Description: ClickHouse tests
 
 
 
@@ -75,7 +76,7 @@ Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, tzdata
 Description: DEPRECATED PACKAGE (use clickhouse-common-static): Server binary for clickhouse
 
 Package: clickhouse-server-common
-Architecture: any
+Architecture: all
 Priority: optional
 Depends: ${shlibs:Depends}, ${misc:Depends}, clickhouse-server-base (= ${binary:Version})
 Description: DEPRECATED PACKAGE (use clickhouse-server): Common configuration files for clickhouse-server-base package

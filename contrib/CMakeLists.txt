@@ -1,5 +1,11 @@
-if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast")
+# Third-party libraries may have substandard code.
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -std=c++1z")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
 endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)
@@ -21,12 +27,12 @@ if (USE_INTERNAL_RE2_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
-    set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     add_subdirectory (double-conversion)
 endif ()
 
 if (USE_INTERNAL_CITYHASH_LIBRARY)
-    add_subdirectory (libcityhash)
+    add_subdirectory (cityhash102)
 endif ()
 
 if (USE_INTERNAL_FARMHASH_LIBRARY)
@@ -43,6 +49,10 @@ endif ()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind)
+endif ()
+
+if (USE_INTERNAL_MURMURHASH2_LIBRARY)
+    add_subdirectory (libmurmurhash2)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
@@ -75,7 +85,7 @@ if (ENABLE_TCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
     add_subdirectory (libtcmalloc)
 endif ()
 
-if (NOT ARCH_ARM)
+if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
 
@@ -113,11 +123,7 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
-    if (APPLE) # tests never end
-        set (BUILD_TESTING 0 CACHE INTERNAL "")
-    else ()
-        set (BUILD_TESTING ${ENABLE_TESTS} CACHE INTERNAL "")
-    endif ()
+    set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
     set (CMAKE_CXX_EXTENSIONS)
     add_subdirectory (capnproto/c++)
@@ -132,7 +138,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (USE_INTERNAL_SSL_LIBRARY)
+    if (USE_INTERNAL_SSL_LIBRARY OR (DEFINED ENABLE_POCO_NETSSL AND NOT ENABLE_POCO_NETSSL))
         set (DISABLE_INTERNAL_OPENSSL 1 CACHE INTERNAL "")
         set (ENABLE_NETSSL 0 CACHE INTERNAL "") # TODO!
         set (ENABLE_CRYPTO 0 CACHE INTERNAL "") # TODO!
@@ -145,8 +151,17 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (ENABLE_TESTS ${_save})
     set (CMAKE_CXX_FLAGS ${save_CMAKE_CXX_FLAGS})
     set (CMAKE_C_FLAGS ${save_CMAKE_C_FLAGS})
-    if (OPENSSL_FOUND AND TARGET Crypto)
+
+    if (OPENSSL_FOUND AND TARGET Crypto AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
         target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
+endif ()
+
+if (USE_INTERNAL_LLVM_LIBRARY)
+    # ld: unknown option: --color-diagnostics
+    if (APPLE AND COMPILER_GCC)
+        set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
+    endif ()
+    add_subdirectory (llvm/llvm)
 endif ()

@@ -15,10 +15,9 @@
 namespace DB
 {
 
-StorageSystemColumns::StorageSystemColumns(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemColumns::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
@@ -28,21 +27,11 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
-    }));
+    };
 }
 
-
-BlockInputStreams StorageSystemColumns::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemColumns::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     Block block_to_filter;
 
     std::map<std::pair<std::string, std::string>, StoragePtr> storages;
@@ -60,7 +49,7 @@ BlockInputStreams StorageSystemColumns::read(
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
         if (!block_to_filter.rows())
-            return BlockInputStreams();
+            return;
 
         ColumnPtr database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
@@ -98,14 +87,12 @@ BlockInputStreams StorageSystemColumns::read(
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
     if (!block_to_filter.rows())
-        return BlockInputStreams();
+        return;
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
     ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
 
     /// We compose the result.
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     size_t rows = filtered_database_column->size();
     for (size_t i = 0; i < rows; ++i)
     {
@@ -193,8 +180,6 @@ BlockInputStreams StorageSystemColumns::read(
             }
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

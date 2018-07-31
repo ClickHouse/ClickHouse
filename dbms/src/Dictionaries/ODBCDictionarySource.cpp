@@ -1,12 +1,14 @@
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
+#include <common/logger_useful.h>
+#include <common/LocalDateTime.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <DataTypes/DataTypeString.h>
+#include <Columns/ColumnString.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
-#include <common/logger_useful.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -27,7 +29,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     where{config.getString(config_prefix + ".where", "")},
     update_field{config.getString(config_prefix + ".update_field", "")},
     sample_block{sample_block},
-    query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
+    query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()},
     invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
@@ -56,7 +58,7 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     update_field{other.update_field},
     sample_block{other.sample_block},
     pool{other.pool},
-    query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
+    query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::None},
     load_all_query{other.load_all_query},
     invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {

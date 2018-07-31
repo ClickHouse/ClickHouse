@@ -15,10 +15,10 @@
 #include <Poco/Exception.h>
 
 
- /// Implementation of Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the `sample_count` size.
- /// Can approximately get quantiles.
- /// The `quantile` call takes O(sample_count log sample_count), if after the previous call `quantile` there was at least one call to insert. Otherwise, O(1).
- /// That is, it makes sense to first add, then get quantiles without adding.
+/// Implementation of Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the `sample_count` size.
+/// Can approximately get quantiles.
+/// The `quantile` call takes O(sample_count log sample_count), if after the previous call `quantile` there was at least one call to insert. Otherwise, O(1).
+/// That is, it makes sense to first add, then get quantiles without adding.
 
 
 namespace DB

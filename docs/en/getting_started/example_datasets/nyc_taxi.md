@@ -301,14 +301,19 @@ SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetr
 Q4:
 
 ```sql
-SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)FROM trips_mergetreeGROUP BY passenger_count, year, distanceORDER BY year, count(*) DESC
+SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
+FROM trips_mergetree
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC
 ```
 
 3.593 seconds.
 
 The following server was used:
 
-Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,128 GiB RAM,8x6 TB HD on hardware RAID-5
+Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,
+128 GiB RAM,
+8x6 TB HD on hardware RAID-5
 
 Execution time is the best of three runsBut starting from the second run, queries read data from the file system cache. No further caching occurs: the data is read out and processed in each run.
 
@@ -355,10 +360,8 @@ We ran queries using a client located in a Yandex datacenter in Finland on a clu
 
 ## Summary
 
-```text
-nodes   Q1     Q2     Q3     Q4
-  1  0.490  1.224  2.104  3.593
-  3  0.212  0.438  0.733  1.241
-140  0.028  0.043  0.051  0.072
-```
-
+| nodes | Q1    | Q2    | Q3    | Q4    |
+| ----- | ----- | ----- | ----- | ----- |
+|     1 | 0.490 | 1.224 | 2.104 | 3.593 |
+|     3 | 0.212 | 0.438 | 0.733 | 1.241 |
+|   140 | 0.028 | 0.043 | 0.051 | 0.072 |

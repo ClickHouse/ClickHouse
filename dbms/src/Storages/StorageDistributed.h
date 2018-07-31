@@ -9,6 +9,7 @@
 #include <Interpreters/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 
 
@@ -36,8 +37,15 @@ public:
     static StoragePtr createWithOwnCluster(
         const std::string & table_name_,
         const ColumnsDescription & columns_,
-        const String & remote_database_,      /// database on remote servers.
-        const String & remote_table_,         /// The name of the table on the remote servers.
+        const String & remote_database_,       /// database on remote servers.
+        const String & remote_table_,          /// The name of the table on the remote servers.
+        ClusterPtr owned_cluster_,
+        const Context & context_);
+
+    static StoragePtr createWithOwnCluster(
+        const std::string & table_name_,
+        const ColumnsDescription & columns_,
+        ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
         ClusterPtr & owned_cluster_,
         const Context & context_);
 
@@ -63,6 +71,10 @@ public:
     BlockOutputStreamPtr write(const ASTPtr & query, const Settings & settings) override;
 
     void drop() override {}
+
+    /// Removes temporary data in local filesystem.
+    void truncate(const ASTPtr &) override;
+
     void rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & new_table_name) override { table_name = new_table_name; }
     /// in the sub-tables, you need to manually add and delete columns
     /// the structure of the sub-table is not checked
@@ -97,6 +109,7 @@ public:
     String table_name;
     String remote_database;
     String remote_table;
+    ASTPtr remote_table_function_ptr;
 
     const Context & context;
     Logger * log = &Logger::get("StorageDistributed");
@@ -121,6 +134,8 @@ public:
         void requireConnectionPool(const std::string & name, const StorageDistributed & storage);
         /// Creates directory_monitor if not exists.
         void requireDirectoryMonitor(const std::string & name, StorageDistributed & storage);
+
+        void shutdownAndDropAllData();
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     std::mutex cluster_nodes_mutex;
@@ -135,6 +150,17 @@ protected:
         const ColumnsDescription & columns_,
         const String & remote_database_,
         const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_,
+        const String & data_path_,
+        bool attach);
+
+    StorageDistributed(
+        const String & database_name,
+        const String & table_name_,
+        const ColumnsDescription & columns_,
+        ASTPtr remote_table_function_ptr_,
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,

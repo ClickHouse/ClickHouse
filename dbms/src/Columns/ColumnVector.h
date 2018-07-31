@@ -138,7 +138,7 @@ private:
     ColumnVector() {}
     ColumnVector(const size_t n) : data(n) {}
     ColumnVector(const size_t n, const value_type x) : data(n, x) {}
-    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {};
+    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
 
     /// Sugar constructor.
     ColumnVector(std::initializer_list<T> il) : data{il} {}
@@ -231,6 +231,11 @@ public:
         return UInt64(data[n]);
     }
 
+    bool getBool(size_t n) const override
+    {
+        return bool(data[n]);
+    }
+
     Int64 getInt(size_t n) const override
     {
         return Int64(data[n]);
@@ -263,7 +268,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return sizeof(T); }
-
+    StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
 
     /** More efficient methods of manipulation - to manipulate with data directly. */
     Container & getData()
