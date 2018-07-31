@@ -111,7 +111,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         return;
 
     /// We will mark lost replicas.
-    markLostReplicas(log_pointers_losted_replicas, entries.back());
+    markLostReplicas(log_pointers_lost_replicas, entries.back());
 
     zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
