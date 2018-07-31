@@ -490,7 +490,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
     }
     else if (auto * join = typeid_cast<ASTTableJoin *>(ast.get()))
     {
-        /// Don't translate on_expression hear in order to resolve equasions parts later.
+        /// Don't translate on_expression here in order to resolve equation parts later.
         if (join->using_expression_list)
             translateQualifiedNamesImpl(join->using_expression_list, tables);
     }
