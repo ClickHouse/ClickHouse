@@ -144,8 +144,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<Strin
                 zkutil::CreateMode::Persistent));
     }
     
-    zkutil::Responses responses;
-    auto code = zookeeper->multi(ops, responses);
+    auto code = zookeeper->multi(ops);
 }
 
 
