@@ -493,8 +493,7 @@ void TCPHandler::receiveHello()
     readStringBinary(client_name, *in);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
-    // TODO: If we will broke protocol - add this field:
-    // readVarUInt(client_version_patch, *in);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_revision, *in);
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
