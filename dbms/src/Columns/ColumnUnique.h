@@ -6,6 +6,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
@@ -48,6 +49,27 @@ namespace ZeroTraits
 
 namespace DB
 {
+
+namespace
+{
+    template <typename ColumnType>
+    struct ColumnUniqueContainer
+    {
+        using Type = HashMap<StringRefWrapper<ColumnType>, UInt64, StringRefHash>;
+    };
+
+    template <>
+    struct ColumnUniqueContainer<ColumnString>
+    {
+        using Type = HashMapWithSavedHash<StringRefWrapper<ColumnString>, UInt64, StringRefHash>;
+    };
+
+    template <>
+    struct ColumnUniqueContainer<ColumnFixedString>
+    {
+        using Type = HashMapWithSavedHash<StringRefWrapper<ColumnFixedString>, UInt64, StringRefHash>;
+    };
+}
 
 template <typename ColumnType>
 class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>
@@ -125,7 +147,7 @@ public:
 
 private:
 
-    using IndexMapType = HashMap<StringRefWrapper<ColumnType>, UInt64, StringRefHash>;
+    using IndexMapType = typename ColumnUniqueContainer<ColumnType>::Type;
 
     ColumnPtr column_holder;
 
