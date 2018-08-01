@@ -28,6 +28,7 @@
 #endif
 
 #if USE_JEMALLOC
+    #define JEMALLOC_NO_DEMANGLE
     #include <jemalloc/jemalloc.h>
 #endif
 
