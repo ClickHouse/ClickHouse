@@ -41,6 +41,8 @@ Names ExpressionAction::getNeededColumns() const
 
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
 
+    res.insert(res.end(), join_key_names_left.begin(), join_key_names_left.end());
+
     for (const auto & column : projection)
         res.push_back(column.first);
 
@@ -146,11 +148,14 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_,
+                                                const Names & join_key_names_left,
+                                                const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;
     a.type = JOIN;
-    a.join = join_;
+    a.join = std::move(join_);
+    a.join_key_names_left = join_key_names_left;
     a.columns_added_by_join = columns_added_by_join_;
     return a;
 }

@@ -41,7 +41,7 @@ public:
         const String & remote_table_,          /// The name of the table on the remote servers.
         ClusterPtr owned_cluster_,
         const Context & context_);
-    
+
     static StoragePtr createWithOwnCluster(
         const std::string & table_name_,
         const ColumnsDescription & columns_,
@@ -155,7 +155,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & data_path_,
         bool attach);
-    
+
     StorageDistributed(
         const String & database_name,
         const String & table_name_,
