@@ -42,9 +42,9 @@ endif()
 
 add_library(jemalloc STATIC ${SRCS})
 
-target_include_directories(jemalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include) # jemalloc.h
+target_include_directories(jemalloc PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_x86_64) # jemalloc.h
 
 target_include_directories(jemalloc PRIVATE
-    ${JEMALLOC_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/include_linux_x86_64)
+    ${JEMALLOC_SOURCE_DIR}/include)
