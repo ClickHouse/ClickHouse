@@ -11,6 +11,7 @@ if (ENABLE_MYSQL)
     if (USE_INTERNAL_MYSQL_LIBRARY)
         set (MYSQLCLIENT_LIBRARIES mysqlclient)
         set (USE_MYSQL 1)
+        set (MYSQLXX_LIBRARY mysqlxx)
     else ()
         set (MYSQL_LIB_PATHS
             "/usr/local/opt/mysql/lib"
