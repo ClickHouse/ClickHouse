@@ -83,7 +83,7 @@ static Field convertIntToDecimalType(const Field & from, const To & type)
         throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     FieldType scaled_value = type.getScaleMultiplier() * value;
-    return Field(FieldType(scaled_value));
+    return Field(typename NearestFieldType<FieldType>::Type(scaled_value));
 }
 
 
@@ -94,7 +94,7 @@ static Field convertStringToDecimalType(const Field & from, const DataTypeDecima
 
     const String & str_value = from.get<String>();
     T value = type.parseFromString(str_value);
-    return Field(FieldType(value));
+    return Field(typename NearestFieldType<FieldType>::Type(value));
 }
 
 

@@ -243,8 +243,9 @@ private:
         Shift shift;
         if (decimal0 && decimal1)
         {
-            shift.a = decimal0->scaleFactor(decimalResultType(*decimal0, *decimal1));
-            shift.b = decimal1->scaleFactor(decimalResultType(*decimal0, *decimal1));
+            auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
+            shift.a = result_type.scaleFactorFor(*decimal0);
+            shift.b = result_type.scaleFactorFor(*decimal1);
         }
         else if (decimal0)
             shift.b = decimal0->getScaleMultiplier();
