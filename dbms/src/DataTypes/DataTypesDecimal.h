@@ -1,8 +1,9 @@
 #pragma once
 #include <common/likely.h>
 #include <Common/typeid_cast.h>
-#include <DataTypes/IDataType.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -98,8 +99,7 @@ template <typename T>
 class DataTypeDecimal final : public DataTypeSimpleSerialization
 {
 public:
-    using UnderlyingType = T;
-    using FieldType = typename NearestFieldType<T>::Type;
+    using FieldType = T;
     using ColumnType = ColumnVector<T, false>;
 
     static constexpr bool is_parametric = true;
@@ -187,16 +187,18 @@ public:
         return true;
     }
 
-    /// @returns multiplier for T to become UnderlyingType of result_type with correct scale
-    template <typename R>
-    std::enable_if_t<decimalTrait<T>() && decimalTrait<R>(), R>
-    scaleFactor(const DataTypeDecimal<R> & result_type) const
+    /// @returns multiplier for U to become T with correct scale
+    template <typename U>
+    T scaleFactorFor(const DataTypeDecimal<U> & x) const
     {
-        if (getScale() > result_type.getScale())
+        if (getScale() < x.getScale())
             throw Exception("Decimal result's scale is less then argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        UInt32 scale_delta = result_type.getScale() - getScale(); /// scale_delta >= 0
-        return DataTypeDecimal<R>::getScaleMultiplier(scale_delta);
+        UInt32 scale_delta = getScale() - x.getScale(); /// scale_delta >= 0
+        return getScaleMultiplier(scale_delta);
     }
+
+    template <typename U>
+    T scaleFactorFor(const DataTypeNumber<U> & ) const { return 1; }
 
     T parseFromString(const String & str) const;
 
@@ -205,25 +207,45 @@ private:
     const UInt32 scale; /// TODO: should we support scales out of [0, precision]?
 
     static T getScaleMultiplier(UInt32 scale);
-
-    template <typename>
-    friend class DataTypeDecimal;
 };
 
 
 template <typename T, typename U>
 typename std::enable_if_t<(sizeof(T) >= sizeof(U)), const DataTypeDecimal<T>>
-decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty)
+decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty, bool is_multiply, bool is_divide)
 {
-    return DataTypeDecimal<T>(maxDecimalPrecision<T>(), (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale()));
+    T scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+    if (is_multiply)
+        scale = tx.getScale() + ty.getScale();
+    else if (is_divide)
+        scale = tx.getScale();
+    return DataTypeDecimal<T>(maxDecimalPrecision<T>(), scale);
 }
 
 template <typename T, typename U>
 typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DataTypeDecimal<U>>
-decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty)
+decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty, bool is_multiply, bool is_divide)
 {
-    return DataTypeDecimal<U>(maxDecimalPrecision<U>(), (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale()));
+    U scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+    if (is_multiply)
+        scale = tx.getScale() * ty.getScale();
+    else if (is_divide)
+        scale = tx.getScale();
+    return DataTypeDecimal<U>(maxDecimalPrecision<U>(), scale);
 }
+
+template <typename T, typename U>
+const DataTypeDecimal<T> decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeNumber<U> &, bool, bool)
+{
+    return DataTypeDecimal<T>(maxDecimalPrecision<T>(), tx.getScale());
+}
+
+template <typename T, typename U>
+const DataTypeDecimal<U> decimalResultType(const DataTypeNumber<T> &, const DataTypeDecimal<U> & ty, bool, bool)
+{
+    return DataTypeDecimal<U>(maxDecimalPrecision<U>(), ty.getScale());
+}
+
 
 template <typename T>
 inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)

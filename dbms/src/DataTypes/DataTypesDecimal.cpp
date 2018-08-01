@@ -2,11 +2,9 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
-//#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/readFloatText.h>
-//#include <Formats/FormatSettings.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 
@@ -117,7 +115,7 @@ void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     typename ColumnType::value_type x;
     readBinary(x, istr);
-    field = FieldType(x);
+    field = typename NearestFieldType<FieldType>::Type(x);
 }
 
 template <typename T>
@@ -142,7 +140,7 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeDecimal<T>::getDefault() const
 {
-    return FieldType();
+    return typename NearestFieldType<FieldType>::Type();
 }
 
 
