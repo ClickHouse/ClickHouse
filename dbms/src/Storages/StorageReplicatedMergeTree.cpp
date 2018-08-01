@@ -3352,6 +3352,21 @@ bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 }
 
 
+bool StorageReplicatedMergeTree::checkPartitionCanBeDroppedAttachReplace(const ASTPtr & partition)
+{
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
+    
+    const String partition_id = data.getPartitionIDFromQuery(partition, context);
+    auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    
+    for (const auto & part : parts_to_remove)
+    {
+        context.checkPartitionCanBeDroppedAttachReplace(database_name, table_name, part->getTotalColumnsSize().data_compressed);
+    }
+    return true;
+}
+
+
 void StorageReplicatedMergeTree::drop()
 {
     {
