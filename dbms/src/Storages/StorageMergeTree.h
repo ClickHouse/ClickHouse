@@ -85,6 +85,8 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
+    bool checkPartitionCanBeDroppedAttachReplace(const ASTPtr & partition) override;
+
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     MergeTreeData & getData() { return data; }

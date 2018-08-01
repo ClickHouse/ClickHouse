@@ -80,7 +80,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int DDL_GUARD_IS_ACTIVE;
-    extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
+    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
@@ -140,6 +140,7 @@ struct ContextShared
     mutable std::unique_ptr<CompressionSettingsSelector> compression_settings_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
+    size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
 
@@ -1649,6 +1650,34 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
          << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
     throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
+}
+
+
+void Context::setMaxPartitionSizeToDropAttachReplace(size_t max_size)
+{
+    // Is initialized at server startup
+    shared->max_partition_size_to_drop = max_size;
+}
+
+
+void Context::checkPartitionCanBeDroppedAttachReplace(const String & database, const String & table, size_t partition_size)
+{
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
+    if (!max_partition_size_to_drop || partition_size <= max_partition_size_to_drop)
+        return;
+    
+    String partition_size_str = formatReadableSizeWithDecimalSuffix(partition_size);
+    String max_partition_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_partition_size_to_drop);
+    std::stringstream ostr;
+
+    ostr << "Partition in table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
+         << "Reason:\n"
+         << "1. Partition size (" << partition_size_str << ") is greater than max_table_size_to_drop (" << max_partition_size_to_drop_str << ")\n";
+
+    ostr << "How to fix this:\n"
+         << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n";
+
+    throw Exception(ostr.str(), ErrorCodes::PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
 }
 
 

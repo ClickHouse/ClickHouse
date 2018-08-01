@@ -140,6 +140,8 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
+    bool checkPartitionCanBeDroppedAttachReplace(const ASTPtr & partition) override;
+
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
     /// Wait when replication queue size becomes less or equal than queue_size
