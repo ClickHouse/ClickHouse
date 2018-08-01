@@ -43,6 +43,7 @@ public:
     void shutdown() override;
 
     bool checkTableCanBeDropped() const override;
+    
     bool checkPartitionCanBeDroppedAttachReplace(const ASTPtr & partition) override;
 
     BlockInputStreams read(
