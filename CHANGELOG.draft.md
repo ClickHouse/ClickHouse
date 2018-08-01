@@ -1,15 +1,6 @@
-# en:
+## RU
 
-## Improvements:
-* Added Nullable support for runningDifference function. [#2590](https://github.com/yandex/ClickHouse/issues/2590)
-
-## Bug fiexs:
-* Fixed switching to default databses in case of client reconection. [#2580](https://github.com/yandex/ClickHouse/issues/2580)
-
-# ru:
-
-## Улучшения:
-* Добавлена поддержка Nullable для функции runningDifference. [#2590](https://github.com/yandex/ClickHouse/issues/2590)
-
-## Исправление ошибок:
-* Исправлено переключение на дефолтную базу данных при переподключении клиента. [#2580](https://github.com/yandex/ClickHouse/issues/2580)
+### Новые возможности:
+* Добавлена поддержка ON выражений для JOIN ON синтаксиса:  
+`JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) [AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]`  
+Выражение должно представлять из себя цепочку равенств, объединенных оператором AND. Каждая часть равенства может являться произвольным выражением над столбцами одной из таблиц. Поддержана возможность использования fully qualified имен столбцов (`table.name`, `database.table.name`, `table_alias.name`, `subquery_alias.name`) для правой таблицы. [#2742](https://github.com/yandex/ClickHouse/pull/2742)
