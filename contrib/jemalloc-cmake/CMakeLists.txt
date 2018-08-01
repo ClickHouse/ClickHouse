@@ -11,33 +11,31 @@ endif()
 set (JEMALLOC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../jemalloc/")
 set (JEMALLOC_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/../jemalloc/")
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/Utilities.cmake)
-
 # The following config switches that mimic the original autoconf behavior are supported
 # use -D to define cmd arguments, options may have values of ON/OFF
-option(disable-munmap "Disables unmapping for later reuse (default - enabled)" OFF )
+option(jemalloc-disable-munmap "Disables unmapping for later reuse (default - enabled)" ON)
 #  with-mangling=k:v,k:v... comma separated list of key:value pairs overrides specific function mangling
 #  with-jemalloc-prefix=<prefix> override default je_ prefix
-option(without-export "Ddisable export of public APIs" OFF)
+option(jemalloc-without-export "Disable export of public APIs" OFF)
 #  with-private-namespace=<additional_prefix>
 #  with-install-suffix=<suffix> added to public headers and the library
 #  with-malloc-conf=lg_chunk:18 Embed <malloc_conf> as a run-time options string that is processed prior to
 #       the malloc_conf global variable
-option(disable-cc-silence "Disable compiler silencing code" OFF)
-option(enable-debug "Enable debugging code" OFF)
-option(enable-ivsalloc "Validate pub API pointers" OFF)
-option(disable-stats "Disable stats calculation (on by default)" OFF)
-option(disable-tcache "Disable thread-specific caching (on by default)" OFF)
-option(disable-fill  "Disabling filling memory with junk on by default" OFF)
-option(enable-xmalloc "Support xmalloc option" OFF)
-option(disable-cache-oblivious "Disable uniform distribution of large allocations" OFF)
+option(jemalloc-disable-cc-silence "Disable compiler silencing code" OFF)
+option(jemalloc-enable-debug "Enable debugging code" OFF)
+option(jemalloc-enable-ivsalloc "Validate pub API pointers" OFF)
+option(jemalloc-disable-stats "Disable stats calculation (on by default)" OFF)
+option(jemalloc-disable-tcache "Disable thread-specific caching (on by default)" OFF)
+option(jemalloc-disable-fill  "Disabling filling memory with junk on by default" OFF)
+option(jemalloc-enable-xmalloc "Support xmalloc option" OFF)
+option(jemalloc-disable-cache-oblivious "Disable uniform distribution of large allocations" OFF)
 #  with-lg-tiny-min=<lg2 value> override default value of 3 of lg2 minimum tiny clas size
 #  with-lg-quantum=<lg2 of the min allocation alignment>
 #  with-lg-page=<lg2 of the page size> override system page size
 #  with-lg-page-sizes=<comma separated list of lg2 pages sizes> Base 2 logs of system page sizes to support
 #  with-lg_size-class-group=<Base 2 log of size classes per doubling> default 2
-option(enable-lazy-lock "Enable lazy locking (only lock when multi-threaded" OFF)
-option(force_lazy_lock "Forcing lazy-lock to avoid allocator/threading bootstrap issues" OFF)
+option(jemalloc-enable-lazy-lock "Enable lazy locking (only lock when multi-threaded)" OFF)
+option(jemalloc-force-lazy-lock "Forcing lazy-lock to avoid allocator/threading bootstrap issues" OFF)
 # install_prefix - installation directory prefix
 # with-xslroot=<path>  XSL stylesheet root path
 
@@ -46,8 +44,15 @@ project (${PACKAGE_NAME} C)
 
 include (CheckTypeSize)
 include (CheckIncludeFiles)
-include (TestBigEndian)
+include(TestBigEndian)
 include (CheckCSourceCompiles)
+include (CTest)
+
+include(${CMAKE_CURRENT_SOURCE_DIR}/Utilities.cmake)
+
+#list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/build-aux")
+
+set (JEMALLOC_HAS_RESTRICT 1)
 
 CHECK_INCLUDE_FILES (alloca.h JEMALLOC_HAS_ALLOCA_H)
 
@@ -55,7 +60,6 @@ set(abi "elf")
 
 # Whether malloc_usable_size definition can use const argument
 CHECK_INCLUDE_FILES (malloc.h HAVE_MALLOC_H)
-set(JEMALLOC_USABLE_SIZE_CONST)
 if(HAVE_MALLOC_H)
     set(JEMALLOC_USABLE_SIZE_CONST const)
 endif()
@@ -66,10 +70,58 @@ CHECK_INCLUDE_FILES (sys/time.h HAVE_SYSTIME_H)
 
 TEST_BIG_ENDIAN(JEMALLOC_BIG_ENDIAN)
 
-# CPU-specific settings.
+UtilCheckTypeSize(void* SIZEOF_VOID_P)
+if(SIZEOF_VOID_P)
+  lg(${SIZEOF_VOID_P} "LG_SIZEOF_PTR")
+  if((NOT ${LG_SIZEOF_PTR} EQUAL 3) AND
+     (NOT ${LG_SIZEOF_PTR} EQUAL 2))
+    message(FATAL_ERROR "Unsupported pointer size: ${LG_SIZEOF_PTR}")
+  endif()
+endif()
 
-if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "i686" OR CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64")
-  set( CPU_SPINWAIT "__asm__ volatile(\"pause\")")
+UtilCheckTypeSize(int SIZEOF_INT)
+if(SIZEOF_INT)
+  lg(${SIZEOF_INT} "LG_SIZEOF_INT")
+  if((NOT ${LG_SIZEOF_INT} EQUAL 3) AND
+     (NOT ${LG_SIZEOF_INT} EQUAL 2))
+    message(FATAL_ERROR "Unsupported int size: ${LG_SIZEOF_INT}")
+  endif()
+endif()
+
+UtilCheckTypeSize(long SIZEOF_LONG)
+if(SIZEOF_LONG)
+  lg(${SIZEOF_LONG} "LG_SIZEOF_LONG")
+  if((NOT ${LG_SIZEOF_LONG} EQUAL 3) AND
+     (NOT ${LG_SIZEOF_LONG} EQUAL 2))
+    message(FATAL_ERROR "Unsupported long size: ${LG_SIZEOF_LONG}")
+  endif()
+endif()
+
+UtilCheckTypeSize("long long" SIZEOF_LONG_LONG)
+if(SIZEOF_LONG_LONG)
+  lg(${SIZEOF_LONG_LONG} "LG_SIZEOF_LONG_LONG")
+  if((NOT ${LG_SIZEOF_LONG_LONG} EQUAL 3) AND
+     (NOT ${LG_SIZEOF_LONG_LONG} EQUAL 2))
+    message(FATAL_ERROR "Unsupported long size: ${LG_SIZEOF_LONG_LONG}")
+  endif()
+endif()
+
+UtilCheckTypeSize(intmax_t SIZEOF_INTMAX_T)
+if(SIZEOF_INTMAX_T)
+  lg(${SIZEOF_INTMAX_T} "LG_SIZEOF_INTMAX_T")
+  if((NOT ${LG_SIZEOF_INTMAX_T} EQUAL 4) AND
+     (NOT ${LG_SIZEOF_INTMAX_T} EQUAL 3) AND
+     (NOT ${LG_SIZEOF_INTMAX_T} EQUAL 2))
+    message(FATAL_ERROR "Unsupported long size: ${LG_SIZEOF_INTMAX_T}")
+  endif()
+endif()
+
+if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "i686" OR
+   CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "x86_64")
+  JeCompilable("pause instruction" "" "__asm__ volatile(\"pause\");" je_cv_pause)
+  if(je_cv_pause)
+    set( CPU_SPINWAIT "__asm__ volatile(\"pause\")")
+  endif()
 endif()
 
 if(CMAKE_SYSTEM_NAME MATCHES "powerpc")
@@ -81,7 +133,11 @@ endif()
 # later reuse.  This is disabled by default on Linux because common sequences
 # of mmap()/munmap() calls will cause virtual memory map holes.
 # But it is enabled by default on Windows
-set(JEMALLOC_MUNMAP 0)
+set(JEMALLOC_MUNMAP 1)
+
+if(jemalloc-disable-munmap)
+  set(JEMALLOC_MUNMAP 0)
+endif()
 
 # If defined, adjacent virtual memory mappings with identical attributes
 # automatically coalesce, and they fragment when changes are made to subranges.
@@ -90,16 +146,11 @@ set(JEMALLOC_MUNMAP 0)
 # mappings do *not* coalesce/fragment.
 set(JEMALLOC_MAPS_COALESCE 1)
 
-###################################################
-# Undefined
-# #undef JEMALLOC_HAVE_ATTR
 set(JEMALLOC_HAVE_ATTR 1)
-# Below is everything under HAVE_ATTR
-# #undef JEMALLOC_HAVE_ATTR_ALLOC_SIZE
-# #undef JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF
-# #undef JEMALLOC_FORMAT_PRINTF
-# #undef JEMALLOC_USE_CXX_THROW
-#
+set(JEMALLOC_HAVE_ATTR_ALLOC_SIZE 1)
+set(JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF 1)
+set(JEMALLOC_FORMAT_PRINTF 1)
+set(JEMALLOC_USE_CXX_THROW 1)
 
 set (JEMALLOC_OVERRIDE_MEMALIGN 1)
 set (JEMALLOC_OVERRIDE_VALLOC 1)
@@ -131,7 +182,7 @@ endif()
 # We need to define the var to whitespace string
 # as empty strings will not be defined in CMake
 # Non-empty definition is necessary so
-if(without-export)
+if(jemalloc-without-export)
     set(JEMALLOC_EXPORT " ")
 endif()
 
@@ -158,31 +209,31 @@ endif()
 
 # Do not silence irrelevant compiler warnings
 set(JEMALLOC_CC_SILENCE 1)
-if(disable-cc-silence)
+if(jemalloc-disable-cc-silence)
     set(JEMALLOC_CC_SILENCE 0)
 endif()
 
-# Build debugging code (implies --enable-ivsalloc)
-if(enable-debug)
+# Build debugging code (implies --jemalloc-enable-ivsalloc)
+if(jemalloc-enable-debug)
     set(JEMALLOC_DEBUG 1)
     set(JEMALLOC_IVSALLOC 1)
 endif()
 
 # Validate pointers passed through the public API
-if(enable-ivsalloc)
+if(jemalloc-enable-ivsalloc)
     set(JEMALLOC_IVSALLOC 1)
 endif()
 
 # Enable stats by default
 set(JEMALLOC_STATS 1)
 # Disable statistics calculation/reporting
-if(disable-stats)
+if(jemalloc-disable-stats)
   set(JEMALLOC_STATS 0)
 endif()
 
 # Enable thread-specific caching by default.
 set(JEMALLOC_TCACHE 1)
-if(disable-tcache)
+if(jemalloc-disable-tcache)
   set(JEMALLOC_TCACHE 0)
 endif()
 
@@ -194,7 +245,7 @@ set(JEMALLOC_DSS 0)
 # Support the junk/zero filling option by default.
 set (JEMALLOC_FILL 1)
 # Disable support for junk/zero filling, quarantine, and redzones
-if(disable-fill)
+if(jemalloc-disable-fill)
   set (JEMALLOC_FILL 0)
 endif()
 
@@ -204,7 +255,7 @@ set(JEMALLOC_VALGRIND 0)
 
 # Support xmalloc option
 set(JEMALLOC_XMALLOC 0)
-if(enable-xmalloc)
+if(jemalloc-enable-xmalloc)
   set(JEMALLOC_XMALLOC 1)
 endif()
 
@@ -212,7 +263,7 @@ endif()
 # If defined, explicitly attempt to more uniformly distribute large allocation
 # pointer alignments across all cache indices.
 set(JEMALLOC_CACHE_OBLIVIOUS 1)
-if(disable-cache-oblivious)
+if(jemalloc-disable-cache-oblivious)
   set(JEMALLOC_CACHE_OBLIVIOUS 0)
 endif()
 
@@ -244,7 +295,11 @@ if(with-lg-page)
   set(LG_PAGE ${with-lg-page})
 endif()
 
-set(LG_PAGE 12)
+if(NOT LG_PAGE OR
+   "${LG_PAGE}" STREQUAL "detect")
+    GetSystemPageSize("SYSTEM_PAGE_SIZE")
+    lg(${SYSTEM_PAGE_SIZE} "LG_PAGE")
+endif()
 
 # Base 2 logs of system page sizes to support
 set (LG_PAGE_SIZES ${LG_PAGE})
@@ -276,7 +331,6 @@ if(NOT WIN32)
   if(HAVE_SECURE_GETENV)
     set(JEMALLOC_HAVE_SECURE_GETENV 1)
   endif()
-
 endif()
 
 set(JEMALLOC_HAVE_ISSETUGID 0)
@@ -284,24 +338,19 @@ set(JEMALLOC_MALLOC_THREAD_CLEANUP 0)
 
 set(JEMALLOC_MUTEX_INIT_CB 0)
 
+# TODO
+
 ############################
-# enable-lazy-lock
+# jemalloc-enable-lazy-lock
 set(JEMALLOC_LAZY_LOCK 0)
-if(NOT enable-lazy-lock)
-   if(force_lazy_lock)
+if(NOT jemalloc-enable-lazy-lock)
+   if(jemalloc-force-lazy-lock)
       message(STATUS "Forcing lazy-lock to avoid allocator/threading bootstrap issues")
-      set(enable-lazy-lock ON)
+      set(jemalloc-enable-lazy-lock ON)
   endif()
 endif()
 
-if(enable-lazy-lock)
-  if(${abi} STREQUAL "pecoff")
-      message(STATUS "Forcing no lazy-lock because thread creation monitoring is unimplemented")
-      set(enable-lazy-lock OFF)
-  endif()
-endif()
-
-if(enable-lazy-lock)
+if(jemalloc-enable-lazy-lock)
   CHECK_INCLUDE_FILES (dlfcn.h HAVE_DLFCN_H)
   if(NOT HAVE_DLFCN_H)
     message(FATAL_ERROR "dlfcn.h is missing")
@@ -310,7 +359,7 @@ if(enable-lazy-lock)
   set(CMAKE_REQUIRED_LIBRARIES "dl")
   CHECK_FUNCTION_EXISTS(dlsym HAVE_DLSYM)
   if(NOT HAVE_DLSYM)
-    message(FATAL_ERROR "libdl is missing]")
+    message(FATAL_ERROR "libdl is missing")
   endif()
 endif()
 
@@ -318,7 +367,7 @@ endif()
 
 # Separate clause for _WIN32 does the right thing
 # So TLS is enabled for Windows
-set(JEMALLOC_TLS 0)
+set(JEMALLOC_TLS 1)
 
 # Relevant for FreeBSD only
 set(JEMALLOC_ATOMIC9 0)
@@ -331,8 +380,8 @@ set(JEMALLOC_ZONE 0)
 # Only for GNU
 set(JE_FORCE_SYNC_COMPARE_AND_SWAP_4 0)
 set(JE_FORCE_SYNC_COMPARE_AND_SWAP_8 0)
-set(JEMALLOC_HAVE_BUILTIN_CLZ 0)
-set(JEMALLOC_HAVE_MADVISE 0)
+set(JEMALLOC_HAVE_BUILTIN_CLZ 1)
+set(JEMALLOC_HAVE_MADVISE 1)
 set(JEMALLOC_THREADED_INIT 0)
 
 set(JEMALLOC_TLS_MODEL 0)
@@ -368,31 +417,47 @@ set(PUBLIC_SYM
   malloc_usable_size
 )
 
+set(PUBLIC_SYM_FILE "${JEMALLOC_SOURCE_DIR}/include/jemalloc/internal/public_symbols.txt")
+GeneratePublicSymbolsList("${PUBLIC_SYM}" "${MANGLING_MAP}" ${JEMALLOC_PREFIX} "${PUBLIC_SYM_FILE}")
+
 foreach(public_in jemalloc_macros.h jemalloc_defs.h jemalloc_protos.h jemalloc_typedefs.h)
-  configure_file("${JEMALLOC_SOURCE_DIR}/include/jemalloc/${public_in}.in"
-    "${JEMALLOC_BINARY_DIR}/include/jemalloc/${public_in}")
+  ConfigureFile("${JEMALLOC_SOURCE_DIR}/include/jemalloc/${public_in}.in"
+    "${JEMALLOC_BINARY_DIR}/include/jemalloc/${public_in}" True)
 endforeach(public_in)
+
+set(JEMALLOC_RENAME_HDR "${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_rename.h")
+GenerateJemallocRename("${PUBLIC_SYM_FILE}" ${JEMALLOC_RENAME_HDR})
+
+set(JEMALLOC_MANGLE_HDR "${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_mangle.h")
+GenerateJemallocMangle("${PUBLIC_SYM_FILE}" ${JEMALLOC_PREFIX} ${JEMALLOC_MANGLE_HDR})
+
+# Needed for tests
+set(JEMALLOC_MANGLE_JET_HDR "${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_mangle_jet.h")
+GenerateJemallocMangle("${PUBLIC_SYM_FILE}" ${JEMALLOC_PREFIX_JET} ${JEMALLOC_MANGLE_JET_HDR})
 
 # Generate main public header
 set(JEMALLOC_HDR "${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc${install_suffix}.h")
 
 set(JEMALLOC_HDR_LIST
-   jemalloc_defs.h
-   jemalloc_macros.h
-   jemalloc_protos.h
-   jemalloc_typedefs.h
+   ${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc_defs.h
+   ${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_rename.h
+   ${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc_macros.h
+   ${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc_protos.h
+   ${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc_typedefs.h
+   ${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_mangle.h
 )
 
 CreateJemallocHeader("${JEMALLOC_HDR_LIST}" "${JEMALLOC_HDR}")
 
+
 # Configure internal headers
 
 foreach(internal_in jemalloc_internal_defs.h jemalloc_preamble.h)
-  configure_file("${JEMALLOC_SOURCE_DIR}/include/jemalloc/internal/${internal_in}.in"
-    "${JEMALLOC_BINARY_DIR}/include/jemalloc/internal/${internal_in}")
+  ConfigureFile("${JEMALLOC_SOURCE_DIR}/include/jemalloc/internal/${internal_in}.in"
+    "${JEMALLOC_BINARY_DIR}/include/jemalloc/internal/${internal_in}" True)
 endforeach(internal_in)
 
-set(SIZE_CLASSES_HDR "${JEMALLOC_SOURCE_DIR}/include/jemalloc/internal/size_classes.h")
+set(SIZE_CLASSES_HDR "${JEMALLOC_BINARY_DIR}/include/jemalloc/internal/size_classes.h")
 SizeClasses("${LG_QUANTA}" ${LG_TINY_MIN} "${LG_PAGE_SIZES}" "${LG_SIZE_CLASS_GROUP}"
  "${SIZE_CLASSES_HDR}")
 
@@ -400,8 +465,8 @@ SizeClasses("${LG_QUANTA}" ${LG_TINY_MIN} "${LG_PAGE_SIZES}" "${LG_SIZE_CLASS_GR
 set(je_ jet_)
 
 # replace prefix only
-configure_file("${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_protos.h.in"
-    "${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc_protos_jet.h")
+ConfigureFile("${JEMALLOC_SOURCE_DIR}/include/jemalloc/jemalloc_protos.h.in"
+    "${JEMALLOC_BINARY_DIR}/include/jemalloc/jemalloc_protos_jet.h" True)
 
 # revert
 set(je_ je_)
@@ -444,11 +509,11 @@ ${JEMALLOC_SOURCE_DIR}/src/zone.c
 )
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  list(APPEND C_SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
+  list(APPEND C_SRCS src/zone.c)
 endif()
 
 if(enable_valgrind)
-  list(APPEND C_SRCS ${JEMALLOC_SOURCE_DIR}/src/valgrind.c)
+  list(APPEND C_SRCS src/valgrind.c)
 endif()
 
 # The original library, delivery product
@@ -458,6 +523,6 @@ add_library(${LIBJEMALLOCLIB} STATIC ${C_SRCS})
 target_include_directories(${LIBJEMALLOCLIB} PRIVATE ${JEMALLOC_BINARY_DIR}/include ${JEMALLOC_SOURCE_DIR}/include)
 
 if(with-jemalloc-prefix)
-  target_compile_definitions(${LIBJEMALLOCLIB} PRIVATE JEMALLOC_MANGLE)
+  target_compile_definitions(${LIBJEMALLOCLIB} PRIVATE
+      JEMALLOC_MANGLE)
 endif()
-

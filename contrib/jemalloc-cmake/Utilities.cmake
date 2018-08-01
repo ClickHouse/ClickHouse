@@ -312,7 +312,7 @@ endfunction(size_classes)
 # lg_g - Size class group size (number of size classes for each size doubling).
 function (SizeClasses lg_qarr lg_tmin lg_parr lg_g output_file)
 
-message(STATUS "Please wait while we configure class sizes")
+message(STATUS "Please wait while we configure class sizes\n")
 
 # message(STATUS "SizeClasses: lg_qarr:${lg_qarr} lg_tmin:${lg_tmin} lg_parr:${lg_parr} lg_g:${lg_g}\n"
 # "output: ${output_file}"
@@ -427,6 +427,104 @@ file(APPEND ${output} "${buffer}")
 endfunction (AppendFileContents)
 
 
+#############################################
+# Generate public symbols list
+function (GeneratePublicSymbolsList public_sym_list mangling_map symbol_prefix output_file)
+
+file(REMOVE "${output_file}")
+
+# First remove from public symbols those that appear in the mangling map
+if(mangling_map)
+  foreach(map_entry ${mangling_map})
+    # Extract the symbol
+    string(REGEX REPLACE "([^ \t]*):[^ \t]*" "\\1" sym ${map_entry})
+    list(REMOVE_ITEM  public_sym_list ${sym})
+    file(APPEND "${output_file}" "${map_entry}\n")
+  endforeach(map_entry)
+endif()
+
+foreach(pub_sym ${public_sym_list})
+  file(APPEND "${output_file}" "${pub_sym}:${symbol_prefix}${pub_sym}\n")
+endforeach(pub_sym)
+
+endfunction(GeneratePublicSymbolsList)
+
+#####################################################################
+# Decorate symbols with a prefix
+#
+# This is per jemalloc_mangle.sh script.
+#
+# IMHO, the script has a bug that is currently reflected here
+# If the public symbol as alternatively named in a mangling map it is not
+# reflected here. Instead, all symbols are #defined using the passed symbol_prefix
+function (GenerateJemallocMangle public_sym_list symbol_prefix output_file)
+
+# Header
+file(WRITE "${output_file}"
+"/*\n * By default application code must explicitly refer to mangled symbol names,\n"
+" * so that it is possible to use jemalloc in conjunction with another allocator\n"
+" * in the same application.  Define JEMALLOC_MANGLE in order to cause automatic\n"
+" * name mangling that matches the API prefixing that happened as a result of\n"
+" * --with-mangling and/or --with-jemalloc-prefix configuration settings.\n"
+" */\n"
+"#ifdef JEMALLOC_MANGLE\n"
+"#  ifndef JEMALLOC_NO_DEMANGLE\n"
+"#    define JEMALLOC_NO_DEMANGLE\n"
+"#  endif\n"
+)
+
+file(STRINGS "${public_sym_list}" INPUT_STRINGS)
+
+foreach(line ${INPUT_STRINGS})
+  string(REGEX REPLACE "([^ \t]*):[^ \t]*" "#  define \\1 ${symbol_prefix}\\1" output ${line})
+  file(APPEND "${output_file}" "${output}\n")
+endforeach(line)
+
+file(APPEND "${output_file}"
+"#endif\n\n"
+"/*\n"
+" * The ${symbol_prefix}* macros can be used as stable alternative names for the\n"
+" * public jemalloc API if JEMALLOC_NO_DEMANGLE is defined.  This is primarily\n"
+" * meant for use in jemalloc itself, but it can be used by application code to\n"
+" * provide isolation from the name mangling specified via --with-mangling\n"
+" * and/or --with-jemalloc-prefix.\n"
+" */\n"
+"#ifndef JEMALLOC_NO_DEMANGLE\n"
+)
+
+foreach(line ${INPUT_STRINGS})
+  string(REGEX REPLACE "([^ \t]*):[^ \t]*" "#  undef ${symbol_prefix}\\1" output ${line})
+  file(APPEND "${output_file}" "${output}\n")
+endforeach(line)
+
+# Footer
+file(APPEND "${output_file}" "#endif\n")
+
+endfunction (GenerateJemallocMangle)
+
+########################################################################
+# Generate jemalloc_rename.h per jemalloc_rename.sh
+function (GenerateJemallocRename public_sym_list_file file_path)
+# Header
+file(WRITE "${file_path}"
+  "/*\n * Name mangling for public symbols is controlled by --with-mangling and\n"
+  " * --with-jemalloc-prefix.  With" "default settings the je_" "prefix is stripped by\n"
+  " * these macro definitions.\n"
+  " */\n#ifndef JEMALLOC_NO_RENAME\n\n"
+)
+
+file(STRINGS "${public_sym_list_file}" INPUT_STRINGS)
+foreach(line ${INPUT_STRINGS})
+  string(REGEX REPLACE "([^ \t]*):([^ \t]*)" "#define je_\\1 \\2" output ${line})
+  file(APPEND "${file_path}" "${output}\n")
+endforeach(line)
+
+# Footer
+file(APPEND "${file_path}"
+  "#endif\n"
+)
+endfunction (GenerateJemallocRename)
+
 ###############################################################
 # Create a jemalloc.h header by concatenating the following headers
 # Mimic processing from jemalloc.sh
@@ -448,9 +546,8 @@ file(WRITE "${ntv_output_file}"
   "#endif\n\n"
 )
 
-foreach(pub_hdr ${header_list} )
-  set(HDR_PATH "${JEMALLOC_BINARY_DIR}/include/jemalloc/${pub_hdr}")
-  file(TO_NATIVE_PATH "${HDR_PATH}" ntv_pub_hdr)
+foreach(pub_hdr ${header_list})
+  file(TO_NATIVE_PATH "${pub_hdr}" ntv_pub_hdr)
   AppendFileContents(${ntv_pub_hdr} ${ntv_output_file})
 endforeach(pub_hdr)
 
@@ -464,6 +561,75 @@ file(APPEND "${ntv_output_file}"
 
 endfunction(CreateJemallocHeader)
 
+
+############################################################################
+# A function that configures a file_path and outputs
+# end result into output_path
+# ExpandDefine True/False if we want to process the file and expand
+# lines that start with #undef DEFINE into what is defined in CMAKE
+function (ConfigureFile file_path output_path ExpandDefine)
+
+if(EXISTS ${file_path})
+  if(NOT ${ExpandDefine})
+    configure_file(${file_path} ${output_path} @ONLY)
+  else()
+    file(REMOVE ${file_path}.cmake)
+    # Convert autoconf .in into a cmake .in
+    execute_process(COMMAND sed -r -e "s/^#undef (\\w+)/#cmakedefine \\1 @\\1@/" INPUT_FILE ${file_path} OUTPUT_FILE ${file_path}.cmake)
+
+    configure_file(${file_path}.cmake ${output_path} @ONLY)
+    file(REMOVE ${file_path}.cmake)
+  endif()
+else()
+  message(FATAL_ERROR "${file_path} not found")
+endif()
+
+endfunction(ConfigureFile)
+
+
+#################################################################################
+## Compile a progam and collect page size output from the OUTPUT_VAR_NAME
+function (GetSystemPageSize OUTPUT_VAR_NAME)
+
+# Direct all the files into one folder
+set(WORK_FOLDER "${PROJECT_BINARY_DIR}/GetPageSize")
+file(MAKE_DIRECTORY ${WORK_FOLDER})
+
+set(SRC "${WORK_FOLDER}/getpagesize.c")
+set(COMPILE_OUTPUT_FILE "${WORK_FOLDER}/getpagesize.log")
+
+file(WRITE ${SRC}
+"#include <unistd.h>\n"
+"#include <stdio.h>\n"
+"int main(int argc, const char** argv) {\n"
+"int result;\n"
+"result = sysconf(_SC_PAGESIZE);\n"
+"printf(\"%d\", result);\n"
+"return 0;\n"
+"}\n"
+)
+
+try_run(RUN_RESULT COMPILE_RESULT
+        "${WORK_FOLDER}"
+        "${SRC}"
+        COMPILE_OUTPUT_VARIABLE COMPILE_OUTPUT
+        RUN_OUTPUT_VARIABLE RUN_OUTPUT
+        )
+
+if(NOT COMPILE_RESULT)
+    file(WRITE ${COMPILE_OUTPUT_FILE} ${COMPILE_OUTPUT})
+    message(FATAL_ERROR "GetSystemPageSize failed compilation see ${COMPILE_OUTPUT_FILE}")
+endif()
+
+if("${RUN_RESULT}" STREQUAL "FAILED_TO_RUN")
+    message(FATAL_ERROR "GetSystemPageSize failed to run executable")
+endif()
+
+message(STATUS "System pages size ${RUN_OUTPUT}")
+
+set(${OUTPUT_VAR_NAME} ${RUN_OUTPUT} PARENT_SCOPE)
+
+endfunction (GetSystemPageSize)
 
 ######################################################
 ## This function attemps to compile a one liner
