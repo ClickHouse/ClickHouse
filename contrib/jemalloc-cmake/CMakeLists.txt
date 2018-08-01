@@ -48,3 +48,5 @@ target_include_directories(jemalloc PUBLIC
 
 target_include_directories(jemalloc PRIVATE
     ${JEMALLOC_SOURCE_DIR}/include)
+
+target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)

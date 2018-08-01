@@ -28,7 +28,6 @@
 #endif
 
 #if USE_JEMALLOC
-    #define JEMALLOC_NO_DEMANGLE
     #include <jemalloc/jemalloc.h>
 #endif
 
@@ -253,7 +252,7 @@ void AsynchronousMetrics::update()
         { \
             TYPE value{}; \
             size_t size = sizeof(value); \
-            je_mallctl("stats." NAME, &value, &size, nullptr, 0); \
+            mallctl("stats." NAME, &value, &size, nullptr, 0); \
             set("jemalloc." NAME, value); \
         } while (0);
 
