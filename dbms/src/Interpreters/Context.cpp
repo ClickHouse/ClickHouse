@@ -80,6 +80,7 @@ namespace ErrorCodes
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int DDL_GUARD_IS_ACTIVE;
+    extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
