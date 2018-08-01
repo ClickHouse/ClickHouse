@@ -2,4 +2,5 @@ Here are pre-generated files from jemalloc on Linux x86_64.
 You can obtain these files by running ./autogen.sh inside jemalloc source directory.
 
 Added #define GNU_SOURCE
-Removed JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF due to -std=c11
+Removed JEMALLOC_HAVE_ATTR_FORMAT_GNU_PRINTF because it's non standard
+Removed JEMALLOC_PURGE_MADVISE_FREE because it's available only from Linux 4.5
