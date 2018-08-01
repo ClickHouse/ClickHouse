@@ -38,7 +38,7 @@ def autoremoved_file(path):
 def build_for_lang(lang, args):
     logging.info('Building %s docs' % lang)
 
-    config_path = os.path.join(args.docs_dir, 'mkdocs_%s.yml' % lang)
+    config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
 
     try:
         theme_cfg = {
@@ -60,6 +60,7 @@ def build_for_lang(lang, args):
             'static_templates': ['404.html'],
             'extra': {
                 'single_page': False,
+                'opposite_lang': 'en' if lang == 'ru' else 'ru',
                 'search': {
                     'language': 'en' if lang == 'en' else 'en, %s' % lang
                 }
@@ -79,7 +80,11 @@ def build_for_lang(lang, args):
             repo_url='https://github.com/yandex/ClickHouse/',
             edit_uri='edit/master/docs/%s' % lang,
             extra_css=['assets/stylesheets/custom.css'],
-            markdown_extensions=['codehilite']
+            markdown_extensions=[
+                'admonition',
+                'attr_list',
+                'codehilite'
+            ]
         )
 
         mkdocs_build.build(cfg)
@@ -104,6 +109,7 @@ def build_single_page_version(lang, args, cfg):
                 'site_dir': temp,
                 'extra': {
                     'single_page': True,
+                    'opposite_lang': 'en' if lang == 'ru' else 'ru',
                     'search': {
                         'language': 'en, ru'
                     }

@@ -11,9 +11,12 @@
 
 /build
 /docs/build
+/docs/edit
 /docs/tools/venv/
 /docs/en/development/build/
 /docs/ru/development/build/
+/docs/en/single.md
+/docs/ru/single.md
 
 # callgrind files
 callgrind.out.*
@@ -238,3 +241,6 @@ node_modules
 public
 website/docs
 website/presentations
+website/package-lock.json
+.DS_Store
+*/.DS_Store
