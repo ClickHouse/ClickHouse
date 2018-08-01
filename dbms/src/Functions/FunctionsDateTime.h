@@ -1519,45 +1519,70 @@ public:
         return name;
     }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool useDefaultImplementationForConstants() const override { return true; }
 
-    size_t getNumberOfArguments() const override { return 2; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1,2}; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
+        if (arguments.size() != 2 && arguments.size() != 3)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(arguments.size()) + ", should be 2 or 3",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!arguments[0].type->isDateOrDateTime())
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
+                            ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!checkDataType<DataTypeString>(arguments[1].type.get()))
+            throw Exception("Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeString>(arguments[1].get()))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        if (arguments.size() == 3)
+        {
+            if (!checkDataType<DataTypeString>(arguments[2].type.get()))
+                throw Exception("Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
 
         return std::make_shared<DataTypeString>();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
+        auto times = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+
+        if (const_times)
+            throw Exception("Constant times are not supported yet");
+
         const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+
+        if (!pattern_column)
+            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                            + " of second ('format') argument of function " + getName()
+                            + ". Must be constant string.",
+                            ErrorCodes::ILLEGAL_COLUMN);
 
         String pattern = pattern_column->getValue<String>();
 
         std::vector<std::function<void (String &, UInt32, DateLUTImpl)>> instructions = {};
-
         parsePattern(pattern, instructions);
 
-        auto times = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
-        auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        const DateLUTImpl * time_zone_tmp = nullptr;
+        if (arguments.size() == 3)
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        else
+            time_zone_tmp = &DateLUT::instance();
+
+        const DateLUTImpl & time_zone = *time_zone_tmp;
 
         auto res_column = ColumnString::create();
         const ColumnUInt32::Container & vec = times->getData();
         res_column->reserve(vec.size());
-
-        if (const_times) {
-            throw Exception("Constant times are not supported yet");
-        }
-
-        const DateLUTImpl & time_zone = DateLUT::instance();
 
         for(size_t i = 0; i < input_rows_count; ++i)
         {
@@ -1602,7 +1627,7 @@ public:
                     case 'd':
                         instructions.push_back(
                                 [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
-                                    auto day = ToHourImpl::execute(date_or_ts, time_zone);
+                                    auto day = ToDayOfMonthImpl::execute(date_or_ts, time_zone);
 
                                     if (day < 10) {
                                         receiver.append("0");
