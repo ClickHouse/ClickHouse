@@ -19,20 +19,20 @@
 
 * Added system tables: `formats`, `data_type_families`, `aggregate_function_combined`, `table_functions`, `table_engines`, `collations` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
 * Added the ability to use a table function instead of a table as an argument of a `remote` or `cluster` table function [#2708](https://github.com/yandex/ClickHouse/pull/2708).
-* Support  for `HTTP Basic` authentication in the replication protocol [#2727](https://github.com/yandex/ClickHouse/pull/2727).
+* Support for `HTTP Basic` authentication in the replication protocol [#2727](https://github.com/yandex/ClickHouse/pull/2727).
 * The `has` function now allows searching for a numeric value in an array of `Enum` values [Maxim Khrisanfov](https://github.com/yandex/ClickHouse/pull/2699).
 * Support for adding arbitrary message separators when reading from `Kafka` [Amos Bird](https://github.com/yandex/ClickHouse/pull/2701).
 
 ### Improvements:
 
-* The `ALTER TABLE t DELETE WHERE` query does not overwrite data chunks that were not affected by the WHERE condition [#2694](https://github.com/yandex/ClickHouse/pull/2694).
+* The `ALTER TABLE t DELETE WHERE` query does not rewrite data chunks that were not affected by the WHERE condition [#2694](https://github.com/yandex/ClickHouse/pull/2694).
 * The `use_minimalistic_checksums_in_zookeeper` option for `ReplicatedMergeTree` tables is enabled by default. This setting was added in version 1.1.54378, 2018-04-16. Versions that are older than 1.1.54378 can no longer be installed.
 * Support for running `KILL` and `OPTIMIZE` queries that specify `ON CLUSTER` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
 
 ### Bug fixes:
 
 * Fixed the error `Column ... is not under an aggregate function and not in GROUP BY` for aggregation with an IN expression. This bug appeared in version 18.1.0. ([bbdd780b](https://github.com/yandex/ClickHouse/commit/bbdd780be0be06a0f336775941cdd536878dd2c2))
-* Fixed a bug in the `windowFunnel aggregate function` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2735).
+* Fixed a bug in the `windowFunnel` aggregate function [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2735).
 * Fixed a bug in the `anyHeavy`  aggregate function ([a2101df2](https://github.com/yandex/ClickHouse/commit/a2101df25a6a0fba99aa71f8793d762af2b801ee))
 * Fixed server crash when using the `countArray()` feature.
 
