@@ -39,6 +39,9 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     if (connection_string.empty())
         throw Exception("ODBC connection string cannot be empty", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
 
+    if (connection_string.size() >= MAX_CONNECTION_STRING_SIZE)
+        throw Exception("ODBC connection string is too long", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+
     const char * pos = connection_string.data();
     const char * end = pos + connection_string.size();
 
