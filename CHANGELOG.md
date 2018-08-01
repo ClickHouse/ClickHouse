@@ -18,7 +18,7 @@
 ### New features:
 
 * Added system tables: `formats`, `data_type_families`, `aggregate_function_combined`, `table_functions`, `table_engines`, `collations` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
-* Added the ability to use a table function instead of a table as an argument of a `remote` or `cluster table function` [#2708](https://github.com/yandex/ClickHouse/pull/2708).
+* Added the ability to use a table function instead of a table as an argument of a `remote` or `cluster` table function [#2708](https://github.com/yandex/ClickHouse/pull/2708).
 * Support  for `HTTP Basic` authentication in the replication protocol [#2727](https://github.com/yandex/ClickHouse/pull/2727).
 * The `has` function now allows searching for a numeric value in an array of `Enum` values [Maxim Khrisanfov](https://github.com/yandex/ClickHouse/pull/2699).
 * Support for adding arbitrary message separators when reading from `Kafka` [Amos Bird](https://github.com/yandex/ClickHouse/pull/2701).
