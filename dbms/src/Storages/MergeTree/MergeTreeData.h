@@ -386,7 +386,7 @@ public:
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
-    void delayInsertOrThrowIfNeeded(Poco::Event *until = nullptr) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;
     void throwInsertIfNeeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.

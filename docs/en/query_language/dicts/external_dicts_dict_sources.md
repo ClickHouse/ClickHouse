@@ -156,34 +156,36 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 The dictionary configuration in ClickHouse:
 
 ```xml
-<dictionary>
-    <name>table_name</name>
-    <source>
-    <odbc>
-        <!-- You can specifiy the following parameters in connection_string: -->
-        <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
-            <connection_string>DSN=myconnection</connection_string>
-            <table>postgresql_table</table>
-        </odbc>
-    </source>
-    <lifetime>
-        <min>300</min>
-        <max>360</max>
-    </lifetime>
-    <layout>
-        <hashed/>
-    </layout>
-    <structure>
-        <id>
-            <name>id</name>
-        </id>
-        <attribute>
-            <name>some_column</name>
-            <type>UInt64</type>
-            <null_value>0</null_value>
-        </attribute>
-    </structure>
-</dictionary>
+<yandex>
+    <dictionary>
+        <name>table_name</name>
+        <source>
+        <odbc>
+            <!-- You can specifiy the following parameters in connection_string: -->
+            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+                <connection_string>DSN=myconnection</connection_string>
+                <table>postgresql_table</table>
+            </odbc>
+        </source>
+        <lifetime>
+            <min>300</min>
+            <max>360</max>
+        </lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>some_column</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>
 ```
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.

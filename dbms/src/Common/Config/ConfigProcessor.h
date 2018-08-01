@@ -95,6 +95,8 @@ public:
     /// Is the file named as result of config preprocessing, not as original files.
     static bool isPreprocessedFile(const std::string & config_path);
 
+    static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
+
 private:
     const std::string path;
     const std::string preprocessed_path;

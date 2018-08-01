@@ -51,7 +51,11 @@ function gen_revision_author {
                 VERSION_MINOR=$(($VERSION_MINOR + 1))
                 VERSION_PATCH=0
             elif [ "$TYPE" == "patch" ] || [ "$TYPE" == "bugfix" ]; then
-                # VERSION_REVISION not incremented.
+                # VERSION_REVISION not incremented in new scheme.
+                if [ "$VERSION_MAJOR" -eq "1" ] && [ "$VERSION_MINOR" -eq "1" ]; then
+                    VERSION_REVISION=$(($VERSION_REVISION + 1))
+                fi
+
                 VERSION_PATCH=$(($VERSION_PATCH + 1))
             else
                 echo "Unknown version type $TYPE"
