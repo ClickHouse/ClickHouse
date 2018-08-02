@@ -57,26 +57,26 @@ add_library (common ${SPLIT_SHARED}
     ${CONFIG_COMMON}
 )
 
-# When testing for memory leaks, dont link tcmalloc or jemalloc.
+# When testing for memory leaks with Valgrind, dont link tcmalloc or jemalloc.
 
 if (USE_JEMALLOC)
-        message (STATUS "Link jemalloc : ${JEMALLOC_LIBRARIES}")
+    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
     set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (USE_TCMALLOC)
 
+elseif (USE_TCMALLOC)
     if (DEBUG_TCMALLOC AND NOT GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
-        message (WARNING "Requested DEBUG_TCMALLOC but debug lib not found. try install libgoogle-perftools-dev")
+        message (FATAL_ERROR "Requested DEBUG_TCMALLOC but debug library is not found. You should install Google Perftools. Example: sudo apt-get install libgoogle-perftools-dev")
     endif ()
 
     if (DEBUG_TCMALLOC AND GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG)
         message (STATUS "Link libtcmalloc_minimal_debug for testing: ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG}")
         set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL_DEBUG})
     else ()
-        message (STATUS "Link libtcmalloc_minimal : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
+        message (STATUS "Link libtcmalloc_minimal: ${GPERFTOOLS_TCMALLOC_MINIMAL}")
         set (MALLOC_LIBRARIES ${GPERFTOOLS_TCMALLOC_MINIMAL})
     endif ()
 else ()
-    message (STATUS "Disabling libtcmalloc for valgrind better analysis")
+    message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
 if (GLIBC_COMPATIBILITY)
