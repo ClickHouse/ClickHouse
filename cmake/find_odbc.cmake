@@ -16,7 +16,7 @@
 # ODBC_FOUND.  If false, you cannot build anything that requires ODBC.
 
 option (ENABLE_ODBC "Enable ODBC" ON)
-if (NOT APPLE)
+if (NOT APPLE AND NOT ARCH_FREEBSD)
     option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
 
