@@ -101,4 +101,4 @@ target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/include)
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbc)
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbcinst)
 
-target_compile_definitions(iodbc PRIVATE -Wno-self-assign -Wno-pointer-sign -Wno-sometimes-uninitialized)
+target_compile_options(iodbc PRIVATE -Wno-self-assign -Wno-pointer-sign -Wno-sometimes-uninitialized)
