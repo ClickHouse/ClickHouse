@@ -10,8 +10,8 @@
 
 /// iodbc is an extremely bad library.
 ///
-/// Here we apply a patch to make mutex recursive, because otherwise it deadlocks even if simpliest usage scenario
-///  when we pass non-existent DSN.
+/// Here we apply a patch to make mutex recursive, because otherwise
+/// it deadlocks even in simpliest usage scenario when we pass a non-existent DSN.
 ///
 /// #1 in __GI___pthread_mutex_lock (mutex=0x87a93e0 <iodbcdm_global_lock>) at ../nptl/pthread_mutex_lock.c:78
 /// #2 in SQLGetInfo (...) at ../contrib/iodbc/iodbc/info.c:1108
