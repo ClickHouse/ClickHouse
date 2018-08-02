@@ -1,3 +1,49 @@
+## ClickHouse release 18.6.0, 2018-08-02
+
+### Новые возможности:
+* Добавлена поддержка ON выражений для JOIN ON синтаксиса:
+`JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) [AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]`
+Выражение должно представлять из себя цепочку равенств, объединенных оператором AND. Каждая часть равенства может являться произвольным выражением над столбцами одной из таблиц. Поддержана возможность использования fully qualified имен столбцов (`table.name`, `database.table.name`, `table_alias.name`, `subquery_alias.name`) для правой таблицы. [#2742](https://github.com/yandex/ClickHouse/pull/2742)
+* Добавлена возможность включить HTTPS для репликации. [#2760](https://github.com/yandex/ClickHouse/pull/2760)
+
+### Улучшения:
+* Сервер передаёт на клиент также patch-компонент своей версии. Данные о patch компоненте версии добавлены в `system.processes` и `query_log`. [#2646](https://github.com/yandex/ClickHouse/pull/2646)
+
+
+## ClickHouse release 18.5.1, 2018-07-31
+
+### Новые возможности:
+* Добавлена функция хеширования `murmurHash2_32` [#2756](https://github.com/yandex/ClickHouse/pull/2756).
+
+### Улучшения:
+* Добавлена возможность указывать значения в конфигурационных файлах из переменных окружения с помощью атрибута `from_env` [#2741](https://github.com/yandex/ClickHouse/pull/2741).
+* Добавлены регистронезависимые версии функций `coalesce`, `ifNull`, `nullIf` [#2752](https://github.com/yandex/ClickHouse/pull/2752).
+
+### Исправление ошибок:
+* Исправлена возможная ошибка при старте реплики [#2759](https://github.com/yandex/ClickHouse/pull/2759).
+
+
+## ClickHouse release 18.4.0, 2018-07-28
+
+### Новые возможности:
+* Добавлены системные таблицы `formats`, `data_type_families`, `aggregate_function_combinators`, `table_functions`, `table_engines`, `collations` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
+* Добавлена возможность использования табличной функции вместо таблицы в качестве аргумента табличной функции `remote` и `cluster` [#2708](https://github.com/yandex/ClickHouse/pull/2708).
+* Поддержка `HTTP Basic` аутентификации в протоколе репликации [#2727](https://github.com/yandex/ClickHouse/pull/2727).
+* В функции `has` добавлена возможность поиска в массиве значений типа `Enum` по числовому значению [Maxim Khrisanfov](https://github.com/yandex/ClickHouse/pull/2699).
+* Поддержка добавления произвольных разделителей сообщений в процессе чтения из `Kafka` [Amos Bird](https://github.com/yandex/ClickHouse/pull/2701).
+
+### Улучшения:
+* Запрос `ALTER TABLE t DELETE WHERE` не перезаписывает куски данных, которые не были затронуты условием WHERE [#2694](https://github.com/yandex/ClickHouse/pull/2694).
+* Настройка `use_minimalistic_checksums_in_zookeeper` таблиц семейства `ReplicatedMergeTree` включена по-умолчанию. Эта настройка была добавлена в версии 1.1.54378, 2018-04-16. Установка версий, более старых, чем 1.1.54378, становится невозможной.
+* Поддерживается запуск запросов `KILL` и `OPTIMIZE` с указанием `ON CLUSTER` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
+
+### Исправление ошибок:
+* Исправлена ошибка `Column ... is not under aggregate function and not in GROUP BY` в случае агрегации по выражению с оператором IN. Ошибка появилась в версии 18.1.0. ([bbdd780b](https://github.com/yandex/ClickHouse/commit/bbdd780be0be06a0f336775941cdd536878dd2c2))
+* Исправлена ошибка в агрегатной функции `windowFunnel` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2735).
+* Исправлена ошибка в агрегатной функции `anyHeavy` ([a2101df2](https://github.com/yandex/ClickHouse/commit/a2101df25a6a0fba99aa71f8793d762af2b801ee))
+* Исправлено падение сервера при использовании функции `countArray()`.
+
+
 ## ClickHouse release 18.1.0, 2018-07-23
 
 ### Новые возможности:
