@@ -131,6 +131,7 @@ ${IODBC_SOURCE_DIR}/iodbcinst/unicode.c
 
 add_library(iodbc STATIC ${SRCS})
 
+target_include_directories(iodbc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/iodbc)
 target_include_directories(iodbc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/include)
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbc)
@@ -139,7 +140,7 @@ target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbcinst)
 target_compile_definitions(iodbc PRIVATE -DHAVE_CONFIG_H -DWITH_PTHREADS -D_REENTRANT -DODBCVER=0x0350 -DIODBC_BUILD=12171101)
 
 # The library looks like trash.
-target_compile_options(iodbc PRIVATE
+target_compile_options(iodbc PRIVATE -O0
     -Wno-self-assign -Wno-pointer-sign -Wno-uninitialized -Wno-sometimes-uninitialized
     -Wno-address -Wno-stringop-overflow -Wno-strict-overflow -Wno-implicit-function-declaration
     -Wno-unknown-warning-option)
