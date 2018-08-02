@@ -10,7 +10,7 @@ ${ODBC_SOURCE_DIR}/libltdl/lt_dlloader.c
 ${ODBC_SOURCE_DIR}/libltdl/slist.c
 ${ODBC_SOURCE_DIR}/libltdl/lt_error.c
 ${ODBC_SOURCE_DIR}/libltdl/loaders/dlopen.c
-#${ODBC_SOURCE_DIR}/libltdl/loaders/preopen.c
+${ODBC_SOURCE_DIR}/libltdl/loaders/preopen.c
 #${ODBC_SOURCE_DIR}/libltdl/lt__dirent.c
 #${ODBC_SOURCE_DIR}/libltdl/lt__argz.c
 #${ODBC_SOURCE_DIR}/libltdl/loaders/dld_link.c
