@@ -1,3 +1,28 @@
+## ClickHouse release 18.6.0, 2018-08-02
+
+### Новые возможности:
+* Добавлена поддержка ON выражений для JOIN ON синтаксиса:
+`JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) [AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]`
+Выражение должно представлять из себя цепочку равенств, объединенных оператором AND. Каждая часть равенства может являться произвольным выражением над столбцами одной из таблиц. Поддержана возможность использования fully qualified имен столбцов (`table.name`, `database.table.name`, `table_alias.name`, `subquery_alias.name`) для правой таблицы. [#2742](https://github.com/yandex/ClickHouse/pull/2742)
+* Добавлена возможность включить HTTPS для репликации. [#2760](https://github.com/yandex/ClickHouse/pull/2760)
+
+### Улучшения:
+* Сервер передаёт на клиент также patch-компонент своей версии. Данные о patch компоненте версии добавлены в `system.processes` и `query_log`. [#2646](https://github.com/yandex/ClickHouse/pull/2646)
+
+
+## ClickHouse release 18.5.1, 2018-07-31
+
+### Новые возможности:
+* Добавлена функция хеширования `murmurHash2_32` [#2756](https://github.com/yandex/ClickHouse/pull/2756).
+
+### Улучшения:
+* Добавлена возможность указывать значения в конфигурационных файлах из переменных окружения с помощью атрибута `from_env` [#2741](https://github.com/yandex/ClickHouse/pull/2741).
+* Добавлены регистронезависимые версии функций `coalesce`, `ifNull`, `nullIf` [#2752](https://github.com/yandex/ClickHouse/pull/2752).
+
+### Исправление ошибок:
+* Исправлена возможная ошибка при старте реплики [#2759](https://github.com/yandex/ClickHouse/pull/2759).
+
+
 ## ClickHouse release 18.4.0, 2018-07-28
 
 ### Новые возможности:
