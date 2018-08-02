@@ -284,4 +284,4 @@ target_include_directories(unixodbc PUBLIC ${ODBC_SOURCE_DIR}/include)
 
 target_compile_definitions(unixodbc PRIVATE -DHAVE_CONFIG_H)
 
-target_compile_options(unixodbc PRIVATE -Wno-logical-op-parentheses -Wno-dangling-else -Wno-unknown-warning-option -O2)
+target_compile_options(unixodbc PRIVATE -Wno-dangling-else -Wno-parentheses -Wno-unknown-warning-option -O2)
