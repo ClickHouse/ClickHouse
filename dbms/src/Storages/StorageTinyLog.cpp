@@ -245,6 +245,10 @@ void TinyLogBlockOutputStream::writeSuffix()
         return;
     done = true;
 
+    /// If nothing was written - leave the table in initial state.
+    if (streams.empty())
+        return;
+
     /// Finish write.
     for (auto & stream : streams)
         stream.second->finalize();

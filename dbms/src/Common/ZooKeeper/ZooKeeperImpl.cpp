@@ -367,10 +367,20 @@ void read(String & s, ReadBuffer & in)
     static constexpr int32_t max_string_size = 1 << 20;
     int32_t size = 0;
     read(size, in);
-    if (size < 0)    /// TODO Actually it means that zookeeper node has NULL value. Maybe better to treat it like empty string.
+
+    if (size == -1)
+    {
+        /// It means that zookeeper node has NULL value. We will treat it like empty string.
+        s.clear();
+        return;
+    }
+
+    if (size < 0)
         throw Exception("Negative size while reading string from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
+
     if (size > max_string_size)
         throw Exception("Too large string size while reading from ZooKeeper", ZooKeeper::ZMARSHALLINGERROR);
+
     s.resize(size);
     in.read(&s[0], size);
 }
@@ -875,6 +885,18 @@ ZooKeeper::ResponsePtr ZooKeeper::MultiRequest::makeResponse() const { return st
 ZooKeeper::ResponsePtr ZooKeeper::CloseRequest::makeResponse() const { return std::make_shared<CloseResponse>(); }
 
 
+ZooKeeper::RequestPtr ZooKeeper::MultiRequest::clone() const
+{
+    auto res = std::make_shared<MultiRequest>();
+
+    res->requests.reserve(requests.size());
+    for (const auto & request : requests)
+        res->requests.emplace_back(request->clone());
+
+    return res;
+}
+
+
 void ZooKeeper::CreateRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
 void ZooKeeper::RemoveRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
 void ZooKeeper::ExistsRequest::addRootPath(const String & root_path) { ZooKeeperImpl::addRootPath(path, root_path); }
@@ -965,30 +987,52 @@ void ZooKeeper::receiveEvent()
             if (it == operations.end())
                 throw Exception("Received response for unknown xid", ZRUNTIMEINCONSISTENCY);
 
+            /// After this point, we must invoke callback, that we've grabbed from 'operations'.
+            /// Invariant: all callbacks are invoked either in case of success or in case of error.
+            /// (all callbacks in 'operations' are guaranteed to be invoked)
+
             request_info = std::move(it->second);
             operations.erase(it);
             CurrentMetrics::sub(CurrentMetrics::ZooKeeperRequest);
         }
 
-        response = request_info.request->makeResponse();
-
         auto elapsed_microseconds = std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - request_info.time).count();
         ProfileEvents::increment(ProfileEvents::ZooKeeperWaitMicroseconds, elapsed_microseconds);
     }
 
-    if (err)
-        response->error = err;
-    else
+    try
     {
-        response->readImpl(*in);
-        response->removeRootPath(root_path);
+        if (!response)
+            response = request_info.request->makeResponse();
+
+        if (err)
+            response->error = err;
+        else
+        {
+            response->readImpl(*in);
+            response->removeRootPath(root_path);
+        }
+
+        int32_t actual_length = in->count() - count_before_event;
+        if (length != actual_length)
+            throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
+        /// Unrecoverable. Don't leave incorrect state in memory.
+        if (!response)
+            std::terminate();
+
+        response->error = ZMARSHALLINGERROR;
+        if (request_info.callback)
+            request_info.callback(*response);
+
+        throw;
     }
 
-    int32_t actual_length = in->count() - count_before_event;
-    if (length != actual_length)
-        throw Exception("Response length doesn't match. Expected: " + toString(length) + ", actual: " + toString(actual_length), ZMARSHALLINGERROR);
-
-    /// NOTE: Exception in callback will propagate to receiveThread and will lead to session expiration. This is Ok.
+    /// Exception in callback will propagate to receiveThread and will lead to session expiration. This is Ok.
 
     if (request_info.callback)
         request_info.callback(*response);
@@ -1507,7 +1551,11 @@ void ZooKeeper::multi(
     MultiCallback callback)
 {
     MultiRequest request;
-    request.requests = requests;
+
+    /// Deep copy to avoid modifying path in presence of chroot prefix.
+    request.requests.reserve(requests.size());
+    for (const auto & elem : requests)
+        request.requests.emplace_back(elem->clone());
 
     for (auto & elem : request.requests)
         if (CreateRequest * create = typeid_cast<CreateRequest *>(elem.get()))

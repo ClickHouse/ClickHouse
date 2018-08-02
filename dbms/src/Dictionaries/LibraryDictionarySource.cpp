@@ -208,25 +208,30 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 {
     LOG_TRACE(log, "loadKeys " << toString() << " size = " << requested_rows.size());
 
-    auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(key_columns.size());
-    ClickHouseLibrary::CStrings columns_pass{
-        static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), key_columns.size()};
-    size_t key_columns_n = 0;
-    for (auto & column : key_columns)
+    auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
+    std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
+    for (size_t i = 0; i < key_columns.size(); ++i)
     {
-        columns_pass.data[key_columns_n] = column->getName().c_str();
-        ++key_columns_n;
-    }
-    const ClickHouseLibrary::VectorUInt64 requested_rows_c{
-        ext::bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(requested_rows.data()), requested_rows.size()};
-    void * data_ptr = nullptr;
+        auto cell_holder = std::make_unique<ClickHouseLibrary::Field[]>(requested_rows.size());
+        for (size_t j = 0; j < requested_rows.size(); ++j)
+        {
+            auto data_ref = key_columns[i]->getDataAt(requested_rows[j]);
+            cell_holder[j] = ClickHouseLibrary::Field{.data = static_cast<const void *>(data_ref.data), .size = data_ref.size};
+        }
+        holder[i]
+            = ClickHouseLibrary::Row{.data = static_cast<ClickHouseLibrary::Field *>(cell_holder.get()), .size = requested_rows.size()};
 
+        column_data_holders.push_back(std::move(cell_holder));
+    }
+
+    ClickHouseLibrary::Table request_cols{.data = static_cast<ClickHouseLibrary::Row *>(holder.get()), .size = key_columns.size()};
+
+    void * data_ptr = nullptr;
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_loadKeys
-        = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&requested_rows_c))>(
-            "ClickHouseDictionary_v3_loadKeys");
+    auto func_loadKeys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
+        "ClickHouseDictionary_v3_loadKeys");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_loadKeys(data_ptr, &settings->strings, &columns_pass, &requested_rows_c);
+    auto data = func_loadKeys(data_ptr, &settings->strings, &request_cols);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);

@@ -63,7 +63,8 @@ void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, 
     type.deserializeBinaryBulkWithMultipleStreams(column, input_stream_getter, rows, avg_value_size_hint, false, {});
 
     if (column.size() != rows)
-        throw Exception("Cannot read all data in NativeBlockInputStream.", ErrorCodes::CANNOT_READ_ALL_DATA);
+        throw Exception("Cannot read all data in NativeBlockInputStream. Rows read: " + toString(column.size()) + ". Rows expected: " + toString(rows) + ".",
+            ErrorCodes::CANNOT_READ_ALL_DATA);
 }
 
 

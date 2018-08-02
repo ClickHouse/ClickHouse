@@ -11,8 +11,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
 
-#include <Storages/VirtualColumnFactory.h>
-
 #include <Common/typeid_cast.h>
 
 

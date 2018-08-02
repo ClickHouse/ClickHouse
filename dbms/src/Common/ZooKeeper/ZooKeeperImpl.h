@@ -156,6 +156,10 @@ public:
     using XID = int32_t;
     using OpNum = int32_t;
 
+    struct Response;
+    using ResponsePtr = std::shared_ptr<Response>;
+    using Responses = std::vector<ResponsePtr>;
+    using ResponseCallback = std::function<void(const Response &)>;
 
     struct Response
     {
@@ -166,9 +170,9 @@ public:
         virtual void removeRootPath(const String & /* root_path */) {}
     };
 
-    using ResponsePtr = std::shared_ptr<Response>;
-    using Responses = std::vector<ResponsePtr>;
-    using ResponseCallback = std::function<void(const Response &)>;
+    struct Request;
+    using RequestPtr = std::shared_ptr<Request>;
+    using Requests = std::vector<RequestPtr>;
 
     struct Request
     {
@@ -176,6 +180,8 @@ public:
         bool has_watch = false;
 
         virtual ~Request() {}
+        virtual RequestPtr clone() const = 0;
+
         virtual OpNum getOpNum() const = 0;
 
         /// Writes length, xid, op_num, then the rest.
@@ -188,11 +194,9 @@ public:
         virtual String getPath() const = 0;
     };
 
-    using RequestPtr = std::shared_ptr<Request>;
-    using Requests = std::vector<RequestPtr>;
-
     struct HeartbeatRequest final : Request
     {
+        RequestPtr clone() const override { return std::make_shared<HeartbeatRequest>(*this); }
         OpNum getOpNum() const override { return 11; }
         void writeImpl(WriteBuffer &) const override {}
         ResponsePtr makeResponse() const override;
@@ -222,6 +226,7 @@ public:
         String scheme;
         String data;
 
+        RequestPtr clone() const override { return std::make_shared<AuthRequest>(*this); }
         OpNum getOpNum() const override { return 100; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -235,6 +240,7 @@ public:
 
     struct CloseRequest final : Request
     {
+        RequestPtr clone() const override { return std::make_shared<CloseRequest>(*this); }
         OpNum getOpNum() const override { return -11; }
         void writeImpl(WriteBuffer &) const override {}
         ResponsePtr makeResponse() const override;
@@ -254,6 +260,7 @@ public:
         bool is_sequential = false;
         ACLs acls;
 
+        RequestPtr clone() const override { return std::make_shared<CreateRequest>(*this); }
         OpNum getOpNum() const override { return 1; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -274,6 +281,7 @@ public:
         String path;
         int32_t version = -1;
 
+        RequestPtr clone() const override { return std::make_shared<RemoveRequest>(*this); }
         OpNum getOpNum() const override { return 2; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -290,6 +298,7 @@ public:
     {
         String path;
 
+        RequestPtr clone() const override { return std::make_shared<ExistsRequest>(*this); }
         OpNum getOpNum() const override { return 3; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -308,6 +317,7 @@ public:
     {
         String path;
 
+        RequestPtr clone() const override { return std::make_shared<GetRequest>(*this); }
         OpNum getOpNum() const override { return 4; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -329,6 +339,7 @@ public:
         String data;
         int32_t version = -1;
 
+        RequestPtr clone() const override { return std::make_shared<SetRequest>(*this); }
         OpNum getOpNum() const override { return 5; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -347,6 +358,7 @@ public:
     {
         String path;
 
+        RequestPtr clone() const override { return std::make_shared<ListRequest>(*this); }
         OpNum getOpNum() const override { return 12; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -367,6 +379,7 @@ public:
         String path;
         int32_t version = -1;
 
+        RequestPtr clone() const override { return std::make_shared<CheckRequest>(*this); }
         OpNum getOpNum() const override { return 13; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;
@@ -383,6 +396,7 @@ public:
     {
         Requests requests;
 
+        RequestPtr clone() const override;
         OpNum getOpNum() const override { return 14; }
         void writeImpl(WriteBuffer &) const override;
         ResponsePtr makeResponse() const override;

@@ -14,8 +14,8 @@ from helpers.client import CommandRequest
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', config_dir='configs', with_zookeeper=True, macroses={"layer": 0, "shard": 0, "replica": 1})
-node2 = cluster.add_instance('node2', config_dir='configs', with_zookeeper=True, macroses={"layer": 0, "shard": 0, "replica": 2})
+node1 = cluster.add_instance('node1', config_dir='configs', with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 1})
+node2 = cluster.add_instance('node2', config_dir='configs', with_zookeeper=True, macros={"layer": 0, "shard": 0, "replica": 2})
 nodes = [node1, node2]
 
 @pytest.fixture(scope="module")
@@ -134,14 +134,18 @@ def test_insert_multithreaded(started_cluster):
     # Sanity check: at least something was inserted
     assert runner.total_inserted > 0
 
-    for i in range(30): # wait for replication 3 seconds max
+    all_replicated = False
+    for i in range(50): # wait for replication 5 seconds max
         time.sleep(0.1)
 
         def get_delay(node):
             return int(node.query("SELECT absolute_delay FROM system.replicas WHERE table = 'repl_test'").rstrip())
 
         if all([get_delay(n) == 0 for n in nodes]):
+            all_replicated = True
             break
+
+    assert all_replicated
 
     actual_inserted = []
     for i, node in enumerate(nodes):
