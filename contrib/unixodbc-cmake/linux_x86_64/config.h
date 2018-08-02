@@ -339,7 +339,7 @@
 #define HAVE_WORKING_ARGZ 1
 
 /* Define as const if the declaration of iconv() needs const. */
-#define ICONV_CONST 
+#define ICONV_CONST
 
 /* Install includedir */
 #define INCLUDE_PREFIX "/usr/local/include"
@@ -438,7 +438,7 @@
 #define STRICT_ODBC_ERROR /**/
 
 /* System file path */
-#define SYSTEM_FILE_PATH "/usr/local/etc"
+#define SYSTEM_FILE_PATH "/etc"
 
 /* Lib path */
 #define SYSTEM_LIB_PATH "/usr/local/lib"

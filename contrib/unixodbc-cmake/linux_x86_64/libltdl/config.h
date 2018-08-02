@@ -63,7 +63,7 @@
 #define HAVE_LIBDL 1
 
 /* Define if libdlloader will be built on this platform */
-/* #undef HAVE_LIBDLLOADER */
+#define HAVE_LIBDLLOADER 1
 
 /* Define to 1 if you have the <mach-o/dyld.h> header file. */
 /* #undef HAVE_MACH_O_DYLD_H */

@@ -133,7 +133,7 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 endif ()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
-    add_subdirectory (iodbc-cmake)
+    add_subdirectory (unixodbc-cmake)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
