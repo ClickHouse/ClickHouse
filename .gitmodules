@@ -43,3 +43,6 @@
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc.git
+[submodule "contrib/iodbc"]
+	path = contrib/iodbc
+	url = https://github.com/openlink/iODBC.git
