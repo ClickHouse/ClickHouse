@@ -3363,7 +3363,7 @@ bool StorageReplicatedMergeTree::checkPartitionCanBeDroppedDetachReplace(const A
     
     for (const auto & part : parts_to_remove)
     {
-        context.checkPartitionCanBeDroppedAttachReplace(database_name, table_name, part->getTotalColumnsSize().data_compressed);
+        context.checkPartitionCanBeDroppedDetachReplace(database_name, table_name, part->getTotalColumnsSize().data_compressed);
     }
     return true;
 }
