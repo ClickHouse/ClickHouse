@@ -92,6 +92,41 @@ ${IODBC_SOURCE_DIR}/iodbc/trace/TablePrivileges.c
 ${IODBC_SOURCE_DIR}/iodbc/trace/Tables.c
 ${IODBC_SOURCE_DIR}/iodbc/trace/trace.c
 ${IODBC_SOURCE_DIR}/iodbc/trace/Transact.c
+${IODBC_SOURCE_DIR}/iodbcinst/dlf.c
+#${IODBC_SOURCE_DIR}/iodbcinst/Info.c
+${IODBC_SOURCE_DIR}/iodbcinst/inifile.c
+${IODBC_SOURCE_DIR}/iodbcinst/iodbc_error.c
+${IODBC_SOURCE_DIR}/iodbcinst/misc.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLConfigDataSource.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLConfigDriver.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLCreateDataSource.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLGetAvailableDrivers.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLGetConfigMode.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLGetInstalledDrivers.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLGetPrivateProfileString.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLGetTranslator.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallDriver.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallDriverEx.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallDriverManager.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallerError.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallODBC.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallTranslator.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLInstallTranslatorEx.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLManageDataSource.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLPostInstallerError.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLReadFileDSN.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLRemoveDefaultDataSource.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLRemoveDriver.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLRemoveDriverManager.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLRemoveDSNFromIni.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLRemoveTranslator.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLSetConfigMode.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLValidDSN.c
+#${IODBC_SOURCE_DIR}/iodbcinst/SQLWriteDSNToIni.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLWriteFileDSN.c
+${IODBC_SOURCE_DIR}/iodbcinst/SQLWritePrivateProfileString.c
+${IODBC_SOURCE_DIR}/iodbcinst/unicode.c
+
 )
 
 add_library(iodbc STATIC ${SRCS})
@@ -100,6 +135,8 @@ target_include_directories(iodbc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/include)
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbc)
 target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbcinst)
+
+target_compile_definitions(iodbc PRIVATE -DHAVE_CONFIG_H -DWITH_PTHREADS -D_REENTRANT -DODBCVER=0x0350 -DIODBC_BUILD=12171101)
 
 # The library looks like trash.
 target_compile_options(iodbc PRIVATE
