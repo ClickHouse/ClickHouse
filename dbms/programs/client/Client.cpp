@@ -204,8 +204,23 @@ public:
 
         std::vector<Block> blocks;
 
-        //preload all functions
-        sendQuery("SELECT name FROM system.functions", blocks);
+        //preload all functions, table engines, formats, table functions, data types, combinators, collations
+        sendQuery(
+                "SELECT name FROM system.functions"
+                " UNION ALL "
+                "SELECT name FROM system.table_engines"
+                " UNION ALL "
+                "SELECT name FROM system.formats"
+                " UNION ALL "
+                "SELECT name FROM system.table_functions"
+                " UNION ALL "
+                "SELECT name FROM system.data_type_families"
+                " UNION ALL "
+                "SELECT name FROM system.aggregate_function_combinators"
+                " UNION ALL "
+                "SELECT name FROM system.collations",
+                blocks
+        );
         for (const auto &block : blocks) {
             size_t size = block.rows();
             for (size_t i = size; i--;) {
