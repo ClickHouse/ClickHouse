@@ -303,7 +303,7 @@ bool StorageMaterializedView::checkPartitionCanBeDroppedDetachReplace(const ASTP
     if (!target_table)
         return true;
 
-    return target_table->checkPartitionCanBeDroppedAttachReplace(partition);
+    return target_table->checkPartitionCanBeDroppedDetachReplace(partition);
 }
 
 void registerStorageMaterializedView(StorageFactory & factory)
