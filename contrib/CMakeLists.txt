@@ -103,6 +103,12 @@ if (USE_INTERNAL_SSL_LIBRARY)
     target_include_directories(${OPENSSL_SSL_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
 endif ()
 
+if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
+    add_subdirectory (mariadb-connector-c-cmake)
+    target_include_directories(mysqlclient PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(mysqlclient PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+endif ()
+
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     set (RDKAFKA_BUILD_EXAMPLES OFF CACHE INTERNAL "")
     set (RDKAFKA_BUILD_TESTS OFF CACHE INTERNAL "")
