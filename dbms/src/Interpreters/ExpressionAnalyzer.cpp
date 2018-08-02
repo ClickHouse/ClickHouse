@@ -1156,22 +1156,21 @@ void ExpressionAnalyzer::normalizeTreeImpl(
         {
             if (typeid_cast<ASTAsterisk *>(asts[i].get()))
             {
-                ASTs all_columns;
+                Names all_columns_name;
 
-                if (storage)
-                {
-                    /// If we select from a table, get only not MATERIALIZED, not ALIAS columns.
-                    for (const auto & name_type : storage->getColumns().ordinary)
-                        all_columns.emplace_back(std::make_shared<ASTIdentifier>(name_type.name));
-                }
-                else
-                {
-                    for (const auto & name_type : source_columns)
-                        all_columns.emplace_back(std::make_shared<ASTIdentifier>(name_type.name));
-                }
+                auto columns_name = storage ? storage->getColumns().ordinary.getNames() : source_columns.getNames();
+                all_columns_name.insert(all_columns_name.begin(), columns_name.begin(), columns_name.end());
+
+                NameSet joined_columns;
+                collectJoinedColumns(joined_columns);
+                auto columns_from_joined_table = analyzed_join.columns_from_joined_table.getNames();
+                all_columns_name.insert(all_columns_name.end(), columns_from_joined_table.begin(), columns_from_joined_table.end());
+                /// HACK: The side effect of calling the `collectJoinedColumns` method, we have to reset it.
+                analyzed_join = AnalyzedJoin();
 
                 asts.erase(asts.begin() + i);
-                asts.insert(asts.begin() + i, all_columns.begin(), all_columns.end());
+                for (size_t idx = 0; idx < all_columns_name.size(); idx++)
+                    asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(all_columns_name[idx]));
             }
         }
     }
