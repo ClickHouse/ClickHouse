@@ -132,6 +132,10 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
     target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
 endif ()
 
+if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
+    add_subdirectory (unixodbc-cmake)
+endif ()
+
 if (USE_INTERNAL_CAPNP_LIBRARY)
     set (BUILD_TESTING 0 CACHE INTERNAL "")
     set (_save ${CMAKE_CXX_EXTENSIONS})
