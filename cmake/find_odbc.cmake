@@ -25,6 +25,7 @@ endif ()
 if (ENABLE_ODBC)
     if (USE_INTERNAL_ODBC_LIBRARY)
         set (ODBC_LIBRARIES iodbc)
+        set (ODBC_FOUND 1)
         set (USE_ODBC 1)
     else ()
         find_path(ODBC_INCLUDE_DIRECTORIES
