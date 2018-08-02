@@ -181,7 +181,7 @@ struct IntHash64Impl
     {
         return intHash64(x ^ 0x4CF2D2BAAE6DA887ULL);
     }
-}''
+};
 
 
 template <typename Impl>
