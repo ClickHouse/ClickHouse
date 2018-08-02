@@ -52,9 +52,6 @@ case $PACKAGE_MANAGER in
             libreadline-dev)
                 $SUDO apt-get install -y libreadline-dev
                 ;;
-            libunixodbc-dev)
-                $SUDO apt-get install -y unixodbc-dev
-                ;;
             llvm-libs*)
                 $SUDO apt-get install -y ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
                 ;;
@@ -103,9 +100,6 @@ case $PACKAGE_MANAGER in
             libreadline-dev)
                 $SUDO yum install -y readline-devel
                 ;;
-            libunixodbc-dev)
-                $SUDO yum install -y unixODBC-devel libtool-ltdl-devel
-                ;;
             *)
                 echo "Unknown package"; exit 1;
                 ;;
@@ -147,9 +141,6 @@ case $PACKAGE_MANAGER in
                 ;;
             libreadline-dev)
                 $SUDO pkg install -y readline
-                ;;
-            libunixodbc-dev)
-                $SUDO pkg install -y unixODBC libltdl
                 ;;
             *)
                 echo "Unknown package"; exit 1;
