@@ -3354,7 +3354,7 @@ bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
 }
 
 
-bool StorageReplicatedMergeTree::checkPartitionCanBeDroppedAttachReplace(const ASTPtr & partition)
+bool StorageReplicatedMergeTree::checkPartitionCanBeDroppedDetachReplace(const ASTPtr & partition)
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     

@@ -303,7 +303,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
     if (config().has("max_partition_size_to_drop"))
-        global_context->setMaxPartitionSizeToDropAttachReplace(config().getUInt64("max_partition_size_to_drop"));
+        global_context->setMaxPartitionSizeToDropDetachReplace(config().getUInt64("max_partition_size_to_drop"));
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);

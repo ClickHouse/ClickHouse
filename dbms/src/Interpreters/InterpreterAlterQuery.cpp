@@ -59,18 +59,17 @@ BlockIO InterpreterAlterQuery::execute()
         switch (command.type)
         {
             case PartitionCommand::DROP_PARTITION:
-                if (table->checkPartitionCanBeDroppedAttachReplace(command.partition))
+                if (table->checkPartitionCanBeDroppedDetachReplace(command.partition))
                     table->dropPartition(query_ptr, command.partition, command.detach, context);
                 break;
 
             case PartitionCommand::ATTACH_PARTITION:
-                if (table->checkPartitionCanBeDroppedAttachReplace(command.partition))
-                    table->attachPartition(command.partition, command.part, context);
+                table->attachPartition(command.partition, command.part, context);
                 break;
 
             case PartitionCommand::REPLACE_PARTITION:
                 {
-                    if (table->checkPartitionCanBeDroppedAttachReplace(command.partition))
+                    if (table->checkPartitionCanBeDroppedDetachReplace(command.partition))
                     {
                         String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
                         auto from_storage = context.getTable(from_database, command.from_table);
