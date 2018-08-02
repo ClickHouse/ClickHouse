@@ -189,7 +189,7 @@ public:
 
     /// @returns multiplier for U to become T with correct scale
     template <typename U>
-    T scaleFactorFor(const DataTypeDecimal<U> & x) const
+    T scaleFactorFor(const DataTypeDecimal<U> & x, bool ) const
     {
         if (getScale() < x.getScale())
             throw Exception("Decimal result's scale is less then argiment's one", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -198,7 +198,12 @@ public:
     }
 
     template <typename U>
-    T scaleFactorFor(const DataTypeNumber<U> & ) const { return 1; }
+    T scaleFactorFor(const DataTypeNumber<U> & , bool is_multiply_or_divisor) const
+    {
+        if (is_multiply_or_divisor)
+            return 1;
+        return getScaleMultiplier();
+    }
 
     T parseFromString(const String & str) const;
 
@@ -214,7 +219,7 @@ template <typename T, typename U>
 typename std::enable_if_t<(sizeof(T) >= sizeof(U)), const DataTypeDecimal<T>>
 decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty, bool is_multiply, bool is_divide)
 {
-    T scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
     if (is_multiply)
         scale = tx.getScale() + ty.getScale();
     else if (is_divide)
@@ -226,7 +231,7 @@ template <typename T, typename U>
 typename std::enable_if_t<(sizeof(T) < sizeof(U)), const DataTypeDecimal<U>>
 decimalResultType(const DataTypeDecimal<T> & tx, const DataTypeDecimal<U> & ty, bool is_multiply, bool is_divide)
 {
-    U scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
+    UInt32 scale = (tx.getScale() > ty.getScale() ? tx.getScale() : ty.getScale());
     if (is_multiply)
         scale = tx.getScale() * ty.getScale();
     else if (is_divide)
