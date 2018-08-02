@@ -2,10 +2,13 @@ option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc" ON)
 option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" ${NOT_UNBUNDLED})
 
 if (ENABLE_JEMALLOC)
-    if (USE_INTERNAL_JEMALLOC_LIBRARY)
-        set (JEMALLOC_LIBRARIES "jemalloc")
-    else ()
+
+    if (NOT USE_INTERNAL_JEMALLOC_LIBRARY)
         find_package (JeMalloc)
+    endif ()
+
+    if (NOT JEMALLOC_LIBRARIES)
+        set (JEMALLOC_LIBRARIES "jemalloc")
     endif ()
 
     if (JEMALLOC_LIBRARIES)
