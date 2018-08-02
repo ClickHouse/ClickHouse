@@ -301,7 +301,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("max_table_size_to_drop"))
         global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
 
-    /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
     if (config().has("max_partition_size_to_drop"))
         global_context->setMaxPartitionSizeToDropDetachReplace(config().getUInt64("max_partition_size_to_drop"));
 
