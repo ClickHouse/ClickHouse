@@ -9,8 +9,9 @@ ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
 #TODO: DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
 DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
-BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
+[ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
+BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
 [ -x "$CUR_DIR/clickhouse-server" ] && [ -x "${CUR_DIR}/${CLICKHOUSE_BINARY}-client" ] && BIN_DIR= # Allow run in /usr/bin
 [ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/programs/}
 [ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
@@ -52,9 +53,9 @@ CERT=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG --key
 [ -n "$DHPARAM" ] && openssl dhparam -out $DHPARAM 256
 [ -n "$PRIVATEKEY" ] && [ -n "$CERT" ] && openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout $PRIVATEKEY -out $CERT
 
-if [ "$TEST_GDB" ]; then
+if [ "$TEST_GDB" ] || [ "$GDB" ]; then
     echo -e "run \nset pagination off \nset logging file $DATA_DIR/gdb.log \nset logging on \nthread apply all backtrace \ndetach \nquit " > $DATA_DIR/gdb.cmd
-    GDB="gdb -x $DATA_DIR/gdb.cmd --args "
+    GDB=${GDB:="gdb -x $DATA_DIR/gdb.cmd --args "}
 fi
 
 # Start a local clickhouse server which will be used to run tests

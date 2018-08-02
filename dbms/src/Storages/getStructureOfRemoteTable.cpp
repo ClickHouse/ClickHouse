@@ -7,6 +7,8 @@
 #include <Storages/IStorage.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 
 namespace DB
@@ -22,21 +24,40 @@ ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const std::string & database,
     const std::string & table,
-    const Context & context)
+    const Context & context,
+    const ASTPtr & table_func_ptr)
 {
     /// Send to the first any remote shard.
     const auto & shard_info = cluster.getAnyShardInfo();
 
-    if (shard_info.isLocal())
-        return context.getTable(database, table)->getColumns();
+    String query;
 
-    /// Request for a table description
-    String query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
+    if (table_func_ptr)
+    {
+        if (shard_info.isLocal())
+        {
+            auto table_function = static_cast<const ASTFunction *>(table_func_ptr.get());
+            return TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context)->getColumns();
+        }
+
+        auto table_func_name = queryToString(table_func_ptr);
+        query = "DESC TABLE " + table_func_name;
+    }
+    else
+    {
+        if (shard_info.isLocal())
+            return context.getTable(database, table)->getColumns();
+
+        /// Request for a table description
+        query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
+    }
+
     ColumnsDescription res;
 
     auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, InterpreterDescribeQuery::getSampleBlock(), context);
     input->setPoolMode(PoolMode::GET_ONE);
-    input->setMainTable(QualifiedTableName{database, table});
+    if (!table_func_ptr)
+        input->setMainTable(QualifiedTableName{database, table});
     input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

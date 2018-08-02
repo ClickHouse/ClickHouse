@@ -121,6 +121,9 @@ private:
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
 
+    using SampleBlockCache = std::unordered_map<std::string, Block>;
+    mutable SampleBlockCache sample_block_cache;
+
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
@@ -246,6 +249,15 @@ public:
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
     std::pair<String, UInt16> getInterserverIOAddress() const;
+
+    /// Credentials which server will use to communicate with others
+    void setInterserverCredentials(const String & user, const String & password);
+    std::pair<String, String> getInterserverCredentials() const;
+
+    /// Interserver requests scheme (http or https)
+    void setInterserverScheme(const String & scheme);
+    String getInterserverScheme() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -401,9 +413,7 @@ public:
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
 
-    using getSampleBlockCacheType = std::unordered_map<std::string, Block>;
-    mutable Context::getSampleBlockCacheType get_sample_block_cache;
-    getSampleBlockCacheType & getSampleBlockCache() const;
+    SampleBlockCache & getSampleBlockCache() const;
 
 private:
     /** Check if the current client has access to the specified database.

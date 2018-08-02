@@ -46,6 +46,7 @@ public:
     bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueRepresentedByInteger() const override;
+    bool isValueRepresentedByUnsignedInteger() const override;
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
