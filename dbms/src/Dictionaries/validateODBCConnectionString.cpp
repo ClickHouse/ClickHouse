@@ -1,5 +1,6 @@
 #include <map>
 #include <cstring>
+#include <algorithm>
 #include <Poco/String.h>
 #include <common/find_first_symbols.h>
 #include <Common/Exception.h>
@@ -38,6 +39,9 @@ std::string validateODBCConnectionString(const std::string & connection_string)
 
     if (connection_string.empty())
         throw Exception("ODBC connection string cannot be empty", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
+
+    if (connection_string.size() >= MAX_CONNECTION_STRING_SIZE)
+        throw Exception("ODBC connection string is too long", ErrorCodes::BAD_ODBC_CONNECTION_STRING);
 
     const char * pos = connection_string.data();
     const char * end = pos + connection_string.size();
@@ -176,7 +180,12 @@ std::string validateODBCConnectionString(const std::string & connection_string)
 
     std::string reconstructed_connection_string;
 
-    auto write_value = [&](const std::string & value)
+    auto write_plain_value = [&](const std::string & value)
+    {
+        reconstructed_connection_string += value;
+    };
+
+    auto write_escaped_value = [&](const std::string & value)
     {
         reconstructed_connection_string += '{';
 
@@ -200,6 +209,14 @@ std::string validateODBCConnectionString(const std::string & connection_string)
         }
 
         reconstructed_connection_string += '}';
+    };
+
+    auto write_value = [&](const std::string & value)
+    {
+        if (std::all_of(value.begin(), value.end(), isWordCharASCII))
+            write_plain_value(value);
+        else
+            write_escaped_value(value);
     };
 
     auto write_element = [&](const std::string & name, const std::string & value)
