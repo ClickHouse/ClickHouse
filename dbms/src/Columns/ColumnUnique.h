@@ -1,75 +1,21 @@
 #pragma once
 #include <Columns/IColumnUnique.h>
-#include <Common/HashTable/HashMap.h>
-#include <ext/range.h>
-#include <Common/typeid_cast.h>
+#include <Columns/ReverseIndex.h>
+
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
+
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 
-class NullMap;
-
-
-template <typename ColumnType>
-struct StringRefWrapper
-{
-    const ColumnType * column = nullptr;
-    size_t row = 0;
-
-    StringRef ref;
-
-    StringRefWrapper(const ColumnType * column, size_t row) : column(column), row(row) {}
-    StringRefWrapper(StringRef ref) : ref(ref) {}
-    StringRefWrapper(const StringRefWrapper & other) = default;
-    StringRefWrapper & operator =(int) { column = nullptr; ref.data = nullptr; return *this; }
-    bool operator ==(int) const { return nullptr == column && nullptr == ref.data; }
-    StringRefWrapper() {}
-
-    operator StringRef() const { return column ? column->getDataAt(row) : ref; }
-
-    bool operator==(const StringRefWrapper<ColumnType> & other) const
-    {
-        return (column && column == other.column && row == other.row) || StringRef(*this) == other;
-    }
-
-};
-
-namespace ZeroTraits
-{
-    template <typename ColumnType>
-    bool check(const StringRefWrapper<ColumnType> x) { return nullptr == x.column && nullptr == x.ref.data; }
-
-    template <typename ColumnType>
-    void set(StringRefWrapper<ColumnType> & x) { x.column = nullptr; x.ref.data = nullptr; }
-};
-
+#include <Common/typeid_cast.h>
+#include <ext/range.h>
 
 namespace DB
 {
 
-namespace
-{
-    template <typename ColumnType>
-    struct ColumnUniqueContainer
-    {
-        using Type = HashMap<StringRefWrapper<ColumnType>, UInt64, StringRefHash>;
-    };
-
-    template <>
-    struct ColumnUniqueContainer<ColumnString>
-    {
-        using Type = HashMapWithSavedHash<StringRefWrapper<ColumnString>, UInt64, StringRefHash>;
-    };
-
-    template <>
-    struct ColumnUniqueContainer<ColumnFixedString>
-    {
-        using Type = HashMapWithSavedHash<StringRefWrapper<ColumnFixedString>, UInt64, StringRefHash>;
-    };
-}
 
 template <typename ColumnType>
 class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>
@@ -79,7 +25,7 @@ class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<Colum
 private:
     explicit ColumnUnique(MutableColumnPtr && holder, bool is_nullable);
     explicit ColumnUnique(const IDataType & type);
-    ColumnUnique(const ColumnUnique & other) : column_holder(other.column_holder), is_nullable(other.is_nullable) {}
+    ColumnUnique(const ColumnUnique & other);
 
 public:
     MutableColumnPtr cloneEmpty() const override;
@@ -136,36 +82,30 @@ public:
     size_t allocatedBytes() const override
     {
         return column_holder->allocatedBytes()
-               + (index ? index->getBufferSizeInBytes() : 0)
+               + index.allocatedBytes()
                + (cached_null_mask ? cached_null_mask->allocatedBytes() : 0);
     }
     void forEachSubcolumn(IColumn::ColumnCallback callback) override
     {
         callback(column_holder);
-        index = nullptr;
+        index.setColumn(getRawColumnPtr());
     }
 
 private:
 
-    using IndexMapType = typename ColumnUniqueContainer<ColumnType>::Type;
-
     ColumnPtr column_holder;
+    bool is_nullable;
+    ReverseIndex<UInt64, ColumnType> index;
 
     /// For DataTypeNullable, stores null map.
     mutable ColumnPtr cached_null_mask;
     mutable ColumnPtr cached_column_nullable;
 
-    /// Lazy initialized.
-    std::unique_ptr<IndexMapType> index;
+    static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
+    size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
 
-    bool is_nullable;
-
-    size_t numSpecialValues() const { return is_nullable ? 2 : 1; }
-
-    void buildIndex();
     ColumnType * getRawColumnPtr() { return static_cast<ColumnType *>(column_holder->assumeMutable().get()); }
     const ColumnType * getRawColumnPtr() const { return static_cast<const ColumnType *>(column_holder.get()); }
-    UInt64 insertIntoMap(const StringRefWrapper<ColumnType> & ref, UInt64 value);
 
     template <typename IndexType>
     MutableColumnPtr uniqueInsertRangeImpl(
@@ -174,8 +114,7 @@ private:
         size_t length,
         size_t num_added_rows,
         typename ColumnVector<IndexType>::MutablePtr && positions_column,
-        ColumnType * overflowed_keys,
-        IndexMapType * secondary_index,
+        ReverseIndex<UInt64, ColumnType> * secondary_index,
         size_t max_dictionary_size);
 };
 
@@ -186,20 +125,36 @@ MutableColumnPtr ColumnUnique<ColumnType>::cloneEmpty() const
 }
 
 template <typename ColumnType>
-ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type) : is_nullable(type.isNullable())
+ColumnUnique<ColumnType>::ColumnUnique(const ColumnUnique & other)
+    : column_holder(other.column_holder)
+    , is_nullable(other.is_nullable)
+    , index(numSpecialValues(is_nullable), 0)
+{
+    index.setColumn(getRawColumnPtr());
+}
+
+template <typename ColumnType>
+ColumnUnique<ColumnType>::ColumnUnique(const IDataType & type)
+    : is_nullable(type.isNullable())
+    , index(numSpecialValues(is_nullable), 0)
 {
     const auto & holder_type = is_nullable ? *static_cast<const DataTypeNullable &>(type).getNestedType() : type;
     column_holder = holder_type.createColumn()->cloneResized(numSpecialValues());
+    index.setColumn(getRawColumnPtr());
 }
 
 template <typename ColumnType>
 ColumnUnique<ColumnType>::ColumnUnique(MutableColumnPtr && holder, bool is_nullable)
-    : column_holder(std::move(holder)), is_nullable(is_nullable)
+    : column_holder(std::move(holder))
+    , is_nullable(is_nullable)
+    , index(numSpecialValues(is_nullable), 0)
 {
     if (column_holder->size() < numSpecialValues())
         throw Exception("Too small holder column for ColumnUnique.", ErrorCodes::ILLEGAL_COLUMN);
     if (column_holder->isColumnNullable())
         throw Exception("Holder column for ColumnUnique can't be nullable.", ErrorCodes::ILLEGAL_COLUMN);
+
+    index.setColumn(getRawColumnPtr());
 }
 
 template <typename ColumnType>
@@ -239,38 +194,6 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 }
 
 template <typename ColumnType>
-void ColumnUnique<ColumnType>::buildIndex()
-{
-    if (index)
-        return;
-
-    auto column = getRawColumnPtr();
-    index = std::make_unique<IndexMapType>(column_holder->size());
-
-    for (auto row : ext::range(numSpecialValues(), column->size()))
-    {
-        (*index)[StringRefWrapper<ColumnType>(column, row)] = row;
-    }
-}
-
-template <typename ColumnType>
-UInt64 ColumnUnique<ColumnType>::insertIntoMap(const StringRefWrapper<ColumnType> & ref, UInt64 value)
-{
-    if (!index)
-        buildIndex();
-
-    using IteratorType = typename IndexMapType::iterator;
-    IteratorType it;
-    bool inserted;
-    index->emplace(ref, it, inserted);
-
-    if (inserted)
-        it->second = value;
-
-    return it->second;
-}
-
-template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
     if (x.getType() == Field::Types::Null)
@@ -283,7 +206,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
         return getDefaultValueIndex();
 
     column->insert(x);
-    auto pos = insertIntoMap(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
+    auto pos = index.insert(prev_size);
     if (pos != prev_size)
         column->popBack(1);
 
@@ -306,24 +229,21 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t length)
 {
-    if (!index)
-        buildIndex();
-
     auto column = getRawColumnPtr();
 
     if (column->getDataAt(getDefaultValueIndex()) == StringRef(pos, length))
         return getDefaultValueIndex();
 
     UInt64 size = column->size();
-    auto iter = index->find(StringRefWrapper<ColumnType>(StringRef(pos, length)));
+    UInt64 insertion_point = index.getInsertionPoint(StringRef(pos, length));
 
-    if (iter == index->end())
+    if (insertion_point == size)
     {
         column->insertData(pos, length);
-        return insertIntoMap(StringRefWrapper<ColumnType>(column, size), size);
+        index.insertFromLastRow();
     }
 
-    return iter->second;
+    return insertion_point;
 }
 
 template <typename ColumnType>
@@ -347,7 +267,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertDataWithTerminatingZero(const char 
         return getDefaultValueIndex();
     }
 
-    auto position = insertIntoMap(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
+    auto position = index.insert(prev_size);
     if (position != prev_size)
         column->popBack(1);
 
@@ -367,7 +287,7 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
         return getDefaultValueIndex();
     }
 
-    auto index_pos = insertIntoMap(StringRefWrapper<ColumnType>(column, prev_size), prev_size);
+    auto index_pos = index.insert(prev_size);
     if (index_pos != prev_size)
         column->popBack(1);
 
@@ -397,18 +317,14 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     size_t length,
     size_t num_added_rows,
     typename ColumnVector<IndexType>::MutablePtr && positions_column,
-    ColumnType * overflowed_keys,
-    IndexMapType * secondary_index,
+    ReverseIndex<UInt64, ColumnType> * secondary_index,
     size_t max_dictionary_size)
 {
-    if (!index)
-        buildIndex();
-
     const ColumnType * src_column;
     const NullMap * null_map = nullptr;
     auto & positions = positions_column->getData();
 
-    auto updatePosition = [&](UInt64 & next_position) -> MutableColumnPtr
+    auto update_position = [&](UInt64 & next_position) -> MutableColumnPtr
     {
         constexpr auto next_size = NumberTraits::nextSize(sizeof(IndexType));
         using SuperiorIndexType = typename NumberTraits::Construct<false, false, next_size>::Type;
@@ -432,7 +348,6 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
                     length,
                     num_added_rows,
                     std::move(expanded_column),
-                    overflowed_keys,
                     secondary_index,
                     max_dictionary_size);
         }
@@ -458,6 +373,22 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
     if (secondary_index)
         next_position += secondary_index->size();
 
+    auto check_inserted_position = [&next_position](UInt64 inserted_position)
+    {
+        if (inserted_position != next_position)
+            throw Exception("Inserted position " + toString(inserted_position)
+                            + " is not equal with expected " + toString(next_position), ErrorCodes::LOGICAL_ERROR);
+    };
+
+    auto insert_key = [&](const StringRef & ref, ReverseIndex<UInt64, ColumnType> * cur_index)
+    {
+        positions[num_added_rows] = next_position;
+        cur_index->getColumn()->insertData(ref.data, ref.size);
+        auto inserted_pos = cur_index->insertFromLastRow();
+        check_inserted_position(inserted_pos);
+        return update_position(next_position);
+    };
+
     for (; num_added_rows < length; ++num_added_rows)
     {
         auto row = start + num_added_rows;
@@ -468,52 +399,40 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
             positions[num_added_rows] = getDefaultValueIndex();
         else
         {
-            auto it = index->find(StringRefWrapper<ColumnType>(src_column, row));
-            if (it == index->end())
+            auto ref = src_column->getDataAt(row);
+            auto cur_index = &index;
+            bool inserted = false;
+
+            while (!inserted)
             {
+                auto insertion_point = cur_index->getInsertionPoint(ref);
 
-                if (overflowed_keys && next_position >= max_dictionary_size)
+                if (insertion_point == cur_index->lastInsertionPoint())
                 {
-                    auto jt = secondary_index->find(StringRefWrapper<ColumnType>(src_column, row));
-                    if (jt == secondary_index->end())
+                    if (secondary_index && cur_index != secondary_index && next_position >= max_dictionary_size)
                     {
-                        positions[num_added_rows] = next_position;
-                        auto ref = src_column->getDataAt(row);
-                        overflowed_keys->insertData(ref.data, ref.size);
-                        (*secondary_index)[StringRefWrapper<ColumnType>(src_column, row)] = next_position;
-
-                        if (auto res = updatePosition(next_position))
-                            return res;
+                        cur_index = secondary_index;
+                        continue;
                     }
-                    else
-                        positions[num_added_rows] = jt->second;
-                }
-                else
-                {
-                    positions[num_added_rows] = next_position;
-                    auto ref = src_column->getDataAt(row);
-                    column->insertData(ref.data, ref.size);
-                    (*index)[StringRefWrapper<ColumnType>(column, next_position)] = next_position;
 
-                    if (auto res = updatePosition(next_position))
+                    if (auto res = insert_key(ref, cur_index))
                         return res;
                 }
+                else
+                   positions[num_added_rows] = insertion_point;
+
+                inserted = true;
             }
-            else
-                positions[num_added_rows] = it->second;
         }
     }
 
-    /// TODO: remove
     // checkIndexes(*positions_column, column->size() + (overflowed_keys ? overflowed_keys->size() : 0));
-
     return std::move(positions_column);
 }
 
 template <typename ColumnType>
 MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-
     auto callForType = [this, &src, start, length](auto x) -> MutableColumnPtr
     {
         size_t size = getRawColumnPtr()->size();
@@ -522,8 +441,7 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeFrom(const IColumn &
         if (size <= std::numeric_limits<IndexType>::max())
         {
             auto positions = ColumnVector<IndexType>::create(length);
-            return this->uniqueInsertRangeImpl<IndexType>(src, start, length, 0,
-                                                          std::move(positions), nullptr, nullptr, 0);
+            return this->uniqueInsertRangeImpl<IndexType>(src, start, length, 0, std::move(positions), nullptr, 0);
         }
 
         return nullptr;
@@ -551,7 +469,6 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     size_t length,
     size_t max_dictionary_size)
 {
-
     auto overflowed_keys = column_holder->cloneEmpty();
     auto overflowed_keys_ptr = typeid_cast<ColumnType *>(overflowed_keys.get());
     if (!overflowed_keys_ptr)
@@ -565,9 +482,10 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
         if (size <= std::numeric_limits<IndexType>::max())
         {
             auto positions = ColumnVector<IndexType>::create(length);
-            IndexMapType secondary_index;
+            ReverseIndex<UInt64, ColumnType> secondary_index(0, max_dictionary_size);
+            secondary_index.setColumn(overflowed_keys_ptr);
             return this->uniqueInsertRangeImpl<IndexType>(src, start, length, 0, std::move(positions),
-                                                          overflowed_keys_ptr, &secondary_index, max_dictionary_size);
+                                                          &secondary_index, max_dictionary_size);
         }
 
         return nullptr;

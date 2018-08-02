@@ -268,7 +268,7 @@ struct Settings
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
     \
     M(SettingUInt64, max_dictionary_size, 8192, "Maximum size (in rows) of shared global dictionary for WithDictionary type.") \
-    M(SettingBool, use_single_dictionary_for_part, true, "WithDictionary type serialization setting. If is true, than will use additional keys when global dictionary overflows. Otherwise, will create several shared dictionaries.") \
+    M(SettingBool, use_single_dictionary_for_part, false, "WithDictionary type serialization setting. If is true, than will use additional keys when global dictionary overflows. Otherwise, will create several shared dictionaries.") \
 
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \

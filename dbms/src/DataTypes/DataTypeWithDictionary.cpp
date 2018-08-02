@@ -2,6 +2,7 @@
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
