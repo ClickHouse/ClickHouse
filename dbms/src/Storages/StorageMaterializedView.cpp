@@ -293,7 +293,7 @@ bool StorageMaterializedView::checkTableCanBeDropped() const
     return target_table->checkTableCanBeDropped();
 }
 
-bool StorageMaterializedView::checkPartitionCanBeDroppedAttachReplace(const ASTPtr & partition)
+bool StorageMaterializedView::checkPartitionCanBeDroppedDetachReplace(const ASTPtr & partition)
 {
     /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
     if (!has_inner_table)

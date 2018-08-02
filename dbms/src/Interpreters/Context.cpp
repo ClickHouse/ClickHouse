@@ -1677,18 +1677,35 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 }
 
 
-void Context::setMaxPartitionSizeToDropAttachReplace(size_t max_size)
+void Context::setMaxPartitionSizeToDropDetachReplace(size_t max_size)
 {
     // Is initialized at server startup
     shared->max_partition_size_to_drop = max_size;
 }
 
 
-void Context::checkPartitionCanBeDroppedAttachReplace(const String & database, const String & table, size_t partition_size)
+void Context::checkPartitionCanBeDroppedDetachReplace(const String & database, const String & table, size_t partition_size)
 {
     size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
     if (!max_partition_size_to_drop || partition_size <= max_partition_size_to_drop)
         return;
+    
+    Poco::File force_file(getFlagsPath() + "force_drop_table");
+    bool force_file_exists = force_file.exists();
+    
+    if (force_file_exists)
+    {
+        try
+        {
+            force_file.remove();
+            return;
+        }
+        catch (...)
+        {
+            /// User should recreate force file on each drop, it shouldn't be protected
+            tryLogCurrentException("Drop table check", "Can't remove force file to enable table drop");
+        }
+    }
     
     String partition_size_str = formatReadableSizeWithDecimalSuffix(partition_size);
     String max_partition_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_partition_size_to_drop);
@@ -1696,10 +1713,14 @@ void Context::checkPartitionCanBeDroppedAttachReplace(const String & database, c
 
     ostr << "Partition in table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
-         << "1. Partition size (" << partition_size_str << ") is greater than max_table_size_to_drop (" << max_partition_size_to_drop_str << ")\n";
+         << "1. Partition size (" << partition_size_str << ") is greater than max_table_size_to_drop (" << max_partition_size_to_drop_str << ")\n"
+         << "2. File '" << force_file.path() << "' intended to force DROP "
+            << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n";
+         << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n"
+         << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
+         << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
     throw Exception(ostr.str(), ErrorCodes::PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
 }
