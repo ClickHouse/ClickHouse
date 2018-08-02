@@ -103,4 +103,6 @@ target_include_directories(iodbc PUBLIC ${IODBC_SOURCE_DIR}/iodbcinst)
 
 # The library looks like trash.
 target_compile_options(iodbc PRIVATE
-    -Wno-self-assign -Wno-pointer-sign -Wno-sometimes-uninitialized -Wno-address -Wno-stringop-overflow -Wno-strict-overflow -Wno-implicit-function-declaration)
+    -Wno-self-assign -Wno-pointer-sign -Wno-uninitialized -Wno-sometimes-uninitialized
+    -Wno-address -Wno-stringop-overflow -Wno-strict-overflow -Wno-implicit-function-declaration
+    -Wno-unknown-warning-option)
