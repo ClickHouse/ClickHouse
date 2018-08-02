@@ -55,6 +55,10 @@ if (USE_INTERNAL_MURMURHASH2_LIBRARY)
     add_subdirectory (libmurmurhash2)
 endif ()
 
+if (USE_INTERNAL_MURMURHASH3_LIBRARY)
+    add_subdirectory (libmurmurhash3)
+endif ()
+
 if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # todo: make pull to Dead2/zlib-ng and remove:
