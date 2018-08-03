@@ -90,4 +90,4 @@ INSERT INTO test.decimal (a) VALUES ('0x1'); -- { clientError 72 }
 INSERT INTO test.decimal (a) VALUES ('1e2'); -- { clientError 72 }
 
 SELECT * FROM test.decimal ORDER BY a, b, c, d, e, f, g, h, i, j;
---DROP TABLE IF EXISTS test.defaults;
+DROP TABLE IF EXISTS test.decimal;
