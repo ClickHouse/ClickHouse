@@ -95,7 +95,8 @@ function gen_revision_author {
                 dbms/cmake/version.cmake
 
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
-            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog
+            gen_dockerfiles "$VERSION_STRING"
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile
             git push
 
             # Second tag for correct version information in version.cmake inside tag
@@ -152,4 +153,10 @@ function gen_changelog {
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
         -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
         < $CHLOG.in > $CHLOG
+}
+
+# Change package versions that are installed for Docker images.
+function gen_dockerfiles {
+    VERSION_STRING="$1"
+    ls -1 docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='$VERSION_STRING'/'
 }
