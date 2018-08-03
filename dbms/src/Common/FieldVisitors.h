@@ -162,9 +162,13 @@ public:
     }
 
     T operator() (const UInt64 & x) const { return x; }
-    T operator() (const UInt128 & x) const { return x; }
     T operator() (const Int64 & x) const { return x; }
     T operator() (const Float64 & x) const { return x; }
+
+    T operator() (const UInt128 &) const
+    {
+        throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
 };
 
 
@@ -189,6 +193,8 @@ public:
 /** More precise comparison, used for index.
   * Differs from Field::operator< and Field::operator== in that it also compares values of different types.
   * Comparison rules are same as in FunctionsComparison (to be consistent with expression evaluation in query).
+  *
+  * TODO Comparisons of UInt128 with different type are incorrect.
   */
 class FieldVisitorAccurateEquals : public StaticVisitor<bool>
 {
@@ -204,7 +210,7 @@ public:
 
     bool operator() (const UInt64 &, const Null &)          const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
-    bool operator() (const UInt64 &, const UInt128)         const { return false; }
+    bool operator() (const UInt64 &, const UInt128)         const { return true; }
     bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::equalsOp(l, r); }
     bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::equalsOp(l, r); }
     bool operator() (const UInt64 &, const String &)        const { return false; }
@@ -280,7 +286,7 @@ public:
 
     bool operator() (const UInt64 &, const Null &)        const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)  const { return l < r; }
-    bool operator() (const UInt64 &, const UInt128 &)     const { return false; }
+    bool operator() (const UInt64 &, const UInt128 &)     const { return true; }
     bool operator() (const UInt64 & l, const Int64 & r)   const { return accurate::lessOp(l, r); }
     bool operator() (const UInt64 & l, const Float64 & r) const { return accurate::lessOp(l, r); }
     bool operator() (const UInt64 &, const String &)      const { return true; }
