@@ -19,8 +19,6 @@ INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (0, 0, 0, 0, 0, 0
 INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42);
 INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42);
 
-SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h, 21 / h, 84 / h FROM test.decimal WHERE h > 0;
-
 SELECT a + a, a - a, a * a, a / a FROM test.decimal WHERE a = 42;
 SELECT b + b, b - b, b * b, b / b FROM test.decimal WHERE b = 42;
 SELECT c + c, c - c, c * c, c / c FROM test.decimal WHERE c = 42;
