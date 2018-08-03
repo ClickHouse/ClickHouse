@@ -126,10 +126,9 @@ bool StorageMergeTree::checkTableCanBeDropped() const
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
-    return true;
 }
 
-bool StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
+void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     
@@ -140,7 +139,6 @@ bool StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     {
         context.checkPartitionCanBeDropped(database_name, table_name, part->bytes_on_disk);
     }
-    return true;
 }
 
 void StorageMergeTree::drop()
