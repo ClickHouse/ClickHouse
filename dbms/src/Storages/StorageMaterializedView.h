@@ -44,7 +44,7 @@ public:
 
     bool checkTableCanBeDropped() const override;
     
-    bool checkPartitionCanBeDroppedDetachReplace(const ASTPtr & partition) override;
+    bool checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     BlockInputStreams read(
         const Names & column_names,

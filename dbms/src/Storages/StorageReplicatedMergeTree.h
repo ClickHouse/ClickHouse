@@ -140,7 +140,7 @@ public:
 
     bool checkTableCanBeDropped() const override;
 
-    bool checkPartitionCanBeDroppedDetachReplace(const ASTPtr & partition) override;
+    bool checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 

@@ -1677,14 +1677,14 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
 }
 
 
-void Context::setMaxPartitionSizeToDropDetachReplace(size_t max_size)
+void Context::setMaxPartitionSizeToDrop(size_t max_size)
 {
     // Is initialized at server startup
     shared->max_partition_size_to_drop = max_size;
 }
 
 
-void Context::checkPartitionCanBeDroppedDetachReplace(const String & database, const String & table, size_t partition_size)
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, size_t partition_size)
 {
     size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
     if (!max_partition_size_to_drop || partition_size <= max_partition_size_to_drop)
