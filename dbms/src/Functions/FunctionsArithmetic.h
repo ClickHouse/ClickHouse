@@ -602,7 +602,9 @@ struct AbsImpl
 
     static inline ResultType apply(A a)
     {
-        if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
+        if constexpr (std::is_same_v<A, __int128>)
+            return a < 0 ? -a : a;
+        else if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
         else if constexpr (std::is_integral_v<A> && std::is_unsigned_v<A>)
             return static_cast<ResultType>(a);
@@ -1238,6 +1240,9 @@ struct FunctionUnaryArithmeticMonotonicity;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
+    //static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
+    static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>>;
+
     template <typename F>
     static bool castType(const IDataType * type, F && f)
     {
@@ -1251,7 +1256,10 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeInt32,
             DataTypeInt64,
             DataTypeFloat32,
-            DataTypeFloat64
+            DataTypeFloat64,
+            DataTypeDecimal<Int32>,
+            DataTypeDecimal<Int64>
+            //DataTypeDecimal<Int128> // TODO: needs visitor
         >(type, std::forward<F>(f));
     }
 
@@ -1274,8 +1282,17 @@ public:
         DataTypePtr result;
         bool valid = castType(arguments[0].get(), [&](const auto & type)
         {
-            using T0 = typename std::decay_t<decltype(type)>::FieldType;
-            result = std::make_shared<DataTypeNumber<typename Op<T0>::ResultType>>();
+            using DataType = std::decay_t<decltype(type)>;
+            using T0 = typename DataType::FieldType;
+
+            if constexpr (IsDecimal<DataType>)
+            {
+                if constexpr (!allow_decimal)
+                    return false;
+                result = std::make_shared<DataType>(type.getPrecision(), type.getScale());
+            }
+            else
+                result = std::make_shared<DataTypeNumber<typename Op<T0>::ResultType>>();
             return true;
         });
         if (!valid)
@@ -1288,16 +1305,37 @@ public:
     {
         bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
         {
-            using T0 = typename std::decay_t<decltype(type)>::FieldType;
-            if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+            using DataType = std::decay_t<decltype(type)>;
+            using T0 = typename DataType::FieldType;
+
+            if constexpr (IsDecimal<DataType>)
             {
-                auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
-                auto & vec_res = col_res->getData();
-                vec_res.resize(col->getData().size());
-                UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
-                block.getByPosition(result).column = std::move(col_res);
-                return true;
+                if constexpr (allow_decimal)
+                {
+                    if (auto col = checkAndGetColumn<ColumnVector<T0, false>>(block.getByPosition(arguments[0]).column.get()))
+                    {
+                        auto col_res = ColumnVector<typename Op<T0>::ResultType, false>::create();
+                        auto & vec_res = col_res->getData();
+                        vec_res.resize(col->getData().size());
+                        UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                        block.getByPosition(result).column = std::move(col_res);
+                        return true;
+                    }
+                }
             }
+            else
+            {
+                if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+                {
+                    auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                    auto & vec_res = col_res->getData();
+                    vec_res.resize(col->getData().size());
+                    UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                    block.getByPosition(result).column = std::move(col_res);
+                    return true;
+                }
+            }
+
             return false;
         });
         if (!valid)
