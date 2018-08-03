@@ -285,6 +285,3 @@ target_include_directories(unixodbc PUBLIC ${ODBC_SOURCE_DIR}/include)
 target_compile_definitions(unixodbc PRIVATE -DHAVE_CONFIG_H)
 
 target_compile_options(unixodbc PRIVATE -Wno-dangling-else -Wno-parentheses -Wno-misleading-indentation -Wno-unknown-warning-option -O2)
-
-set(ODBC_FOUND 1)
-set(ODBC_INCLUDE_DIRECTORIES )
