@@ -74,7 +74,7 @@ void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const String & query, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
-    BlockInputStreams & res)
+    BlockInputStreams & res, bool prefer_localhost_replica)
 {
     auto emplace_local_stream = [&]()
     {
@@ -90,7 +90,7 @@ void SelectStreamFactory::createForShard(
         res.emplace_back(std::move(stream));
     };
 
-    if (shard_info.isLocal())
+    if (prefer_localhost_replica && shard_info.isLocal())
     {
         StoragePtr main_table_storage;
 
