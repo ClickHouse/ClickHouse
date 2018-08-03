@@ -24,7 +24,7 @@ SELECT a > '0.0' FROM test.decimal; -- { serverError 43 }
 
 SELECT a, b, a = b, a < b, a > b, a != b, a <= b, a >= b FROM test.decimal ORDER BY a;
 SELECT a, g, a = g, a < g, a > g, a != g, a <= g, a >= g FROM test.decimal ORDER BY a;
-SELECT a > 0, b > 0, g > 0 FROM test.decimal;
+SELECT a > 0, b > 0, g > 0 FROM test.decimal ORDER BY a DESC;
 SELECT a, g > toInt8(0), g > toInt16(0), g > toInt32(0), g > toInt64(0) FROM test.decimal ORDER BY a;
 SELECT a, g > toUInt8(0), g > toUInt16(0), g > toUInt32(0), g > toUInt64(0) FROM test.decimal ORDER BY a;
 SELECT a, b, g FROM test.decimal WHERE a IN(42) AND b IN(42) AND g IN(42);
@@ -40,4 +40,4 @@ SELECT a, b, c FROM test.decimal WHERE a = toInt64(42) AND b = toInt64(42) AND c
 SELECT a, b, c FROM test.decimal WHERE a = toFloat32(42); -- { serverError 43 }
 SELECT a, b, c FROM test.decimal WHERE a = toFloat64(42); -- { serverError 43 }
 
-DROP TABLE IF EXISTS test.defaults;
+DROP TABLE IF EXISTS test.decimal;
