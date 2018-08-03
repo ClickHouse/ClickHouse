@@ -15,11 +15,11 @@ namespace ErrorCodes
 
 VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    const String & sign_column_, size_t max_block_size_, bool can_collapse_all_rows_,
+    const String & sign_column_, size_t max_block_size_,
     WriteBuffer * out_row_sources_buf_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
     , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 2)
-    , current_keys(max_rows_in_queue + 1), can_collapse_all_rows(can_collapse_all_rows_)
+    , current_keys(max_rows_in_queue + 1)
 {
     sign_column_number = header.getPositionByName(sign_column_);
 }
@@ -130,10 +130,7 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
             {
                 update_queue(current);
 
-                /// If all the rows was collapsed, we still want to give at least one block in the result.
-                /// If queue is empty then don't collapse two last rows.
-                if (sign == sign_in_queue || (!can_collapse_all_rows && blocks_written == 0
-                                              && merged_rows == 0 && queue.empty() && current_keys.size() == 1))
+                if (sign == sign_in_queue)
                     current_keys.pushBack(next_key);
                 else
                 {
