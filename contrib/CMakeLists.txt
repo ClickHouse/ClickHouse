@@ -1,5 +1,11 @@
-if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-deprecated-declarations -Wno-non-virtual-dtor -std=c++1z")
+# Third-party libraries may have substandard code.
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -std=c++1z")
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
 endif ()
 
 if (USE_INTERNAL_BOOST_LIBRARY)
@@ -79,6 +85,10 @@ if (ENABLE_TCMALLOC AND USE_INTERNAL_GPERFTOOLS_LIBRARY)
     add_subdirectory (libtcmalloc)
 endif ()
 
+if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
+    add_subdirectory (jemalloc-cmake)
+endif ()
+
 if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
 endif ()
@@ -91,6 +101,12 @@ if (USE_INTERNAL_SSL_LIBRARY)
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
+endif ()
+
+if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
+    add_subdirectory (mariadb-connector-c-cmake)
+    target_include_directories(mysqlclient PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(mysqlclient PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -114,6 +130,10 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
         target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
     endif ()
     target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
+endif ()
+
+if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
+    add_subdirectory (unixodbc-cmake)
 endif ()
 
 if (USE_INTERNAL_CAPNP_LIBRARY)
