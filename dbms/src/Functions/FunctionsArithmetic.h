@@ -704,12 +704,14 @@ struct DecimalBinaryOperation
     static constexpr bool is_plus_minus =   std::is_same_v<Op, PlusImpl<ResultType, ResultType>> ||
                                             std::is_same_v<Op, MinusImpl<ResultType, ResultType>>;
     static constexpr bool is_division =     std::is_same_v<Op, DivideFloatingImpl<ResultType, ResultType>>;
+    static constexpr bool is_compare =      std::is_same_v<Op, LeastBaseImpl<ResultType, ResultType>> ||
+                                            std::is_same_v<Op, GreatestBaseImpl<ResultType, ResultType>>;
 
     static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
-        if constexpr (is_plus_minus)
+        if constexpr (is_plus_minus || is_compare)
         {
             if (scale_a != 1)
             {
@@ -740,7 +742,7 @@ struct DecimalBinaryOperation
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
-        if constexpr (is_plus_minus)
+        if constexpr (is_plus_minus || is_compare)
         {
             if (scale_a != 1)
             {
@@ -771,7 +773,7 @@ struct DecimalBinaryOperation
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = b.size();
-        if constexpr (is_plus_minus)
+        if constexpr (is_plus_minus || is_compare)
         {
             if (scale_a != 1)
             {
@@ -800,7 +802,7 @@ struct DecimalBinaryOperation
 
     static ResultType constant_constant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
-        if constexpr (is_plus_minus)
+        if constexpr (is_plus_minus || is_compare)
             return Op::template apply<ResultType>(a * scale_a, b * scale_b);
         else if constexpr (is_division)
             return Op::template apply<ResultType>(a * scale_a, b);
@@ -856,7 +858,9 @@ public:
         std::is_same_v<Operation<T0, T0>, PlusImpl<T0, T0>> ||
         std::is_same_v<Operation<T0, T0>, MinusImpl<T0, T0>> ||
         std::is_same_v<Operation<T0, T0>, MultiplyImpl<T0, T0>> ||
-        std::is_same_v<Operation<T0, T0>, DivideFloatingImpl<T0, T0>>;
+        std::is_same_v<Operation<T0, T0>, DivideFloatingImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, LeastBaseImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, GreatestBaseImpl<T0, T0>>;
 
     /// Appropriate result type for binary operator on numeric types. "Date" can also mean
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
