@@ -15,9 +15,11 @@
 # ODBC_LIBRARIES, the libraries to link against to use ODBC
 # ODBC_FOUND.  If false, you cannot build anything that requires ODBC.
 
-option (ENABLE_ODBC "Enable ODBC" ON)
-if (NOT APPLE AND NOT ARCH_FREEBSD)
+option (ENABLE_ODBC "Enable ODBC" ${ARCH_LINUX})
+if (ARCH_LINUX)
     option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})
+else ()
+    option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" OFF)
 endif ()
 
 if (USE_INTERNAL_ODBC_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/unixodbc/README")

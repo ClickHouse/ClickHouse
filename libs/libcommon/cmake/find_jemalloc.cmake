@@ -1,8 +1,9 @@
-# bundled jemalloc only for linux x64
-if (NOT ARCH_FREEBSD AND NOT APPLE)
-    option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc" ON)
+option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc" ${ARCH_LINUX})
+if (ARCH_LINUX)
     option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" ${NOT_UNBUNDLED})
-endif ()
+elseif ()
+    option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" OFF)
+endif()
 
 if (ENABLE_JEMALLOC)
     if (NOT USE_INTERNAL_JEMALLOC_LIBRARY)
