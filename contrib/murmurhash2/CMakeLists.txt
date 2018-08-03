@@ -3,4 +3,3 @@ add_library(murmurhash2
     include/murmurhash2.h)
 
 target_include_directories (murmurhash2 PUBLIC include)
-target_include_directories (murmurhash2 PUBLIC src)
