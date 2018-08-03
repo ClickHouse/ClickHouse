@@ -34,6 +34,11 @@ DataTypePtr FieldToDataType::operator() (const UInt64 & x) const
     return std::make_shared<DataTypeUInt64>();
 }
 
+DataTypePtr FieldToDataType::operator() (const Uint128 & x) const
+{
+    return std::make_shared<DataTypeUInt128>();
+}
+
 DataTypePtr FieldToDataType::operator() (const Int64 & x) const
 {
     if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min())   return std::make_shared<DataTypeInt8>();
