@@ -332,7 +332,7 @@ public:
     /// Checks that Partition could be dropped right now
     /// If it can - returns true
     /// Otherwise - throws an exception with detailed information or returns false
-    virtual bool checkPartitionCanBeDroppedDetachReplace(const ASTPtr & /*partition*/) { return true; }
+    virtual bool checkPartitionCanBeDropped(const ASTPtr & /*partition*/) { return true; }
 
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}
