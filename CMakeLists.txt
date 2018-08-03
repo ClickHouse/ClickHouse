@@ -162,7 +162,7 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND ARCH_FREEBSD))
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-    
+
     # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
     set (CMAKE_SHARED_LINKER_FLAGS       "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
@@ -281,7 +281,6 @@ include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
-find_contrib_lib(murmurhash2)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
 
