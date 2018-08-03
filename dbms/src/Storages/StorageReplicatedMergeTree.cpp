@@ -1972,9 +1972,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
             auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
             auto [user, password] = context.getInterserverCredentials();
+            String interserver_scheme = context.getInterserverScheme();
+
+            if (interserver_scheme != address.scheme)
+                throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, replica_path,
-                                                    address.host, address.replication_port, timeouts, user, password, false, TMP_PREFIX + "fetch_");
+                                                    address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -2704,10 +2708,14 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
     auto [user, password] = context.getInterserverCredentials();
+    String interserver_scheme = context.getInterserverScheme();
 
     try
     {
-        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, to_detached);
+        if (interserver_scheme != address.scheme)
+            throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
+
+        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, interserver_scheme, to_detached);
 
         if (!to_detached)
         {
@@ -4586,6 +4594,7 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
     res.queries_port = context.getTCPPort();
     res.database = database_name;
     res.table = table_name;
+    res.scheme = context.getInterserverScheme();
     return res;
 }
 
