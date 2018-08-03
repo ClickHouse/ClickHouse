@@ -3345,16 +3345,15 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 }
 
 
-bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
+void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
-    return true;
 }
 
 
-bool StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
+void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     
@@ -3365,7 +3364,6 @@ bool StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
     {
         context.checkPartitionCanBeDropped(database_name, table_name, part->bytes_on_disk);
     }
-    return true;
 }
 
 

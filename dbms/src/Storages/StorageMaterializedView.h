@@ -42,9 +42,9 @@ public:
 
     void shutdown() override;
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
     
-    bool checkPartitionCanBeDropped(const ASTPtr & partition) override;
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     BlockInputStreams read(
         const Names & column_names,

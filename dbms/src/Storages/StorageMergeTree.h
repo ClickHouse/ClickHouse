@@ -83,9 +83,9 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
 
-    bool checkPartitionCanBeDropped(const ASTPtr & partition) override;
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
