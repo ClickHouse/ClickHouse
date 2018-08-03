@@ -40,4 +40,8 @@ SELECT a, b, c FROM test.decimal WHERE a = toInt64(42) AND b = toInt64(42) AND c
 SELECT a, b, c FROM test.decimal WHERE a = toFloat32(42); -- { serverError 43 }
 SELECT a, b, c FROM test.decimal WHERE a = toFloat64(42); -- { serverError 43 }
 
+SELECT least(a, b), least(a, g), greatest(a, b), greatest(a, g) FROM test.decimal ORDER BY a;
+SELECT least(a, 0), least(b, 0), least(g, 0) FROM test.decimal ORDER BY a;
+SELECT greatest(a, 0), greatest(b, 0), greatest(g, 0) FROM test.decimal ORDER BY a;
+
 DROP TABLE IF EXISTS test.decimal;
