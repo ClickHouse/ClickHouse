@@ -25,6 +25,7 @@ endif ()
 if (ENABLE_ODBC)
     if (USE_INTERNAL_ODBC_LIBRARY)
         set (ODBC_LIBRARIES unixodbc)
+        set (ODBC_INCLUDE_DIRECTORIES ) # Include directories will be used automatically by target_include_directories.
         set (ODBC_FOUND 1)
         set (USE_ODBC 1)
     else ()
