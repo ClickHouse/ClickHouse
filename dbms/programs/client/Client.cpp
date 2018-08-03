@@ -204,7 +204,7 @@ public:
 
         std::vector<Block> blocks;
 
-        //preload all functions, table engines, formats, table functions, data types, combinators, collations
+        //preload all functions, table engines, formats, table functions, data types, combinators
         sendQuery(
                 "SELECT name FROM system.functions"
                 " UNION ALL "
@@ -216,9 +216,7 @@ public:
                 " UNION ALL "
                 "SELECT name FROM system.data_type_families"
                 " UNION ALL "
-                "SELECT name FROM system.aggregate_function_combinators"
-                " UNION ALL "
-                "SELECT name FROM system.collations",
+                "SELECT name FROM system.aggregate_function_combinators",
                 blocks
         );
         for (const auto &block : blocks) {
