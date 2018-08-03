@@ -52,7 +52,7 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_MURMURHASH2_LIBRARY)
-    add_subdirectory (libmurmurhash2)
+    add_subdirectory (murmurhash2)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)

@@ -162,6 +162,9 @@ set (CMAKE_C_FLAGS_DEBUG                 "${CMAKE_C_FLAGS_DEBUG} -O0 -g3 -ggdb3 
 
 if (MAKE_STATIC_LIBRARIES AND NOT APPLE AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND ARCH_FREEBSD))
     set (CMAKE_EXE_LINKER_FLAGS          "${CMAKE_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
+    
+    # Along with executables, we also build example of shared library for "library dictionary source"; and it also should be self-contained.
+    set (CMAKE_SHARED_LINKER_FLAGS       "${CMAKE_SHARED_LINKER_FLAGS} -static-libgcc -static-libstdc++")
 endif ()
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
