@@ -273,6 +273,8 @@ private:
         void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
+
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query);
     };
 
     AnalyzedJoin analyzed_join;
