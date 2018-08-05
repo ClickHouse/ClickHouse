@@ -1,5 +1,5 @@
-option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc" ${ARCH_LINUX})
-if (ARCH_LINUX)
+option (ENABLE_JEMALLOC "Set to TRUE to use jemalloc" ${OS_LINUX})
+if (OS_LINUX)
     option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" ${NOT_UNBUNDLED})
 elseif ()
     option (USE_INTERNAL_JEMALLOC_LIBRARY "Set to FALSE to use system jemalloc library instead of bundled" OFF)
