@@ -44,12 +44,6 @@ void Block::initializeIndexByName()
 }
 
 
-bool Block::hasAmbiguousNames() const
-{
-    return index_by_name.size() < data.size();
-}
-
-
 void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
 {
     if (position > data.size())
