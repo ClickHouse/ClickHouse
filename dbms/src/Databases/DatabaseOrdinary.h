@@ -59,11 +59,13 @@ public:
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
     String getDataPath() const override;
+    String getDatabaseName() const override;
     String getMetadataPath() const override;
     String getTableMetadataPath(const String & table_name) const override;
 
-    void shutdown() override;
     void drop() override;
+
+    void shutdown() override;
 
 private:
     const String metadata_path;

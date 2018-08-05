@@ -25,40 +25,24 @@ public:
     ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
     ~ReplicatedMergeTreeRestartingThread();
 
-    void wakeup()
-    {
-        wakeup_event.set();
-        task_handle->schedule();
-    }
-
-    Poco::Event & getWakeupEvent()
-    {
-        return wakeup_event;
-    }
-
-    void stop()
-    {
-        need_stop = true;
-        wakeup_event.set();
-    }
+    void wakeup() { task->schedule(); }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    Poco::Event wakeup_event;
     std::atomic<bool> need_stop {false};
 
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
-    BackgroundSchedulePool::TaskHandle task_handle;
+    BackgroundSchedulePool::TaskHolder task;
     Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
     bool first_time = true;                 /// Activate replica for the first time.
     time_t prev_time_of_check_delay = 0;
     bool startup_completed = false;
 
     void run();
-    void completeShutdown();
 
     /// Start or stop background threads. Used for partial reinitialization when re-creating a session in ZooKeeper.
     bool tryStartup(); /// Returns false if ZooKeeper is not available.

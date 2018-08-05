@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -e
 
 clickhouse-client -q "DROP TABLE IF EXISTS test.comparisons"

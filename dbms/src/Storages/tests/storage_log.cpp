@@ -2,9 +2,10 @@
 
 #include <IO/WriteBufferFromOStream.h>
 #include <Storages/StorageLog.h>
-#include <DataStreams/TabSeparatedRowOutputStream.h>
+#include <Formats/FormatFactory.h>
+#include <Interpreters/Context.h>
 #include <DataStreams/LimitBlockInputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -25,8 +26,7 @@ try
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
     names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
-    StoragePtr table = StorageLog::create(
-        "./", "test", ColumnsDescription{names_and_types}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create("./", "test", ColumnsDescription{names_and_types}, 1048576);
     table->startup();
 
     /// write into it
@@ -91,11 +91,12 @@ try
 
         WriteBufferFromOStream out_buf(std::cout);
 
-        LimitBlockInputStream in_limit(in, 10, 0);
-        RowOutputStreamPtr output_ = std::make_shared<TabSeparatedRowOutputStream>(out_buf, sample);
-        BlockOutputStreamFromRowOutputStream output(output_, sample);
+        Context context = Context::createGlobal();
 
-        copyData(in_limit, output);
+        LimitBlockInputStream in_limit(in, 10, 0);
+        BlockOutputStreamPtr output = FormatFactory::instance().getOutput("TabSeparated", out_buf, sample, context);
+
+        copyData(in_limit, *output);
     }
 
     return 0;

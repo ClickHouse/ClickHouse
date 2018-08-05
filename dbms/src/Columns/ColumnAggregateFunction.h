@@ -88,7 +88,7 @@ private:
     }
 
 public:
-    ~ColumnAggregateFunction();
+    ~ColumnAggregateFunction() override;
 
     void set(const AggregateFunctionPtr & func_)
     {

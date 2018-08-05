@@ -32,9 +32,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int AIO_READ_ERROR;
-    extern const int AIO_SUBMIT_ERROR;
     extern const int AIO_WRITE_ERROR;
-    extern const int AIO_COMPLETION_ERROR;
+    extern const int CANNOT_IO_SUBMIT;
+    extern const int CANNOT_IO_GETEVENTS;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_FSYNC;
 }
@@ -119,12 +119,12 @@ void WriteBufferAIO::nextImpl()
     request.aio_offset = region_aligned_begin;
 
     /// Send the request.
-    while (io_submit(aio_context.ctx, request_ptrs.size(), request_ptrs.data()) < 0)
+    while (io_submit(aio_context.ctx, 1, &request_ptr) < 0)
     {
         if (errno != EINTR)
         {
             aio_failed =  true;
-            throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
+            throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::CANNOT_IO_SUBMIT);
         }
     }
 
@@ -184,17 +184,18 @@ bool WriteBufferAIO::waitForAIOCompletion()
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
 
-    while (io_getevents(aio_context.ctx, events.size(), events.size(), events.data(), nullptr) < 0)
+    io_event event;
+    while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
     {
         if (errno != EINTR)
         {
             aio_failed = true;
-            throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
+            throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::CANNOT_IO_GETEVENTS);
         }
     }
 
     is_pending_write = false;
-    bytes_written = events[0].res;
+    bytes_written = event.res;
 
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);

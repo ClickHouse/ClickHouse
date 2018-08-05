@@ -1,4 +1,3 @@
-
 add_library (mysqlxx ${SPLIT_SHARED}
     src/Connection.cpp
     src/Exception.cpp
@@ -30,26 +29,33 @@ add_library (mysqlxx ${SPLIT_SHARED}
 
 target_include_directories (mysqlxx PUBLIC include)
 
-set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
+if (USE_INTERNAL_MYSQL_LIBRARY)
 
-if (USE_MYSQL)
-    target_include_directories (mysqlxx PRIVATE ${MYSQL_INCLUDE_DIR})
-endif ()
+else ()
+    set(PLATFORM_LIBRARIES ${CMAKE_DL_LIBS})
 
-if (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
-    set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
-    add_custom_command (
-        OUTPUT ${MYSQLCLIENT_LIB}
-        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        COMMENT "Patching mysqlclient library.")
-    add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
-    add_dependencies (mysqlxx our_mysql_client)
-    set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIB})
+    if (USE_MYSQL)
+        target_include_directories (mysqlxx SYSTEM PRIVATE ${MYSQL_INCLUDE_DIR})
+    endif ()
+
+    if (APPLE)
+        find_library (ICONV_LIBRARY iconv)
+        set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIBRARIES} ${STATIC_MYSQLCLIENT_LIB} ${ICONV_LIBRARY})
+    elseif (USE_STATIC_LIBRARIES AND STATIC_MYSQLCLIENT_LIB)
+        set (MYSQLCLIENT_LIB ${CMAKE_CURRENT_BINARY_DIR}/libmysqlclient.a)
+        add_custom_command (
+            OUTPUT ${MYSQLCLIENT_LIB}
+            COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/patch.sh ${STATIC_MYSQLCLIENT_LIB} ${MYSQLCLIENT_LIB}
+            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            COMMENT "Patching mysqlclient library.")
+        add_custom_target (our_mysql_client DEPENDS ${MYSQLCLIENT_LIB})
+        add_dependencies (mysqlxx our_mysql_client)
+        set (MYSQLCLIENT_LIBRARIES ${MYSQLCLIENT_LIB})
+    endif ()
 endif ()
 
 target_link_libraries (mysqlxx common ${MYSQLCLIENT_LIBRARIES} ${OPENSSL_LIBRARIES} ${ZLIB_LIBRARIES} ${PLATFORM_LIBRARIES})
-target_include_directories (mysqlxx PRIVATE ${OPENSSL_INCLUDE_DIR})
+target_include_directories (mysqlxx SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 if (ENABLE_TESTS)
     add_subdirectory (src/tests)

@@ -40,10 +40,10 @@ public:
     std::unique_ptr<ReadBuffer> read_buffer;
     Block sample_block;
 
-    virtual ~BaseExternalTable() {};
+    virtual ~BaseExternalTable() {}
 
     /// Initialize read_buffer, depending on the data source. By default, does nothing.
-    virtual void initReadBuffer() {};
+    virtual void initReadBuffer() {}
 
     /// Get the table data - a pair (a thread with the contents of the table, the name of the table)
     ExternalTableData getData(const Context & context)

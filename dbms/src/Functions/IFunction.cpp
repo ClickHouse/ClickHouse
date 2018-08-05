@@ -8,6 +8,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <ext/collection_cast.h>
 #include <cstdlib>
@@ -17,7 +18,7 @@
 #if USE_EMBEDDED_COMPILER
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/IRBuilder.h> // Y_IGNORE
 #pragma GCC diagnostic pop
 #endif
 
@@ -32,14 +33,7 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-
-/** Return ColumnNullable of src, with null map as OR-ed null maps of args columns in blocks.
-  * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
-  */
-ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
+ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     ColumnPtr result_null_map_column;
 
@@ -99,6 +93,9 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, Block & block, const ColumnNumbe
         return ColumnNullable::create(src_not_nullable, result_null_map_column);
 }
 
+
+namespace
+{
 
 struct NullPresence
 {

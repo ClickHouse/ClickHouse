@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/URI.h>
 #include <IO/ReadBuffer.h>
@@ -12,9 +13,6 @@
 namespace DB
 {
 
-const int HTTP_TOO_MANY_REQUESTS = 429;
-
-
 /** Perform HTTP POST request and provide response to read.
   */
 class ReadWriteBufferFromHTTP : public ReadBuffer
@@ -22,9 +20,7 @@ class ReadWriteBufferFromHTTP : public ReadBuffer
 private:
     Poco::URI uri;
     std::string method;
-    ConnectionTimeouts timeouts;
 
-    bool is_ssl;
     std::unique_ptr<Poco::Net::HTTPClientSession> session;
     std::istream * istr;    /// owned by session
     std::unique_ptr<ReadBuffer> impl;
@@ -37,6 +33,7 @@ public:
         const std::string & method = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
+        const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;

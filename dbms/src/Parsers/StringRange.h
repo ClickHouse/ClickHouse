@@ -16,7 +16,6 @@ struct StringRange
     const char * second = nullptr;
 
     StringRange() = default;
-    StringRange(const StringRange & other) = default;
     StringRange(const char * begin, const char * end) : first(begin), second(end) {}
     explicit StringRange(TokenIterator token) : first(token->begin), second(token->end) {}
 
@@ -36,8 +35,6 @@ struct StringRange
         first = token_begin->begin;
         second = token_last->end;
     }
-
-    bool operator==(const StringRange & rhs) const { return std::tie(first, second) == std::tie(rhs.first, rhs.second); }
 };
 
 using StringPtr = std::shared_ptr<String>;
@@ -48,7 +45,8 @@ inline String toString(const StringRange & range)
     return range.first ? String(range.first, range.second) : String();
 }
 
-struct StringRangeHash
+/// Hashes only the values of pointers in StringRange. Is used with StringRangePointersEqualTo comparator.
+struct StringRangePointersHash
 {
     UInt64 operator()(const StringRange & range) const
     {
@@ -59,5 +57,15 @@ struct StringRangeHash
     }
 };
 
-}
+/// Ranges are equal only when they point to the same memory region.
+/// It may be used when it's enough to compare substrings by their position in the same string.
+struct StringRangePointersEqualTo
+{
+    constexpr bool operator()(const StringRange &lhs, const StringRange &rhs) const
+    {
+        return std::tie(lhs.first, lhs.second) == std::tie(rhs.first, rhs.second);
+    }
+};
+
+};
 

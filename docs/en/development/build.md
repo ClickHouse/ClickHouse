@@ -14,16 +14,10 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 ## Install Git and CMake
 
 ```bash
-sudo apt-get install git cmake
+sudo apt-get install git cmake ninja-build
 ```
 
 Or cmake3 instead of cmake on older systems.
-
-## Detect the number of threads
-
-```bash
-export THREADS=$(grep -c ^processor /proc/cpuinfo)
-```
 
 ## Install GCC 7
 
@@ -40,7 +34,7 @@ sudo apt-get install gcc-7 g++-7
 
 ### Install from sources
 
-Look at [https://github.com/yandex/ClickHouse/blob/master/utils/prepare-environment/install-gcc.sh]
+Look at [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
 
 ## Use GCC 7 for builds
 
@@ -52,22 +46,19 @@ export CXX=g++-7
 ## Install required libraries from packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev ninja-build
+sudo apt-get install libicu-dev libreadline-dev
 ```
 
 ## Checkout ClickHouse sources
 
-To get the latest stable version:
-
 ```bash
-git clone -b stable --recursive git@github.com:yandex/ClickHouse.git
-# or: git clone -b stable --recursive https://github.com/yandex/ClickHouse.git
+git clone --recursive git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-For development, switch to the `master` branch.
-For the latest release candidate, switch to the `testing` branch.
+For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 
@@ -85,7 +76,7 @@ Install the most recent version of Clang.
 
 Clang is embedded into the ClickHouse package and used at runtime. The minimum version is 5.0. It is optional.
 
-To install clang, see `utils/prepare-environment/install-clang.sh`
+To install clang, see  [ci/build-clang-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-clang-from-sources.sh)
 
 You may also build ClickHouse with Clang for development purposes.
 For production releases, GCC is used.
@@ -119,10 +110,10 @@ sudo service clickhouse-server start
 mkdir build
 cd build
 cmake ..
-make -j $THREADS
+ninja
 cd ..
 ```
 
-To create an executable, run `make clickhouse`.
-This will create the `dbms/src/Server/clickhouse` executable, which can be used with `client` or `server` arguments.
+To create an executable, run `ninja clickhouse`.
+This will create the `dbms/programs/clickhouse` executable, which can be used with `client` or `server` arguments.
 

@@ -1,4 +1,3 @@
-#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
 
@@ -25,11 +24,6 @@
 #include <Interpreters/executeQuery.h>
 #include "DNSCacheUpdater.h"
 
-
-namespace ProfileEvents
-{
-    extern const Event Query;
-}
 
 namespace DB
 {
@@ -109,26 +103,24 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     bool log_queries = context.getSettingsRef().log_queries;
 
     /// Log the start of query execution into the table if necessary.
+    QueryLogElement elem;
+
+    elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
+
+    elem.event_time = current_time;
+    elem.query_start_time = current_time;
+
+    elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
+    elem.exception = getCurrentExceptionMessage(false);
+
+    elem.client_info = context.getClientInfo();
+
+    setExceptionStackTrace(elem);
+    logException(context, elem);
+
     if (log_queries)
-    {
-        QueryLogElement elem;
-
-        elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
-
-        elem.event_time = current_time;
-        elem.query_start_time = current_time;
-
-        elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
-        elem.exception = getCurrentExceptionMessage(false);
-
-        elem.client_info = context.getClientInfo();
-
-        setExceptionStackTrace(elem);
-        logException(context, elem);
-
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
-    }
 }
 
 
@@ -139,7 +131,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage)
 {
-    ProfileEvents::increment(ProfileEvents::Query);
     time_t current_time = time(nullptr);
 
     context.setQueryContext(context);

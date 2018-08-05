@@ -388,5 +388,27 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
     }
 }
 
+
+void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
+{
+    ASTTableExpression * table_expression = getFirstTableExpression(*this);
+
+    if (!table_expression)
+    {
+        auto tables_list = std::make_shared<ASTTablesInSelectQuery>();
+        auto element = std::make_shared<ASTTablesInSelectQueryElement>();
+        auto table_expr = std::make_shared<ASTTableExpression>();
+        element->table_expression = table_expr;
+        element->children.emplace_back(table_expr);
+        tables_list->children.emplace_back(element);
+        tables = tables_list;
+        children.emplace_back(tables_list);
+        table_expression = table_expr.get();
+    }
+
+    table_expression->table_function = table_function_ptr;
+    table_expression->database_and_table_name = nullptr;
+}
+
 };
 

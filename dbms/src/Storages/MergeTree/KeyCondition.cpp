@@ -269,13 +269,13 @@ KeyCondition::KeyCondition(
     const SelectQueryInfo & query_info,
     const Context & context,
     const NamesAndTypesList & all_columns,
-    const SortDescription & sort_descr_,
+    const Names & key_column_names,
     const ExpressionActionsPtr & key_expr_)
-    : sort_descr(sort_descr_), key_expr(key_expr_), prepared_sets(query_info.sets)
+    : key_expr(key_expr_), prepared_sets(query_info.sets)
 {
-    for (size_t i = 0; i < sort_descr.size(); ++i)
+    for (size_t i = 0, size = key_column_names.size(); i < size; ++i)
     {
-        std::string name = sort_descr[i].column_name;
+        std::string name = key_column_names[i];
         if (!key_columns.count(name))
             key_columns[name] = i;
     }
@@ -484,14 +484,17 @@ void KeyCondition::getKeyTuplePositionMapping(
 }
 
 
-/// Try to prepare KeyTuplePositionMapping for tuples from IN expression.
-bool KeyCondition::isTupleIndexable(
+bool KeyCondition::tryPrepareSetIndex(
     const ASTPtr & node,
     const Context & context,
     RPNElement & out,
     const SetPtr & prepared_set,
     size_t & out_key_column_num)
 {
+    /// The index can be prepared if the elements of the set were saved in advance.
+    if (!prepared_set->hasExplicitSetElements())
+        return false;
+
     out_key_column_num = 0;
     std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> indexes_mapping;
 
@@ -523,8 +526,7 @@ bool KeyCondition::isTupleIndexable(
     if (indexes_mapping.empty())
         return false;
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(
-        prepared_set->getSetElements(), std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(prepared_set->getSetElements(), std::move(indexes_mapping));
 
     return true;
 }
@@ -535,7 +537,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const Context & context,
     size_t & out_key_column_num,
     DataTypePtr & out_key_res_column_type,
-    RPNElement::MonotonicFunctionsChain & out_functions_chain)
+    MonotonicFunctionsChain & out_functions_chain)
 {
     std::vector<const ASTFunction *> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
@@ -636,13 +638,13 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         DataTypePtr key_expr_type;    /// Type of expression containing key column
         size_t key_arg_pos;           /// Position of argument with key column (non-const argument)
-        size_t key_column_num;        /// Number of a key column (inside sort_descr array)
-        RPNElement::MonotonicFunctionsChain chain;
+        size_t key_column_num;        /// Number of a key column (inside key_column_names array)
+        MonotonicFunctionsChain chain;
         bool is_set_const = false;
         bool is_constant_transformed = false;
 
         if (prepared_sets.count(args[1]->range)
-            && isTupleIndexable(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
+            && tryPrepareSetIndex(args[0], context, out, prepared_sets[args[1]->range], key_column_num))
         {
             key_arg_pos = 0;
             is_set_const = true;
@@ -921,7 +923,7 @@ bool KeyCondition::mayBeTrueInRange(
     return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0,
         [&] (const std::vector<Range> & key_ranges)
     {
-        auto res = mayBeTrueInRangeImpl(key_ranges, data_types);
+        auto res = mayBeTrueInParallelogram(key_ranges, data_types);
 
 /*      std::cerr << "Parallelogram: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
@@ -934,7 +936,7 @@ bool KeyCondition::mayBeTrueInRange(
 
 std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     Range key_range,
-    RPNElement::MonotonicFunctionsChain & functions,
+    MonotonicFunctionsChain & functions,
     DataTypePtr current_type
 )
 {
@@ -969,7 +971,7 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, const DataTypes & data_types) const
+bool KeyCondition::mayBeTrueInParallelogram(const std::vector<Range> & parallelogram, const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
     for (size_t i = 0; i < rpn.size(); ++i)
@@ -982,7 +984,7 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
-            const Range * key_range = &key_ranges[element.key_column];
+            const Range * key_range = &parallelogram[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range transformed_range;
@@ -1019,7 +1021,7 @@ bool KeyCondition::mayBeTrueInRangeImpl(const std::vector<Range> & key_ranges, c
             PreparedSets::const_iterator it = prepared_sets.find(args[1]->range);
             if (in_func && it != prepared_sets.end())
             {
-                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(key_ranges, data_types));
+                rpn_stack.emplace_back(element.set_index->mayBeTrueInRange(parallelogram, data_types));
                 if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                     rpn_stack.back() = !rpn_stack.back();
             }

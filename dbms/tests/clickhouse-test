@@ -77,6 +77,8 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_BINARY", args.binary)
     os.environ.setdefault("CLICKHOUSE_CLIENT", args.client)
     os.environ.setdefault("CLICKHOUSE_CONFIG", args.configserver)
+    if args.configclient:
+        os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
     # TODO ! use clickhouse-extract-from-config here:
@@ -100,6 +102,9 @@ def main(args):
     passed_total = 0
     skipped_total = 0
     failures_total = 0
+
+    clickhouse_proc_create = Popen(shlex.split(args.client), stdin=PIPE, stdout=PIPE, stderr=PIPE)
+    clickhouse_proc_create.communicate("CREATE DATABASE IF NOT EXISTS test")
 
     for suite in sorted(os.listdir(base_dir)):
         if SERVER_DIED:
@@ -190,7 +195,7 @@ def main(args):
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                                 if ext == '.sql':
-                                    command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
+                                    command = "{0} --testmode --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
                                 else:
                                     command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
 
@@ -359,5 +364,10 @@ if __name__ == '__main__':
     if args.client is None:
         args.client = args.binary + '-client'
         if args.configclient:
-            args.client += ' -c' + args.configclient
+            args.client += ' --config-file=' + args.configclient
+        if os.getenv("CLICKHOUSE_HOST"):
+            args.client += ' --host=' + os.getenv("CLICKHOUSE_HOST")
+        if os.getenv("CLICKHOUSE_PORT_TCP"):
+            args.client += ' --port=' + os.getenv("CLICKHOUSE_PORT_TCP")
+
     main(args)

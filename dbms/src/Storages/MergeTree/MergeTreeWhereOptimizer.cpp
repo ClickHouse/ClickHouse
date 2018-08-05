@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <ext/scope_guard.h>
+#include <ext/collection_cast.h>
 #include <ext/map.h>
 #include <memory>
 #include <unordered_map>
@@ -39,8 +40,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const MergeTreeData & data,
     const Names & column_names,
     Logger * log)
-        : primary_key_columns{ext::map<std::unordered_set>(data.getPrimarySortDescription(),
-            [] (const SortColumnDescription & col) { return col.column_name; })},
+        : primary_key_columns{ext::collection_cast<std::unordered_set>(data.getPrimarySortColumns())},
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, context, data.getColumns().getAllPhysical())},

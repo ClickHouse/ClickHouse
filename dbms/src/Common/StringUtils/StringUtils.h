@@ -107,6 +107,11 @@ inline bool isWhitespaceASCII(char c)
     return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v';
 }
 
+inline bool isControlASCII(char c)
+{
+    return static_cast<unsigned char>(c) <= 31;
+}
+
 /// Works assuming isAlphaASCII.
 inline char toLowerIfAlphaASCII(char c)
 {
@@ -128,3 +133,32 @@ inline bool equalsCaseInsensitive(char a, char b)
     return a == b || (isAlphaASCII(a) && alternateCaseIfAlphaASCII(a) == b);
 }
 
+
+template <typename F>
+std::string trim(const std::string & str, F && predicate)
+{
+    size_t cut_front = 0;
+    size_t cut_back = 0;
+    size_t size = str.size();
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        if (predicate(str[i]))
+            ++cut_front;
+        else
+            break;
+    }
+
+    if (cut_front == size)
+        return {};
+
+    for (auto it = str.rbegin(); it != str.rend(); ++it)
+    {
+        if (predicate(*it))
+            ++cut_back;
+        else
+            break;
+    }
+
+    return str.substr(cut_front, size - cut_front - cut_back);
+}

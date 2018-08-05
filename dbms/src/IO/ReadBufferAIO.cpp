@@ -1,6 +1,7 @@
 #if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
 
 #include <IO/ReadBufferAIO.h>
+#include <IO/AIOContextPool.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
