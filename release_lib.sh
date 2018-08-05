@@ -99,6 +99,8 @@ function gen_revision_author {
             git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile
             git push
 
+            echo "Generated version: ${VERSION_STRING}, revision: ${VERSION_REVISION}."
+
             # Second tag for correct version information in version.cmake inside tag
             if git tag --force -a "$tag" -m "$tag"
             then
@@ -112,11 +114,15 @@ function gen_revision_author {
                 fi
             fi
 
+            # Reset testing branch to current commit.
+            git checkout testing
+            git reset --hard "$tag"
+            git push
+
         else
             get_version
             echo reusing old version $VERSION_STRING
         fi
-
     fi
 
     AUTHOR=$(git config --get user.name || echo ${USER})
