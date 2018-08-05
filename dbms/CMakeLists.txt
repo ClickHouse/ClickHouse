@@ -85,7 +85,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-if (ARCH_FREEBSD)
+if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
 endif ()
 
