@@ -124,6 +124,30 @@ public:
         return res;
     }
 
+    /// Get peice of memory with alignment 
+    char * alloc_align(size_t size, size_t align)
+    {
+        // Fast code path for non-alignment requirement
+        if (align <= 1) return alloc(size);
+
+        size_t pos = (size_t)(head->pos);
+        // next pos match align requirement
+        pos = (pos & ~(align - 1)) + align;
+
+        if (unlikely(pos + size > (size_t)(head->end)))
+        {
+            addChunk(size);
+            pos = (size_t)(head->pos);
+            pos = (pos & ~(align - 1)) + align;
+        }
+        
+        char * res = (char *)pos;
+
+        head->pos = res + size;
+        
+        return res;
+    }
+
     /** Rollback just performed allocation.
       * Must pass size not more that was just allocated.
       */
