@@ -92,8 +92,7 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         endif ()
     endif ()
 
-    # TODO! fix internal ssl
-    if (OPENSSL_FOUND AND NOT USE_INTERNAL_SSL_LIBRARY AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
+    if (OPENSSL_FOUND AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         set (Poco_NetSSL_LIBRARY PocoNetSSL)
         set (Poco_Crypto_LIBRARY PocoCrypto)
     endif ()
