@@ -2,6 +2,7 @@
 #include <Common/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/readFloatText.h>
@@ -17,6 +18,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
+    extern const int CANNOT_PARSE_DATETIME;
+    extern const int CANNOT_PARSE_DATE;
     extern const int INCORRECT_DATA;
 }
 
@@ -252,9 +255,9 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message, int code)
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throw Exception(message, code);
         return ReturnType(false);
     };
@@ -500,18 +503,19 @@ void readBackQuotedStringWithSQLStyle(String & s, ReadBuffer & buf)
 
 
 template <typename Vector>
-void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
+void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    char maybe_quote = *buf.position();
+    const char delimiter = settings.delimiter;
+    const char maybe_quote = *buf.position();
 
     /// Emptiness and not even in quotation marks.
     if (maybe_quote == delimiter)
         return;
 
-    if (maybe_quote == '\'' || maybe_quote == '"')
+    if ((settings.allow_single_quotes && maybe_quote == '\'') || (settings.allow_double_quotes && maybe_quote == '"'))
     {
         ++buf.position();
 
@@ -575,13 +579,13 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const char delimiter)
     }
 }
 
-void readCSVString(String & s, ReadBuffer & buf, const char delimiter)
+void readCSVString(String & s, ReadBuffer & buf, const FormatSettings::CSV & settings)
 {
     s.clear();
-    readCSVStringInto(s, buf, delimiter);
+    readCSVStringInto(s, buf, settings);
 }
 
-template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const char delimiter);
+template void readCSVStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf, const FormatSettings::CSV & settings);
 
 
 template <typename Vector, typename ReturnType>
@@ -589,9 +593,9 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    auto error = [](const char * message, int code)
+    auto error = [](const char * message [[maybe_unused]], int code [[maybe_unused]])
     {
-        if (throw_exception)
+        if constexpr (throw_exception)
             throw Exception(message, code);
         return ReturnType(false);
     };
@@ -634,38 +638,77 @@ template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UIn
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
 
 
-void readDateTextFallback(LocalDate & date, ReadBuffer & buf)
+template <typename ReturnType>
+ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 {
-    char chars_year[4];
-    readPODBinary(chars_year, buf);
-    UInt16 year = (chars_year[0] - '0') * 1000 + (chars_year[1] - '0') * 100 + (chars_year[2] - '0') * 10 + (chars_year[3] - '0');
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    buf.ignore();
-
-    char chars_month[2];
-    readPODBinary(chars_month, buf);
-    UInt8 month = chars_month[0] - '0';
-    if (isNumericASCII(chars_month[1]))
+    auto error = []
     {
-        month = month * 10 + chars_month[1] - '0';
-        buf.ignore();
-    }
+        if constexpr (throw_exception)
+            throw Exception("Cannot parse date: value is too short", ErrorCodes::CANNOT_PARSE_DATE);
+        return ReturnType(false);
+    };
 
-    char char_day;
-    readChar(char_day, buf);
-    UInt8 day = char_day - '0';
-    if (!buf.eof() && isNumericASCII(*buf.position()))
+    auto ignore_delimiter = [&]
     {
-        day = day * 10 + *buf.position() - '0';
-        ++buf.position();
-    }
+        if (!buf.eof())
+        {
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
+    auto append_digit = [&](auto & x)
+    {
+        if (!buf.eof() && isNumericASCII(*buf.position()))
+        {
+            x = x * 10 + (*buf.position() - '0');
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
+    UInt16 year = 0;
+    if (!append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year)
+        || !append_digit(year))
+        return error();
+
+    if (!ignore_delimiter())
+        return error();
+
+    UInt8 month = 0;
+    if (!append_digit(month))
+        return error();
+    append_digit(month);
+
+    if (!ignore_delimiter())
+        return error();
+
+    UInt8 day = 0;
+    if (!append_digit(day))
+        return error();
+    append_digit(day);
 
     date = LocalDate(year, month, day);
+    return ReturnType(true);
 }
 
+template void readDateTextFallback<void>(LocalDate &, ReadBuffer &);
+template bool readDateTextFallback<bool>(LocalDate &, ReadBuffer &);
 
-void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
+
+template <typename ReturnType>
+ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut)
 {
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
     static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
     static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
 
@@ -688,7 +731,11 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
         if (remaining_size != size)
         {
             s_pos[size] = 0;
-            throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+
+            if constexpr (throw_exception)
+                throw Exception(std::string("Cannot parse datetime ") + s, ErrorCodes::CANNOT_PARSE_DATETIME);
+            else
+                return false;
         }
 
         UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -705,8 +752,29 @@ void readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUT
             datetime = date_lut.makeDateTime(year, month, day, hour, minute, second);
     }
     else
-        datetime = parse<time_t>(s, s_pos - s);
+    {
+        /// Only unix timestamp of 5-10 characters is supported. For consistency. See readDateTimeTextImpl.
+        if (s_pos - s >= 5 && s_pos - s <= 10)
+        {
+            /// Not very efficient.
+            datetime = 0;
+            for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
+                datetime = datetime * 10 + *digit_pos - '0';
+        }
+        else
+        {
+            if constexpr (throw_exception)
+                throw Exception("Cannot parse datetime", ErrorCodes::CANNOT_PARSE_DATETIME);
+            else
+                return false;
+        }
+    }
+
+    return ReturnType(true);
 }
+
+template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateLUTImpl &);
+template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
 void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)

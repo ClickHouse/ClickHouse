@@ -1,4 +1,5 @@
 #include <Dictionaries/DictionaryStructure.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -222,7 +223,7 @@ size_t DictionaryStructure::getKeySize() const
 }
 
 
-static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
+static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
     static const std::unordered_set<std::string> valid_keys =
         { "name", "type", "expression", "null_value", "hierarchical", "injective", "is_object_id" };
@@ -234,6 +235,7 @@ static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
     }
 }
 
+
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     const bool hierarchy_allowed, const bool allow_null_values)
@@ -244,6 +246,8 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
     std::vector<DictionaryAttribute> attributes;
 
+    const FormatSettings format_settings;
+
     for (const auto & key : keys)
     {
         if (!startsWith(key.data(), "attribute"))
@@ -253,7 +257,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         Poco::Util::AbstractConfiguration::Keys attribute_keys;
         config.keys(config_prefix + '.' + key, attribute_keys);
 
-        CheckAttributeKeys(attribute_keys);
+        checkAttributeKeys(attribute_keys);
 
         const auto name = config.getString(prefix + "name");
         const auto type_string = config.getString(prefix + "type");
@@ -272,7 +276,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             {
                 ReadBufferFromString null_value_buffer{null_value_string};
                 auto column_with_null_value = type->createColumn();
-                type->deserializeTextEscaped(*column_with_null_value, null_value_buffer);
+                type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                 null_value = (*column_with_null_value)[0];
             }
             catch (Exception & e)

@@ -39,8 +39,10 @@ public:
       */
     LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
         : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+        , log_name("LeaderElection (" + path + ")")
+        , log(&Logger::get(log_name))
     {
-        task_handle = pool.addTask("LeaderElection", [this] { threadFunction(); });
+        task = pool.createTask(log_name, [this] { threadFunction(); });
         createNode();
     }
 
@@ -50,22 +52,23 @@ public:
             return;
 
         shutdown_called = true;
-        task_handle->deactivate();
+        task->deactivate();
     }
 
     ~LeaderElection()
     {
         releaseNode();
-        pool.removeTask(task_handle);
     }
 
 private:
     DB::BackgroundSchedulePool & pool;
-    DB::BackgroundSchedulePool::TaskHandle task_handle;
+    DB::BackgroundSchedulePool::TaskHolder task;
     std::string path;
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
     std::string identifier;
+    std::string log_name;
+    Logger * log;
 
     EphemeralNodeHolderPtr node;
     std::string node_name;
@@ -82,8 +85,8 @@ private:
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-        task_handle->activate();
-        task_handle->schedule();
+        task->activate();
+        task->schedule();
     }
 
     void releaseNode()
@@ -111,25 +114,25 @@ private:
                 return;
             }
 
-            if (!zookeeper.existsWatch(path + "/" + *(it - 1), nullptr, task_handle->getWatchCallback()))
-                task_handle->schedule();
+            if (!zookeeper.existsWatch(path + "/" + *(it - 1), nullptr, task->getWatchCallback()))
+                task->schedule();
 
             success = true;
         }
         catch (const KeeperException & e)
         {
-            DB::tryLogCurrentException("LeaderElection");
+            DB::tryLogCurrentException(log);
 
             if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
                 return;
         }
         catch (...)
         {
-            DB::tryLogCurrentException("LeaderElection");
+            DB::tryLogCurrentException(log);
         }
 
         if (!success)
-            task_handle->scheduleAfter(10 * 1000);
+            task->scheduleAfter(10 * 1000);
     }
 };
 

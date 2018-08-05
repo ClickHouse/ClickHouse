@@ -37,10 +37,11 @@ private:
     const std::string name;
     bool multithreaded;
     size_t limit;
+    size_t offset;
 
 protected:
     /// limit: 0 means unlimited.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0);
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0, size_t offset_ = 0);
 };
 
 }

@@ -31,6 +31,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int TOO_MANY_TEMPORARY_COLUMNS;
     extern const int TOO_MANY_TEMPORARY_NON_CONST_COLUMNS;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -39,6 +40,8 @@ Names ExpressionAction::getNeededColumns() const
     Names res = argument_names;
 
     res.insert(res.end(), array_joined_columns.begin(), array_joined_columns.end());
+
+    res.insert(res.end(), join_key_names_left.begin(), join_key_names_left.end());
 
     for (const auto & column : projection)
         res.push_back(column.first);
@@ -145,11 +148,14 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join_,
+                                                const Names & join_key_names_left,
+                                                const NamesAndTypesList & columns_added_by_join_)
 {
     ExpressionAction a;
     a.type = JOIN;
-    a.join = join_;
+    a.join = std::move(join_);
+    a.join_key_names_left = join_key_names_left;
     a.columns_added_by_join = columns_added_by_join_;
     return a;
 }
@@ -157,7 +163,7 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join
 
 void ExpressionAction::prepare(Block & sample_block)
 {
-//    std::cerr << "preparing: " << toString() << std::endl;
+    // std::cerr << "preparing: " << toString() << std::endl;
 
     /** Constant expressions should be evaluated, and put the result in sample_block.
       */
@@ -321,8 +327,6 @@ size_t ExpressionAction::getInputRowsCount(Block & block, std::unordered_map<std
 
 void ExpressionAction::execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const
 {
-//    std::cerr << "executing: " << toString() << std::endl;
-
     size_t input_rows_count = getInputRowsCount(block, input_rows_counts);
 
     if (type == REMOVE_COLUMN || type == COPY_COLUMN)

@@ -9,32 +9,30 @@
 namespace DB
 {
 
-String ASTFunction::getColumnNameImpl() const
+void ASTFunction::appendColumnNameImpl(WriteBuffer & ostr) const
 {
-    WriteBufferFromOwnString wb;
-    writeString(name, wb);
+    writeString(name, ostr);
 
     if (parameters)
     {
-        writeChar('(', wb);
-        for (ASTs::const_iterator it = parameters->children.begin(); it != parameters->children.end(); ++it)
+        writeChar('(', ostr);
+        for (auto it = parameters->children.begin(); it != parameters->children.end(); ++it)
         {
             if (it != parameters->children.begin())
-                writeCString(", ", wb);
-            writeString((*it)->getColumnName(), wb);
+                writeCString(", ", ostr);
+            (*it)->appendColumnName(ostr);
         }
-        writeChar(')', wb);
+        writeChar(')', ostr);
     }
 
-    writeChar('(', wb);
-    for (ASTs::const_iterator it = arguments->children.begin(); it != arguments->children.end(); ++it)
+    writeChar('(', ostr);
+    for (auto it = arguments->children.begin(); it != arguments->children.end(); ++it)
     {
         if (it != arguments->children.begin())
-            writeCString(", ", wb);
-        writeString((*it)->getColumnName(), wb);
+            writeCString(", ", ostr);
+        (*it)->appendColumnName(ostr);
     }
-    writeChar(')', wb);
-    return wb.str();
+    writeChar(')', ostr);
 }
 
 /** Get the text that identifies this element. */
@@ -65,27 +63,6 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
     bool written = false;
     if (arguments && !parameters)
     {
-        if (0 == strcmp(name.data(), "CAST"))
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << name;
-
-            settings.ostr << '(' << (settings.hilite ? hilite_none : "");
-
-            arguments->children.front()->formatImpl(settings, state, nested_need_parens);
-
-            settings.ostr <<  (settings.hilite ? hilite_keyword : "") << " AS "
-                << (settings.hilite ? hilite_none : "");
-
-            settings.ostr << (settings.hilite ? hilite_function : "")
-                << typeid_cast<const ASTLiteral &>(*arguments->children.back()).value.safeGet<String>()
-                << (settings.hilite ? hilite_none : "");
-
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << ')'
-                << (settings.hilite ? hilite_none : "");
-
-            written = true;
-        }
-
         if (arguments->children.size() == 1)
         {
             const char * operators[] =

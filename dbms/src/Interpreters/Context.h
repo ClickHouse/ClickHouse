@@ -6,10 +6,12 @@
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <atomic>
 
 #include <common/MultiVersion.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Block.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ClientInfo.h>
 #include <IO/CompressionSettings.h>
@@ -70,6 +72,8 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 class Block;
 struct SystemLogs;
 using SystemLogsPtr = std::shared_ptr<SystemLogs>;
+class ActionLocksManager;
+using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
 
 /// (database name, table name)
@@ -117,6 +121,9 @@ private:
     UInt64 session_close_cycle = 0;
     bool session_is_used = false;
 
+    using SampleBlockCache = std::unordered_map<std::string, Block>;
+    mutable SampleBlockCache sample_block_cache;
+
     using DatabasePtr = std::shared_ptr<IDatabase>;
     using Databases = std::map<String, std::shared_ptr<IDatabase>>;
 
@@ -128,6 +135,7 @@ public:
     static Context createGlobal(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory);
     static Context createGlobal();
 
+    Context(const Context &) = default;
     ~Context();
 
     String getPath() const;
@@ -158,8 +166,8 @@ public:
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
-    ClientInfo & getClientInfo() { return client_info; };
-    const ClientInfo & getClientInfo() const { return client_info; };
+    ClientInfo & getClientInfo() { return client_info; }
+    const ClientInfo & getClientInfo() const { return client_info; }
 
     void setQuota(const String & name, const String & quota_key, const String & user_name, const Poco::Net::IPAddress & address);
     QuotaForIntervals & getQuota();
@@ -241,6 +249,15 @@ public:
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
     std::pair<String, UInt16> getInterserverIOAddress() const;
+
+    /// Credentials which server will use to communicate with others
+    void setInterserverCredentials(const String & user, const String & password);
+    std::pair<String, String> getInterserverCredentials() const;
+
+    /// Interserver requests scheme (http or https)
+    void setInterserverScheme(const String & scheme);
+    String getInterserverScheme() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -282,8 +299,8 @@ public:
     void setSessionContext(Context & context_) { session_context = &context_; }
     void setGlobalContext(Context & context_) { global_context = &context_; }
 
-    const Settings & getSettingsRef() const { return settings; };
-    Settings & getSettingsRef() { return settings; };
+    const Settings & getSettingsRef() const { return settings; }
+    Settings & getSettingsRef() { return settings; }
 
 
     void setProgressCallback(ProgressCallback callback);
@@ -372,6 +389,8 @@ public:
 
     void shutdown();
 
+    ActionLocksManagerPtr getActionLocksManager();
+
     enum class ApplicationType
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
@@ -393,6 +412,8 @@ public:
 
     /// User name and session identifier. Named sessions are local to users.
     using SessionKey = std::pair<String, String>;
+
+    SampleBlockCache & getSampleBlockCache() const;
 
 private:
     /** Check if the current client has access to the specified database.

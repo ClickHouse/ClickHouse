@@ -135,8 +135,9 @@ public:
     /** Reads n bytes, if there are less - throws an exception. */
     void readStrict(char * to, size_t n)
     {
-        if (n != read(to, n))
-            throw Exception("Cannot read all data", ErrorCodes::CANNOT_READ_ALL_DATA);
+        auto read_bytes = read(to, n);
+        if (n != read_bytes)
+            throw Exception("Cannot read all data. Bytes read: " + std::to_string(read_bytes) + ". Bytes expected: " + std::to_string(n) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
     }
 
     /** A method that can be more efficiently implemented in successors, in the case of reading large enough blocks.
@@ -159,7 +160,7 @@ private:
       * Return `false` in case of the end, `true` otherwise.
       * Throw an exception if something is wrong.
       */
-    virtual bool nextImpl() { return false; };
+    virtual bool nextImpl() { return false; }
 };
 
 

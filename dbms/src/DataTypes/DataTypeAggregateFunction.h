@@ -35,7 +35,7 @@ public:
 
     bool canBeInsideNullable() const override { return false; }
 
-    DataTypePtr getReturnType() const { return function->getReturnType(); };
+    DataTypePtr getReturnType() const { return function->getReturnType(); }
     DataTypes getArgumentsDataTypes() const { return argument_types; }
 
     /// NOTE These two functions for serializing single values are incompatible with the functions below.
@@ -46,16 +46,16 @@ public:
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
     void serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const override;
     void deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double avg_value_size_hint) const override;
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     MutableColumnPtr createColumn() const override;
 

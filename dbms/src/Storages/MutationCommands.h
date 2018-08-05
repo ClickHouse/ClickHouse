@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <optional>
 
 
 namespace DB
@@ -8,9 +9,13 @@ namespace DB
 
 class IStorage;
 class Context;
+class WriteBuffer;
+class ReadBuffer;
 
 struct MutationCommand
 {
+    ASTPtr ast; /// The AST of the whole command
+
     enum Type
     {
         EMPTY,     /// Not used.
@@ -21,20 +26,18 @@ struct MutationCommand
 
     ASTPtr predicate;
 
-    static MutationCommand delete_(const ASTPtr & predicate)
-    {
-        MutationCommand res;
-        res.type = DELETE;
-        res.predicate = predicate;
-        return res;
-    }
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command);
 };
 
-struct MutationCommands
+class MutationCommands : public std::vector<MutationCommand>
 {
-    std::vector<MutationCommand> commands;
+public:
+    std::shared_ptr<ASTAlterCommandList> ast() const;
 
-    void validate(const IStorage & table, const Context & context);
+    void validate(const IStorage & table, const Context & context) const;
+
+    void writeText(WriteBuffer & out) const;
+    void readText(ReadBuffer & in);
 };
 
 }

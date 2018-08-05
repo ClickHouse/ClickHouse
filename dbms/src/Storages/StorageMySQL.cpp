@@ -9,9 +9,7 @@
 #include <Interpreters/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/BlockOutputStreamFromRowOutputStream.h>
-#include <DataStreams/ValuesRowOutputStream.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
@@ -59,7 +57,8 @@ BlockInputStreams StorageMySQL::read(
 {
     check(column_names);
     processed_stage = QueryProcessingStage::FetchColumns;
-    String query = transformQueryForExternalDatabase(*query_info.query, getColumns().ordinary, remote_database_name, remote_table_name, context);
+    String query = transformQueryForExternalDatabase(
+        *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & name : column_names)
@@ -116,7 +115,7 @@ public:
         sqlbuf << backQuoteIfNeed(remote_database_name) << "." << backQuoteIfNeed(remote_table_name);
         sqlbuf << " ( " << dumpNamesWithBackQuote(block) << " ) VALUES ";
 
-        auto writer = FormatFactory().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
+        auto writer = FormatFactory::instance().getOutput("Values", sqlbuf, storage.getSampleBlock(), storage.context);
         writer->write(block);
 
         if (!storage.on_duplicate_clause.empty())

@@ -19,6 +19,9 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int UNKNOWN_DATABASE;
     extern const int READONLY;
+    extern const int LOGICAL_ERROR;
+    extern const int SYNTAX_ERROR;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -34,119 +37,76 @@ BlockIO InterpreterDropQuery::execute()
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {drop.database});
 
-    String path = context.getPath();
-    String current_database = context.getCurrentDatabase();
-
-    bool drop_database = drop.table.empty() && !drop.database.empty();
-
-    if (drop_database && drop.detach)
-    {
-        auto database = context.detachDatabase(drop.database);
-        database->shutdown();
-        return {};
-    }
-
-    /// Drop temporary table.
-    if (drop.database.empty() || drop.temporary)
-    {
-        StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(drop.table);
-        if (table)
-        {
-            if (drop.database.empty() && !drop.temporary)
-            {
-                LOG_WARNING((&Logger::get("InterpreterDropQuery")),
-                            "It is recommended to use `DROP TEMPORARY TABLE` to delete temporary tables");
-            }
-            table->shutdown();
-            /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
-            /// Delete table data
-            table->drop();
-            table->is_dropped = true;
-            return {};
-        }
-    }
-
-    String database_name = drop.database.empty() ? current_database : drop.database;
-    String database_name_escaped = escapeForFileName(database_name);
-
-    String metadata_path = path + "metadata/" + database_name_escaped + "/";
-    String database_metadata_path = path + "metadata/" + database_name_escaped + ".sql";
-
-    auto database = context.tryGetDatabase(database_name);
-    if (!database && !drop.if_exists)
-        throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-
-    std::vector<std::pair<StoragePtr, std::unique_ptr<DDLGuard>>> tables_to_drop;
-
-    if (!drop_database)
-    {
-        StoragePtr table;
-
-        if (drop.if_exists)
-            table = context.tryGetTable(database_name, drop.table);
-        else
-            table = context.getTable(database_name, drop.table);
-
-        if (table)
-            tables_to_drop.emplace_back(table,
-                context.getDDLGuard(
-                    database_name, drop.table, "Table " + database_name + "." + drop.table + " is dropping or detaching right now"));
-        else
-            return {};
-    }
+    if (!drop.table.empty())
+        return executeToTable(drop.database, drop.table, drop.kind, drop.if_exists, drop.temporary);
+    else if (!drop.database.empty())
+        return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else
-    {
-        if (!database)
-        {
-            if (!drop.if_exists)
-                throw Exception("Database " + database_name + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-            return {};
-        }
+        throw Exception("Database and table names is empty.", ErrorCodes::LOGICAL_ERROR);
+}
 
-        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
-            tables_to_drop.emplace_back(iterator->table(),
-                context.getDDLGuard(database_name,
-                    iterator->name(),
-                    "Table " + database_name + "." + iterator->name() + " is dropping or detaching right now"));
+
+BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & table_name, ASTDropQuery::Kind kind, bool if_exists, bool if_temporary)
+{
+    if (if_temporary || database_name_.empty())
+    {
+        auto & session_context = context.hasSessionContext() ? context.getSessionContext() : context;
+
+        if (session_context.isExternalTableExist(table_name))
+            return executeToTemporaryTable(table_name, kind);
     }
 
-    for (auto & table : tables_to_drop)
+    String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
+
+    DatabaseAndTable database_and_table = tryGetDatabaseAndTable(database_name, table_name, if_exists);
+
+    if (database_and_table.first && database_and_table.second)
     {
-        if (!drop.detach)
+        auto ddl_guard = context.getDDLGuard(
+            database_name, table_name, "Table " + database_name + "." + table_name + " is dropping or detaching right now");
+
+        if (kind == ASTDropQuery::Kind::Detach)
         {
-            if (!table.first->checkTableCanBeDropped())
-                throw Exception("Table " + database_name + "." + table.first->getTableName() + " couldn't be dropped due to failed pre-drop check",
-                    ErrorCodes::TABLE_WAS_NOT_DROPPED);
-        }
-
-        table.first->shutdown();
-
-        /// If table was already dropped by anyone, an exception will be thrown
-        auto table_lock = table.first->lockForAlter(__PRETTY_FUNCTION__);
-
-        String current_table_name = table.first->getTableName();
-
-        if (drop.detach)
-        {
+            database_and_table.second->shutdown();
+            /// If table was already dropped by anyone, an exception will be thrown
+            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
             /// Drop table from memory, don't touch data and metadata
-            database->detachTable(current_table_name);
+            database_and_table.first->detachTable(database_and_table.second->getTableName());
         }
-        else
+        else if (kind == ASTDropQuery::Kind::Truncate)
         {
+            if (!database_and_table.second->checkTableCanBeDropped())
+                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
+                                " couldn't be truncated due to failed pre-drop check",
+                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+            /// If table was already dropped by anyone, an exception will be thrown
+            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            /// Drop table data, don't touch metadata
+            database_and_table.second->truncate(query_ptr);
+        }
+        else if (kind == ASTDropQuery::Kind::Drop)
+        {
+            if (!database_and_table.second->checkTableCanBeDropped())
+                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
+                                " couldn't be dropped due to failed pre-drop check",
+                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+
+            database_and_table.second->shutdown();
+            /// If table was already dropped by anyone, an exception will be thrown
+            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
             /// Delete table metdata and table itself from memory
-            database->removeTable(context, current_table_name);
+            database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             /// Delete table data
-            table.first->drop();
+            database_and_table.second->drop();
+            database_and_table.second->is_dropped = true;
 
-            table.first->is_dropped = true;
-
-            String database_data_path = database->getDataPath();
+            String database_data_path = database_and_table.first->getDataPath();
 
             /// If it is not virtual database like Dictionary then drop remaining data dir
             if (!database_data_path.empty())
             {
-                String table_data_path = database_data_path + "/" + escapeForFileName(current_table_name);
+                String table_data_path = database_data_path + "/" + escapeForFileName(database_and_table.second->getTableName());
 
                 if (Poco::File(table_data_path).exists())
                     Poco::File(table_data_path).remove(true);
@@ -154,41 +114,110 @@ BlockIO InterpreterDropQuery::execute()
         }
     }
 
-    if (drop_database)
+    return {};
+}
+
+BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDropQuery::Kind kind)
+{
+    if (kind == ASTDropQuery::Kind::Detach)
+        throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
+    else
     {
-        /// Delete the database. The tables in it have already been deleted.
-
-        auto lock = context.getLock();
-
-        /// Someone could have time to delete the database before us.
-        context.assertDatabaseExists(database_name);
-
-        /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
-        if (!context.getDatabase(database_name)->empty(context))
-            throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
-
-        /// Delete database information from the RAM
-        auto database = context.detachDatabase(database_name);
-
-        /// Delete the database.
-        database->drop();
-
-        /// Remove data directory if it is not virtual database. TODO: should IDatabase::drop() do that?
-        String database_data_path = database->getDataPath();
-        if (!database_data_path.empty())
-            Poco::File(database_data_path).remove(false);
-
-        Poco::File(metadata_path).remove(false);
-
-        /// Old ClickHouse versions did not store database.sql files
-        Poco::File database_metadata_file(database_metadata_path);
-        if (database_metadata_file.exists())
-            database_metadata_file.remove(false);
+        auto & context_handle = context.hasSessionContext() ? context.getSessionContext() : context;
+        StoragePtr table = context_handle.tryGetExternalTable(table_name);
+        if (table)
+        {
+            if (kind == ASTDropQuery::Kind::Truncate)
+            {
+                /// If table was already dropped by anyone, an exception will be thrown
+                auto table_lock = table->lockDataForAlter(__PRETTY_FUNCTION__);
+                /// Drop table data, don't touch metadata
+                table->truncate(query_ptr);
+            }
+            else if (kind == ASTDropQuery::Kind::Drop)
+            {
+                context_handle.tryRemoveExternalTable(table_name);
+                table->shutdown();
+                /// If table was already dropped by anyone, an exception will be thrown
+                auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+                /// Delete table data
+                table->drop();
+                table->is_dropped = true;
+            }
+        }
     }
 
     return {};
 }
 
+BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQuery::Kind kind, bool if_exists)
+{
+    if (auto database = tryGetDatabase(database_name, if_exists))
+    {
+        if (kind == ASTDropQuery::Kind::Truncate)
+        {
+            throw Exception("Unable to truncate database.", ErrorCodes::SYNTAX_ERROR);
+        }
+        else if (kind == ASTDropQuery::Kind::Detach)
+        {
+            context.detachDatabase(database_name);
+            database->shutdown();
+        }
+        else if (kind == ASTDropQuery::Kind::Drop)
+        {
+            for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+            {
+                String current_table_name = iterator->table()->getTableName();
+                executeToTable(database_name, current_table_name, kind, false, false);
+            }
+
+            auto context_lock = context.getLock();
+
+            /// Someone could have time to delete the database before us.
+            context.assertDatabaseExists(database_name);
+
+            /// Someone could have time to create a table in the database to be deleted while we deleted the tables without the context lock.
+            if (!context.getDatabase(database_name)->empty(context))
+                throw Exception("New table appeared in database being dropped. Try dropping it again.", ErrorCodes::DATABASE_NOT_EMPTY);
+
+            /// Delete database information from the RAM
+            context.detachDatabase(database_name);
+
+            database->shutdown();
+
+            /// Delete the database.
+            database->drop();
+
+            /// Old ClickHouse versions did not store database.sql files
+            Poco::File database_metadata_file(context.getPath() + "metadata/" + escapeForFileName(database_name) + ".sql");
+            if (database_metadata_file.exists())
+                database_metadata_file.remove(false);
+        }
+    }
+
+    return {};
+}
+
+DatabasePtr InterpreterDropQuery::tryGetDatabase(String & database_name, bool if_exists)
+{
+    return if_exists ? context.tryGetDatabase(database_name) : context.getDatabase(database_name);
+}
+
+DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_name, String & table_name, bool if_exists)
+{
+    DatabasePtr database = tryGetDatabase(database_name, if_exists);
+
+    if (database)
+    {
+        StoragePtr table = database->tryGetTable(context, table_name);
+        if (!table && !if_exists)
+            throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+                            ErrorCodes::UNKNOWN_TABLE);
+
+        return std::make_pair<DatabasePtr, StoragePtr>(std::move(database), std::move(table));
+    }
+    return {};
+}
 
 void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 {

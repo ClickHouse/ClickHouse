@@ -21,11 +21,6 @@
 #include <Parsers/ASTFunction.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event InsertQuery;
-}
-
 namespace DB
 {
 
@@ -41,7 +36,6 @@ InterpreterInsertQuery::InterpreterInsertQuery(
     const ASTPtr & query_ptr_, const Context & context_, bool allow_materialized_)
     : query_ptr(query_ptr_), context(context_), allow_materialized(allow_materialized_)
 {
-    ProfileEvents::increment(ProfileEvents::InsertQuery);
 }
 
 

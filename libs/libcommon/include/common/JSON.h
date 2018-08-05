@@ -62,9 +62,6 @@ public:
 
     JSON(const JSON & rhs) : ptr_begin(rhs.ptr_begin), ptr_end(rhs.ptr_end), level(rhs.level) {}
 
-    /// Для вставки в контейнеры (создаёт некорректный объект)
-    JSON() : ptr_begin(nullptr), ptr_end(ptr_begin + 1) {}
-
     const char * data() const { return ptr_begin; }
     const char * dataEnd() const { return ptr_end; }
 

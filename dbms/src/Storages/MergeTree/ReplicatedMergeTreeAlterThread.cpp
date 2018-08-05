@@ -14,17 +14,12 @@ namespace DB
 static const auto ALTER_ERROR_SLEEP_MS = 10 * 1000;
 
 
-ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_) :
-    storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, AlterThread)"))
-    {
-        task_handle = storage_.context.getSchedulePool().addTask("ReplicatedMergeTreeAlterThread", [this]{run();});
-        task_handle->schedule();
-    }
-
-ReplicatedMergeTreeAlterThread::~ReplicatedMergeTreeAlterThread()
+ReplicatedMergeTreeAlterThread::ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_)
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeAlterThread)")
+    , log(&Logger::get(log_name))
 {
-    storage.context.getSchedulePool().removeTask(task_handle);
+    task = storage_.context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
 
 void ReplicatedMergeTreeAlterThread::run()
@@ -59,17 +54,17 @@ void ReplicatedMergeTreeAlterThread::run()
         auto zookeeper = storage.getZooKeeper();
 
         zkutil::Stat stat;
-        const String columns_str = zookeeper->getWatch(storage.zookeeper_path + "/columns", &stat, task_handle->getWatchCallback());
+        const String columns_str = zookeeper->getWatch(storage.zookeeper_path + "/columns", &stat, task->getWatchCallback());
         auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
         bool changed_version = (stat.version != storage.columns_version);
 
         {
             /// If you need to lock table structure, then suspend merges.
-            ActionBlocker::LockHolder merge_blocker;
+            ActionLock merge_blocker;
 
             if (changed_version || force_recheck_parts)
-                merge_blocker = storage.merger.merges_blocker.cancel();
+                merge_blocker = storage.merger_mutator.actions_blocker.cancel();
 
             MergeTreeData::DataParts parts;
 
@@ -79,10 +74,10 @@ void ReplicatedMergeTreeAlterThread::run()
                 /// Temporarily cancel part checks to avoid locking for long time.
                 auto temporarily_stop_part_checks = storage.part_check_thread.temporarilyStop();
 
-                /// Temporarily cancel parts sending
-                ActionBlocker::LockHolder data_parts_exchange_blocker;
-                if (storage.data_parts_exchange_endpoint_holder)
-                    data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->cancel();
+                    /// Temporarily cancel parts sending
+                    ActionLock data_parts_exchange_blocker;
+                    if (storage.data_parts_exchange_endpoint_holder)
+                        data_parts_exchange_blocker = storage.data_parts_exchange_endpoint_holder->getBlocker().cancel();
 
                 /// Temporarily cancel part fetches
                 auto fetches_blocker = storage.fetcher.blocker.cancel();
@@ -197,14 +192,14 @@ void ReplicatedMergeTreeAlterThread::run()
             return;
 
         force_recheck_parts = true;
-        task_handle->scheduleAfter(ALTER_ERROR_SLEEP_MS);
+        task->scheduleAfter(ALTER_ERROR_SLEEP_MS);
     }
     catch (...)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
         force_recheck_parts = true;
-        task_handle->scheduleAfter(ALTER_ERROR_SLEEP_MS);
+        task->scheduleAfter(ALTER_ERROR_SLEEP_MS);
     }
 }
 

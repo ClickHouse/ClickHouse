@@ -17,28 +17,21 @@ namespace DB
 {
 
 
-// TaskNotification
-
 class TaskNotification final : public Poco::Notification
 {
 public:
-    explicit TaskNotification(const BackgroundSchedulePool::TaskHandle & task) : task(task) {}
+    explicit TaskNotification(const BackgroundSchedulePool::TaskInfoPtr & task) : task(task) {}
     void execute() { task->execute(); }
 
 private:
-    BackgroundSchedulePool::TaskHandle task;
+    BackgroundSchedulePool::TaskInfoPtr task;
 };
 
 
-// BackgroundSchedulePool::TaskInfo
-
-BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool, const std::string & name, const Task & function):
-    name(name),
-    pool(pool),
-    function(function)
+BackgroundSchedulePool::TaskInfo::TaskInfo(BackgroundSchedulePool & pool_, const std::string & log_name_, const TaskFunc & function_)
+    : pool(pool_) , log_name(log_name_) , function(function_)
 {
 }
-
 
 bool BackgroundSchedulePool::TaskInfo::schedule()
 {
@@ -49,17 +42,17 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
 
     scheduled = true;
 
-    if(!executing)
-    {
-        if (delayed)
-            pool.cancelDelayedTask(shared_from_this(), lock);
+    if (delayed)
+        pool.cancelDelayedTask(shared_from_this(), lock);
 
+    /// If the task is not executing at the moment, enqueue it for immediate execution.
+    /// But if it is currently executing, do nothing because it will be enqueued
+    /// at the end of the execute() method.
+    if (!executing)
         pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
-    }
 
     return true;
 }
-
 
 bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
 {
@@ -71,7 +64,6 @@ bool BackgroundSchedulePool::TaskInfo::scheduleAfter(size_t ms)
     pool.scheduleDelayedTask(shared_from_this(), ms, lock);
     return true;
 }
-
 
 void BackgroundSchedulePool::TaskInfo::deactivate()
 {
@@ -88,16 +80,17 @@ void BackgroundSchedulePool::TaskInfo::deactivate()
         pool.cancelDelayedTask(shared_from_this(), lock_schedule);
 }
 
-
 void BackgroundSchedulePool::TaskInfo::activate()
 {
     std::lock_guard lock(schedule_mutex);
     deactivated = false;
 }
 
-
 void BackgroundSchedulePool::TaskInfo::execute()
 {
+    Stopwatch watch;
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
+
     std::lock_guard lock_exec(exec_mutex);
 
     {
@@ -110,17 +103,14 @@ void BackgroundSchedulePool::TaskInfo::execute()
         executing = true;
     }
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
-
-    Stopwatch watch;
     function();
     UInt64 milliseconds = watch.elapsedMilliseconds();
 
     /// If the task is executed longer than specified time, it will be logged.
-    static const int32_t slow_execution_threshold_ms = 50;
+    static const int32_t slow_execution_threshold_ms = 200;
 
     if (milliseconds >= slow_execution_threshold_ms)
-        LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Executing " << name << " took " << milliseconds << " ms.");
+        LOG_TRACE(&Logger::get(log_name), "Execution took " << milliseconds << " ms.");
 
     {
         std::lock_guard lock_schedule(schedule_mutex);
@@ -128,24 +118,22 @@ void BackgroundSchedulePool::TaskInfo::execute()
         executing = false;
 
         /// In case was scheduled while executing (including a scheduleAfter which expired) we schedule the task
-		/// on the queue. We don't call the function again here because this way all tasks
-		/// will have their chance to execute
+        /// on the queue. We don't call the function again here because this way all tasks
+        /// will have their chance to execute
 
-        if(scheduled)
-                pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
+        if (scheduled)
+            pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     }
-
 }
 
 zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
 {
-     return [t=shared_from_this()](const ZooKeeperImpl::ZooKeeper::WatchResponse &) {
+     return [t = shared_from_this()](const ZooKeeperImpl::ZooKeeper::WatchResponse &)
+     {
          t->schedule();
      };
 }
 
-
-// BackgroundSchedulePool
 
 BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
     : size(size)
@@ -165,7 +153,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
     try
     {
         {
-            std::unique_lock lock(delayed_tasks_lock);
+            std::unique_lock lock(delayed_tasks_mutex);
             shutdown = true;
             wakeup_cond.notify_all();
         }
@@ -184,24 +172,18 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
 }
 
 
-BackgroundSchedulePool::TaskHandle BackgroundSchedulePool::addTask(const std::string & name, const Task & task)
+BackgroundSchedulePool::TaskHolder BackgroundSchedulePool::createTask(const std::string & name, const TaskFunc & function)
 {
-    return std::make_shared<TaskInfo>(*this, name, task);
+    return TaskHolder(std::make_shared<TaskInfo>(*this, name, function));
 }
 
 
-void BackgroundSchedulePool::removeTask(const TaskHandle & task)
-{
-    task->deactivate();
-}
-
-
-void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t ms, std::lock_guard<std::mutex> & /* schedule_mutex_lock */)
+void BackgroundSchedulePool::scheduleDelayedTask(const TaskInfoPtr & task, size_t ms, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
 {
     Poco::Timestamp current_time;
 
     {
-        std::lock_guard lock(delayed_tasks_lock);
+        std::lock_guard lock(delayed_tasks_mutex);
 
         if (task->delayed)
             delayed_tasks.erase(task->iterator);
@@ -214,10 +196,10 @@ void BackgroundSchedulePool::scheduleDelayedTask(const TaskHandle & task, size_t
 }
 
 
-void BackgroundSchedulePool::cancelDelayedTask(const TaskHandle & task, std::lock_guard<std::mutex> & /* schedule_mutex_lock */)
+void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lock_guard<std::mutex> & /* task_schedule_mutex_lock */)
 {
     {
-        std::lock_guard lock(delayed_tasks_lock);
+        std::lock_guard lock(delayed_tasks_mutex);
         delayed_tasks.erase(task->iterator);
         task->delayed = false;
     }
@@ -253,11 +235,11 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 
     while (!shutdown)
     {
-        TaskHandle task;
+        TaskInfoPtr task;
         bool found = false;
 
         {
-            std::unique_lock lock(delayed_tasks_lock);
+            std::unique_lock lock(delayed_tasks_mutex);
 
             while(!shutdown)
             {
@@ -292,7 +274,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
             }
         }
 
-        if(found)
+        if (found)
             task->schedule();
     }
 }

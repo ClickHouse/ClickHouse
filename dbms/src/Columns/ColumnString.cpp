@@ -5,9 +5,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
-/// Used in the `reserve` method, when the number of rows is known, but sizes of elements are not.
-#define APPROX_STRING_SIZE 64
-
 
 namespace DB
 {
@@ -260,7 +257,6 @@ void ColumnString::gather(ColumnGathererStream & gatherer)
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve(n);
-    chars.reserve(n * APPROX_STRING_SIZE);
 }
 
 

@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/IAST.h>
@@ -129,19 +130,19 @@ void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) 
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     /// NOTE It would be nice to do without creating a temporary object - at least extract std::string out.
     std::string name;
@@ -150,13 +151,13 @@ void DataTypeEnum<Type>::deserializeTextEscaped(IColumn & column, ReadBuffer & i
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeQuotedString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     std::string name;
     readQuotedStringWithSQLStyle(name, istr);
@@ -164,19 +165,19 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     std::string name;
     readJSONString(name, istr);
@@ -184,16 +185,16 @@ void DataTypeEnum<Type>::deserializeTextJSON(IColumn & column, ReadBuffer & istr
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeEnum<Type>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeCSVString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeEnum<Type>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     std::string name;
-    readCSVString(name, istr, delimiter);
+    readCSVString(name, istr, settings.csv);
     static_cast<ColumnType &>(column).getData().push_back(getValue(StringRef(name)));
 }
 

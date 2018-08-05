@@ -26,7 +26,7 @@ cd "${WORKSPACE}/llvm/build"
 #  -DLLVM_ENABLE_LIBCXX=1
 # to the line below.
 
-cmake -DCMAKE_BUILD_TYPE:STRING=Release ../llvm
+cmake -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_LIBCXX=1 -DLLVM_ENABLE_RTTI=1 ../llvm
 
 make -j $THREADS
 $SUDO make install

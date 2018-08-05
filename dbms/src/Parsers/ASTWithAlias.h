@@ -20,8 +20,8 @@ public:
 
     using IAST::IAST;
 
-    String getColumnName() const override final { return prefer_alias_to_column_name && !alias.empty() ? alias : getColumnNameImpl(); }
-    String getAliasOrColumnName() const override { return alias.empty() ? getColumnNameImpl() : alias; }
+    void appendColumnName(WriteBuffer & ostr) const final;
+    String getAliasOrColumnName() const override { return alias.empty() ? getColumnName() : alias; }
     String tryGetAlias() const override { return alias; }
     void setAlias(const String & to) override { alias = to; }
 
@@ -31,7 +31,9 @@ public:
     virtual void formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const = 0;
 
 protected:
-    virtual String getColumnNameImpl() const = 0;
+    virtual void appendColumnNameImpl(WriteBuffer & ostr) const = 0;
+
+    void writeAlias(const String & name, const FormatSettings & settings) const;
 };
 
 /// helper for setting aliases and chaining result to other functions

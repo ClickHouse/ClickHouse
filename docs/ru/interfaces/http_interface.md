@@ -26,9 +26,6 @@ $ curl 'http://localhost:8123/?query=SELECT%201'
 $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 1
 
-$ GET 'http://localhost:8123/?query=SELECT 1'
-1
-
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
 Connection: Close
@@ -79,37 +76,37 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 Создаём таблицу:
 
 ```bash
-echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | POST 'http://localhost:8123/'
+echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Используем привычный запрос INSERT для вставки данных:
 
 ```bash
-echo 'INSERT INTO t VALUES (1),(2),(3)' | POST 'http://localhost:8123/'
+echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Данные можно отправить отдельно от запроса:
 
 ```bash
-echo '(4),(5),(6)' | POST 'http://localhost:8123/?query=INSERT INTO t VALUES'
+echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
 Можно указать любой формат для данных. Формат Values - то же, что используется при записи INSERT INTO t VALUES:
 
 ```bash
-echo '(7),(8),(9)' | POST 'http://localhost:8123/?query=INSERT INTO t FORMAT Values'
+echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
 Можно вставить данные из tab-separated дампа, указав соответствующий формат:
 
 ```bash
-echo -ne '10\n11\n12\n' | POST 'http://localhost:8123/?query=INSERT INTO t FORMAT TabSeparated'
+echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
 Прочитаем содержимое таблицы. Данные выводятся в произвольном порядке из-за параллельной обработки запроса:
 
 ```bash
-$ GET 'http://localhost:8123/?query=SELECT a FROM t'
+$ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 7
 8
 9
@@ -127,7 +124,7 @@ $ GET 'http://localhost:8123/?query=SELECT a FROM t'
 Удаляем таблицу.
 
 ```bash
-POST 'http://localhost:8123/?query=DROP TABLE t'
+echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Для запросов, которые не возвращают таблицу с данными, в случае успеха, выдаётся пустое тело ответа.

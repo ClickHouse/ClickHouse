@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IInterpreter.h>
@@ -16,6 +18,7 @@ namespace DB
 class ExpressionAnalyzer;
 class ASTSelectQuery;
 struct SubqueryForSet;
+class InterpreterSelectWithUnionQuery;
 
 
 /** Interprets the SELECT query. Returns the stream of blocks with the results of the query before `to_stage` stage.
@@ -35,9 +38,6 @@ public:
      * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
      *   for INSERT SELECT, a value 1 is passed instead of 0.
      *
-     * input
-     * - if given - read not from the table specified in the query, but from prepared source.
-     *
      * required_result_column_names
      * - don't calculate all columns except the specified ones from the query
      *  - it is used to remove calculation (and reading) of unnecessary columns from subqueries.
@@ -50,10 +50,25 @@ public:
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        const BlockInputStreamPtr & input = nullptr,
-        bool only_analyze = false);
+        bool only_analyze_ = false);
 
-    ~InterpreterSelectQuery();
+    /// Read data not from the table specified in the query, but from the prepared source `input`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const BlockInputStreamPtr & input_,
+        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+        bool only_analyze_ = false);
+
+    /// Read data not from the table specified in the query, but from the specified `storage_`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const StoragePtr & storage_,
+        QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
+        bool only_analyze_ = false);
+
+    ~InterpreterSelectQuery() override;
 
     /// Execute a query. Get the stream of blocks to read.
     BlockIO execute() override;
@@ -63,13 +78,20 @@ public:
 
     Block getSampleBlock();
 
-    static Block getSampleBlock(
-        const ASTPtr & query_ptr_,
-        const Context & context_);
-
     void ignoreWithTotals();
 
 private:
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        const Context & context_,
+        const BlockInputStreamPtr & input_,
+        const StoragePtr & storage_,
+        const Names & required_result_column_names,
+        QueryProcessingStage::Enum to_stage_,
+        size_t subquery_depth_,
+        bool only_analyze_);
+
+
     struct Pipeline
     {
         /** Streams of data.
@@ -103,14 +125,6 @@ private:
         }
     };
 
-    struct OnlyAnalyzeTag {};
-    InterpreterSelectQuery(
-        OnlyAnalyzeTag,
-        const ASTPtr & query_ptr_,
-        const Context & context_);
-
-    void init(const Names & required_result_column_names);
-
     void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
 
@@ -142,7 +156,7 @@ private:
         SubqueriesForSets subqueries_for_sets;
     };
 
-    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage);
+    AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
 
 
     /** From which table to read. With JOIN, the "left" table is returned.
@@ -155,7 +169,7 @@ private:
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
     /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline, bool dry_run);
+    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
 
     void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
@@ -186,7 +200,7 @@ private:
     ASTSelectQuery & query;
     Context context;
     QueryProcessingStage::Enum to_stage;
-    size_t subquery_depth;
+    size_t subquery_depth = 0;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.
@@ -194,6 +208,16 @@ private:
 
     /// The object was created only for query analysis.
     bool only_analyze = false;
+
+    /// List of columns to read to execute the query.
+    Names required_columns;
+    /// Structure of query source (table, subquery, etc).
+    Block source_header;
+    /// Structure of query result.
+    Block result_header;
+
+    /// The subquery interpreter, if the subquery
+    std::unique_ptr<InterpreterSelectWithUnionQuery> interpreter_subquery;
 
     /// Table from where to read data, if not subquery.
     StoragePtr storage;

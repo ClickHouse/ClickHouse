@@ -1,5 +1,3 @@
-include_directories (${CMAKE_CURRENT_BINARY_DIR})
-
 add_executable (read_buffer read_buffer.cpp)
 target_link_libraries (read_buffer clickhouse_common_io)
 
@@ -62,7 +60,7 @@ add_check (hashing_read_buffer)
 add_executable (io_operators operators.cpp)
 target_link_libraries (io_operators clickhouse_common_io)
 
-if (NOT APPLE AND NOT ARCH_FREEBSD)
+if (OS_LINUX)
     add_executable(write_buffer_aio write_buffer_aio.cpp)
     target_link_libraries (write_buffer_aio clickhouse_common_io ${Boost_FILESYSTEM_LIBRARY})
 

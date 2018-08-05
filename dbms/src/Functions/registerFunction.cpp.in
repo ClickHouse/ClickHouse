@@ -1,4 +1,4 @@
-#include <Functions/register@FUNCTION@.h>
+#include "register@FUNCTION@.h"
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/Functions@FUNCTION_AREA@.h>
