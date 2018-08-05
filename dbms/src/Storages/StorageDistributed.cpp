@@ -244,7 +244,6 @@ BlockInputStreams StorageDistributed::read(
             ? QueryProcessingStage::Complete
             : QueryProcessingStage::WithMergeableState;
 
-
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
