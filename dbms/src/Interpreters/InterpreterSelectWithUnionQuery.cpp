@@ -154,8 +154,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         }
     }
 
-    /// Subquery cannot have ambiguous column names. It is still Ok for top SELECT.
-    if (subquery_depth > 0 && result_header.hasAmbiguousNames())
+    /// Subquery cannot have ambiguous column names. It is still Ok for top SELECT. It is still Ok for INSERT SELECT.
+    /// NOTE MySQL doesn't allow ambiguous column names but PostgreSQL do.
+    if (subquery_depth > 0 && !required_result_column_names.empty() && result_header.hasAmbiguousNames())
         throw Exception("Subquery cannot have duplicate column names", ErrorCodes::DUPLICATE_COLUMN);
 }
 
