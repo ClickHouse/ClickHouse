@@ -280,7 +280,7 @@ BlockInputStreams StorageMerge::read(
                     case QueryProcessingStage::Complete:
                         header = materializeBlock(InterpreterSelectQuery(
                             query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
-                            processed_stage_in_source_table, true).getSampleBlock());
+                            processed_stage, true).getSampleBlock());
                         break;
                 }
             }
