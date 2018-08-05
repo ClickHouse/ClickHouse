@@ -121,18 +121,29 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
 {
     if (kind == ASTDropQuery::Kind::Detach)
         throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
-    else if (kind == ASTDropQuery::Kind::Drop)
+    else
     {
-        StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(table_name);
+        auto & context_handle = context.hasSessionContext() ? context.getSessionContext() : context;
+        StoragePtr table = context_handle.tryGetExternalTable(table_name);
         if (table)
         {
-            table->shutdown();
-            /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
-            /// Delete table data
-            table->drop();
-            table->is_dropped = true;
-            return {};
+            if (kind == ASTDropQuery::Kind::Truncate)
+            {
+                /// If table was already dropped by anyone, an exception will be thrown
+                auto table_lock = table->lockDataForAlter(__PRETTY_FUNCTION__);
+                /// Drop table data, don't touch metadata
+                table->truncate(query_ptr);
+            }
+            else if (kind == ASTDropQuery::Kind::Drop)
+            {
+                context_handle.tryRemoveExternalTable(table_name);
+                table->shutdown();
+                /// If table was already dropped by anyone, an exception will be thrown
+                auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+                /// Delete table data
+                table->drop();
+                table->is_dropped = true;
+            }
         }
     }
 

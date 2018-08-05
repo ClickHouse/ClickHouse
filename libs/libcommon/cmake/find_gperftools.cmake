@@ -4,12 +4,7 @@ else ()
     option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
 
-if (ARCH_FREEBSD OR MSVC)
-    option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" OFF)
-else ()
-    option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" ON)
-endif ()
-
+option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" OFF)
 option (DEBUG_TCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
 
 if (ENABLE_TCMALLOC)

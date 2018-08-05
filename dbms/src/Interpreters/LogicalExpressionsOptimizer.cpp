@@ -357,11 +357,10 @@ void LogicalExpressionsOptimizer::fixBrokenOrExpressions()
 
             for (auto & parent : parents)
             {
-                parent->children.push_back(operands[0]);
-                auto first_erased = std::remove_if(parent->children.begin(), parent->children.end(),
-                    [or_function](const ASTPtr & ptr) { return ptr.get() == or_function; });
-
-                parent->children.erase(first_erased, parent->children.end());
+                // The order of children matters if or is children of some function, e.g. minus
+                std::replace_if(parent->children.begin(), parent->children.end(),
+                                [or_function](const ASTPtr & ptr) { return ptr.get() == or_function; },
+                                operands[0] );
             }
 
             /// If the OR node was the root of the WHERE, PREWHERE, or HAVING expression, then update this root.

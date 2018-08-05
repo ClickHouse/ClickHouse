@@ -116,7 +116,7 @@ struct AggregateFunctionWindowFunnelData
         /// TODO Protection against huge size
 
         events_list.clear();
-        events_list.resize(size);
+        events_list.reserve(size);
 
         UInt32 timestamp;
         UInt8 event;

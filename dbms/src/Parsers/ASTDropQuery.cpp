@@ -53,6 +53,9 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
     else
         throw Exception("Not supported kind of drop query.", ErrorCodes::SYNTAX_ERROR);
 
+    if (temporary)
+        settings.ostr << "TEMPORARY ";
+
     settings.ostr << ((table.empty() && !database.empty()) ? "DATABASE " : "TABLE ");
 
     if (if_exists)

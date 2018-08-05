@@ -4,6 +4,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
+#include <Dictionaries/validateODBCConnectionString.h>
 #include <Parsers/ASTLiteral.h>
 
 
@@ -29,7 +30,7 @@ StorageODBC::StorageODBC(
 {
     pool = createAndCheckResizePocoSessionPool([&]
     {
-        return std::make_shared<Poco::Data::SessionPool>("ODBC", connection_string);
+        return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_string));
     });
 }
 
@@ -44,7 +45,7 @@ BlockInputStreams StorageODBC::read(
     check(column_names);
     checkQueryProcessingStage(processed_stage, context);
     String query = transformQueryForExternalDatabase(
-        *query_info.query, getColumns().ordinary, remote_database_name, remote_table_name, context);
+        *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::DoubleQuotes, remote_database_name, remote_table_name, context);
 
     Block sample_block;
     for (const String & name : column_names)

@@ -86,9 +86,12 @@ public:
 /// value of the first argument.
 class FunctionNullIf : public IFunction
 {
+private:
+    const Context & context;
 public:
     static constexpr auto name = "nullIf";
     static FunctionPtr create(const Context & context);
+    FunctionNullIf(const Context & context);
 
     std::string getName() const override;
     size_t getNumberOfArguments() const override { return 2; }

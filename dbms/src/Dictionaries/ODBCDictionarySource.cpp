@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
+#include <Dictionaries/validateODBCConnectionString.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -29,7 +30,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     where{config.getString(config_prefix + ".where", "")},
     update_field{config.getString(config_prefix + ".update_field", "")},
     sample_block{sample_block},
-    query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},    /// NOTE Better to obtain quoting style via ODBC interface.
+    query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()},
     invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
 {
@@ -39,7 +40,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     {
         auto session = std::make_shared<Poco::Data::SessionPool>(
             config.getString(config_prefix + ".connector", "ODBC"),
-            config.getString(config_prefix + ".connection_string"));
+            validateODBCConnectionString(config.getString(config_prefix + ".connection_string")));
 
         /// Default POCO value is 1024. Set property manually to make possible reading of longer strings.
         session->setProperty("maxFieldSize", Poco::Any(field_size));
@@ -58,7 +59,7 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     update_field{other.update_field},
     sample_block{other.sample_block},
     pool{other.pool},
-    query_builder{dict_struct, db, table, where, ExternalQueryBuilder::None},
+    query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::None},
     load_all_query{other.load_all_query},
     invalidate_query{other.invalidate_query}, invalidate_query_response{other.invalidate_query_response}
 {

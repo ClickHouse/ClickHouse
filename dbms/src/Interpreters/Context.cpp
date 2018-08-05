@@ -109,6 +109,9 @@ struct ContextShared
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
+    String interserver_io_user;
+    String interserver_io_password;
+    String interserver_scheme;                              /// http or https
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
@@ -191,7 +194,7 @@ struct ContextShared
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextShared(std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory_)
-        : runtime_components_factory(std::move(runtime_components_factory_))
+        : runtime_components_factory(std::move(runtime_components_factory_)), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -1378,14 +1381,34 @@ void Context::setInterserverIOAddress(const String & host, UInt16 port)
     shared->interserver_io_port = port;
 }
 
-
 std::pair<String, UInt16> Context::getInterserverIOAddress() const
 {
     if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
-        throw Exception("Parameter 'interserver_http_port' required for replication is not specified in configuration file.",
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+        throw Exception("Parameter 'interserver_http(s)_port' required for replication is not specified in configuration file.",
+                        ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return { shared->interserver_io_host, shared->interserver_io_port };
+}
+
+void Context::setInterserverCredentials(const String & user, const String & password)
+{
+    shared->interserver_io_user = user;
+    shared->interserver_io_password = password;
+}
+
+std::pair<String, String> Context::getInterserverCredentials() const
+{
+    return { shared->interserver_io_user, shared->interserver_io_password };
+}
+
+void Context::setInterserverScheme(const String & scheme)
+{
+    shared->interserver_scheme = scheme;
+}
+
+String Context::getInterserverScheme() const
+{
+    return shared->interserver_scheme;
 }
 
 UInt16 Context::getTCPPort() const
@@ -1731,9 +1754,9 @@ void Context::setFormatSchemaPath(const String & path)
     shared->format_schema_path = path;
 }
 
-Context::getSampleBlockCacheType & Context::getSampleBlockCache() const
+Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
-    return getQueryContext().get_sample_block_cache;
+    return getQueryContext().sample_block_cache;
 }
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
