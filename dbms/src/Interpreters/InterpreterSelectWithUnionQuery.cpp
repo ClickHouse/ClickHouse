@@ -92,7 +92,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             ast.list_of_selects->children.at(query_num), context, current_required_result_column_names, to_stage, subquery_depth, only_analyze));
     }
 
-    /// Determine structure of result.
+    /// Determine structure of the result.
 
     if (num_selects == 1)
     {
