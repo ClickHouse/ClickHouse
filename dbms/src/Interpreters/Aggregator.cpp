@@ -635,7 +635,7 @@ void NO_INLINE Aggregator::executeImplCase(
 
             method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
-            AggregateDataPtr place = aggregates_pool->alloc_align(total_size_of_aggregate_states, 
+            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, 
                                                                   align_aggregate_states);
             createAggregateStates(place);
             aggregate_data = place;
@@ -754,7 +754,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
-        AggregateDataPtr place = result.aggregates_pool->alloc_align(total_size_of_aggregate_states,
+        AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states,
                                                                      align_aggregate_states);
         createAggregateStates(place);
         result.without_key = place;
@@ -1923,7 +1923,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 
             method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
-            AggregateDataPtr place = aggregates_pool->alloc_align(total_size_of_aggregate_states,
+            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states,
                                                                   align_aggregate_states);
             createAggregateStates(place);
             aggregate_data = place;
@@ -1975,7 +1975,7 @@ void NO_INLINE Aggregator::mergeWithoutKeyStreamsImpl(
     AggregatedDataWithoutKey & res = result.without_key;
     if (!res)
     {
-        AggregateDataPtr place = result.aggregates_pool->alloc_align(total_size_of_aggregate_states,
+        AggregateDataPtr place = result.aggregates_pool->alignedAlloc(total_size_of_aggregate_states,
                                                                      align_aggregate_states);
         createAggregateStates(place);
         res = place;

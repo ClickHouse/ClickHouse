@@ -125,24 +125,23 @@ public:
     }
 
     /// Get peice of memory with alignment 
-    char * alloc_align(size_t size, size_t align)
+    char * alignedAlloc(size_t size, size_t align)
     {
         // Fast code path for non-alignment requirement
-        if (align <= 1) return alloc(size);
+        if (align <= 1) 
+            return alloc(size);
 
-        size_t pos = (size_t)(head->pos);
+        uintptr_t pos = reinterpret_cast<uintptr_t>(head->pos);
         // next pos match align requirement
-        pos = (pos & ~(align - 1)) + align;
+        pos = ((pos-1) & ~(align - 1)) + align;
 
-        if (unlikely(pos + size > (size_t)(head->end)))
+        if (unlikely(pos + size > reinterpret_cast<uintptr_t>(head->end)))
         {
             addChunk(size);
-            pos = (size_t)(head->pos);
-            pos = (pos & ~(align - 1)) + align;
+            pos = reinterpret_cast<uintptr_t>(head->pos);
+            pos = ((pos-1) & ~(align - 1)) + align;
         }
-        
         char * res = (char *)pos;
-
         head->pos = res + size;
         
         return res;
