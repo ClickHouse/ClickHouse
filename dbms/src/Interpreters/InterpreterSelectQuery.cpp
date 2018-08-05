@@ -445,7 +445,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
 
         /** Read the data from Storage. from_stage - to what stage the request was completed in Storage. */
-        executeFetchColumns(from_stage, pipeline, dry_run, expressions.prewhere_info);
+        executeFetchColumns(from_stage, pipeline, expressions.prewhere_info);
 
         LOG_TRACE(log, QueryProcessingStage::toString(from_stage) << " -> " << QueryProcessingStage::toString(to_stage));
     }
