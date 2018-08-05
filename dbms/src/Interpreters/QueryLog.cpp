@@ -20,10 +20,10 @@ Block QueryLogElement::createBlock()
 {
     return
     {
-        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),         "type"},
-        {ColumnUInt16::create(),     std::make_shared<DataTypeDate>(),         "event_date"},
-        {ColumnUInt32::create(),     std::make_shared<DataTypeDateTime>(),     "event_time"},
-        {ColumnUInt32::create(),     std::make_shared<DataTypeDateTime>(),     "query_start_time"},
+        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),       "type"},
+        {ColumnUInt16::create(),     std::make_shared<DataTypeDate>(),       "event_date"},
+        {ColumnUInt32::create(),     std::make_shared<DataTypeDateTime>(),   "event_time"},
+        {ColumnUInt32::create(),     std::make_shared<DataTypeDateTime>(),   "query_start_time"},
         {ColumnUInt64::create(),     std::make_shared<DataTypeUInt64>(),     "query_duration_ms"},
 
         {ColumnUInt64::create(),     std::make_shared<DataTypeUInt64>(),     "read_rows"},
@@ -41,7 +41,7 @@ Block QueryLogElement::createBlock()
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "exception"},
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "stack_trace"},
 
-        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),         "is_initial_query"},
+        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),       "is_initial_query"},
 
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "user"},
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "query_id"},
@@ -53,14 +53,17 @@ Block QueryLogElement::createBlock()
         {ColumnFixedString::create(16), std::make_shared<DataTypeFixedString>(16), "initial_address"},
         {ColumnUInt16::create(),     std::make_shared<DataTypeUInt16>(),     "initial_port"},
 
-        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),         "interface"},
+        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),       "interface"},
 
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "os_user"},
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "client_hostname"},
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "client_name"},
         {ColumnUInt32::create(),     std::make_shared<DataTypeUInt32>(),     "client_revision"},
+        {ColumnUInt32::create(),     std::make_shared<DataTypeUInt32>(),     "client_version_major"},
+        {ColumnUInt32::create(),     std::make_shared<DataTypeUInt32>(),     "client_version_minor"},
+        {ColumnUInt32::create(),     std::make_shared<DataTypeUInt32>(),     "client_version_patch"},
 
-        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),         "http_method"},
+        {ColumnUInt8::create(),     std::make_shared<DataTypeUInt8>(),       "http_method"},
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "http_user_agent"},
 
         {ColumnString::create(),     std::make_shared<DataTypeString>(),     "quota_key"},
@@ -138,6 +141,9 @@ void QueryLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(client_info.client_hostname);
     columns[i++]->insert(client_info.client_name);
     columns[i++]->insert(UInt64(client_info.client_revision));
+    columns[i++]->insert(UInt64(client_info.client_version_major));
+    columns[i++]->insert(UInt64(client_info.client_version_minor));
+    columns[i++]->insert(UInt64(client_info.client_version_patch));
 
     columns[i++]->insert(UInt64(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);

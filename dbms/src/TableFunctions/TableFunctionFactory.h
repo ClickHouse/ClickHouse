@@ -23,6 +23,7 @@ class TableFunctionFactory final: public ext::singleton<TableFunctionFactory>
 public:
     using Creator = std::function<TableFunctionPtr()>;
 
+    using TableFunctions = std::unordered_map<std::string, Creator>;
     /// Register a function by its name.
     /// No locking, you must register all functions before usage of get.
     void registerFunction(const std::string & name, Creator creator);
@@ -42,9 +43,14 @@ public:
         const std::string & name,
         const Context & context) const;
 
-private:
-    using TableFunctions = std::unordered_map<std::string, Creator>;
+    bool isTableFunctionName(const std::string & name) const;
 
+    const TableFunctions & getAllTableFunctions() const
+    {
+        return functions;
+    }
+
+private:
     TableFunctions functions;
 };
 

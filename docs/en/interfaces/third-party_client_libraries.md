@@ -8,10 +8,10 @@ There are libraries for working with ClickHouse for:
     - [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
     - [clickhouse-client](https://github.com/yurial/clickhouse-client)
 - PHP
-    - [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
-    - [PhpClickHouseClient](https://github.com/SevaCode/PhpClickHouseClient)
     - [phpClickHouse](https://github.com/smi2/phpClickHouse)
+    - [clickhouse-php-client](https://github.com/8bitov/clickhouse-php-client)
     - [clickhouse-client](https://github.com/bozerkins/clickhouse-client)
+    - [PhpClickHouseClient](https://github.com/SevaCode/PhpClickHouseClient)
 - Go
     - [clickhouse](https://github.com/kshvakov/clickhouse/)
     - [go-clickhouse](https://github.com/roistat/go-clickhouse)
@@ -30,7 +30,9 @@ There are libraries for working with ClickHouse for:
     - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
 - .NET
-    - [ClickHouse-Net](https://github.com/killwort/ClickHouse-Net)
+    - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+    - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
+    - [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
 - C++
     - [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp/)
 - Elixir

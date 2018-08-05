@@ -180,9 +180,9 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of effective implementation), you can not pass several arguments, among which there are tuples.
   */
-template <bool argument_is_tuple>
+template <bool is_exact, bool argument_is_tuple>
 class AggregateFunctionUniqUpToVariadic final
-    : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<argument_is_tuple>>
+    : public IAggregateFunctionDataHelper<AggregateFunctionUniqUpToData<UInt64>, AggregateFunctionUniqUpToVariadic<is_exact, argument_is_tuple>>
 {
 private:
     size_t num_args = 0;
@@ -212,7 +212,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).insert(UniqVariadicHash<false, argument_is_tuple>::apply(num_args, columns, row_num), threshold);
+        this->data(place).insert(UInt64(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)), threshold);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

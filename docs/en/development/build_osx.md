@@ -12,22 +12,19 @@ With appropriate changes, it should also work on any other Linux distribution.
 ## Install required compilers, tools, and libraries
 
 ```bash
-brew install cmake ninja gcc icu4c mysql openssl unixodbc libtool gettext readline
+brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext readline
 ```
 
 ## Checkout ClickHouse sources
 
-To get the latest stable version:
-
 ```bash
-git clone -b stable --recursive --depth=10 git@github.com:yandex/ClickHouse.git
-# or: git clone -b stable --recursive --depth=10 https://github.com/yandex/ClickHouse.git
+git clone --recursive --depth=10 git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive --depth=10 https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-For development, switch to the `master` branch.
-For the latest release candidate, switch to the `testing` branch.
+For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 
@@ -41,5 +38,44 @@ cd ..
 
 ## Caveats
 
-If you intend to run clickhouse-server, make sure to increase the system's maxfiles variable. See [MacOS.md](https://github.com/yandex/ClickHouse/blob/master/MacOS.md) for more details.
+If you intend to run clickhouse-server, make sure to increase the system's maxfiles variable.
+
+!!! info "Note"
+    You'll need to use sudo.
+
+To do so, create the following file:
+
+/Library/LaunchDaemons/limit.maxfiles.plist:
+``` xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+Execute the following command:
+``` bash
+$ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+Reboot.
+
+To check if it's working, you can use `ulimit -n` command.
 

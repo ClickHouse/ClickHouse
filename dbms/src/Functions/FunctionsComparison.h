@@ -15,6 +15,10 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/getLeastSupertype.h>
+
+#include <Interpreters/castColumn.h>
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunction.h>
@@ -617,9 +621,12 @@ class FunctionComparison : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionComparison>(); }
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
+    FunctionComparison(const Context & context) : context(context) {}
 
 private:
+    const Context & context;
+
     template <typename T0, typename T1>
     bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
     {
@@ -798,7 +805,7 @@ private:
         }
     }
 
-    void executeDateOrDateTimeOrEnumWithConstString(
+    bool executeDateOrDateTimeOrEnumOrUUIDWithConstString(
         Block & block, size_t result, const IColumn * col_left_untyped, const IColumn * col_right_untyped,
         const DataTypePtr & left_type, const DataTypePtr & right_type, bool left_is_num, size_t input_rows_count)
     {
@@ -821,8 +828,7 @@ private:
 
         const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
-            throw Exception{"Illegal columns " + col_left_untyped->getName() + " and " + col_right_untyped->getName()
-                + " of arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
+            return false;
 
         StringRef string_value = column_string->getDataAt(0);
 
@@ -875,6 +881,8 @@ private:
         else if (is_enum16)
             executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
                 number_type, left_is_num, input_rows_count);
+
+        return true;
     }
 
     /// Comparison between DataTypeEnum<T> and string constant containing the name of an enum element
@@ -954,7 +962,7 @@ private:
     void executeTupleEqualityImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x, const ColumnsWithTypeAndName & y,
                                       size_t tuple_size, size_t input_rows_count)
     {
-        ComparisonFunction func_compare;
+        ComparisonFunction func_compare(context);
         ConvolutionFunction func_convolution;
 
         Block tmp_block;
@@ -983,11 +991,11 @@ private:
     void executeTupleLessGreaterImpl(Block & block, size_t result, const ColumnsWithTypeAndName & x,
                                          const ColumnsWithTypeAndName & y, size_t tuple_size, size_t input_rows_count)
     {
-        HeadComparisonFunction func_compare_head;
-        TailComparisonFunction func_compare_tail;
+        HeadComparisonFunction func_compare_head(context);
+        TailComparisonFunction func_compare_tail(context);
         FunctionAnd func_and;
         FunctionOr func_or;
-        FunctionComparison<EqualsOp, NameEquals> func_equals;
+        FunctionComparison<EqualsOp, NameEquals> func_equals(context);
 
         Block tmp_block;
 
@@ -1025,7 +1033,7 @@ private:
         block.getByPosition(result).column = tmp_block.getByPosition(tmp_block.columns() - 1).column;
     }
 
-    void executeGeneric(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
+    void executeGenericIdenticalTypes(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
     {
         bool c0_const = c0->isColumnConst();
         bool c1_const = c1->isColumnConst();
@@ -1051,6 +1059,16 @@ private:
 
             block.getByPosition(result).column = std::move(c_res);
         }
+    }
+
+    void executeGeneric(Block & block, size_t result, const ColumnWithTypeAndName & c0, const ColumnWithTypeAndName & c1)
+    {
+        DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
+
+        ColumnPtr c0_converted = castColumn(c0, common_type, context);
+        ColumnPtr c1_converted = castColumn(c1, common_type, context);
+
+        executeGenericIdenticalTypes(block, result, c0_converted.get(), c1_converted.get());
     }
 
 public:
@@ -1122,8 +1140,17 @@ public:
             || (left_is_string && right_is_enum)
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
-            throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
-                " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        {
+            try
+            {
+                getLeastSupertype(arguments);
+            }
+            catch (const Exception &)
+            {
+                throw Exception("Illegal types of arguments (" + arguments[0]->getName() + ", " + arguments[1]->getName() + ")"
+                    " of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+        }
 
         if (left_tuple && right_tuple)
         {
@@ -1167,16 +1194,26 @@ public:
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
+        {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
-            ;
+        {
+        }
         else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))
-            executeGeneric(block, result, col_left_untyped, col_right_untyped);
-        else
-            executeDateOrDateTimeOrEnumWithConstString(
+        {
+            executeGenericIdenticalTypes(block, result, col_left_untyped, col_right_untyped);
+        }
+        else if (executeDateOrDateTimeOrEnumOrUUIDWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
                 col_with_type_and_name_left.type, col_with_type_and_name_right.type,
-                left_is_num, input_rows_count);
+                left_is_num, input_rows_count))
+        {
+        }
+        else
+        {
+            executeGeneric(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
+        }
     }
 
 #if USE_EMBEDDED_COMPILER

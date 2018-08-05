@@ -365,26 +365,20 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
     /// The set of written offset columns so that you do not write shared offsets of nested structures columns several times
     OffsetColumns offset_columns;
 
-    auto sort_description = storage.getPrimarySortDescription();
+    auto sort_columns = storage.getPrimarySortColumns();
 
     /// Here we will add the columns related to the Primary Key, then write the index.
-    std::vector<ColumnWithTypeAndName> primary_columns(sort_description.size());
+    std::vector<ColumnWithTypeAndName> primary_columns(sort_columns.size());
     std::map<String, size_t> primary_columns_name_to_position;
 
-    for (size_t i = 0, size = sort_description.size(); i < size; ++i)
+    for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
     {
-        const auto & descr = sort_description[i];
-
-        String name = !descr.column_name.empty()
-            ? descr.column_name
-            : block.safeGetByPosition(descr.column_number).name;
+        const auto & name = sort_columns[i];
 
         if (!primary_columns_name_to_position.emplace(name, i).second)
             throw Exception("Primary key contains duplicate columns", ErrorCodes::BAD_ARGUMENTS);
 
-        primary_columns[i] = !descr.column_name.empty()
-            ? block.getByName(descr.column_name)
-            : block.safeGetByPosition(descr.column_number);
+        primary_columns[i] = block.getByName(name);
 
         /// Reorder primary key columns in advance and add them to `primary_columns`.
         if (permutation)
@@ -393,8 +387,8 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
 
     if (index_columns.empty())
     {
-        index_columns.resize(sort_description.size());
-        for (size_t i = 0, size = sort_description.size(); i < size; ++i)
+        index_columns.resize(sort_columns.size());
+        for (size_t i = 0, size = sort_columns.size(); i < size; ++i)
             index_columns[i] = primary_columns[i].column->cloneEmpty();
     }
 

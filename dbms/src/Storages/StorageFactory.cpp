@@ -87,11 +87,19 @@ StoragePtr StorageFactory::get(
 
             name = engine_def.name;
 
-            if ((storage_def->partition_by || storage_def->order_by || storage_def->sample_by || storage_def->settings)
+            if (storage_def->settings && !endsWith(name, "MergeTree") && name != "Kafka")
+            {
+                throw Exception(
+                    "Engine " + name + " doesn't support SETTINGS clause. "
+                    "Currently only the MergeTree family of engines and Kafka engine supports it", 
+                    ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            if ((storage_def->partition_by || storage_def->order_by || storage_def->sample_by)
                 && !endsWith(name, "MergeTree"))
             {
                 throw Exception(
-                    "Engine " + name + " doesn't support PARTITION BY, ORDER BY, SAMPLE BY or SETTINGS clauses. "
+                    "Engine " + name + " doesn't support PARTITION BY, ORDER BY or SAMPLE BY clauses. "
                     "Currently only the MergeTree family of engines supports them", ErrorCodes::BAD_ARGUMENTS);
             }
 

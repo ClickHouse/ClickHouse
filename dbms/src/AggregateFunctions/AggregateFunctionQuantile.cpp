@@ -93,30 +93,14 @@ void registerAggregateFunctionsQuantile(AggregateFunctionFactory & factory)
         createAggregateFunctionQuantile<QuantileTDigest, NameQuantilesTDigestWeighted, true, Float32, true>);
 
     /// 'median' is an alias for 'quantile'
-
-    factory.registerFunction("median",
-        createAggregateFunctionQuantile<QuantileReservoirSampler, NameQuantile, false, Float64, false>);
-
-    factory.registerFunction("medianDeterministic",
-        createAggregateFunctionQuantile<QuantileReservoirSamplerDeterministic, NameQuantileDeterministic, true, Float64, false>);
-
-    factory.registerFunction("medianExact",
-        createAggregateFunctionQuantile<QuantileExact, NameQuantileExact, false, void, false>);
-
-    factory.registerFunction("medianExactWeighted",
-        createAggregateFunctionQuantile<QuantileExactWeighted, NameQuantileExactWeighted, true, void, false>);
-
-    factory.registerFunction("medianTiming",
-        createAggregateFunctionQuantile<QuantileTiming, NameQuantileTiming, false, Float32, false>);
-
-    factory.registerFunction("medianTimingWeighted",
-        createAggregateFunctionQuantile<QuantileTiming, NameQuantileTimingWeighted, true, Float32, false>);
-
-    factory.registerFunction("medianTDigest",
-        createAggregateFunctionQuantile<QuantileTDigest, NameQuantileTDigest, false, Float32, false>);
-
-    factory.registerFunction("medianTDigestWeighted",
-        createAggregateFunctionQuantile<QuantileTDigest, NameQuantileTDigestWeighted, true, Float32, false>);
+    factory.registerAlias("median", NameQuantile::name);
+    factory.registerAlias("medianDeterministic", NameQuantileDeterministic::name);
+    factory.registerAlias("medianExact", NameQuantileExact::name);
+    factory.registerAlias("medianExactWeighted", NameQuantileExactWeighted::name);
+    factory.registerAlias("medianTiming", NameQuantileTiming::name);
+    factory.registerAlias("medianTimingWeighted", NameQuantileTimingWeighted::name);
+    factory.registerAlias("medianTDigest", NameQuantileTDigest::name);
+    factory.registerAlias("medianTDigestWeighted", NameQuantileTDigestWeighted::name);
 }
 
 }
