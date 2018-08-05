@@ -132,6 +132,10 @@ public:
       */
     void updateHash(SipHash & hash) const;
 
+    /** Are there columns with identical names.
+      */
+    bool hasAmbiguousNames() const;
+
 private:
     void eraseImpl(size_t position);
     void initializeIndexByName();

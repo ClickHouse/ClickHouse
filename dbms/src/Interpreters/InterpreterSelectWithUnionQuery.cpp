@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNION_ALL_RESULT_STRUCTURES_MISMATCH;
+    extern const int DUPLICATE_COLUMN;
 }
 
 
@@ -152,6 +153,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             /// BTW, result column names are from first SELECT.
         }
     }
+
+    /// Subquery cannot have ambiguous column names. It is still Ok for top SELECT.
+    if (subquery_depth > 0 && result_header.hasAmbiguousNames())
+        throw Exception("Subquery cannot have duplicate column names", ErrorCodes::DUPLICATE_COLUMN);
 }
 
 
