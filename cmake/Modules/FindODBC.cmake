@@ -27,11 +27,10 @@ if (USE_INTERNAL_ODBC_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/u
    set (USE_INTERNAL_ODBC_LIBRARY 0)
 endif ()
 
-set (ODBC_INCLUDE_DIRECTORIES ) # Include directories will be either used automatically by target_include_directories or set later.
-
 if (ENABLE_ODBC)
     if (USE_INTERNAL_ODBC_LIBRARY)
         set (ODBC_LIBRARIES unixodbc)
+        set (ODBC_INCLUDE_DIRECTORIES ${CMAKE_SOURCE_DIR}/contrib/unixodbc/include)
         set (ODBC_FOUND 1)
         set (USE_ODBC 1)
     else ()
