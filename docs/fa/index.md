@@ -45,7 +45,7 @@ ClickHouse یک مدیریت دیتابیس (DBMS) ستون گرا برای پر
 ## ویژگی های کلیدی یک سناریو OLAP
 
 - اکثریت درخواست های برای خواندن می باشد.
-- Data is ingested in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
+- داده ها به صورت batch های بزرگ (< 1000 رکورد) وارد می شوند، نه به صورت تکی؛ یا اینکه اصلا بروز نمی شوند.
 - داده ها به دیتابیس اضافه می شوند و تغییر پیدا نمی کنند.
 - برای خواندن، تعداد زیادی از رکورد ها از دیتابیس استخراج می شوند، اما فقط چند ستون از رکورد ها.
 - جداول "wide" هستند، به این معنی تعداد زیادی ستون دارند.
@@ -56,35 +56,35 @@ ClickHouse یک مدیریت دیتابیس (DBMS) ستون گرا برای پر
 - تراکنش واجب نیست.
 - نیازمندی کم برای consistency بودن داده ها.
 - فقط یک جدول بزرگ به ازای هر query وجود دارد. تمام جداول کوچک هستند، به جز یکی.
-- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server's RAM.
 - نتیجه query به طول قابل توجهی کوچکتر از source داده ها می باشد. به عبارتی دیگر در یک query، داده ها فیلتر یا تجمیع می شوند، پس نتایج در RAM یک سرور فیت می شوند.
 
 خوب خیلی ساده می توان دید که سناریو های OLAP خیلی متفاوت تر از دیگر سناریو های محبوب هستند (مثل OLTP یا Key-Value). پس اگر میخواهید performance مناسب داشته باشید، استفاده از دیتابیس های OLTP یا Key-Value برای اجرای query های OLAP معنی ندارد. برای مثال، اگر شما از دیتابیس MongoDB یا Redis برای آنالیز استفاده کنید، قطعا performance بسیار ضعیف تری نسبت به دیتابیس های OLAP خواهید داشت.
 
-## Reasons why columnar databases are better suited for OLAP scenario
+## دلایل برتری دیتابیس های ستون گرا برای سناریو های OLAP
 
 
-Column-oriented databases are better suited to OLAP scenarios (at least 100 times better in processing speed for most queries). The reasons for that are explained below in detail, but it's easier to be demonstrated visually:
+دیتابیس های ستون گرا مناسب سناریو های OLAP هستند
+ (حداقل 100 برابر در بیشتر query ها سرعت پردازش آنها بهتر است). دلایل این برتری در پایین شرح داده شده است، اما آسانترش این هست که به صورت visually این تفاوت را ببینیم:
 
-**Row oriented**
+**ردیف گرا**
 
 ![Row oriented](images/row_oriented.gif#)
 
-**Column oriented**
+**ستون گرا**
 
 ![Column oriented](images/column_oriented.gif#)
 
-See the difference? Read further to learn why this happens.
+تفاوت را دیدید؟ بیشتر بخوانید تا یاد بگیرید چرا این اتفاق رخ میدهد.
 
 ### Input/output
 
-1. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
-2. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
-3. Due to the reduced I/O, more data fits in the system cache.
+1. برای query های تحلیلی، تنها چند ستون از تمام ستون های جدول نیاز به خواندن دارد. در یک دیتابیس ستون گرا، شما فقط داده ی مورد نیاز را می خوانید. برای مثال، اگر شما نیاز به 5 ستون از 100 ستون را دارید، شما می توانید انتظار 20 برابر کاهش I/O را داشته باشید.
+2. از آنجایی که داده در بسته ها خوانده می شوند، فشرده سازی ساده می باشد. همچنین داده های ستون ها برای فشرده سازی ساده می باشند. این باعث کاهش نرخ I/O در ادامه می شود.
+3. با توجه به کاهش I/O، داده های بیشتری در system cache قرار می گیرند.
 
-For example, the query "count the number of records for each advertising platform" requires reading one "advertising platform ID" column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
+ برای مثال، query "تعداد رکوردها به ازای هر بستر نیازمندی" نیازمند خواندن ستون "آیدی بستر آگهی"، که 1 بایت بدون فشرده طول می کشد، خواهد بود. اگر بیشتر ترافیک مربوط به بستر های نیازمندی نبود، شما می توانید انتظار حداقل 10 برابر فشرده سازی این ستون را داشته باشید. زمانی که از الگوریتم فشرده سازی quick استفاده می کنید، عملیات decompression داده ها با سرعت حداقل چندین گیگابایت در ثانیه انجام می شود. به عبارت دیگر، این query توانایی پردازش تقریبا چندین میلیارد رکورد در ثانیه به ازای یک سرور را دارد. این سرعت در عمل واقعی و دست یافتنی است.
 
-<details><summary>Example</summary>
+<details><summary>مثال</summary>
 <p>
 <pre>
 $ clickhouse-client
@@ -134,17 +134,16 @@ LIMIT 20
 
 ### CPU
 
-Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU.
-It makes sense to both store data in columns and process it, when possible, by columns.
+از آنجایی که اجرای یک query نیازمند پردازش تعداد زیادی سطر می باشد، این کمک می کند تا تمام عملیات ها به جای ارسال به سطرهای جداگانه، برای کل بردار ارسال شود، یا برای ترکیب query engine به طوری که هیچ هزینه ی ارسالی وجود ندارد. اگر این کار رو نکنید، با هر half-decent disk subsystem، تفسیرگر query ناگزیر است که CPU را متوقف کند. این منطقی است که که در صورت امکان هر دو کار ذخیره سازی داده در ستون ها و پردازش ستون ها با هم انجام شود.
 
-There are two ways to do this:
+دو راه برای انجام این کار وجود دارد:
 
-1. A vector engine. All operations are written for vectors, instead of for separate values. This means you don't need to call operations very often, and dispatching costs are negligible. Operation code contains an optimized internal cycle.
+1. یک موتور بردار. تمام عملیات ها به جای مقادیر جداگانه، برای بردارها نوشته شوند. این به این معنیست که شما خیلی از مواقع نیازی به صدا کردن عملیات ها ندارید، و هزینه انتقال ناچیز است. کد عملیاتی شامل یک چرخه داخلی بهینه شده است.
 
-2. Code generation. The code generated for the query has all the indirect calls in it.
+2. Code generation. کد تولید شده برای query دارای تمام تماس های غیرمستقیم در آن است.
 
-This is not done in "normal" databases, because it doesn't make sense when running simple queries. However, there are exceptions. For example, MemSQL uses code generation to reduce latency when processing SQL queries. (For comparison, analytical DBMSs require optimization of throughput, not latency.)
+این در یک دیتابیس نرمال انجام نمی شود، چرا که برای اجرای query های ساده این کارها منطقی نیست. هرچند، استثناهاتی هم وجود دارد. برای مثال، MemSQL از code generation برای کاهش latency در هنگام پردازش query های SQL استفاده می کند. (برای مقایسه، مدیریت دیتابیس های آنالیزی نیازمند بهینه سازی توان عملیاتی (throughput) هستند نه latency.)
 
-Note that for CPU efficiency, the query language must be declarative (SQL or MDX), or at least a vector (J, K). The query should only contain implicit loops, allowing for optimization.
+توجه کنید که برای کارایی CPU، query language باید SQL یا MDX باشد، یا حداقل یک بردارد (J, K) باشد. query برای بهینه سازی باید فقط دارای حلقه های implicit باشد.
 
 </div>
