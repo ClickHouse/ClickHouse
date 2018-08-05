@@ -249,19 +249,15 @@ message (STATUS "Building for: ${CMAKE_SYSTEM} ${CMAKE_SYSTEM_PROCESSOR} ${CMAKE
 include(GNUInstallDirs)
 
 include (cmake/find_ssl.cmake)
-if (NOT OPENSSL_FOUND)
-    message (FATAL_ERROR "Need openssl for build. debian tip: sudo apt install libssl-dev")
-endif ()
-
 include (cmake/lib_name.cmake)
 include (cmake/find_icu4c.cmake)
 include (cmake/find_boost.cmake)
-# openssl, zlib before poco
 include (cmake/find_zlib.cmake)
 include (cmake/find_zstd.cmake)
 include (cmake/find_ltdl.cmake) # for odbc
 include (cmake/find_termcap.cmake)
 include (cmake/find_odbc.cmake)
+# openssl, zlib, odbc before poco
 include (cmake/find_poco.cmake)
 include (cmake/find_lz4.cmake)
 include (cmake/find_sparsehash.cmake)
