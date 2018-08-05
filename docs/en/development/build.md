@@ -46,7 +46,7 @@ export CXX=g++-7
 ## Install required libraries from packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev libssl-dev
+sudo apt-get install libicu-dev libreadline-dev
 ```
 
 ## Checkout ClickHouse sources
