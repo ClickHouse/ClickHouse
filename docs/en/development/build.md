@@ -4,9 +4,8 @@
 
 ```bash
 sudo apt-get install git cmake
+# Or cmake3 instead of cmake on older systems.
 ```
-
-Or cmake3 instead of cmake on older systems.
 
 ## Checkout ClickHouse sources
 
