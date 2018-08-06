@@ -1,6 +1,31 @@
-# How to build ClickHouse on Linux
+# How to build release package of ClickHouse
 
-Build should work on Linux Ubuntu 12.04, 14.04 or newer.
+## Install Git and CMake
+
+```bash
+sudo apt-get install git cmake
+```
+
+Or cmake3 instead of cmake on older systems.
+
+## Checkout ClickHouse sources
+
+```bash
+git clone --recursive --branch stable git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
+
+cd ClickHouse
+```
+
+## Run release script
+
+```bash
+./release
+```
+
+# How to build ClickHouse for development
+
+Build should work on Ubuntu Linux.
 With appropriate changes, it should also work on any other Linux distribution.
 The build process is not intended to work on Mac OS X.
 Only x86_64 with SSE 4.2 is supported. Support for AArch64 is experimental.
@@ -61,50 +86,6 @@ cd ClickHouse
 For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
-
-There are two build variants.
-
-### Build release package
-
-Install prerequisites to build Debian packages.
-
-```bash
-sudo apt-get install devscripts dupload fakeroot debhelper
-```
-
-Install the most recent version of Clang.
-
-Clang is embedded into the ClickHouse package and used at runtime. The minimum version is 5.0. It is optional.
-
-To install clang, see  [ci/build-clang-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-clang-from-sources.sh)
-
-You may also build ClickHouse with Clang for development purposes.
-For production releases, GCC is used.
-
-Run the release script:
-
-```bash
-rm -f ../clickhouse*.deb
-./release
-```
-
-You will find built packages in the parent directory:
-
-```bash
-ls -l ../clickhouse*.deb
-```
-
-Note that usage of debian packages is not required.
-ClickHouse has no runtime dependencies except libc, so it could work on almost any Linux.
-
-Installing freshly built packages on a development server:
-
-```bash
-sudo dpkg -i ../clickhouse*.deb
-sudo service clickhouse-server start
-```
-
-### Build to work with code
 
 ```bash
 mkdir build
