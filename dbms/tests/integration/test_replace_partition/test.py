@@ -104,6 +104,7 @@ def test_drop_failover(drop_failover):
         time.sleep(1)
         counter += 1
     assert 'Not found part' not in node4.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
+    assert node4.query("SELECT id FROM test_table order by id") == ''
 
 node5 = cluster.add_instance('node5', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
 node6 = cluster.add_instance('node6', main_configs=['configs/remote_servers.xml'], with_zookeeper=True)
@@ -154,8 +155,9 @@ def test_replace_after_replace_failover(replace_after_replace_failover):
     # connection restored
     counter = 0
     while counter < 10: # will lasts forever
-        if 'Not found part' not in node4.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'"):
+        if 'Not found part' not in node6.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'"):
             break
         time.sleep(1)
         counter += 1
-    assert 'Not found part' not in node4.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
+    assert 'Not found part' not in node6.query("select last_exception from system.replication_queue where type = 'REPLACE_RANGE'")
+    assert node6.query("SELECT id FROM test_table order by id") == '333\n'
