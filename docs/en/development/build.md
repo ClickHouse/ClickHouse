@@ -1,10 +1,9 @@
 # How to build release package of ClickHouse
 
-## Install Git and CMake
+## Install Git and pbuilder
 
 ```bash
-sudo apt-get install git cmake
-# Or cmake3 instead of cmake on older systems.
+sudo apt-get install git pbuilder
 ```
 
 ## Checkout ClickHouse sources
