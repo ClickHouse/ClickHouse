@@ -134,11 +134,14 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     
     const String partition_id = data.getPartitionIDFromQuery(partition, context);
     auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-    
+
+    UInt64 partition_size = 0;
+
     for (const auto & part : parts_to_remove)
     {
-        context.checkPartitionCanBeDropped(database_name, table_name, part->bytes_on_disk);
+        partition_size += part->bytes_on_disk;
     }
+    context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
 void StorageMergeTree::drop()
