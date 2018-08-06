@@ -78,14 +78,17 @@ struct  KeysSerializationVersion
 
     enum Value
     {
-        SingleDictionaryWithAdditionalKeysPerBlock = 1,
+        /// Version is written at the start of <name.dict.bin>.
+        /// Dictionary is written as number N and N keys after them.
+        /// Dictionary can be shared for continuous range of granules.
+        SharedDictionariesWithAdditionalKeys = 1,
     };
 
     Value value;
 
     static void checkVersion(UInt64 version)
     {
-        if (version != SingleDictionaryWithAdditionalKeysPerBlock)
+        if (version != SharedDictionariesWithAdditionalKeys)
             throw Exception("Invalid version for DataTypeWithDictionary key column.", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -250,7 +253,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
                         ErrorCodes::LOGICAL_ERROR);
 
     /// Write version and create SerializeBinaryBulkState.
-    UInt64 key_version = KeysSerializationVersion::SingleDictionaryWithAdditionalKeysPerBlock;
+    UInt64 key_version = KeysSerializationVersion::SharedDictionariesWithAdditionalKeys;
 
     writeIntBinary(key_version, *stream);
 
@@ -320,7 +323,7 @@ namespace
     };
 
     template <typename T>
-    IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeys(PaddedPODArray<T> & index, size_t dict_size)
+    IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeysRef(PaddedPODArray<T> & index, size_t dict_size)
     {
         PaddedPODArray<T> copy(index.cbegin(), index.cend());
 
@@ -362,15 +365,105 @@ namespace
         return {std::move(dictionary_map), std::move(additional_keys_map)};
     }
 
+    template <typename T>
+    IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeys(PaddedPODArray<T> & index, size_t dict_size)
+    {
+        T max_less_dict_size = 0;
+        T max_value = 0;
+
+        auto size = index.size();
+        if (size == 0)
+            return {ColumnVector<T>::create(), ColumnVector<T>::create()};
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            auto val = index[i];
+            if (val < dict_size)
+                max_less_dict_size = std::max(max_less_dict_size, val);
+
+            max_value = std::max(max_value, val);
+        }
+
+        auto map_size = UInt64(max_less_dict_size) + 1;
+        auto overflow_map_size = max_value >= dict_size ? (UInt64(max_value - dict_size) + 1) : 0;
+        PaddedPODArray<T> map(map_size, 0);
+        PaddedPODArray<T> overflow_map(overflow_map_size, 0);
+
+        T zero_pos_value = 0;
+        T zero_pos_overflowed_value = 0;
+        UInt64 cur_pos = 0;
+        UInt64 cur_overflowed_pos = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            T val = index[i];
+            if (val < dict_size)
+            {
+                if (cur_pos == 0)
+                {
+                    zero_pos_value = val;
+                    ++cur_pos;
+                }
+                else if (map[val] == 0 && val != zero_pos_value)
+                {
+                    map[val] = cur_pos;
+                    ++cur_pos;
+                }
+            }
+            else
+            {
+                T shifted_val = val - dict_size;
+                if (cur_overflowed_pos == 0)
+                {
+                    zero_pos_overflowed_value = shifted_val;
+                    ++cur_overflowed_pos;
+                }
+                else if (overflow_map[shifted_val] == 0 && shifted_val != zero_pos_overflowed_value)
+                {
+                    overflow_map[shifted_val] = cur_overflowed_pos;
+                    ++cur_overflowed_pos;
+                }
+            }
+        }
+
+        auto dictionary_map = ColumnVector<T>::create(cur_pos);
+        auto additional_keys_map = ColumnVector<T>::create(cur_overflowed_pos);
+        auto & dict_data = dictionary_map->getData();
+        auto & add_keys_data = additional_keys_map->getData();
+
+        for (size_t i = 0; i < map_size; ++i)
+            if (map[i])
+                dict_data[map[i]] = static_cast<T>(i);
+
+        for (size_t i = 0; i < overflow_map_size; ++i)
+            if (overflow_map[i])
+                add_keys_data[overflow_map[i]] = static_cast<T>(i);
+
+        if (cur_pos)
+            dict_data[0] = zero_pos_value;
+        if (cur_overflowed_pos)
+            add_keys_data[0] = zero_pos_overflowed_value;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            T & val = index[i];
+            if (val < dict_size)
+                val = map[val];
+            else
+                val = overflow_map[val - dict_size] + cur_pos;
+        }
+
+        return {std::move(dictionary_map), std::move(additional_keys_map)};
+    }
+
     /// Update column and return map with old indexes.
     /// Let N is the number of distinct values which are less than max_size;
     ///     old_column - column before function call;
-    ///     new_column - column after function call;
-    ///     map - function result (map.size() is N):
+    ///     new_column - column after function call:
     /// * if old_column[i] < max_size, than
-    ///       map[new_column[i]] = old_column[i]
+    ///       dictionary_map[new_column[i]] = old_column[i]
     /// * else
-    ///       new_column[i] = old_column[i] - max_size + N
+    ///       additional_keys_map[new_column[i]] = old_column[i] - dict_size + N
     IndexMapsWithAdditionalKeys mapIndexWithAdditionalKeys(IColumn & column, size_t dict_size)
     {
         if (auto * data_uint8 = getIndexesData<UInt8>(column))
