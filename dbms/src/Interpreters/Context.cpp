@@ -1628,7 +1628,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 }
 
 
-void checkCanBeDropped(size_t size, size_t max_size_to_drop)
+void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop)
 {
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;
@@ -1676,11 +1676,11 @@ void Context::setMaxTableSizeToDrop(size_t max_size)
 }
 
 
-void Context::checkTableCanBeDropped(const String & database, const String & table, size_t table_size)
+void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size)
 {
     size_t max_table_size_to_drop = shared->max_table_size_to_drop;
 
-    checkCanBeDropped(table_size, max_table_size_to_drop);
+    checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
 }
 
 
@@ -1695,7 +1695,7 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 {
     size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
 
-    checkCanBeDropped(partition_size, max_partition_size_to_drop);
+    checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
 
