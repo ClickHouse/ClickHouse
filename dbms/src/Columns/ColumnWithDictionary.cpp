@@ -20,7 +20,7 @@ namespace
     }
 
     template <typename T>
-    MutableColumnPtr mapUniqueIndexImpl(PaddedPODArray<T> & index)
+    MutableColumnPtr mapUniqueIndexImplRef(PaddedPODArray<T> & index)
     {
         PaddedPODArray<T> copy(index.cbegin(), index.cend());
 
@@ -41,6 +41,52 @@ namespace
         for (size_t i = 0; i < index.size(); ++i)
             if (data[index[i]] != copy[i])
                 throw Exception("Expected " + toString(data[index[i]]) + ", but got " + toString(copy[i]), ErrorCodes::LOGICAL_ERROR);
+
+        return std::move(res_col);
+    }
+
+    template <typename T>
+    MutableColumnPtr mapUniqueIndexImpl(PaddedPODArray<T> & index)
+    {
+        if (index.empty())
+            return ColumnVector<T>::create();
+
+        auto size = index.size();
+
+        T max_val = index[0];
+        for (size_t i = 1; i < size; ++i)
+            max_val = std::max(max_val, index[i]);
+
+        /// May happen when dictionary is shared.
+        if (max_val > size)
+            return mapUniqueIndexImplRef(index);
+
+        auto map_size = UInt64(max_val) + 1;
+        PaddedPODArray<T> map(map_size, 0);
+        T zero_pos_value = index[0];
+        index[0] = 0;
+        T cur_pos = 0;
+        for (size_t i = 1; i < size; ++i)
+        {
+            T val = index[i];
+            if (val != zero_pos_value && map[val] == 0)
+            {
+                ++cur_pos;
+                map[val] = cur_pos;
+            }
+
+            index[i] = map[val];
+        }
+
+        auto res_col = ColumnVector<T>::create(UInt64(cur_pos) + 1);
+        auto & data = res_col->getData();
+        data[0] = zero_pos_value;
+        for (size_t i = 0; i < map_size; ++i)
+        {
+            auto val = map[i];
+            if (val)
+                data[val] = static_cast<T>(i);
+        }
 
         return std::move(res_col);
     }
