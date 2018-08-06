@@ -521,11 +521,12 @@ public:
         std::string name;
         UInt64 version_major;
         UInt64 version_minor;
+        UInt64 version_patch;
         UInt64 version_revision;
-        connection.getServerVersion(name, version_major, version_minor, version_revision);
+        connection.getServerVersion(name, version_major, version_minor, version_patch, version_revision);
 
         std::stringstream ss;
-        ss << version_major << "." << version_minor << "." << version_revision;
+        ss << version_major << "." << version_minor << "." << version_patch;
         server_version = ss.str();
 
         processTestsConfigurations(input_files);

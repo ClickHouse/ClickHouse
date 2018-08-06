@@ -8,3 +8,6 @@ Query involving aliases should fail on submission
 mutation_1.txt	DELETE WHERE x = 1	['']	[1]	0	1
 mutation_5.txt	DELETE WHERE (x % 2) = 1	['']	[5]	0	1
 mutation_6.txt	DELETE WHERE s = \'d\'	['']	[6]	0	1
+*** Test mutations cleaner ***
+mutation_3.txt	DELETE WHERE x = 2	1
+mutation_4.txt	DELETE WHERE x = 3	1
