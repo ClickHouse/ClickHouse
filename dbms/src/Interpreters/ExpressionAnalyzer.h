@@ -204,7 +204,7 @@ private:
 
     /** If non-empty, ignore all expressions in  not from this list.
       */
-    NameSet required_result_columns;
+    Names required_result_columns;
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;

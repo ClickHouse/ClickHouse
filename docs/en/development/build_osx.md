@@ -17,17 +17,14 @@ brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext r
 
 ## Checkout ClickHouse sources
 
-To get the latest stable version:
-
 ```bash
-git clone -b stable --recursive --depth=10 git@github.com:yandex/ClickHouse.git
-# or: git clone -b stable --recursive --depth=10 https://github.com/yandex/ClickHouse.git
+git clone --recursive --depth=10 git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive --depth=10 https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-For development, switch to the `master` branch.
-For the latest release candidate, switch to the `testing` branch.
+For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 

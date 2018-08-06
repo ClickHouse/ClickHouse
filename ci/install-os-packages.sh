@@ -43,9 +43,6 @@ case $PACKAGE_MANAGER in
             jq)
                 $SUDO apt-get install -y jq
                 ;;
-            libssl-dev)
-                $SUDO apt-get install -y libssl-dev
-                ;;
             libicu-dev)
                 $SUDO apt-get install -y libicu-dev
                 ;;
@@ -91,9 +88,6 @@ case $PACKAGE_MANAGER in
             jq)
                 $SUDO yum install -y jq
                 ;;
-            libssl-dev)
-                $SUDO yum install -y openssl-devel
-                ;;
             libicu-dev)
                 $SUDO yum install -y libicu-devel
                 ;;
@@ -132,9 +126,6 @@ case $PACKAGE_MANAGER in
                 ;;
             jq)
                 $SUDO pkg install -y jq
-                ;;
-            libssl-dev)
-                $SUDO pkg install -y openssl
                 ;;
             libicu-dev)
                 $SUDO pkg install -y icu

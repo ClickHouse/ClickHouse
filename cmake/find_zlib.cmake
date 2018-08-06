@@ -17,7 +17,7 @@ if (NOT ZLIB_FOUND)
     set (USE_INTERNAL_ZLIB_LIBRARY 1)
     set (ZLIB_COMPAT 1) # for zlib-ng, also enables WITH_GZFILEOP
     set (WITH_NATIVE_INSTRUCTIONS ${ARCHNATIVE})
-    if (ARCH_FREEBSD OR ARCH_I386)
+    if (OS_FREEBSD OR ARCH_I386)
         set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
     endif ()
     if (ARCH_AARCH64)
