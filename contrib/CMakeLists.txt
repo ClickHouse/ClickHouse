@@ -43,20 +43,14 @@ if (USE_INTERNAL_METROHASH_LIBRARY)
     add_subdirectory (libmetrohash)
 endif ()
 
+add_subdirectory (murmurhash)
+
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
 endif ()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind)
-endif ()
-
-if (USE_INTERNAL_MURMURHASH2_LIBRARY)
-    add_subdirectory (libmurmurhash2)
-endif ()
-
-if (USE_INTERNAL_MURMURHASH3_LIBRARY)
-    add_subdirectory (libmurmurhash3)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)

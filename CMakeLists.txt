@@ -283,8 +283,6 @@ include (cmake/find_contrib_lib.cmake)
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)
 find_contrib_lib(metrohash)
-find_contrib_lib(murmurhash2)
-find_contrib_lib(murmurhash3)
 find_contrib_lib(btrie)
 find_contrib_lib(double-conversion)
 
