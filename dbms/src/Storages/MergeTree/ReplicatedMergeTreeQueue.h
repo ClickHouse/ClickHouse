@@ -140,6 +140,8 @@ private:
     /// Notify subscribers about queue change
     void notifySubscribers(size_t new_queue_size);
 
+    /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue due to current entry cover's it
+    bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
@@ -249,7 +251,7 @@ public:
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
 
     /** Throws and exception if there are currently executing entries in the range .
      */
