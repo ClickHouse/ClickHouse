@@ -70,9 +70,9 @@ BlockIO InterpreterAlterQuery::execute()
             case PartitionCommand::REPLACE_PARTITION:
                 {
                     table->checkPartitionCanBeDropped(command.partition);
-		    String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
-		    auto from_storage = context.getTable(from_database, command.from_table);
-		    table->replacePartitionFrom(from_storage, command.partition, command.replace, context);
+                    String from_database = command.from_database.empty() ? context.getCurrentDatabase() : command.from_database;
+                    auto from_storage = context.getTable(from_database, command.from_table);
+                    table->replacePartitionFrom(from_storage, command.partition, command.replace, context);
                 }
                 break;
 
