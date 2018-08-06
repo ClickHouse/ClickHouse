@@ -41,7 +41,7 @@ generate_function_register(Array
     FunctionArrayEnumerate
     FunctionArrayEnumerateUniq
     FunctionArrayUniq
-    FunctionArrayDistinct	
+    FunctionArrayDistinct
     FunctionEmptyArrayUInt8
     FunctionEmptyArrayUInt16
     FunctionEmptyArrayUInt32

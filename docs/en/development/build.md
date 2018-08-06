@@ -46,22 +46,19 @@ export CXX=g++-7
 ## Install required libraries from packages
 
 ```bash
-sudo apt-get install libicu-dev libreadline-dev libmysqlclient-dev libssl-dev unixodbc-dev ninja-build
+sudo apt-get install libicu-dev libreadline-dev
 ```
 
 ## Checkout ClickHouse sources
 
-To get the latest stable version:
-
 ```bash
-git clone -b stable --recursive git@github.com:yandex/ClickHouse.git
-# or: git clone -b stable --recursive https://github.com/yandex/ClickHouse.git
+git clone --recursive git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-For development, switch to the `master` branch.
-For the latest release candidate, switch to the `testing` branch.
+For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 

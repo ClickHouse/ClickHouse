@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
+#include <Dictionaries/validateODBCConnectionString.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -39,7 +40,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     {
         auto session = std::make_shared<Poco::Data::SessionPool>(
             config.getString(config_prefix + ".connector", "ODBC"),
-            config.getString(config_prefix + ".connection_string"));
+            validateODBCConnectionString(config.getString(config_prefix + ".connection_string")));
 
         /// Default POCO value is 1024. Set property manually to make possible reading of longer strings.
         session->setProperty("maxFieldSize", Poco::Any(field_size));

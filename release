@@ -52,10 +52,6 @@ do
     elif [[ $1 == '--version' ]]; then
         gen_revision_author $2
         exit 0
-    # who use this?
-    #elif [[ $1 == '--head' ]]; then
-    #    VERSION_STRING=`git rev-parse HEAD`
-    #    shift
     elif [[ $1 == '--pbuilder' ]]; then
         # Default
         shift
@@ -64,7 +60,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
         shift
     else
         echo "Unknown option $1"
@@ -77,9 +73,6 @@ if [ -n "$SANITIZER" ]
 then
     CMAKE_BUILD_TYPE=$SANITIZER
     VERSION_POSTFIX+=+${SANITIZER,,}
-    # todo: нужно ли отключить libtcmalloc?
-    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    # GLIBC_COMPATIBILITY отключен по умолчанию
     export DEB_CC=${DEB_CC=clang-6.0}
     export DEB_CXX=${DEB_CXX=clang++-6.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"

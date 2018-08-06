@@ -10,10 +10,8 @@ Build-Depends: debhelper (>= 9),
                libc6-dev,
                libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
-               libltdl-dev,
                libreadline-dev,
                libssl1.0-dev | libssl-dev,
-               unixodbc-dev
 Standards-Version: 3.9.8
 
 Package: clickhouse-client
