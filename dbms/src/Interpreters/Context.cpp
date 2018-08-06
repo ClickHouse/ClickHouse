@@ -1628,7 +1628,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 }
 
 
-void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop)
+void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop)
 {
     if (!max_size_to_drop || size <= max_size_to_drop)
         return;

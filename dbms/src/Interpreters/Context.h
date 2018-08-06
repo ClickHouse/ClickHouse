@@ -436,6 +436,8 @@ private:
 
     /// Session will be closed after specified timeout.
     void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
+
+    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop);
 };
 
 
