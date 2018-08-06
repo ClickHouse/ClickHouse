@@ -1619,7 +1619,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
 
@@ -1728,7 +1728,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Range with only one block has special meaning ATTACH PARTITION
     bool replace = drop_range.getBlocksCount() > 1;
 
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
 
     struct PartDescription
     {
@@ -4477,7 +4477,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     }
 
     /// We are almost ready to commit changes, remove fetches and merges from drop range
-    queue.removePartProducingOpsInRange(zookeeper, drop_range);
+    queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
 
     /// Remove deduplication block_ids of replacing parts
     if (replace)
