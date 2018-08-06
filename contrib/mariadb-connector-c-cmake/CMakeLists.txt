@@ -57,6 +57,8 @@ ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/libmariadb/ma_client_plugin.c
 
 add_library(mysqlclient STATIC ${SRCS})
 
+target_link_libraries(mysqlclient ${OPENSSL_LIBRARIES})
+
 target_include_directories(mysqlclient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/include)
 target_include_directories(mysqlclient PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/common/include)
 target_include_directories(mysqlclient PUBLIC ${MARIADB_CLIENT_SOURCE_DIR}/include)

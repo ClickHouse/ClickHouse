@@ -140,6 +140,8 @@ private:
         const MergeTreeData::DataPartPtr & part,
         std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
 
+    void clearOldMutations();
+
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;
     friend struct CurrentlyMergingPartsTagger;

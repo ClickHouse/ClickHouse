@@ -2197,7 +2197,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
         /// and in the same time, many small parts could be created and won't be merged.
-        size_t merges_and_mutations_queued = merge_pred.countMergesAndPartMutations();
+        size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
         if (merges_and_mutations_queued >= data.settings.max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
@@ -2216,7 +2216,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 {
                     success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
                 }
-                else if (merge_pred.countMutations() > 0)
+                else if (queue.countMutations() > 0)
                 {
                     /// Choose a part to mutate.
 

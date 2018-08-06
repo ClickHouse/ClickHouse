@@ -37,7 +37,7 @@ ${JEMALLOC_SOURCE_DIR}/src/witness.c
 )
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-  list(APPEND SRCS src/zone.c)
+  list(APPEND SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
 endif()
 
 add_library(jemalloc STATIC ${SRCS})

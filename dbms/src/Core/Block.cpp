@@ -54,7 +54,7 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, elem);
 }
 
@@ -68,20 +68,20 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, std::move(elem));
 }
 
 
 void Block::insert(const ColumnWithTypeAndName & elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(elem);
 }
 
 void Block::insert(ColumnWithTypeAndName && elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(std::move(elem));
 }
 
