@@ -1,3 +1,5 @@
+<div dir="rtl">
+
 # ویژگی های برجسته ClickHouse
 
 ## مدیریت دیتابیس ستون گرای واقعی
@@ -61,3 +63,4 @@ ClickHouse از روش asynchronous multimaster replication استفاده می 
 
 برای اطلاعات بیشتر، به بخش [replication داده ها](../operations/table_engines/replication.md#table_engines-replication) مراجعه کنید.
 
+</div>
