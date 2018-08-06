@@ -27,3 +27,6 @@ SELECT murmurHash3_32(1);
 SELECT murmurHash3_64('foo');
 SELECT murmurHash3_64('\x01');
 SELECT murmurHash3_64(1);
+
+SELECT hex(murmurHash3_128('foo'));
+SELECT hex(murmurHash3_128('\x01'));
