@@ -10,9 +10,7 @@ sudo apt-get install git cmake
 ## Checkout ClickHouse sources
 
 ```bash
-git clone --recursive --branch stable git@github.com:yandex/ClickHouse.git
-# or: git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
-
+git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
 cd ClickHouse
 ```
 
