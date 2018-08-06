@@ -1691,7 +1691,7 @@ void Context::setMaxPartitionSizeToDrop(size_t max_size)
 }
 
 
-void Context::checkPartitionCanBeDropped(const String & database, const String & table, size_t partition_size)
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size)
 {
     size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
 
