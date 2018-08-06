@@ -17,7 +17,7 @@ struct FormatSettings
     {
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
-        bool escape_slashes = true;
+        bool escape_forward_slashes = true;
     };
 
     JSON json;
