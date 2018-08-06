@@ -325,9 +325,14 @@ public:
     virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
 
     /// Checks that table could be dropped right now
-    /// If it can - returns true
-    /// Otherwise - throws an exception with detailed information or returns false
-    virtual bool checkTableCanBeDropped() const { return true; }
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkTableCanBeDropped() const {}
+
+    /// Checks that Partition could be dropped right now
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}
