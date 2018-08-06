@@ -44,4 +44,7 @@ SELECT least(a, b), least(a, g), greatest(a, b), greatest(a, g) FROM test.decima
 SELECT least(a, 0), least(b, 0), least(g, 0) FROM test.decimal ORDER BY a;
 SELECT greatest(a, 0), greatest(b, 0), greatest(g, 0) FROM test.decimal ORDER BY a;
 
+SELECT (a, d, g) = (b, e, h), (a, d, g) != (b, e, h) FROM test.decimal ORDER BY a;
+SELECT (a, d, g) = (c, f, i), (a, d, g) != (c, f, i) FROM test.decimal ORDER BY a;
+
 DROP TABLE IF EXISTS test.decimal;
