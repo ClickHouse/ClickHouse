@@ -275,6 +275,15 @@ public:
       */
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
 
+    /// Count the number of merges and mutations of single parts in the queue.
+    size_t countMergesAndPartMutations() const;
+
+    /// Count the total number of active mutations.
+    size_t countMutations() const;
+
+    /// Count the total number of active mutations that are finished (is_done = true).
+    size_t countFinishedMutations() const;
+
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
     /// Return the version (block number) of the last mutation that we don't need to apply to the part
@@ -344,12 +353,6 @@ public:
     bool operator()(
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
-
-    /// Count the number of merges and mutations of single parts in the queue.
-    size_t countMergesAndPartMutations() const;
-
-    /// Count the total number of active mutations.
-    size_t countMutations() const;
 
     /// Return nonempty optional if the part can and should be mutated.
     /// Returned mutation version number is always the biggest possible.

@@ -156,9 +156,10 @@ ConnectionPoolWithFailover::tryGetEntry(
         String server_name;
         UInt64 server_version_major;
         UInt64 server_version_minor;
+        UInt64 server_version_patch;
         UInt64 server_revision;
         if (table_to_check)
-            result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+            result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
