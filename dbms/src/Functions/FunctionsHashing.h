@@ -725,11 +725,11 @@ struct MurmurHash3Impl64
     {
         union
         {
-            UInt64 h, h1;
-            char bytes[sizeof(h) * 2];
+            UInt64 h[2];
+            char bytes[16];
         };
         MurmurHash3_x64_128(data, size, 0, bytes);
-        return intHash64(h ^ intHash64(h1));
+        return h[0] ^ h[1];
     }
 };
 
