@@ -216,6 +216,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
             if (address.is_local)
                 info.local_addresses.push_back(address);
+
             ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
@@ -284,9 +285,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
 
             Addresses shard_local_addresses;
 
-            ConnectionPoolPtrs remote_replicas_pools;
             ConnectionPoolPtrs all_replicas_pools;
-            remote_replicas_pools.reserve(replica_addresses.size());
             all_replicas_pools.reserve(replica_addresses.size());
 
             for (const auto & replica : replica_addresses)
@@ -301,14 +300,10 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
                 all_replicas_pools.emplace_back(replica_pool);
                 if (replica.is_local)
                     shard_local_addresses.push_back(replica);
-                else
-                    remote_replicas_pools.emplace_back(replica_pool);
             }
 
-            ConnectionPoolWithFailoverPtr shard_pool;
-            if (!remote_replicas_pools.empty())
-                shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                        std::move(remote_replicas_pools), settings.load_balancing, settings.connections_with_failover_max_tries);
+            ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
+                        std::move(all_replicas_pools), settings.load_balancing, settings.connections_with_failover_max_tries);
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());

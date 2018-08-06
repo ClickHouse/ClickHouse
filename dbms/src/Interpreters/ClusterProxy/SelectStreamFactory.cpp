@@ -74,7 +74,7 @@ void SelectStreamFactory::createForShard(
     const Cluster::ShardInfo & shard_info,
     const String & query, const ASTPtr & query_ast,
     const Context & context, const ThrottlerPtr & throttler,
-    BlockInputStreams & res, bool prefer_localhost_replica)
+    BlockInputStreams & res)
 {
     auto emplace_local_stream = [&]()
     {
@@ -90,7 +90,8 @@ void SelectStreamFactory::createForShard(
         res.emplace_back(std::move(stream));
     };
 
-    if (prefer_localhost_replica && shard_info.isLocal())
+    const auto & settings = context.getSettingsRef();
+    if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
         StoragePtr main_table_storage;
 
@@ -106,22 +107,13 @@ void SelectStreamFactory::createForShard(
         if (!main_table_storage) /// Table is absent on a local server.
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-            if (shard_info.pool)
-            {
-                LOG_WARNING(
-                        &Logger::get("ClusterProxy::SelectStreamFactory"),
-                        "There is no table " << main_table.database << "." << main_table.table
-                        << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
+            LOG_WARNING(
+                    &Logger::get("ClusterProxy::SelectStreamFactory"),
+                    "There is no table " << main_table.database << "." << main_table.table
+                    << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
 
-                emplace_remote_stream();
-                return;
-            }
-            else
-            {
-                /// Let it fail the usual way.
-                emplace_local_stream();
-                return;
-            }
+            emplace_remote_stream();
+            return;
         }
 
         const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
@@ -133,7 +125,6 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        const Settings & settings = context.getSettingsRef();
         UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
