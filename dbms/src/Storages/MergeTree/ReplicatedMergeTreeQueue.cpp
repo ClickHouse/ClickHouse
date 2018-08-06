@@ -1031,6 +1031,45 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
+size_t ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+{
+    std::lock_guard lock(state_mutex);
+
+    size_t count = 0;
+    for (const auto & entry : queue)
+        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
+            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
+            ++count;
+
+    return count;
+}
+
+
+size_t ReplicatedMergeTreeQueue::countMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return mutations_by_znode.size();
+}
+
+
+size_t ReplicatedMergeTreeQueue::countFinishedMutations() const
+{
+    std::lock_guard lock(state_mutex);
+
+    size_t count = 0;
+    for (const auto & pair : mutations_by_znode)
+    {
+        const auto & mutation = pair.second;
+        if (!mutation.is_done)
+            break;
+
+        ++count;
+    }
+
+    return count;
+}
+
+
 ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper)
 {
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper);
@@ -1123,6 +1162,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     {
         std::lock_guard lock(state_mutex);
+
+        mutation_pointer = finished.back()->znode_name;
 
         for (const ReplicatedMergeTreeMutationEntry * entry : finished)
         {
@@ -1473,27 +1514,6 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     }
 
     return true;
-}
-
-
-size_t ReplicatedMergeTreeMergePredicate::countMergesAndPartMutations() const
-{
-    std::lock_guard lock(queue.state_mutex);
-
-    size_t count = 0;
-    for (const auto & entry : queue.queue)
-        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
-            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-            ++count;
-
-    return count;
-}
-
-
-size_t ReplicatedMergeTreeMergePredicate::countMutations() const
-{
-    std::lock_guard lock(queue.state_mutex);
-    return queue.mutations_by_znode.size();
 }
 
 

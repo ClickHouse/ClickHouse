@@ -1972,9 +1972,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
             auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
             auto [user, password] = context.getInterserverCredentials();
+            String interserver_scheme = context.getInterserverScheme();
+
+            if (interserver_scheme != address.scheme)
+                throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, replica_path,
-                                                    address.host, address.replication_port, timeouts, user, password, false, TMP_PREFIX + "fetch_");
+                                                    address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -2193,7 +2197,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
         /// and in the same time, many small parts could be created and won't be merged.
-        size_t merges_and_mutations_queued = merge_pred.countMergesAndPartMutations();
+        size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
         if (merges_and_mutations_queued >= data.settings.max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
@@ -2212,7 +2216,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 {
                     success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
                 }
-                else if (merge_pred.countMutations() > 0)
+                else if (queue.countMutations() > 0)
                 {
                     /// Choose a part to mutate.
 
@@ -2704,10 +2708,14 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
     auto [user, password] = context.getInterserverCredentials();
+    String interserver_scheme = context.getInterserverScheme();
 
     try
     {
-        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, to_detached);
+        if (interserver_scheme != address.scheme)
+            throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
+
+        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, interserver_scheme, to_detached);
 
         if (!to_detached)
         {
@@ -4586,6 +4594,7 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
     res.queries_port = context.getTCPPort();
     res.database = database_name;
     res.table = table_name;
+    res.scheme = context.getInterserverScheme();
     return res;
 }
 
