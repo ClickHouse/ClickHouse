@@ -206,7 +206,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 writeChar('\\', buf);
                 break;
             case '/':
-                if (settings.json.escape_slashes)
+                if (settings.json.escape_forward_slashes)
                     writeChar('\\', buf);
                 writeChar('/', buf);
                 break;
