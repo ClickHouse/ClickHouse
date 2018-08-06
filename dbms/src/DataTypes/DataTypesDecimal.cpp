@@ -86,7 +86,7 @@ template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     /// ColumnType::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnType::value_type x = get<FieldType>(field);
+    typename ColumnType::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
     writeBinary(x, ostr);
 }
 
