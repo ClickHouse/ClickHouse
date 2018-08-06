@@ -165,9 +165,9 @@ void DataTypeEnum<Type>::deserializeTextQuoted(IColumn & column, ReadBuffer & is
 }
 
 template <typename Type>
-void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeEnum<Type>::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr);
+    writeJSONString(getNameForValue(static_cast<const ColumnType &>(column).getData()[row_num]), ostr, settings);
 }
 
 template <typename Type>
