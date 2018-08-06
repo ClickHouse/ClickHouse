@@ -154,7 +154,7 @@ struct Settings
     \
     M(SettingBool, output_format_json_quote_denormals, false, "Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.") \
     \
-    M(SettingBool, output_format_json_escape_slashes, true, "Controls escaping slashes for string outputs in JSON output format.") \
+    M(SettingBool, output_format_json_escape_slashes, true, "Controls escaping forward slashes for string outputs in JSON output format. This is intended for compatibility with JavaScript. Don't confuse with backslashes that are always escaped.") \
     \
     M(SettingUInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.") \
     M(SettingBool, output_format_pretty_color, true, "Use ANSI escape sequences to paint colors in Pretty formats") \
