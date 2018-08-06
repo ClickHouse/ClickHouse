@@ -60,7 +60,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     FormatSettings format_settings;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
-    format_settings.json.escape_slashes = settings.output_format_json_escape_slashes;
+    format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
