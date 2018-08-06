@@ -82,7 +82,7 @@ def test_drop_failover(drop_failover):
     with PartitionManager() as pm:
         # Hinder replication between replicas
         pm.partition_instances(node3, node4, port=9009)
-        # Disconnect instance 2 from zookeper
+        # Disconnect Node4 from zookeper
         pm.drop_instance_zk_connections(node4)
 
         node3.query("ALTER TABLE test_table REPLACE PARTITION 201706 FROM real_table")
@@ -136,7 +136,7 @@ def test_replace_after_replace_failover(replace_after_replace_failover):
     with PartitionManager() as pm:
         # Hinder replication between replicas
         pm.partition_instances(node5, node6, port=9009)
-        # Disconnect instance 2 from zookeper
+        # Disconnect Node6 from zookeper
         pm.drop_instance_zk_connections(node6)
 
         node5.query("ALTER TABLE test_table REPLACE PARTITION 201706 FROM real_table")
