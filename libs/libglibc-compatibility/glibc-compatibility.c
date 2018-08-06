@@ -153,7 +153,7 @@ void explicit_bzero(void * buf, size_t len)
     __asm__ __volatile__("" :: "r"(buf) : "memory");
 }
 
-void __explicit_bzero_chk(void * buf, size_t len)
+void __explicit_bzero_chk(void * buf, size_t len, size_t unused)
 {
     return explicit_bzero(buf, len);
 }
