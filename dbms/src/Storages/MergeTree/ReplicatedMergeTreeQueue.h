@@ -140,7 +140,7 @@ private:
     /// Notify subscribers about queue change
     void notifySubscribers(size_t new_queue_size);
 
-    /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue due to current entry cover's it
+    /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
     bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
