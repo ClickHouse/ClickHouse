@@ -175,7 +175,13 @@ pages:
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
 
+<<<<<<< HEAD
 - 'Что нового':
   - 'Changelog': 'changelog.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
+=======
+- 'Roadmap': 'roadmap.md'
+- 'Changelog': 'changelog.md'
+- 'Security changelog': 'security_changelog.md'
+>>>>>>> cc433d996c4dc331adb8b694a518c4acf769a993
