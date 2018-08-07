@@ -61,28 +61,24 @@ class DataTypeSimpleSerialization : public IDataType
 };
 
 
-/// Enum for IDataType to DataTypeDecimal convertion.
-enum class DecimalPrecision
-{
-    None = 0,
-    I32 = 9,
-    I64 = 18,
-    I128 = 38,
-};
-
-
 static constexpr size_t minDecimalPrecision() { return 1; }
 template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
-template <> constexpr size_t maxDecimalPrecision<Int32>() { return 9; }
-template <> constexpr size_t maxDecimalPrecision<Int64>() { return 18; }
-template <> constexpr size_t maxDecimalPrecision<Int128>() { return 38; }
+template <> constexpr size_t maxDecimalPrecision<Dec32>() { return 9; }
+template <> constexpr size_t maxDecimalPrecision<Dec64>() { return 18; }
+template <> constexpr size_t maxDecimalPrecision<Dec128>() { return 38; }
 
 
 template <typename T>
-inline constexpr bool decimalTrait() { return false; }
-template <> constexpr bool decimalTrait<Int32>() { return true; }
-template <> constexpr bool decimalTrait<Int64>() { return true; }
-template <> constexpr bool decimalTrait<Int128>() { return true; }
+inline constexpr bool decTrait() { return false; }
+template <> constexpr bool decTrait<Dec32>() { return true; }
+template <> constexpr bool decTrait<Dec64>() { return true; }
+template <> constexpr bool decTrait<Dec128>() { return true; }
+
+template <typename T>
+inline constexpr bool decBaseTrait() { return false; }
+template <> constexpr bool decBaseTrait<Int32>() { return true; }
+template <> constexpr bool decBaseTrait<Int64>() { return true; }
+template <> constexpr bool decBaseTrait<Int128>() { return true; }
 
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
@@ -100,7 +96,7 @@ class DataTypeDecimal final : public DataTypeSimpleSerialization
 {
 public:
     using FieldType = T;
-    using ColumnType = ColumnVector<T, false>;
+    using ColumnType = ColumnVector<T>;
 
     static constexpr bool is_parametric = true;
 
@@ -172,12 +168,12 @@ public:
     {
         if (scale == 0)
             return 0;
-        if (x < 0)
-            x *= -1;
+        if (x < T(0))
+            x *= T(-1);
         return x % getScaleMultiplier();
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(maxDecimalPrecision<T>() - scale) - 1; }
+    T maxWholeValue() const { return getScaleMultiplier(maxDecimalPrecision<T>() - scale) - T(1); }
 
     bool canStoreWhole(T x) const
     {
@@ -258,19 +254,16 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline DecimalPrecision checkDecimal(const IDataType & data_type)
+inline bool isDecimal(const IDataType & data_type)
 {
-    if (typeid_cast<const DataTypeDecimal<Int32> *>(&data_type))
-        return DecimalPrecision::I32;
-    if (typeid_cast<const DataTypeDecimal<Int64> *>(&data_type))
-        return DecimalPrecision::I64;
-    if (typeid_cast<const DataTypeDecimal<Int128> *>(&data_type))
-        return DecimalPrecision::I128;
-    return DecimalPrecision::None;
+    if (typeid_cast<const DataTypeDecimal<Dec32> *>(&data_type))
+        return true;
+    if (typeid_cast<const DataTypeDecimal<Dec64> *>(&data_type))
+        return true;
+    if (typeid_cast<const DataTypeDecimal<Dec128> *>(&data_type))
+        return true;
+    return false;
 }
-
-inline bool isDecimal(DecimalPrecision precision) { return precision != DecimalPrecision::None; }
-inline bool isDecimal(const IDataType & data_type) { return isDecimal(checkDecimal(data_type)); }
 
 ///
 inline bool notDecimalButComparableToDecimal(const IDataType & data_type)

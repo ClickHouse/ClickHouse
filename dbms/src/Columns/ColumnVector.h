@@ -120,11 +120,11 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 /** A template for columns that use a simple array to store.
  * If _simpleType then T and columnType are the same.
  */
-template <typename T, bool _simpleType = true>
-class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T, _simpleType>>
+template <typename T>
+class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
 {
 private:
-    using Self = ColumnVector<T, _simpleType>;
+    using Self = ColumnVector<T>;
     friend class COWPtrHelper<IColumn, Self>;
 
     struct less;
@@ -144,7 +144,7 @@ private:
     ColumnVector(std::initializer_list<T> il) : data{il} {}
 
 public:
-    bool isNumeric() const override { return _simpleType && IsNumber<T>; }
+    bool isNumeric() const override { return IsNumber<T>; }
 
     size_t size() const override
     {

@@ -557,7 +557,7 @@ template <typename T>
 inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale, bool digits_only = false)
 {
     x = 0;
-    int sign = 1;
+    typename T::NativeType sign = 1;
     bool leading_zeores = true;
     bool trailing_zeores = false;
     bool after_point = false;

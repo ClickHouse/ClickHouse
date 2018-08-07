@@ -164,9 +164,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
         if (typeid_cast<const DataTypeInt64 *>(&type)) return convertNumericType<Int64>(src, type);
         if (typeid_cast<const DataTypeFloat32 *>(&type)) return convertNumericType<Float32>(src, type);
         if (typeid_cast<const DataTypeFloat64 *>(&type)) return convertNumericType<Float64>(src, type);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int32> *>(&type)) return convertDecimalType(src, *ptype);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int64> *>(&type)) return convertDecimalType(src, *ptype);
-        if (auto * ptype = typeid_cast<const DataTypeDecimal<Int128> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Dec32> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Dec64> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Dec128> *>(&type)) return convertDecimalType(src, *ptype);
 
         const bool is_date = typeid_cast<const DataTypeDate *>(&type);
         bool is_datetime = false;

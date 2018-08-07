@@ -41,19 +41,19 @@ template <typename T>
 void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     T value = static_cast<const ColumnType &>(column).getData()[row_num];
-    if (value < 0)
+    if (value < T(0))
     {
-        value *= -1;
+        value *= T(-1);
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    writeIntText(wholePart(value), ostr);
+    writeIntText(static_cast<typename T::NativeType>(wholePart(value)), ostr);
     if (scale)
     {
         writeChar('.', ostr);
         String str_fractional(scale, '0');
-        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= 10)
-            str_fractional[pos] += value % 10;
+        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= T(10))
+            str_fractional[pos] += value % T(10);
         ostr.write(str_fractional.data(), scale);
     }
 }
@@ -85,15 +85,15 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    /// ColumnType::value_type is a narrower type. For example, UInt8, when the Field type is UInt64
-    typename ColumnType::value_type x = get<typename NearestFieldType<FieldType>::Type>(field);
+    FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
     writeBinary(x, ostr);
 }
 
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
-    writeBinary(static_cast<const ColumnType &>(column).getData()[row_num], ostr);
+    const FieldType & x = static_cast<const ColumnType &>(column).getData()[row_num];
+    writeBinary(x, ostr);
 }
 
 template <typename T>
@@ -106,14 +106,14 @@ void DataTypeDecimal<T>::serializeBinaryBulk(const IColumn & column, WriteBuffer
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(typename ColumnType::value_type) * limit);
+    ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(FieldType) * limit);
 }
 
 
 template <typename T>
 void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
-    typename ColumnType::value_type x;
+    typename FieldType::NativeType x;
     readBinary(x, istr);
     field = typename NearestFieldType<FieldType>::Type(x);
 }
@@ -121,9 +121,9 @@ void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) con
 template <typename T>
 void DataTypeDecimal<T>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    typename ColumnType::value_type x;
+    typename FieldType::NativeType x;
     readBinary(x, istr);
-    static_cast<ColumnType &>(column).getData().push_back(x);
+    static_cast<ColumnType &>(column).getData().push_back(FieldType(x));
 }
 
 template <typename T>
@@ -132,8 +132,8 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
     typename ColumnType::Container & x = typeid_cast<ColumnType &>(column).getData();
     size_t initial_size = x.size();
     x.resize(initial_size + limit);
-    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(typename ColumnType::value_type) * limit);
-    x.resize(initial_size + size / sizeof(typename ColumnType::value_type));
+    size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(FieldType) * limit);
+    x.resize(initial_size + size / sizeof(FieldType));
 }
 
 
@@ -169,17 +169,17 @@ static DataTypePtr create(const ASTPtr & arguments)
     UInt64 precision_value = precision->value.get<UInt64>();
     Int64 scale_value = scale->value.get<Int64>();
 
-    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Int128>())
+    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Dec128>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (scale_value < 0 || static_cast<UInt64>(scale_value) > precision_value)
         throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
-    if (precision_value <= maxDecimalPrecision<Int32>())
-        return std::make_shared<DataTypeDecimal<Int32>>(precision_value, scale_value);
-    else if (precision_value <= maxDecimalPrecision<Int64>())
-        return std::make_shared<DataTypeDecimal<Int64>>(precision_value, scale_value);
-    return std::make_shared<DataTypeDecimal<Int128>>(precision_value, scale_value);
+    if (precision_value <= maxDecimalPrecision<Dec32>())
+        return std::make_shared<DataTypeDecimal<Dec32>>(precision_value, scale_value);
+    else if (precision_value <= maxDecimalPrecision<Dec64>())
+        return std::make_shared<DataTypeDecimal<Dec64>>(precision_value, scale_value);
+    return std::make_shared<DataTypeDecimal<Dec128>>(precision_value, scale_value);
 }
 
 
@@ -191,7 +191,7 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 
 
 template <>
-Int32 DataTypeDecimal<Int32>::getScaleMultiplier(UInt32 scale_)
+Dec32 DataTypeDecimal<Dec32>::getScaleMultiplier(UInt32 scale_)
 {
     static const Int32 values[] = {
         1,
@@ -209,7 +209,7 @@ Int32 DataTypeDecimal<Int32>::getScaleMultiplier(UInt32 scale_)
 }
 
 template <>
-Int64 DataTypeDecimal<Int64>::getScaleMultiplier(UInt32 scale_)
+Dec64 DataTypeDecimal<Dec64>::getScaleMultiplier(UInt32 scale_)
 {
     static const Int64 values[] = {
         1ll,
@@ -236,7 +236,7 @@ Int64 DataTypeDecimal<Int64>::getScaleMultiplier(UInt32 scale_)
 }
 
 template <>
-Int128 DataTypeDecimal<Int128>::getScaleMultiplier(UInt32 scale_)
+Dec128 DataTypeDecimal<Dec128>::getScaleMultiplier(UInt32 scale_)
 {
     static const Int128 values[] = {
         static_cast<Int128>(1ll),
@@ -284,8 +284,8 @@ Int128 DataTypeDecimal<Int128>::getScaleMultiplier(UInt32 scale_)
 
 
 /// Explicit template instantiations.
-template class DataTypeDecimal<Int32>;
-template class DataTypeDecimal<Int64>;
-template class DataTypeDecimal<Int128>;
+template class DataTypeDecimal<Dec32>;
+template class DataTypeDecimal<Dec64>;
+template class DataTypeDecimal<Dec128>;
 
 }

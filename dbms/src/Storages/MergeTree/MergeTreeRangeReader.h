@@ -7,9 +7,9 @@
 namespace DB
 {
 
-template <typename T, bool>
+template <typename T>
 class ColumnVector;
-using ColumnUInt8 = ColumnVector<UInt8, true>;
+using ColumnUInt8 = ColumnVector<UInt8>;
 
 class MergeTreeReader;
 
