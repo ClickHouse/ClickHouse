@@ -195,9 +195,6 @@ private:
         const MergeTreePartInfo & range, const LogEntry & entry, String * out_description,
         std::lock_guard<std::mutex> & state_lock) const;
 
-    /// Restart lost replica.
-    void restartLostReplica(zkutil::ZooKeeperPtr zookeeper);
-
     /// Marks the element of the queue as running.
     class CurrentlyExecuting
     {
