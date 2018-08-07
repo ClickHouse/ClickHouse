@@ -81,7 +81,6 @@ def main(args):
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
-    # TODO ! use clickhouse-extract-from-config here:
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
