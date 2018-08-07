@@ -17,9 +17,9 @@ public:
 
     String getName() const override
     {
-        return "WithDictionary(" + dictionary_type->getName() + ")";
+        return "LowCardinality(" + dictionary_type->getName() + ")";
     }
-    const char * getFamilyName() const override { return "WithDictionary"; }
+    const char * getFamilyName() const override { return "LowCardinality"; }
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 

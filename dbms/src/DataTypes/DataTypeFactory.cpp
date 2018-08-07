@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -53,6 +54,23 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
 
 DataTypePtr DataTypeFactory::get(const String & family_name, const ASTPtr & parameters) const
 {
+    if (endsWith(family_name, "WithDictionary"))
+    {
+        ASTPtr low_cardinality_params = std::make_shared<ASTExpressionList>();
+        String param_name = family_name.substr(0, family_name.size() - strlen("WithDictionary"));
+        if (parameters)
+        {
+            auto func = std::make_shared<ASTFunction>();
+            func->name = param_name;
+            func->arguments = parameters;
+            low_cardinality_params->children.push_back(func);
+        }
+        else
+            low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
+
+        return get("LowCardinality", low_cardinality_params);
+    }
+
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
