@@ -174,7 +174,7 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings = FormatSettings())
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeChar('"', buf);
     for (const char * it = begin; it != end; ++it)
@@ -313,13 +313,13 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings = FormatSettings())
+inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(s.data(), s.data() + s.size(), buf, settings);
 }
 
 
-inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings = FormatSettings())
+inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeJSONString(ref.data, ref.data + ref.size, buf, settings);
 }

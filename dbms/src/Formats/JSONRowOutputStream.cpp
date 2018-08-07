@@ -50,7 +50,7 @@ void JSONRowOutputStream::writePrefix()
         writeString(fields[i].name, *ostr);
         writeCString(",\n", *ostr);
         writeCString("\t\t\t\"type\": ", *ostr);
-        writeJSONString(fields[i].type->getName(), *ostr);
+        writeJSONString(fields[i].type->getName(), *ostr, settings);
         writeChar('\n', *ostr);
 
         writeCString("\t\t}", *ostr);
@@ -149,7 +149,7 @@ void JSONRowOutputStream::writeTotals()
                 writeCString(",\n", *ostr);
 
             writeCString("\t\t", *ostr);
-            writeJSONString(column.name, *ostr);
+            writeJSONString(column.name, *ostr, settings);
             writeCString(": ", *ostr);
             column.type->serializeTextJSON(*column.column.get(), 0, *ostr, settings);
         }
