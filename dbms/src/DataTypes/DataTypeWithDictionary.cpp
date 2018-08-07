@@ -820,7 +820,7 @@ bool DataTypeWithDictionary::equals(const IDataType & rhs) const
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 1)
-        throw Exception("WithDictionary data type family must have single argument - type of elements",
+        throw Exception("LowCardinality data type family must have single argument - type of elements",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     return std::make_shared<DataTypeWithDictionary>(DataTypeFactory::instance().get(arguments->children[0]));
@@ -828,7 +828,7 @@ static DataTypePtr create(const ASTPtr & arguments)
 
 void registerDataTypeWithDictionary(DataTypeFactory & factory)
 {
-    factory.registerDataType("WithDictionary", create);
+    factory.registerDataType("LowCardinality", create);
 }
 
 }
