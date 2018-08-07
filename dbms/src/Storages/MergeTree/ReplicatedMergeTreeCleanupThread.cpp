@@ -153,23 +153,6 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 }
 
 
-void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String remove_border)
-{
-    auto zookeeper = storage.getZooKeeper();
-
-    zkutil::Requests ops;
-
-    for (auto pair : log_pointers_lost_replicas)
-    {
-        if ("log-" + padIndex(pair.second) <= remove_border)
-            ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + pair.first + "/is_lost", "",
-                zkutil::CreateMode::Persistent));
-    }
-
-    auto code = zookeeper->multi(ops);
-}
-
-
 struct ReplicatedMergeTreeCleanupThread::NodeWithStat
 {
     String node;
