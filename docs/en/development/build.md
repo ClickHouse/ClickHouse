@@ -4,7 +4,7 @@
 
 ```bash
 sudo apt-get update
-sudo apt-get install git pbuilder debhelper fakeroot
+sudo apt-get install git pbuilder debhelper fakeroot sudo
 ```
 
 ## Checkout ClickHouse sources
