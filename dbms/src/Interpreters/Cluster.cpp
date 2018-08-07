@@ -303,7 +303,7 @@ Cluster::Cluster(Poco::Util::AbstractConfiguration & config, const Settings & se
             }
 
             ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                        std::move(all_replicas_pools), settings.load_balancing, settings.connections_with_failover_max_tries);
+                        all_replicas_pools, settings.load_balancing, settings.connections_with_failover_max_tries);
 
             if (weight)
                 slot_to_shard.insert(std::end(slot_to_shard), weight, shards_info.size());
@@ -339,9 +339,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         Addresses shard_local_addresses;
         ConnectionPoolPtrs all_replicas;
-        ConnectionPoolPtrs remote_replicas;
         all_replicas.reserve(current.size());
-        remote_replicas.reserve(current.size());
 
         for (const auto & replica : current)
         {
@@ -354,12 +352,10 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
             all_replicas.emplace_back(replica_pool);
             if (replica.is_local && !treat_local_as_remote)
                 shard_local_addresses.push_back(replica);
-            else       
-                remote_replicas.emplace_back(replica_pool);
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                std::move(remote_replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
+                std::move(all_replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
         shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), std::move(shard_pool),

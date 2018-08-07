@@ -107,12 +107,17 @@ void SelectStreamFactory::createForShard(
         if (!main_table_storage) /// Table is absent on a local server.
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-            LOG_WARNING(
-                    &Logger::get("ClusterProxy::SelectStreamFactory"),
-                    "There is no table " << main_table.database << "." << main_table.table
-                    << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
-
-            emplace_remote_stream();
+            if (shard_info.hasRemoteConnections())
+            {
+                LOG_WARNING(
+                        &Logger::get("ClusterProxy::SelectStreamFactory"),
+                        "There is no table " << main_table.database << "." << main_table.table
+                        << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
+                emplace_remote_stream();
+            }
+            else
+                emplace_local_stream();  /// Let it fail the usual way.
+                
             return;
         }
 
@@ -149,7 +154,7 @@ void SelectStreamFactory::createForShard(
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
-            if (shard_info.pool)
+            if (shard_info.hasRemoteConnections())
             {
                 /// If we cannot fallback, then we cannot use local replica. Try our luck with remote replicas.
                 emplace_remote_stream();
@@ -162,7 +167,7 @@ void SelectStreamFactory::createForShard(
                     ErrorCodes::ALL_REPLICAS_ARE_STALE);
         }
 
-        if (!shard_info.pool)
+        if (!shard_info.hasRemoteConnections())
         {
             /// There are no remote replicas but we are allowed to fall back to stale local replica.
             emplace_local_stream();
