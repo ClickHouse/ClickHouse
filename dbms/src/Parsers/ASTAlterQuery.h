@@ -33,6 +33,7 @@ public:
         FREEZE_PARTITION,
 
         DELETE,
+        UPDATE,
 
         NO_TYPE,
     };
@@ -59,8 +60,11 @@ public:
      */
     ASTPtr partition;
 
-    /// For DELETE WHERE: the predicate that filters the rows to delete.
+    /// For DELETE/UPDATE WHERE: the predicate that filters the rows to delete/update.
     ASTPtr predicate;
+
+    /// A list of expressions of the form `column = expr` for the UPDATE command.
+    ASTPtr update_assignments;
 
     bool detach = false;        /// true for DETACH PARTITION
 

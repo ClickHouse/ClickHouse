@@ -2,6 +2,7 @@
 
 #include <Parsers/ASTAlterQuery.h>
 #include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -20,11 +21,14 @@ struct MutationCommand
     {
         EMPTY,     /// Not used.
         DELETE,
+        UPDATE,
     };
 
     Type type = EMPTY;
 
     ASTPtr predicate;
+
+    std::unordered_map<String, ASTPtr> column_to_update_expression;
 
     static std::optional<MutationCommand> parse(ASTAlterCommand * command);
 };
