@@ -1,9 +1,10 @@
-# How to build release package of ClickHouse
+# How to build ClickHouse release package
 
 ## Install Git and pbuilder
 
 ```bash
-sudo apt-get install git pbuilder
+sudo apt-get update
+sudo apt-get install git pbuilder debhelper fakeroot
 ```
 
 ## Checkout ClickHouse sources
@@ -16,6 +17,7 @@ cd ClickHouse
 ## Run release script
 
 ```bash
+pbuilder create
 ./release
 ```
 
