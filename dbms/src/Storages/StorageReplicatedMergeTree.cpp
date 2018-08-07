@@ -646,73 +646,7 @@ void StorageReplicatedMergeTree::createReplica()
     }
     else
     {
-        LOG_INFO(log, "Will mimic " << source_replica);
-
-        String source_path = zookeeper_path + "/replicas/" + source_replica;
-
-        /** If the reference/master replica is not yet fully created, let's wait.
-          * NOTE: If something went wrong while creating it, we can hang around forever.
-          *    You can create an ephemeral node at the time of creation to make sure that the replica is created, and not abandoned.
-          *    The same can be done for the table. You can automatically delete a replica/table node,
-          *     if you see that it was not created up to the end, and the one who created it died.
-          */
-        while (!zookeeper->exists(source_path + "/columns"))
-        {
-            LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
-
-            zkutil::EventPtr event = std::make_shared<Poco::Event>();
-            if (zookeeper->exists(source_path + "/columns", nullptr, event))
-            {
-                LOG_WARNING(log, "Oops, a watch has leaked");
-                break;
-            }
-
-            event->wait();
-        }
-
-        /// The order of the following three actions is important. Entries in the log can be duplicated, but they can not be lost.
-
-        /// Copy reference to the log from `reference/master` replica.
-        zookeeper->set(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"));
-
-        /// Let's remember the queue of the reference/master replica.
-        Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
-        std::sort(source_queue_names.begin(), source_queue_names.end());
-        Strings source_queue;
-        for (const String & entry_name : source_queue_names)
-        {
-            String entry;
-            if (!zookeeper->tryGet(source_path + "/queue/" + entry_name, entry))
-                continue;
-            source_queue.push_back(entry);
-        }
-
-        /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
-        Strings parts = zookeeper->getChildren(source_path + "/parts");
-        ActiveDataPartSet active_parts_set(data.format_version, parts);
-
-        Strings active_parts = active_parts_set.getParts();
-        for (const String & name : active_parts)
-        {
-            LogEntry log_entry;
-            log_entry.type = LogEntry::GET_PART;
-            log_entry.source_replica = "";
-            log_entry.new_part_name = name;
-            log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
-
-            zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
-        }
-        LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
-
-        /// Add content of the reference/master replica queue to the queue.
-        for (const String & entry : source_queue)
-        {
-            zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
-        }
-
-        /// It will then be loaded into the queue variable in `queue.initialize` method.
-
-        LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
+        cloneReplicaIfNeeded();
     }
 
     zookeeper->create(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent);
@@ -2036,6 +1970,144 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     cleanup_thread->schedule();
 
     return true;
+}
+
+
+bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zkutil::ZooKeeperPtr & zookeeper)
+{
+
+
+    LOG_INFO(log, "Will mimic " << source_replica);
+
+    String source_path = zookeeper_path + "/replicas/" + source_replica;
+
+    /** If the reference/master replica is not yet fully created, let's wait.
+        * NOTE: If something went wrong while creating it, we can hang around forever.
+        *    You can create an ephemeral node at the time of creation to make sure that the replica is created, and not abandoned.
+        *    The same can be done for the table. You can automatically delete a replica/table node,
+        *     if you see that it was not created up to the end, and the one who created it died.
+        */
+    while (!zookeeper->exists(source_path + "/columns"))
+    {
+        LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
+
+        zkutil::EventPtr event = std::make_shared<Poco::Event>();
+        if (zookeeper->exists(source_path + "/columns", nullptr, event))
+        {
+            LOG_WARNING(log, "Oops, a watch has leaked");
+            break;
+        }
+
+        event->wait();
+    }
+
+    /// The order of the following three actions is important. Entries in the log can be duplicated, but they can not be lost.
+
+    /// Copy reference to the log from `reference/master` replica.
+    zkutil::Requests rec;
+
+    /// We must check is_active and set log_pointer atomically in order to cleanupThread can not clear log with our log_pointer.
+    rec.push_back(zkutil::makeCheckRequest(source_path + "/is_active", 0));
+    rec.push_back(zkutil::makeSetRequest(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"), -1));
+
+    try
+    {
+        zookeeper->multi(rec);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+            return false;
+        else
+            throw e;
+    }
+
+    zookeeper->set(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"));
+
+    /// Let's remember the queue of the reference/master replica.
+    Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
+    std::sort(source_queue_names.begin(), source_queue_names.end());
+    Strings source_queue;
+    for (const String & entry_name : source_queue_names)
+    {
+        String entry;
+        if (!zookeeper->tryGet(source_path + "/queue/" + entry_name, entry))
+            continue;
+        source_queue.push_back(entry);
+    }
+
+    /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
+    Strings parts = zookeeper->getChildren(source_path + "/parts");
+    ActiveDataPartSet active_parts_set(data.format_version, parts);
+
+    Strings active_parts = active_parts_set.getParts();
+    for (const String & name : active_parts)
+    {
+        LogEntry log_entry;
+        log_entry.type = LogEntry::GET_PART;
+        log_entry.source_replica =  "";
+        log_entry.new_part_name = name;
+        log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
+
+        zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+    }
+    LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
+
+    /// Add content of the reference/master replica queue to the queue.
+    for (const String & entry : source_queue)
+    {
+        zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
+    }
+
+    /// It will then be loaded into the queue variable in `queue.initialize` method.
+
+    LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
+    return true;
+}
+
+
+void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
+{
+    auto zookeeper = getZooKeeper();
+    String raw_log_pointer = zookeeper->get(replica_path + "/log_pointer");
+
+    Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
+
+    if (entries.empty())
+        return;
+
+    std::sort(entries.begin(), entries.end());
+
+    if (!raw_log_pointer.empty() && "log-" + padIndex(parse<UInt64>(raw_log_pointer)) >= entries[0])
+        return;
+
+    clearQueue();
+
+    String source_replica;
+
+    do
+    {
+        /// It is really needed?
+        while (source_replica == "")
+        {
+            for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
+            {
+                String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
+                if (source_replica_path != replica_path && zookeeper->exists(source_replica_path + "/is_active") && !(zookeeper->get(source_replica_path + "/log_pointer").empty()))
+                    source_replica = replica_name;
+            }
+        }
+
+    } while (cloneReplica(source_replica, zookeeper));
+
+    zookeeper->remove(replica_path + "/is_lost", -1);
+}
+
+
+void StorageReplicatedMergeTree::clearQueue()
+{
+    auto zookeeper = getZooKeeper();
+    zookeeper->createOrUpdate(replica_path + "/queue", "", zkutil::CreateMode::Persistent);
 }
 
 

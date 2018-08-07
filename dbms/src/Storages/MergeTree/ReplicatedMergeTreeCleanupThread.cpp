@@ -75,43 +75,65 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     int children_count = stat.numChildren;
 
     /// We will wait for 1.1 times more records to accumulate than necessary.
-    if (static_cast<double>(children_count) < storage.data.settings.replicated_logs_to_keep * 1.1)
+    if (static_cast<double>(children_count) < storage.data.settings.min_replicated_logs_to_keep * 1.1)
         return;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
-    UInt64 min_pointer = std::numeric_limits<UInt64>::max();
-
-    std::unordered_map<String, UInt64> log_pointers_lost_replicas;
-    
-    for (const String & replica : replicas)
-    {
-        String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
-        if (pointer.empty())
-            return;
-        
-        UInt32 log_pointer = parse<UInt64>(pointer);
-        
-        /// Check status of replica (active or not).
-        /// If replica is not active, we will save it's log_pointer.
-        if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
-            min_pointer = std::min(min_pointer, log_pointer);
-        else
-            log_pointers_lost_replicas[replica] = log_pointer;
-    }
+    UInt64 min_pointer_active_replica = std::numeric_limits<UInt64>::max();
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
-    std::sort(entries.begin(), entries.end());
-
-    /// We will not touch the last `replicated_logs_to_keep` records.
-    entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.replicated_logs_to_keep.value), entries.end());
-    /// We will not touch records that are no less than `min_pointer`.
-    entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
 
     if (entries.empty())
         return;
 
-    /// We will mark lost replicas.
-    markLostReplicas(log_pointers_lost_replicas, entries.back());
+    std::sort(entries.begin(), entries.end());
+
+    String min_saved_record_log_str = entries[std::max(0, entries.size() - storage.data.settings.max_replicated_logs_to_keep.value)];
+    String min_pointer_inactive_replica_str;
+
+    for (const String & replica : replicas)
+    {
+        zkutil::Stat log_pointer_stat;
+        String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer", &log_pointer_stat);
+        if (pointer.empty())
+            return;
+
+        UInt32 log_pointer = parse<UInt64>(pointer);
+        String log_pointer_str = "log-" + padIndex(log_pointer);
+
+        /// Check status of replica (active or not).
+        /// If replica was not active, we could check when it's log_pointer locates.
+        /// If replica active, but runs clocneReplica(), we should check it's log_pointer in logs.
+        if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active")  && log_pointer_str >= entries[0])
+            min_pointer_active_replica = std::min(min_pointer_active_replica, log_pointer);
+        else
+        {
+
+            if (log_pointer_str >= min_saved_record_log_str)
+            {
+                if (min_pointer_inactive_replica_str != "" && min_pointer_inactive_replica_str >= log_pointer_str)
+                    min_pointer_inactive_replica_str = log_pointer_str;
+                else if (min_pointer_inactive_replica_str == "")
+                    min_pointer_inactive_replica_str = log_pointer_str;
+            }
+        }
+    }
+
+    String min_pointer_active_replica_str = "log-" + padIndex(min_pointer_active_replica);
+
+    String min_pointer_replica_str = min_pointer_inactive_replica_str == ""
+                                     ? min_pointer_active_replica_str
+                                     : std::min(min_pointer_inactive_replica_str, min_pointer_active_replica_str);
+
+    /// We will not touch the last `min_replicated_logs_to_keep` records.
+    entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
+    /// We will not touch records that are no less than `min_pointer_active_replica`.
+    entries.erase(std::lower_bound(entries.begin(), entries.end(), min_pointer_replica_str), entries.end());
+
+    /// We must check if we are only active_node
+
+    if (entries.empty())
+        return;
 
     zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
@@ -134,16 +156,16 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 void ReplicatedMergeTreeCleanupThread::markLostReplicas(std::unordered_map<String, UInt64> log_pointers_lost_replicas, String remove_border)
 {
     auto zookeeper = storage.getZooKeeper();
-    
+
     zkutil::Requests ops;
-    
+
     for (auto pair : log_pointers_lost_replicas)
     {
         if ("log-" + padIndex(pair.second) <= remove_border)
             ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + pair.first + "/is_lost", "",
                 zkutil::CreateMode::Persistent));
     }
-    
+
     auto code = zookeeper->multi(ops);
 }
 

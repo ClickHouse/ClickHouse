@@ -197,6 +197,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     {
         removeFailedQuorumParts();
         activateReplica();
+        storage.cloneReplicaIfNeeded();
         updateQuorumIfWeHavePart();
 
         if (storage.data.settings.replicated_can_become_leader)
