@@ -170,13 +170,7 @@ pages:
   - 'How to write  C++ code': 'development/style.md'
   - 'How to run ClickHouse tests': 'development/tests.md'
 
-<<<<<<< HEAD
 - 'What''s new':
   - 'Roadmap': 'roadmap.md'
   - 'Changelog': 'changelog.md'
   - 'Security changelog': 'security_changelog.md'
-=======
-- 'Roadmap': 'roadmap.md'
-- 'Changelog': 'changelog.md'
-- 'Security changelog': 'security_changelog.md'
->>>>>>> cc433d996c4dc331adb8b694a518c4acf769a993
