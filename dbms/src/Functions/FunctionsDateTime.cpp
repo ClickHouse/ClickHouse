@@ -111,6 +111,8 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionDateDiff>(FunctionFactory::CaseInsensitive);
 
     factory.registerFunction<FunctionToTimeZone>();
+
+    factory.registerFunction<FunctionFormatDateTime>();
 }
 
 }
