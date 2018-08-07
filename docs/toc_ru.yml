@@ -178,3 +178,4 @@ pages:
 
 - 'Roadmap': 'roadmap.md'
 - 'Changelog': 'changelog.md'
+- 'Security changelog': 'security_changelog.md'

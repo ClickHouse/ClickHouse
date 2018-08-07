@@ -821,9 +821,10 @@ private:
                 }
                 catch (...)
                 {
-                    actual_client_error = getCurrentExceptionCode();
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
                     if (!actual_client_error || actual_client_error != expected_client_error)
-                        std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
                     got_exception = true;
                 }
 
