@@ -50,5 +50,6 @@ SELECT 21 + i, 21 - i, 84 - i, 21 * i, -21 * i, 21 / i, 84 / i FROM test.decimal
 SELECT 21 + j, 21 - j, 84 - j, 21 * j, -21 * j, 21 / j, 84 / j FROM test.decimal WHERE j > 0;
 
 SELECT a, -a, -b, -c, -d, -e, -f, -g, -h, -j from test.decimal ORDER BY a;
+SELECT abs(a), abs(b), abs(c), abs(d), abs(e), abs(f), abs(g), abs(h), abs(j) from test.decimal ORDER BY a;
 
 DROP TABLE IF EXISTS test.decimal;

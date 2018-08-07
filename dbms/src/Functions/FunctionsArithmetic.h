@@ -602,8 +602,8 @@ struct AbsImpl
 
     static inline ResultType apply(A a)
     {
-        if constexpr (std::is_same_v<A, __int128>)
-            return a < 0 ? -a : a;
+        if constexpr (decTrait<A>())
+            return a < 0 ? A(-a) : a;
         else if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
         else if constexpr (std::is_integral_v<A> && std::is_unsigned_v<A>)
@@ -1240,8 +1240,7 @@ struct FunctionUnaryArithmeticMonotonicity;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
-    //static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
-    static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>>;
+    static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
