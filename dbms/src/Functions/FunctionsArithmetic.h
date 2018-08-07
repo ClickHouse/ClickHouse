@@ -1258,8 +1258,8 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeFloat32,
             DataTypeFloat64,
             DataTypeDecimal<Dec32>,
-            DataTypeDecimal<Dec64>
-            //DataTypeDecimal<Dec128> // TODO: needs visitor
+            DataTypeDecimal<Dec64>,
+            DataTypeDecimal<Dec128>
         >(type, std::forward<F>(f));
     }
 
