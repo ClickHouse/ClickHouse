@@ -556,7 +556,7 @@ using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<
 template <typename A>
 struct NegateImpl
 {
-    using ResultType = typename NumberTraits::ResultOfNegate<A>::Type;
+    using ResultType = std::conditional_t<decTrait<A>(), A, typename NumberTraits::ResultOfNegate<A>::Type>;
 
     static inline ResultType apply(A a)
     {
@@ -598,7 +598,7 @@ struct BitNotImpl
 template <typename A>
 struct AbsImpl
 {
-    using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
+    using ResultType = std::conditional_t<decTrait<A>(), A, typename NumberTraits::ResultOfAbs<A>::Type>;
 
     static inline ResultType apply(A a)
     {
@@ -836,14 +836,14 @@ template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename DataType> constexpr bool IsDecimal = false;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Int32>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Int64>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Int128>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Dec32>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Dec64>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Dec128>> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Int128>, DataTypeDecimal<Int32>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Int128>, DataTypeDecimal<Int64>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Int64>, DataTypeDecimal<Int32>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec32>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec64>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec64>, DataTypeDecimal<Dec32>> = true;
 
 template <typename T> using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>, InvalidType, DataTypeNumber<T>>;
 
@@ -925,9 +925,9 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeFloat64,
             DataTypeDate,
             DataTypeDateTime,
-            DataTypeDecimal<Int32>,
-            DataTypeDecimal<Int64>,
-            DataTypeDecimal<Int128>
+            DataTypeDecimal<Dec32>,
+            DataTypeDecimal<Dec64>,
+            DataTypeDecimal<Dec128>
         >(type, std::forward<F>(f));
     }
 
@@ -1084,9 +1084,9 @@ public:
                 using T0 = typename LeftDataType::FieldType;
                 using T1 = typename RightDataType::FieldType;
                 using ResultType = typename ResultDataType::FieldType;
-                using ColVecT0 = ColumnVector<T0, !IsDecimal<LeftDataType>>;
-                using ColVecT1 = ColumnVector<T1, !IsDecimal<RightDataType>>;
-                using ColVecResult = ColumnVector<ResultType, !result_is_decimal>;
+                using ColVecT0 = ColumnVector<T0>;
+                using ColVecT1 = ColumnVector<T1>;
+                using ColVecResult = ColumnVector<ResultType>;
 
                 /// Decimal operations need scale. Operations are on result type.
                 using OpImpl = std::conditional_t<IsDecimal<ResultDataType>,
@@ -1257,9 +1257,9 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeInt64,
             DataTypeFloat32,
             DataTypeFloat64,
-            DataTypeDecimal<Int32>,
-            DataTypeDecimal<Int64>
-            //DataTypeDecimal<Int128> // TODO: needs visitor
+            DataTypeDecimal<Dec32>,
+            DataTypeDecimal<Dec64>
+            //DataTypeDecimal<Dec128> // TODO: needs visitor
         >(type, std::forward<F>(f));
     }
 
@@ -1312,9 +1312,9 @@ public:
             {
                 if constexpr (allow_decimal)
                 {
-                    if (auto col = checkAndGetColumn<ColumnVector<T0, false>>(block.getByPosition(arguments[0]).column.get()))
+                    if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
                     {
-                        auto col_res = ColumnVector<typename Op<T0>::ResultType, false>::create();
+                        auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
                         auto & vec_res = col_res->getData();
                         vec_res.resize(col->getData().size());
                         UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);

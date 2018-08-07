@@ -114,3 +114,54 @@ template <> struct is_arithmetic<__int128>
 
 }
 #endif
+
+
+namespace DB
+{
+    /// Own FieldType for Decimal
+    template <typename T>
+    class Dec
+    {
+    public:
+        using NativeType = T;
+
+        Dec() = default;
+        Dec(Dec<T> &&) = default;
+        Dec(const Dec<T> &) = default;
+
+        Dec(const T & value_)
+        :   value(value_)
+        {}
+
+        template <typename U>
+        Dec(const Dec<U> & x)
+        :   value(x)
+        {}
+
+        constexpr Dec<T> & operator = (Dec<T> &&) = default;
+        constexpr Dec<T> & operator = (const Dec<T> &) = default;
+
+        operator T () const { return value; }
+
+        const Dec<T> & operator += (const T & x) { value += x; return *this; }
+        const Dec<T> & operator -= (const T & x) { value -= x; return *this; }
+        const Dec<T> & operator *= (const T & x) { value *= x; return *this; }
+        const Dec<T> & operator /= (const T & x) { value /= x; return *this; }
+        const Dec<T> & operator %= (const T & x) { value %= x; return *this; }
+
+    private:
+        T value;
+    };
+
+    using Dec32 = Dec<Int32>;
+    using Dec64 = Dec<Int64>;
+    using Dec128 = Dec<Int128>;
+
+    template <> struct TypeName<Dec32>   { static const char * get() { return "Dec32";   } };
+    template <> struct TypeName<Dec64>   { static const char * get() { return "Dec64";   } };
+    template <> struct TypeName<Dec128>  { static const char * get() { return "Dec128";  } };
+
+    template <> struct TypeNumber<Dec32>    { static constexpr const size_t value = 16; };
+    template <> struct TypeNumber<Dec64>    { static constexpr const size_t value = 17; };
+    template <> struct TypeNumber<Dec128>   { static constexpr const size_t value = 18; };
+}

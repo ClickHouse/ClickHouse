@@ -203,7 +203,7 @@ inline bool allowDecimalComparison(const IDataType & left_type, const IDataType 
 }
 
 ///
-template <typename A, typename B, typename Op>
+template <typename A, typename B, typename Op, bool _actual = decTrait<A>() || decTrait<B>()>
 class DecimalComparison
 {
 public:
@@ -214,14 +214,18 @@ public:
                             ErrorCodes::LOGICAL_ERROR);
     }
 
-    static bool apply(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    static bool apply(Block & block, size_t result [[maybe_unused]],
+                      const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        Shift shift = getScales<A, B>(col_left.type, col_right.type);
-
-        if (ColumnPtr c_res = apply(col_left.column, col_right.column, shift))
+        if constexpr (_actual)
         {
-            block.getByPosition(result).column = std::move(c_res);
-            return true;
+            Shift shift = getScales<A, B>(col_left.type, col_right.type);
+
+            if (ColumnPtr c_res = apply(col_left.column, col_right.column, shift))
+            {
+                block.getByPosition(result).column = std::move(c_res);
+                return true;
+            }
         }
         return false;
     }
@@ -234,7 +238,7 @@ private:
     };
 
     template <typename T, typename U>
-    static std::enable_if_t<decimalTrait<T>() && decimalTrait<U>(), Shift>
+    static std::enable_if_t<decTrait<T>() && decTrait<U>(), Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
@@ -256,7 +260,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<decimalTrait<T>() && !decimalTrait<U>(), Shift>
+    static std::enable_if_t<decTrait<T>() && !decTrait<U>(), Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
@@ -267,7 +271,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<!decimalTrait<T>() && decimalTrait<U>(), Shift>
+    static std::enable_if_t<!decTrait<T>() && decTrait<U>(), Shift>
     getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;
@@ -277,62 +281,66 @@ private:
         return shift;
     }
 
-    template <typename T, typename U>
-    static std::enable_if_t<!decimalTrait<T>() && !decimalTrait<U>(), Shift>
-    getScales(const DataTypePtr &, const DataTypePtr &)
-    {
-        return Shift{0, 0};
-    }
-
     static ColumnPtr apply(const ColumnPtr & c0, const ColumnPtr & c1, const Shift & shift)
     {
-        bool c0_const = c0->isColumnConst();
-        bool c1_const = c1->isColumnConst();
-
-        if (c0_const && c1_const)
-        {
-            const ColumnConst * c0_const = checkAndGetColumnConst<ColumnVector<A>>(c0.get());
-            const ColumnConst * c1_const = checkAndGetColumnConst<ColumnVector<B>>(c1.get());
-
-            UInt8 res = apply(c0_const->template getValue<A>(), c1_const->template getValue<B>(), shift);
-            return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
-        }
+        using ColVecA = ColumnVector<A>;
+        using ColVecB = ColumnVector<B>;
 
         auto c_res = ColumnUInt8::create();
-        ColumnUInt8::Container & vec_res = c_res->getData();
-        vec_res.resize(c0->size());
 
-        if (c0_const)
+        if constexpr (_actual)
         {
-            const ColumnConst * c0_const = checkAndGetColumnConst<ColumnVector<A>>(c0.get());
-            if (const ColumnVector<B> * c1_vec = checkAndGetColumn<ColumnVector<B>>(c1.get()))
-                constant_vector(c0_const->template getValue<A>(), c1_vec->getData(), vec_res, shift);
-            else if (const ColumnVector<B, false> * c1_vec = checkAndGetColumn<ColumnVector<B, false>>(c1.get()))
-                constant_vector(c0_const->template getValue<A>(), c1_vec->getData(), vec_res, shift);
-        }
-        else if (c1_const)
-        {
-            const ColumnConst * c1_const = checkAndGetColumnConst<ColumnVector<B>>(c1.get());
-            if (const ColumnVector<A> * c0_vec = checkAndGetColumn<ColumnVector<A>>(c0.get()))
-                vector_constant(c0_vec->getData(), c1_const->template getValue<B>(), vec_res, shift);
-            else if (const ColumnVector<A, false> * c0_vec = checkAndGetColumn<ColumnVector<A, false>>(c0.get()))
-                vector_constant(c0_vec->getData(), c1_const->template getValue<B>(), vec_res, shift);
-        }
-        else
-        {
-            if (const ColumnVector<A> * c0_vec = checkAndGetColumn<ColumnVector<A>>(c0.get()))
+            bool c0_const = c0->isColumnConst();
+            bool c1_const = c1->isColumnConst();
+
+            if (c0_const && c1_const)
             {
-                if (const ColumnVector<B> * c1_vec = checkAndGetColumn<ColumnVector<B>>(c1.get()))
-                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
-                else if (const ColumnVector<B, false> * c1_vec = checkAndGetColumn<ColumnVector<B, false>>(c1.get()))
-                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
+                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
+
+                A a = c0_const->template getValue<A>();
+                B b = c1_const->template getValue<B>();
+                UInt8 res = apply(a, b, shift);
+                return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
             }
-            else if (const ColumnVector<A, false> * c0_vec = checkAndGetColumn<ColumnVector<A, false>>(c0.get()))
+
+            ColumnUInt8::Container & vec_res = c_res->getData();
+            vec_res.resize(c0->size());
+
+            if (c0_const)
             {
-                if (const ColumnVector<B> * c1_vec = checkAndGetColumn<ColumnVector<B>>(c1.get()))
-                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
-                else if (const ColumnVector<B, false> * c1_vec = checkAndGetColumn<ColumnVector<B, false>>(c1.get()))
-                    vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
+                A a = c0_const->template getValue<A>();
+                if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                    constant_vector(a, c1_vec->getData(), vec_res, shift);
+                else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                    constant_vector(a, c1_vec->getData(), vec_res, shift);
+            }
+            else if (c1_const)
+            {
+                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
+                B b = c1_const->template getValue<B>();
+                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                    vector_constant(c0_vec->getData(), b, vec_res, shift);
+                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                    vector_constant(c0_vec->getData(), b, vec_res, shift);
+            }
+            else
+            {
+                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                {
+                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                }
+                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                {
+                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector(c0_vec->getData(), c1_vec->getData(), vec_res, shift);
+                }
             }
         }
 
@@ -939,7 +947,7 @@ private:
         size_t left_number = col_left.type->getTypeNumber();
         size_t right_number = col_right.type->getTypeNumber();
 
-        if (!callByNumber<DecimalComparison, Op<Int128, Int128>>(left_number, right_number, block, result, col_left, col_right))
+        if (!callByNumbers<DecimalComparison, Op<Int128, Int128>>(left_number, right_number, block, result, col_left, col_right))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }

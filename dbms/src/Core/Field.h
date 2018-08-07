@@ -56,6 +56,8 @@ public:
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
+            Dec64   = 6,
+            Dec128  = 7,
 
             /// Non-POD types.
 
@@ -76,6 +78,8 @@ public:
                 case Int64:   return "Int64";
                 case Int128:  return "Int128";
                 case Float64: return "Float64";
+                case Dec64:   return "Dec64";
+                case Dec128:  return "Dec128";
                 case String:  return "String";
                 case Array:   return "Array";
                 case Tuple:   return "Tuple";
@@ -334,7 +338,7 @@ public:
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple
+        Null, UInt64, UInt128, Int64, Int128, Dec64, Dec128, Float64, String, Array, Tuple
         > storage;
 
     Types::Which which;
@@ -376,6 +380,8 @@ private:
             case Types::UInt128: f(field.template get<UInt128>()); return;
             case Types::Int64:   f(field.template get<Int64>());   return;
             case Types::Int128:  f(field.template get<Int128>());  return;
+            case Types::Dec64:   f(field.template get<Dec64>());   return;
+            case Types::Dec128:  f(field.template get<Dec128>());  return;
             case Types::Float64: f(field.template get<Float64>()); return;
 #if !__clang__
 #pragma GCC diagnostic pop
@@ -462,6 +468,8 @@ template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value 
 template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<Int64>   { static const Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Int128>  { static const Types::Which value = Types::Int128; };
+template <> struct Field::TypeToEnum<Dec64>   { static const Types::Which value = Types::Dec64; };
+template <> struct Field::TypeToEnum<Dec128>  { static const Types::Which value = Types::Dec128; };
 template <> struct Field::TypeToEnum<Float64> { static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
@@ -472,6 +480,8 @@ template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt6
 template <> struct Field::EnumToType<Field::Types::UInt128> { using Type = UInt128; };
 template <> struct Field::EnumToType<Field::Types::Int64>   { using Type = Int64; };
 template <> struct Field::EnumToType<Field::Types::Int128>  { using Type = Int128; };
+template <> struct Field::EnumToType<Field::Types::Dec64>   { using Type = Dec64; };
+template <> struct Field::EnumToType<Field::Types::Dec128>  { using Type = Dec128; };
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
@@ -519,6 +529,9 @@ template <> struct NearestFieldType<Int16>   { using Type = Int64; };
 template <> struct NearestFieldType<Int32>   { using Type = Int64; };
 template <> struct NearestFieldType<Int64>   { using Type = Int64; };
 template <> struct NearestFieldType<Int128>  { using Type = Int128; };
+template <> struct NearestFieldType<Dec32>   { using Type = Dec64; };
+template <> struct NearestFieldType<Dec64>   { using Type = Dec64; };
+template <> struct NearestFieldType<Dec128>  { using Type = Dec128; };
 template <> struct NearestFieldType<Float32> { using Type = Float64; };
 template <> struct NearestFieldType<Float64> { using Type = Float64; };
 template <> struct NearestFieldType<String>  { using Type = String; };
