@@ -6,9 +6,13 @@
 
 این یک سیستم چند سکویی (Cross-Platform) نمی باشد. این ابزار نیاز به Linux Ubuntu Precise (12.04) یا جدیدتر، با معماری x86_64 و پشتیبانی از SSE 4.2 می باشد. برای چک کردن SSE 4.2 خروجی دستور زیر را بررسی کنید:
 
+</div>
+
 ```bash
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
+
+<div dir="rtl">
 
 پیشنهاد می کنیم از Ubuntu TrustyT، Ubuntu Xenial یا Ubuntu Precise استفاده کنید. ترمینال باید از UTF-8 پشتیبانی کند. (به صورت پیش فرض در Ubuntu پشتیبانی می شود).
 
@@ -20,19 +24,27 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 در فایل `/etc/apt/sources.list` (یا در یک فایل جدا `/etc/apt/sources.list.d/clickhouse.list`)، Repo زیر را اضافه کنید:
 
+</div>
+
 ```text
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
+<div dir="rtl">
+
 اگر شما میخوایید جدیدترین نسخه ی تست را استفاده کنید، 'stable' رو به 'testing' تغییر بدید.
 
 سپس دستورات زیر را اجرا کنید:
+
+</div>
 
 ```bash
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
+
+<div dir="rtl">
 
 شما همچنین می توانید از طریق لینک زیر پکیج ClickHouse را به صورت دستی دانلود و نصب کنید: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
 
@@ -44,17 +56,25 @@ ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. 
 
 شما میتوانید پکیج را compile و نصب کنید. شما همچنین می توانید بدون نصب پکیج از برنامه ها استفاده کنید.
 
+</div>
+
 ```text
 Client: dbms/programs/clickhouse-client
 Server: dbms/programs/clickhouse-server
 ```
 
+<div dir="rtl">
+
 برای سرور، یک کاتالوگ با دیتا بسازید، مانند
+
+</div>
 
 ```text
 /opt/clickhouse/data/default/
 /opt/clickhouse/metadata/default/
 ```
+
+<div dir="rtl">
 
 (قابل تنظیم در تنظیمات سرور). 'chown' را برای کاربر دلخواه اجرا کنید.
 
@@ -72,9 +92,13 @@ Gentoo: `emerge clickhouse`
 
 برای استارت سرور (به صورت daemon)، دستور زیر را اجرا کنید:
 
+</div>
+
 ```bash
 sudo service clickhouse-server start
 ```
+
+<div dir="rtl">
 
 لاگ های دایرکتوری `/var/log/clickhouse-server/ directory.` را مشاهده کنید.
 
@@ -82,27 +106,41 @@ sudo service clickhouse-server start
 
 شما همچنین می توانید سرور را از طریق کنسول راه اندازی کنید:
 
+</div>
+
 ```bash
 clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
+
+<div dir="rtl">
 
 در این مورد که مناسب زمان توسعه می باشد، لاگ ها در کنسول پرینت می شوند. اگر فایل تنظیمات در دایرکتوری جاری باشد، نیازی به مشخص کردن '--config-file' نمی باشد. به صورت پیش فرض از './config.xml' استفاده می شود.
 
 شما می توانید از کلاینت command-line برای اتصال به سرور استفاده کنید:
 
+</div>
+
 ```bash
 clickhouse-client
 ```
 
+<div dir="rtl">
+
 پارامترهای پیش فرض، نشان از اتصال به localhost:9000 از طرف کاربر 'default' بدون پسورد را می دهد. از کلاینت میتوان برای اتصال به یک سرور remote استفاده کرد. مثال:
+
+</div>
 
 ```bash
 clickhouse-client --host=example.com
 ```
 
+<div dir="rtl">
+
 برای اطلاعات بیشتر، بخش "کلاینت Command-line" را مشاهده کنید.
 
 چک کردن سیستم:
+
+</div>
 
 ```bash
 milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
@@ -122,6 +160,8 @@ SELECT 1
 
 :)
 ```
+
+<div dir="rtl">
 
 **تبریک میگم، سیستم کار می کنه!**
 
