@@ -397,6 +397,14 @@ private:
 
     void mutationsUpdatingTask();
 
+    /// Clone data from another replica.
+    bool cloneReplica(const String & source_replica, zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Clone replica if it is lost.
+    void cloneReplicaIfNeeded();
+
+    void clearQueue();
+
     /** Performs actions from the queue.
       */
     bool queueTask();

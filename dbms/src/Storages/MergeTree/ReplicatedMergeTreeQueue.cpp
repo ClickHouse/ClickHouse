@@ -360,13 +360,6 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
-    if (zookeeper->exists(replica_path + "/is_lost"))
-    {
-        restartLostReplica(zookeeper);
-        
-        zookeeper->remove(replica_path + "/is_lost", -1);
-    }
-
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
 
@@ -395,11 +388,12 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
     /// Multiple log entries that must be copied to the queue.
 
     log_entries.erase(
-        std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
-        log_entries.end());
+            std::remove_if(log_entries.begin(), log_entries.end(), [&min_log_entry](const String & entry) { return entry < min_log_entry; }),
+            log_entries.end());
 
     if (!log_entries.empty())
     {
+
         std::sort(log_entries.begin(), log_entries.end());
 
         /// ZK contains a limit on the number or total size of operations in a multi-request.
@@ -412,14 +406,14 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
         {
             auto begin = log_entries.begin() + i;
             auto end = i + MAX_MULTI_OPS >= log_entries.size()
-                ? log_entries.end()
-                : (begin + MAX_MULTI_OPS);
+                       ? log_entries.end()
+                       : (begin + MAX_MULTI_OPS);
             auto last = end - 1;
 
             String last_entry = *last;
             if (!startsWith(last_entry, "log-"))
                 throw Exception("Error in zookeeper data: unexpected node " + last_entry + " in " + zookeeper_path + "/log",
-                    ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
+                                ErrorCodes::UNEXPECTED_NODE_IN_ZOOKEEPER);
 
             UInt64 last_entry_index = parse<UInt64>(last_entry.substr(strlen("log-")));
 
@@ -446,7 +440,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
                 ops.emplace_back(zkutil::makeCreateRequest(
-                    replica_path + "/queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
+                        replica_path + "/queue/queue-", res.data, zkutil::CreateMode::PersistentSequential));
 
                 const auto & entry = *copied_entries.back();
                 if (entry.type == LogEntry::GET_PART)
@@ -461,11 +455,11 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
             }
 
             ops.emplace_back(zkutil::makeSetRequest(
-                replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
+                    replica_path + "/log_pointer", toString(last_entry_index + 1), -1));
 
             if (min_unprocessed_insert_time_changed)
                 ops.emplace_back(zkutil::makeSetRequest(
-                    replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
+                        replica_path + "/min_unprocessed_insert_time", toString(*min_unprocessed_insert_time_changed), -1));
 
             auto responses = zookeeper->multi(ops);
 
