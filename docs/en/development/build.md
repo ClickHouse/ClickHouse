@@ -4,7 +4,7 @@
 
 ```bash
 sudo apt-get update
-sudo apt-get install git pbuilder debhelper fakeroot sudo
+sudo apt-get install git pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
 ## Checkout ClickHouse sources
@@ -17,7 +17,6 @@ cd ClickHouse
 ## Run release script
 
 ```bash
-pbuilder create
 ./release
 ```
 
