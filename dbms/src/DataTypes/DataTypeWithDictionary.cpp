@@ -60,27 +60,12 @@ void DataTypeWithDictionary::enumerateStreams(const StreamCallback & callback, S
 
 struct  KeysSerializationVersion
 {
-    /// Write keys as full column. No indexes is written. Structure:
-    ///   <name>.dict.bin : [version - 32 bits][keys]
-    ///   <name>.dict.mrk : [marks for keys]
-    // FullColumn = 0,
-    /// Write all keys in serializePostfix and read in deserializePrefix.
-    ///   <name>.dict.bin : [version - 32 bits][indexes type - 32 bits][keys]
-    ///   <name>.bin : [indexes]
-    ///   <name>.mrk : [marks for indexes]
-    // SingleDictionary,
-    /// Write distinct set of keys for each granule. Structure:
-    ///   <name>.dict.bin : [version - 32 bits][indexes type - 32 bits][keys]
-    ///   <name>.dict.mrk : [marks for keys]
-    ///   <name>.bin : [indexes]
-    ///   <name>.mrk : [marks for indexes]
-    // DictionaryPerGranule,
-
     enum Value
     {
         /// Version is written at the start of <name.dict.bin>.
         /// Dictionary is written as number N and N keys after them.
-        /// Dictionary can be shared for continuous range of granules.
+        /// Dictionary can be shared for continuous range of granules, so some marks may point to the same position.
+        /// Shared dictionary is stored in state and is read once.
         SharedDictionariesWithAdditionalKeys = 1,
     };
 
@@ -95,11 +80,15 @@ struct  KeysSerializationVersion
     KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
 };
 
+/// Version is stored at the start of each granule. It's used to store indexes type and flags.
 struct IndexesSerializationType
 {
     using SerializationType = UInt64;
+    /// Need to read dictionary if it wasn't.
     static constexpr SerializationType NeedGlobalDictionaryBit = 1u << 8u;
+    /// Need to read additional keys. Additional keys are stored before indexes as value N and N keys after them.
     static constexpr SerializationType HasAdditionalKeysBit = 1u << 9u;
+    /// Need to update dictionary. It means that previous granule has different dictionary.
     static constexpr SerializationType NeedUpdateDictionary = 1u << 10u;
 
     enum Type
@@ -193,7 +182,7 @@ struct IndexesSerializationType
 struct SerializeStateWithDictionary : public IDataType::SerializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
-    MutableColumnUniquePtr global_dictionary;
+    MutableColumnUniquePtr shared_dictionary;
 
     explicit SerializeStateWithDictionary(UInt64 key_version) : key_version(key_version) {}
 };
@@ -267,9 +256,9 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
     auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
     KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
-    if (state_with_dictionary->global_dictionary && settings.max_dictionary_size)
+    if (state_with_dictionary->shared_dictionary && settings.max_dictionary_size)
     {
-        auto nested_column = state_with_dictionary->global_dictionary->getNestedNotNullableColumn();
+        auto nested_column = state_with_dictionary->shared_dictionary->getNestedNotNullableColumn();
 
         settings.path.push_back(Substream::DictionaryKeys);
         auto * stream = settings.getter(settings.path);
@@ -282,7 +271,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
-        state_with_dictionary->global_dictionary = nullptr;
+        state_with_dictionary->shared_dictionary = nullptr;
     }
 }
 
@@ -505,7 +494,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
 
     auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
-    auto & global_dictionary = state_with_dictionary->global_dictionary;
+    auto & global_dictionary = state_with_dictionary->shared_dictionary;
     KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
     bool need_update_dictionary = global_dictionary == nullptr;
@@ -558,7 +547,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *keys_stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
-        state_with_dictionary->global_dictionary = nullptr;
+        state_with_dictionary->shared_dictionary = nullptr;
     }
 
     if (need_additional_keys)
