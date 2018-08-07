@@ -7,6 +7,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTAssignment.h>
 #include <Common/typeid_cast.h>
 
 
@@ -16,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
+    extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
@@ -26,6 +29,22 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         res.ast = command->ptr();
         res.type = DELETE;
         res.predicate = command->predicate;
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::UPDATE)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = UPDATE;
+        res.predicate = command->predicate;
+        for (const ASTPtr & assignment_ast : command->update_assignments->children)
+        {
+            const auto & assignment = typeid_cast<const ASTAssignment &>(*assignment_ast);
+            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression);
+            if (!insertion.second)
+                throw Exception("Multiple assignments in the single statement to column `" + assignment.column_name + "`",
+                    ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
+        }
         return res;
     }
     else
