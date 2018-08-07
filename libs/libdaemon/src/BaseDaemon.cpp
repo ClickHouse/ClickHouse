@@ -1031,6 +1031,19 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + core_path);
     }
 
+    initializeTerminationAndSignalProcessing();
+
+    logRevision();
+
+    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+    {
+        graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
+    }
+}
+
+
+void BaseDaemon::initializeTerminationAndSignalProcessing()
+{
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -1071,15 +1084,9 @@ void BaseDaemon::initialize(Application & self)
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    logRevision();
-
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
 
-    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
-    {
-        graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
-    }
 }
 
 void BaseDaemon::logRevision() const
