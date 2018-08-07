@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_sources"></a>
 
-# Sources of external dictionaries
+# Sources of External Dictionaries
 
 An external dictionary can be connected from many different sources.
 
@@ -36,7 +36,7 @@ Types of sources (`source_type`):
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
-## Local file
+## Local File
 
 Example of settings:
 
@@ -56,7 +56,7 @@ Setting fields:
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
-## Executable file
+## Executable File
 
 Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
 
@@ -124,7 +124,7 @@ Setting fields:
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-## Example of connecting PostgreSQL
+## Example of Connecting PostgreSQL
 
 Ubuntu OS.
 
@@ -190,7 +190,7 @@ The dictionary configuration in ClickHouse:
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of connecting MS SQL Server
+### Example of Connecting MS SQL Server
 
 Ubuntu OS.
 

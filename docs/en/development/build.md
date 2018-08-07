@@ -1,27 +1,27 @@
-# How to build ClickHouse release package
+# How to Build ClickHouse Release Package
 
-## Install Git and pbuilder
+## Install Git and Pbuilder
 
 ```bash
 sudo apt-get update
 sudo apt-get install git pbuilder debhelper fakeroot
 ```
 
-## Checkout ClickHouse sources
+## Checkout ClickHouse Sources
 
 ```bash
 git clone --recursive --branch stable https://github.com/yandex/ClickHouse.git
 cd ClickHouse
 ```
 
-## Run release script
+## Run Release Script
 
 ```bash
 pbuilder create
 ./release
 ```
 
-# How to build ClickHouse for development
+# How to Build ClickHouse for Development
 
 Build should work on Ubuntu Linux.
 With appropriate changes, it should also work on any other Linux distribution.
@@ -46,7 +46,7 @@ Or cmake3 instead of cmake on older systems.
 
 There are several ways to do this.
 
-### Install from a PPA package
+### Install from a PPA Package
 
 ```bash
 sudo apt-get install software-properties-common
@@ -55,24 +55,24 @@ sudo apt-get update
 sudo apt-get install gcc-7 g++-7
 ```
 
-### Install from sources
+### Install from Sources
 
 Look at [ci/build-gcc-from-sources.sh](https://github.com/yandex/ClickHouse/blob/master/ci/build-gcc-from-sources.sh)
 
-## Use GCC 7 for builds
+## Use GCC 7 for Builds
 
 ```bash
 export CC=gcc-7
 export CXX=g++-7
 ```
 
-## Install required libraries from packages
+## Install Required Libraries from Packages
 
 ```bash
 sudo apt-get install libicu-dev libreadline-dev
 ```
 
-## Checkout ClickHouse sources
+## Checkout ClickHouse Sources
 
 ```bash
 git clone --recursive git@github.com:yandex/ClickHouse.git
