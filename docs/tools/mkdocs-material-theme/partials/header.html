@@ -43,7 +43,7 @@
       {% if page %}
         <div class="md-flex__cell md-flex__cell--shrink">
           <div id="md-language-switch" class="md-header-nav__source">
-            {% if config.extra.lang == 'ru' %}
+            {% if config.theme.extra.opposite_lang == 'en' %}
               <a href="{{ base_url }}/../{{ config.theme.extra.opposite_lang }}{{ page.abs_url }}" title="Switch to English" class="md-flex__ellipsis md-header-nav__title">
                 <svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewBox="0,0 25,15" style="border:1px solid #eee;margin: .8rem 0 0 -1.25rem;">
                   <rect width="25" height="15" fill="#00247d"></rect>
