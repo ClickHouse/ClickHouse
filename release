@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
+
 # Advanced usage:
 # Test gcc-8:
 # env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
@@ -71,21 +73,19 @@ done
 # Build options
 if [ -n "$SANITIZER" ]
 then
-    CMAKE_BUILD_TYPE=$SANITIZER
-    VERSION_POSTFIX+=+${SANITIZER,,}
+    VERSION_POSTFIX+="+${SANITIZER,,}"
     export DEB_CC=${DEB_CC=clang-6.0}
     export DEB_CXX=${DEB_CXX=clang++-6.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
-    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
+    MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
     VERSION_POSTFIX+=+$BUILD_TYPE
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
-    LIBTCMALLOC_OPTS="-DDEBUG_TCMALLOC=1"
     VERSION_POSTFIX+=+$BUILD_TYPE
 fi
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 [[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
 #[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
