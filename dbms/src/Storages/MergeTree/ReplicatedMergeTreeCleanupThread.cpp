@@ -88,7 +88,9 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     std::sort(entries.begin(), entries.end());
 
-    String min_saved_record_log_str = entries[std::max(0, entries.size() - storage.data.settings.max_replicated_logs_to_keep.value)];
+    String min_saved_record_log_str = entries[entries.size() > storage.data.settings.max_replicated_logs_to_keep.value
+                                              ? entries.size() - storage.data.settings.max_replicated_logs_to_keep.value
+                                              : 0];
     String min_pointer_inactive_replica_str;
 
     for (const String & replica : replicas)

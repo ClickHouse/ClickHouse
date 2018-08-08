@@ -2048,8 +2048,6 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
     if (!raw_log_pointer.empty() && "log-" + padIndex(parse<UInt64>(raw_log_pointer)) >= entries[0])
         return;
 
-    clearQueue();
-
     String source_replica;
 
     do
@@ -2066,13 +2064,6 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
         }
 
     } while (cloneReplica(source_replica, zookeeper));
-}
-
-
-void StorageReplicatedMergeTree::clearQueue()
-{
-    auto zookeeper = getZooKeeper();
-    zookeeper->createOrUpdate(replica_path + "/queue", "", zkutil::CreateMode::Persistent);
 }
 
 
