@@ -30,7 +30,7 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
     std::string DSN = params.get("DSN", "");
     std::string database = params.get("database", "");
 
-    std::string max_block_size = params.get("max_block_size", "");
+    std::string max_block_size_str = params.get("max_block_size", "");
     std::string format = params.get("format", "RowBinary");
 
     std::string connection_string = buildConnectionString(DSN, database);
@@ -55,10 +55,20 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
         pool = pool_map[connection_string];
     }
 
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
+
+    if (!max_block_size_str.empty())
+        try
+        {
+            max_block_size = std::stoul(max_block_size_str);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+        }
 
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-        return new ODBCHandler(
-            pool, format, max_block_size == "" ? DEFAULT_BLOCK_SIZE : parse<size_t>(max_block_size), keep_alive_timeout, context);
+        return new ODBCHandler(pool, format, max_block_size, keep_alive_timeout, context);
 
     return nullptr;
 }
