@@ -285,6 +285,9 @@ protected:
       */
     virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
 
+    /// If it isn't, will convert all ColumnWithDictionary arguments to full columns.
+    virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
+
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
 
     virtual void getLambdaArgumentTypesImpl(DataTypes & /*arguments*/) const
@@ -309,9 +312,10 @@ public:
     /// Override this functions to change default implementation behavior. See details in IMyFunction.
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return isDeterministicInScopeOfQuery(); }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool canBeExecutedOnDefaultArguments() const override { return true; }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return isDeterministicInScopeOfQuery(); }
 
     using PreparedFunctionImpl::execute;
     using FunctionBuilderImpl::getReturnTypeImpl;
@@ -459,6 +463,7 @@ protected:
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForColumnsWithDictionary() const override { return function->useDefaultImplementationForColumnsWithDictionary(); }
+    bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
