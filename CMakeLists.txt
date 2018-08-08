@@ -34,10 +34,9 @@ endif ()
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
 message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
 
-# ASan - build type with address sanitizer
-# UBSan - build type with undefined behaviour sanitizer
-# TSan is not supported due to false positive errors in libstdc++ and necessity to rebuild libstdc++ with TSan
-set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel;ASan;UBSan" CACHE STRING "" FORCE)
+set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+
+include (cmake/sanitize.cmake)
 
 include (cmake/arch.cmake)
 
@@ -189,8 +188,6 @@ endif ()
 if (NOT MAKE_STATIC_LIBRARIES)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
-
-include (cmake/sanitize.cmake)
 
 # Using "include-what-you-use" tool.
 option (USE_INCLUDE_WHAT_YOU_USE "Use 'include-what-you-use' tool" OFF)
