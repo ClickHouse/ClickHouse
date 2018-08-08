@@ -1,10 +1,16 @@
+if (OS_LINUX AND NOT SANITIZE)
+    set(ENABLE_TCMALLOC_DEFAULT 1)
+else ()
+    set(ENABLE_TCMALLOC_DEFAULT 0)
+endif ()
+
 if (OS_FREEBSD OR ARCH_32)
     option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" OFF)
 else ()
     option (USE_INTERNAL_GPERFTOOLS_LIBRARY "Set to FALSE to use system gperftools (tcmalloc) library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
 
-option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" OFF)
+option (ENABLE_TCMALLOC "Set to TRUE to enable tcmalloc" ${ENABLE_TCMALLOC_DEFAULT})
 option (DEBUG_TCMALLOC "Set to TRUE to use debug version of libtcmalloc" OFF)
 
 if (ENABLE_TCMALLOC)
@@ -21,6 +27,10 @@ if (ENABLE_TCMALLOC)
 
     if (GPERFTOOLS_FOUND OR USE_INTERNAL_GPERFTOOLS_LIBRARY)
         set (USE_TCMALLOC 1)
+    endif ()
+
+    if (SANITIZE)
+        message (FATAL_ERROR "ENABLE_TCMALLOC is set to true, but it cannot be used with sanitizers")
     endif ()
 
     message (STATUS "Using tcmalloc=${USE_TCMALLOC}: ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
