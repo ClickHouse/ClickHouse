@@ -68,19 +68,6 @@ template <> constexpr size_t maxDecimalPrecision<Dec64>() { return 18; }
 template <> constexpr size_t maxDecimalPrecision<Dec128>() { return 38; }
 
 
-template <typename T>
-inline constexpr bool decTrait() { return false; }
-template <> constexpr bool decTrait<Dec32>() { return true; }
-template <> constexpr bool decTrait<Dec64>() { return true; }
-template <> constexpr bool decTrait<Dec128>() { return true; }
-
-template <typename T>
-inline constexpr bool decBaseTrait() { return false; }
-template <> constexpr bool decBaseTrait<Int32>() { return true; }
-template <> constexpr bool decBaseTrait<Int64>() { return true; }
-template <> constexpr bool decBaseTrait<Int128>() { return true; }
-
-
 /// Implements Decimal(P, S), where P is precision, S is scale.
 /// Maximum precisions for underlying types are:
 /// Int32    9
