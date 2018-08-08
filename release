@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
+
 # Advanced usage:
 # Test gcc-8:
 # env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
