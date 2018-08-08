@@ -204,6 +204,7 @@ private:
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
@@ -474,6 +475,7 @@ private:
         {
             need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
+            ignore_error = config().getBool("ignore-error", false);
         }
 
         connect();
@@ -765,7 +767,6 @@ private:
 
     bool process(const String & text)
     {
-        const bool ignore_error = config().getBool("ignore-error", false);
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
@@ -823,7 +824,7 @@ private:
                 {
                     last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
                     actual_client_error = last_exception->code();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
                         std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
                     got_exception = true;
                 }
