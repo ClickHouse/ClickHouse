@@ -22,11 +22,8 @@ Default value: 3600.
 
 Data compression settings.
 
-<div class="admonition warning">
-
-Don't use it if you have just started using ClickHouse.
-
-</div>
+!!! warning "Warning"
+    Don't use it if you have just started using ClickHouse.
 
 The configuration looks like this:
 
@@ -334,7 +331,7 @@ Also, logging to syslog is possible. Configuration example:
     <use_syslog>1</use_syslog>
     <syslog>
         <address>syslog.remote:10514</address>
-        <hostname>myhost.local</hostname> 
+        <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
         <format>syslog</format>
     </syslog>
@@ -345,8 +342,8 @@ Keys:
 - user_syslog - activation key, turning on syslog logging.
 - address - host[:port] of syslogd. If not specified, local one would be used.
 - hostname - optional, source host of logs
-- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility), 
-in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.). 
+- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility),
+in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.).
 Default values: when ``address`` is specified, then ``LOG_USER``, otherwise - ``LOG_DAEMON``
 - format - message format. Possible values are - ``bsd`` and ``syslog``
 
@@ -561,11 +558,9 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-<div class="admonition warning">
+!!! warning "Attention"
+    The trailing slash is mandatory.
 
-The end slash is mandatory.
-
-</div>
 
 **Example**
 
@@ -651,11 +646,8 @@ Port for communicating with clients over the TCP protocol.
 
 Path to temporary data for processing large queries.
 
-<div class="admonition warning">
-
-The end slash is mandatory.
-
-</div>
+!!! warning "Attention"
+    The trailing slash is mandatory.
 
 **Example**
 

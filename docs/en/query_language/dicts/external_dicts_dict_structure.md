@@ -39,11 +39,8 @@ ClickHouse supports the following types of keys:
 
 A structure can contain either `<id>` or `<key>` .
 
-<div class="admonition attention">
-
-The key doesn't need to be defined separately in attributes.
-
-</div>
+!!! warning
+    The key doesn't need to be defined separately in attributes.
 
 ### Numeric key
 
@@ -65,9 +62,8 @@ Configuration fields:
 
 The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
-<div class="admonition tip">
-A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
-</div>
+!!! tip
+    A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 
 The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Example:
 

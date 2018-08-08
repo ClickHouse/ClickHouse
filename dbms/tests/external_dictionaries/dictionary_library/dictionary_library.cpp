@@ -62,7 +62,8 @@ void MakeColumnsFromVector(DataHolder * ptr)
     ptr->ctable.data = ptr->rowHolder.get();
 }
 
-extern "C" {
+extern "C"
+{
 
 void * ClickHouseDictionary_v3_loadIds(void * data_ptr,
     ClickHouseLibrary::CStrings * settings,
@@ -151,7 +152,8 @@ void * ClickHouseDictionary_v3_loadKeys(void * data_ptr, ClickHouseLibrary::CStr
     if (requested_keys)
     {
         LOG(ptr->lib->log, "requested_keys columns passed: " << requested_keys->size);
-        for (size_t i = 0; i < requested_keys->size; ++i) {
+        for (size_t i = 0; i < requested_keys->size; ++i)
+        {
             LOG(ptr->lib->log, "requested_keys at column " << i << " passed: " << requested_keys->data[i].size);
         }
     }

@@ -219,11 +219,8 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3. Assess memory consumption using the `system.dictionaries` table.
 4. Increase or decrease the number of cells until the required memory consumption is reached.
 
-<div class="admonition warning">
-
-Do not use ClickHouse as a source, because it is slow to process queries with random reads.
-
-</div>
+!!! warning
+    Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
 <a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 

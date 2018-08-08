@@ -1,5 +1,5 @@
 
-if (ARCH_FREEBSD)
+if (OS_FREEBSD)
     set (PATH_SHARE "/usr/local/share" CACHE STRING "")
 else ()
     set (PATH_SHARE "/usr/share" CACHE STRING "")
