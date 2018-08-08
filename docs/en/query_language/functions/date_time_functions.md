@@ -152,7 +152,7 @@ For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2
 This is necessary for searching for pageviews in the corresponding session.
 
 ## formatDateTime(datetime, format)
-Formats the given datetime according to the provided format string. Uses strftime()-like formatting options, additionally supports everything that cctz::format() supports. The time zone is detected automatically from the first argument, to convert datetime into another time zone use toTimeZone() function. To format date use type conversions functions such as toDateTime().
+Formats the given datetime according to the provided format string. Uses strftime() formatting options. The time zone is detected automatically from the first argument, to convert datetime into another time zone use toTimeZone() function. To format date use type conversions functions such as toDateTime().
 
 ```sql
 SELECT

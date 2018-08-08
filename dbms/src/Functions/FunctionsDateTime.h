@@ -1571,6 +1571,7 @@ public:
                                 ErrorCodes::ILLEGAL_COLUMN);
 
             String format = column_format->getValue<String>();
+            auto format_str = format.data();
 
             auto col_to = ColumnString::create();
 
@@ -1583,13 +1584,15 @@ public:
 
             WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
 
+            char buf[64];
+            tm tp{};
             for (size_t i = 0; i < size; ++i)
             {
                 time_t t = vec_from[i];
-                auto formatted_time = cctz::format(format, std::chrono::system_clock::from_time_t(t), tz);
+                time_zone.makeTM(t, tp);
+                auto written = strftime(buf, sizeof(buf), format_str, &tp);
 
-                writeString(formatted_time.data(), formatted_time.length(), buf_to);
-                writeChar(0, buf_to);
+                writeString(buf, written + 1, buf_to);
                 offsets_to[i] = buf_to.count();
             }
             data_to.resize(buf_to.count());
