@@ -19,8 +19,6 @@ protected:
 
     int main(const std::vector<std::string> & args) override;
 
-    std::string getDefaultCorePath() const override;
-
 private:
 
     void handleHelp(const std::string &, const std::string &);

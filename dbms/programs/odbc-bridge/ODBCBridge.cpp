@@ -23,16 +23,6 @@ namespace ErrorCodes
 
 namespace
 {
-    std::string getCanonicalPath(std::string && path)
-    {
-        Poco::trimInPlace(path);
-        if (path.empty())
-            throw Exception("path configuration parameter is empty");
-        if (path.back() != '/')
-            path += '/';
-        return std::move(path);
-    }
-
     Poco::Net::SocketAddress makeSocketAddress(const std::string & host, UInt16 port, Poco::Logger * log)
     {
         Poco::Net::SocketAddress socket_address;
@@ -75,11 +65,6 @@ namespace
 
         return address;
     };
-}
-
-std::string ODBCBridge::getDefaultCorePath() const
-{
-    return getCanonicalPath(config().getString("path")) + "cores";
 }
 
 void ODBCBridge::handleHelp(const std::string &, const std::string &)
@@ -155,14 +140,13 @@ void ODBCBridge::initialize(Application & self)
 
 void ODBCBridge::uninitialize()
 {
-    LOG_INFO(log, "Shutting down");
     BaseDaemon::uninitialize();
 }
 
 int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 {
     if (is_help)
-        return 0;
+        return Application::EXIT_OK;
 
     LOG_INFO(log, "Starting up");
     Poco::Net::ServerSocket socket;
@@ -184,7 +168,6 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     LOG_INFO(log, "Listening http://" + address.toString());
 
     waitForTerminationRequest();
-
 
     return Application::EXIT_OK;
 }
