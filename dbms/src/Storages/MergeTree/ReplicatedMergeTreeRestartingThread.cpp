@@ -197,6 +197,14 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     {
         removeFailedQuorumParts();
         activateReplica();
+
+        storage.cloneReplicaIfNeeded();
+
+        /// pullLogsToQueue() after we mark replica 'is_active' and clone();
+        /// because cleanup_thread don't del our log_pointer.
+        storage.queue.pullLogsToQueue(storage.getZooKeeper());
+        storage.last_queue_update_finish_time.store(time(nullptr));
+        
         storage.cloneReplicaIfNeeded();
         updateQuorumIfWeHavePart();
 
