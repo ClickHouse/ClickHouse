@@ -484,7 +484,7 @@ public:
         return true;
     }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         for (const auto & f : originals)
             if (!f->isDeterministicInScopeOfQuery())

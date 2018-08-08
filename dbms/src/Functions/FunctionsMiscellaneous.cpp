@@ -113,7 +113,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -137,9 +137,9 @@ public:
         return name;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -407,9 +407,9 @@ public:
         return name;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -451,9 +451,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -500,9 +500,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -544,9 +544,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -917,9 +917,9 @@ public:
     }
 
     /** It could return many different values for single argument. */
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1320,7 +1320,7 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -1357,7 +1357,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -1391,9 +1391,9 @@ public:
         return 1;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1560,7 +1560,7 @@ public:
         return 1;
     }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1701,7 +1701,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 

@@ -172,9 +172,9 @@ public:
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
       */
 
-    virtual bool isDeterministic() { return true; }
+    virtual bool isDeterministic() const { return true; }
 
-    virtual bool isDeterministicInScopeOfQuery() { return true; }
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -309,7 +309,7 @@ public:
     /// Override this functions to change default implementation behavior. See details in IMyFunction.
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return isDeterministicInScopeOfQuery(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
     bool canBeExecutedOnDefaultArguments() const override { return true; }
 
@@ -423,9 +423,9 @@ public:
 
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 
-    bool isDeterministic() override { return function->isDeterministic(); }
+    bool isDeterministic() const override { return function->isDeterministic(); }
 
-    bool isDeterministicInScopeOfQuery() override { return function->isDeterministicInScopeOfQuery(); }
+    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
