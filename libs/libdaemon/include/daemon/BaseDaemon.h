@@ -159,6 +159,9 @@ protected:
     /// thread safe
     virtual void handleSignal(int signal_id);
 
+    /// initialize termination process and signal handlers
+    virtual void initializeTerminationAndSignalProcessing();
+
     /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()
 #if POCO_CLICKHOUSE_PATCH || POCO_VERSION >= 0x02000000 // in old upstream poco not vitrual
