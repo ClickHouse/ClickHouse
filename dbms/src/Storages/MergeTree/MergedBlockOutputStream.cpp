@@ -100,8 +100,8 @@ void IMergedBlockOutputStream::writeData(
     auto & settings = storage.context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
     serialize_settings.getter = createStreamGetter(name, offset_columns, skip_offsets);
-    serialize_settings.max_dictionary_size = settings.max_dictionary_size;
-    serialize_settings.use_single_dictionary_for_part = settings.use_single_dictionary_for_part != 0;
+    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
 
     size_t size = column.size();
     size_t prev_mark = 0;
@@ -300,8 +300,8 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     /// Finish columns serialization.
     auto & settings = storage.context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.max_dictionary_size = settings.max_dictionary_size;
-    serialize_settings.use_single_dictionary_for_part = settings.use_single_dictionary_for_part != 0;
+    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
     OffsetColumns offset_columns;
     auto it = columns_list.begin();
     for (size_t i = 0; i < columns_list.size(); ++i, ++it)
@@ -553,8 +553,8 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndG
     /// Finish columns serialization.
     auto & settings = storage.context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.max_dictionary_size = settings.max_dictionary_size;
-    serialize_settings.use_single_dictionary_for_part = settings.use_single_dictionary_for_part != 0;
+    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
     OffsetColumns offset_columns;
     for (size_t i = 0; i < header.columns(); ++i)
     {

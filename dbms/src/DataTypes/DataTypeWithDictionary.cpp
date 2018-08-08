@@ -256,7 +256,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
     auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
     KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
-    if (state_with_dictionary->shared_dictionary && settings.max_dictionary_size)
+    if (state_with_dictionary->shared_dictionary && settings.low_cardinality_max_dictionary_size)
     {
         auto nested_column = state_with_dictionary->shared_dictionary->getNestedNotNullableColumn();
 
@@ -508,25 +508,25 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
 
-    if (settings.max_dictionary_size)
+    if (settings.low_cardinality_max_dictionary_size)
     {
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
-                                                                                      settings.max_dictionary_size);
-        size_t max_size = settings.max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
+                                                                                      settings.low_cardinality_max_dictionary_size);
+        size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
         ColumnWithDictionary::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
-        if (global_dictionary->size() > settings.max_dictionary_size)
+        if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
-                            " but max dictionary size is " + toString(settings.max_dictionary_size),
+                            " but max dictionary size is " + toString(settings.low_cardinality_max_dictionary_size),
                             ErrorCodes::LOGICAL_ERROR);
 
         positions = indexes_with_overflow.indexes->index(*positions, 0);
         keys = std::move(indexes_with_overflow.overflowed_keys);
 
-        if (global_dictionary->size() < settings.max_dictionary_size && !keys->empty())
+        if (global_dictionary->size() < settings.low_cardinality_max_dictionary_size && !keys->empty())
             throw Exception("Has additional keys, but dict size is " + toString(global_dictionary->size()) +
-                            " which is less then max dictionary size (" + toString(settings.max_dictionary_size) + ")",
+                            " which is less then max dictionary size (" + toString(settings.low_cardinality_max_dictionary_size) + ")",
                             ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -534,9 +534,9 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         keys = nullable_keys->getNestedColumnPtr();
 
     bool need_additional_keys = !keys->empty();
-    bool need_dictionary = settings.max_dictionary_size != 0;
-    bool need_write_dictionary = !settings.use_single_dictionary_for_part
-                                 && global_dictionary->size() >= settings.max_dictionary_size;
+    bool need_dictionary = settings.low_cardinality_max_dictionary_size != 0;
+    bool need_write_dictionary = !settings.low_cardinality_use_single_dictionary_for_part
+                                 && global_dictionary->size() >= settings.low_cardinality_max_dictionary_size;
 
     IndexesSerializationType index_version(*positions, need_additional_keys, need_dictionary, need_update_dictionary);
     index_version.serialize(*indexes_stream);
