@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -117,6 +118,12 @@ struct PlusImpl
         return static_cast<Result>(a) + b;
     }
 
+    template <typename Result = ResultType>
+    static inline bool apply(A a, B b, Result & c)
+    {
+        return __builtin_add_overflow(static_cast<Result>(a), b, &c);
+    }
+
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
@@ -140,6 +147,12 @@ struct MultiplyImpl
         return static_cast<Result>(a) * b;
     }
 
+    template <typename Result = ResultType>
+    static inline bool apply(A a, B b, Result & c)
+    {
+        return __builtin_mul_overflow(static_cast<Result>(a), b, &c);
+    }
+
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = true;
 
@@ -160,6 +173,12 @@ struct MinusImpl
     static inline Result apply(A a, B b)
     {
         return static_cast<Result>(a) - b;
+    }
+
+    template <typename Result = ResultType>
+    static inline bool apply(A a, B b, Result & c)
+    {
+        return __builtin_sub_overflow(static_cast<Result>(a), b, &c);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -695,120 +714,210 @@ struct IntExp10Impl
 };
 
 
+template <typename T> struct NativeType { using Type = T; };
+template <> struct NativeType<Dec32> { using Type = Int32; };
+template <> struct NativeType<Dec64> { using Type = Int64; };
+template <> struct NativeType<Dec128> { using Type = Int128; };
+
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// *   no agrs scale. ScaleR = Scale1 + Scale2;
 /// /   first arg scale. ScaleR = Scale1 (scale_a = DecimalType<B>::getScale()).
-template <typename A, typename B, typename Op, typename ResultType_ = typename Op::ResultType>
+template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_>
 struct DecimalBinaryOperation
 {
     using ResultType = ResultType_;
-    static constexpr bool is_plus_minus =   std::is_same_v<Op, PlusImpl<ResultType, ResultType>> ||
-                                            std::is_same_v<Op, MinusImpl<ResultType, ResultType>>;
-    static constexpr bool is_division =     std::is_same_v<Op, DivideFloatingImpl<ResultType, ResultType>>;
-    static constexpr bool is_compare =      std::is_same_v<Op, LeastBaseImpl<ResultType, ResultType>> ||
-                                            std::is_same_v<Op, GreatestBaseImpl<ResultType, ResultType>>;
+    using NativeResultType = typename NativeType<ResultType>::Type;
+    using Op = Operation<NativeResultType, NativeResultType>;
+
+    static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
+    static constexpr bool is_multiply =     std::is_same_v<Operation<Int32, Int32>, MultiplyImpl<Int32, Int32>>;
+    static constexpr bool is_division =     std::is_same_v<Operation<Int32, Int32>, DivideFloatingImpl<Int32, Int32>>;
+    static constexpr bool is_compare =      std::is_same_v<Operation<Int32, Int32>, LeastBaseImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
+    static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
+    static constexpr bool can_overflow = is_plus_minus || is_multiply;
 
     static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
-        if constexpr (is_plus_minus || is_compare)
+        if constexpr (is_plus_minus_compare)
         {
             if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i] * scale_a, b[i]);
+                    c[i] = applyScaled<true>(a[i], b[i], scale_a);
                 return;
             }
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], b[i] * scale_b);
+                    c[i] = applyScaled<false>(a[i], b[i], scale_b);
                 return;
             }
         }
-        else if constexpr (is_division)
+        else if constexpr (is_division && decTrait<B>())
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a[i] * scale_a, b[i]);
+                c[i] = applyScaledDiv(a[i], b[i], scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(a[i], b[i]);
+            c[i] = apply(a[i], b[i]);
     }
 
     static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
-        if constexpr (is_plus_minus || is_compare)
+        if constexpr (is_plus_minus_compare)
         {
             if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i] * scale_a, b);
+                    c[i] = applyScaled<true>(a[i], b, scale_a);
                 return;
             }
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], b * scale_b);
+                    c[i] = applyScaled<false>(a[i], b, scale_b);
                 return;
             }
         }
-        else if constexpr (is_division)
+        else if constexpr (is_division && decTrait<B>())
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a[i] * scale_a, b);
+                c[i] = applyScaledDiv(a[i], b, scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(a[i], b);
+            c[i] = apply(a[i], b);
     }
 
     static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = b.size();
-        if constexpr (is_plus_minus || is_compare)
+        if constexpr (is_plus_minus_compare)
         {
             if (scale_a != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a * scale_a, b[i]);
+                    c[i] = applyScaled<true>(a, b[i], scale_a);
                 return;
             }
             else if (scale_b != 1)
             {
                 for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a, b[i] * scale_b);
+                    c[i] = applyScaled<false>(a, b[i], scale_b);
                 return;
             }
         }
-        else if constexpr (is_division)
+        else if constexpr (is_division && decTrait<B>())
         {
             for (size_t i = 0; i < size; ++i)
-                c[i] = Op::template apply<ResultType>(a * scale_a, b[i]);
+                c[i] = applyScaledDiv(a, b[i], scale_a);
             return;
         }
 
         /// default: use it if no return before
         for (size_t i = 0; i < size; ++i)
-            c[i] = Op::template apply<ResultType>(a, b[i]);
+            c[i] = apply(a, b[i]);
     }
 
     static ResultType constant_constant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
-        if constexpr (is_plus_minus || is_compare)
-            return Op::template apply<ResultType>(a * scale_a, b * scale_b);
-        else if constexpr (is_division)
-            return Op::template apply<ResultType>(a * scale_a, b);
-        return Op::template apply<ResultType>(a, b);
+        if constexpr (is_plus_minus_compare)
+        {
+            if (scale_a != 1)
+                return applyScaled<true>(a, b, scale_a);
+            else if (scale_b != 1)
+                return applyScaled<false>(a, b, scale_b);
+        }
+        else if constexpr (is_division && decTrait<B>())
+            return applyScaledDiv(a, b, scale_a);
+        return apply(a, b);
+    }
+
+private:
+    /// there's implicit type convertion here
+    static NativeResultType apply(NativeResultType a, NativeResultType b)
+    {
+        if constexpr (can_overflow && !std::is_same_v<NativeResultType, Int128>)
+        {
+            NativeResultType res;
+            if (Op::template apply<NativeResultType>(a, b, res))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            return res;
+        }
+        else
+            return Op::template apply<NativeResultType>(a, b);
+    }
+
+    template <bool scale_left>
+    static NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    {
+        if constexpr (is_plus_minus_compare)
+        {
+            NativeResultType res;
+
+            if constexpr (!std::is_same_v<NativeResultType, Int128>)
+            {
+                bool overflow = false;
+                if constexpr (scale_left)
+                    overflow |= __builtin_mul_overflow(a, scale, &a);
+                else
+                    overflow |= __builtin_mul_overflow(b, scale, &b);
+
+                if constexpr (can_overflow)
+                    overflow |= Op::template apply<NativeResultType>(a, b, res);
+                else
+                    res = Op::template apply<NativeResultType>(a, b);
+
+                if (overflow)
+                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
+            else
+            {
+                if constexpr (scale_left)
+                    a *= scale;
+                else
+                    b *= scale;
+                res = Op::template apply<NativeResultType>(a, b);
+            }
+            return res;
+        }
+    }
+
+    static NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+    {
+        if constexpr (is_division)
+        {
+            if constexpr (!std::is_same_v<NativeResultType, Int128>)
+            {
+                bool overflow = false;
+                if constexpr (!decTrait<A>())
+                    overflow |= __builtin_mul_overflow(scale, scale, &scale);
+                overflow |= __builtin_mul_overflow(a, scale, &a);
+                if (overflow)
+                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
+            else
+            {
+                if constexpr (!decTrait<A>())
+                    scale *= scale;
+                a *= scale;
+            }
+
+            return Op::template apply<NativeResultType>(a, b);
+        }
     }
 };
 
@@ -1090,7 +1199,7 @@ public:
 
                 /// Decimal operations need scale. Operations are on result type.
                 using OpImpl = std::conditional_t<IsDecimal<ResultDataType>,
-                    DecimalBinaryOperation<T0, T1, Op<ResultType, ResultType>, ResultType>,
+                    DecimalBinaryOperation<T0, T1, Op, ResultType>,
                     BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>>;
 
                 auto col_left_raw = block.getByPosition(arguments[0]).column.get();
@@ -1106,11 +1215,7 @@ public:
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
-                            {
                                 scale_a = right.getScaleMultiplier();
-                                if (!IsDecimal<LeftDataType>)
-                                    scale_a *= scale_a;
-                            }
                             auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
                                                                  scale_a, scale_b);
                             block.getByPosition(result).column =
@@ -1138,11 +1243,7 @@ public:
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
-                            {
                                 scale_a = right.getScaleMultiplier();
-                                if (!IsDecimal<LeftDataType>)
-                                    scale_a *= scale_a;
-                            }
                             OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
                         }
                         else
@@ -1159,11 +1260,7 @@ public:
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                         if constexpr (IsDecimal<RightDataType> && is_division)
-                        {
                             scale_a = right.getScaleMultiplier();
-                            if (!IsDecimal<LeftDataType>)
-                                scale_a *= scale_a;
-                        }
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                             OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
                         else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
