@@ -1784,6 +1784,21 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 }
 
 
+std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
+{
+    std::lock_guard lock(data_parts_mutex);
+
+    std::optional<Int64> result;
+    for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (!result || *result > part->info.getDataVersion())
+            result = part->info.getDataVersion();
+    }
+
+    return result;
+}
+
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 {
     const size_t parts_count = getMaxPartsCountForPartition();

@@ -24,7 +24,15 @@ class ReplicatedMergeTreeCleanupThread
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    void schedule() { task->schedule(); }
+    void start()
+    {
+        task->activate();
+        task->schedule();
+    }
+
+    void wakeup() { task->schedule(); }
+
+    void stop() { task->deactivate(); }
 
 private:
     StorageReplicatedMergeTree & storage;
@@ -41,6 +49,9 @@ private:
 
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
+
+    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
+    void clearOldMutations();
 
     using NodeCTimeCache = std::map<String, Int64>;
     NodeCTimeCache cached_block_stats;

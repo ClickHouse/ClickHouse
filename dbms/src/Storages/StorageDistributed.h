@@ -41,7 +41,7 @@ public:
         const String & remote_table_,          /// The name of the table on the remote servers.
         ClusterPtr owned_cluster_,
         const Context & context_);
-    
+
     static StoragePtr createWithOwnCluster(
         const std::string & table_name_,
         const ColumnsDescription & columns_,
@@ -84,9 +84,6 @@ public:
     void shutdown() override;
 
     String getDataPath() const override { return path; }
-
-    /// From each replica, get a description of the corresponding local table.
-    BlockInputStreams describe(const Context & context, const Settings & settings);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -155,7 +152,7 @@ protected:
         const ASTPtr & sharding_key_,
         const String & data_path_,
         bool attach);
-    
+
     StorageDistributed(
         const String & database_name,
         const String & table_name_,

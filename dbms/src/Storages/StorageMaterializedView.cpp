@@ -280,19 +280,31 @@ String StorageMaterializedView::getDataPath() const
     return {};
 }
 
-bool StorageMaterializedView::checkTableCanBeDropped() const
+void StorageMaterializedView::checkTableCanBeDropped() const
 {
     /// Don't drop the target table if it was created manually via 'TO inner_table' statement
     if (!has_inner_table)
-        return true;
+        return;
 
     auto target_table = tryGetTargetTable();
     if (!target_table)
-        return true;
+        return;
 
-    return target_table->checkTableCanBeDropped();
+    target_table->checkTableCanBeDropped();
 }
 
+void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkPartitionCanBeDropped(partition);
+}
 
 void registerStorageMaterializedView(StorageFactory & factory)
 {

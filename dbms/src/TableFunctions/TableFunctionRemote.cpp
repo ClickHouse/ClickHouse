@@ -231,17 +231,18 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     ++arg_num;
 
     args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
-    
-    const auto table_function = static_cast<ASTFunction *>(args[arg_num].get());
-    
-    if (TableFunctionFactory::instance().isTableFunctionName(table_function->name))
+
+    const auto function = typeid_cast<const ASTFunction *>(args[arg_num].get());
+
+    if (function && TableFunctionFactory::instance().isTableFunctionName(function->name))
     {
         remote_table_function_ptr = args[arg_num];
         ++arg_num;
     }
-    else {
+    else
+    {
         remote_database = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
-        
+
         ++arg_num;
 
         size_t dot = remote_database.find('.');
@@ -254,12 +255,13 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         else
         {
             if (arg_num >= args.size())
+            {
                 throw Exception(help_message, ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
             else
             {
                 args[arg_num] = evaluateConstantExpressionOrIdentifierAsLiteral(args[arg_num], context);
                 remote_table = static_cast<const ASTLiteral &>(*args[arg_num]).value.safeGet<String>();
-                remote_database = remote_database;
                 ++arg_num;
             }
         }
@@ -315,15 +317,14 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     }
 
     auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
-    
-   StoragePtr res = remote_table_function_ptr ?
-        StorageDistributed::createWithOwnCluster(
+
+    StoragePtr res = remote_table_function_ptr
+        ? StorageDistributed::createWithOwnCluster(
             getName(),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
-        
         : StorageDistributed::createWithOwnCluster(
             getName(),
             structure_remote_table,
@@ -335,6 +336,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     res->startup();
     return res;
 }
+
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_)
     : name(name_)

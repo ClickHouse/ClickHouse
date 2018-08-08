@@ -3,9 +3,8 @@ pages:
   - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
-  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
-  - 'Everything you were afraid to ask': 'introduction/possible_silly_questions.md'
   - 'Performance': 'introduction/performance.md'
+  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
 
 - 'Getting started':
   - 'Deploying and running': 'getting_started/index.md'
@@ -160,6 +159,9 @@ pages:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
+- 'F.A.Q.':
+  - 'General questions': 'faq/general.md'
+
 - 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
@@ -170,3 +172,4 @@ pages:
 
 - 'Roadmap': 'roadmap.md'
 - 'Changelog': 'changelog.md'
+- 'Security changelog': 'security_changelog.md'

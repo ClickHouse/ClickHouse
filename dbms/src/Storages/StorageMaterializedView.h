@@ -41,7 +41,10 @@ public:
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
 
     void shutdown() override;
-    bool checkTableCanBeDropped() const override;
+
+    void checkTableCanBeDropped() const override;
+    
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     BlockInputStreams read(
         const Names & column_names,

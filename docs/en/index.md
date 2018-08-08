@@ -4,12 +4,12 @@ ClickHouse is a columnar database management system (DBMS) for online analytical
 
 In a "normal" row-oriented DBMS, data is stored in this order:
 
-| Row | WatchID             | JavaEnable | Title              | GoodEvent | EventTime           |
-| --- | ------------------- | ---------- | ------------------ | --------- | ------------------- |
-| #0  | 5385521489354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
-| #1  | 5385521490329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
-| #2  | 5385521489953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
-| #N  | ...                 | ...        | ...                | ...       | ...                 |
+| Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+| --- | ----------- | ---------- | ------------------ | --------- | ------------------- |
+| #0  | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+| #1  | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+| #2  | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+| #N  | ...         | ...        | ...                | ...       | ...                 |
 
 In order words, all the values related to a row are physically stored next to each other.
 
@@ -21,7 +21,7 @@ In a column-oriented DBMS, data is stored like this:
 
 | Row:        | #0                  | #1                  | #2                  | #N                  |
 | ----------- | ------------------- | ------------------- | ------------------- | ------------------- |
-| WatchID:    | 5385521489354350662 | 5385521490329509958 | 5385521489953706054 | ...                 |
+| WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...                 |
 | JavaEnable: | 1                   | 0                   | 1                   | ...                 |
 | Title:      | Investor Relations  | Contact us          | Mission             | ...                 |
 | GoodEvent:  | 1                   | 1                   | 1                   | ...                 |

@@ -3,6 +3,7 @@ set -e
 
 CLICKHOUSE_USER=${CLICKHOUSE_USER=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP=${CLICKHOUSE_USER}}
+CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR=/var/log/clickhouse-server}
 OS=${OS=`lsb_release -is 2>/dev/null || uname -s || true`}
@@ -62,6 +63,10 @@ Please fix this and reinstall this package." >&2
         echo "The ${CLICKHOUSE_USER} system user must not have root as primary group.
 Please fix this and reinstall this package." >&2
         exit 1
+    fi
+
+    if [ -d ${CLICKHOUSE_CONFDIR} ]; then
+        su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_CONFDIR}" || chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}
     fi
 
     if [ ! -d ${CLICKHOUSE_DATADIR} ]; then

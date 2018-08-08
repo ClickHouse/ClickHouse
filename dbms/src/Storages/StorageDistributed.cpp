@@ -30,7 +30,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
 #include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
@@ -244,19 +243,18 @@ BlockInputStreams StorageDistributed::read(
         processed_stage = result_size == 1
             ? QueryProcessingStage::Complete
             : QueryProcessingStage::WithMergeableState;
-            
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
-    
+
     ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr ?
         ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
             header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
-    
+
     return ClusterProxy::executeQuery(
         select_stream_factory, cluster, modified_query_ast, context, settings);
 }
@@ -317,34 +315,6 @@ void StorageDistributed::shutdown()
     cluster_nodes_data.clear();
 }
 
-
-BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
-{
-    /// Create DESCRIBE TABLE query.
-    auto cluster = getCluster();
-
-    auto describe_query = std::make_shared<ASTDescribeQuery>();
-
-    std::string name = remote_database + '.' + remote_table;
-
-    auto id = std::make_shared<ASTIdentifier>(name);
-
-    auto desc_database = std::make_shared<ASTIdentifier>(remote_database);
-    auto desc_table = std::make_shared<ASTIdentifier>(remote_table);
-
-    id->children.push_back(desc_database);
-    id->children.push_back(desc_table);
-
-    auto table_expression = std::make_shared<ASTTableExpression>();
-    table_expression->database_and_table_name = id;
-
-    describe_query->table_expression = table_expression;
-
-    ClusterProxy::DescribeStreamFactory describe_stream_factory;
-
-    return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query, context, settings);
-}
 
 void StorageDistributed::truncate(const ASTPtr &)
 {

@@ -4,9 +4,8 @@ pages:
   - 'Обзор': 'index.md'
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
-  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
-  - 'Возможные глупые вопросы': 'introduction/possible_silly_questions.md'
   - 'Производительность': 'introduction/performance.md'
+  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
 
 - 'Начало работы':
   - 'Установка и запуск': 'getting_started/index.md'
@@ -41,6 +40,7 @@ pages:
   - 'Array(T)': 'data_types/array.md'
   - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
   - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+  - 'Nullable': 'data_types/nullable.md'
   - 'Вложенные структуры данных':
     - 'hidden': 'data_types/nested_data_structures/index.md'
     - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
@@ -48,6 +48,7 @@ pages:
     - 'hidden': 'data_types/special_data_types/index.md'
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
+    - 'Nothing': 'data_types/special_data_types/nothing.md'
 
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
@@ -85,6 +86,7 @@ pages:
     - 'Функции для реализации оператора IN.': 'query_language/functions/in_functions.md'
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
+    - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
 
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -163,6 +165,9 @@ pages:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
+- 'F.A.Q.':
+  - 'Общие вопросы': 'faq/general.md'
+
 - 'Разработка':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
@@ -173,3 +178,4 @@ pages:
 
 - 'Roadmap': 'roadmap.md'
 - 'Changelog': 'changelog.md'
+- 'Security changelog': 'security_changelog.md'
