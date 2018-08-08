@@ -476,7 +476,7 @@ public:
 
     PreparedFunctionPtr prepare(const Block &) const override { return std::make_shared<LLVMPreparedFunction>(name, context); }
 
-    bool isDeterministic() override
+    bool isDeterministic() const override
     {
         for (const auto & f : originals)
             if (!f->isDeterministic())

@@ -730,6 +730,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
@@ -1610,6 +1611,8 @@ private:
             auto & res = block.getByPosition(result);
 
             ColumnPtr res_indexes;
+            /// For some types default can't be casted (for example, String to Int). In that case convert column to full.
+            bool src_converted_to_full_column = false;
 
             {
                 /// Replace argument and result columns (and types) to dictionary key columns (and types).
@@ -1620,18 +1623,24 @@ private:
 
                 auto tmp_rows_count = input_rows_count;
 
+                if (to_with_dict)
+                    res.type = to_with_dict->getDictionaryType();
+
                 if (from_with_dict)
                 {
                     auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(prev_arg_col.get());
                     arg.column = col_with_dict->getDictionary().getNestedColumn();
                     arg.type = from_with_dict->getDictionaryType();
 
-                    tmp_rows_count = arg.column->size();
-                    res_indexes = col_with_dict->getIndexesPtr();
-                }
+                    /// TODO: Make map with defaults conversion.
+                    src_converted_to_full_column = !removeNullable(arg.type)->equals(*removeNullable(res.type));
+                    if (src_converted_to_full_column)
+                        arg.column = arg.column->index(col_with_dict->getIndexes(), 0);
+                    else
+                        res_indexes = col_with_dict->getIndexesPtr();
 
-                if (to_with_dict)
-                    res.type = to_with_dict->getDictionaryType();
+                    tmp_rows_count = arg.column->size();
+                }
 
                 /// Perform the requested conversion.
                 wrapper(block, arguments, result, tmp_rows_count);
@@ -1646,7 +1655,7 @@ private:
                 auto res_column = to_with_dict->createColumn();
                 auto * col_with_dict = typeid_cast<ColumnWithDictionary *>(res_column.get());
 
-                if (from_with_dict)
+                if (from_with_dict && !src_converted_to_full_column)
                 {
                     auto res_keys = std::move(res.column);
                     col_with_dict->insertRangeFromDictionaryEncodedColumn(*res_keys, *res_indexes);
@@ -1656,7 +1665,7 @@ private:
 
                 res.column = std::move(res_column);
             }
-            else
+            else if (!src_converted_to_full_column)
                 res.column = res.column->index(*res_indexes, 0);
         };
     }
