@@ -765,7 +765,7 @@ private:
 
     bool process(const String & text)
     {
-        const auto ignore_error = config().getBool("ignore-error", false);
+        const bool ignore_error = config().getBool("ignore-error", false);
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
