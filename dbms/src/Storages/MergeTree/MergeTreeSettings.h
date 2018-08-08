@@ -68,7 +68,7 @@ struct MergeTreeSettings
                                                                                                               \
     /** Keep about this number of last records in ZooKeeper log, even if they are obsolete.                   \
      *  It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning. */             \
-    M(SettingUInt64, min_replicated_logs_to_keep, 5000)                                                       \
+    M(SettingUInt64, min_replicated_logs_to_keep, 100)                                                       \
                                                                                                               \
     /** After specified amount of time passed after replication log entry creation                            \
      *  and sum size of parts is greater than threshold,                                                      \
