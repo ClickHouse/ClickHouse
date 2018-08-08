@@ -1869,11 +1869,11 @@ public:
 };
 
 
-class FunctionMakeDictionary: public IFunction
+class FunctionToLowCardinality: public IFunction
 {
 public:
-    static constexpr auto name = "makeDictionary";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMakeDictionary>(); }
+    static constexpr auto name = "toLowCardinality";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToLowCardinality>(); }
 
     String getName() const override { return name; }
 
@@ -1908,11 +1908,11 @@ public:
     }
 };
 
-class FunctionDictionaryIndexes: public IFunction
+class FunctionLowCardinalityIndexes: public IFunction
 {
 public:
-    static constexpr auto name = "dictionaryIndexes";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDictionaryIndexes>(); }
+    static constexpr auto name = "lowCardinalityIndexes";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityIndexes>(); }
 
     String getName() const override { return name; }
 
@@ -1926,7 +1926,7 @@ public:
     {
         auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
         if (!type)
-            throw Exception("First first argument of function dictionaryIndexes must be ColumnWithDictionary, but got"
+            throw Exception("First first argument of function lowCardinalityIndexes must be ColumnWithDictionary, but got"
                             + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
@@ -1947,11 +1947,11 @@ public:
     }
 };
 
-class FunctionDictionaryValues: public IFunction
+class FunctionLowCardinalityKeys: public IFunction
 {
 public:
-    static constexpr auto name = "dictionaryValues";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDictionaryValues>(); }
+    static constexpr auto name = "lowCardinalityKeys";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityKeys>(); }
 
     String getName() const override { return name; }
 
@@ -1965,7 +1965,7 @@ public:
     {
         auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
         if (!type)
-            throw Exception("First first argument of function dictionaryValues must be ColumnWithDictionary, but got"
+            throw Exception("First first argument of function lowCardinalityKeys must be ColumnWithDictionary, but got"
                             + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return type->getDictionaryType();
@@ -2032,8 +2032,8 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
 
-    factory.registerFunction<FunctionMakeDictionary>();
-    factory.registerFunction<FunctionDictionaryIndexes>();
-    factory.registerFunction<FunctionDictionaryValues>();
+    factory.registerFunction<FunctionToLowCardinality>();
+    factory.registerFunction<FunctionLowCardinalityIndexes>();
+    factory.registerFunction<FunctionLowCardinalityKeys>();
 }
 }
