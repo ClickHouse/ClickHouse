@@ -121,8 +121,8 @@ public:
         OutputStreamGetter getter;
         SubstreamPath path;
 
-        size_t max_dictionary_size = 0;
-        bool use_single_dictionary_for_part = true;
+        size_t low_cardinality_max_dictionary_size = 0;
+        bool low_cardinality_use_single_dictionary_for_part = true;
 
         bool position_independent_encoding = true;
     };
