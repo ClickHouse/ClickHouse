@@ -199,7 +199,7 @@ namespace
                 ReverseIndexNumberHash<typename ColumnType::value_type>>;
     public:
         using Base::Base;
-        friend class ReverseIndexHashTableCell<
+        friend struct ReverseIndexHashTableCell<
                 IndexType,
                 ReverseIndexNumberHash<typename ColumnType::value_type>,
                 ReverseIndexNumberHashTable<IndexType, ColumnType, has_base_index>,
