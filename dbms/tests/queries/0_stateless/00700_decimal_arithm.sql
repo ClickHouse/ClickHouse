@@ -25,15 +25,17 @@ SELECT c + c, c - c, c * c, c / c FROM test.decimal WHERE c = 42;
 SELECT e + e, e - e, e * e, e / e FROM test.decimal WHERE e > 0; -- { serverError 69 }
 SELECT f + f, f - f, f * f, f / f FROM test.decimal WHERE f > 0; -- { serverError 69 }
 SELECT g + g, g - g, g * g, g / g FROM test.decimal WHERE g > 0;
---SELECT h + h, h - h, h * h, h / h FROM test.decimal WHERE h > 0; -- overflow
---SELECT i + i, i - i, i * i, i / i FROM test.decimal WHERE i > 0; -- overflow
+SELECT h + h, h - h, h * h, h / h FROM test.decimal WHERE h > 0; -- { serverError 405 }
+SELECT 1 LIMIT 0;
+--SELECT i + i, i - i, i * i, i / i FROM test.decimal WHERE i > 0; -- Int128 overfow
 SELECT j + j, j - j, j * j, j / j FROM test.decimal WHERE j > 0;
 
 SELECT a + 21, a - 21, a - 84, a * 21, a * -21, a / 21, a / 84 FROM test.decimal WHERE a = 42;
 SELECT b + 21, b - 21, b - 84, b * 21, b * -21, b / 21, b / 84 FROM test.decimal WHERE b = 42;
 SELECT c + 21, c - 21, c - 84, c * 21, c * -21, c / 21, c / 84 FROM test.decimal WHERE c = 42;
---SELECT e + 21, e - 21, e - 84, e * 21, e * -21, e / 21, e / 84 FROM test.decimal WHERE e > 0; -- overflow
---SELECT f + 21, f - 21, f - 84, f * 21, f * -21, f / 21, f / 84 FROM test.decimal WHERE f > 0; -- { serverError 69 }
+SELECT e + 21, e - 21, e - 84, e * 21, e * -21, e / 21, e / 84 FROM test.decimal WHERE e > 0; -- { serverError 405 }
+SELECT 1 LIMIT 0;
+--SELECT f + 21, f - 21, f - 84, f * 21, f * -21, f / 21, f / 84 FROM test.decimal WHERE f > 0; -- Int128 overfow
 SELECT g + 21, g - 21, g - 84, g * 21, g * -21, g / 21, g / 84 FROM test.decimal WHERE g > 0;
 SELECT h + 21, h - 21, h - 84, h * 21, h * -21, h / 21, h / 84 FROM test.decimal WHERE h > 0;
 SELECT i + 21, i - 21, i - 84, i * 21, i * -21, i / 21, i / 84 FROM test.decimal WHERE i > 0;
@@ -42,8 +44,9 @@ SELECT j + 21, j - 21, j - 84, j * 21, j * -21, j / 21, j / 84 FROM test.decimal
 SELECT 21 + a, 21 - a, 84 - a, 21 * a, -21 * a, 21 / a, 84 / a FROM test.decimal WHERE a = 42;
 SELECT 21 + b, 21 - b, 84 - b, 21 * b, -21 * b, 21 / b, 84 / b FROM test.decimal WHERE b = 42;
 SELECT 21 + c, 21 - c, 84 - c, 21 * c, -21 * c, 21 / c, 84 / c FROM test.decimal WHERE c = 42;
---SELECT 21 + e, 21 - e, 84 - e, 21 * e, -21 * e, 21 / e, 84 / e FROM test.decimal WHERE e > 0; -- overflow
---SELECT 21 + f, 21 - f, 84 - f, 21 * f, -21 * f, 21 / f, 84 / f FROM test.decimal WHERE f > 0; -- { serverError 69 }
+SELECT 21 + e, 21 - e, 84 - e, 21 * e, -21 * e, 21 / e, 84 / e FROM test.decimal WHERE e > 0; -- { serverError 405 }
+SELECT 1 LIMIT 0;
+--SELECT 21 + f, 21 - f, 84 - f, 21 * f, -21 * f, 21 / f, 84 / f FROM test.decimal WHERE f > 0; -- Int128 overfow
 SELECT 21 + g, 21 - g, 84 - g, 21 * g, -21 * g, 21 / g, 84 / g FROM test.decimal WHERE g > 0;
 SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h FROM test.decimal WHERE h > 0; --overflow 21 / h, 84 / h
 SELECT 21 + i, 21 - i, 84 - i, 21 * i, -21 * i, 21 / i, 84 / i FROM test.decimal WHERE i > 0;
