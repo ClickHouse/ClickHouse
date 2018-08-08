@@ -499,25 +499,6 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 }
 
 
-/** If necessary, restore a part, replica itself adds a record for its receipt.
-  * What time should I put for this entry in the queue? Time is taken into account when calculating lag of replica.
-  * For these purposes, it makes sense to use creation time of missing part
-  *  (that is, in calculating lag, it will be taken into account how old is the part we need to recover).
-  */
-static time_t tryGetPartCreateTime(zkutil::ZooKeeperPtr & zookeeper, const String & replica_path, const String & part_name)
-{
-    time_t res = 0;
-
-    /// We get creation time of part, if it still exists (was not merged, for example).
-    zkutil::Stat stat;
-    String unused;
-    if (zookeeper->tryGet(replica_path + "/parts/" + part_name, unused, &stat))
-        res = stat.ctime / 1000;
-
-    return res;
-}
-
-
 static size_t countPartsToMutate(
     const ReplicatedMergeTreeMutationEntry & mutation, const ActiveDataPartSet & parts)
 {
