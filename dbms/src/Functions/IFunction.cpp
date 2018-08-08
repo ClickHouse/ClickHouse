@@ -473,7 +473,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
                 can_run_function_on_dictionary = false;
         }
 
-        if (has_type_with_dictionary && can_run_function_on_dictionary)
+        if (canBeExecutedOnLowCardinalityDictionary() && has_type_with_dictionary && can_run_function_on_dictionary)
             return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
         else
             return getReturnTypeWithoutDictionary(args_without_dictionary);
