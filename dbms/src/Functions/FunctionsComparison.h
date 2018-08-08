@@ -202,11 +202,24 @@ inline bool allowDecimalComparison(const IDataType & left_type, const IDataType 
     return false;
 }
 
+template <size_t > struct ConstructDecInt { using Type = Int32; };
+template <> struct ConstructDecInt<8> { using Type = Int64; };
+template <> struct ConstructDecInt<16> { using Type = Int128; };
+
+template <typename T, typename U>
+struct DecCompareInt
+{
+    using Type = typename ConstructDecInt<(!decTrait<U>() || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
+};
+
 ///
-template <typename A, typename B, typename Op, bool _actual = decTrait<A>() || decTrait<B>()>
+template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = decTrait<A>() || decTrait<B>()>
 class DecimalComparison
 {
 public:
+    using CompareInt = typename DecCompareInt<A, B>::Type;
+    using Op = Operation<CompareInt, CompareInt>;
+
     DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
         if (!apply(block, result, col_left, col_right))
@@ -233,8 +246,8 @@ public:
 private:
     struct Shift
     {
-        Int128 a = 1;
-        Int128 b = 1;
+        CompareInt a = 1;
+        CompareInt b = 1;
     };
 
     template <typename T, typename U>
@@ -347,6 +360,7 @@ private:
         return c_res;
     }
 
+    /// TODO: there's special case then sizeof(A) or sizeof(B) > sizeof(CompareInt)
     static NO_INLINE UInt8 apply(A a, B b, const Shift & shift)
     {
         return Op::apply(a * shift.a, b * shift.b);
@@ -947,7 +961,7 @@ private:
         size_t left_number = col_left.type->getTypeNumber();
         size_t right_number = col_right.type->getTypeNumber();
 
-        if (!callByNumbers<DecimalComparison, Op<Int128, Int128>>(left_number, right_number, block, result, col_left, col_right))
+        if (!callByNumbers<DecimalComparison, Op>(left_number, right_number, block, result, col_left, col_right))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }

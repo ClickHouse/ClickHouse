@@ -94,8 +94,8 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 /// Similar function as above. Additionally transform the result type if needed.
 Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
-
-template <typename T, template <typename, typename, typename> typename Apply, typename Op, typename... Args>
+template <typename T, template <typename, typename, template <typename, typename> typename> typename Apply,
+          template <typename, typename> typename Op, typename... Args>
 void callByTypeAndNumber(UInt8 number, bool & done, Args &... args)
 {
     done = true;
@@ -122,8 +122,9 @@ void callByTypeAndNumber(UInt8 number, bool & done, Args &... args)
 }
 
 /// Unroll template using TypeNumber<T>
-template <template <typename, typename, typename> typename Apply, typename Op, typename... Args>
-inline bool callByNumbers(size_t type_num1, size_t type_num2, Args &... args)
+template <template <typename, typename, template <typename, typename> typename> typename Apply,
+          template <typename, typename> typename Op, typename... Args>
+inline bool callByNumbers(UInt8 type_num1, UInt8 type_num2, Args &... args)
 {
     bool done = false;
     switch (type_num1)

@@ -164,4 +164,16 @@ namespace DB
     template <> struct TypeNumber<Dec32>    { static constexpr const size_t value = 16; };
     template <> struct TypeNumber<Dec64>    { static constexpr const size_t value = 17; };
     template <> struct TypeNumber<Dec128>   { static constexpr const size_t value = 18; };
+
+    template <typename T>
+    inline constexpr bool decTrait() { return false; }
+    template <> constexpr bool decTrait<Dec32>() { return true; }
+    template <> constexpr bool decTrait<Dec64>() { return true; }
+    template <> constexpr bool decTrait<Dec128>() { return true; }
+
+    template <typename T>
+    inline constexpr bool decBaseTrait() { return false; }
+    template <> constexpr bool decBaseTrait<Int32>() { return true; }
+    template <> constexpr bool decBaseTrait<Int64>() { return true; }
+    template <> constexpr bool decBaseTrait<Int128>() { return true; }
 }
