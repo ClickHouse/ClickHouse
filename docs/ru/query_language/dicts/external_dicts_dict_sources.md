@@ -156,34 +156,36 @@
 Конфигурация словаря в ClickHouse:
 
 ```xml
-<dictionary>
-    <name>table_name</name>
-    <source>
-        <odbc>
-            <!-- в connection_string можно указывать следующие параметры: -->
-            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
-            <connection_string>DSN=myconnection</connection_string>
-            <table>postgresql_table</table>
-        </odbc>
-    </source>
-    <lifetime>
-        <min>300</min>
-        <max>360</max>
-    </lifetime>
-    <layout>
-        <hashed/>
-    </layout>
-    <structure>
-        <id>
-            <name>id</name>
-        </id>
-        <attribute>
-            <name>some_column</name>
-            <type>UInt64</type>
-            <null_value>0</null_value>
-        </attribute>
-    </structure>
-</dictionary>
+<yandex>
+    <dictionary>
+        <name>table_name</name>
+        <source>
+            <odbc>
+                <!-- в connection_string можно указывать следующие параметры: -->
+                <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+                <connection_string>DSN=myconnection</connection_string>
+                <table>postgresql_table</table>
+            </odbc>
+        </source>
+        <lifetime>
+            <min>300</min>
+            <max>360</max>
+        </lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>some_column</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>
 ```
 
 Может понадобиться в `odbc.ini` указать полный путь до библиотеки с драйвером `DRIVER=/usr/local/lib/psqlodbcw.so`.

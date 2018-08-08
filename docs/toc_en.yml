@@ -1,13 +1,10 @@
 pages:
-- 'ClickHouse': 'index.md'
-
 - 'Introduction':
-  - 'hidden': 'introduction/index.md'
+  - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
   - 'ClickHouse features that can be considered disadvantages': 'introduction/features_considered_disadvantages.md'
-  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
-  - 'Everything you were afraid to ask': 'introduction/possible_silly_questions.md'
   - 'Performance': 'introduction/performance.md'
+  - 'The Yandex.Metrica task': 'introduction/ya_metrika_task.md'
 
 - 'Getting started':
   - 'Deploying and running': 'getting_started/index.md'
@@ -50,7 +47,7 @@ pages:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
 
-- 'SQL dialect':
+- 'SQL reference':
   - 'hidden': 'query_language/index.md'
   - 'SELECT': 'query_language/select.md'
   - 'INSERT INTO': 'query_language/insert_into.md'
@@ -96,6 +93,7 @@ pages:
     - 'merge': 'query_language/table_functions/merge.md'
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
+    - 'url': 'query_language/table_functions/url.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External dictionaries':
@@ -108,9 +106,9 @@ pages:
     - 'Internal dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'General syntax': 'query_language/syntax.md'
-  
+
 - 'Operations':
-  - 'Operations': 'operations/index.md'
+  - 'hidden': 'operations/index.md'
   - 'Table engines':
     - 'Introduction': 'operations/table_engines/index.md'
     - 'MergeTree family':
@@ -136,6 +134,7 @@ pages:
       - 'Null': 'operations/table_engines/null.md'
       - 'Set': 'operations/table_engines/set.md'
       - 'Join': 'operations/table_engines/join.md'
+      - 'URL': 'operations/table_engines/url.md'
       - 'View': 'operations/table_engines/view.md'
       - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Integrations':
@@ -160,7 +159,10 @@ pages:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
-- 'ClickHouse Development':
+- 'F.A.Q.':
+  - 'General questions': 'faq/general.md'
+
+- 'Development':
   - 'hidden': 'development/index.md'
   - 'Overview of ClickHouse architecture': 'development/architecture.md'
   - 'How to build ClickHouse on Linux': 'development/build.md'
@@ -170,3 +172,4 @@ pages:
 
 - 'Roadmap': 'roadmap.md'
 - 'Changelog': 'changelog.md'
+- 'Security changelog': 'security_changelog.md'

@@ -1,5 +1,10 @@
+#if __has_include(<mariadb/mysql.h>)
+#include <mariadb/mysql.h>
+#include <mariadb/mysqld_error.h>
+#else
 #include <mysql/mysql.h>
 #include <mysql/mysqld_error.h>
+#endif
 
 #include <mysqlxx/Pool.h>
 

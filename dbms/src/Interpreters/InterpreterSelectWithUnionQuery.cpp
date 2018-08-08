@@ -11,6 +11,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
 
+
 namespace DB
 {
 
@@ -57,7 +58,7 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         /// We use it to determine positions of 'required_result_column_names' in SELECT clause.
 
         Block full_result_header = InterpreterSelectQuery(
-            ast.list_of_selects->children.at(0), context, Names(), to_stage, subquery_depth, nullptr, true).getSampleBlock();
+            ast.list_of_selects->children.at(0), context, Names(), to_stage, subquery_depth, true).getSampleBlock();
 
         std::vector<size_t> positions_of_required_result_columns(required_result_column_names.size());
         for (size_t required_result_num = 0, size = required_result_column_names.size(); required_result_num < size; ++required_result_num)
@@ -66,10 +67,14 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
         for (size_t query_num = 1; query_num < num_selects; ++query_num)
         {
             Block full_result_header_for_current_select = InterpreterSelectQuery(
-                ast.list_of_selects->children.at(query_num), context, Names(), to_stage, subquery_depth, nullptr, true).getSampleBlock();
+                ast.list_of_selects->children.at(query_num), context, Names(), to_stage, subquery_depth, true).getSampleBlock();
 
             if (full_result_header_for_current_select.columns() != full_result_header.columns())
-                throw Exception("Different number of columns in UNION ALL elements", ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+                throw Exception("Different number of columns in UNION ALL elements:\n"
+                    + full_result_header.dumpNames()
+                    + "\nand\n"
+                    + full_result_header_for_current_select.dumpNames() + "\n",
+                    ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 
             required_result_column_names_for_other_selects[query_num].reserve(required_result_column_names.size());
             for (const auto & pos : positions_of_required_result_columns)
@@ -84,10 +89,10 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
             : required_result_column_names_for_other_selects[query_num];
 
         nested_interpreters.emplace_back(std::make_unique<InterpreterSelectQuery>(
-            ast.list_of_selects->children.at(query_num), context, current_required_result_column_names, to_stage, subquery_depth, nullptr, only_analyze));
+            ast.list_of_selects->children.at(query_num), context, current_required_result_column_names, to_stage, subquery_depth, only_analyze));
     }
 
-    /// Determine structure of result.
+    /// Determine structure of the result.
 
     if (num_selects == 1)
     {
@@ -104,7 +109,11 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
 
         for (size_t query_num = 1; query_num < num_selects; ++query_num)
             if (headers[query_num].columns() != num_columns)
-                throw Exception("Different number of columns in UNION ALL elements", ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
+                throw Exception("Different number of columns in UNION ALL elements:\n"
+                    + result_header.dumpNames()
+                    + "\nand\n"
+                    + headers[query_num].dumpNames() + "\n",
+                    ErrorCodes::UNION_ALL_RESULT_STRUCTURES_MISMATCH);
 
         for (size_t column_num = 0; column_num < num_columns; ++column_num)
         {
