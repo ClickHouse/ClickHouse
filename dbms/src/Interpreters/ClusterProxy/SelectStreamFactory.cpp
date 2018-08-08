@@ -91,7 +91,7 @@ void SelectStreamFactory::createForShard(
     };
 
     const auto & settings = context.getSettingsRef();
-    
+
     if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
         StoragePtr main_table_storage;
