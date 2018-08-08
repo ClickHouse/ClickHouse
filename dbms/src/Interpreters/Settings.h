@@ -154,6 +154,8 @@ struct Settings
     \
     M(SettingBool, output_format_json_quote_denormals, false, "Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.") \
     \
+    M(SettingBool, output_format_json_escape_forward_slashes, true, "Controls escaping forward slashes for string outputs in JSON output format. This is intended for compatibility with JavaScript. Don't confuse with backslashes that are always escaped.") \
+    \
     M(SettingUInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.") \
     M(SettingBool, output_format_pretty_color, true, "Use ANSI escape sequences to paint colors in Pretty formats") \
     \
@@ -266,6 +268,7 @@ struct Settings
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
     \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
+    M(SettingUInt64, max_fetch_partition_retries_count, 5, "Amount of retries while fetching partition from another host.") \
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};

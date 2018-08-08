@@ -15,12 +15,19 @@
 # ODBC_LIBRARIES, the libraries to link against to use ODBC
 # ODBC_FOUND.  If false, you cannot build anything that requires ODBC.
 
-option (ENABLE_ODBC "Enable ODBC" ON)
-option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})
+option (ENABLE_ODBC "Enable ODBC" ${OS_LINUX})
+if (OS_LINUX)
+    option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})
+else ()
+    option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" OFF)
+endif ()
+
 if (USE_INTERNAL_ODBC_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/unixodbc/README")
     message (WARNING "submodule contrib/unixodbc is missing. to fix try run: \n git submodule update --init --recursive")
    set (USE_INTERNAL_ODBC_LIBRARY 0)
 endif ()
+
+set (ODBC_INCLUDE_DIRECTORIES ) # Include directories will be either used automatically by target_include_directories or set later.
 
 if (ENABLE_ODBC)
     if (USE_INTERNAL_ODBC_LIBRARY)

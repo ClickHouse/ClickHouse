@@ -96,7 +96,8 @@
 /*
  * Defined if secure_getenv(3) is available.
  */
-#define JEMALLOC_HAVE_SECURE_GETENV
+// Don't want dependency on newer GLIBC
+//#define JEMALLOC_HAVE_SECURE_GETENV
 
 /*
  * Defined if issetugid(2) is available.

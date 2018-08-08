@@ -50,6 +50,9 @@ private:
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
 
+    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
+    void clearOldMutations();
+
     using NodeCTimeCache = std::map<String, Int64>;
     NodeCTimeCache cached_block_stats;
 

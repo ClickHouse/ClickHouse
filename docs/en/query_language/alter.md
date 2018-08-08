@@ -246,6 +246,8 @@ Mutations are totally ordered by their creation order and are applied to each pa
 
 A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the `system.mutations` table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted.
 
+Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+
 #### system.mutations table
 
 The table contains information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:

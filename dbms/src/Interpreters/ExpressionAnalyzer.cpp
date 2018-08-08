@@ -203,7 +203,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     const SubqueriesForSets & subqueries_for_set_)
     : ast(ast_), context(context_), settings(context.getSettings()),
     subquery_depth(subquery_depth_),
-    source_columns(source_columns_), required_result_columns(required_result_columns_.begin(), required_result_columns_.end()),
+    source_columns(source_columns_), required_result_columns(required_result_columns_),
     storage(storage_),
     do_global(do_global_), subqueries_for_sets(subqueries_for_set_)
 {
@@ -2847,7 +2847,8 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
     for (size_t i = 0; i < asts.size(); ++i)
     {
         String result_name = asts[i]->getAliasOrColumnName();
-        if (required_result_columns.empty() || required_result_columns.count(result_name))
+        if (required_result_columns.empty()
+            || std::find(required_result_columns.begin(), required_result_columns.end(), result_name) !=  required_result_columns.end())
         {
             result_columns.emplace_back(asts[i]->getColumnName(), result_name);
             step.required_output.push_back(result_columns.back().second);
@@ -3393,15 +3394,37 @@ void ExpressionAnalyzer::removeUnneededColumnsFromSelectClause()
     if (!select_query)
         return;
 
-    if (required_result_columns.empty() || select_query->distinct)
+    if (required_result_columns.empty())
         return;
 
     ASTs & elements = select_query->select_expression_list->children;
 
-    elements.erase(std::remove_if(elements.begin(), elements.end(), [this](const auto & node)
+    ASTs new_elements;
+    new_elements.reserve(elements.size());
+
+    /// Some columns may be queried multiple times, like SELECT x, y, y FROM table.
+    /// In that case we keep them exactly same number of times.
+    std::map<String, size_t> required_columns_with_duplicate_count;
+    for (const auto & name : required_result_columns)
+        ++required_columns_with_duplicate_count[name];
+
+    for (const auto & elem : elements)
     {
-        return !required_result_columns.count(node->getAliasOrColumnName()) && !hasArrayJoin(node);
-    }), elements.end());
+        String name = elem->getAliasOrColumnName();
+
+        auto it = required_columns_with_duplicate_count.find(name);
+        if (required_columns_with_duplicate_count.end() != it && it->second)
+        {
+            new_elements.push_back(elem);
+            --it->second;
+        }
+        else if (select_query->distinct || hasArrayJoin(elem))
+        {
+            new_elements.push_back(elem);
+        }
+    }
+
+    elements = std::move(new_elements);
 }
 
 }

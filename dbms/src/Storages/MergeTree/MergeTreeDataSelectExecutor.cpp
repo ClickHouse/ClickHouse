@@ -833,7 +833,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
         case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
             merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
-                    to_merge, sort_description, data.merging_params.sign_column, max_block_size, true);
+                    to_merge, sort_description, data.merging_params.sign_column, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:

@@ -1,8 +1,8 @@
 # Third-party libraries may have substandard code.
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -std=c++1z")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -std=c++1z")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
@@ -43,16 +43,14 @@ if (USE_INTERNAL_METROHASH_LIBRARY)
     add_subdirectory (libmetrohash)
 endif ()
 
+add_subdirectory (murmurhash)
+
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
 endif ()
 
 if (USE_INTERNAL_UNWIND_LIBRARY)
     add_subdirectory (libunwind)
-endif ()
-
-if (USE_INTERNAL_MURMURHASH2_LIBRARY)
-    add_subdirectory (libmurmurhash2)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
@@ -98,6 +96,7 @@ if (USE_INTERNAL_SSL_LIBRARY)
         set (BUILD_SHARED 1)
     endif ()
     set (USE_SHARED ${USE_STATIC_LIBRARIES})
+    set (LIBRESSL_SKIP_INSTALL 1)
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
@@ -152,11 +151,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
     set (_save ${ENABLE_TESTS})
     set (ENABLE_TESTS 0)
     set (CMAKE_DISABLE_FIND_PACKAGE_ZLIB 1)
-    if (USE_INTERNAL_SSL_LIBRARY OR (DEFINED ENABLE_POCO_NETSSL AND NOT ENABLE_POCO_NETSSL))
-        set (DISABLE_INTERNAL_OPENSSL 1 CACHE INTERNAL "")
-        set (ENABLE_NETSSL 0 CACHE INTERNAL "") # TODO!
-        set (ENABLE_CRYPTO 0 CACHE INTERNAL "") # TODO!
-    endif ()
     if (MSVC)
         set (ENABLE_DATA_ODBC 0 CACHE INTERNAL "") # TODO (build fail)
     endif ()
