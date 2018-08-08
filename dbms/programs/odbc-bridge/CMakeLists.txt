@@ -1,6 +1,7 @@
 add_library (clickhouse-odbc-bridge-lib
+    Handlers.cpp
+    HandlerFactory.cpp
     ODBCBridge.cpp
-    ODBCHandler.cpp
     )
 
 target_link_libraries (clickhouse-odbc-bridge-lib clickhouse_common_io daemon)

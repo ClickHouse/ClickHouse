@@ -1,5 +1,5 @@
 #include "ODBCBridge.h"
-#include "ODBCHandler.h"
+#include "HandlerFactory.h"
 
 #include <string>
 #include <errno.h>
@@ -101,7 +101,6 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
         Poco::Util::Option("http-host", "", "hostname to listen, default localhost").argument("http-host").binding("http-host"));
     options.addOption(
         Poco::Util::Option("http-timeout", "", "http timout for socket, default 1800").argument("http-timeout").binding("http-timeout"));
-    options.addOption(Poco::Util::Option("log-level", "", "sets log level, default info").argument("log-level").binding("log-level"));
     options.addOption(Poco::Util::Option("max-server-connections", "", "max connections to server, default 1024")
                           .argument("max-server-connections")
                           .binding("max-server-connections"));
@@ -109,22 +108,36 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
                           .argument("keep-alive-timeout")
                           .binding("keep-alive-timeout"));
 
+    options.addOption(Poco::Util::Option("log-level", "", "sets log level, default info").argument("log-level").binding("logger.level"));
+
+    options.addOption(
+        Poco::Util::Option("log-path", "", "log path for all logs, default console").argument("log-path").binding("logger.log"));
+
+    options.addOption(Poco::Util::Option("err-log-path", "", "err log path for all logs, default no")
+                          .argument("err-log-path")
+                          .binding("logger.errorlog"));
+
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message")
                           .binding("help")
                           .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 
-    ServerApplication::defineOptions(options); /// Don't need complex .xml config
+    ServerApplication::defineOptions(options); /// Don't need complex BaseDaemon's .xml config
 }
 
 void ODBCBridge::initialize(Application & self)
 {
     is_help = config().has("help");
+
     if (is_help)
         return;
 
-    log_level = config().getString("log-level", "info");
-    Poco::Logger::root().setLevel(log_level);
+    if (!config().has("logger.log"))
+        config().setBool("logger.console", true);
+
+    config().setString("logger", "ODBCBridge");
+
+    buildLoggers(config());
     log = &logger();
     hostname = config().getString("http-host", "localhost");
     port = config().getUInt("http-port");
@@ -165,7 +178,7 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     context->setGlobalContext(*context);
 
     auto server = Poco::Net::HTTPServer(
-        new ODBCRequestHandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
+        new HandlerFactory("ODBCRequestHandlerFactory-factory", keep_alive_timeout, context), server_pool, socket, http_params);
     server.start();
 
     LOG_INFO(log, "Listening http://" + address.toString());
