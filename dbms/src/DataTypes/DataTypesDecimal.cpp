@@ -1,4 +1,5 @@
 #include <type_traits>
+#include <common/intExp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -193,93 +194,19 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 template <>
 Dec32 DataTypeDecimal<Dec32>::getScaleMultiplier(UInt32 scale_)
 {
-    static const Int32 values[] = {
-        1,
-        10,
-        100,
-        1000,
-        10000,
-        100000,
-        1000000,
-        10000000,
-        100000000,
-        1000000000
-    };
-    return values[scale_];
+    return common::exp10_i32(scale_);
 }
 
 template <>
 Dec64 DataTypeDecimal<Dec64>::getScaleMultiplier(UInt32 scale_)
 {
-    static const Int64 values[] = {
-        1ll,
-        10ll,
-        100ll,
-        1000ll,
-        10000ll,
-        100000ll,
-        1000000ll,
-        10000000ll,
-        100000000ll,
-        1000000000ll,
-        10000000000ll,
-        100000000000ll,
-        1000000000000ll,
-        10000000000000ll,
-        100000000000000ll,
-        1000000000000000ll,
-        10000000000000000ll,
-        100000000000000000ll,
-        1000000000000000000ll
-    };
-    return values[scale_];
+    return common::exp10_i64(scale_);
 }
 
 template <>
 Dec128 DataTypeDecimal<Dec128>::getScaleMultiplier(UInt32 scale_)
 {
-    static const Int128 values[] = {
-        static_cast<Int128>(1ll),
-        static_cast<Int128>(10ll),
-        static_cast<Int128>(100ll),
-        static_cast<Int128>(1000ll),
-        static_cast<Int128>(10000ll),
-        static_cast<Int128>(100000ll),
-        static_cast<Int128>(1000000ll),
-        static_cast<Int128>(10000000ll),
-        static_cast<Int128>(100000000ll),
-        static_cast<Int128>(1000000000ll),
-        static_cast<Int128>(10000000000ll),
-        static_cast<Int128>(100000000000ll),
-        static_cast<Int128>(1000000000000ll),
-        static_cast<Int128>(10000000000000ll),
-        static_cast<Int128>(100000000000000ll),
-        static_cast<Int128>(1000000000000000ll),
-        static_cast<Int128>(10000000000000000ll),
-        static_cast<Int128>(100000000000000000ll),
-        static_cast<Int128>(1000000000000000000ll),
-        static_cast<Int128>(1000000000000000000ll) * 10ll,
-        static_cast<Int128>(1000000000000000000ll) * 100ll,
-        static_cast<Int128>(1000000000000000000ll) * 1000ll,
-        static_cast<Int128>(1000000000000000000ll) * 10000ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000ll,
-        static_cast<Int128>(1000000000000000000ll) * 1000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 10000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 1000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 10000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 1000000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 10000000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 1000000000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 10000000000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll * 10ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll * 100ll,
-        static_cast<Int128>(1000000000000000000ll) * 100000000000000000ll * 1000ll
-    };
-    return values[scale_];
+    return common::exp10_i128(scale_);
 }
 
 

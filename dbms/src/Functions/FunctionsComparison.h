@@ -360,7 +360,7 @@ private:
         return c_res;
     }
 
-    /// TODO: there's special case then sizeof(A) or sizeof(B) > sizeof(CompareInt)
+    /// TODO: there's a special case then sizeof(A) or sizeof(B) > sizeof(CompareInt)
     static NO_INLINE UInt8 apply(A a, B b, const Shift & shift)
     {
         return Op::apply(a * shift.a, b * shift.b);
