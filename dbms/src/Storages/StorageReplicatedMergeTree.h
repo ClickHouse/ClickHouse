@@ -403,8 +403,6 @@ private:
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded();
 
-    void clearQueue();
-
     /** Performs actions from the queue.
       */
     bool queueTask();
