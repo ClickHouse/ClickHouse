@@ -147,9 +147,6 @@ private:
     /// Put a set of (already existing) parts in virtual_parts.
     void addVirtualParts(const MergeTreeData::DataParts & parts);
 
-    /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
-    bool load(zkutil::ZooKeeperPtr zookeeper);
-
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::lock_guard<std::mutex> & state_lock);
@@ -232,6 +229,9 @@ public:
       * Called for unreachable actions in the queue - old lost parts.
       */
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
+
+    /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
+    bool load(zkutil::ZooKeeperPtr zookeeper);
 
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 

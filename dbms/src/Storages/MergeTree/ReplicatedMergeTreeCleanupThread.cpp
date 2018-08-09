@@ -93,6 +93,9 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                                               : 0];
     String min_pointer_inactive_replica_str;
 
+    std::unordered_map<String, String> log_pointers_lost_replicas;
+    std::unordered_map<String, UInt32> log_pointers_version;
+
     for (const String & replica : replicas)
     {
         zkutil::Stat log_pointer_stat;
@@ -110,6 +113,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
             min_pointer_active_replica = std::min(min_pointer_active_replica, log_pointer);
         else
         {
+            log_pointers_lost_replicas[replica] = log_pointer_str;
+            log_pointers_version[replica] = log_pointer_stat.version;
 
             if (log_pointer_str >= min_saved_record_log_str)
             {
@@ -132,10 +137,20 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// We will not touch records that are no less than `min_pointer_active_replica`.
     entries.erase(std::lower_bound(entries.begin(), entries.end(), min_pointer_replica_str), entries.end());
 
-    /// We must check if we are only active_node
-
     if (entries.empty())
         return;
+
+    /// We must mark lost replicas.
+    try
+    {
+        markLostReplicas(log_pointers_lost_replicas, log_pointers_version, entries[0], zookeeper);
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        if (e.code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+            throw e;
+        else return;
+    }
 
     zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
@@ -152,6 +167,30 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     }
 
     LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
+}
+
+
+void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map<String, String> & log_pointers_lost_replicas,
+                                                        const std::unordered_map<String, UInt32> & log_pointers_version,
+                                                        const String & remove_border, const zkutil::ZooKeeperPtr & zookeeper)
+{
+    std::vector<zkutil::ZooKeeper::FutureMulti> futures;
+
+    for (auto pair : log_pointers_lost_replicas)
+    {
+        String replica = pair.first;
+        if (pair.second <= remove_border)
+        {
+            zkutil::Requests ops;
+            /// If log pointer changes version we can not mark replicas, so we check it.
+            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer", log_pointers_version.at(replica)));
+            ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "", zkutil::CreateMode::Persistent));
+            futures.push_back(zookeeper->asyncMulti(ops));
+        }
+    }
+
+    for (auto & future : futures)
+        future.get();
 }
 
 

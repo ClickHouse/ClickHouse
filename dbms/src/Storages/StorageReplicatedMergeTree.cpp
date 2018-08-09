@@ -1977,11 +1977,10 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
 
     Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
 
-    if (!entries.empty())
+    if (entries.empty())
         return false;
 
     std::sort(entries.begin(), entries.end());
-
     if ("log-" + padIndex(parse<UInt64>(raw_log_pointer)) < entries[0])
         return false;
 
@@ -2053,12 +2052,14 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
             {
                 String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
                 String source_log_pointer_raw = zookeeper->get(source_replica_path + "/log_pointer");
-                if ((source_replica_path != replica_path) && (!source_log_pointer_raw.empty()) && ("log-" + padIndex(parse<UInt64>(source_log_pointer_raw)) >= entries[0]))
+                if ((source_replica_path != replica_path) && (!zookeeper->exists(source_replica_path + "/is_lost")))
                     source_replica = replica_name;
             }
         }
 
-    } while (cloneReplica(source_replica, zookeeper));
+    } while (!cloneReplica(source_replica, zookeeper));
+
+    queueUpdatingTask();
 }
 
 
