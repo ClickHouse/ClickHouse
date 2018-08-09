@@ -39,6 +39,11 @@ private:
     /// Remove old records from ZooKeeper.
     void clearOldLogs();
 
+    /// Mark lost replicas.
+    void markLostReplicas(const std::unordered_map<String, String> & log_pointers_lost_replicas,
+                          const std::unordered_map <String, UInt32> & log_pointers_version,
+                          const String & remove_border, const zkutil::ZooKeeperPtr & zookeeper);
+
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
 
