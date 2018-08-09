@@ -213,7 +213,7 @@ if (USE_CAPNP)
 endif ()
 
 if (USE_RDKAFKA)
-    target_link_libraries (dbms ${RDKAFKA_LIBRARY})
+    target_link_libraries (dbms ${RDKAFKA_LIBRARY} ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
     if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
