@@ -594,7 +594,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    auto readDictionary = [this, state_with_dictionary, keys_stream, &column_with_dictionary]()
+    auto readDictionary = [this, state_with_dictionary, keys_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *keys_stream);
