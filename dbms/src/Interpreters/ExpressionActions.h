@@ -34,11 +34,14 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
+class ExpressionActions;
 
 /** Action on the block.
   */
 struct ExpressionAction
 {
+private:
+    using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 public:
     enum Type
     {
@@ -85,6 +88,7 @@ public:
 
     /// For JOIN
     std::shared_ptr<const Join> join;
+    Names join_key_names_left;
     NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
@@ -103,7 +107,8 @@ public:
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
+                                         const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;

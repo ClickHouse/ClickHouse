@@ -127,11 +127,7 @@ String Cluster::Address::toStringFull() const
 
 Clusters::Clusters(Poco::Util::AbstractConfiguration & config, const Settings & settings, const String & config_name)
 {
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_name, config_keys);
-
-    for (const auto & key : config_keys)
-        impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
+    updateClusters(config, settings, config_name);
 }
 
 
@@ -158,19 +154,9 @@ void Clusters::updateClusters(Poco::Util::AbstractConfiguration & config, const 
 
     std::lock_guard lock(mutex);
 
+    impl.clear();
     for (const auto & key : config_keys)
-    {
-        auto it = impl.find(key);
-        auto new_cluster = std::make_shared<Cluster>(config, settings, config_name + "." + key);
-
-        if (it == impl.end())
-            impl.emplace(key, std::move(new_cluster));
-        else
-        {
-            //TODO: Check that cluster update is necessarily
-            it->second = std::move(new_cluster);
-        }
-    }
+        impl.emplace(key, std::make_shared<Cluster>(config, settings, config_name + "." + key));
 }
 
 Clusters::Impl Clusters::getContainer() const

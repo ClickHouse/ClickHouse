@@ -1,6 +1,6 @@
 # Kafka
 
-Движок работает с [Apache Kafka](http://kafka.apache.org/). 
+Движок работает с [Apache Kafka](http://kafka.apache.org/).
 
 Kafka позволяет:
 
@@ -8,20 +8,40 @@ Kafka позволяет:
 - Организовать отказо-устойчивое хранилище.
 - Обрабатывать потоки по мере их появления.
 
+Старый формат:
+
 ```
-Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
+Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers])
 ```
 
-Параметры:
+Новый формат:
 
-- `broker_list` - Перечень брокеров, разделенный запятыми (`localhost:9092`).
-- `topic_list` - Перечень необходимых топиков Kafka (`my_topic`).
-- `group_name` - Группа потребителя Kafka (`group1`). Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
-- `format` - Формат сообщений. Имеет те же обозначения, что выдает SQL-выражение `FORMAT`, например, `JSONEachRow`. Подробнее смотрите в разделе "Форматы".
-- `schema` - Опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
-- `num_consumers` - Количество потребителей (consumer) на таблицу. По умолчанию `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
+```
+Kafka SETTINGS
+  kafka_broker_list = 'localhost:9092',
+  kafka_topic_list = 'topic1,topic2',
+  kafka_group_name = 'group1',
+  kafka_format = 'JSONEachRow',
+  kafka_row_delimiter = '\n'
+  kafka_schema = '',
+  kafka_num_consumers = 2
+```
 
-Пример:
+Обязательные параметры:
+
+- `kafka_broker_list` - Перечень брокеров, разделенный запятыми (`localhost:9092`).
+- `kafka_topic_list` - Перечень необходимых топиков Kafka (`my_topic`).
+- `kafka_group_name` - Группа потребителя Kafka (`group1`). Отступы для чтения отслеживаются для каждой группы отдельно. Если необходимо, чтобы сообщения не повторялись на кластере, используйте везде одно имя группы.
+- `kafka_format` - Формат сообщений. Имеет те же обозначения, что выдает SQL-выражение `FORMAT`, например, `JSONEachRow`. Подробнее смотрите в разделе "Форматы".
+
+Опциональные параметры:
+
+- `kafka_row_delimiter` - Символ-разделитель записей (строк), которым завершается сообщение.
+- `kafka_schema` - Опциональный параметр, необходимый, если используется формат, требующий определения схемы. Например, [Cap'n Proto](https://capnproto.org/) требует путь к файлу со схемой и название корневого объекта `schema.capnp:Message`.
+- `kafka_num_consumers` - Количество потребителей (consumer) на таблицу. По умолчанию `1`. Укажите больше потребителей, если пропускная способность одного потребителя недостаточна. Общее число потребителей не должно превышать количество партиций в топике, так как на одну партицию может быть назначено не более одного потребителя.
+
+Примеры:
 
 ```sql
   CREATE TABLE queue (
@@ -31,6 +51,24 @@ Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
   ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
 
   SELECT * FROM queue LIMIT 5;
+
+  CREATE TABLE queue2 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka SETTINGS kafka_broker_list = 'localhost:9092',
+                            kafka_topic_list = 'topic',
+                            kafka_group_name = 'group1',
+                            kafka_format = 'JSONEachRow',
+                            kafka_num_consumers = 4;
+
+  CREATE TABLE queue2 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1')
+              SETTINGS kafka_format = 'JSONEachRow',
+                       kafka_num_consumers = 4;
 ```
 
 Полученные сообщения отслеживаются автоматически, поэтому из одной группы каждое сообщение считывается только один раз. Если необходимо получить данные дважды, то создайте копию таблицы с другим именем группы.
@@ -59,7 +97,7 @@ Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
     level String,
     total UInt64
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
-  
+
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;

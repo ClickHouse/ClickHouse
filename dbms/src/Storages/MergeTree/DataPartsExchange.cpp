@@ -163,11 +163,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const ConnectionTimeouts & timeouts,
     const String & user,
     const String & password,
+    const String & interserver_scheme,
     bool to_detached,
     const String & tmp_prefix_)
 {
     Poco::URI uri;
-    uri.setScheme("http");
+    uri.setScheme(interserver_scheme);
     uri.setHost(host);
     uri.setPort(port);
     uri.setQueryParameters(
