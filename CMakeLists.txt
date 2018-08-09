@@ -61,7 +61,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
-option (ENABLE_TESTS "Enables tests" ${NOT_MSVC})
+option (ENABLE_TESTS "Enables tests" ON)
 
 option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
 option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
