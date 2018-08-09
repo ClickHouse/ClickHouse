@@ -66,13 +66,12 @@ void ODBCDriver2BlockOutputStream::writePrefix()
 {
     const size_t columns = header.columns();
 
-    /// Number of header strings.
+    /// Number of header rows.
     writeIntBinary(Int32(2), out);
 
+    /// Names of columns.
     /// Number of columns + 1 for first name column.
     writeIntBinary(Int32(columns + 1), out);
-
-    /// Names of columns.
     writeODBCString(out, "name");
     for (size_t i = 0; i < columns; ++i)
     {
