@@ -355,7 +355,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
         }
 
         ConnectionPoolWithFailoverPtr shard_pool = std::make_shared<ConnectionPoolWithFailover>(
-                std::move(all_replicas), settings.load_balancing, settings.connections_with_failover_max_tries);
+                all_replicas, settings.load_balancing, settings.connections_with_failover_max_tries);
 
         slot_to_shard.insert(std::end(slot_to_shard), default_weight, shards_info.size());
         shards_info.push_back({{}, current_shard_num, default_weight, std::move(shard_local_addresses), std::move(shard_pool),
