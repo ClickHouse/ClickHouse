@@ -99,7 +99,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
 void ReplicatedMergeTreeQueue::initialize(
     const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-    const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper)
+    const MergeTreeData::DataParts & parts)
 {
     zookeeper_path = zookeeper_path_;
     replica_path = replica_path_;
