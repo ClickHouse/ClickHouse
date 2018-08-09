@@ -27,12 +27,6 @@ void writeODBCString(WriteBuffer & out, const std::string & str)
     out.write(str.data(), str.size());
 }
 
-void writeODBCString(WriteBuffer & out, const char * cstr)
-{
-    std::string str{cstr};
-    writeODBCString(out, str);
-}
-
 void ODBCDriver2BlockOutputStream::write(const Block & block)
 {
     const size_t rows = block.rows();
