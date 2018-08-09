@@ -19,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
@@ -64,21 +65,53 @@ void MutationCommands::validate(const IStorage & table, const Context & context)
 {
     auto all_columns = table.getColumns().getAll();
 
+    auto validate_predicate = [&](const ASTPtr & predicate)
+    {
+        auto actions = ExpressionAnalyzer(predicate, context, {}, all_columns).getActions(true);
+
+        /// Try executing the resulting actions on the table sample block to detect malformed queries.
+        auto table_sample_block = table.getSampleBlock();
+        actions->execute(table_sample_block);
+
+        const ColumnWithTypeAndName & predicate_column = actions->getSampleBlock().getByName(
+            predicate->getColumnName());
+        checkColumnCanBeUsedAsFilter(predicate_column);
+    };
+
     for (const MutationCommand & command : *this)
     {
         switch (command.type)
         {
             case MutationCommand::DELETE:
             {
-                auto actions = ExpressionAnalyzer(command.predicate, context, {}, all_columns).getActions(true);
+                validate_predicate(command.predicate);
+                break;
+            }
+            case MutationCommand::UPDATE:
+            {
+                /// TODO: better and more thorough validation.
+                validate_predicate(command.predicate);
 
-                /// Try executing the resulting actions on the table sample block to detect malformed queries.
-                auto table_sample_block = table.getSampleBlock();
-                actions->execute(table_sample_block);
+                for (const auto & pair : command.column_to_update_expression)
+                {
+                    const String & column_name = pair.first;
 
-                const ColumnWithTypeAndName & predicate_column = actions->getSampleBlock().getByName(
-                    command.predicate->getColumnName());
-                checkColumnCanBeUsedAsFilter(predicate_column);
+                    auto found = false;
+                    for (const auto & col : table.getColumns().ordinary)
+                    {
+                        if (col.name == column_name)
+                        {
+                            found = true;
+                            break;
+                        }
+                    }
+
+                    /// TODO: separate error message for the case when the query tries to update a
+                    /// MATERIALIZED column.
+                    if (!found)
+                        throw Exception("There is no updateable column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+                }
+
                 break;
             }
             default:

@@ -833,7 +833,9 @@ static bool isStorageTouchedByMutation(
     }
 
     /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result is tne number of affected rows.
+    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
+    /// changes how many rows satisfy the predicates of the subsequent commands).
+    /// But we can be sure that if count = 0, then no rows will be touched.
 
     auto select = std::make_shared<ASTSelectQuery>();
 
@@ -933,8 +935,8 @@ static BlockInputStreamPtr createInputStreamWithMutatedData(
     InterpreterSelectQuery interpreter_select(select, context, storage);
     BlockInputStreamPtr in = interpreter_select.execute().in;
 
-    if (!commands.empty())
-        in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
+    for (const auto & command : commands)
+        in = std::make_shared<ApplyingMutationsBlockInputStream>(in, command, context);
 
     return in;
 }
