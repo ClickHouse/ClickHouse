@@ -2052,7 +2052,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
             {
                 String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
                 String source_log_pointer_raw = zookeeper->get(source_replica_path + "/log_pointer");
-                if ((source_replica_path != replica_path) && (!source_log_pointer_raw.empty()) && ("log-" + padIndex(parse<UInt64>(source_log_pointer_raw) >= entries[0]))
+                if ((source_replica_path != replica_path) && (!source_log_pointer_raw.empty()) && ("log-" + padIndex(parse<UInt64>(source_log_pointer_raw)) >= entries[0]))
                     source_replica = replica_name;
             }
         }
