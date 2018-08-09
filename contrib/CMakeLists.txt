@@ -127,6 +127,7 @@ if (USE_INTERNAL_RDKAFKA_LIBRARY)
 
     if (USE_INTERNAL_SSL_LIBRARY AND MAKE_STATIC_LIBRARIES)
         target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+        target_link_libraries(rdkafka PRIVATE ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
     endif ()
     target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
 endif ()
