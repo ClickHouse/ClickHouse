@@ -86,7 +86,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    FieldType x = get<typename NearestFieldType<FieldType>::Type>(field);
+    FieldType x = get<DecField>(field);
     writeBinary(x, ostr);
 }
 
@@ -116,7 +116,7 @@ void DataTypeDecimal<T>::deserializeBinary(Field & field, ReadBuffer & istr) con
 {
     typename FieldType::NativeType x;
     readBinary(x, istr);
-    field = typename NearestFieldType<FieldType>::Type(x);
+    field = DecField(T(x), scale);
 }
 
 template <typename T>
@@ -141,7 +141,7 @@ void DataTypeDecimal<T>::deserializeBinaryBulk(IColumn & column, ReadBuffer & is
 template <typename T>
 Field DataTypeDecimal<T>::getDefault() const
 {
-    return typename NearestFieldType<FieldType>::Type();
+    return DecField(T(0), scale);
 }
 
 

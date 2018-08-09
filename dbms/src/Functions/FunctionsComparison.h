@@ -241,13 +241,7 @@ public:
             ColumnPtr c_res;
             Shift shift = getScales<A, B>(col_left.type, col_right.type);
 
-            if (shift.a == 1 && shift.b == 1)
-                c_res = apply<false, false>(col_left.column, col_right.column, 1);
-            else if (shift.a == 1)
-                c_res = apply<false, true>(col_left.column, col_right.column, shift.b);
-            else
-                c_res = apply<true, false>(col_left.column, col_right.column, shift.a);
-
+            c_res = applyWithScale(col_left.column, col_right.column, shift);
             if (c_res)
                 block.getByPosition(result).column = std::move(c_res);
             return true;
@@ -255,12 +249,41 @@ public:
         return false;
     }
 
+    static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
+    {
+        static const UInt32 max_scale = maxDecimalPrecision<Dec128>();
+        if (scale_a > max_scale || scale_b > max_scale)
+            throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
+
+        Shift shift;
+        if (scale_a < scale_b)
+            shift.a = DataTypeDecimal<B>(maxDecimalPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
+        if (scale_a > scale_b)
+            shift.b = DataTypeDecimal<A>(maxDecimalPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
+
+        return applyWithScale(a, b, shift);
+    }
+
 private:
     struct Shift
     {
         CompareInt a = 1;
         CompareInt b = 1;
+
+        bool none() const { return a == 1 && b == 1; }
+        bool left() const { return a != 1; }
+        bool right() const { return b != 1; }
     };
+
+    template <typename T, typename U>
+    static auto applyWithScale(T a, U b, const Shift & shift)
+    {
+        if (shift.left())
+            return apply<true, false>(a, b, shift.a);
+        else if (shift.right())
+            return apply<false, true>(a, b, shift.b);
+        return apply<false, false>(a, b, 1);
+    }
 
     template <typename T, typename U>
     static std::enable_if_t<decTrait<T>() && decTrait<U>(), Shift>
@@ -390,9 +413,9 @@ private:
             overflow |= (y < 0);
 
         if constexpr (scale_left)
-            overflow |= __builtin_mul_overflow(x, scale, &x);
+            overflow |= common::mulOverflow(x, scale, x);
         if constexpr (scale_right)
-            overflow |= __builtin_mul_overflow(y, scale, &y);
+            overflow |= common::mulOverflow(y, scale, y);
 
         if (overflow)
             throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);

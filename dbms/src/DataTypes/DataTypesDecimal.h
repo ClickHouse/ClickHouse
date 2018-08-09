@@ -190,11 +190,11 @@ public:
 
     T parseFromString(const String & str) const;
 
+    static T getScaleMultiplier(UInt32 scale);
+
 private:
     const UInt32 precision;
     const UInt32 scale; /// TODO: should we support scales out of [0, precision]?
-
-    static T getScaleMultiplier(UInt32 scale);
 };
 
 
