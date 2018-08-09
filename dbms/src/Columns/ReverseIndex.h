@@ -166,7 +166,7 @@ namespace
                 ReverseIndexStringHash>;
     public:
         using Base::Base;
-        friend class ReverseIndexHashTableCell<
+        friend struct ReverseIndexHashTableCell<
                 IndexType,
                 ReverseIndexStringHash,
                 ReverseIndexStringHashTable<IndexType, ColumnType, has_base_index>,

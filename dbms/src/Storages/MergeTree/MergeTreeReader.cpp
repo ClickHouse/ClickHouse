@@ -390,7 +390,7 @@ void MergeTreeReader::readData(
 {
     auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
-        return [&](const IDataType::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix](const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
             /// If offsets for arrays have already been read.
             if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
