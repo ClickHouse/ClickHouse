@@ -408,7 +408,7 @@ public:
         tp.tm_year = values.year - 1900;
         tp.tm_mon = values.month - 1;
         tp.tm_mday = values.day_of_month;
-        tp.tm_wday = values.day_of_week;
+        tp.tm_wday = values.day_of_week % 7;
         tp.tm_yday = toDayNum(t) - toFirstDayOfYear(t);
         tp.tm_hour = toHour(t);
         tp.tm_min = toMinute(t);

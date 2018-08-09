@@ -4,6 +4,7 @@ select formatDateTime(toDateTime('2018-01-02 04:05:30', 'UTC'), '%F %T');
 select formatDateTime(toDateTime('2018-01-02 04:05:30', 'UTC'), '%c %Z %z');
 select formatDateTime(toTimeZone(toDateTime('2018-01-02 04:05:30'), 'America/Los_Angeles'), '%c %Z %z');
 select formatDateTime(toTimeZone(toDateTime('2018-01-02 04:05:30'), 'Asia/Calcutta'), '%c %Z %z');
+select formatDateTime(toDateTime('2018-01-07 00:00:00', 'America/Los_Angeles'), '%c');
 
 select formatDateTime(t, '%x %X') from (select toDateTime('2018-01-02 04:05:30', 'UTC') + number as t from numbers(10));
 
