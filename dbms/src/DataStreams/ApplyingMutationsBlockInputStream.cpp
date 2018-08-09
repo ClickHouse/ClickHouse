@@ -1,6 +1,9 @@
 #include <DataStreams/ApplyingMutationsBlockInputStream.h>
 #include <DataStreams/FilterBlockInputStream.h>
+#include <DataStreams/ExpressionBlockInputStream.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <IO/WriteHelpers.h>
 
@@ -9,60 +12,54 @@ namespace DB
 {
 
 ApplyingMutationsBlockInputStream::ApplyingMutationsBlockInputStream(
-    const BlockInputStreamPtr & input, const std::vector<MutationCommand> & commands, const Context & context)
+    const BlockInputStreamPtr & input, const MutationCommand & command, const Context & context)
 {
     children.push_back(input);
 
-    if (commands.empty())
+    switch (command.type)
     {
-        impl = input;
-        return;
+    case MutationCommand::DELETE:
+    {
+        auto negated_predicate = makeASTFunction("not", command.predicate);
+        auto predicate_expr = ExpressionAnalyzer(
+            negated_predicate, context, nullptr, input->getHeader().getNamesAndTypesList())
+            .getActions(false);
+        String col_name = negated_predicate->getColumnName();
+        impl = std::make_shared<FilterBlockInputStream>(input, predicate_expr, col_name);
+        break;
     }
-
-    /// Create a total predicate for all mutations and then pass it to a single FilterBlockInputStream
-    /// because ExpressionAnalyzer won't detect that some columns in the block are already calculated
-    /// and will try to calculate them twice. This works as long as all mutations are DELETE.
-    /// TODO: fix ExpressionAnalyzer.
-
-    std::vector<ASTPtr> predicates;
-
-    for (const MutationCommand & cmd : commands)
+    case MutationCommand::UPDATE:
     {
-        switch (cmd.type)
+        auto new_column_exprs = std::make_shared<ASTExpressionList>();
+        std::unordered_map<String, ASTPtr> column_to_updated;
+        for (const auto & pair : command.column_to_update_expression)
         {
-        case MutationCommand::DELETE:
-        {
-            auto predicate = std::make_shared<ASTFunction>();
-            predicate->name = "not";
-            predicate->arguments = std::make_shared<ASTExpressionList>();
-            predicate->arguments->children.push_back(cmd.predicate);
-            predicate->children.push_back(predicate->arguments);
-            predicates.push_back(predicate);
-            break;
+            auto new_col = makeASTFunction("CAST",
+                makeASTFunction("if",
+                    command.predicate,
+                    pair.second->clone(),
+                    std::make_shared<ASTIdentifier>(pair.first)),
+                std::make_shared<ASTLiteral>(input->getHeader().getByName(pair.first).type->getName()));
+            new_column_exprs->children.push_back(new_col);
+            column_to_updated.emplace(pair.first, new_col);
         }
-        default:
-            throw Exception("Unsupported mutation cmd type: " + toString<int>(cmd.type),
-                ErrorCodes::LOGICAL_ERROR);
-        }
-    }
 
-    ASTPtr total_predicate;
-    if (predicates.size() == 1)
-        total_predicate = predicates[0];
-    else
-    {
-        auto and_func = std::make_shared<ASTFunction>();
-        and_func->name = "and";
-        and_func->arguments = std::make_shared<ASTExpressionList>();
-        and_func->children.push_back(and_func->arguments);
-        and_func->arguments->children = predicates;
-        total_predicate = and_func;
-    }
+        auto updating_expr = ExpressionAnalyzer(
+            new_column_exprs, context, nullptr, input->getHeader().getNamesAndTypesList())
+            .getActions(false);
 
-    auto predicate_expr = ExpressionAnalyzer(
-        total_predicate, context, nullptr, input->getHeader().getNamesAndTypesList()).getActions(false);
-    String col_name = total_predicate->getColumnName();
-    impl = std::make_shared<FilterBlockInputStream>(input, predicate_expr, col_name);
+        /// Calling getColumnName() for updating expressions after the ExpressionAnalyzer pass, because
+        /// it can change the AST of the expressions.
+        for (const auto & pair : column_to_updated)
+            updating_expr->add(ExpressionAction::copyColumn(pair.second->getColumnName(), pair.first, /* can_replace = */ true));
+
+        impl = std::make_shared<ExpressionBlockInputStream>(input, updating_expr);
+        break;
+    }
+    default:
+        throw Exception("Unsupported mutation command type: " + toString<int>(command.type),
+            ErrorCodes::LOGICAL_ERROR);
+    }
 }
 
 Block ApplyingMutationsBlockInputStream::getHeader() const
