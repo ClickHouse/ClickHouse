@@ -2058,8 +2058,6 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
         }
 
     } while (!cloneReplica(source_replica, zookeeper));
-
-    queueUpdatingTask();
 }
 
 
