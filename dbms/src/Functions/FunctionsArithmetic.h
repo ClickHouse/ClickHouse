@@ -31,8 +31,6 @@
 
 namespace common
 {
-    /// It's possible to get false positives for Int128 overflow
-
     template <typename T>
     inline bool addOverflow(T x, T y, T & res)
     {
