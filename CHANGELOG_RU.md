@@ -43,6 +43,10 @@
 * Исправлена ошибка в агрегатной функции `anyHeavy` ([a2101df2](https://github.com/yandex/ClickHouse/commit/a2101df25a6a0fba99aa71f8793d762af2b801ee))
 * Исправлено падение сервера при использовании функции `countArray()`.
 
+### Обратно несовместимые изменения:
+
+* Список параметров для таблиц `Kafka` был изменён с `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_schema, kafka_num_consumers])` на `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_row_delimiter, kafka_schema, kafka_num_consumers])`. Если вы использовали параметры `kafka_schema` или `kafka_num_consumers`, вам необходимо вручную отредактировать файлы с метаданными `path/metadata/database/table.sql`, добавив параметр `kafka_row_delimiter` со значением `''` в соответствующее место.
+
 
 ## ClickHouse release 18.1.0, 2018-07-23
 
