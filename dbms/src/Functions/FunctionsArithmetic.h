@@ -29,49 +29,6 @@
 #endif
 
 
-namespace common
-{
-    template <typename T>
-    inline bool addOverflow(T x, T y, T & res)
-    {
-        return __builtin_add_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
-    {
-        res = x + y;
-        return (res - y) != x;
-    }
-
-    template <typename T>
-    inline bool subOverflow(T x, T y, T & res)
-    {
-        return __builtin_sub_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
-    {
-        res = x - y;
-        return (res + y) != x;
-    }
-
-    template <typename T>
-    inline bool mulOverflow(T x, T y, T & res)
-    {
-        return __builtin_mul_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
-    {
-        res = x * y;
-        return (res / y) != x;
-    }
-}
-
-
 namespace DB
 {
 

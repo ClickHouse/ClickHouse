@@ -118,7 +118,6 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 
 
 /** A template for columns that use a simple array to store.
- * If _simpleType then T and columnType are the same.
  */
 template <typename T>
 class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
