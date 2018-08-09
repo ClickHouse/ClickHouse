@@ -29,6 +29,51 @@
 #endif
 
 
+namespace common
+{
+    /// It's possible to get false positives for Int128 overflow
+
+    template <typename T>
+    inline bool addOverflow(T x, T y, T & res)
+    {
+        return __builtin_add_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
+    {
+        res = x + y;
+        return (res - y) != x;
+    }
+
+    template <typename T>
+    inline bool subOverflow(T x, T y, T & res)
+    {
+        return __builtin_sub_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
+    {
+        res = x - y;
+        return (res + y) != x;
+    }
+
+    template <typename T>
+    inline bool mulOverflow(T x, T y, T & res)
+    {
+        return __builtin_mul_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
+    {
+        res = x * y;
+        return (res / y) != x;
+    }
+}
+
+
 namespace DB
 {
 
@@ -121,7 +166,7 @@ struct PlusImpl
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
-        return __builtin_add_overflow(static_cast<Result>(a), b, &c);
+        return common::addOverflow(static_cast<Result>(a), b, c);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -150,7 +195,7 @@ struct MultiplyImpl
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
-        return __builtin_mul_overflow(static_cast<Result>(a), b, &c);
+        return common::mulOverflow(static_cast<Result>(a), b, c);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -178,7 +223,7 @@ struct MinusImpl
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
-        return __builtin_sub_overflow(static_cast<Result>(a), b, &c);
+        return common::subOverflow(static_cast<Result>(a), b, c);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -850,7 +895,7 @@ private:
     /// there's implicit type convertion here
     static NativeResultType apply(NativeResultType a, NativeResultType b)
     {
-        if constexpr (can_overflow && !std::is_same_v<NativeResultType, Int128>)
+        if constexpr (can_overflow)
         {
             NativeResultType res;
             if (Op::template apply<NativeResultType>(a, b, res))
@@ -868,30 +913,20 @@ private:
         {
             NativeResultType res;
 
-            if constexpr (!std::is_same_v<NativeResultType, Int128>)
-            {
-                bool overflow = false;
-                if constexpr (scale_left)
-                    overflow |= __builtin_mul_overflow(a, scale, &a);
-                else
-                    overflow |= __builtin_mul_overflow(b, scale, &b);
-
-                if constexpr (can_overflow)
-                    overflow |= Op::template apply<NativeResultType>(a, b, res);
-                else
-                    res = Op::template apply<NativeResultType>(a, b);
-
-                if (overflow)
-                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-            }
+            bool overflow = false;
+            if constexpr (scale_left)
+                overflow |= common::mulOverflow(a, scale, a);
             else
-            {
-                if constexpr (scale_left)
-                    a *= scale;
-                else
-                    b *= scale;
+                overflow |= common::mulOverflow(b, scale, b);
+
+            if constexpr (can_overflow)
+                overflow |= Op::template apply<NativeResultType>(a, b, res);
+            else
                 res = Op::template apply<NativeResultType>(a, b);
-            }
+
+            if (overflow)
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
             return res;
         }
     }
@@ -900,21 +935,12 @@ private:
     {
         if constexpr (is_division)
         {
-            if constexpr (!std::is_same_v<NativeResultType, Int128>)
-            {
-                bool overflow = false;
-                if constexpr (!decTrait<A>())
-                    overflow |= __builtin_mul_overflow(scale, scale, &scale);
-                overflow |= __builtin_mul_overflow(a, scale, &a);
-                if (overflow)
-                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
-            }
-            else
-            {
-                if constexpr (!decTrait<A>())
-                    scale *= scale;
-                a *= scale;
-            }
+            bool overflow = false;
+            if constexpr (!decTrait<A>())
+                overflow |= common::mulOverflow(scale, scale, scale);
+            overflow |= common::mulOverflow(a, scale, a);
+            if (overflow)
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
 
             return Op::template apply<NativeResultType>(a, b);
         }
