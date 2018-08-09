@@ -36,6 +36,10 @@
 * Fixed a bug in the `anyHeavy`  aggregate function ([a2101df2](https://github.com/yandex/ClickHouse/commit/a2101df25a6a0fba99aa71f8793d762af2b801ee))
 * Fixed server crash when using the `countArray()` aggregate function.
 
+### Backward incompatible changes:
+
+* Parameters for `Kafka` engine was changed from `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_schema, kafka_num_consumers])` to `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_row_delimiter, kafka_schema, kafka_num_consumers])`. If your tables use `kafka_schema` or `kafka_num_consumers` parameters, you have to manually edit the metadata files `path/metadata/database/table.sql` and add `kafka_row_delimiter` parameter with `''` value.
+
 ## ClickHouse release 18.1.0, 2018-07-23
 
 ### New features:
