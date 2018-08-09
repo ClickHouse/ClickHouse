@@ -217,7 +217,7 @@ public:
     ~ReplicatedMergeTreeQueue();
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-        const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
+        const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
