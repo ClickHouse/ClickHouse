@@ -126,7 +126,7 @@ void ODBCBridge::initialize(Application & self)
     log = &logger();
     hostname = config().getString("http-host", "localhost");
     port = config().getUInt("http-port");
-    if (port < 0 || port > 0xFFFF)
+    if (port > 0xFFFF)
         throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     http_timeout = config().getUInt("http-timeout", DEFAULT_HTTP_READ_BUFFER_TIMEOUT);

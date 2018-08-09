@@ -3,6 +3,7 @@
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include "Handlers.h"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -18,6 +19,7 @@ public:
     HandlerFactory(const std::string & name_, size_t keep_alive_timeout_, std::shared_ptr<Context> context_)
         : log(&Poco::Logger::get(name_)), name(name_), keep_alive_timeout(keep_alive_timeout_), context(context_)
     {
+        pool_map = std::make_shared<ODBCHandler::PoolMap>();
     }
 
     Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
@@ -27,6 +29,6 @@ private:
     std::string name;
     size_t keep_alive_timeout;
     std::shared_ptr<Context> context;
-    std::unordered_map<std::string, std::shared_ptr<Poco::Data::SessionPool>> pool_map;
+    std::shared_ptr<ODBCHandler::PoolMap> pool_map;
 };
 }

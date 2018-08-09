@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
 #include <Formats/BinaryRowInputStream.h>
@@ -13,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/tokenizer.hpp>
+#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <common/logger_useful.h>
@@ -25,30 +27,44 @@ namespace ErrorCodes
 
 namespace
 {
-    std::optional<NamesAndTypesList> parseColumns(std::string && column_string, Poco::Logger * log)
+    std::unique_ptr<Block> parseColumns(std::string && column_string)
     {
-        const auto & factory_instance = DataTypeFactory::instance();
-        NamesAndTypesList result;
-        static boost::char_separator<char> sep(",");
-        boost::tokenizer<boost::char_separator<char>> tokens(column_string, sep);
-        for (const std::string & name_and_type_str : tokens)
+        std::unique_ptr<Block> sample_block = std::make_unique<Block>();
+        auto names_and_types = NamesAndTypesList::parse(column_string);
+        for (const NameAndTypePair & column_data : names_and_types)
+            sample_block->insert({column_data.type, column_data.name});
+        return sample_block;
+    }
+
+    size_t parseMaxBlockSize(const std::string & max_block_size_str, Poco::Logger * log)
+    {
+        size_t max_block_size = DEFAULT_BLOCK_SIZE;
+        if (!max_block_size_str.empty())
         {
-            std::vector<std::string> name_and_type;
-            boost::split(name_and_type, name_and_type_str, boost::is_any_of(":"));
-            if (name_and_type.size() != 2)
-                return std::nullopt;
             try
             {
-                result.emplace_back(name_and_type[0], factory_instance.get(name_and_type[1]));
+                max_block_size = std::stoul(max_block_size_str);
             }
             catch (...)
             {
                 tryLogCurrentException(log);
-                return std::nullopt;
             }
         }
-        return result;
+        return max_block_size;
     }
+}
+
+
+ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
+{
+    if (!pool_map->count(connection_str))
+    {
+        std::lock_guard lock(mutex);
+        pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str] {
+            return std::make_shared<Poco::Data::SessionPool>("ODBC", connection_str);
+        }));
+    }
+    return pool_map->at(connection_str);
 }
 
 void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
@@ -63,12 +79,6 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         LOG_WARNING(log, message);
     };
 
-    if (pool == nullptr)
-    {
-        process_error("ODBCBridge: DSN or database in URL params is not provided or incorrect");
-        return;
-    }
-
     if (!params.has("query"))
     {
         process_error("ODBCBridge: No 'query' in request body");
@@ -77,52 +87,55 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
     if (!params.has("columns"))
     {
-        process_error("ODBCBridge: No 'columns' in request body");
+        process_error("ODBCBridge: No 'columns' in request URL");
         return;
     }
 
-    std::string query = params.get("query");
-    std::string columns = params.get("columns");
-
-    auto names_and_types = parseColumns(std::move(columns), log);
-
-    if (!names_and_types)
+    if (!params.has("connection_string"))
     {
-        process_error("ODBCBridge: Invalid 'columns' parameter in request body");
+        process_error("ODBCBridge: No 'connection_string' in request URL");
         return;
     }
 
-    Block sample_block;
-    for (const NameAndTypePair & column_data : *names_and_types)
-        sample_block.insert({column_data.type, column_data.name});
+    size_t max_block_size = parseMaxBlockSize(params.get("max_block_size", ""), log);
 
-    WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
-
-    std::shared_ptr<IBlockOutputStream> writer = FormatFactory::instance().getOutput(format, out, sample_block, *context);
-
+    std::string columns = params.get("columns");
+    std::unique_ptr<Block> sample_block;
     try
     {
-        ODBCBlockInputStream inp(pool->get(), query, sample_block, max_block_size);
+        sample_block = parseColumns(std::move(columns));
+    }
+    catch (const Exception & ex)
+    {
+        process_error("ODBCBridge: Invalid 'columns' parameter in request body '" + ex.message() + "'");
+        return;
+    }
 
-        writer->writePrefix();
-        while (auto block = inp.read())
-            writer->write(block);
+    std::string format = params.get("format", "RowBinary");
+    std::string query = params.get("query");
+    LOG_TRACE(log, "ODBCBridge: Query '" << query << "'");
 
-        writer->writeSuffix();
+    std::string connection_string = params.get("connection_string");
+    LOG_TRACE(log, "ODBCBridge: Connection string '" << connection_string << "'");
 
+    WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
+    try
+    {
 
-        writer->flush();
+        BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, *context);
+        auto pool = getPool(connection_string);
+        ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
+        copyData(inp, *writer);
     }
     catch (...)
     {
-        auto message = "Communication with ODBC-driver failed: \n" + getCurrentExceptionMessage(true);
+        auto message = "ODBCBridge:\n" + getCurrentExceptionMessage(true);
         response.setStatusAndReason(
             Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, bacause of too soon response sending
         writeStringBinary(message, out);
         LOG_WARNING(log, message);
     }
 }
-
 
 void PingHandler::handleRequest(Poco::Net::HTTPServerRequest & /*request*/, Poco::Net::HTTPServerResponse & response)
 {

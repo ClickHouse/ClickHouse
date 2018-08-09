@@ -6,7 +6,7 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <Poco/Data/SessionPool.h>
+    #include <Poco/Data/SessionPool.h>
 #pragma GCC diagnostic pop
 
 namespace DB
@@ -14,15 +14,14 @@ namespace DB
 class ODBCHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    ODBCHandler(std::shared_ptr<Poco::Data::SessionPool> pool_,
-        const std::string & format_,
-        size_t max_block_size_,
+    using PoolPtr = std::shared_ptr<Poco::Data::SessionPool>;
+    using PoolMap = std::unordered_map<std::string, PoolPtr>;
+
+    ODBCHandler(std::shared_ptr<PoolMap> pool_map_,
         size_t keep_alive_timeout_,
         std::shared_ptr<Context> context_)
         : log(&Poco::Logger::get("ODBCHandler"))
-        , pool(pool_)
-        , format(format_)
-        , max_block_size(max_block_size_)
+        , pool_map(pool_map_)
         , keep_alive_timeout(keep_alive_timeout_)
         , context(context_)
     {
@@ -32,11 +31,14 @@ public:
 
 private:
     Poco::Logger * log;
-    std::shared_ptr<Poco::Data::SessionPool> pool;
-    std::string format;
-    size_t max_block_size;
+
+    std::shared_ptr<PoolMap> pool_map;
     size_t keep_alive_timeout;
     std::shared_ptr<Context> context;
+
+    static inline std::mutex mutex;
+
+    PoolPtr getPool(const std::string & connection_str);
 };
 
 class PingHandler : public Poco::Net::HTTPRequestHandler
