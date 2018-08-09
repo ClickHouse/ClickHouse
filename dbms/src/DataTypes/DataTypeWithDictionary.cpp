@@ -724,7 +724,7 @@ void DataTypeWithDictionary::deserializeImpl(
         DataTypeWithDictionary::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
 {
     auto & column_with_dictionary = getColumnWithDictionary(column);
-    auto temp_column = column_with_dictionary.getDictionary().cloneEmpty();
+    auto temp_column = column_with_dictionary.getDictionary().getNestedColumn()->cloneEmpty();
 
     (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
 
