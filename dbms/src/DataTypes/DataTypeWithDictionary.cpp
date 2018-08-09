@@ -207,9 +207,12 @@ static SerializeStateWithDictionary * checkAndGetWithDictionarySerializeState(
 
     auto * with_dictionary_state = typeid_cast<SerializeStateWithDictionary *>(state.get());
     if (!with_dictionary_state)
+    {
+        auto & state_ref = *state;
         throw Exception("Invalid SerializeBinaryBulkState for DataTypeWithDictionary. Expected: "
                         + demangle(typeid(SerializeStateWithDictionary).name()) + ", got "
-                        + demangle(typeid(*state).name()), ErrorCodes::LOGICAL_ERROR);
+                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
+    }
 
     return with_dictionary_state;
 }
@@ -222,9 +225,12 @@ static DeserializeStateWithDictionary * checkAndGetWithDictionaryDeserializeStat
 
     auto * with_dictionary_state = typeid_cast<DeserializeStateWithDictionary *>(state.get());
     if (!with_dictionary_state)
+    {
+        auto & state_ref = *state;
         throw Exception("Invalid DeserializeBinaryBulkState for DataTypeWithDictionary. Expected: "
                         + demangle(typeid(DeserializeStateWithDictionary).name()) + ", got "
-                        + demangle(typeid(*state).name()), ErrorCodes::LOGICAL_ERROR);
+                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
+    }
 
     return with_dictionary_state;
 }

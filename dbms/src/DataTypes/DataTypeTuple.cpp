@@ -311,9 +311,12 @@ static SerializeBinaryBulkStateTuple * checkAndGetTupleSerializeState(IDataType:
 
     auto * tuple_state = typeid_cast<SerializeBinaryBulkStateTuple *>(state.get());
     if (!tuple_state)
+    {
+        auto & state_ref = *state;
         throw Exception("Invalid SerializeBinaryBulkState for DataTypeTuple. Expected: "
                         + demangle(typeid(SerializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(*state).name()), ErrorCodes::LOGICAL_ERROR);
+                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
+    }
 
     return tuple_state;
 }
@@ -325,9 +328,12 @@ static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(IDataT
 
     auto * tuple_state = typeid_cast<DeserializeBinaryBulkStateTuple *>(state.get());
     if (!tuple_state)
+    {
+        auto & state_ref = *state;
         throw Exception("Invalid DeserializeBinaryBulkState for DataTypeTuple. Expected: "
                         + demangle(typeid(DeserializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(*state).name()), ErrorCodes::LOGICAL_ERROR);
+                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
+    }
 
     return tuple_state;
 }
