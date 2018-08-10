@@ -326,7 +326,7 @@ static DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const 
         throw Exception("Logical error: no known elements in ASTTableExpression", ErrorCodes::LOGICAL_ERROR);
 
     return database_and_table_with_alias;
-};
+}
 
 
 void ExpressionAnalyzer::translateQualifiedNames()

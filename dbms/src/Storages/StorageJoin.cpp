@@ -50,7 +50,7 @@ void StorageJoin::truncate(const ASTPtr &)
     increment = 0;
     join = std::make_shared<Join>(key_names, key_names, NameSet(), false /* use_nulls */, SizeLimits(), kind, strictness);
     join->setSampleBlock(getSampleBlock().sortColumns());
-};
+}
 
 
 void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const
@@ -62,7 +62,7 @@ void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Stric
 
 
 void StorageJoin::insertBlock(const Block & block) { join->insertFromBlock(block); }
-size_t StorageJoin::getSize() const { return join->getTotalRowCount(); };
+size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 
 void registerStorageJoin(StorageFactory & factory)

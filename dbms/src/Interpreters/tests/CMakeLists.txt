@@ -18,7 +18,7 @@ add_executable (hash_map3 hash_map3.cpp)
 target_link_libraries (hash_map3 dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
 
 add_executable (hash_map_string hash_map_string.cpp)
-target_include_directories (hash_map_string BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (hash_map_string SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map_string dbms)
 
 add_executable (hash_map_string_2 hash_map_string_2.cpp)
