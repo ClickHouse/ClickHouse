@@ -4,6 +4,7 @@
 #include <Storages/StorageFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
+#include <Dictionaries/validateODBCConnectionString.h>
 #include <Parsers/ASTLiteral.h>
 
 
@@ -29,7 +30,7 @@ StorageODBC::StorageODBC(
 {
     pool = createAndCheckResizePocoSessionPool([&]
     {
-        return std::make_shared<Poco::Data::SessionPool>("ODBC", connection_string);
+        return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_string));
     });
 }
 

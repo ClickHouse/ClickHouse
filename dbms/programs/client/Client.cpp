@@ -204,6 +204,7 @@ private:
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
@@ -474,6 +475,7 @@ private:
         {
             need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
+            ignore_error = config().getBool("ignore-error", false);
         }
 
         connect();
@@ -616,6 +618,7 @@ private:
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
+        UInt64 server_version_patch = 0;
         UInt64 server_revision = 0;
 
         if (max_client_network_bandwidth)
@@ -624,9 +627,9 @@ private:
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
-        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
+        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
         if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
         {
@@ -637,6 +640,7 @@ private:
         {
             std::cout << "Connected to " << server_name
                       << " server version " << server_version
+                      << " revision " << server_revision
                       << "." << std::endl << std::endl;
         }
     }
@@ -763,7 +767,6 @@ private:
 
     bool process(const String & text)
     {
-        const auto ignore_error = config().getBool("ignore-error", false);
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
@@ -819,9 +822,10 @@ private:
                 }
                 catch (...)
                 {
-                    actual_client_error = getCurrentExceptionCode();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
-                        std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
                     got_exception = true;
                 }
 

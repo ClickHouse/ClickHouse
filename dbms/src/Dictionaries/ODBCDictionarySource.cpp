@@ -6,6 +6,7 @@
 #include <Columns/ColumnString.h>
 #include <Dictionaries/ODBCDictionarySource.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
+#include <Dictionaries/validateODBCConnectionString.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -39,7 +40,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     {
         auto session = std::make_shared<Poco::Data::SessionPool>(
             config.getString(config_prefix + ".connector", "ODBC"),
-            config.getString(config_prefix + ".connection_string"));
+            validateODBCConnectionString(config.getString(config_prefix + ".connection_string")));
 
         /// Default POCO value is 1024. Set property manually to make possible reading of longer strings.
         session->setProperty("maxFieldSize", Poco::Any(field_size));
@@ -144,10 +145,10 @@ bool ODBCDictionarySource::isModified() const
 
 std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    Block sample_block;
+    Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
-    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    ODBCBlockInputStream block_input_stream(pool->get(), request, sample_block, 1);
+    invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    ODBCBlockInputStream block_input_stream(pool->get(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
 

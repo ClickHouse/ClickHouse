@@ -94,8 +94,8 @@ public:
     {
         if (auto it = aliases.find(name); it != aliases.end())
             return it->second;
-        else if (auto it = case_insensitive_aliases.find(Poco::toLower(name)); it != case_insensitive_aliases.end())
-            return it->second;
+        else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
+            return jt->second;
 
         throw Exception(getFactoryName() + ": name '" + name + "' is not alias", ErrorCodes::LOGICAL_ERROR);
     }

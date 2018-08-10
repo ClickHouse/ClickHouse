@@ -125,7 +125,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         part->checksums.checkEqual(data_checksums, false);
     }
-    catch (const NetException & e)
+    catch (const NetException &)
     {
         /// Network error or error on remote side. No need to enqueue part for check.
         throw;
@@ -163,11 +163,12 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const ConnectionTimeouts & timeouts,
     const String & user,
     const String & password,
+    const String & interserver_scheme,
     bool to_detached,
     const String & tmp_prefix_)
 {
     Poco::URI uri;
-    uri.setScheme("http");
+    uri.setScheme(interserver_scheme);
     uri.setHost(host);
     uri.setPort(port);
     uri.setQueryParameters(

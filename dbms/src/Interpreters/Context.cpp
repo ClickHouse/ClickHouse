@@ -81,6 +81,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int DDL_GUARD_IS_ACTIVE;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
+    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
@@ -111,6 +112,7 @@ struct ContextShared
     UInt16 interserver_io_port = 0;                         /// and port.
     String interserver_io_user;
     String interserver_io_password;
+    String interserver_scheme;                              /// http or https
 
     String path;                                            /// Path to the data directory, with a slash at the end.
     String tmp_path;                                        /// The path to the temporary files that occur when processing the request.
@@ -142,6 +144,7 @@ struct ContextShared
     mutable std::unique_ptr<CompressionSettingsSelector> compression_settings_selector;
     std::unique_ptr<MergeTreeSettings> merge_tree_settings; /// Settings of MergeTree* engines.
     size_t max_table_size_to_drop = 50000000000lu;          /// Protects MergeTree tables from accidental DROP (50GB by default)
+    size_t max_partition_size_to_drop = 50000000000lu;      /// Protects MergeTree partitions from accidental DROP (50GB by default)
     String format_schema_path;                              /// Path to a directory that contains schema files used by input formats.
     ActionLocksManagerPtr action_locks_manager;             /// Set of storages' action lockers
 
@@ -1380,7 +1383,16 @@ void Context::setInterserverIOAddress(const String & host, UInt16 port)
     shared->interserver_io_port = port;
 }
 
-void Context::setInterverserCredentials(const String & user, const String & password)
+std::pair<String, UInt16> Context::getInterserverIOAddress() const
+{
+    if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
+        throw Exception("Parameter 'interserver_http(s)_port' required for replication is not specified in configuration file.",
+                        ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+    return { shared->interserver_io_host, shared->interserver_io_port };
+}
+
+void Context::setInterserverCredentials(const String & user, const String & password)
 {
     shared->interserver_io_user = user;
     shared->interserver_io_password = password;
@@ -1391,14 +1403,14 @@ std::pair<String, String> Context::getInterserverCredentials() const
     return { shared->interserver_io_user, shared->interserver_io_password };
 }
 
-
-std::pair<String, UInt16> Context::getInterserverIOAddress() const
+void Context::setInterserverScheme(const String & scheme)
 {
-    if (shared->interserver_io_host.empty() || shared->interserver_io_port == 0)
-        throw Exception("Parameter 'interserver_http_port' required for replication is not specified in configuration file.",
-            ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+    shared->interserver_scheme = scheme;
+}
 
-    return { shared->interserver_io_host, shared->interserver_io_port };
+String Context::getInterserverScheme() const
+{
+    return shared->interserver_scheme;
 }
 
 UInt16 Context::getTCPPort() const
@@ -1616,17 +1628,9 @@ const MergeTreeSettings & Context::getMergeTreeSettings()
 }
 
 
-void Context::setMaxTableSizeToDrop(size_t max_size)
+void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop)
 {
-    // Is initialized at server startup
-    shared->max_table_size_to_drop = max_size;
-}
-
-void Context::checkTableCanBeDropped(const String & database, const String & table, size_t table_size)
-{
-    size_t max_table_size_to_drop = shared->max_table_size_to_drop;
-
-    if (!max_table_size_to_drop || table_size <= max_table_size_to_drop)
+    if (!max_size_to_drop || size <= max_size_to_drop)
         return;
 
     Poco::File force_file(getFlagsPath() + "force_drop_table");
@@ -1642,26 +1646,56 @@ void Context::checkTableCanBeDropped(const String & database, const String & tab
         catch (...)
         {
             /// User should recreate force file on each drop, it shouldn't be protected
-            tryLogCurrentException("Drop table check", "Can't remove force file to enable table drop");
+            tryLogCurrentException("Drop table check", "Can't remove force file to enable table or partition drop");
         }
     }
 
-    String table_size_str = formatReadableSizeWithDecimalSuffix(table_size);
-    String max_table_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_table_size_to_drop);
+    String size_str = formatReadableSizeWithDecimalSuffix(size);
+    String max_size_to_drop_str = formatReadableSizeWithDecimalSuffix(max_size_to_drop);
     std::stringstream ostr;
 
-    ostr << "Table " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
+    ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
-         << "1. Table size (" << table_size_str << ") is greater than max_table_size_to_drop (" << max_table_size_to_drop_str << ")\n"
+         << "1. Size (" << size_str << ") is greater than max_size_to_drop (" << max_size_to_drop_str << ")\n"
          << "2. File '" << force_file.path() << "' intended to force DROP "
-            << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
+         << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_table_size_to_drop in server config and restart ClickHouse\n"
+         << "1. Either increase (or set to zero) max_size_to_drop in server config and restart ClickHouse\n"
          << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
          << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 
     throw Exception(ostr.str(), ErrorCodes::TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT);
+}
+
+
+void Context::setMaxTableSizeToDrop(size_t max_size)
+{
+    // Is initialized at server startup
+    shared->max_table_size_to_drop = max_size;
+}
+
+
+void Context::checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size)
+{
+    size_t max_table_size_to_drop = shared->max_table_size_to_drop;
+
+    checkCanBeDropped(database, table, table_size, max_table_size_to_drop);
+}
+
+
+void Context::setMaxPartitionSizeToDrop(size_t max_size)
+{
+    // Is initialized at server startup
+    shared->max_partition_size_to_drop = max_size;
+}
+
+
+void Context::checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size)
+{
+    size_t max_partition_size_to_drop = shared->max_partition_size_to_drop;
+
+    checkCanBeDropped(database, table, partition_size, max_partition_size_to_drop);
 }
 
 
