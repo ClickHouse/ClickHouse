@@ -62,7 +62,7 @@ SELECT h = 10000000000 FROM test.decimal WHERE a = 42; -- { serverError 405 }
 SELECT i = 10000000000, (i - g + 10000000000) = 10000000000 FROM test.decimal WHERE a = 42;
 SELECT 10000000000 = i, 10000000000 = (i - g + 10000000000) FROM test.decimal WHERE a = 42;
 
---SELECT min(a), min(b), min(c), min(d), min(e), min(f), min(g), min(h), min(i), min(j) FROM test.decimal;
---SELECT max(a), max(b), max(c), max(d), max(e), max(f), max(g), max(h), max(i), max(j) FROM test.decimal;
+SELECT min(a), min(b), min(c), min(d), min(e), min(f), min(g), min(h), min(i), min(j) FROM test.decimal;
+SELECT max(a), max(b), max(c), max(d), max(e), max(f), max(g), max(h), max(i), max(j) FROM test.decimal;
 
 DROP TABLE IF EXISTS test.decimal;

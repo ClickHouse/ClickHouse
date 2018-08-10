@@ -41,6 +41,7 @@ public:
     operator Dec32() const { return dec; }
     operator Dec64() const { return dec; }
     operator Dec128() const { return dec; }
+
     UInt32 getScale() const { return scale; }
 
     bool operator < (const DecField & r) const;
@@ -50,8 +51,6 @@ public:
     bool operator > (const DecField & r) const { return r < *this; }
     bool operator >= (const DecField & r) const { return r <= * this; }
     bool operator != (const DecField & r) const { return !(*this == r); }
-
-    bool hasScale() const { return scale != wrongScale(); }
 
 private:
     Int128 dec;

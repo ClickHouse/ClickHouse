@@ -90,8 +90,10 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayC = typename ColumnVector<ResultType>::Container;
 
-    static void NO_INLINE vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
@@ -729,6 +731,9 @@ struct DecimalBinaryOperation
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = Operation<NativeResultType, NativeResultType>;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayB = typename ColumnVector<B>::Container;
+    using ArrayC = typename ColumnVector<ResultType>::Container;
 
     static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
                                             std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
@@ -739,7 +744,7 @@ struct DecimalBinaryOperation
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
 
-    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c,
+    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
@@ -770,7 +775,7 @@ struct DecimalBinaryOperation
             c[i] = apply(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<ResultType> & c,
+    static void NO_INLINE vector_constant(const ArrayA & a, B b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
@@ -801,7 +806,7 @@ struct DecimalBinaryOperation
             c[i] = apply(a[i], b);
     }
 
-    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<ResultType> & c,
+    static void NO_INLINE constant_vector(A a, const ArrayB & b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = b.size();
@@ -1221,6 +1226,8 @@ public:
                         if constexpr (result_is_decimal)
                         {
                             ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                            vec_res.setScale(type.getScale());
+
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
@@ -1238,6 +1245,8 @@ public:
                     if constexpr (result_is_decimal)
                     {
                         ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                        vec_res.setScale(type.getScale());
+
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                         if constexpr (IsDecimal<RightDataType> && is_division)

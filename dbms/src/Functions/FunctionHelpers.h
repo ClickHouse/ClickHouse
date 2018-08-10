@@ -16,6 +16,18 @@ namespace common
     }
 
     template <>
+    inline bool addOverflow(Int32 x, Int32 y, Int32 & res)
+    {
+        return __builtin_sadd_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool addOverflow(Int64 x, Int64 y, Int64 & res)
+    {
+        return __builtin_saddl_overflow(x, y, &res);
+    }
+
+    template <>
     inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
     {
         res = x + y;
@@ -29,6 +41,18 @@ namespace common
     }
 
     template <>
+    inline bool subOverflow(Int32 x, Int32 y, Int32 & res)
+    {
+        return __builtin_ssub_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool subOverflow(Int64 x, Int64 y, Int64 & res)
+    {
+        return __builtin_ssubl_overflow(x, y, &res);
+    }
+
+    template <>
     inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
     {
         res = x - y;
@@ -39,6 +63,18 @@ namespace common
     inline bool mulOverflow(T x, T y, T & res)
     {
         return __builtin_mul_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(Int32 x, Int32 y, Int32 & res)
+    {
+        return __builtin_smul_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(Int64 x, Int64 y, Int64 & res)
+    {
+        return __builtin_smull_overflow(x, y, &res);
     }
 
     template <>
