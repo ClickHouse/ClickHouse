@@ -41,7 +41,7 @@ inline ASTPtr setAlias(ASTPtr ast, const String & alias)
 {
     ast->setAlias(alias);
     return ast;
-};
+}
 
 
 }

@@ -56,5 +56,5 @@ ${RDKAFKA_SOURCE_DIR}/rdgz.c
 
 add_library(rdkafka STATIC ${SRCS})
 target_include_directories(rdkafka PRIVATE include)
-target_include_directories(rdkafka PUBLIC ${RDKAFKA_SOURCE_DIR})
+target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})
 target_link_libraries(rdkafka PUBLIC ${ZLIB_LIBRARIES} ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
