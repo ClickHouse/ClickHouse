@@ -11,6 +11,11 @@
 
 namespace DB
 {
+/** Main handler for requests to ODBC driver
+  * requires connection_string and columns in request params
+  * and also query in request body
+  * response in RowBinary format
+  */
 class ODBCHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
@@ -41,6 +46,8 @@ private:
     PoolPtr getPool(const std::string & connection_str);
 };
 
+/** Simple ping handler, answers "Ok." to GET request
+  */
 class PingHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
