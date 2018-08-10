@@ -13,6 +13,8 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/config.h>
 #include <common/logger_useful.h>
+#include <ext/scope_guard.h>
+#include <ext/range.h>
 
 namespace DB
 {
@@ -83,9 +85,10 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
 {
     options.addOption(Poco::Util::Option("http-port", "", "port to listen").argument("http-port", true).binding("http-port"));
     options.addOption(
-        Poco::Util::Option("http-host", "", "hostname to listen, default localhost").argument("http-host").binding("http-host"));
+        Poco::Util::Option("listen-host", "", "hostname to listen, default localhost").argument("listen-host").binding("listen-host"));
     options.addOption(
         Poco::Util::Option("http-timeout", "", "http timout for socket, default 1800").argument("http-timeout").binding("http-timeout"));
+
     options.addOption(Poco::Util::Option("max-server-connections", "", "max connections to server, default 1024")
                           .argument("max-server-connections")
                           .binding("max-server-connections"));
@@ -124,7 +127,7 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config());
     log = &logger();
-    hostname = config().getString("http-host", "localhost");
+    hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
     if (port > 0xFFFF)
         throw Exception("Out of range 'http-port': " + std::to_string(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
@@ -167,8 +170,20 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
 
     LOG_INFO(log, "Listening http://" + address.toString());
 
-    waitForTerminationRequest();
+    SCOPE_EXIT({
+        LOG_DEBUG(log, "Received termination signal.");
+        LOG_DEBUG(log, "Waiting for current connections to close.");
+        server.stop();
+        for (size_t count : ext::range(1, 6))
+        {
+            if (server.currentConnections() == 0)
+                break;
+            LOG_DEBUG(log, "Waiting for " << server.currentConnections() << " connections, try " << count);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+        }
+    });
 
+    waitForTerminationRequest();
     return Application::EXIT_OK;
 }
 }

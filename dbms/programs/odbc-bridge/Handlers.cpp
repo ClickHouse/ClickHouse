@@ -35,31 +35,14 @@ namespace
             sample_block->insert({column_data.type, column_data.name});
         return sample_block;
     }
-
-    size_t parseMaxBlockSize(const std::string & max_block_size_str, Poco::Logger * log)
-    {
-        size_t max_block_size = DEFAULT_BLOCK_SIZE;
-        if (!max_block_size_str.empty())
-        {
-            try
-            {
-                max_block_size = std::stoul(max_block_size_str);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(log);
-            }
-        }
-        return max_block_size;
-    }
 }
 
 
 ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
 {
+    std::lock_guard lock(mutex);
     if (!pool_map->count(connection_str))
     {
-        std::lock_guard lock(mutex);
         pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str] {
             return std::make_shared<Poco::Data::SessionPool>("ODBC", connection_str);
         }));
@@ -97,7 +80,17 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         return;
     }
 
-    size_t max_block_size = parseMaxBlockSize(params.get("max_block_size", ""), log);
+    size_t max_block_size = DEFAULT_BLOCK_SIZE;
+    if (params.has("max_block_size"))
+    {
+        std::string max_block_size_str = params.get("max_block_size", "");
+        if (max_block_size_str.empty())
+        {
+            process_error("ODBCBridge: Empty max_block_size specified");
+            return;
+        }
+        max_block_size = parse<size_t>(max_block_size_str);
+    }
 
     std::string columns = params.get("columns");
     std::unique_ptr<Block> sample_block;
@@ -108,12 +101,13 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     catch (const Exception & ex)
     {
         process_error("ODBCBridge: Invalid 'columns' parameter in request body '" + ex.message() + "'");
+        LOG_WARNING(log, ex.getStackTrace().toString());
         return;
     }
 
     std::string format = params.get("format", "RowBinary");
     std::string query = params.get("query");
-    LOG_TRACE(log, "ODBCBridge: Query '" << query << "'");
+    LOG_TRACE(log, "ODBCBridge: " << query);
 
     std::string connection_string = params.get("connection_string");
     LOG_TRACE(log, "ODBCBridge: Connection string '" << connection_string << "'");
@@ -121,7 +115,6 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
     try
     {
-
         BlockOutputStreamPtr writer = FormatFactory::instance().getOutput(format, out, *sample_block, *context);
         auto pool = getPool(connection_string);
         ODBCBlockInputStream inp(pool->get(), query, *sample_block, max_block_size);
