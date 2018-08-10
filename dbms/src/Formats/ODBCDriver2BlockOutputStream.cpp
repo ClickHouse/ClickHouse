@@ -87,7 +87,8 @@ void ODBCDriver2BlockOutputStream::writePrefix()
 void registerOutputFormatODBCDriver2(FormatFactory & factory)
 {
     factory.registerOutputFormat(
-        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & format_settings) {
+        "ODBCDriver2", [](WriteBuffer & buf, const Block & sample, const Context &, const FormatSettings & format_settings)
+        {
             return std::make_shared<ODBCDriver2BlockOutputStream>(buf, sample, format_settings);
         });
 }

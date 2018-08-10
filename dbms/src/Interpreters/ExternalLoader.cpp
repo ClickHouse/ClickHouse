@@ -228,8 +228,8 @@ void ExternalLoader::reloadFromConfigFiles(const bool throw_on_error, const bool
                 throw;
         }
     }
-    
-    /// erase removed from config loadable objects 
+
+    /// erase removed from config loadable objects
     std::list<std::string> removed_loadable_objects;
     for (const auto & loadable : loadable_objects)
     {
@@ -261,7 +261,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
         if (force_reload || last_modified > config_last_modified)
         {
             auto config = config_repository->load(config_path);
-            
+
             loadable_objects_defined_in_config[config_path].clear();
 
             /// Definitions of loadable objects may have changed, recreate all of them
@@ -295,7 +295,7 @@ void ExternalLoader::reloadFromConfigFile(const std::string & config_path, const
                         LOG_WARNING(log, config_path << ": " + config_settings.external_name + " name cannot be empty");
                         continue;
                     }
-                    
+
                     loadable_objects_defined_in_config[config_path].emplace(name);
                     if (!loadable_name.empty() && name != loadable_name)
                         continue;
