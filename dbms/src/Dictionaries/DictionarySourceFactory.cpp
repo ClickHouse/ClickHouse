@@ -20,10 +20,7 @@
     #include <Dictionaries/MongoDBDictionarySource.h>
 #endif
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
     #include <Poco/Data/ODBC/Connector.h>
-#pragma GCC diagnostic pop
     #include <Dictionaries/ODBCDictionarySource.h>
 #endif
 #if USE_MYSQL
