@@ -125,11 +125,11 @@ def test_inserts_batching(started_cluster):
     # 4. Full batch of inserts after ALTER (that have different block structure).
     # 5. What was left to insert with (d, x) order before ALTER.
     expected = '''\
-20000101_20000101_1_1_0 [1]
-20000101_20000101_2_2_0	[3,4,5]
-20000101_20000101_3_3_0	[2,7,8]
-20000101_20000101_4_4_0	[10,11,12]
-20000101_20000101_5_5_0	[6,9]
+20000101_20000101_1_1_0\t[1]
+20000101_20000101_2_2_0\t[3,4,5]
+20000101_20000101_3_3_0\t[2,7,8]
+20000101_20000101_4_4_0\t[10,11,12]
+20000101_20000101_5_5_0\t[6,9]
 '''
     assert TSV(result) == TSV(expected)
 
@@ -146,8 +146,8 @@ def test_prefer_localhost_replica(started_cluster):
     node2.query("INSERT INTO distributed VALUES (toDate('2017-06-17'), 22)")
     time.sleep(1.0)
     expected_distributed = '''\
-2017-06-17	11
-2017-06-17	22
+2017-06-17\t11
+2017-06-17\t22
 '''
     assert TSV(node1.query(test_query)) == TSV(expected_distributed)
     assert TSV(node2.query(test_query)) == TSV(expected_distributed)
@@ -157,16 +157,16 @@ def test_prefer_localhost_replica(started_cluster):
         node2.query("INSERT INTO replicated VALUES (toDate('2017-06-17'), 44)")
         time.sleep(1.0)
     expected_from_node2 =  '''\
-2017-06-17	11
-2017-06-17	22
-2017-06-17	44
+2017-06-17\t11
+2017-06-17\t22
+2017-06-17\t44
 '''
     # Query is sent to node2, as it local and prefer_localhost_replica=1
     assert TSV(node2.query(test_query)) == TSV(expected_from_node2)
     expected_from_node1 =  '''\
-2017-06-17	11
-2017-06-17	22
-2017-06-17	33
+2017-06-17\t11
+2017-06-17\t22
+2017-06-17\t33
 '''
     # Now query is sent to node1, as it higher in order
     assert TSV(node2.query("SET load_balancing='in_order'; SET prefer_localhost_replica=0;" + test_query)) == TSV(expected_from_node1)
