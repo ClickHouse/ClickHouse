@@ -419,12 +419,12 @@ inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F
 
 inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s, WriteBuffer & buf) { return writeBackQuotedString(s, buf); });
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
 }
 
 inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s, WriteBuffer & buf) { return writeDoubleQuotedString(s, buf); });
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
 

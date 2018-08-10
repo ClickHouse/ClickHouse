@@ -131,7 +131,7 @@ void StorageSet::truncate(const ASTPtr &)
     increment = 0;
     set = std::make_shared<Set>(SizeLimits(), false);
     set->setHeader(header);
-};
+}
 
 
 void StorageSetOrJoinBase::restore()

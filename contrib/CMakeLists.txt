@@ -98,8 +98,8 @@ if (USE_INTERNAL_SSL_LIBRARY)
     set (USE_SHARED ${USE_STATIC_LIBRARIES})
     set (LIBRESSL_SKIP_INSTALL 1)
     add_subdirectory (ssl)
-    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
-    target_include_directories(${OPENSSL_SSL_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -109,26 +109,9 @@ if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
-    set (RDKAFKA_BUILD_EXAMPLES OFF CACHE INTERNAL "")
-    set (RDKAFKA_BUILD_TESTS OFF CACHE INTERNAL "")
-    set (RDKAFKA_BUILD_STATIC ${MAKE_STATIC_LIBRARIES} CACHE INTERNAL "")
-    mark_as_advanced (ZLIB_INCLUDE_DIR)
-
-    if (USE_INTERNAL_SSL_LIBRARY)
-        if (MAKE_STATIC_LIBRARIES)
-            add_library(bundled-ssl ALIAS ${OPENSSL_SSL_LIBRARY})
-            set (WITH_BUNDLED_SSL 1 CACHE INTERNAL "")
-        else ()
-            set (WITH_SSL 0 CACHE INTERNAL "")
-        endif ()
-    endif ()
-
-    add_subdirectory (librdkafka)
-
-    if (USE_INTERNAL_SSL_LIBRARY AND MAKE_STATIC_LIBRARIES)
-        target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
-    endif ()
+    add_subdirectory (librdkafka-cmake)
     target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
@@ -162,7 +145,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
     if (OPENSSL_FOUND AND TARGET Crypto AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
-        target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
+        target_include_directories(Crypto SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
 endif ()
 

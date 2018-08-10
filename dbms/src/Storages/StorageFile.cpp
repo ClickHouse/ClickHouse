@@ -36,7 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-};
+}
 
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
