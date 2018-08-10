@@ -118,7 +118,7 @@ void SelectStreamFactory::createForShard(
             }
             else
                 emplace_local_stream();  /// Let it fail the usual way.
-                
+
             return;
         }
 

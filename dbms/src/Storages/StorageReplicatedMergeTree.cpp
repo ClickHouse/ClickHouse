@@ -3356,12 +3356,12 @@ void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    
+
     const String partition_id = data.getPartitionIDFromQuery(partition, context);
     auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     UInt64 partition_size = 0;
-    
+
     for (const auto & part : parts_to_remove)
     {
         partition_size += part->bytes_on_disk;
