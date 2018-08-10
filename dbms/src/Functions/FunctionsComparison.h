@@ -225,6 +225,10 @@ class DecimalComparison
 public:
     using CompareInt = typename DecCompareInt<A, B>::Type;
     using Op = Operation<CompareInt, CompareInt>;
+    using ColVecA = ColumnVector<A>;
+    using ColVecB = ColumnVector<B>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayB = typename ColVecB::Container;
 
     DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
@@ -332,9 +336,6 @@ private:
     template <bool scale_left, bool scale_right>
     static ColumnPtr apply(const ColumnPtr & c0, const ColumnPtr & c1, CompareInt scale)
     {
-        using ColVecA = ColumnVector<A>;
-        using ColVecB = ColumnVector<B>;
-
         auto c_res = ColumnUInt8::create();
 
         if constexpr (_actual)
@@ -424,7 +425,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_vector(const PaddedPODArray<A> & a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c,
+    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
                                         CompareInt scale)
     {
         size_t size = a.size();
@@ -443,7 +444,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
         const A * a_pos = &a[0];
@@ -459,7 +460,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE constant_vector(A a, const PaddedPODArray<B> & b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = b.size();
         const B * b_pos = &b[0];

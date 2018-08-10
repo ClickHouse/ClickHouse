@@ -148,7 +148,9 @@ Field DataTypeDecimal<T>::getDefault() const
 template <typename T>
 MutableColumnPtr DataTypeDecimal<T>::createColumn() const
 {
-    return ColumnType::create();
+    auto column = ColumnType::create();
+    column->getData().setScale(scale);
+    return column;
 }
 
 
