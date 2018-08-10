@@ -1822,7 +1822,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             src_data = data.checkStructureAndGetMergeTreeData(source_table);
         }
-        catch (Exception & e)
+        catch (Exception &)
         {
             LOG_INFO(log, "Can't use " << source_table_name << " as source table for REPLACE PARTITION command. Will fetch all parts."
                            << " Reason: " << getCurrentExceptionMessage(false));

@@ -645,7 +645,7 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
         return 0;
     --it;
     return it->first;
-};
+}
 
 void StorageMergeTree::clearOldMutations()
 {
