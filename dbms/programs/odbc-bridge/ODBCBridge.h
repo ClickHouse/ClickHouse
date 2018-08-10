@@ -1,14 +1,18 @@
 #pragma once
 
-#include <daemon/BaseDaemon.h>
-#include <Poco/Logger.h>
 #include <Interpreters/Context.h>
+#include <Poco/Logger.h>
+#include <daemon/BaseDaemon.h>
 
 namespace DB
 {
+/** Class represents clickhouse-odbc-bridge server, which listen
+  * incoming HTTP POST and GET requests on specified port and host.
+  * Has two handlers '/' for all incoming POST requests to ODBC driver
+  * and /ping for GET request about service status
+  */
 class ODBCBridge : public BaseDaemon
 {
-
 public:
     void defineOptions(Poco::Util::OptionSet & options) override;
 
@@ -20,7 +24,6 @@ protected:
     int main(const std::vector<std::string> & args) override;
 
 private:
-
     void handleHelp(const std::string &, const std::string &);
 
     bool is_help;
@@ -35,5 +38,4 @@ private:
 
     std::shared_ptr<Context> context; /// need for settings only
 };
-
 }

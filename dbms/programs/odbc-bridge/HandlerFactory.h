@@ -13,6 +13,9 @@
 
 namespace DB
 {
+/** Factory for '/ping' and '/' handlers.
+  * Also stores Session pools for ODBC connections
+  */
 class HandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
