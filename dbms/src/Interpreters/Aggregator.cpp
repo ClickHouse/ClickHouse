@@ -1601,7 +1601,7 @@ public:
 
     Block getHeader() const override { return aggregator.getHeader(final); }
 
-    ~MergingAndConvertingBlockInputStream()
+    ~MergingAndConvertingBlockInputStream() override
     {
         LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
 
