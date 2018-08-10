@@ -125,7 +125,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         part->checksums.checkEqual(data_checksums, false);
     }
-    catch (const NetException & e)
+    catch (const NetException &)
     {
         /// Network error or error on remote side. No need to enqueue part for check.
         throw;
