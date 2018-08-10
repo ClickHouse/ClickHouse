@@ -382,6 +382,7 @@ namespace ErrorCodes
     extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 405;
     extern const int BAD_REQUEST_PARAMETER = 406;
     extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 407;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 408;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

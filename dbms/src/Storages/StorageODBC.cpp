@@ -16,12 +16,14 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Path.h>
 #include <Common/ShellCommand.h>
+#include <ext/range.h>
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int EXTERNAL_EXECUTABLE_NOT_FOUND;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
 }
 
 
@@ -35,6 +37,7 @@ StorageODBC::StorageODBC(const std::string & table_name_,
     , connection_string(connection_string)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
+    , log(&Poco::Logger::get("StorageODBC"))
 {
     const auto & config = context_.getConfigRef();
     size_t bridge_port = config.getUInt("odbc_bridge.port", 9018);
@@ -99,7 +102,6 @@ bool StorageODBC::checkODBCBridgeIsRunning() const
     }
 }
 
-
 void StorageODBC::startODBCBridge() const
 {
     const auto & config = context_global.getConfigRef();
@@ -112,9 +114,8 @@ void StorageODBC::startODBCBridge() const
 
     std::stringstream command;
     command << path.toString() << ' ';
-    command << "--daemon" << ' ';
     command << "--http-port " << config.getUInt("odbc_bridge.port", 9018) << ' ';
-    command << "--http-host " << config.getString("odbc_bridge.host", "localhost") << ' ';
+    command << "--listen-host " << config.getString("odbc_bridge.listen_host", "localhost") << ' ';
     command << "--http-timeout " << settings.http_receive_timeout.value.totalSeconds() << ' ';
     if (config.has("logger.odbc_bridge_log"))
         command << "--log-path " << config.getString("logger.odbc_bridge_log") << ' ';
@@ -122,10 +123,15 @@ void StorageODBC::startODBCBridge() const
         command << "--err-log-path " << config.getString("logger.odbc_bridge_errlog") << ' ';
     if (config.has("logger.odbc_bridge_level"))
         command << "--log-level " << config.getString("logger.odbc_bridge_level") << ' ';
+    command << "&"; // we don't want to wait this process
 
-    auto cmd = ShellCommand::execute(command.str());
+    auto command_str = command.str();
+    LOG_TRACE(log, "Starting clickhouse-odbc-bridge with command: " << command_str);
+
+    auto cmd = ShellCommand::execute(command_str);
     cmd->wait();
 }
+
 BlockInputStreams StorageODBC::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -135,13 +141,21 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
 {
     if (!checkODBCBridgeIsRunning())
     {
+        LOG_TRACE(log, "clickhouse-odbc-bridge is not running, will try to start it");
         startODBCBridge();
-        size_t counter = 0;
-        while (!checkODBCBridgeIsRunning() && counter <= 5)
+        bool started = false;
+        for (size_t counter : ext::range(1, 6))
         {
-            sleep(1);
-            counter++;
+            LOG_TRACE(log, "Checking clickhouse-odbc-bridge is running, try " << counter);
+            if (checkODBCBridgeIsRunning())
+            {
+                started = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
+        if (!started)
+            throw Exception("StorageODBC: clickhouse-odbc-bridge is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
     }
 
     return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);

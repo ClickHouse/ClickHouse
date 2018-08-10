@@ -40,6 +40,8 @@ private:
     std::string remote_table_name;
     Poco::URI ping_uri;
 
+    Poco::Logger * log;
+
     std::string getReadMethod() const override;
 
     std::vector<std::pair<std::string, std::string>> getReadURIParams(const Names & column_names,
