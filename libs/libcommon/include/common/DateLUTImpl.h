@@ -15,7 +15,7 @@
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 
-STRONG_TYPEDEF(UInt16, DayNum);
+STRONG_TYPEDEF(UInt16, DayNum)
 
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.

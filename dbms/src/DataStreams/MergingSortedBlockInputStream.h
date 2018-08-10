@@ -2,16 +2,7 @@
 
 #include <queue>
 
-#ifdef __clang__
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
-#endif
-
 #include <boost/smart_ptr/intrusive_ptr.hpp>
-
-#ifdef __clang__
-    #pragma clang diagnostic pop
-#endif
 
 #include <common/logger_useful.h>
 
@@ -161,7 +152,7 @@ protected:
     CursorImpls cursors;
 
     using Queue = std::priority_queue<SortCursor>;
-    Queue queue;
+    Queue queue_without_collation;
 
     using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
     QueueWithCollation queue_with_collation;

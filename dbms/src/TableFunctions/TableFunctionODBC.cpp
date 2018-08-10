@@ -16,13 +16,9 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-    #include <Poco/Data/ODBC/ODBCException.h>
-    #include <Poco/Data/ODBC/SessionImpl.h>
-    #include <Poco/Data/ODBC/Utility.h>
-#pragma GCC diagnostic pop
+#include <Poco/Data/ODBC/ODBCException.h>
+#include <Poco/Data/ODBC/SessionImpl.h>
+#include <Poco/Data/ODBC/Utility.h>
 
 
 namespace DB
