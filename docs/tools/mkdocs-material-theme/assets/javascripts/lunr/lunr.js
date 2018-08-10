@@ -1445,6 +1445,7 @@ lunr.TokenSet.prototype.toArray = function () {
         len = edges.length
 
     if (frame.node.final) {
+      frame.prefix.charAt(0)
       words.push(frame.prefix)
     }
 
