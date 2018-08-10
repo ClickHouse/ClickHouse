@@ -61,7 +61,7 @@ void ODBCDriver2BlockOutputStream::writePrefix()
     const size_t columns = header.columns();
 
     /// Number of header rows.
-    writeIntBinary(Int32(2), out);
+    writeIntBinary(Int32(3), out);
 
     /// Names of columns.
     /// Number of columns + 1 for first name column.
@@ -80,6 +80,15 @@ void ODBCDriver2BlockOutputStream::writePrefix()
     {
         const ColumnWithTypeAndName & col = header.getByPosition(i);
         writeODBCString(out, col.type->getName());
+    }
+
+    /// Nullable.
+    writeIntBinary(Int32(columns + 1), out);
+    writeODBCString(out, "null");
+    for (size_t i = 0; i < columns; ++i)
+    {
+        const ColumnWithTypeAndName & col = header.getByPosition(i);
+        writeODBCString(out, col.type->isNullable() ? "1" : "0");
     }
 }
 
