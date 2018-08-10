@@ -3,7 +3,7 @@
 Date with time. Stored in four bytes as a Unix timestamp (unsigned). Allows storing values in the same range as for the Date type. The minimal value is output as 0000-00-00 00:00:00.
 The time is stored with accuracy up to one second (without leap seconds).
 
-## Time zones
+## Time Zones
 
 The date with time is converted from text (divided into component parts) to binary and back, using the system's time zone at the time the client or server starts. In text format, information about daylight savings is lost.
 
