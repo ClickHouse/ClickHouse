@@ -226,6 +226,6 @@ ConnectionPoolWithFailover::tryGetEntry(
         }
     }
     return result;
-};
+}
 
 }

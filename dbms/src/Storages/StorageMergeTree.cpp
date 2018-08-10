@@ -131,7 +131,7 @@ void StorageMergeTree::checkTableCanBeDropped() const
 void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-    
+
     const String partition_id = data.getPartitionIDFromQuery(partition, context);
     auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
@@ -645,7 +645,7 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
         return 0;
     --it;
     return it->first;
-};
+}
 
 void StorageMergeTree::clearOldMutations()
 {

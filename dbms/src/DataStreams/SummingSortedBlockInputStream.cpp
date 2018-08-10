@@ -286,7 +286,7 @@ Block SummingSortedBlockInputStream::readImpl()
             desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
     }
 
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     Block res = header.cloneWithColumns(std::move(merged_columns));
 
     /// Place aggregation results into block.

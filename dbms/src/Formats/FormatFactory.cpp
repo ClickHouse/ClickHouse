@@ -120,6 +120,7 @@ void registerOutputFormatJSON(FormatFactory & factory);
 void registerOutputFormatJSONCompact(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
+void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
 
 /// Input only formats.
@@ -153,6 +154,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatJSONCompact(*this);
     registerOutputFormatXML(*this);
     registerOutputFormatODBCDriver(*this);
+    registerOutputFormatODBCDriver2(*this);
     registerOutputFormatNull(*this);
 }
 
