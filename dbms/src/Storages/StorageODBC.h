@@ -2,12 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/Data/SessionPool.h>
-#pragma GCC diagnostic pop
-
+#include <Poco/Data/SessionPool.h>
 
 
 namespace DB

@@ -189,22 +189,22 @@ std::string validateODBCConnectionString(const std::string & connection_string)
     {
         reconstructed_connection_string += '{';
 
-        const char * pos = value.data();
-        const char * end = pos + value.size();
+        const char * value_pos = value.data();
+        const char * value_end = value_pos + value.size();
         while (true)
         {
-            const char * next_pos = find_first_symbols<'}'>(pos, end);
+            const char * next_pos = find_first_symbols<'}'>(value_pos, value_end);
 
-            if (next_pos == end)
+            if (next_pos == value_end)
             {
-                reconstructed_connection_string.append(pos, next_pos - pos);
+                reconstructed_connection_string.append(value_pos, next_pos - value_pos);
                 break;
             }
             else
             {
-                reconstructed_connection_string.append(pos, next_pos - pos);
+                reconstructed_connection_string.append(value_pos, next_pos - value_pos);
                 reconstructed_connection_string.append("}}");
-                pos = next_pos + 1;
+                value_pos = next_pos + 1;
             }
         }
 

@@ -646,4 +646,4 @@ private:
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
 };
 
-};
+}

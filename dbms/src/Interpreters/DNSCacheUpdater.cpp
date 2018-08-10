@@ -38,11 +38,11 @@ static bool isNetworkError()
         if (e.code() == ErrorCodes::TIMEOUT_EXCEEDED || e.code() == ErrorCodes::ALL_CONNECTION_TRIES_FAILED)
             return true;
     }
-    catch (Poco::Net::DNSException & e)
+    catch (Poco::Net::DNSException &)
     {
         return true;
     }
-    catch (Poco::TimeoutException & e)
+    catch (Poco::TimeoutException &)
     {
         return true;
     }

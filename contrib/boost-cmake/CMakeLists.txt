@@ -42,9 +42,9 @@ ${LIBRARY_DIR}/libs/filesystem/src/windows_file_codecvt.cpp)
 add_library(boost_system_internal
 ${LIBRARY_DIR}/libs/system/src/error_code.cpp)
 
-target_include_directories (boost_program_options_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_filesystem_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
-target_include_directories (boost_system_internal BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories (boost_program_options_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories (boost_filesystem_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+target_include_directories (boost_system_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 
 target_compile_definitions (boost_program_options_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)
 target_compile_definitions (boost_filesystem_internal PUBLIC BOOST_SYSTEM_NO_DEPRECATED)

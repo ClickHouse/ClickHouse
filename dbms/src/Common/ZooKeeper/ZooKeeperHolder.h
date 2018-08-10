@@ -83,4 +83,4 @@ void ZooKeeperHolder::init(Args&&... args)
 
 using ZooKeeperHolderPtr = std::shared_ptr<ZooKeeperHolder>;
 
-};
+}
