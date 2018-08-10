@@ -1,4 +1,5 @@
-pages:
+nav:
+
 - 'Introduction':
   - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
