@@ -98,8 +98,8 @@ if (USE_INTERNAL_SSL_LIBRARY)
     set (USE_SHARED ${USE_STATIC_LIBRARIES})
     set (LIBRESSL_SKIP_INSTALL 1)
     add_subdirectory (ssl)
-    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
-    target_include_directories(${OPENSSL_SSL_LIBRARY} PUBLIC ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
@@ -145,7 +145,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
     if (OPENSSL_FOUND AND TARGET Crypto AND (NOT DEFINED ENABLE_POCO_NETSSL OR ENABLE_POCO_NETSSL))
         # Bug in poco https://github.com/pocoproject/poco/pull/2100 found on macos
-        target_include_directories(Crypto PUBLIC ${OPENSSL_INCLUDE_DIR})
+        target_include_directories(Crypto SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     endif ()
 endif ()
 
