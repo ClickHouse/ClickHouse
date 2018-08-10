@@ -140,9 +140,22 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const unsigned num_streams,
     Int64 max_block_number_to_read) const
 {
-    size_t part_index = 0;
+    return readFromParts(
+        data.getDataPartsVector(), column_names_to_return, query_info, context, processed_stage,
+        max_block_size, num_streams, max_block_number_to_read);
+}
 
-    MergeTreeData::DataPartsVector parts = data.getDataPartsVector();
+BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
+    MergeTreeData::DataPartsVector parts,
+    const Names & column_names_to_return,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum & processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams,
+    Int64 max_block_number_to_read) const
+{
+    size_t part_index = 0;
 
     /// If query contains restrictions on the virtual column `_part` or `_part_index`, select only parts suitable for it.
     /// The virtual column `_sample_factor` (which is equal to 1 / used sample rate) can be requested in the query.
@@ -310,7 +323,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         if (relative_sample_size == RelativeSize(1))
             relative_sample_size = 0;
 
-        if (relative_sample_offset > 0 && 0 == relative_sample_size)
+        if (relative_sample_offset > 0 && RelativeSize(0) == relative_sample_size)
             throw Exception("Sampling offset is incorrect because no sampling", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (relative_sample_offset > 1)
@@ -361,7 +374,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
         if (!data.sampling_expression)
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-        if (sample_factor_column_queried && relative_sample_size != 0)
+        if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
@@ -820,7 +833,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal
 
         case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
             merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
-                    to_merge, sort_description, data.merging_params.sign_column, max_block_size, true);
+                    to_merge, sort_description, data.merging_params.sign_column, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:

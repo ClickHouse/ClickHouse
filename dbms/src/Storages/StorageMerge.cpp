@@ -241,12 +241,10 @@ BlockInputStreams StorageMerge::read(
                         header = getSampleBlockForColumns(column_names);
                         break;
                     case QueryProcessingStage::WithMergeableState:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::WithMergeableState, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
-                        break;
                     case QueryProcessingStage::Complete:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::Complete, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
+                        header = materializeBlock(InterpreterSelectQuery(
+                            query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
+                            processed_stage_in_source_table, true).getSampleBlock());
                         break;
                 }
             }

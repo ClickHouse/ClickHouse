@@ -139,7 +139,11 @@ struct MergeTreeSettings
       *  instead of ordinary ones (dozens KB).                                                                \
       * Before enabling check that all replicas support new format.                                           \
       */                                                                                                      \
-    M(SettingBool, use_minimalistic_checksums_in_zookeeper, false)
+    M(SettingBool, use_minimalistic_checksums_in_zookeeper, true)                                             \
+                                                                                                              \
+    /** How many records about mutations that are done to keep.                                               \
+     *  If zero, then keep all of them */                                                                     \
+    M(SettingUInt64, finished_mutations_to_keep, 100)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \

@@ -1052,16 +1052,16 @@ void FunctionArrayUniq::executeImpl(Block & block, const ColumnNumbers & argumen
     if (arguments.size() == 1)
     {
         if (!( executeNumber<UInt8>(first_array, first_null_map, res_values)
-               || executeNumber<UInt16>(first_array, first_null_map, res_values)
-               || executeNumber<UInt32>(first_array, first_null_map, res_values)
-               || executeNumber<UInt64>(first_array, first_null_map, res_values)
-               || executeNumber<Int8>(first_array, first_null_map, res_values)
-               || executeNumber<Int16>(first_array, first_null_map, res_values)
-               || executeNumber<Int32>(first_array, first_null_map, res_values)
-               || executeNumber<Int64>(first_array, first_null_map, res_values)
-               || executeNumber<Float32>(first_array, first_null_map, res_values)
-               || executeNumber<Float64>(first_array, first_null_map, res_values)
-               || executeString(first_array, first_null_map, res_values)))
+            || executeNumber<UInt16>(first_array, first_null_map, res_values)
+            || executeNumber<UInt32>(first_array, first_null_map, res_values)
+            || executeNumber<UInt64>(first_array, first_null_map, res_values)
+            || executeNumber<Int8>(first_array, first_null_map, res_values)
+            || executeNumber<Int16>(first_array, first_null_map, res_values)
+            || executeNumber<Int32>(first_array, first_null_map, res_values)
+            || executeNumber<Int64>(first_array, first_null_map, res_values)
+            || executeNumber<Float32>(first_array, first_null_map, res_values)
+            || executeNumber<Float64>(first_array, first_null_map, res_values)
+            || executeString(first_array, first_null_map, res_values)))
             executeHashed(*offsets, original_data_columns, res_values);
     }
     else
@@ -1287,8 +1287,8 @@ DataTypePtr FunctionArrayDistinct::getReturnTypeImpl(const DataTypes & arguments
     const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
     if (!array_type)
         throw Exception("Argument for function " + getName() + " must be array but it "
-                                                               " has type " + arguments[0]->getName() + ".",
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            " has type " + arguments[0]->getName() + ".",
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     auto nested_type = removeNullable(array_type->getNestedType());
 
@@ -1329,16 +1329,16 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     }
 
     if (!(executeNumber<UInt8>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<UInt16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<UInt32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<UInt64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<Int8>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<Int16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<Int32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<Int64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
-          || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
+        || executeNumber<UInt16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<UInt32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<UInt64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int8>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int16>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Int64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
+        || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
         executeHashed(offsets, original_data_columns, res_data, res_offsets, nullable_col);
 
     block.getByPosition(result).column = std::move(res_ptr);
@@ -1346,10 +1346,10 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
 
 template <typename T>
 bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
-                                          const ColumnArray::Offsets & src_offsets,
-                                          IColumn & res_data_col,
-                                          ColumnArray::Offsets & res_offsets,
-                                          const ColumnNullable * nullable_col)
+    const ColumnArray::Offsets & src_offsets,
+    IColumn & res_data_col,
+    ColumnArray::Offsets & res_offsets,
+    const ColumnNullable * nullable_col)
 {
     const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
@@ -1369,9 +1369,9 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
     }
 
     using Set = ClearableHashSet<T,
-    DefaultHash<T>,
-    HashTableGrower<INITIAL_SIZE_DEGREE>,
-    HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
+        DefaultHash<T>,
+        HashTableGrower<INITIAL_SIZE_DEGREE>,
+        HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     Set set;
     size_t prev_off = 0;
@@ -1395,11 +1395,11 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
 }
 
 bool FunctionArrayDistinct::executeString(
-        const IColumn & src_data,
-        const ColumnArray::Offsets & src_offsets,
-        IColumn & res_data_col,
-        ColumnArray::Offsets & res_offsets,
-        const ColumnNullable * nullable_col)
+    const IColumn & src_data,
+    const ColumnArray::Offsets & src_offsets,
+    IColumn & res_data_col,
+    ColumnArray::Offsets & res_offsets,
+    const ColumnNullable * nullable_col)
 {
     const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data);
 
@@ -1446,10 +1446,11 @@ bool FunctionArrayDistinct::executeString(
 }
 
 void FunctionArrayDistinct::executeHashed(
-        const ColumnArray::Offsets & offsets,
-        const ColumnRawPtrs & columns,
-        IColumn & res_data_col,
-        ColumnArray::Offsets & res_offsets)
+    const ColumnArray::Offsets & offsets,
+    const ColumnRawPtrs & columns,
+    IColumn & res_data_col,
+    ColumnArray::Offsets & res_offsets,
+    const ColumnNullable * nullable_col)
 {
     size_t count = columns.size();
 
@@ -1579,16 +1580,16 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
     if (num_columns == 1)
     {
         if (!( executeNumber<UInt8>(first_array, first_null_map, res_values)
-               || executeNumber<UInt16>(first_array, first_null_map, res_values)
-               || executeNumber<UInt32>(first_array, first_null_map, res_values)
-               || executeNumber<UInt64>(first_array, first_null_map, res_values)
-               || executeNumber<Int8>(first_array, first_null_map, res_values)
-               || executeNumber<Int16>(first_array, first_null_map, res_values)
-               || executeNumber<Int32>(first_array, first_null_map, res_values)
-               || executeNumber<Int64>(first_array, first_null_map, res_values)
-               || executeNumber<Float32>(first_array, first_null_map, res_values)
-               || executeNumber<Float64>(first_array, first_null_map, res_values)
-               || executeString (first_array, first_null_map, res_values)))
+            || executeNumber<UInt16>(first_array, first_null_map, res_values)
+            || executeNumber<UInt32>(first_array, first_null_map, res_values)
+            || executeNumber<UInt64>(first_array, first_null_map, res_values)
+            || executeNumber<Int8>(first_array, first_null_map, res_values)
+            || executeNumber<Int16>(first_array, first_null_map, res_values)
+            || executeNumber<Int32>(first_array, first_null_map, res_values)
+            || executeNumber<Int64>(first_array, first_null_map, res_values)
+            || executeNumber<Float32>(first_array, first_null_map, res_values)
+            || executeNumber<Float64>(first_array, first_null_map, res_values)
+            || executeString (first_array, first_null_map, res_values)))
             executeHashed(*offsets, original_data_columns, res_values);
     }
     else

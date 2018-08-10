@@ -12,7 +12,7 @@ namespace ext
         using value_type = typename Collection::value_type;
 
         return ResultCollection<value_type>(std::begin(collection), std::end(collection));
-    };
+    }
 
     /** \brief Returns collection of specified type.
      *    Performs implicit conversion of between source and result value_type, if available and required. */

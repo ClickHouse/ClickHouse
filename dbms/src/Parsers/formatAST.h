@@ -12,6 +12,7 @@ namespace DB
   */
 void formatAST(const IAST & ast, std::ostream & s, bool hilite = true, bool one_line = false);
 
+
 inline std::ostream & operator<<(std::ostream & os, const IAST & ast)
 {
     formatAST(ast, os, false, true);

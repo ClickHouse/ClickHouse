@@ -231,7 +231,7 @@ void ReplicatedMergeTreePartCheckThread::checkPart(const String & part_name)
 
                 LOG_INFO(log, "Part " << part_name << " looks good.");
             }
-            catch (const Exception & e)
+            catch (const Exception &)
             {
                 /// TODO Better to check error code.
 

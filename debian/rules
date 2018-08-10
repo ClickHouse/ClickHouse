@@ -70,8 +70,8 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
-	#cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
-	cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT)
+	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
+	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:
 	#TODO, use ENABLE_TESTS=1
