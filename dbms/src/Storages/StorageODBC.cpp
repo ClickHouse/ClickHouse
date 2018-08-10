@@ -144,7 +144,7 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
         LOG_TRACE(log, "clickhouse-odbc-bridge is not running, will try to start it");
         startODBCBridge();
         bool started = false;
-        for (size_t counter : ext::range(1, 6))
+        for (size_t counter : ext::range(1, 20))
         {
             LOG_TRACE(log, "Checking clickhouse-odbc-bridge is running, try " << counter);
             if (checkODBCBridgeIsRunning())
@@ -152,7 +152,7 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
                 started = true;
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         if (!started)
             throw Exception("StorageODBC: clickhouse-odbc-bridge is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
