@@ -73,7 +73,15 @@ done
 # Build options
 if [ -n "$SANITIZER" ]
 then
-    VERSION_POSTFIX+="+${SANITIZER,,}"
+    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="asan"
+    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="tsan"
+    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="msan"
+    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="ubsan"
+    else
+        echo "Unknown value of SANITIZER variable: $SANITIZER"
+        exit 3
+    fi
+
     export DEB_CC=${DEB_CC=clang-6.0}
     export DEB_CXX=${DEB_CXX=clang++-6.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
