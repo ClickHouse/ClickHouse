@@ -73,10 +73,10 @@ done
 # Build options
 if [ -n "$SANITIZER" ]
 then
-    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="asan"
-    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="tsan"
-    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="msan"
-    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="ubsan"
+    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="+asan"
+    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
+    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
+    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
     else
         echo "Unknown value of SANITIZER variable: $SANITIZER"
         exit 3
@@ -87,10 +87,10 @@ then
     EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
-    VERSION_POSTFIX+=+$BUILD_TYPE
+    VERSION_POSTFIX+="+valgrind"
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
-    VERSION_POSTFIX+=+$BUILD_TYPE
+    VERSION_POSTFIX+="+debug"
 fi
 
 CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
