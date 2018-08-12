@@ -145,6 +145,11 @@ public:
         return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
 
+    /// close all process FDs except
+    /// 0-2 -- stdin, stdout, stderr
+    /// also doesn't close global internal pipes for signal handling
+    void closeFDs();
+
 protected:
     /// Возвращает TaskManager приложения
     /// все методы task_manager следует вызывать из одного потока

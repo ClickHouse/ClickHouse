@@ -115,6 +115,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
 
 void ODBCBridge::initialize(Application & self)
 {
+    BaseDaemon::closeFDs();
     is_help = config().has("help");
 
     if (is_help)
