@@ -36,7 +36,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
         {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
-        {"dependencies", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"create_table_query", std::make_shared<DataTypeString>()},
         {"engine_full", std::make_shared<DataTypeString>()}
     }));
@@ -128,16 +129,27 @@ BlockInputStreams StorageSystemTables::read(
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
 
-            if (columns_mask[src_index++])
             {
-                Array dependencies_name_array;
-                const auto dependencies = context.getDependencies(database_name, table_name);
+                Array dependencies_table_name_array;
+                Array dependencies_database_name_array;
+                if (columns_mask[src_index] || columns_mask[src_index + 1])
+                {
+                    const auto dependencies = context.getDependencies(database_name, table_name);
 
-                dependencies_name_array.reserve(dependencies.size());
-                for (const auto & dependency : dependencies)
-                    dependencies_name_array.push_back(dependency.first + "." + dependency.second);
+                    dependencies_table_name_array.reserve(dependencies.size());
+                    dependencies_database_name_array.reserve(dependencies.size());
+                    for (const auto & dependency : dependencies)
+                    {
+                        dependencies_table_name_array.push_back(dependency.second);
+                        dependencies_database_name_array.push_back(dependency.first);
+                    }
+                }
 
-                res_columns[res_index++]->insert(dependencies_name_array);
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(dependencies_database_name_array);
+
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(dependencies_table_name_array);
             }
 
             if (columns_mask[src_index] || columns_mask[src_index + 1])
@@ -203,16 +215,10 @@ BlockInputStreams StorageSystemTables::read(
                 res_columns[res_index++]->insertDefault();
 
             if (columns_mask[src_index++])
-            {
-                Array dependencies_name_array;
-                const auto dependencies = context.getDependencies("", table.first);
+                res_columns[res_index++]->insertDefault();
 
-                dependencies_name_array.reserve(dependencies.size());
-                for (const auto & dependency : dependencies)
-                    dependencies_name_array.push_back(dependency.second);
-
-                res_columns[res_index++]->insert(dependencies_name_array);
-            }
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
 
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insertDefault();
