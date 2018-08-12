@@ -575,7 +575,7 @@ test: string with \'quotes\' and \t with some special \n characters
 
 اگر نام فیلد، فرمت قابل قبولی نداشته باشد، اسم 'field' به عنوان نام عنصر استفاده می شود. به طور کلی، ساختار XML مشابه ساختار JSON می باشد. فقط در JSON، موارد بی اعتبار UTF-8 تبدیل به کاراکتر � می شوند که منجر به خروجی معتبر UTF-8 می شود.
 
-در مقادیر رشته ای، کاراکتر های `>` و `&` به صورت `<` and `&` escape می شوند.
+در مقادیر رشته ای، کاراکتر های `>` و `&` به صورت `<` و `&` escape می شوند.
 
 آرایه ها به شکل `<array><elem>Hello</elem><elem>World</elem>...</array>` و tuple ها به صورت `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>` در خروجی می آیند.
 
