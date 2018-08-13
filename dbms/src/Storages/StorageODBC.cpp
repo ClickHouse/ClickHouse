@@ -33,27 +33,24 @@ StorageODBC::StorageODBC(const std::string & table_name_,
     const std::string & remote_table_name_,
     const ColumnsDescription & columns_,
     const Context & context_)
-    : IStorageURLBase(Poco::URI(), context_, table_name_, "RowBinary", columns_)
-    , connection_string(connection_string)
+    : IStorageURLBase(Poco::URI(), context_, table_name_, ODBCBridgeHelper::DEFAULT_FORMAT, columns_)
+    , odbc_bridge_helper(context_, connection_string)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , log(&Poco::Logger::get("StorageODBC"))
 {
-    const auto & config = context_.getConfigRef();
-    size_t bridge_port = config.getUInt("odbc_bridge.port", 9018);
-    std::string bridge_host = config.getString("odbc_bridge.host", "localhost");
+    const auto & config = context_global.getConfigRef();
+    size_t bridge_port = config.getUInt("odbc_bridge.port", ODBCBridgeHelper::DEFAULT_PORT);
+    std::string bridge_host = config.getString("odbc_bridge.host", ODBCBridgeHelper::DEFAULT_HOST);
 
     uri.setHost(bridge_host);
     uri.setPort(bridge_port);
     uri.setScheme("http");
-
-    ping_uri = uri;
-    ping_uri.setPath("/ping");
 }
 
 std::string StorageODBC::getReadMethod() const
 {
-    return Poco::Net::HTTPRequest::HTTP_POST;
+    return ODBCBridgeHelper::MAIN_METHOD;
 }
 
 std::vector<std::pair<std::string, std::string>> StorageODBC::getReadURIParams(const Names & column_names,
@@ -68,13 +65,7 @@ std::vector<std::pair<std::string, std::string>> StorageODBC::getReadURIParams(c
         auto column_data = getColumn(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
-    std::vector<std::pair<std::string, std::string>> result;
-
-    result.emplace_back("connection_string", connection_string);
-    result.emplace_back("columns", cols.toString());
-    result.emplace_back("max_block_size", std::to_string(max_block_size));
-
-    return result;
+    return odbc_bridge_helper.getURLParams(cols, max_block_size);
 }
 
 std::function<void(std::ostream &)> StorageODBC::getReadPOSTDataCallback(const Names & /*column_names*/,
@@ -89,49 +80,6 @@ std::function<void(std::ostream &)> StorageODBC::getReadPOSTDataCallback(const N
     return [query](std::ostream & os) { os << "query=" << query; };
 }
 
-bool StorageODBC::checkODBCBridgeIsRunning() const
-{
-    try
-    {
-        ReadWriteBufferFromHTTP buf(ping_uri, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
-        return checkString("Ok.", buf);
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-void StorageODBC::startODBCBridge() const
-{
-    const auto & config = context_global.getConfigRef();
-    const auto & settings = context_global.getSettingsRef();
-    Poco::Path path{config.getString("application.dir", "")};
-    path.setFileName("clickhouse-odbc-bridge");
-
-    if (!path.isFile())
-        throw Exception("clickhouse-odbc-bridge is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
-
-    std::stringstream command;
-    command << path.toString() << ' ';
-    command << "--http-port " << config.getUInt("odbc_bridge.port", 9018) << ' ';
-    command << "--listen-host " << config.getString("odbc_bridge.listen_host", "localhost") << ' ';
-    command << "--http-timeout " << settings.http_receive_timeout.value.totalSeconds() << ' ';
-    if (config.has("logger.odbc_bridge_log"))
-        command << "--log-path " << config.getString("logger.odbc_bridge_log") << ' ';
-    if (config.has("logger.odbc_bridge_errlog"))
-        command << "--err-log-path " << config.getString("logger.odbc_bridge_errlog") << ' ';
-    if (config.has("logger.odbc_bridge_level"))
-        command << "--log-level " << config.getString("logger.odbc_bridge_level") << ' ';
-    command << "&"; // we don't want to wait this process
-
-    auto command_str = command.str();
-    LOG_TRACE(log, "Starting clickhouse-odbc-bridge with command: " << command_str);
-
-    auto cmd = ShellCommand::execute(command_str);
-    cmd->wait();
-}
-
 BlockInputStreams StorageODBC::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -139,25 +87,8 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
     size_t max_block_size,
     unsigned num_streams)
 {
-    if (!checkODBCBridgeIsRunning())
-    {
-        LOG_TRACE(log, "clickhouse-odbc-bridge is not running, will try to start it");
-        startODBCBridge();
-        bool started = false;
-        for (size_t counter : ext::range(1, 20))
-        {
-            LOG_TRACE(log, "Checking clickhouse-odbc-bridge is running, try " << counter);
-            if (checkODBCBridgeIsRunning())
-            {
-                started = true;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-        if (!started)
-            throw Exception("StorageODBC: clickhouse-odbc-bridge is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
-    }
 
+    odbc_bridge_helper.startODBCBridgeSync();
     return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
