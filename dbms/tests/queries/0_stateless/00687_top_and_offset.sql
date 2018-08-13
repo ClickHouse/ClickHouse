@@ -15,6 +15,6 @@ INSERT INTO test.test VALUES (9);
 SELECT TOP 2 * FROM test.test;
 SELECT TOP (2) * FROM test.test;
 SELECT * FROM test.test LIMIT 2 OFFSET 2;
-SELECT TOP 2 * FROM test.test LIMIT 2; -- { clientError 404 } 
+SELECT TOP 2 * FROM test.test LIMIT 2; -- { clientError 406 } 
 
 DROP TABLE test.test;
