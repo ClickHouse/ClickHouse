@@ -23,13 +23,31 @@ public:
       * max_block_number_to_read - if not zero, do not read all the parts whose right border is greater than this threshold.
       */
     BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams,
-        Int64 max_block_number_to_read) const;
+            const Names & column_names,
+            const SelectQueryInfo & query_info,
+            const Context & context,
+            QueryProcessingStage::Enum & processed_stage,
+            size_t max_block_size,
+            unsigned num_streams) const;
+
+    BlockInputStreams read(
+            const Names & column_names,
+            const SelectQueryInfo & query_info,
+            const Context & context,
+            QueryProcessingStage::Enum & processed_stage,
+            size_t max_block_size,
+            unsigned num_streams,
+            const std::unordered_map<String, Int64> & max_blocks_number_to_read) const;
+
+    BlockInputStreams readFromParts(
+            MergeTreeData::DataPartsVector parts,
+            const Names & column_names,
+            const SelectQueryInfo & query_info,
+            const Context & context,
+            QueryProcessingStage::Enum & processed_stage,
+            size_t max_block_size,
+            unsigned num_streams,
+            const std::unordered_map<String, Int64> & max_blocks_number_to_read) const;
 
 private:
     MergeTreeData & data;

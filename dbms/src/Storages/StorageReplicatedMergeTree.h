@@ -401,6 +401,12 @@ private:
       */
     bool queueTask();
 
+    /// Get parts, that were recorded with the quorum.
+    std::unordered_map<String, Int64> getLastPartsWithQuorum(const String & last_parts_str);
+
+    /// Rewrite last parts in the quorum
+    String rewriteLastParts(const String & old_last_part, const String & tmp, const Int64 & new_block);
+
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
     /// or an exception is thrown and leader_election is destroyed.
