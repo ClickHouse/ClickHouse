@@ -15,7 +15,7 @@
 	url = https://github.com/google/cctz.git
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
-	url = https://github.com/Dead2/zlib-ng.git
+	url = https://github.com/ClickHouse-Extras/zlib-ng.git
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest.git
