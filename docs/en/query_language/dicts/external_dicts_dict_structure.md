@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_structure"></a>
 
-# Dictionary key and fields
+# Dictionary Key and Fields
 
 The `<structure>` clause describes the dictionary key and fields available for queries.
 
@@ -42,7 +42,7 @@ A structure can contain either `<id>` or `<key>` .
 !!! warning
     The key doesn't need to be defined separately in attributes.
 
-### Numeric key
+### Numeric Key
 
 Format: `UInt64`.
 
@@ -58,7 +58,7 @@ Configuration fields:
 
 - name – The name of the column with keys.
 
-### Composite key
+### Composite Key
 
 The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
