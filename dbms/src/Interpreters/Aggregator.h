@@ -1215,6 +1215,19 @@ protected:
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
 
+    template <typename Method>
+    void executeLowCardinalityImpl(
+            Method & method,
+            Arena * aggregates_pool,
+            size_t rows,
+            ColumnRawPtrs & key_columns,
+            ColumnRawPtrs & key_counts,
+            AggregateFunctionInstruction * aggregate_instructions,
+            const Sizes & key_sizes,
+            StringRefs & keys,
+            bool no_more_keys,
+            AggregateDataPtr overflow_row) const;
+
     /// Specialization for a particular value no_more_keys.
     template <bool no_more_keys, typename Method>
     void executeImplCase(
@@ -1227,6 +1240,19 @@ protected:
         const Sizes & key_sizes,
         StringRefs & keys,
         AggregateDataPtr overflow_row) const;
+
+    template <bool no_more_keys, typename Method>
+    void executeLowCardinalityImplCase(
+            Method & method,
+            typename Method::State & state,
+            Arena * aggregates_pool,
+            size_t rows,
+            ColumnRawPtrs & key_columns,
+            ColumnRawPtrs & key_counts,
+            AggregateFunctionInstruction * aggregate_instructions,
+            const Sizes & key_sizes,
+            StringRefs & keys,
+            AggregateDataPtr overflow_row) const;
 
     /// For case when there are no keys (all aggregate into one row).
     void executeWithoutKeyImpl(

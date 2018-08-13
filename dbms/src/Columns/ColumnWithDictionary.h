@@ -164,6 +164,8 @@ public:
 
     DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const;
 
+    ColumnPtr countKeys() const;
+
     class Index
     {
     public:
@@ -190,6 +192,8 @@ public:
         ColumnPtr detachPositions() { return std::move(positions); }
         void attachPositions(ColumnPtr positions_);
 
+        void countKeys(ColumnUInt64::Container & counts) const;
+
     private:
         ColumnPtr positions;
         size_t size_of_type = 0;
@@ -199,6 +203,9 @@ public:
 
         template <typename IndexType>
         typename ColumnVector<IndexType>::Container & getPositionsData();
+
+        template <typename IndexType>
+        typename const ColumnVector<IndexType>::Container & getPositionsData() const;
 
         template <typename IndexType>
         void convertPositions();

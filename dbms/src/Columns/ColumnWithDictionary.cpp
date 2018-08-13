@@ -356,6 +356,17 @@ ColumnWithDictionary::getMinimalDictionaryEncodedColumn(size_t offset, size_t li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
+ColumnPtr ColumnWithDictionary::countKeys() const
+{
+    const auto & nested_column = getDictionary().getNestedColumn();
+    size_t dict_size = nested_column->size();
+
+    auto counter = ColumnUInt64::create(dict_size, 0);
+    idx.countKeys(counter->getData());
+    return std::move(counter);
+}
+
+
 
 ColumnWithDictionary::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
@@ -422,6 +433,18 @@ template <typename IndexType>
 typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPositionsData()
 {
     auto * positions_ptr = typeid_cast<ColumnVector<IndexType> *>(positions->assumeMutable().get());
+    if (!positions_ptr)
+        throw Exception("Invalid indexes type for ColumnWithDictionary."
+                        " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
+
+    return positions_ptr->getData();
+}
+
+template <typename IndexType>
+typename const ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPositionsData() const
+{
+    const auto * positions_ptr = typeid_cast<const ColumnVector<IndexType> *>(positions.get());
     if (!positions_ptr)
         throw Exception("Invalid indexes type for ColumnWithDictionary."
                         " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
@@ -614,6 +637,19 @@ void ColumnWithDictionary::Dictionary::compact(ColumnPtr & positions)
     column_unique = std::move(new_column_unique);
 
     shared = false;
+}
+
+
+void ColumnWithDictionary::Dictionary::countKeys(ColumnUInt64::Container & counts) const
+{
+    auto counter = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        for (auto pos : data)
+            ++counts[pos];
+    };
+    callForType(std::move(counter), size_of_type);
 }
 
 }
