@@ -1613,7 +1613,7 @@ CompressionSettings Context::chooseCompressionSettings(size_t part_size, double 
 }
 
 
-const MergeTreeSettings & Context::getMergeTreeSettings()
+const MergeTreeSettings & Context::getMergeTreeSettings() const
 {
     auto lock = getLock();
 
