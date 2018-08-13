@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int TOP_AND_LIMIT_TOGETHER;
 }
 
 
@@ -142,6 +143,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list
     if (s_limit.ignore(pos, expected))
     {
+        if (select_query->limit_length)
+            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+
         ParserToken s_comma(TokenType::Comma);
         ParserNumber num;
 
