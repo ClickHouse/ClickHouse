@@ -64,19 +64,19 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
 
     if (!params.has("query"))
     {
-        process_error("ODBCBridge: No 'query' in request body");
+        process_error("No 'query' in request body");
         return;
     }
 
     if (!params.has("columns"))
     {
-        process_error("ODBCBridge: No 'columns' in request URL");
+        process_error("No 'columns' in request URL");
         return;
     }
 
     if (!params.has("connection_string"))
     {
-        process_error("ODBCBridge: No 'connection_string' in request URL");
+        process_error("No 'connection_string' in request URL");
         return;
     }
 
@@ -86,7 +86,7 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         std::string max_block_size_str = params.get("max_block_size", "");
         if (max_block_size_str.empty())
         {
-            process_error("ODBCBridge: Empty max_block_size specified");
+            process_error("Empty max_block_size specified");
             return;
         }
         max_block_size = parse<size_t>(max_block_size_str);
@@ -100,17 +100,17 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     }
     catch (const Exception & ex)
     {
-        process_error("ODBCBridge: Invalid 'columns' parameter in request body '" + ex.message() + "'");
+        process_error("Invalid 'columns' parameter in request body '" + ex.message() + "'");
         LOG_WARNING(log, ex.getStackTrace().toString());
         return;
     }
 
     std::string format = params.get("format", "RowBinary");
     std::string query = params.get("query");
-    LOG_TRACE(log, "ODBCBridge: " << query);
+    LOG_TRACE(log, "Query: " << query);
 
     std::string connection_string = params.get("connection_string");
-    LOG_TRACE(log, "ODBCBridge: Connection string '" << connection_string << "'");
+    LOG_TRACE(log, "Connection string: '" << connection_string << "'");
 
     WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
     try
@@ -122,11 +122,11 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
     }
     catch (...)
     {
-        auto message = "ODBCBridge:\n" + getCurrentExceptionMessage(true);
+        auto message = getCurrentExceptionMessage(true);
         response.setStatusAndReason(
             Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, bacause of too soon response sending
         writeStringBinary(message, out);
-        LOG_WARNING(log, message);
+        tryLogCurrentException(log);
     }
 }
 
