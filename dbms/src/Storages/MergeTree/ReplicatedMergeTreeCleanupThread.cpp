@@ -21,7 +21,6 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
     , log(&Logger::get(log_name))
 {
     task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
-    task->schedule();
 }
 
 void ReplicatedMergeTreeCleanupThread::run()
@@ -60,6 +59,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     {
         clearOldLogs();
         clearOldBlocks();
+        clearOldMutations();
     }
 }
 
@@ -235,6 +235,65 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     }
 
     std::sort(timed_blocks.begin(), timed_blocks.end(), NodeWithStat::greaterByTime);
+}
+
+
+void ReplicatedMergeTreeCleanupThread::clearOldMutations()
+{
+    if (!storage.data.settings.finished_mutations_to_keep)
+        return;
+
+    if (storage.queue.countFinishedMutations() <= storage.data.settings.finished_mutations_to_keep)
+    {
+        /// Not strictly necessary, but helps to avoid unnecessary ZooKeeper requests.
+        /// If even this replica hasn't finished enough mutations yet, then we don't need to clean anything.
+        return;
+    }
+
+    auto zookeeper = storage.getZooKeeper();
+
+    zkutil::Stat replicas_stat;
+    Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &replicas_stat);
+
+    UInt64 min_pointer = std::numeric_limits<UInt64>::max();
+    for (const String & replica : replicas)
+    {
+        String pointer;
+        zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/mutation_pointer", pointer);
+        if (pointer.empty())
+            return; /// One replica hasn't done anything yet so we can't delete any mutations.
+        min_pointer = std::min(parse<UInt64>(pointer), min_pointer);
+    }
+
+    Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
+    std::sort(entries.begin(), entries.end());
+
+    /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
+    entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());
+    /// Do not remove last `storage.data.settings.finished_mutations_to_keep` entries.
+    if (entries.size() <= storage.data.settings.finished_mutations_to_keep)
+        return;
+    entries.erase(entries.end() - storage.data.settings.finished_mutations_to_keep, entries.end());
+
+    if (entries.empty())
+        return;
+
+    zkutil::Requests ops;
+    size_t batch_start_i = 0;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/mutations/" + entries[i], -1));
+
+        if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
+        {
+            /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
+            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", replicas_stat.version));
+            zookeeper->multi(ops);
+            LOG_DEBUG(log, "Removed " << (i + 1 - batch_start_i) << " old mutation entries: " << entries[batch_start_i] << " - " << entries[i]);
+            batch_start_i = i + 1;
+            ops.clear();
+        }
+    }
 }
 
 }

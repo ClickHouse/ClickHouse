@@ -26,15 +26,16 @@
         "clipboard.copy",
         "clipboard.copied",
         "search.language",
+        "search.pipeline.stopwords",
+        "search.pipeline.trimmer",
         "search.result.none",
         "search.result.one",
         "search.result.other",
         "search.tokenizer"
       ] %}
-        <meta name="lang:{{ key }}" content="{{ lang.t(key) }}">
+      <meta name="lang:{{ key }}" content="{{ lang.t(key) }}">
       {% endfor %}
       <link rel="shortcut icon" href="{{ base_url }}/{{ config.theme.favicon }}">
-      <meta name="generator" content="mkdocs-{{ mkdocs_version }}, mkdocs-material-2.2.1">
     {% endblock %}
     {% block htmltitle %}
       {% if page and page.meta and page.meta.title %}
@@ -181,9 +182,9 @@
     </div>
     {% block scripts %}
       {% block libs %}
-        <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
+        <script src="{{ base_url }}/assets/javascripts/modernizr.js"></script>
       {% endblock %}
-      <script src="{{ base_url }}/assets/javascripts/application.5165553b.js"></script>
+      <script src="{{ base_url }}/assets/javascripts/application.js"></script>
       {% if lang.t("search.language") != "en" %}
         {% set languages = lang.t("search.language").split(",") %}
         {% if languages | length and languages[0] != "" %}
@@ -197,7 +198,7 @@
               <script src="{{ path }}/lunr.{{ language }}.js"></script>
             {% endif %}
           {% endfor %}
-          {% if languages | length > 1 %}
+          {% if languages | length > 0 %}
             <script src="{{ path }}/lunr.multi.js"></script>
           {% endif %}
         {% endif %}
@@ -224,34 +225,11 @@
               }
           });
       }
-      function drawLanguageSwitch() {
-          var url, text, title;
-          if (window.location.pathname.indexOf('/ru/') >= 0) {
-            url = window.location.pathname.replace('/ru/', '/en/');
-            text = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"50\" height=\"30\" viewBox=\"0,0 25,15\" style=\"border:1px solid #eee;margin: .8rem 0 0 -1.25rem;\">\n" +
-                "<rect width=\"25\" height=\"15\" fill=\"#00247d\"></rect>\n" +
-                "<path d=\"M 0,0 L 25,15 M 25,0 L 0,15\" stroke=\"#fff\" stroke-width=\"3\"></path>\n" +
-                "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#fff\" stroke-width=\"5\"></path>\n" +
-                "<path d=\"M 12.5,0 V 15 M 0,7.5 H 25\" stroke=\"#cf142b\" stroke-width=\"3\"></path>\n" +
-                "</svg>";
-            title = "Switch to English"
-          } else {
-            url = window.location.pathname.replace('/en/', '/ru/');
-            text = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 6\" width=\"50\" height=\"30\" style=\"border: 1px solid #eee;margin: .8rem 0 0 -1.25rem\">\n" +
-                "<rect fill=\"#fff\" width=\"10\" height=\"3\"></rect>\n" +
-                "<rect fill=\"#d52b1e\" y=\"3\" width=\"10\" height=\"3\"></rect>\n" +
-                "<rect fill=\"#0039a6\" y=\"2\" width=\"10\" height=\"2\"></rect>\n" +
-                "</svg>";
-            title = "Переключить на русский язык"
-          }
-          document.getElementById("md-language-switch").innerHTML = '<a href="' + url + '" title="' + title + '" class="md-flex__ellipsis md-header-nav__title">' + text + '</a>';
-      }
       ready(function () {
           {% if config.extra.single_page and page.content %}
           document.getElementById("content").innerHTML = {{ page.content|tojson|safe }};
           document.getElementsByClassName('md-footer')[0].style.display = 'block';
           {% endif %}
-          drawLanguageSwitch();
           app.initialize({
               version: "{{ mkdocs_version }}",
               url: {

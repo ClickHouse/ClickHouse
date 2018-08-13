@@ -25,7 +25,7 @@ namespace ErrorCodes
 class Field;
 using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
-STRONG_TYPEDEF(TupleBackend, Tuple); /// Array and Tuple are different types with equal representation inside Field.
+STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
 
 
 /** 32 is enough. Round number is used for alignment and for better arithmetic inside std::vector.

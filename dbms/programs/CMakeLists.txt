@@ -152,6 +152,6 @@ else ()
 
 endif ()
 
-if (USE_EMBEDDED_COMPILER AND ENABLE_CLICKHOUSE_SERVER)
+if (TARGET clickhouse-server AND TARGET copy-headers)
     add_dependencies(clickhouse-server copy-headers)
 endif ()

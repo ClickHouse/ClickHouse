@@ -78,11 +78,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
 
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
-    const String & name,
+    const String & name_param,
     const DataTypes & argument_types,
     const Array & parameters,
     int recursion_level) const
 {
+    String name = getAliasToOrName(name_param);
     /// Find by exact match.
     auto it = aggregate_functions.find(name);
     if (it != aggregate_functions.end())
@@ -103,8 +104,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
     {
-        if (combinator->getName() == "Null")
-            throw Exception("Aggregate function combinator 'Null' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        if (combinator->isForInternalUsageOnly())
+            throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(argument_types);
@@ -126,10 +127,11 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
-    if (aggregate_functions.count(name))
+    if (aggregate_functions.count(name) || isAlias(name))
         return true;
 
-    if (recursion_level == 0 && case_insensitive_aggregate_functions.count(Poco::toLower(name)))
+    String name_lowercase = Poco::toLower(name);
+    if (recursion_level == 0 && (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase)))
         return true;
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

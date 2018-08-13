@@ -215,7 +215,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()), queue(*this),
     fetcher(data),
-    shutdown_event(false), part_check_thread(*this),
+    cleanup_thread(*this), alter_thread(*this), part_check_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
     if (path_.empty())
@@ -1619,7 +1619,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
 
@@ -1653,7 +1653,7 @@ void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
     /// We want to remove dropped parts from disk as soon as possible
     /// To be removed a partition should have zero refcount, therefore call the cleanup thread at exit
     parts_to_remove.clear();
-    cleanup_thread->schedule();
+    cleanup_thread.wakeup();
 }
 
 
@@ -1728,7 +1728,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Range with only one block has special meaning ATTACH PARTITION
     bool replace = drop_range.getBlocksCount() > 1;
 
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
 
     struct PartDescription
     {
@@ -1822,7 +1822,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             src_data = data.checkStructureAndGetMergeTreeData(source_table);
         }
-        catch (Exception & e)
+        catch (Exception &)
         {
             LOG_INFO(log, "Can't use " << source_table_name << " as source table for REPLACE PARTITION command. Will fetch all parts."
                            << " Reason: " << getCurrentExceptionMessage(false));
@@ -1971,9 +1971,14 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
             String replica_path = zookeeper_path + "/replicas/" + part_desc->replica;
             ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
             auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
+            auto [user, password] = context.getInterserverCredentials();
+            String interserver_scheme = context.getInterserverScheme();
+
+            if (interserver_scheme != address.scheme)
+                throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
 
             part_desc->res_part = fetcher.fetchPart(part_desc->found_new_part_name, replica_path,
-                                                    address.host, address.replication_port, timeouts, false, TMP_PREFIX + "fetch_");
+                                                    address.host, address.replication_port, timeouts, user, password, interserver_scheme, false, TMP_PREFIX + "fetch_");
 
             /// TODO: check columns_version of fetched part
 
@@ -2033,7 +2038,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove);
     res_parts.clear();
     parts_to_remove.clear();
-    cleanup_thread->schedule();
+    cleanup_thread.wakeup();
 
     return true;
 }
@@ -2041,10 +2046,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
 void StorageReplicatedMergeTree::queueUpdatingTask()
 {
-    //most probably this check is not relevant
-    if (shutdown_called)
-        return;
-
     if (!queue_update_in_progress)
     {
         last_queue_update_start_time.store(time(nullptr));
@@ -2196,7 +2197,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         /// If many merges is already queued, then will queue only small enough merges.
         /// Otherwise merge queue could be filled with only large merges,
         /// and in the same time, many small parts could be created and won't be merged.
-        size_t merges_and_mutations_queued = merge_pred.countMergesAndPartMutations();
+        size_t merges_and_mutations_queued = queue.countMergesAndPartMutations();
         if (merges_and_mutations_queued >= data.settings.max_replicated_merges_in_queue)
         {
             LOG_TRACE(log, "Number of queued merges and part mutations (" << merges_and_mutations_queued
@@ -2215,7 +2216,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 {
                     success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts, future_merged_part.name, deduplicate);
                 }
-                else if (merge_pred.countMutations() > 0)
+                else if (queue.countMutations() > 0)
                 {
                     /// Choose a part to mutate.
 
@@ -2667,7 +2668,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
-        cleanup_thread->schedule();
+        cleanup_thread.wakeup();
         return false;
     }
 
@@ -2706,10 +2707,15 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
     auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
+    auto [user, password] = context.getInterserverCredentials();
+    String interserver_scheme = context.getInterserverScheme();
 
     try
     {
-        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, to_detached);
+        if (interserver_scheme != address.scheme)
+            throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
+
+        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, interserver_scheme, to_detached);
 
         if (!to_detached)
         {
@@ -2789,11 +2795,7 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    if (restarting_thread)
-    {
-        restarting_thread->stop();
-        restarting_thread.reset();
-    }
+    restarting_thread.reset();
 
     if (data_parts_exchange_endpoint_holder)
     {
@@ -3028,7 +3030,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
     {
         LOG_DEBUG(log, "Waiting for " << replica << " to apply changes");
 
-        while (!shutdown_called)
+        while (!partial_shutdown_called)
         {
             /// Replica could be inactive.
             if (!getZooKeeper()->exists(zookeeper_path + "/replicas/" + replica + "/is_active"))
@@ -3093,7 +3095,7 @@ void StorageReplicatedMergeTree::alter(const AlterCommands & params,
             }
         }
 
-        if (shutdown_called)
+        if (partial_shutdown_called)
             throw Exception("Alter is not finished because table shutdown was called. Alter will be done after table restart.",
                 ErrorCodes::UNFINISHED);
 
@@ -3343,12 +3345,28 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 }
 
 
-bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
+void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
-    return true;
+}
+
+
+void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
+
+    const String partition_id = data.getPartitionIDFromQuery(partition, context);
+    auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
+    UInt64 partition_size = 0;
+
+    for (const auto & part : parts_to_remove)
+    {
+        partition_size += part->bytes_on_disk;
+    }
+    context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
 
@@ -3924,7 +3942,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
         if (try_no)
             LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
 
-        if (try_no >= 5)
+        if (try_no >= context.getSettings().max_fetch_partition_retries_count)
             throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
@@ -3971,7 +3989,8 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                    && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                     throw;
 
                 LOG_INFO(log, e.displayText());
@@ -4475,7 +4494,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     }
 
     /// We are almost ready to commit changes, remove fetches and merges from drop range
-    queue.removePartProducingOpsInRange(zookeeper, drop_range);
+    queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
 
     /// Remove deduplication block_ids of replacing parts
     if (replace)
@@ -4539,7 +4558,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
     /// Speedup removing of replaced parts from filesystem
     parts_to_remove.clear();
-    cleanup_thread->schedule();
+    cleanup_thread.wakeup();
 
     /// If necessary, wait until the operation is performed on all replicas.
     if (context.getSettingsRef().replication_alter_partitions_sync > 1)
@@ -4592,6 +4611,7 @@ ReplicatedMergeTreeAddress StorageReplicatedMergeTree::getReplicatedMergeTreeAdd
     res.queries_port = context.getTCPPort();
     res.database = database_name;
     res.table = table_name;
+    res.scheme = context.getInterserverScheme();
     return res;
 }
 
@@ -4642,7 +4662,7 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
         if (cond_reached)
             break;
 
-        if (shutdown_called)
+        if (partial_shutdown_called)
             throw Exception("Shutdown is called for table", ErrorCodes::ABORTED);
     }
 

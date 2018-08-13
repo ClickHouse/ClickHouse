@@ -104,7 +104,7 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
-    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
+    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision);
 
     const String & getServerTimezone();
     const String & getServerDisplayName();
@@ -187,6 +187,7 @@ private:
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
+    UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     String server_timezone;
     String server_display_name;

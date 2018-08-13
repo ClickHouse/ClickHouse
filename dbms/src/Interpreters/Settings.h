@@ -154,6 +154,8 @@ struct Settings
     \
     M(SettingBool, output_format_json_quote_denormals, false, "Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.") \
     \
+    M(SettingBool, output_format_json_escape_forward_slashes, true, "Controls escaping forward slashes for string outputs in JSON output format. This is intended for compatibility with JavaScript. Don't confuse with backslashes that are always escaped.") \
+    \
     M(SettingUInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.") \
     M(SettingBool, output_format_pretty_color, true, "Use ANSI escape sequences to paint colors in Pretty formats") \
     \
@@ -187,8 +189,6 @@ struct Settings
     M(SettingSeconds, http_receive_timeout, DEFAULT_HTTP_READ_BUFFER_TIMEOUT, "HTTP receive timeout") \
     M(SettingBool, optimize_throw_if_noop, false, "If setting is enabled and OPTIMIZE query didn't actually assign a merge then an explanatory exception is thrown") \
     M(SettingBool, use_index_for_in_with_subqueries, true, "Try using an index if there is a subquery or a table expression on the right side of the IN operator.") \
-    M(SettingUInt64, use_index_for_in_with_subqueries_max_values, 100000, "Don't use index of a table for filtering by right hand size of the IN operator if the size of set is larger than specified threshold. This allows to avoid performance degradation and higher memory usage due to preparation of additional data structures.") \
-    \
     M(SettingBool, empty_result_for_aggregation_by_empty_set, false, "Return empty result when aggregating without keys on empty set.") \
     M(SettingBool, allow_distributed_ddl, true, "If it is set to true, then a user is allowed to executed distributed DDL queries.") \
     M(SettingUInt64, odbc_max_field_size, 1024, "Max size of filed can be read from ODBC dictionary. Long strings are truncated.") \
@@ -268,6 +268,9 @@ struct Settings
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
     \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
+    M(SettingBool, prefer_localhost_replica, 1, "1 - always send query to local replica, if it exists. 0 - choose replica to send query between local and remote ones according to load_balancing") \
+    M(SettingUInt64, max_fetch_partition_retries_count, 5, "Amount of retries while fetching partition from another host.") \
+
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
