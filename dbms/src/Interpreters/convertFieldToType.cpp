@@ -18,6 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 
 namespace DB
@@ -217,12 +218,10 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_type_hint && from_type_hint->equals(to_type))
         return from_value;
 
-    if (to_type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(to_type);
-        const DataTypePtr & nested_type = nullable_type.getNestedType();
-        return convertFieldToTypeImpl(from_value, *nested_type);
-    }
+    if (auto * with_dict_type = typeid_cast<const DataTypeWithDictionary *>(&to_type))
+        return convertFieldToType(from_value, *with_dict_type->getDictionaryType(), from_type_hint);
+    else if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
+        return convertFieldToTypeImpl(from_value, *nullable_type->getNestedType());
     else
         return convertFieldToTypeImpl(from_value, to_type);
 }
