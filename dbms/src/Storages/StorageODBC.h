@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
+#include <Common/ODBCBridgeHelper.h>
 #include <ext/shared_ptr_helper.h>
 
 namespace DB
@@ -35,10 +36,9 @@ protected:
         const Context & context_);
 
 private:
-    std::string connection_string;
+    ODBCBridgeHelper odbc_bridge_helper;
     std::string remote_database_name;
     std::string remote_table_name;
-    Poco::URI ping_uri;
 
     Poco::Logger * log;
 
@@ -55,8 +55,5 @@ private:
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
-
-    bool checkODBCBridgeIsRunning() const;
-    void startODBCBridge() const;
 };
 }
