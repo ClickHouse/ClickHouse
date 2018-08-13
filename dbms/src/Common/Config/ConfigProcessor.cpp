@@ -2,6 +2,7 @@
 
 #include <sys/utsname.h>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <iostream>
@@ -103,7 +104,9 @@ static ElementIdentifier getElementIdentifier(Node * element)
     {
         const Node * node = attrs->item(i);
         std::string name = node->nodeName();
-        if (name == "replace" || name == "remove" || name == "incl" || name == "from_zk")
+        auto subst_name_pos = std::find(ConfigProcessor::SUBSTITUTION_ATTRS.begin(), ConfigProcessor::SUBSTITUTION_ATTRS.end(), name);
+        if (name == "replace" || name == "remove" ||
+            subst_name_pos != ConfigProcessor::SUBSTITUTION_ATTRS.end())
             continue;
         std::string value = node->nodeValue();
         attrs_kv.push_back(std::make_pair(name, value));
@@ -267,12 +270,18 @@ void ConfigProcessor::doIncludesRecursive(
         return;
     }
 
+    std::map<std::string, const Node *> attr_nodes;
     NamedNodeMapPtr attributes = node->attributes();
-    const Node * incl_attribute = attributes->getNamedItem("incl");
-    const Node * from_zk_attribute = attributes->getNamedItem("from_zk");
+    size_t substs_count = 0;
+    for (const auto & attr_name : SUBSTITUTION_ATTRS)
+    {
+        auto subst = attributes->getNamedItem(attr_name);
+        attr_nodes[attr_name] = subst;
+        substs_count += static_cast<size_t>(subst == nullptr);
+    }
 
-    if (incl_attribute && from_zk_attribute)
-        throw Poco::Exception("both incl and from_zk attributes set for element <" + node->nodeName() + ">");
+    if (substs_count < SUBSTITUTION_ATTRS.size() - 1) /// only one substitution is allowed
+        throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
@@ -296,8 +305,8 @@ void ConfigProcessor::doIncludesRecursive(
         {
             Element & element = dynamic_cast<Element &>(*node);
 
-            element.removeAttribute("incl");
-            element.removeAttribute("from_zk");
+            for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                element.removeAttribute(attr_name);
 
             if (replace)
             {
@@ -324,16 +333,19 @@ void ConfigProcessor::doIncludesRecursive(
         }
     };
 
-    auto get_incl_node = [&](const std::string & name)
+    if (attr_nodes["incl"]) // we have include subst
     {
-        return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
-    };
-    if (incl_attribute)
-        process_include(incl_attribute, get_incl_node, "Include not found: ");
+        auto get_incl_node = [&](const std::string & name)
+        {
+            return include_from ? include_from->getNodeByPath("yandex/" + name) : nullptr;
+        };
 
-    if (from_zk_attribute)
+        process_include(attr_nodes["incl"], get_incl_node, "Include not found: ");
+    }
+
+    if (attr_nodes["from_zk"]) /// we have zookeeper subst
     {
-        contributing_zk_paths.insert(from_zk_attribute->getNodeValue());
+        contributing_zk_paths.insert(attr_nodes["from_zk"]->getNodeValue());
 
         if (zk_node_cache)
         {
@@ -349,8 +361,25 @@ void ConfigProcessor::doIncludesRecursive(
                 return getRootNode(zk_document.get());
             };
 
-            process_include(from_zk_attribute, get_zk_node, "Could not get ZooKeeper node: ");
+            process_include(attr_nodes["from_zk"], get_zk_node, "Could not get ZooKeeper node: ");
         }
+    }
+
+    if (attr_nodes["from_env"]) /// we have env subst
+    {
+        XMLDocumentPtr env_document;
+        auto get_env_node = [&](const std::string & name) -> const Node *
+        {
+            const char * env_val = std::getenv(name.c_str());
+            if (env_val == nullptr)
+                return nullptr;
+
+            env_document = dom_parser.parseString("<from_env>" + std::string{env_val} + "</from_env>");
+
+            return getRootNode(env_document.get());
+        };
+
+        process_include(attr_nodes["from_env"], get_env_node, "Env variable is not set: ");
     }
 
     if (included_something)
@@ -376,9 +405,6 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     merge_dirs.insert(merge_dir_path.toString());
     /// Add path_to_config/conf.d dir
     merge_dir_path.setBaseName("conf");
-    merge_dirs.insert(merge_dir_path.toString());
-    /// Add path_to_config/config.d dir
-    merge_dir_path.setBaseName("config");
     merge_dirs.insert(merge_dir_path.toString());
 
     for (const std::string & merge_dir_name : merge_dirs)

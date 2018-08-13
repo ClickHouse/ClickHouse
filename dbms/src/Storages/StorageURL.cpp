@@ -22,7 +22,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-};
+}
 
 StorageURL::StorageURL(const Poco::URI & uri_,
     const std::string & table_name_,

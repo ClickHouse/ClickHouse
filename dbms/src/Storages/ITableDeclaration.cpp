@@ -69,10 +69,24 @@ Block ITableDeclaration::getSampleBlockForColumns(const Names & column_names) co
 {
     Block res;
 
+    NamesAndTypesList all_columns = getColumns().getAll();
+    std::unordered_map<String, DataTypePtr> columns_map;
+    for (const auto & elem : all_columns)
+        columns_map.emplace(elem.name, elem.type);
+
     for (const auto & name : column_names)
     {
-        auto col = getColumn(name);
-        res.insert({ col.type->createColumn(), col.type, name });
+        auto it = columns_map.find(name);
+        if (it != columns_map.end())
+        {
+            res.insert({ it->second->createColumn(), it->second, it->first });
+        }
+        else
+        {
+            /// Virtual columns.
+            NameAndTypePair elem = getColumn(name);
+            res.insert({ elem.type->createColumn(), elem.type, elem.name });
+        }
     }
 
     return res;
