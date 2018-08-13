@@ -1,4 +1,4 @@
-# SELECT queries syntax
+# SELECT Queries Syntax
 
 `SELECT` performs data retrieval.
 
@@ -26,7 +26,7 @@ The clauses below are described in almost the same order as in the query executi
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM.
 Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified: `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. `The system does not have "merge join"`.
 
-### FROM clause
+### FROM Clause
 
 If the FROM clause is omitted, data will be read from the `system.one` table.
 The 'system.one' table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
@@ -44,7 +44,7 @@ If a query does not list any columns (for example, SELECT count() FROM t), some 
 
 The FINAL modifier can be used only for a SELECT from a CollapsingMergeTree table. When you specify FINAL, data is selected fully "collapsed". Keep in mind that using FINAL leads to a selection that includes columns related to the primary key, in addition to the columns specified in the SELECT. Additionally, the query will be executed in a single stream, and data will be merged during query execution. This means that when using FINAL, the query is processed more slowly. In most cases, you should avoid using FINAL. For more information, see the section "CollapsingMergeTree engine".
 
-### SAMPLE clause
+### SAMPLE Clause
 
 The SAMPLE clause allows for approximated query processing. Approximated query processing is only supported by MergeTree\* type tables, and only if the sampling expression was specified during table creation (see the section "MergeTree engine").
 
@@ -80,7 +80,7 @@ A sample with a relative coefficient is "consistent": if we look at all possible
 
 For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This allows using the sample in subqueries in the IN clause, as well as for manually correlating results of different queries with samples.
 
-### ARRAY JOIN clause
+### ARRAY JOIN Clause
 
 Allows executing JOIN with an array or nested data structure. The intent is similar to the 'arrayJoin' function, but its functionality is broader.
 
@@ -332,7 +332,7 @@ The query can only specify a single ARRAY JOIN clause.
 
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
-### JOIN clause
+### JOIN Clause
 
 The normal JOIN, which is not related to ARRAY JOIN described above.
 
@@ -426,14 +426,14 @@ Among the various types of JOINs, the most efficient is ANY LEFT JOIN, then ANY 
 
 If you need a JOIN for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a JOIN might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of JOIN. For more information, see the section "External dictionaries".
 
-### WHERE clause
+### WHERE Clause
 
 If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
 This expression will be used for filtering data before all other transformations.
 
 If indexes are supported by the database table engine, the expression is evaluated on the ability to use indexes.
 
-### PREWHERE clause
+### PREWHERE Clause
 
 This clause has the same meaning as the WHERE clause. The difference is in which data is read from the table.
 When using PREWHERE, first only the columns necessary for executing PREWHERE are read. Then the other columns are read that are needed for running the query, but only those blocks where the PREWHERE expression is true.
@@ -450,7 +450,7 @@ Keep in mind that it does not make much sense for PREWHERE to only specify those
 
 If the 'optimize_move_to_prewhere' setting is set to 1 and PREWHERE is omitted, the system uses heuristics to automatically move parts of expressions from WHERE to PREWHERE.
 
-### GROUP BY clause
+### GROUP BY Clause
 
 This is one of the most important parts of a column-oriented DBMS.
 
@@ -490,7 +490,7 @@ GROUP BY is not supported for array columns.
 
 A constant can't be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: `count()`.
 
-#### WITH TOTALS modifier
+#### WITH TOTALS Modifier
 
 If the WITH TOTALS modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the "total" values).
 
@@ -515,7 +515,7 @@ If `max_rows_to_group_by` and `group_by_overflow_mode = 'any'` are not used, all
 
 You can use WITH TOTALS in subqueries, including subqueries in the JOIN clause (in this case, the respective total values are combined).
 
-#### GROUP BY in external memory
+#### GROUP BY in External Memory
 
 You can enable dumping temporary data to the disk to restrict memory usage during GROUP BY.
 The `max_bytes_before_external_group_by` setting determines the threshold RAM consumption for dumping GROUP BY temporary data to the file system. If set to 0 (the default), it is disabled.
@@ -533,7 +533,7 @@ When external aggregation is enabled, if there was less than ` max_bytes_before_
 If you have an ORDER BY with a small LIMIT after GROUP BY, then the ORDER BY CLAUSE will not use significant amounts of RAM.
 But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting (`max_bytes_before_external_sort`).
 
-### LIMIT N BY clause
+### LIMIT N BY Clause
 
 LIMIT N BY COLUMNS selects the top N rows for each group of COLUMNS. LIMIT N BY is not related to LIMIT; they can both be used in the same query. The key for LIMIT N BY can contain any number of columns or expressions.
 
@@ -554,7 +554,7 @@ LIMIT 100
 
 The query will select the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
 
-### HAVING clause
+### HAVING Clause
 
 Allows filtering the result received after GROUP BY, similar to the WHERE clause.
 WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY), while HAVING is performed after it.
@@ -562,7 +562,7 @@ If aggregation is not performed, HAVING can't be used.
 
 <a name="query_language-queries-order_by"></a>
 
-### ORDER BY clause
+### ORDER BY Clause
 
 The ORDER BY clause contains a list of expressions, which can each be assigned DESC or ASC (the sorting direction). If the direction is not specified, ASC is assumed. ASC is sorted in ascending order, and DESC in descending order. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`
 
@@ -583,14 +583,14 @@ Running a query may use more memory than 'max_bytes_before_external_sort'. For t
 
 External sorting works much less effectively than sorting in RAM.
 
-### SELECT clause
+### SELECT Clause
 
 The expressions specified in the SELECT clause are analyzed after the calculations for all the clauses listed above are completed.
 More specifically, expressions are analyzed that are above the aggregate functions, if there are any aggregate functions.
 The aggregate functions and everything below them are calculated during aggregation (GROUP BY).
 These expressions work as if they are applied to separate rows in the result.
 
-### DISTINCT clause
+### DISTINCT Clause
 
 If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
 The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:
@@ -601,7 +601,7 @@ The result will be the same as if GROUP BY were specified across all the fields 
 
 DISTINCT is not supported if SELECT has at least one array column.
 
-### LIMIT clause
+### LIMIT Clause
 
 LIMIT m allows you to select the first 'm' rows from the result.
 LIMIT n, m allows you to select the first 'm' rows from the result after skipping the first 'n' rows.
@@ -610,7 +610,7 @@ LIMIT n, m allows you to select the first 'm' rows from the result after skippin
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
-### UNION ALL clause
+### UNION ALL Clause
 
 You can use UNION ALL to combine any number of queries. Example:
 
@@ -635,7 +635,7 @@ The structure of results (the number and type of columns) must match for the que
 
 Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
 
-### INTO OUTFILE clause
+### INTO OUTFILE Clause
 
 Add the `INTO OUTFILE filename` clause (where filename is a string literal) to redirect query output to the specified file.
 In contrast to MySQL, the file is created on the client side. The query will fail if a file with the same filename already exists.
@@ -643,7 +643,7 @@ This functionality is available in the command-line client and clickhouse-local 
 
 The default output format is TabSeparated (the same as in the command-line client batch mode).
 
-### FORMAT clause
+### FORMAT Clause
 
 Specify 'FORMAT format' to get data in any specified format.
 You can use this for convenience, or for creating dumps.
@@ -652,7 +652,7 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
-### IN operators
+### IN Operators
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -718,7 +718,7 @@ A subquery in the IN clause is always run just one time on a single server. Ther
 
 <a name="queries-distributed-subrequests"></a>
 
-#### Distributed subqueries
+#### Distributed Subqueries
 
 There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / ` OIN`  and `IN GLOBAL`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
@@ -819,7 +819,7 @@ This is more optimal than using the normal IN. However, keep the following point
 
 It also makes sense to specify a local table in the `GLOBAL IN` clause, in case this local table is only available on the requestor server and you want to use data from it on remote servers.
 
-### Extreme values
+### Extreme Values
 
 In addition to results, you can also get minimum and maximum values for the results columns. To do this, set the **extremes** setting to 1. Minimums and maximums are calculated for numeric types, dates, and dates with times. For other columns, the default values are output.
 

@@ -314,6 +314,9 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         new_part->partition.store(storage, part_path, checksums);
         if (new_part->minmax_idx.initialized)
             new_part->minmax_idx.store(storage, part_path, checksums);
+        else if (rows_count)
+            throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
+                + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
         WriteBufferFromFile count_out(part_path + "count.txt", 4096);
         HashingWriteBuffer count_out_hashing(count_out);

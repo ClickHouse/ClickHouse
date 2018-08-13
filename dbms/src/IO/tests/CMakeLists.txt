@@ -79,3 +79,6 @@ target_link_libraries (limit_read_buffer2 clickhouse_common_io)
 
 add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp)
 target_link_libraries (parse_date_time_best_effort clickhouse_common_io)
+
+add_executable (zlib_ng_bug zlib_ng_bug.cpp)
+target_link_libraries (zlib_ng_bug ${Poco_Foundation_LIBRARY})

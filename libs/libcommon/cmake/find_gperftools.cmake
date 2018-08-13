@@ -23,5 +23,9 @@ if (ENABLE_TCMALLOC)
         set (USE_TCMALLOC 1)
     endif ()
 
+    if (SANITIZE)
+        message (FATAL_ERROR "ENABLE_TCMALLOC is set to true, but it cannot be used with sanitizers")
+    endif ()
+
     message (STATUS "Using tcmalloc=${USE_TCMALLOC}: ${GPERFTOOLS_INCLUDE_DIR} : ${GPERFTOOLS_TCMALLOC_MINIMAL}")
 endif ()

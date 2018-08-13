@@ -1,10 +1,9 @@
 #include <iomanip>
 #include <thread>
 #include <future>
-
+#include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,7 +16,6 @@
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
-
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
@@ -202,6 +200,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
     else
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
+    auto compiler_headers = Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
+
     /// List of types of aggregate functions.
     std::stringstream aggregate_functions_typenames_str;
     std::stringstream aggregate_functions_headers_args;
@@ -225,12 +225,12 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
             throw Exception("Cannot compile code: unusual path of header file for aggregate function: " + header_path,
                 ErrorCodes::CANNOT_COMPILE_CODE);
 
-        aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src";
+        aggregate_functions_headers_args << "-include '" << compiler_headers << "/dbms/src";
         aggregate_functions_headers_args.write(&header_path[pos], header_path.size() - pos);
         aggregate_functions_headers_args << "' ";
     }
 
-    aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h'";
+    aggregate_functions_headers_args << "-include '" << compiler_headers << "/dbms/src/Interpreters/SpecializedAggregator.h'";
 
     std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
 
@@ -1601,7 +1601,7 @@ public:
 
     Block getHeader() const override { return aggregator.getHeader(final); }
 
-    ~MergingAndConvertingBlockInputStream()
+    ~MergingAndConvertingBlockInputStream() override
     {
         LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
 
