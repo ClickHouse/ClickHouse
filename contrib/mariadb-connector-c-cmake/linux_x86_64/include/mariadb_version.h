@@ -15,7 +15,7 @@
 #define MARIADB_VERSION_ID		100306
 #define MYSQL_VERSION_ID		100306
 #define MARIADB_PORT	        	3306
-#define MARIADB_UNIX_ADDR               "/tmp/mysql.sock"
+#define MARIADB_UNIX_ADDR               "/var/run/mysqld/mysqld.sock"
 #define MYSQL_CONFIG_NAME		"my"
 
 #define MARIADB_PACKAGE_VERSION "3.0.6"

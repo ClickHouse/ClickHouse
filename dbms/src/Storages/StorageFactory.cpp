@@ -91,7 +91,7 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(
                     "Engine " + name + " doesn't support SETTINGS clause. "
-                    "Currently only the MergeTree family of engines and Kafka engine supports it", 
+                    "Currently only the MergeTree family of engines and Kafka engine supports it",
                     ErrorCodes::BAD_ARGUMENTS);
             }
 

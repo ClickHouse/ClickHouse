@@ -204,6 +204,7 @@ private:
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
@@ -474,6 +475,7 @@ private:
         {
             need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
+            ignore_error = config().getBool("ignore-error", false);
         }
 
         connect();
@@ -765,7 +767,6 @@ private:
 
     bool process(const String & text)
     {
-        const auto ignore_error = config().getBool("ignore-error", false);
         const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
@@ -821,9 +822,10 @@ private:
                 }
                 catch (...)
                 {
-                    actual_client_error = getCurrentExceptionCode();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
-                        std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
                     got_exception = true;
                 }
 
@@ -1544,6 +1546,7 @@ public:
             ("stacktrace", "print stack traces of exceptions")
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
+            ("version-clean", "print version in machine-readable format and exit")
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
@@ -1570,6 +1573,12 @@ public:
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
+            exit(0);
+        }
+
+        if (options.count("version-clean"))
+        {
+            std::cout << VERSION_STRING;
             exit(0);
         }
 

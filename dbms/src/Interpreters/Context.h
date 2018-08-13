@@ -371,11 +371,15 @@ public:
     /// Provide table name to make required cheks.
     PartLog * getPartLog(const String & part_database);
 
-    const MergeTreeSettings & getMergeTreeSettings();
+    const MergeTreeSettings & getMergeTreeSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
-    void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
+    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size);
+
+    /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
+    void setMaxPartitionSizeToDrop(size_t max_size);
+    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size);
 
     /// Lets you select the compression settings according to the conditions described in the configuration file.
     CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
@@ -432,6 +436,8 @@ private:
 
     /// Session will be closed after specified timeout.
     void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
+
+    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop);
 };
 
 
