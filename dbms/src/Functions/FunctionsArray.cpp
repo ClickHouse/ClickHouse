@@ -1458,7 +1458,7 @@ void FunctionArrayDistinct::executeHashed(
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
-    
+
     if (nullable_col)
     {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
@@ -1479,7 +1479,7 @@ void FunctionArrayDistinct::executeHashed(
                 res_data_col.insertFrom(*columns[0], j);
             }
         }
-        
+
         res_offsets.emplace_back(set.size() + prev_off);
         prev_off = off;
     }
