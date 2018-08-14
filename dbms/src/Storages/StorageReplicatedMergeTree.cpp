@@ -2615,14 +2615,11 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
             zkutil::Requests ops;
             zkutil::Responses responses;
-
-	    /// We should get info about part for write it in zk node.
-            auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
             
             zkutil::Stat last_part_stat;
             String last_parts = zookeeper->get(quorum_last_part_path, &last_part_stat);
             
-            String new_last_parts = rewriteLastParts(last_parts, part_info.partition_id, part_info.max_block);
+            String new_last_parts = rewriteLastParts(last_parts, part_name);
 
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
             ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, part_name, last_part_stat.version));
@@ -2671,22 +2668,33 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 }
 
 
-std::unordered_map<String, Int64> StorageReplicatedMergeTree::getLastPartsWithQuorum(const String & last_parts_str)
+std::unordered_map<String, Int64> StorageReplicatedMergeTree::getMaxBlocksWithQuorum(const std::unordered_map<String, String> & last_parts)
+{
+    std::unordered_map<String, Int64> max_blocks;
+    for (auto last_part : last_parts)
+    {
+        max_blocks[last_part.first] = MergeTreePartInfo::fromPartName(last_part.second, data.format_version).max_block;
+    }
+    return max_blocks;
+}
+
+
+std::unordered_map<String, String> StorageReplicatedMergeTree::getLastPartsWithQuorum(const String & last_parts_str)
 {
     auto in = ReadBufferFromString(last_parts_str);
     
     size_t count;
-    std::unordered_map<String, Int64> last_blocks;
+    std::unordered_map<String, String> last_blocks;
     
     if (!last_parts_str.empty())
     {
         in >> "parts_count " >> count >> "\n";
         for (size_t i = 0; i < count; ++i)
         {
-            String part_id;
-            Int64 max_block;
-            in  >> part_id >> "\t" >> max_block >> "\n";
-            last_blocks[part_id] = max_block;
+            String partition_id;
+            String part_name;
+            in  >> partition_id >> "\t" >> part_name >> "\n";
+            last_blocks[partition_id] = part_name;
         }
     }
     
@@ -2694,23 +2702,25 @@ std::unordered_map<String, Int64> StorageReplicatedMergeTree::getLastPartsWithQu
 }
 
 
-String StorageReplicatedMergeTree::rewriteLastParts(const String & old_last_parts, const String & part_id, const Int64 & new_block)
+String StorageReplicatedMergeTree::rewriteLastParts(const String & old_last_parts, const String & new_part_name)
 {
     auto last_blocks = getLastPartsWithQuorum(old_last_parts);
     
-    last_blocks[part_id] = new_block;
+    auto new_part_info = MergeTreePartInfo::fromPartName(new_part_name, data.format_version);
     
-    String new_old_last_parts;
-    auto out = WriteBufferFromString(new_old_last_parts);
+    last_blocks[new_part_info.partition_id] = new_part_name;
+    
+    String new_last_parts;
+    auto out = WriteBufferFromString(new_last_parts);
     
     out << "parts_count " << last_blocks.size() << "\n";
     
-    for (auto & part_info : last_blocks)
+    for (auto & last_block : last_blocks)
     {
-        out << part_info.first << "\t" << part_info.second << "\n";
+        out << last_block.first << "\t" << last_block.second << "\n";
     }
     
-    return new_old_last_parts;
+    return new_last_parts;
 }
 
 
@@ -2895,12 +2905,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         String last_parts;
         zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_parts);
 
-	/*
-        if (!last_part.empty() && !data.getActiveContainingPart(last_part))    /// TODO Disable replica for distributed queries.
-            throw Exception("Replica doesn't have part " + last_part + " which was successfully written to quorum of other replicas."
-                " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
-	*/
-        if (last_parts.empty())  /// If no part has been written with quorum.
+	if (last_parts.empty())  /// If no part has been written with quorum.
         {
             String quorum_str;
             if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_str))
@@ -2912,7 +2917,11 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         }
         else
         {
-            max_blocks_number_to_read = getLastPartsWithQuorum(last_parts);
+            auto last_blocks_with_quorum = getLastPartsWithQuorum(last_parts);
+            for (auto & part_info : last_blocks_with_quorum)
+                if (!data.getActiveContainingPart(part_info.second))
+                    throw Exception("Replica doesn't have part " + part_info.second + " which was successfully written to quorum of other replicas."
+                        " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
         }
     }
 
