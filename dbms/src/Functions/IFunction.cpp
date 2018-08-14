@@ -326,11 +326,15 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             if (!column_with_dictionary)
                 throw Exception("Expected LowCardinality column, got" + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
 
-            const auto & keys = block_without_dicts.safeGetByPosition(result).column;
+            auto & keys = block_without_dicts.safeGetByPosition(result).column;
             if (indexes)
                 column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
             else
-                column_with_dictionary->insertRangeFromFullColumn(*keys->convertToFullColumnIfConst(), 0, keys->size());
+            {
+                if (auto full_column = keys->convertToFullColumnIfConst())
+                    keys = full_column;
+                column_with_dictionary->insertRangeFromFullColumn(*keys, 0, keys->size());
+            }
 
             res.column = std::move(res_column);
         }
