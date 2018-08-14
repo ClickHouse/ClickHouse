@@ -28,8 +28,16 @@ public:
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
+        unsigned num_streams) const;
+        
+    BlockInputStreams read(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size,
         unsigned num_streams,
-        Int64 max_block_number_to_read) const;
+        const std::unordered_map<String, Int64> & max_blocks_number_to_read) const;
 
     BlockInputStreams readFromParts(
         MergeTreeData::DataPartsVector parts,
@@ -39,7 +47,7 @@ public:
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams,
-        Int64 max_block_number_to_read) const;
+        const std::unordered_map<String, Int64> & max_blocks_number_to_read) const;
 
 private:
     MergeTreeData & data;

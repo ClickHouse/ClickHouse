@@ -27,7 +27,7 @@ public:
         unsigned num_streams) override
     {
         return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-            {part}, column_names, query_info, context, processed_stage, max_block_size, num_streams, 0);
+            {part}, column_names, query_info, context, processed_stage, max_block_size, num_streams, std::unordered_map<String, Int64>());
     }
 
 protected:
