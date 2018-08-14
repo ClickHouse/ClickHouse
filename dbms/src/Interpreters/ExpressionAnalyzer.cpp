@@ -28,6 +28,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
@@ -271,6 +272,9 @@ ExpressionAnalyzer::ExpressionAnalyzer(
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns();
+
+    /// Push the predicate expression down to the sub-queries.
+    rewrite_sub_queries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();
