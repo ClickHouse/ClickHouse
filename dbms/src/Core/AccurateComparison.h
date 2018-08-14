@@ -139,7 +139,6 @@ inline bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAFloat a, TAInt 
     return static_cast<double>(a) == static_cast<double>(b);
 }
 
-
 /* Final realiztions */
 
 
@@ -333,6 +332,15 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
     return equalsOp(static_cast<DB::Float64>(f), u);
 }
 
+inline bool greaterOp(DB::Int128 i, DB::Float64 f) { return static_cast<DB::Int128>(f) < i; }
+inline bool greaterOp(DB::Int128 i, DB::Float32 f) { return static_cast<DB::Int128>(f) < i; }
+inline bool greaterOp(DB::Float64 f, DB::Int128 i) { return static_cast<DB::Int128>(f) > i; }
+inline bool greaterOp(DB::Float32 f, DB::Int128 i) { return static_cast<DB::Int128>(f) > i; }
+
+inline bool equalsOp(DB::Int128 i, DB::Float64 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float64>(i) == f; }
+inline bool equalsOp(DB::Int128 i, DB::Float32 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float32>(i) == f; }
+inline bool equalsOp(DB::Float64 f, DB::Int128 i) { return equalsOp(i, f); }
+inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
 
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> notEqualsOp(A a, B b)
