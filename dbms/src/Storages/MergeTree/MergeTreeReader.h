@@ -23,6 +23,7 @@ class MergeTreeReader : private boost::noncopyable
 {
 public:
     using ValueSizeMap = std::map<std::string, double>;
+    using DeserializeBinaryBulkStateMap = std::map<std::string, IDataType::DeserializeBinaryBulkStatePtr>;
 
     MergeTreeReader(const String & path, /// Path to the directory containing the part
         const MergeTreeData::DataPartPtr & data_part, const NamesAndTypesList & columns,
@@ -63,6 +64,7 @@ private:
             const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);
 
         void seekToMark(size_t index);
+        void seekToStart();
 
         ReadBuffer * data_buffer;
 
@@ -91,6 +93,8 @@ private:
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
+    /// Stores states for IDataType::deserializeBinaryBulk
+    DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
     String path;
     MergeTreeData::DataPartPtr data_part;
 
@@ -108,6 +112,7 @@ private:
     MarkRanges all_mark_ranges;
     size_t aio_threshold;
     size_t max_read_buffer_size;
+    size_t index_granularity;
 
     void addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type);

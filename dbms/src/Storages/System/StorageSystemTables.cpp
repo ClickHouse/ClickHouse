@@ -95,7 +95,7 @@ BlockInputStreams StorageSystemTables::read(
 
         auto database = context.tryGetDatabase(database_name);
 
-        if (!database)
+        if (!database || !context.hasDatabaseAccessRights(database_name))
         {
             /// Database was deleted just now.
             continue;
