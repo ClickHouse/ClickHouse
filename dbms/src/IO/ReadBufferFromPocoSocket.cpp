@@ -30,7 +30,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
     {
         throw NetException(e.displayText(), "while reading from socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
     }
-    catch (const Poco::TimeoutException & e)
+    catch (const Poco::TimeoutException &)
     {
         throw NetException("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }

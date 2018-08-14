@@ -1,4 +1,4 @@
-# Internal dictionaries
+# Internal Dictionaries
 
 ClickHouse contains a built-in feature for working with a geobase.
 

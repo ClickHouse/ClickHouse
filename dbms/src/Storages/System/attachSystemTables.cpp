@@ -27,6 +27,7 @@
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/System/StorageSystemSettings.h>
+#include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemTableEngines.h>
 #include <Storages/System/StorageSystemTableFunctions.h>
 #include <Storages/System/StorageSystemTables.h>
@@ -47,6 +48,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("functions", StorageSystemFunctions::create("functions"));
     system_database.attachTable("events", StorageSystemEvents::create("events"));
     system_database.attachTable("settings", StorageSystemSettings::create("settings"));
+    system_database.attachTable("merge_tree_settings", SystemMergeTreeSettings::create("merge_tree_settings"));
     system_database.attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
     system_database.attachTable("formats", StorageSystemFormats::create("formats"));
     system_database.attachTable("table_functions", StorageSystemTableFunctions::create("table_functions"));

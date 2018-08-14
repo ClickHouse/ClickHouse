@@ -127,7 +127,7 @@ DictionaryPtr DictionaryFactory::create(const std::string & name, const Poco::Ut
 
     throw Exception{name + ": unknown dictionary layout type: " + layout_type,
         ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
-};
+}
 
 
 }

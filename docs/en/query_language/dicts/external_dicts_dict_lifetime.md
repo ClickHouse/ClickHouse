@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_lifetime"></a>
 
-# Dictionary updates
+# Dictionary Updates
 
 ClickHouse periodically updates the dictionaries. The update interval for fully downloaded dictionaries and the invalidation interval for cached dictionaries are defined in the `<lifetime>` tag in seconds.
 
