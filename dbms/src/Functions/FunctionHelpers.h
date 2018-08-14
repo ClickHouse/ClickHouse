@@ -7,6 +7,83 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 
+namespace common
+{
+    template <typename T>
+    inline bool addOverflow(T x, T y, T & res)
+    {
+        return __builtin_add_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool addOverflow(Int32 x, Int32 y, Int32 & res)
+    {
+        return __builtin_sadd_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool addOverflow(Int64 x, Int64 y, Int64 & res)
+    {
+        return __builtin_saddl_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
+    {
+        res = x + y;
+        return (res - y) != x;
+    }
+
+    template <typename T>
+    inline bool subOverflow(T x, T y, T & res)
+    {
+        return __builtin_sub_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool subOverflow(Int32 x, Int32 y, Int32 & res)
+    {
+        return __builtin_ssub_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool subOverflow(Int64 x, Int64 y, Int64 & res)
+    {
+        return __builtin_ssubl_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
+    {
+        res = x - y;
+        return (res + y) != x;
+    }
+
+    template <typename T>
+    inline bool mulOverflow(T x, T y, T & res)
+    {
+        return __builtin_mul_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(Int32 x, Int32 y, Int32 & res)
+    {
+        return __builtin_smul_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(Int64 x, Int64 y, Int64 & res)
+    {
+        return __builtin_smull_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
+    {
+        res = x * y;
+        return (res / y) != x;
+    }
+}
 
 namespace DB
 {
@@ -94,5 +171,62 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 /// Similar function as above. Additionally transform the result type if needed.
 Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
+template <typename T, template <typename, typename, template <typename, typename> typename> typename Apply,
+          template <typename, typename> typename Op, typename... Args>
+void callByTypeAndNumber(UInt8 number, bool & done, Args &... args)
+{
+    done = true;
+    switch (number)
+    {
+        case TypeNumber<UInt8>::value:        Apply<T, UInt8, Op>(args...); break;
+        case TypeNumber<UInt16>::value:       Apply<T, UInt16, Op>(args...); break;
+        case TypeNumber<UInt32>::value:       Apply<T, UInt32, Op>(args...); break;
+        case TypeNumber<UInt64>::value:       Apply<T, UInt64, Op>(args...); break;
+        //case TypeNumber<UInt128>::value:      Apply<T, UInt128, Op>(args...); break;
+
+        case TypeNumber<Int8>::value:         Apply<T, Int8, Op>(args...); break;
+        case TypeNumber<Int16>::value:        Apply<T, Int16, Op>(args...); break;
+        case TypeNumber<Int32>::value:        Apply<T, Int32, Op>(args...); break;
+        case TypeNumber<Int64>::value:        Apply<T, Int64, Op>(args...); break;
+        case TypeNumber<Int128>::value:       Apply<T, Int128, Op>(args...); break;
+
+        case TypeNumber<Dec32>::value:        Apply<T, Dec32, Op>(args...); break;
+        case TypeNumber<Dec64>::value:        Apply<T, Dec64, Op>(args...); break;
+        case TypeNumber<Dec128>::value:       Apply<T, Dec128, Op>(args...); break;
+        default:
+            done = false;
+    }
+}
+
+/// Unroll template using TypeNumber<T>
+template <template <typename, typename, template <typename, typename> typename> typename Apply,
+          template <typename, typename> typename Op, typename... Args>
+inline bool callByNumbers(UInt8 type_num1, UInt8 type_num2, Args &... args)
+{
+    bool done = false;
+    switch (type_num1)
+    {
+        case TypeNumber<UInt8>::value: callByTypeAndNumber<UInt8, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<UInt16>::value: callByTypeAndNumber<UInt16, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<UInt32>::value: callByTypeAndNumber<UInt32, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<UInt64>::value: callByTypeAndNumber<UInt64, Apply, Op, Args...>(type_num2, done, args...); break;
+        //case TypeNumber<UInt128>::value: callByTypeAndNumber<UInt128, Apply, Op, Args...>(type_num2, done, args...); break;
+
+        case TypeNumber<Int8>::value: callByTypeAndNumber<Int8, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<Int16>::value: callByTypeAndNumber<Int16, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<Int32>::value: callByTypeAndNumber<Int32, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<Int64>::value: callByTypeAndNumber<Int64, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<Int128>::value: callByTypeAndNumber<Int128, Apply, Op, Args...>(type_num2, done, args...); break;
+
+        case TypeNumber<Dec32>::value: callByTypeAndNumber<Dec32, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<Dec64>::value: callByTypeAndNumber<Dec64, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeNumber<Dec128>::value: callByTypeAndNumber<Dec128, Apply, Op, Args...>(type_num2, done, args...); break;
+
+        default:
+            break;
+    };
+
+    return done;
+}
 
 }
