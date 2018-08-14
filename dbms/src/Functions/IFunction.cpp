@@ -324,7 +324,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             auto * column_with_dictionary = typeid_cast<ColumnWithDictionary *>(res_column.get());
 
             if (!column_with_dictionary)
-                throw Exception("Expected LowCardinality column, got" + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Expected LowCardinality column, got " + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
 
             auto & keys = block_without_dicts.safeGetByPosition(result).column;
             if (indexes)
