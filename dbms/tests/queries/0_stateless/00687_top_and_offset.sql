@@ -1,3 +1,5 @@
+SET send_logs_level = 'none';
+
 DROP TABLE IF EXISTS test.test;
 
 CREATE TABLE test.test(val Int64) engine = Memory;
