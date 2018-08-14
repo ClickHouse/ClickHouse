@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+#include <unistd.h>
 
 #if USE_UNWIND
     #define UNW_LOCAL_ONLY
@@ -54,6 +55,7 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -845,8 +847,40 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+void BaseDaemon::closeFDs()
+{
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(__MACH__))
+    Poco::File proc_path{"/dev/fd"};
+#else
+    Poco::File proc_path{"/proc/self/fd"};
+#endif
+    if (proc_path.isDirectory()) /// Hooray, proc exists
+    {
+        Poco::DirectoryIterator itr(proc_path), end;
+        for (; itr != end; ++itr)
+        {
+            long fd = DB::parse<long>(itr.name());
+            if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+                ::close(fd);
+        }
+    }
+    else
+    {
+        long max_fd = -1;
+#ifdef _SC_OPEN_MAX
+        max_fd = sysconf(_SC_OPEN_MAX);
+        if (max_fd == -1)
+#endif
+            max_fd = 256; /// bad fallback
+        for (long fd = 3; fd < max_fd; ++fd)
+            if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+                ::close(fd);
+    }
+}
+
 void BaseDaemon::initialize(Application & self)
 {
+    closeFDs();
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
 
@@ -1031,6 +1065,19 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + core_path);
     }
 
+    initializeTerminationAndSignalProcessing();
+
+    logRevision();
+
+    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+    {
+        graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
+    }
+}
+
+
+void BaseDaemon::initializeTerminationAndSignalProcessing()
+{
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -1071,15 +1118,9 @@ void BaseDaemon::initialize(Application & self)
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    logRevision();
-
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
 
-    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
-    {
-        graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
-    }
 }
 
 void BaseDaemon::logRevision() const

@@ -381,6 +381,10 @@ namespace ErrorCodes
     extern const int BAD_ODBC_CONNECTION_STRING = 404;
     extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 405;
     extern const int TOP_AND_LIMIT_TOGETHER = 406;
+    extern const int DECIMAL_OVERFLOW = 407;
+    extern const int BAD_REQUEST_PARAMETER = 408;
+    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 409;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 410;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
