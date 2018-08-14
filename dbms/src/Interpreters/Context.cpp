@@ -618,6 +618,13 @@ void Context::checkDatabaseAccessRights(const std::string & database_name) const
     checkDatabaseAccessRightsImpl(database_name);
 }
 
+bool Context::hasDatabaseAccessRights(const String & database_name) const
+{
+    auto lock = getLock();
+    return client_info.current_user.empty() || (database_name == "system") ||
+        shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name);
+}
+
 void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) const
 {
     if (client_info.current_user.empty() || (database_name == "system"))
@@ -1792,6 +1799,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 
     return shared->action_locks_manager;
 }
+
 
 SessionCleaner::~SessionCleaner()
 {
