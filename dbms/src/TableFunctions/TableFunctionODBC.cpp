@@ -9,7 +9,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/StorageODBC.h>
-#include <Dictionaries/validateODBCConnectionString.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
@@ -72,7 +71,7 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
     for (int i = 0; i < 2; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string connection_string = validateODBCConnectionString(static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>());
+    std::string connection_string = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
     std::string table_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
 
     Poco::Data::ODBC::SessionImpl session(connection_string, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
@@ -110,7 +109,7 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
         columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
     }
 
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns});
+    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns}, context);
     result->startup();
     return result;
 }
