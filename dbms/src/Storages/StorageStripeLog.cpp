@@ -73,7 +73,7 @@ public:
     Block getHeader() const override
     {
         return header;
-    };
+    }
 
 protected:
     Block readImpl() override
@@ -143,7 +143,7 @@ public:
     {
     }
 
-    ~StripeLogBlockOutputStream()
+    ~StripeLogBlockOutputStream() override
     {
         try
         {

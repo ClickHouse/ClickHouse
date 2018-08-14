@@ -1,15 +1,11 @@
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Settings.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <Storages/System/VirtualColumnsProcessor.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
@@ -18,71 +14,58 @@
 namespace DB
 {
 
-
-StorageSystemProcesses::StorageSystemProcesses(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
-        { "is_initial_query",     std::make_shared<DataTypeUInt8>() },
+    return {
+        {"is_initial_query", std::make_shared<DataTypeUInt8>()},
 
-        { "user",                 std::make_shared<DataTypeString>() },
-        { "query_id",             std::make_shared<DataTypeString>() },
-        { "address",              std::make_shared<DataTypeString>() },
-        { "port",                 std::make_shared<DataTypeUInt16>() },
+        {"user", std::make_shared<DataTypeString>()},
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"address", std::make_shared<DataTypeString>()},
+        {"port", std::make_shared<DataTypeUInt16>()},
 
-        { "initial_user",         std::make_shared<DataTypeString>() },
-        { "initial_query_id",     std::make_shared<DataTypeString>() },
-        { "initial_address",      std::make_shared<DataTypeString>() },
-        { "initial_port",         std::make_shared<DataTypeUInt16>() },
+        {"initial_user", std::make_shared<DataTypeString>()},
+        {"initial_query_id", std::make_shared<DataTypeString>()},
+        {"initial_address", std::make_shared<DataTypeString>()},
+        {"initial_port", std::make_shared<DataTypeUInt16>()},
 
-        { "interface",            std::make_shared<DataTypeUInt8>() },
+        {"interface", std::make_shared<DataTypeUInt8>()},
 
-        { "os_user",              std::make_shared<DataTypeString>() },
-        { "client_hostname",      std::make_shared<DataTypeString>() },
-        { "client_name",          std::make_shared<DataTypeString>() },
-        { "client_version_major", std::make_shared<DataTypeUInt64>() },
-        { "client_version_minor", std::make_shared<DataTypeUInt64>() },
-        { "client_revision",      std::make_shared<DataTypeUInt64>() },
+        {"os_user", std::make_shared<DataTypeString>()},
+        {"client_hostname", std::make_shared<DataTypeString>()},
+        {"client_name", std::make_shared<DataTypeString>()},
+        {"client_version_major", std::make_shared<DataTypeUInt64>()},
+        {"client_version_minor", std::make_shared<DataTypeUInt64>()},
+        {"client_version_patch", std::make_shared<DataTypeUInt64>()},
+        {"client_revision", std::make_shared<DataTypeUInt64>()},
 
-        { "http_method",          std::make_shared<DataTypeUInt8>() },
-        { "http_user_agent",      std::make_shared<DataTypeString>() },
+        {"http_method", std::make_shared<DataTypeUInt8>()},
+        {"http_user_agent", std::make_shared<DataTypeString>()},
 
-        { "quota_key",            std::make_shared<DataTypeString>() },
+        {"quota_key", std::make_shared<DataTypeString>()},
 
-        { "elapsed",              std::make_shared<DataTypeFloat64>() },
-        { "is_cancelled",         std::make_shared<DataTypeUInt8>() },
-        { "read_rows",            std::make_shared<DataTypeUInt64>() },
-        { "read_bytes",           std::make_shared<DataTypeUInt64>() },
-        { "total_rows_approx",    std::make_shared<DataTypeUInt64>() },
-        { "written_rows",         std::make_shared<DataTypeUInt64>() },
-        { "written_bytes",        std::make_shared<DataTypeUInt64>() },
-        { "memory_usage",         std::make_shared<DataTypeInt64>() },
-        { "peak_memory_usage",    std::make_shared<DataTypeInt64>() },
-        { "query",                std::make_shared<DataTypeString>() },
+        {"elapsed", std::make_shared<DataTypeFloat64>()},
+        {"is_cancelled", std::make_shared<DataTypeUInt8>()},
+        {"read_rows", std::make_shared<DataTypeUInt64>()},
+        {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"total_rows_approx", std::make_shared<DataTypeUInt64>()},
+        {"written_rows", std::make_shared<DataTypeUInt64>()},
+        {"written_bytes", std::make_shared<DataTypeUInt64>()},
+        {"memory_usage", std::make_shared<DataTypeInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
+        {"query", std::make_shared<DataTypeString>()},
 
-        { "thread_numbers",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()) },
-        { "ProfileEvents.Names",  std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "thread_numbers", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()) },
+        { "ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
         { "ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
-        { "Settings.Names",       std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
-        { "Settings.Values",      std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) }
-    }));
+        { "Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+    };
 }
 
 
-BlockInputStreams StorageSystemProcesses::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    processed_stage = QueryProcessingStage::FetchColumns;
-    check(column_names);
-
-    Block res_block = getSampleBlock().cloneEmpty();
-    MutableColumns res_columns = res_block.cloneEmptyColumns();
-
     ProcessList::Info info = context.getProcessList().getInfo(true, true, true);
 
     for (const auto & process : info)
@@ -103,6 +86,7 @@ BlockInputStreams StorageSystemProcesses::read(
         res_columns[i++]->insert(process.client_info.client_name);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
+        res_columns[i++]->insert(process.client_info.client_version_patch);
         res_columns[i++]->insert(UInt64(process.client_info.client_revision));
         res_columns[i++]->insert(UInt64(process.client_info.http_method));
         res_columns[i++]->insert(process.client_info.http_user_agent);
@@ -152,8 +136,6 @@ BlockInputStreams StorageSystemProcesses::read(
             }
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(res_block.cloneWithColumns(std::move(res_columns))));
 }
 
 }

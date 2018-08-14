@@ -1,5 +1,5 @@
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Storages/MergeTree/AbandonableLockInZooKeeper.h>
+#include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Interpreters/PartLog.h>
@@ -108,7 +108,7 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
     last_block_is_duplicate = false;
 
     /// TODO Is it possible to not lock the table structure here?
-    storage.data.delayInsertOrThrowIfNeeded(&storage.restarting_thread->getWakeupEvent());
+    storage.data.delayInsertOrThrowIfNeeded(&storage.partial_shutdown_event);
 
     auto zookeeper = storage.getZooKeeper();
     assertSessionIsNotExpired(zookeeper);

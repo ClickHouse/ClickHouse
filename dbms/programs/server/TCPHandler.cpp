@@ -1,39 +1,34 @@
 #include <iomanip>
-
+#include <ext/scope_guard.h>
 #include <Poco/Net/NetException.h>
+#include <daemon/OwnSplitChannel.h>
 
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
-
 #include <IO/Progress.h>
-
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/CompressionSettings.h>
-
 #include <IO/copyData.h>
-
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/TablesStatus.h>
-
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-
+#include <Common/ClickHouseRevision.h>
+#include <Common/Stopwatch.h>
 #include <Common/ExternalTable.h>
+#include <Common/NetException.h>
+#include <Common/config_version.h>
 
 #include "TCPHandler.h"
-#include <daemon/OwnSplitChannel.h>
-#include <Interpreters/InternalTextLogsQueue.h>
-
-#include <Common/NetException.h>
-#include <ext/scope_guard.h>
 
 
 namespace DB
@@ -547,6 +542,7 @@ void TCPHandler::receiveHello()
     readStringBinary(client_name, *in);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
+    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_revision, *in);
     readStringBinary(default_database, *in);
     readStringBinary(user, *in);
@@ -555,7 +551,8 @@ void TCPHandler::receiveHello()
     LOG_DEBUG(log, "Connected " << client_name
         << " version " << client_version_major
         << "." << client_version_minor
-        << "." << client_revision
+        << "." << client_version_patch
+        << ", revision: " << client_revision
         << (!default_database.empty() ? ", database: " + default_database : "")
         << (!user.empty() ? ", user: " + user : "")
         << ".");
@@ -572,13 +569,11 @@ void TCPHandler::sendHello()
     writeVarUInt(DBMS_VERSION_MINOR, *out);
     writeVarUInt(ClickHouseRevision::get(), *out);
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
-    {
         writeStringBinary(DateLUT::instance().getTimeZone(), *out);
-    }
     if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
-    {
         writeStringBinary(server_display_name, *out);
-    }
+    if (client_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
+        writeVarUInt(DBMS_VERSION_PATCH, *out);
     out->next();
 }
 
@@ -651,6 +646,7 @@ void TCPHandler::receiveQuery()
             client_info.client_name = client_name;
             client_info.client_version_major = client_version_major;
             client_info.client_version_minor = client_version_minor;
+            client_info.client_version_patch = client_version_patch;
             client_info.client_revision = client_revision;
         }
 

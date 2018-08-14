@@ -75,10 +75,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
-            if (!database_and_table.second->checkTableCanBeDropped())
-                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
-                                " couldn't be truncated due to failed pre-drop check",
-                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+            database_and_table.second->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
@@ -87,10 +84,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
-            if (!database_and_table.second->checkTableCanBeDropped())
-                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
-                                " couldn't be dropped due to failed pre-drop check",
-                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+            database_and_table.second->checkTableCanBeDropped();
 
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
@@ -121,18 +115,29 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
 {
     if (kind == ASTDropQuery::Kind::Detach)
         throw Exception("Unable to detach temporary table.", ErrorCodes::SYNTAX_ERROR);
-    else if (kind == ASTDropQuery::Kind::Drop)
+    else
     {
-        StoragePtr table = (context.hasSessionContext() ? context.getSessionContext() : context).tryRemoveExternalTable(table_name);
+        auto & context_handle = context.hasSessionContext() ? context.getSessionContext() : context;
+        StoragePtr table = context_handle.tryGetExternalTable(table_name);
         if (table)
         {
-            table->shutdown();
-            /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
-            /// Delete table data
-            table->drop();
-            table->is_dropped = true;
-            return {};
+            if (kind == ASTDropQuery::Kind::Truncate)
+            {
+                /// If table was already dropped by anyone, an exception will be thrown
+                auto table_lock = table->lockDataForAlter(__PRETTY_FUNCTION__);
+                /// Drop table data, don't touch metadata
+                table->truncate(query_ptr);
+            }
+            else if (kind == ASTDropQuery::Kind::Drop)
+            {
+                context_handle.tryRemoveExternalTable(table_name);
+                table->shutdown();
+                /// If table was already dropped by anyone, an exception will be thrown
+                auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
+                /// Delete table data
+                table->drop();
+                table->is_dropped = true;
+            }
         }
     }
 

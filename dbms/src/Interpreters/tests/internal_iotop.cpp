@@ -126,7 +126,7 @@ void test_perf()
 
         auto ms = watch.elapsedMilliseconds();
         if (ms > 0)
-            std::cerr << "Rusage: " << double(ms) / num_samples << " ms per call, " << 1000 * num_samples / ms << " calls per second\n";
+            std::cerr << "RUsage: " << double(ms) / num_samples << " ms per call, " << 1000 * num_samples / ms << " calls per second\n";
     }
 
     {

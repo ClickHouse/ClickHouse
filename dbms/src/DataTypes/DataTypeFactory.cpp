@@ -6,6 +6,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
 #include <Poco/String.h>
+#include <Common/StringUtils/StringUtils.h>
 
 
 namespace DB
@@ -51,16 +52,36 @@ DataTypePtr DataTypeFactory::get(const ASTPtr & ast) const
     throw Exception("Unexpected AST element for data type.", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
 
-DataTypePtr DataTypeFactory::get(const String & family_name, const ASTPtr & parameters) const
+DataTypePtr DataTypeFactory::get(const String & family_name_param, const ASTPtr & parameters) const
 {
+    String family_name = getAliasToOrName(family_name_param);
+
+    if (endsWith(family_name, "WithDictionary"))
+    {
+        ASTPtr low_cardinality_params = std::make_shared<ASTExpressionList>();
+        String param_name = family_name.substr(0, family_name.size() - strlen("WithDictionary"));
+        if (parameters)
+        {
+            auto func = std::make_shared<ASTFunction>();
+            func->name = param_name;
+            func->arguments = parameters;
+            low_cardinality_params->children.push_back(func);
+        }
+        else
+            low_cardinality_params->children.push_back(std::make_shared<ASTIdentifier>(param_name));
+
+        return get("LowCardinality", low_cardinality_params);
+    }
+
     {
         DataTypesDictionary::const_iterator it = data_types.find(family_name);
         if (data_types.end() != it)
             return it->second(parameters);
     }
 
+    String family_name_lowercase = Poco::toLower(family_name);
+
     {
-        String family_name_lowercase = Poco::toLower(family_name);
         DataTypesDictionary::const_iterator it = case_insensitive_data_types.find(family_name_lowercase);
         if (case_insensitive_data_types.end() != it)
             return it->second(parameters);
@@ -76,18 +97,22 @@ void DataTypeFactory::registerDataType(const String & family_name, Creator creat
         throw Exception("DataTypeFactory: the data type family " + family_name + " has been provided "
             " a null constructor", ErrorCodes::LOGICAL_ERROR);
 
+    String family_name_lowercase = Poco::toLower(family_name);
+
+    if (isAlias(family_name) || isAlias(family_name_lowercase))
+        throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is already registered as alias",
+                        ErrorCodes::LOGICAL_ERROR);
+
     if (!data_types.emplace(family_name, creator).second)
         throw Exception("DataTypeFactory: the data type family name '" + family_name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 
-    String family_name_lowercase = Poco::toLower(family_name);
 
     if (case_sensitiveness == CaseInsensitive
         && !case_insensitive_data_types.emplace(family_name_lowercase, creator).second)
         throw Exception("DataTypeFactory: the case insensitive data type family name '" + family_name + "' is not unique",
             ErrorCodes::LOGICAL_ERROR);
 }
-
 
 void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator creator, CaseSensitiveness case_sensitiveness)
 {
@@ -103,8 +128,8 @@ void DataTypeFactory::registerSimpleDataType(const String & name, SimpleCreator 
     }, case_sensitiveness);
 }
 
-
 void registerDataTypeNumbers(DataTypeFactory & factory);
+void registerDataTypeDecimal(DataTypeFactory & factory);
 void registerDataTypeDate(DataTypeFactory & factory);
 void registerDataTypeDateTime(DataTypeFactory & factory);
 void registerDataTypeString(DataTypeFactory & factory);
@@ -118,11 +143,13 @@ void registerDataTypeUUID(DataTypeFactory & factory);
 void registerDataTypeAggregateFunction(DataTypeFactory & factory);
 void registerDataTypeNested(DataTypeFactory & factory);
 void registerDataTypeInterval(DataTypeFactory & factory);
+void registerDataTypeWithDictionary(DataTypeFactory & factory);
 
 
 DataTypeFactory::DataTypeFactory()
 {
     registerDataTypeNumbers(*this);
+    registerDataTypeDecimal(*this);
     registerDataTypeDate(*this);
     registerDataTypeDateTime(*this);
     registerDataTypeString(*this);
@@ -136,6 +163,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeAggregateFunction(*this);
     registerDataTypeNested(*this);
     registerDataTypeInterval(*this);
+    registerDataTypeWithDictionary(*this);
 }
 
 }

@@ -2,7 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <Storages/System/VirtualColumnsProcessor.h>
+
 
 namespace DB
 {
@@ -12,7 +12,7 @@ class Context;
 
 /** Implements the system table `tables`, which allows you to get information about all tables.
   */
-class StorageSystemTables : public ext::shared_ptr_helper<StorageSystemTables>, public StorageWithVirtualColumns
+class StorageSystemTables : public ext::shared_ptr_helper<StorageSystemTables>, public IStorage
 {
 public:
     std::string getName() const override { return "SystemTables"; }

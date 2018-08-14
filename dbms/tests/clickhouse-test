@@ -82,8 +82,8 @@ def main(args):
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
     # Force to print server warnings in stderr
-    # Sell scripts could change logging level
-    server_logs_level="warning"
+    # Shell scripts could change logging level
+    server_logs_level = "warning"
     os.environ.setdefault("CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL", server_logs_level)
 
     # TODO ! use clickhouse-extract-from-config here:
@@ -131,7 +131,7 @@ def main(args):
             failures = 0
             failures_chain = 0
             if 'stateful' in suite and not is_data_present():
-                print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
+                print("Won't run stateful tests because test data wasn't loaded.")
                 continue
 
             # Reverse sort order: we want run newest test first.
@@ -200,7 +200,7 @@ def main(args):
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                                 if ext == '.sql':
-                                    command = "{} --server_logs_level={} --multiquery < {} > {} 2> {}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
+                                    command = "{0} --server_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
                                 else:
                                     command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 

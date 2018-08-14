@@ -4,7 +4,7 @@
 
 ## distributed_product_mode
 
-Changes the behavior of [distributed subqueries](../../query_language/queries.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
+Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
 
 ClickHouse applies the configuration if the subqueries on any level have a distributed table that exists on the local server and has more than one shard.
 
@@ -12,7 +12,7 @@ Restrictions:
 
 - Only applied for IN and JOIN subqueries.
 - Used only if a distributed table is used in the FROM clause.
-- Not used for a table-valued [ remote](../../table_functions/remote.md#table_functions-remote) function.
+- Not used for a table-valued [ remote](../../query_language/table_functions/remote.md#table_functions-remote) function.
 
 The possible values ​​are:
 
@@ -20,7 +20,7 @@ The possible values ​​are:
 
 ## fallback_to_stale_replicas_for_distributed_queries
 
-Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../table_engines/replication.md#table_engines-replication)".
+Forces a query to an out-of-date replica if updated data is not available. See "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
@@ -36,7 +36,7 @@ Disables query execution if the index can't be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)".
+If `force_index_by_date=1`,  ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)".
 
 <a name="settings-settings-force_primary_key"></a>
 
@@ -46,7 +46,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)".
+If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition actually reduces the amount of data to read. For more information about data ranges in MergeTree tables, see "[MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)".
 
 <a name="settings_settings_fsync_metadata"></a>
 
@@ -125,7 +125,7 @@ This is slightly more than `max_block_size`. The reason for this is because cert
 
 ## max_replica_delay_for_distributed_queries
 
-Disables lagging replicas for distributed queries. See "[Replication](../../table_engines/replication.md#table_engines-replication)".
+Disables lagging replicas for distributed queries. See "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
@@ -158,7 +158,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) and
 
 ## min_compress_block_size
 
-For [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
+For [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than 'max_compress_block_size', is no less than this value and no less than the volume of data for one mark.
 

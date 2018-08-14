@@ -88,7 +88,7 @@ struct HostID
         {
             return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
         }
-        catch (const Poco::Net::NetException & e)
+        catch (const Poco::Net::NetException &)
         {
             /// Avoid "Host not found" exceptions
             return false;
@@ -578,7 +578,7 @@ void DDLWorker::processTask(DDLTask & task)
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
             }
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const zkutil::KeeperException &)
         {
             throw;
         }

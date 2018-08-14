@@ -23,7 +23,7 @@ class ThreadStatus;
 using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 class QueryThreadLog;
 struct TasksStatsCounters;
-struct RusageCounters;
+struct RUsageCounters;
 class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
@@ -158,7 +158,7 @@ protected:
     friend struct TasksStatsCounters;
 
     /// Use ptr not to add extra dependencies in the header
-    std::unique_ptr<RusageCounters> last_rusage;
+    std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
     std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
     bool has_permissions_for_taskstats = false;
