@@ -1,12 +1,11 @@
+#include <Dictionaries/ODBCDictionarySource.h>
 #include <common/logger_useful.h>
 #include <common/LocalDateTime.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
-#include <Dictionaries/ODBCDictionarySource.h>
-#include <Dictionaries/ODBCBlockInputStream.h>
-#include <Dictionaries/validateODBCConnectionString.h>
+#include <DataStreams/IProfilingBlockInputStream.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -33,11 +32,6 @@ namespace
             reader = FormatFactory::instance().getInput(ODBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
         }
 
-        Block readImpl() override
-        {
-            return reader->read();
-        }
-
         Block getHeader() const override
         {
             return reader->getHeader();
@@ -49,6 +43,11 @@ namespace
         }
 
     private:
+        Block readImpl() override
+        {
+            return reader->read();
+        }
+
         std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
         BlockInputStreamPtr reader;
     };
@@ -193,8 +192,7 @@ std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request)
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
     odbc_bridge_helper.startODBCBridgeSync();
-    ReadWriteBufferFromHTTP buf(bridge_url, ODBCBridgeHelper::MAIN_METHOD, [request](std::ostream & os) { os << "query=" << request; }, timeouts);
-    BlockInputStreamPtr reader = FormatFactory::instance().getInput(ODBCBridgeHelper::DEFAULT_FORMAT, buf, invalidate_sample_block, global_context, max_block_size);
+
     ODBCBridgeBlockInputStream stream(
         bridge_url,
         [request](std::ostream & os) { os << "query=" << request; },
@@ -202,6 +200,7 @@ std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request)
         global_context,
         max_block_size,
         timeouts);
+
     return readInvalidateQuery(stream);
 }
 

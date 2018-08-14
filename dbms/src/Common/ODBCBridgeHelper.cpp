@@ -1,7 +1,7 @@
 #include <Common/ODBCBridgeHelper.h>
 
 #include <sstream>
-#include <Dictionaries/validateODBCConnectionString.h>
+#include <Common/validateODBCConnectionString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Path.h>

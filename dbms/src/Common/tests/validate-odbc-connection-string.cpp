@@ -1,6 +1,6 @@
 #include <iostream>
 #include <Common/Exception.h>
-#include <Dictionaries/validateODBCConnectionString.h>
+#include <Common/validateODBCConnectionString.h>
 
 
 using namespace DB;
