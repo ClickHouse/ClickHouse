@@ -200,7 +200,7 @@ def main(args):
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                                 if ext == '.sql':
-                                    command = "{0} --server_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
+                                    command = "{0} --send_logs_level={1} --testmode --multiquery < {2} > {3} 2> {4}".format(args.client, server_logs_level, case_file, stdout_file, stderr_file)
                                 else:
                                     command = "{} > {} 2> {}".format(case_file, stdout_file, stderr_file)
 
