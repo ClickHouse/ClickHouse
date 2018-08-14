@@ -51,7 +51,7 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
     {
-        if (context.isDatabaseAccessRights(db.first))
+        if (context.hasDatabaseAccessRights(db.first))
         {
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
                 if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))

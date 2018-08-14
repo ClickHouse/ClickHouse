@@ -22,7 +22,7 @@ void StorageSystemDatabases::fillData(MutableColumns & res_columns, const Contex
     auto databases = context.getDatabases();
     for (const auto & database : databases)
     {
-        if (context.isDatabaseAccessRights(database.first))
+        if (context.hasDatabaseAccessRights(database.first))
         {
             res_columns[0]->insert(database.first);
             res_columns[1]->insert(database.second->getEngineName());

@@ -60,7 +60,7 @@ public:
             MutableColumnPtr database_column_mut = ColumnString::create();
             for (const auto & database : databases)
             {
-                if (context.isDatabaseAccessRights(database.first))
+                if (context.hasDatabaseAccessRights(database.first))
                     database_column_mut->insert(database.first);
             }
             block_to_filter.insert(ColumnWithTypeAndName(
