@@ -102,7 +102,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return {};
 
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 

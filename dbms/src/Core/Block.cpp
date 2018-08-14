@@ -368,6 +368,18 @@ Block Block::cloneWithColumns(const Columns & columns) const
 }
 
 
+Block Block::cloneWithoutColumns() const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ nullptr, data[i].type, data[i].name });
+
+    return res;
+}
+
+
 Block Block::sortColumns() const
 {
     Block sorted_block;

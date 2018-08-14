@@ -180,6 +180,7 @@ public:
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
     bool isExternalTableExist(const String & table_name) const;
+    bool hasDatabaseAccessRights(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
@@ -371,7 +372,7 @@ public:
     /// Provide table name to make required cheks.
     PartLog * getPartLog(const String & part_database);
 
-    const MergeTreeSettings & getMergeTreeSettings();
+    const MergeTreeSettings & getMergeTreeSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);

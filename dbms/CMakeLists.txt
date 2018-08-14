@@ -156,7 +156,6 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
-    ${OPENSSL_CRYPTO_LIBRARY}
     ${BTRIE_LIBRARIES}
 )
 
@@ -218,6 +217,8 @@ if (USE_RDKAFKA)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
 endif ()
+
+target_link_libraries(dbms ${OPENSSL_CRYPTO_LIBRARY})
 
 target_link_libraries (dbms
     Threads::Threads

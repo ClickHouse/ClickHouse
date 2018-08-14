@@ -30,7 +30,7 @@ add_subdirectory (obfuscator)
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
-            clickhouse-extract-from-config clickhouse-format clickhouse-copier)
+            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-copier)
 
     if (USE_EMBEDDED_COMPILER)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)

@@ -22,6 +22,6 @@ namespace Nested
 
     /// Collect Array columns in a form of `column_name.element_name` to single Array(Tuple(...)) column.
     NamesAndTypesList collect(const NamesAndTypesList & names_and_types);
-};
+}
 
 }
