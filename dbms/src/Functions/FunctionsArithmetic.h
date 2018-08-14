@@ -999,7 +999,7 @@ static bool castTypeToEither(const IDataType * type, F && f)
 }
 
 
-template <template <typename, typename> class Op, typename Name>
+template <template <typename, typename> class Op, typename Name, bool CanBeExecutedOnDefaultArguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
@@ -1317,6 +1317,8 @@ public:
         return result;
     }
 #endif
+
+    bool canBeExecutedOnDefaultArguments() const override { return CanBeExecutedOnDefaultArguments; }
 };
 
 
@@ -1500,9 +1502,9 @@ using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
 using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
 using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivideFloating>;
-using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral>;
+using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral, false>;
 using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero>;
-using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo>;
+using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
 using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, NameNegate, true>;
 using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
 using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd>;
@@ -1516,8 +1518,8 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
-using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
-using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
 /// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
 using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
 using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, true>;
