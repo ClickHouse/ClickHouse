@@ -404,11 +404,13 @@ private:
       */
     bool queueTask();
 
+    std::unordered_map<String, Int64> getMaxBlocksWithQuorum(const std::unordered_map<String, String> & last_parts);
+    
     /// Get parts, wich were wrote with quorum.
-    std::unordered_map<String, Int64> getLastPartsWithQuorum(const String & last_parts_str);
+    std::unordered_map<String, String> getLastPartsWithQuorum(const String & last_parts_str);
     
     /// Rewrite last parts with quorum
-    String rewriteLastParts(const String & old_last_part, const String & tmp, const Int64 & new_block);
+    String rewriteLastParts(const String & old_last_parts, const String & new_part_name);
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
