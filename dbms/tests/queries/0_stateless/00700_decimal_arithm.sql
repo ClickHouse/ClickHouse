@@ -1,3 +1,4 @@
+SET allow_experimental_decimal=1;
 CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.decimal;
 
