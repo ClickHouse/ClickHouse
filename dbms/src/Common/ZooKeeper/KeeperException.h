@@ -50,4 +50,4 @@ private:
     static size_t getFailedOpIndex(int32_t code, const Responses & responses);
 };
 
-};
+}

@@ -19,3 +19,4 @@ DROP TABLE arrayDistinct_test;
 
 SELECT arrayDistinct([['1212'], ['sef'], ['343r4'], ['1212']]);
 SELECT arrayDistinct([(1, 2), (1, 3), (1, 2), (1, 2), (1, 2), (1, 5)]);
+SELECT length(arrayDistinct([NULL, NULL, NULL]));

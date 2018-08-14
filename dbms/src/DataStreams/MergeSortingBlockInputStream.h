@@ -55,7 +55,7 @@ private:
 
     bool has_collation = false;
 
-    std::priority_queue<SortCursor> queue;
+    std::priority_queue<SortCursor> queue_without_collation;
     std::priority_queue<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.

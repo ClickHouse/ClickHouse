@@ -1,8 +1,10 @@
-option (ENABLE_RDKAFKA "Enable kafka" ${NOT_MSVC})
+option (ENABLE_RDKAFKA "Enable kafka" ON)
 
 if (ENABLE_RDKAFKA)
 
-option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
+if (OS_LINUX_X86_64)
+    option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
+endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/CMakeLists.txt")
    message (WARNING "submodule contrib/librdkafka is missing. to fix try run: \n git submodule update --init --recursive")
@@ -13,7 +15,7 @@ endif ()
 if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
     find_library (RDKAFKA_LIB rdkafka)
     find_path (RDKAFKA_INCLUDE_DIR NAMES librdkafka/rdkafka.h PATHS ${RDKAFKA_INCLUDE_PATHS})
-    if (USE_STATIC_LIBRARIES AND NOT ARCH_FREEBSD)
+    if (USE_STATIC_LIBRARIES AND NOT OS_FREEBSD)
        find_library (SASL2_LIBRARY sasl2)
     endif ()
 endif ()

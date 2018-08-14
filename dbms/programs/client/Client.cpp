@@ -86,7 +86,104 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
+    extern const int LOGICAL_ERROR;
 }
+
+
+/// Checks expected server and client error codes in testmode.
+/// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
+class TestHint
+{
+public:
+    TestHint(bool enabled_, const String & query)
+    :   enabled(enabled_),
+        server_error(0),
+        client_error(0)
+    {
+        if (!enabled_)
+            return;
+
+        size_t pos = query.find("--");
+        if (pos != String::npos && query.find("--", pos + 2) != String::npos)
+            return; /// It's not last comment. Hint belongs to commented query.
+
+        if (pos != String::npos)
+        {
+            pos = query.find('{', pos + 2);
+            if (pos != String::npos)
+            {
+                String hint = query.substr(pos + 1);
+                pos = hint.find('}');
+                hint.resize(pos);
+                parse(hint);
+            }
+        }
+    }
+
+    /// @returns true if it's possible to continue without reconnect
+    bool checkActual(int & actual_server_error, int & actual_client_error,
+                     bool & got_exception, std::unique_ptr<Exception> & last_exception) const
+    {
+        if (!enabled)
+            return true;
+
+        if (allErrorsExpected(actual_server_error, actual_client_error))
+        {
+            got_exception = false;
+            last_exception.reset();
+            actual_server_error = 0;
+            actual_client_error = 0;
+            return false;
+        }
+
+        if (lostExpectedError(actual_server_error, actual_client_error))
+        {
+            std::cerr << "Success when error expected. It expects server error "
+                << server_error << ", client error " << client_error << "." << std::endl;
+            got_exception = true;
+            last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::LOGICAL_ERROR); /// return error to OS
+            return false;
+        }
+
+        return true;
+    }
+
+    int serverError() const { return server_error; }
+    int clientError() const { return client_error; }
+
+private:
+    bool enabled;
+    int server_error;
+    int client_error;
+
+    void parse(const String & hint)
+    {
+        std::stringstream ss;
+        ss << hint;
+        while (!ss.eof())
+        {
+            String item;
+            ss >> item;
+            if (item.empty())
+                break;
+
+            if (item == "serverError")
+                ss >> server_error;
+            else if (item == "clientError")
+                ss >> client_error;
+        }
+    }
+
+    bool allErrorsExpected(int actual_server_error, int actual_client_error) const
+    {
+        return (server_error || client_error) && (server_error == actual_server_error) && (client_error == actual_client_error);
+    }
+
+    bool lostExpectedError(int actual_server_error, int actual_client_error) const
+    {
+        return (server_error && !actual_server_error) || (client_error && !actual_client_error);
+    }
+};
 
 
 class Client : public Poco::Util::Application
@@ -107,6 +204,7 @@ private:
     bool is_interactive = true;          /// Use either readline interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
     bool echo_queries = false;           /// Print queries before execution in batch mode.
+    bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_not_tty = false;       /// stdin is not a terminal.
 
@@ -157,6 +255,10 @@ private:
 
     /// If the last query resulted in exception.
     bool got_exception = false;
+    int expected_server_error = 0;
+    int expected_client_error = 0;
+    int actual_server_error = 0;
+    int actual_client_error = 0;
     String server_version;
     String server_display_name;
 
@@ -373,6 +475,7 @@ private:
         {
             need_render_progress = config().getBool("progress", false);
             echo_queries = config().getBool("echo", false);
+            ignore_error = config().getBool("ignore-error", false);
         }
 
         connect();
@@ -515,6 +618,7 @@ private:
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
+        UInt64 server_version_patch = 0;
         UInt64 server_revision = 0;
 
         if (max_client_network_bandwidth)
@@ -523,9 +627,9 @@ private:
             connection->setThrottler(throttler);
         }
 
-        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+        connection->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
-        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_revision);
+        server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
         if (server_display_name = connection->getServerDisplayName(); server_display_name.length() == 0)
         {
@@ -536,6 +640,7 @@ private:
         {
             std::cout << "Connected to " << server_name
                       << " server version " << server_version
+                      << " revision " << server_revision
                       << "." << std::endl << std::endl;
         }
     }
@@ -617,10 +722,14 @@ private:
                 }
                 catch (const Exception & e)
                 {
-                    std::cerr << std::endl
-                        << "Exception on client:" << std::endl
-                        << "Code: " << e.code() << ". " << e.displayText() << std::endl
-                        << std::endl;
+                    actual_client_error = e.code();
+                    if (!actual_client_error || actual_client_error != expected_client_error)
+                    {
+                        std::cerr << std::endl
+                            << "Exception on client:" << std::endl
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl
+                            << std::endl;
+                    }
 
                     /// Client-side exception during query execution can result in the loss of
                     /// sync in the connection protocol.
@@ -658,7 +767,7 @@ private:
 
     bool process(const String & text)
     {
-        const auto ignore_error = config().getBool("ignore-error", false);
+        const bool test_mode = config().has("testmode");
         if (config().has("multiquery"))
         {
             /// Several queries separated by ';'.
@@ -702,6 +811,10 @@ private:
                 while (isWhitespaceASCII(*begin) || *begin == ';')
                     ++begin;
 
+                TestHint test_hint(test_mode, query);
+                expected_client_error = test_hint.clientError();
+                expected_server_error = test_hint.serverError();
+
                 try
                 {
                     if (!processSingleQuery(query, ast) && !ignore_error)
@@ -709,9 +822,15 @@ private:
                 }
                 catch (...)
                 {
-                    std::cerr << "Error on processing query: " << query << std::endl << getCurrentExceptionMessage(true);
+                    last_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    actual_client_error = last_exception->code();
+                    if (!ignore_error && (!actual_client_error || actual_client_error != expected_client_error))
+                        std::cerr << "Error on processing query: " << query << std::endl << last_exception->message();
                     got_exception = true;
                 }
+
+                if (!test_hint.checkActual(actual_server_error, actual_client_error, got_exception, last_exception))
+                    connection->forceConnected();
 
                 if (got_exception && !ignore_error)
                 {
@@ -1286,6 +1405,14 @@ private:
         resetOutput();
         got_exception = true;
 
+        actual_server_error = e.code();
+        if (expected_server_error)
+        {
+            if (actual_server_error == expected_server_error)
+                return;
+            std::cerr << "Expected error code: " << expected_server_error << " but got: " << actual_server_error << "." << std::endl;
+        }
+
         std::string text = e.displayText();
 
         auto embedded_stack_trace_pos = text.find("Stack trace");
@@ -1411,13 +1538,15 @@ public:
             ("pager", boost::program_options::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
-            ("ignore-error", "Do not stop processing in multiquery mode")
+            ("testmode,T", "enable test hints in comments")
+            ("ignore-error", "do not stop processing in multiquery mode")
             ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
             ("stacktrace", "print stack traces of exceptions")
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
+            ("version-clean", "print version in machine-readable format and exit")
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
@@ -1444,6 +1573,12 @@ public:
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
+            exit(0);
+        }
+
+        if (options.count("version-clean"))
+        {
+            std::cout << VERSION_STRING;
             exit(0);
         }
 
@@ -1517,6 +1652,8 @@ public:
             config().setBool("multiline", true);
         if (options.count("multiquery"))
             config().setBool("multiquery", true);
+        if (options.count("testmode"))
+            config().setBool("testmode", true);
         if (options.count("ignore-error"))
             config().setBool("ignore-error", true);
         if (options.count("format"))

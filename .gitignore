@@ -178,7 +178,6 @@ utils/zookeeper-create-entry-to-download-part/zookeeper-create-entry-to-download
 utils/zookeeper-dump-tree/zookeeper-dump-tree
 utils/zookeeper-remove-by-list/zookeeper-remove-by-list
 dbms/src/Storages/tests/remove_symlink_directory
-dbms/tests/queries/1_stateful
 debian/control
 debian/copyright
 debian/tmp/
@@ -241,5 +240,6 @@ node_modules
 public
 website/docs
 website/presentations
+website/package-lock.json
 .DS_Store
 */.DS_Store
