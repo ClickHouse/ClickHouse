@@ -188,7 +188,9 @@ namespace detail
 #if 1
     inline void writeSIntText(__int128 x, WriteBuffer & buf)
     {
-        if (unlikely(-x < 0))
+        static const __int128 max_int128 = __int128(0x8000000000000000ll) << 64;
+
+        if (unlikely(x == max_int128))
         {
             buf.write("-170141183460469231731687303715884105728", 40);
             return;
