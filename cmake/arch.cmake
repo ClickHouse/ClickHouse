@@ -26,5 +26,5 @@ elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
 endif ()
 
 if(OS_LINUX AND CMAKE_SYSTEM_PROCESSOR STREQUAL "amd64")
-    set (OS_LINUX_64 1)
+    set (OS_LINUX_X86_64 1)
 endif ()
