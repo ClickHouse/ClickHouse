@@ -1,9 +1,9 @@
 #include <sys/resource.h>
 #include "Stopwatch.h"
 
-StopWatchRusage::Timestamp StopWatchRusage::Timestamp::current()
+StopWatchRUsage::Timestamp StopWatchRUsage::Timestamp::current()
 {
-    StopWatchRusage::Timestamp res;
+    StopWatchRUsage::Timestamp res;
 
     ::rusage rusage;
     ::getrusage(RUSAGE_THREAD, &rusage);

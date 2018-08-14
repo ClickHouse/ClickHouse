@@ -12,7 +12,7 @@ $CLICKHOUSE_CLIENT --readonly=1 --multiquery --query="set output_format_json_quo
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?query=SELECT+toUInt64(pow(2,+63))+as+value+format+JSON&output_format_json_quote_64bit_integers=1" | grep value
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?query=SELECT+toUInt64(pow(2,+63))+as+value+format+JSON&output_format_json_quote_64bit_integers=0" | grep value
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?session_id=readonly" -d 'SET readonly = 1'
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?session_id=readonly&session_timeout=3600" -d 'SET readonly = 1'
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?session_id=readonly&query=SELECT+toUInt64(pow(2,+63))+as+value+format+JSON&output_format_json_quote_64bit_integers=1" 2>&1 | grep -o 'value\|Cannot override setting'
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}?session_id=readonly&query=SELECT+toUInt64(pow(2,+63))+as+value+format+JSON&output_format_json_quote_64bit_integers=0" 2>&1 | grep -o 'value\|Cannot override setting'

@@ -1,0 +1,13 @@
+Query should fail 1
+Query should fail 2
+Query involving aliases should fail on submission
+2000-01-01	2	b
+2000-01-01	5	e
+2000-02-01	2	b
+2000-02-01	5	e
+mutation_1.txt	DELETE WHERE x = 1	['']	[1]	0	1
+mutation_5.txt	DELETE WHERE (x % 2) = 1	['']	[5]	0	1
+mutation_6.txt	DELETE WHERE s = \'d\'	['']	[6]	0	1
+*** Test mutations cleaner ***
+mutation_3.txt	DELETE WHERE x = 2	1
+mutation_4.txt	DELETE WHERE x = 3	1

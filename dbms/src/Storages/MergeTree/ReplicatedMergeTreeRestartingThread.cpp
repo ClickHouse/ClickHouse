@@ -57,7 +57,29 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
 
 ReplicatedMergeTreeRestartingThread::~ReplicatedMergeTreeRestartingThread()
 {
-    completeShutdown();
+    try
+    {
+        /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
+        need_stop = true;
+        task->deactivate();
+        LOG_TRACE(log, "Restarting thread finished");
+
+        /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
+        storage.fetcher.blocker.cancelForever();
+        storage.merger_mutator.actions_blocker.cancelForever();
+
+        /// Stop other tasks.
+
+        partialShutdown();
+
+        if (storage.queue_task_handle)
+            storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
+        storage.queue_task_handle.reset();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+    }
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -92,7 +114,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     storage.setZooKeeper(storage.context.getZooKeeper());
                 }
-                catch (const zkutil::KeeperException & e)
+                catch (const zkutil::KeeperException &)
                 {
                     /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                     tryLogCurrentException(log, __PRETTY_FUNCTION__);
@@ -167,29 +189,6 @@ void ReplicatedMergeTreeRestartingThread::run()
     task->scheduleAfter(check_period_ms);
 }
 
-void ReplicatedMergeTreeRestartingThread::completeShutdown()
-{
-    try
-    {
-        storage.data_parts_exchange_endpoint_holder->getBlocker().cancelForever();
-        storage.data_parts_exchange_endpoint_holder = nullptr;
-
-        /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
-        storage.fetcher.blocker.cancelForever();
-        storage.merger_mutator.actions_blocker.cancelForever();
-
-        partialShutdown();
-
-        if (storage.queue_task_handle)
-            storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
-        storage.queue_task_handle.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-    }
-}
-
 
 bool ReplicatedMergeTreeRestartingThread::tryStartup()
 {
@@ -205,16 +204,16 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// Anything above can throw a KeeperException if something is wrong with ZK.
         /// Anything below should not throw exceptions.
 
-        storage.shutdown_called = false;
-        storage.shutdown_event.reset();
+        storage.partial_shutdown_called = false;
+        storage.partial_shutdown_event.reset();
 
         storage.queue_updating_task->activate();
         storage.queue_updating_task->schedule();
         storage.mutations_updating_task->activate();
         storage.mutations_updating_task->schedule();
+        storage.cleanup_thread.start();
+        storage.alter_thread.start();
         storage.part_check_thread.start();
-        storage.alter_thread = std::make_unique<ReplicatedMergeTreeAlterThread>(storage);
-        storage.cleanup_thread = std::make_unique<ReplicatedMergeTreeCleanupThread>(storage);
 
         if (!storage.queue_task_handle)
             storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
@@ -350,8 +349,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 {
     ProfileEvents::increment(ProfileEvents::ReplicaPartialShutdown);
 
-    storage.shutdown_called = true;
-    storage.shutdown_event.set();
+    storage.partial_shutdown_called = true;
+    storage.partial_shutdown_event.set();
     storage.alter_query_event->set();
     storage.replica_is_active_node = nullptr;
 
@@ -362,8 +361,8 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
 
-    storage.cleanup_thread.reset();
-    storage.alter_thread.reset();
+    storage.cleanup_thread.stop();
+    storage.alter_thread.stop();
     storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");

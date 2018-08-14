@@ -23,50 +23,54 @@ namespace DB
 Block QueryLogElement::createBlock()
 {
     return
-            {
-                    {std::make_shared<DataTypeUInt8>(),                                   "type"},
-                    {std::make_shared<DataTypeDate>(),                                    "event_date"},
-                    {std::make_shared<DataTypeDateTime>(),                                "event_time"},
-                    {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "query_duration_ms"},
+    {
+        {std::make_shared<DataTypeUInt8>(),                                   "type"},
+        {std::make_shared<DataTypeDate>(),                                    "event_date"},
+        {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<DataTypeDateTime>(),                                "query_start_time"},
+        {std::make_shared<DataTypeUInt64>(),                                  "query_duration_ms"},
 
-                    {std::make_shared<DataTypeUInt64>(),                                  "read_rows"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "read_bytes"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "written_rows"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "written_bytes"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "result_rows"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "result_bytes"},
-                    {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
+        {std::make_shared<DataTypeUInt64>(),                                  "read_rows"},
+        {std::make_shared<DataTypeUInt64>(),                                  "read_bytes"},
+        {std::make_shared<DataTypeUInt64>(),                                  "written_rows"},
+        {std::make_shared<DataTypeUInt64>(),                                  "written_bytes"},
+        {std::make_shared<DataTypeUInt64>(),                                  "result_rows"},
+        {std::make_shared<DataTypeUInt64>(),                                  "result_bytes"},
+        {std::make_shared<DataTypeUInt64>(),                                  "memory_usage"},
 
-                    {std::make_shared<DataTypeString>(),                                  "query"},
-                    {std::make_shared<DataTypeString>(),                                  "exception"},
-                    {std::make_shared<DataTypeString>(),                                  "stack_trace"},
+        {std::make_shared<DataTypeString>(),                                  "query"},
+        {std::make_shared<DataTypeString>(),                                  "exception"},
+        {std::make_shared<DataTypeString>(),                                  "stack_trace"},
 
-                    {std::make_shared<DataTypeUInt8>(),                                   "is_initial_query"},
-                    {std::make_shared<DataTypeString>(),                                  "user"},
-                    {std::make_shared<DataTypeString>(),                                  "query_id"},
-                    {std::make_shared<DataTypeFixedString>(16),                           "address"},
-                    {std::make_shared<DataTypeUInt16>(),                                  "port"},
-                    {std::make_shared<DataTypeString>(),                                  "initial_user"},
-                    {std::make_shared<DataTypeString>(),                                  "initial_query_id"},
-                    {std::make_shared<DataTypeFixedString>(16),                           "initial_address"},
-                    {std::make_shared<DataTypeUInt16>(),                                  "initial_port"},
-                    {std::make_shared<DataTypeUInt8>(),                                   "interface"},
-                    {std::make_shared<DataTypeString>(),                                  "os_user"},
-                    {std::make_shared<DataTypeString>(),                                  "client_hostname"},
-                    {std::make_shared<DataTypeString>(),                                  "client_name"},
-                    {std::make_shared<DataTypeUInt32>(),                                  "client_revision"},
-                    {std::make_shared<DataTypeUInt8>(),                                   "http_method"},
-                    {std::make_shared<DataTypeString>(),                                  "http_user_agent"},
-                    {std::make_shared<DataTypeString>(),                                  "quota_key"},
-                    {std::make_shared<DataTypeUInt32>(),                                  "revision"},
+        {std::make_shared<DataTypeUInt8>(),                                   "is_initial_query"},
+        {std::make_shared<DataTypeString>(),                                  "user"},
+        {std::make_shared<DataTypeString>(),                                  "query_id"},
+        {std::make_shared<DataTypeFixedString>(16),                           "address"},
+        {std::make_shared<DataTypeUInt16>(),                                  "port"},
+        {std::make_shared<DataTypeString>(),                                  "initial_user"},
+        {std::make_shared<DataTypeString>(),                                  "initial_query_id"},
+        {std::make_shared<DataTypeFixedString>(16),                           "initial_address"},
+        {std::make_shared<DataTypeUInt16>(),                                  "initial_port"},
+        {std::make_shared<DataTypeUInt8>(),                                   "interface"},
+        {std::make_shared<DataTypeString>(),                                  "os_user"},
+        {std::make_shared<DataTypeString>(),                                  "client_hostname"},
+        {std::make_shared<DataTypeString>(),                                  "client_name"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_revision"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_version_major"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_version_minor"},
+        {std::make_shared<DataTypeUInt32>(),                                  "client_version_patch"},
+        {std::make_shared<DataTypeUInt8>(),                                   "http_method"},
+        {std::make_shared<DataTypeString>(),                                  "http_user_agent"},
+        {std::make_shared<DataTypeString>(),                                  "quota_key"},
 
-                    {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers"},
-                    {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
-                    {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
-                    {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
-                    {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"}
-            };
+        {std::make_shared<DataTypeUInt32>(),                                  "revision"},
+
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()), "thread_numbers"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "ProfileEvents.Names"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()), "ProfileEvents.Values"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Names"},
+        {std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "Settings.Values"}
+    };
 }
 
 
@@ -177,6 +181,9 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
     columns[i++]->insert(client_info.client_hostname);
     columns[i++]->insert(client_info.client_name);
     columns[i++]->insert(UInt64(client_info.client_revision));
+    columns[i++]->insert(UInt64(client_info.client_version_major));
+    columns[i++]->insert(UInt64(client_info.client_version_minor));
+    columns[i++]->insert(UInt64(client_info.client_version_patch));
 
     columns[i++]->insert(UInt64(client_info.http_method));
     columns[i++]->insert(client_info.http_user_agent);

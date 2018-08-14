@@ -37,6 +37,8 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
 
     FormatSettings format_settings;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
+    format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
+    format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.skip_unknown_fields = settings.input_format_skip_unknown_fields;
     format_settings.date_time_input_format = settings.date_time_input_format;
@@ -58,7 +60,10 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     FormatSettings format_settings;
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
+    format_settings.json.escape_forward_slashes = settings.output_format_json_escape_forward_slashes;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
+    format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
+    format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
@@ -115,6 +120,7 @@ void registerOutputFormatJSON(FormatFactory & factory);
 void registerOutputFormatJSONCompact(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver(FormatFactory & factory);
+void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
 
 /// Input only formats.
@@ -148,6 +154,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatJSONCompact(*this);
     registerOutputFormatXML(*this);
     registerOutputFormatODBCDriver(*this);
+    registerOutputFormatODBCDriver2(*this);
     registerOutputFormatNull(*this);
 }
 

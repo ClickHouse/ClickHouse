@@ -136,9 +136,9 @@ private:
 
 
 /// Like ordinary StopWatch, but uses getrusage() system call
-struct StopWatchRusage
+struct StopWatchRUsage
 {
-    StopWatchRusage() = default;
+    StopWatchRUsage() = default;
 
     void start()    { start_ts = Timestamp::current(); is_running = true; }
     void stop()     { stop_ts = Timestamp::current(); is_running = false; }

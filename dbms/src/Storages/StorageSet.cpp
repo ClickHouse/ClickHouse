@@ -81,8 +81,8 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 
 BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
-    ++increment;
-    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(increment) + ".bin");
+    UInt64 id = ++increment;
+    return std::make_shared<SetOrJoinBlockOutputStream>(*this, path, path + "tmp/", toString(id) + ".bin");
 }
 
 
@@ -105,7 +105,7 @@ StorageSet::StorageSet(
     const String & name_,
     const ColumnsDescription & columns_)
     : StorageSetOrJoinBase{path_, name_, columns_},
-    set(std::make_shared<Set>(SizeLimits()))
+    set(std::make_shared<Set>(SizeLimits(), false))
 {
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -115,7 +115,7 @@ StorageSet::StorageSet(
 }
 
 
-void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block, /*fill_set_elements=*/false); }
+void StorageSet::insertBlock(const Block & block) { set->insertFromBlock(block); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
@@ -129,9 +129,9 @@ void StorageSet::truncate(const ASTPtr &)
     header = header.sortColumns();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits());
+    set = std::make_shared<Set>(SizeLimits(), false);
     set->setHeader(header);
-};
+}
 
 
 void StorageSetOrJoinBase::restore()

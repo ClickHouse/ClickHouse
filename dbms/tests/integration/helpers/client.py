@@ -11,15 +11,15 @@ class Client:
         self.command = [command, '--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
-    def query(self, sql, stdin=None, timeout=None, settings=None):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings).get_answer()
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None):
+        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user).get_answer()
 
 
-    def get_query_request(self, sql, stdin=None, timeout=None, settings=None):
+    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None):
         command = self.command[:]
 
         if stdin is None:
-            command += ['--multiquery']
+            command += ['--multiquery', '--testmode']
             stdin = sql
         else:
             command += ['--query', sql]
@@ -27,6 +27,9 @@ class Client:
         if settings is not None:
             for setting, value in settings.iteritems():
                 command += ['--' + setting, str(value)]
+
+        if user is not None:
+            command += ['--user', user]
 
         return CommandRequest(command, stdin, timeout)
 

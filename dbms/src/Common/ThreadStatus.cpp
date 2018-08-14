@@ -37,7 +37,7 @@ ThreadStatus::ThreadStatus()
     thread_number = Poco::ThreadNumber::get();
     os_thread_id = TaskStatsInfoGetter::getCurrentTID();
 
-    last_rusage = std::make_unique<RusageCounters>();
+    last_rusage = std::make_unique<RUsageCounters>();
     last_taskstats = std::make_unique<TasksStatsCounters>();
     taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
 
@@ -69,7 +69,7 @@ void ThreadStatus::initPerformanceCounters()
     query_start_time = time(nullptr);
     ++queries_started;
 
-    *last_rusage = RusageCounters::current(query_start_time_nanoseconds);
+    *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
     has_permissions_for_taskstats = TaskStatsInfoGetter::checkProcessHasRequiredPermissions();
     if (has_permissions_for_taskstats)
         *last_taskstats = TasksStatsCounters::current();
@@ -79,7 +79,7 @@ void ThreadStatus::updatePerformanceCounters()
 {
     try
     {
-        RusageCounters::updateProfileEvents(*last_rusage, performance_counters);
+        RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
         if (has_permissions_for_taskstats)
             TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
     }

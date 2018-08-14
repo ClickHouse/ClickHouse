@@ -47,7 +47,7 @@ inline UInt64 getCurrentTimeNanoseconds(clockid_t clock_type = CLOCK_MONOTONIC)
 }
 
 
-struct RusageCounters
+struct RUsageCounters
 {
     /// In nanoseconds
     UInt64 real_time = 0;
@@ -57,8 +57,8 @@ struct RusageCounters
     UInt64 soft_page_faults = 0;
     UInt64 hard_page_faults = 0;
 
-    RusageCounters() = default;
-    RusageCounters(const ::rusage & rusage_, UInt64 real_time_)
+    RUsageCounters() = default;
+    RUsageCounters(const ::rusage & rusage_, UInt64 real_time_)
     {
         set(rusage_, real_time_);
     }
@@ -73,21 +73,21 @@ struct RusageCounters
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);
     }
 
-    static RusageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
+    static RUsageCounters zeros(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
-        RusageCounters res;
+        RUsageCounters res;
         res.real_time = real_time_;
         return res;
     }
 
-    static RusageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
+    static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
         ::rusage rusage;
         ::getrusage(RUSAGE_THREAD, &rusage);
-        return RusageCounters(rusage, real_time_);
+        return RUsageCounters(rusage, real_time_);
     }
 
-    static void incrementProfileEvents(const RusageCounters & prev, const RusageCounters & curr, ProfileEvents::Counters & profile_events)
+    static void incrementProfileEvents(const RUsageCounters & prev, const RUsageCounters & curr, ProfileEvents::Counters & profile_events)
     {
         profile_events.increment(ProfileEvents::RealTimeMicroseconds,   (curr.real_time - prev.real_time) / 1000U);
         profile_events.increment(ProfileEvents::UserTimeMicroseconds,   (curr.user_time - prev.user_time) / 1000U);
@@ -97,7 +97,7 @@ struct RusageCounters
         profile_events.increment(ProfileEvents::HardPageFaults, curr.hard_page_faults - prev.hard_page_faults);
     }
 
-    static void updateProfileEvents(RusageCounters & last_counters, ProfileEvents::Counters & profile_events)
+    static void updateProfileEvents(RUsageCounters & last_counters, ProfileEvents::Counters & profile_events)
     {
         auto current_counters = current();
         incrementProfileEvents(last_counters, current_counters, profile_events);

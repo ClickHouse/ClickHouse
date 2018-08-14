@@ -13,6 +13,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 
 namespace DB
@@ -41,6 +42,20 @@ void AggregateFunctionFactory::registerFunction(const String & name, Creator cre
             ErrorCodes::LOGICAL_ERROR);
 }
 
+static DataTypes convertTypesWithDictionaryToNested(const DataTypes & types)
+{
+    DataTypes res_types;
+    res_types.reserve(types.size());
+    for (const auto & type : types)
+    {
+        if (auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(type.get()))
+            res_types.push_back(type_with_dict->getDictionaryType());
+        else
+            res_types.push_back(type);
+    }
+
+    return res_types;
+}
 
 AggregateFunctionPtr AggregateFunctionFactory::get(
     const String & name,
@@ -48,6 +63,8 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
     const Array & parameters,
     int recursion_level) const
 {
+    auto type_without_dictionary = convertTypesWithDictionaryToNested(argument_types);
+
     /// If one of types is Nullable, we apply aggregate function combinator "Null".
 
     if (std::any_of(argument_types.begin(), argument_types.end(),
@@ -57,7 +74,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         if (!combinator)
             throw Exception("Logical error: cannot find aggregate function combinator to apply a function to Nullable arguments.", ErrorCodes::LOGICAL_ERROR);
 
-        DataTypes nested_types = combinator->transformArguments(argument_types);
+        DataTypes nested_types = combinator->transformArguments(type_without_dictionary);
 
         AggregateFunctionPtr nested_function;
 
@@ -70,7 +87,7 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
-    auto res = getImpl(name, argument_types, parameters, recursion_level);
+    auto res = getImpl(name, type_without_dictionary, parameters, recursion_level);
     if (!res)
         throw Exception("Logical error: AggregateFunctionFactory returned nullptr", ErrorCodes::LOGICAL_ERROR);
     return res;
@@ -78,11 +95,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
 
 
 AggregateFunctionPtr AggregateFunctionFactory::getImpl(
-    const String & name,
+    const String & name_param,
     const DataTypes & argument_types,
     const Array & parameters,
     int recursion_level) const
 {
+    String name = getAliasToOrName(name_param);
     /// Find by exact match.
     auto it = aggregate_functions.find(name);
     if (it != aggregate_functions.end())
@@ -103,8 +121,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
     {
-        if (combinator->getName() == "Null")
-            throw Exception("Aggregate function combinator 'Null' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
+        if (combinator->isForInternalUsageOnly())
+            throw Exception("Aggregate function combinator '" + combinator->getName() + "' is only for internal usage", ErrorCodes::UNKNOWN_AGGREGATE_FUNCTION);
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(argument_types);
@@ -126,10 +144,11 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGet(const String & name, const
 
 bool AggregateFunctionFactory::isAggregateFunctionName(const String & name, int recursion_level) const
 {
-    if (aggregate_functions.count(name))
+    if (aggregate_functions.count(name) || isAlias(name))
         return true;
 
-    if (recursion_level == 0 && case_insensitive_aggregate_functions.count(Poco::toLower(name)))
+    String name_lowercase = Poco::toLower(name);
+    if (recursion_level == 0 && (case_insensitive_aggregate_functions.count(name_lowercase) || isAlias(name_lowercase)))
         return true;
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

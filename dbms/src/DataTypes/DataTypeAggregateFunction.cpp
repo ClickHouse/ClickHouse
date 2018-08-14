@@ -212,9 +212,9 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(serializeToString(function, column, row_num), ostr);
+    writeJSONString(serializeToString(function, column, row_num), ostr, settings);
 }
 
 
@@ -241,7 +241,7 @@ void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t 
 void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readCSV(s, istr, settings.csv.delimiter);
+    readCSV(s, istr, settings.csv);
     deserializeFromString(function, column, s);
 }
 

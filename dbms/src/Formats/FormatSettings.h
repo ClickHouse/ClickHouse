@@ -17,6 +17,7 @@ struct FormatSettings
     {
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
+        bool escape_forward_slashes = true;
     };
 
     JSON json;
@@ -24,6 +25,8 @@ struct FormatSettings
     struct CSV
     {
         char delimiter = ',';
+        bool allow_single_quotes = true;
+        bool allow_double_quotes = true;
     };
 
     CSV csv;

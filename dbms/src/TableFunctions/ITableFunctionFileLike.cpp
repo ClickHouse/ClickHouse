@@ -1,6 +1,5 @@
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/ITableFunctionFileLike.h>
-#include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/Exception.h>

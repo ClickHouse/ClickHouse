@@ -15,13 +15,9 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-    #include <Poco/Data/ODBC/ODBCException.h>
-    #include <Poco/Data/ODBC/SessionImpl.h>
-    #include <Poco/Data/ODBC/Utility.h>
-#pragma GCC diagnostic pop
+#include <Poco/Data/ODBC/ODBCException.h>
+#include <Poco/Data/ODBC/SessionImpl.h>
+#include <Poco/Data/ODBC/Utility.h>
 
 
 namespace DB
@@ -113,7 +109,7 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
         columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
     }
 
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns});
+    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns}, context);
     result->startup();
     return result;
 }

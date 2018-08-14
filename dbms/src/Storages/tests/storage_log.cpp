@@ -26,8 +26,7 @@ try
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
     names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
-    StoragePtr table = StorageLog::create(
-        "./", "test", ColumnsDescription{names_and_types}, DEFAULT_MAX_COMPRESS_BLOCK_SIZE);
+    StoragePtr table = StorageLog::create("./", "test", ColumnsDescription{names_and_types}, 1048576);
     table->startup();
 
     /// write into it
