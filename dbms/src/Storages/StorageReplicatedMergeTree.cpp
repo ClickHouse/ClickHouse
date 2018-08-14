@@ -2892,8 +2892,8 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     {
         auto zookeeper = getZooKeeper();
 
-        String last_part;
-        zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
+        String last_parts;
+        zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_parts);
 
 	/*
         if (!last_part.empty() && !data.getActiveContainingPart(last_part))    /// TODO Disable replica for distributed queries.
