@@ -2615,8 +2615,17 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
             zkutil::Requests ops;
             zkutil::Responses responses;
+
+	    /// We should get info about part for write it in zk node.
+            auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+            
+            zkutil::Stat last_part_stat;
+            String last_parts = zookeeper->get(quorum_last_part_path, &last_part_stat);
+            
+            String new_last_parts = rewriteLastParts(last_parts, part_info.partition_id, part_info.max_block);
+
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
-            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, part_name, -1));
+            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, part_name, last_part_stat.version));
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == ZooKeeperImpl::ZooKeeper::ZOK)
@@ -2659,6 +2668,49 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
                 throw zkutil::KeeperException(code, quorum_status_path);
         }
     }
+}
+
+
+std::unordered_map<String, Int64> StorageReplicatedMergeTree::getLastPartsWithQuorum(const String & last_parts_str)
+{
+    auto in = ReadBufferFromString(last_parts_str);
+    
+    size_t count;
+    std::unordered_map<String, Int64> last_blocks;
+    
+    if (!last_parts_str.empty())
+    {
+        in >> "parts_count " >> count >> "\n";
+        for (size_t i = 0; i < count; ++i)
+        {
+            String part_id;
+            Int64 max_block;
+            in  >> part_id >> "\t" >> max_block >> "\n";
+            last_blocks[part_id] = max_block;
+        }
+    }
+    
+    return last_blocks;
+}
+
+
+String StorageReplicatedMergeTree::rewriteLastParts(const String & old_last_parts, const String & part_id, const Int64 & new_block)
+{
+    auto last_blocks = getLastPartsWithQuorum(old_last_parts);
+    
+    last_blocks[part_id] = new_block;
+    
+    String new_old_last_parts;
+    auto out = WriteBufferFromString(new_old_last_parts);
+    
+    out << "parts_count " << last_blocks.size() << "\n";
+    
+    for (auto & part_info : last_blocks)
+    {
+        out << part_info.first << "\t" << part_info.second << "\n";
+    }
+    
+    return new_old_last_parts;
 }
 
 
@@ -2835,7 +2887,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    Int64 max_block_number_to_read = 0;
+    std::unordered_map<String, Int64> max_blocks_number_to_read;
     if (settings.select_sequential_consistency)
     {
         auto zookeeper = getZooKeeper();
@@ -2843,11 +2895,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         String last_part;
         zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_part);
 
+	/*
         if (!last_part.empty() && !data.getActiveContainingPart(last_part))    /// TODO Disable replica for distributed queries.
             throw Exception("Replica doesn't have part " + last_part + " which was successfully written to quorum of other replicas."
                 " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
-
-        if (last_part.empty())  /// If no part has been written with quorum.
+	*/
+        if (last_parts.empty())  /// If no part has been written with quorum.
         {
             String quorum_str;
             if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_str))
@@ -2855,18 +2908,16 @@ BlockInputStreams StorageReplicatedMergeTree::read(
                 ReplicatedMergeTreeQuorumEntry quorum_entry;
                 quorum_entry.fromString(quorum_str);
                 auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
-                max_block_number_to_read = part_info.min_block - 1;
             }
         }
         else
         {
-            auto part_info = MergeTreePartInfo::fromPartName(last_part, data.format_version);
-            max_block_number_to_read = part_info.max_block;
+            max_blocks_number_to_read = getLastPartsWithQuorum(last_parts);
         }
     }
 
     return reader.read(
-        column_names, query_info, context, processed_stage, max_block_size, num_streams, max_block_number_to_read);
+        column_names, query_info, context, processed_stage, max_block_size, num_streams, max_blocks_number_to_read);
 }
 
 

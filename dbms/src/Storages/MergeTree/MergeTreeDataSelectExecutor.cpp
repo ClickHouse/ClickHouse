@@ -137,12 +137,26 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
-    const unsigned num_streams,
-    Int64 max_block_number_to_read) const
+    const unsigned num_streams) const
 {
     return readFromParts(
         data.getDataPartsVector(), column_names_to_return, query_info, context, processed_stage,
-        max_block_size, num_streams, max_block_number_to_read);
+        max_block_size, num_streams, std::unordered_map<String, Int64>());
+}
+
+
+BlockInputStreams MergeTreeDataSelectExecutor::read(
+    const Names & column_names_to_return,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum & processed_stage,
+    const size_t max_block_size,
+    const unsigned num_streams,
+    const std::unordered_map<String, Int64> & max_blocks_number_to_read) const
+{
+    return readFromParts(
+        data.getDataPartsVector(), column_names_to_return, query_info, context, processed_stage,
+        max_block_size, num_streams, max_blocks_number_to_read);
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
@@ -153,7 +167,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams,
-    Int64 max_block_number_to_read) const
+    const std::unordered_map<String, Int64> & max_blocks_number_to_read) const
 {
     size_t part_index = 0;
 
@@ -270,7 +284,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
-            if (max_block_number_to_read && part->info.max_block > max_block_number_to_read)
+            if (!max_blocks_number_to_read.empty() &&  max_blocks_number_to_read.find(part->info.partition_id) != max_blocks_number_to_read.end()
+                && part->info.max_block > max_blocks_number_to_read.at(part->info.partition_id))
                 continue;
 
             parts.push_back(part);
@@ -323,7 +338,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         if (relative_sample_size == RelativeSize(1))
             relative_sample_size = 0;
 
-        if (relative_sample_offset > 0 && RelativeSize(0) == relative_sample_size)
+        if (relative_sample_offset > 0 && 0 == relative_sample_size)
             throw Exception("Sampling offset is incorrect because no sampling", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (relative_sample_offset > 1)
@@ -374,7 +389,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         if (!data.sampling_expression)
             throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
-        if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
+        if (sample_factor_column_queried && relative_sample_size != 0)
             used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 
         RelativeSize size_of_universum = 0;
