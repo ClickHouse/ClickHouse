@@ -38,7 +38,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
     for (const auto & db : context.getDatabases())
     {
-        if (context.isDatabaseAccessRights(db.first))
+        if (context.hasDatabaseAccessRights(db.first))
         {
             for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {

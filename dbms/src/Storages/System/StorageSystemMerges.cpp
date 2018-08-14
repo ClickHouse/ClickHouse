@@ -33,7 +33,7 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
 {
     for (const auto & merge : context.getMergeList().get())
     {
-        if (context.isDatabaseAccessRights(merge.database))
+        if (context.hasDatabaseAccessRights(merge.database))
         {
             size_t i = 0;
             res_columns[i++]->insert(merge.database);

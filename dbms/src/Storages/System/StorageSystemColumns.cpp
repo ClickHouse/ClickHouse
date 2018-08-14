@@ -43,7 +43,7 @@ void StorageSystemColumns::fillData(MutableColumns & res_columns, const Context 
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
         {
-            if (context.isDatabaseAccessRights(database.first))
+            if (context.hasDatabaseAccessRights(database.first))
                 database_column_mut->insert(database.first);
         }
 
