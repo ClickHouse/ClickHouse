@@ -1,7 +1,6 @@
 #include "HandlerFactory.h"
 #include <Common/HTMLForm.h>
 
-#include <Dictionaries/validateODBCConnectionString.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <common/logger_useful.h>

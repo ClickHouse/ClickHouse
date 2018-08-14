@@ -28,7 +28,7 @@ private:
 
     bool is_help;
     std::string hostname;
-    UInt16 port;
+    size_t port;
     size_t http_timeout;
     std::string log_level;
     size_t max_server_connections;

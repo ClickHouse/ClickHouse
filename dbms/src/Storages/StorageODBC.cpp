@@ -1,5 +1,4 @@
 #include <Dictionaries/ODBCBlockInputStream.h>
-#include <Dictionaries/validateODBCConnectionString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
