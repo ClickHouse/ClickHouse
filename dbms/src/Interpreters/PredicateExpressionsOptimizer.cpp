@@ -186,7 +186,7 @@ void PredicateExpressionsOptimizer::cloneOuterPredicateForInnerPredicate(
     const ASTPtr & outer_predicate, const ProjectionsWithAliases & projection_columns, ASTs & predicate_dependent_columns,
     ASTPtr & inner_predicate)
 {
-    inner_predicate = std::move(outer_predicate->clone());
+    inner_predicate = outer_predicate->clone();
 
     ASTs new_expression_require_columns;
     new_expression_require_columns.reserve(predicate_dependent_columns.size());
