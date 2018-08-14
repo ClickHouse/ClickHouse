@@ -37,17 +37,17 @@ $CLICKHOUSE_CLIENT $settings --max_threads=1 -q "$heavy_cpu_query"
 $CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH SYSTEM TABLES"
 $CLICKHOUSE_CLIENT $settings -q "
 WITH
-	any(query_duration_ms*1000) AS duration,
-	sumIf(PV, PN = 'RealTimeMicroseconds') AS threads_realtime,
-	sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS threads_time_user_system_io
+    any(query_duration_ms*1000) AS duration,
+    sumIf(PV, PN = 'RealTimeMicroseconds') AS threads_realtime,
+    sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS threads_time_user_system_io
 SELECT
-	--duration, threads_realtime, threads_time_user_system_io,
-	threads_realtime >= 0.99 * duration,
-	threads_realtime >= threads_time_user_system_io,
-	any(length(thread_numbers)) >= 1
-	FROM
-		(SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
-	ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
+    --duration, threads_realtime, threads_time_user_system_io,
+    threads_realtime >= 0.99 * duration,
+    threads_realtime >= threads_time_user_system_io,
+    any(length(thread_numbers)) >= 1
+    FROM
+        (SELECT * FROM system.query_log PREWHERE query='$heavy_cpu_query' WHERE event_date >= today()-1 AND type=2 ORDER BY event_time DESC LIMIT 1)
+    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV"
 
 
 # Check ProfileEvents in query_thread_log
@@ -60,20 +60,20 @@ threads=`$CLICKHOUSE_CLIENT $settings -q "SELECT length(thread_numbers) FROM sys
 
 $CLICKHOUSE_CLIENT $settings -q "
 SELECT
-	-- max(thread_realtime), $query_elapsed, max(thread_time_user_system_io),
-	0.9 * $query_elapsed <= max(thread_realtime) AND max(thread_realtime) <= 1.1 * $query_elapsed,
-	0.7 * $query_elapsed <= max(thread_time_user_system_io) AND max(thread_time_user_system_io) <= 1.3 * $query_elapsed,
-	uniqExact(thread_number) = $threads
+    -- max(thread_realtime), $query_elapsed, max(thread_time_user_system_io),
+    0.9 * $query_elapsed <= max(thread_realtime) AND max(thread_realtime) <= 1.1 * $query_elapsed,
+    0.7 * $query_elapsed <= max(thread_time_user_system_io) AND max(thread_time_user_system_io) <= 1.3 * $query_elapsed,
+    uniqExact(thread_number) = $threads
 FROM
 (
-	SELECT
-		thread_number,
-		sumIf(PV, PN = 'RealTimeMicroseconds') AS thread_realtime,
-		sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS thread_time_user_system_io
-		FROM
-			(SELECT * FROM system.query_thread_log PREWHERE query_id='$query_id' WHERE event_date >= today()-1)
-		ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-		GROUP BY thread_number
+    SELECT
+        thread_number,
+        sumIf(PV, PN = 'RealTimeMicroseconds') AS thread_realtime,
+        sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS thread_time_user_system_io
+        FROM
+            (SELECT * FROM system.query_thread_log PREWHERE query_id='$query_id' WHERE event_date >= today()-1)
+        ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
+        GROUP BY thread_number
 )
 "
 
@@ -82,23 +82,23 @@ FROM
 $CLICKHOUSE_CLIENT $settings -q "
 SELECT PN, PVq, PVt FROM
 (
-	SELECT PN, sum(PV) AS PVt
-	FROM system.query_thread_log
-	ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-	WHERE event_date >= today()-1 AND query_id='$query_id'
-	GROUP BY PN
+    SELECT PN, sum(PV) AS PVt
+    FROM system.query_thread_log
+    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
+    WHERE event_date >= today()-1 AND query_id='$query_id'
+    GROUP BY PN
 )
 ANY INNER JOIN
 (
-	SELECT PN, PV AS PVq
-	FROM system.query_log
-	ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
-	WHERE event_date >= today()-1 AND query_id='$query_id'
+    SELECT PN, PV AS PVq
+    FROM system.query_log
+    ARRAY JOIN ProfileEvents.Names AS PN, ProfileEvents.Values AS PV
+    WHERE event_date >= today()-1 AND query_id='$query_id'
 )
 USING PN
 WHERE 
-	NOT PN IN ('ContextLock') AND
-	NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
+    NOT PN IN ('ContextLock') AND
+    NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
 "
 
 
