@@ -8,6 +8,7 @@ node1 = cluster.add_instance('node1', main_configs=['configs/config_no_substs.xm
 node2 = cluster.add_instance('node2', main_configs=['configs/config_env.xml'], env_variables={"MAX_QUERY_SIZE": "55555"})
 node3 = cluster.add_instance('node3', main_configs=['configs/config_zk.xml'], with_zookeeper=True)
 node4 = cluster.add_instance('node4', main_configs=['configs/config_incl.xml', 'configs/max_query_size.xml']) # include value 77777
+node5 = cluster.add_instance('node5', main_configs=['configs/config_allow_databases.xml'])
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -26,3 +27,19 @@ def test_config(start_cluster):
    assert node2.query("select value from system.settings where name = 'max_query_size'") == "55555\n"
    assert node3.query("select value from system.settings where name = 'max_query_size'") == "77777\n"
    assert node4.query("select value from system.settings where name = 'max_query_size'") == "99999\n"
+
+def test_allow_databases(start_cluster):
+    node5.query("CREATE DATABASE db1")
+    node5.query("CREATE TABLE db1.test_table(date Date, k1 String, v1 Int32) ENGINE = MergeTree(date, (k1, date), 8192)")
+    node5.query("INSERT INTO db1.test_table VALUES('2000-01-01', 'test_key', 1)")
+    assert node5.query("SELECT name FROM system.databases WHERE name = 'db1'") == "db1\n"
+    assert node5.query("SELECT name FROM system.tables WHERE database = 'db1' AND name = 'test_table' ") == "test_table\n"
+    assert node5.query("SELECT name FROM system.columns WHERE database = 'db1' AND table = 'test_table'") == "date\nk1\nv1\n"
+    assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0\n"
+    assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0\n20000101_20000101_1_1_0\n20000101_20000101_1_1_0\n"
+
+    assert node5.query("SELECT name FROM system.databases WHERE name = 'db1'", user="test_allow") == "\n"
+    assert node5.query("SELECT name FROM system.tables WHERE database = 'db1' AND name = 'test_table'", user="test_allow") == "\n"
+    assert node5.query("SELECT name FROM system.columns WHERE database = 'db1' AND table = 'test_table'", user="test_allow") == "\n"
+    assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'", user="test_allow") == "\n"
+    assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'", user="test_allow") == "\n"
