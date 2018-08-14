@@ -12,9 +12,9 @@ INSERT INTO test.test VALUES (7);
 INSERT INTO test.test VALUES (8);
 INSERT INTO test.test VALUES (9);
 
-SELECT TOP 2 * FROM test.test;
-SELECT TOP (2) * FROM test.test;
-SELECT * FROM test.test LIMIT 2 OFFSET 2;
-SELECT TOP 2 * FROM test.test LIMIT 2; -- { clientError 406 } 
+SELECT TOP 2 * FROM test.test ORDER BY val;
+SELECT TOP (2) * FROM test.test ORDER BY val;
+SELECT * FROM test.test ORDER BY val LIMIT 2 OFFSET 2;
+SELECT TOP 2 * FROM test.test ORDER BY val LIMIT 2; -- { clientError 406 } 
 
 DROP TABLE test.test;
