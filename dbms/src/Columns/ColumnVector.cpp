@@ -17,6 +17,8 @@
 
 #if __SSE2__
     #include <emmintrin.h>
+#include <Columns/ColumnsCommon.h>
+
 #endif
 
 
@@ -228,6 +230,12 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
         res_data[i] = data[perm[i]];
 
     return std::move(res);
+}
+
+template <typename T>
+ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
 }
 
 template <typename T>

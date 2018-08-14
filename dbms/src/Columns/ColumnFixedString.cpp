@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -254,6 +255,32 @@ ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) con
     size_t offset = 0;
     for (size_t i = 0; i < limit; ++i, offset += n)
         memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[perm[i] * n], n);
+
+    return std::move(res);
+}
+
+
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+
+template <typename Type>
+ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    if (limit == 0)
+        return ColumnFixedString::create(n);
+
+    auto res = ColumnFixedString::create(n);
+
+    Chars_t & res_chars = res->chars;
+
+    res_chars.resize(n * limit);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < limit; ++i, offset += n)
+        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
 
     return std::move(res);
 }

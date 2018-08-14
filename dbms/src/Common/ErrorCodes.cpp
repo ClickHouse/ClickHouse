@@ -380,9 +380,10 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION = 403;
     extern const int BAD_ODBC_CONNECTION_STRING = 404;
     extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 405;
-    extern const int BAD_REQUEST_PARAMETER = 406;
-    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 407;
-    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 408;
+    extern const int TOP_AND_LIMIT_TOGETHER = 406;
+    extern const int BAD_REQUEST_PARAMETER = 407;
+    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 408;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 409;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

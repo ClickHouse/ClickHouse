@@ -18,6 +18,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/ConvertColumnWithDictionaryToFullBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -775,7 +776,8 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
+        stream = std::make_shared<ConvertColumnWithDictionaryToFullBlockInputStream>(
+                std::make_shared<ExpressionBlockInputStream>(stream, expression));
     });
 
     Names key_names;
