@@ -44,7 +44,6 @@ public:
 private:
     ASTSelectQuery * ast_select;
     const Settings & settings;
-    const Context & context;
 
     enum OptimizeKind
     {
