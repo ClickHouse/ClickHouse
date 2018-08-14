@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -86,6 +87,15 @@ public:
     using ColumnType = ColumnVector<T>;
 
     static constexpr bool is_parametric = true;
+
+#if 1 /// TODO: remove this ctor
+    DataTypeDecimal()
+    :   precision(0),
+        scale(0)
+    {
+        throw Exception("Ctor for success build", ErrorCodes::LOGICAL_ERROR);
+    }
+#endif
 
     DataTypeDecimal(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
