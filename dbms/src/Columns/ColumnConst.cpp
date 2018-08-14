@@ -30,6 +30,11 @@ ColumnPtr ColumnConst::convertToFullColumn() const
     return data->replicate(Offsets(1, s));
 }
 
+ColumnPtr ColumnConst::removeLowCardinality() const
+{
+    return ColumnConst::create(data->convertToFullColumnIfWithDictionary(), s);
+}
+
 ColumnPtr ColumnConst::filter(const Filter & filt, ssize_t /*result_size_hint*/) const
 {
     if (s != filt.size())

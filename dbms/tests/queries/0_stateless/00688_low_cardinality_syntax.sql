@@ -65,5 +65,10 @@ drop table if exists test.lc_fix_str_1;
 drop table if exists test.lc_null_fix_str_0;
 drop table if exists test.lc_null_fix_str_1;
 
-
+select '-';
+SELECT toLowCardinality('a') AS s, toTypeName(s), toTypeName(length(s)) from system.one;
+select toLowCardinality('a') as val group by val;
+select (toLowCardinality('a') as val) || 'b' group by val;
+select toLowCardinality(z) as val from (select arrayJoin(['c', 'd']) as z) group by val;
+select (toLowCardinality(z) as val) || 'b'  from (select arrayJoin(['c', 'd']) as z) group by val;
 
