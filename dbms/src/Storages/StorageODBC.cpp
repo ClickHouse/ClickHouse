@@ -49,7 +49,7 @@ StorageODBC::StorageODBC(const std::string & table_name_,
 
 std::string StorageODBC::getReadMethod() const
 {
-    return ODBCBridgeHelper::MAIN_METHOD;
+    return Poco::Net::HTTPRequest::HTTP_POST;
 }
 
 std::vector<std::pair<std::string, std::string>> StorageODBC::getReadURIParams(const Names & column_names,
