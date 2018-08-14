@@ -37,7 +37,7 @@ using SubQueriesProjectionColumns = std::map<IAST *, ProjectionsWithAliases>;
 class PredicateExpressionsOptimizer
 {
 public:
-    PredicateExpressionsOptimizer(ASTSelectQuery * ast_select_, const Settings & settings_, const Context & context_);
+    PredicateExpressionsOptimizer(ASTSelectQuery * ast_select_, const Settings & settings_);
 
     bool optimize();
 

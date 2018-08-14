@@ -274,7 +274,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     getArrayJoinedColumns();
 
     /// Push the predicate expression down to the sub-queries.
-    rewrite_sub_queries = PredicateExpressionsOptimizer(select_query, settings, context).optimize();
+    rewrite_sub_queries = PredicateExpressionsOptimizer(select_query, settings).optimize();
 
     /// Delete the unnecessary from `source_columns` list. Create `unknown_required_source_columns`. Form `columns_added_by_join`.
     collectUsedColumns();

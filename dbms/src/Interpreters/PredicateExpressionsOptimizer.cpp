@@ -14,8 +14,8 @@ namespace DB
 static constexpr auto and_function_name = "and";
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
-    ASTSelectQuery * ast_select_, const Settings & settings_, const Context & context_)
-    : ast_select(ast_select_), settings(settings_), context(context_)
+    ASTSelectQuery * ast_select_, const Settings & settings_)
+    : ast_select(ast_select_), settings(settings_)
 {
 }
 
