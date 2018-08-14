@@ -6,9 +6,11 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
+
 
 namespace DB
 {
@@ -73,7 +75,7 @@ bool ODBCBridgeHelper::checkODBCBridgeIsRunning() const
 {
     try
     {
-        ReadWriteBufferFromHTTP buf(ping_url, ODBCBridgeHelper::PING_METHOD, nullptr);
+        ReadWriteBufferFromHTTP buf(ping_url, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
         return checkString(ODBCBridgeHelper::PING_OK_ANSWER, buf);
     }
     catch (...)

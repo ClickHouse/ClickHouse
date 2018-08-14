@@ -3,6 +3,7 @@
 #include <common/LocalDateTime.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -28,7 +29,7 @@ namespace
             size_t max_block_size,
             const ConnectionTimeouts & timeouts)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, ODBCBridgeHelper::MAIN_METHOD, callback, timeouts);
+            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
             reader = FormatFactory::instance().getInput(ODBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
         }
 
