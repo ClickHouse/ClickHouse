@@ -60,7 +60,7 @@ add_check (hashing_read_buffer)
 add_executable (io_operators operators.cpp)
 target_link_libraries (io_operators clickhouse_common_io)
 
-if (NOT APPLE AND NOT ARCH_FREEBSD)
+if (OS_LINUX)
     add_executable(write_buffer_aio write_buffer_aio.cpp)
     target_link_libraries (write_buffer_aio clickhouse_common_io ${Boost_FILESYSTEM_LIBRARY})
 
@@ -79,3 +79,6 @@ target_link_libraries (limit_read_buffer2 clickhouse_common_io)
 
 add_executable (parse_date_time_best_effort parse_date_time_best_effort.cpp)
 target_link_libraries (parse_date_time_best_effort clickhouse_common_io)
+
+add_executable (zlib_ng_bug zlib_ng_bug.cpp)
+target_link_libraries (zlib_ng_bug ${Poco_Foundation_LIBRARY})

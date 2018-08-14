@@ -43,7 +43,7 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
     auto res = pool->getHeader();
     injectVirtualColumns(res);
     return res;
-};
+}
 
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one

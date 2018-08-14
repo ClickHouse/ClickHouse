@@ -98,6 +98,7 @@ private:
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
+    UInt64 client_version_patch = 0;
     UInt64 client_revision = 0;
 
     Context connection_context;

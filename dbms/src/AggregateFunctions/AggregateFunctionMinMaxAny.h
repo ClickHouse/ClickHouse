@@ -646,7 +646,7 @@ struct AggregateFunctionAnyHeavyData : Data
         }
         else
         {
-            if (counter < to.counter)
+            if ((!this->has() && to.has()) || counter < to.counter)
             {
                 this->change(to, arena);
                 return true;

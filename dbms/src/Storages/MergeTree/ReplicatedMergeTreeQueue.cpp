@@ -666,8 +666,25 @@ ReplicatedMergeTreeQueue::StringSet ReplicatedMergeTreeQueue::moveSiblingPartsFo
     return parts_for_merge;
 }
 
+bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const
+{
+    if (entry_ptr->type != LogEntry::REPLACE_RANGE)
+        return false;
 
-void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info)
+    if (current.type != LogEntry::REPLACE_RANGE && current.type != LogEntry::DROP_RANGE)
+        return false;
+
+    if (entry_ptr->replace_range_entry != nullptr && entry_ptr->replace_range_entry == current.replace_range_entry) /// same partition, don't want to drop ourselves
+        return false;
+
+    for (const String & new_part_name : entry_ptr->replace_range_entry->new_part_names)
+        if (!part_info.contains(MergeTreePartInfo::fromPartName(new_part_name, format_version)))
+            return false;
+
+    return true;
+}
+
+void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current)
 {
     Queue to_wait;
     size_t removed_entries = 0;
@@ -680,8 +697,9 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(zkutil::ZooKeeperPt
     {
         auto type = (*it)->type;
 
-        if ((type == LogEntry::GET_PART || type == LogEntry::MERGE_PARTS || type == LogEntry::MUTATE_PART)
-            && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version)))
+        if (((type == LogEntry::GET_PART || type == LogEntry::MERGE_PARTS || type == LogEntry::MUTATE_PART)
+             && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version)))
+            || checkReplaceRangeCanBeRemoved(part_info, *it, current))
         {
             if ((*it)->currently_executing)
                 to_wait.push_back(*it);
@@ -1031,6 +1049,45 @@ bool ReplicatedMergeTreeQueue::processEntry(
 }
 
 
+size_t ReplicatedMergeTreeQueue::countMergesAndPartMutations() const
+{
+    std::lock_guard lock(state_mutex);
+
+    size_t count = 0;
+    for (const auto & entry : queue)
+        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
+            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
+            ++count;
+
+    return count;
+}
+
+
+size_t ReplicatedMergeTreeQueue::countMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return mutations_by_znode.size();
+}
+
+
+size_t ReplicatedMergeTreeQueue::countFinishedMutations() const
+{
+    std::lock_guard lock(state_mutex);
+
+    size_t count = 0;
+    for (const auto & pair : mutations_by_znode)
+    {
+        const auto & mutation = pair.second;
+        if (!mutation.is_done)
+            break;
+
+        ++count;
+    }
+
+    return count;
+}
+
+
 ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zkutil::ZooKeeperPtr & zookeeper)
 {
     return ReplicatedMergeTreeMergePredicate(*this, zookeeper);
@@ -1123,6 +1180,8 @@ bool ReplicatedMergeTreeQueue::tryFinalizeMutations(zkutil::ZooKeeperPtr zookeep
 
     {
         std::lock_guard lock(state_mutex);
+
+        mutation_pointer = finished.back()->znode_name;
 
         for (const ReplicatedMergeTreeMutationEntry * entry : finished)
         {
@@ -1473,27 +1532,6 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     }
 
     return true;
-}
-
-
-size_t ReplicatedMergeTreeMergePredicate::countMergesAndPartMutations() const
-{
-    std::lock_guard lock(queue.state_mutex);
-
-    size_t count = 0;
-    for (const auto & entry : queue.queue)
-        if (entry->type == ReplicatedMergeTreeLogEntry::MERGE_PARTS
-            || entry->type == ReplicatedMergeTreeLogEntry::MUTATE_PART)
-            ++count;
-
-    return count;
-}
-
-
-size_t ReplicatedMergeTreeMergePredicate::countMutations() const
-{
-    std::lock_guard lock(queue.state_mutex);
-    return queue.mutations_by_znode.size();
 }
 
 

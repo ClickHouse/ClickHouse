@@ -81,7 +81,6 @@ def main(args):
         os.environ.setdefault("CLICKHOUSE_CONFIG_CLIENT", args.configclient)
     os.environ.setdefault("CLICKHOUSE_TMP", tmp_dir)
 
-    # TODO ! use clickhouse-extract-from-config here:
     if args.zookeeper is None:
         code, out = commands.getstatusoutput(args.binary + "-extract-from-config --try --config " + args.configserver + ' --key zookeeper | grep . | wc -l')
         try:
@@ -126,7 +125,7 @@ def main(args):
             failures = 0
             failures_chain = 0
             if 'stateful' in suite and not is_data_present():
-                print("Won't run stateful tests because test data wasn't loaded. See README.txt.")
+                print("Won't run stateful tests because test data wasn't loaded.")
                 continue
 
             # Reverse sort order: we want run newest test first.
@@ -195,7 +194,7 @@ def main(args):
                                 stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
                                 if ext == '.sql':
-                                    command = "{0} --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
+                                    command = "{0} --testmode --multiquery < {1} > {2} 2> {3}".format(args.client, case_file, stdout_file, stderr_file)
                                 else:
                                     command = "{0} > {1} 2> {2}".format(case_file, stdout_file, stderr_file)
 

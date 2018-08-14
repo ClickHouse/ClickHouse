@@ -6,6 +6,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
+#include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
 
@@ -28,13 +29,26 @@ namespace ClusterProxy
 {
 
 SelectStreamFactory::SelectStreamFactory(
-    const Block & header,
+    const Block & header_,
     QueryProcessingStage::Enum processed_stage_,
     QualifiedTableName main_table_,
     const Tables & external_tables_)
-    : header(header),
+    : header(header_),
     processed_stage{processed_stage_},
     main_table(std::move(main_table_)),
+    table_func_ptr{nullptr},
+    external_tables{external_tables_}
+{
+}
+
+SelectStreamFactory::SelectStreamFactory(
+    const Block & header_,
+    QueryProcessingStage::Enum processed_stage_,
+    ASTPtr table_func_ptr_,
+    const Tables & external_tables_)
+    : header(header_),
+    processed_stage{processed_stage_},
+    table_func_ptr{table_func_ptr_},
     external_tables{external_tables_}
 {
 }
@@ -71,32 +85,41 @@ void SelectStreamFactory::createForShard(
     {
         auto stream = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, header, context, nullptr, throttler, external_tables, processed_stage);
         stream->setPoolMode(PoolMode::GET_MANY);
-        stream->setMainTable(main_table);
+        if (!table_func_ptr)
+            stream->setMainTable(main_table);
         res.emplace_back(std::move(stream));
     };
 
-    if (shard_info.isLocal())
+    const auto & settings = context.getSettingsRef();
+
+    if (settings.prefer_localhost_replica && shard_info.isLocal())
     {
-        StoragePtr main_table_storage = context.tryGetTable(main_table.database, main_table.table);
+        StoragePtr main_table_storage;
+
+        if (table_func_ptr)
+        {
+            auto table_function = static_cast<const ASTFunction *>(table_func_ptr.get());
+            main_table_storage = TableFunctionFactory::instance().get(table_function->name, context)->execute(table_func_ptr, context);
+        }
+        else
+            main_table_storage = context.tryGetTable(main_table.database, main_table.table);
+
+
         if (!main_table_storage) /// Table is absent on a local server.
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-            if (shard_info.pool)
+            if (shard_info.hasRemoteConnections())
             {
                 LOG_WARNING(
                         &Logger::get("ClusterProxy::SelectStreamFactory"),
                         "There is no table " << main_table.database << "." << main_table.table
                         << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
-
                 emplace_remote_stream();
-                return;
             }
             else
-            {
-                /// Let it fail the usual way.
-                emplace_local_stream();
-                return;
-            }
+                emplace_local_stream();  /// Let it fail the usual way.
+
+            return;
         }
 
         const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
@@ -108,7 +131,6 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
-        const Settings & settings = context.getSettingsRef();
         UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
@@ -133,7 +155,7 @@ void SelectStreamFactory::createForShard(
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
-            if (shard_info.pool)
+            if (shard_info.hasRemoteConnections())
             {
                 /// If we cannot fallback, then we cannot use local replica. Try our luck with remote replicas.
                 emplace_remote_stream();
@@ -146,7 +168,7 @@ void SelectStreamFactory::createForShard(
                     ErrorCodes::ALL_REPLICAS_ARE_STALE);
         }
 
-        if (!shard_info.pool)
+        if (!shard_info.hasRemoteConnections())
         {
             /// There are no remote replicas but we are allowed to fall back to stale local replica.
             emplace_local_stream();
@@ -158,14 +180,17 @@ void SelectStreamFactory::createForShard(
 
         auto lazily_create_stream = [
                 pool = shard_info.pool, shard_num = shard_info.shard_num, query, header = header, query_ast, context, throttler,
-                main_table = main_table, external_tables = external_tables, stage = processed_stage,
+                main_table = main_table, table_func_ptr = table_func_ptr, external_tables = external_tables, stage = processed_stage,
                 local_delay]()
             -> BlockInputStreamPtr
         {
             std::vector<ConnectionPoolWithFailover::TryResult> try_results;
             try
             {
-                try_results = pool->getManyChecked(&context.getSettingsRef(), PoolMode::GET_MANY, main_table);
+                if (table_func_ptr)
+                    try_results  = pool->getManyForTableFunction(&context.getSettingsRef(), PoolMode::GET_MANY);
+                else
+                    try_results = pool->getManyChecked(&context.getSettingsRef(), PoolMode::GET_MANY, main_table);
             }
             catch (const Exception & ex)
             {

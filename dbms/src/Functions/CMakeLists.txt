@@ -41,7 +41,7 @@ generate_function_register(Array
     FunctionArrayEnumerate
     FunctionArrayEnumerateUniq
     FunctionArrayUniq
-    FunctionArrayDistinct	
+    FunctionArrayDistinct
     FunctionEmptyArrayUInt8
     FunctionEmptyArrayUInt16
     FunctionEmptyArrayUInt32
@@ -91,7 +91,7 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
+target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} murmurhash)
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
 
