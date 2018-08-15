@@ -571,7 +571,8 @@ private:
                     Poco::File(history_file).createFile();
             }
 
-            loop();
+            signal(SIGINT, signalHandler);
+            loop();     
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
 
@@ -656,6 +657,24 @@ private:
     inline const String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+    }
+
+    static void signalHandler(int signo)
+    {
+        if(signo == SIGINT)
+        {
+            if (strcmp(rl_line_buffer, "") == 0)
+            {
+                std::cout << std::endl;
+                exit(SIGINT);
+            }
+            else       
+            {   
+                std::cout << std::endl;
+                rl_replace_line("", 0);
+                rl_forced_update_display();
+            }
+        }
     }
 
     void loop()
@@ -1099,6 +1118,8 @@ private:
     /// Also checks if query execution should be cancelled.
     void receiveResult()
     {
+        signal(SIGINT, SIG_DFL);
+        
         InterruptListener interrupt_listener;
         bool cancelled = false;
 
@@ -1129,6 +1150,8 @@ private:
 
         if (cancelled && is_interactive)
             std::cout << "Query was cancelled." << std::endl;
+            
+        signal(SIGINT, signalHandler);
     }
 
 
