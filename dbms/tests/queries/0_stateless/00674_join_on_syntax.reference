@@ -51,3 +51,23 @@ duplicate column names
 {"a1":1,"copy.a1":2}
 {"a1":1,"copy.a1":2}
 {"a1":1,"copy.a1":2}
+subquery
+1
+1
+1	2
+1	2	2	3
+1	2
+subquery expression
+2
+1	2	2	3
+1	2	2
+subquery column alias
+1	2	2	3
+1	2	2	3
+1	2	2	3
+subquery alias
+1	2	2	3
+1	2	2	3
+1	2	2	3
+1	2	2	3
+{"a1":1,"s.a1":2}
