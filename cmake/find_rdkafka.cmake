@@ -2,7 +2,9 @@ option (ENABLE_RDKAFKA "Enable kafka" ON)
 
 if (ENABLE_RDKAFKA)
 
-option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
+if (OS_LINUX_X86_64)
+    option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
+endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/librdkafka/CMakeLists.txt")
    message (WARNING "submodule contrib/librdkafka is missing. to fix try run: \n git submodule update --init --recursive")

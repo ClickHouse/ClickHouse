@@ -118,7 +118,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
 
         if (size > count)
-            memset(&new_col.data[count], static_cast<int>(value_type()), (size - count) * sizeof(value_type));
+            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
     }
 
     return std::move(res);
@@ -327,6 +327,11 @@ template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
+template class ColumnVector<Int128>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+
+template class ColumnVector<Dec32>;
+template class ColumnVector<Dec64>;
+template class ColumnVector<Dec128>;
 }

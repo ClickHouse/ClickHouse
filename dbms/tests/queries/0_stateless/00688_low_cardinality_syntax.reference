@@ -10,3 +10,11 @@ ab
 ab
 ab
 ab
+-
+a	LowCardinality(String)	LowCardinality(UInt64)
+a
+ab
+c
+d
+cb
+db
