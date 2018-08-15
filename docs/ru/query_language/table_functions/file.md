@@ -2,17 +2,46 @@
 
 # file
 
-`file(path, format, structure)` - возвращает таблицу со столбцами, указанными в structure, созданную из файла path типа format.
+Создает таблицу из файла.
 
-path - относительный путь до файла от [user_files_path](../../operations/server_settings/settings.md#user_files_path).
+```
+file(path, format, structure)
+```
 
-format - [формат](../../interfaces/formats.md#formats) файла.
+**Входные параметры**
 
-structure - структура таблицы в форме 'UserID UInt64, URL String'. Определяет имена и типы столбцов.
+- `path` — относительный путь до файла от [user_files_path](../../operations/server_settings/settings.md#user_files_path).
+- `format` — [формат](../../interfaces/formats.md#formats) файла. Файл должен быть одного из форматов, которые доступны в запросе `INSERT`.
+- `structure` — структура таблицы. Формат `'colunm-1-name column-1-data-type, colunm-2-name column-2-data-type, ...'`.
+
+**Возвращаемое значение**
+
+Таблица с указанной структурой.
 
 **Пример**
 
+Настройка `user_files_path` и содержимое файла `test.csv`.
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+
+$ cat /var/lib/clickhouse/user_files/test.csv
+    1,2,3
+    3,2,1
+    78,43,45
+```
+
+Таблица из `test.csv` и выборка первых двух строк из неё.
+
 ```sql
--- получение первых 10 строк таблицы, состоящей из трёх колонок типа UInt32 из CSV файла
-SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32') LIMIT 10
+SELECT *
+FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+LIMIT 2
+```
+```
+┌─column1─┬─column2─┬─column3─┐
+│       1 │       2 │       3 │
+│       3 │       2 │       1 │
+└─────────┴─────────┴─────────┘
 ```
