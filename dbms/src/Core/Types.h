@@ -120,9 +120,8 @@ namespace DB
 {
     /// Own FieldType for Decimal
     template <typename T>
-    class Dec
+    struct Dec
     {
-    public:
         using NativeType = T;
 
         Dec() = default;
@@ -149,7 +148,6 @@ namespace DB
         const Dec<T> & operator /= (const T & x) { value /= x; return *this; }
         const Dec<T> & operator %= (const T & x) { value %= x; return *this; }
 
-    private:
         T value;
     };
 
