@@ -3,6 +3,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Columns/ColumnWithDictionary.h>
 #include <DataTypes/DataTypeWithDictionary.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -32,22 +33,13 @@ private:
     {
         for (auto & column : block)
         {
-            auto * type_with_dict = typeid_cast<const DataTypeWithDictionary *>(column.type.get());
-            auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(column.column.get());
+            if (auto * column_const = typeid_cast<const ColumnConst *>(column.column.get()))
+                column.column = column_const->removeLowCardinality();
+            else
+                column.column = column.column->convertToFullColumnIfWithDictionary();
 
-            if (type_with_dict && !col_with_dict)
-                throw Exception("Invalid column for " + type_with_dict->getName() + ": " + column.column->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            if (!type_with_dict && col_with_dict)
-                throw Exception("Invalid type for " + col_with_dict->getName() + ": " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            if (type_with_dict && col_with_dict)
-            {
-                column.column = col_with_dict->convertToFullColumn();
-                column.type = type_with_dict->getDictionaryType();
-            }
+            if (auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(column.type.get()))
+                column.type = low_cardinality_type->getDictionaryType();
         }
 
         return std::move(block);
