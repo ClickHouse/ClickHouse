@@ -88,15 +88,6 @@ public:
 
     static constexpr bool is_parametric = true;
 
-#if 1 /// TODO: remove this ctor
-    DataTypeDecimal()
-    :   precision(0),
-        scale(0)
-    {
-        throw Exception("Ctor for success build", ErrorCodes::LOGICAL_ERROR);
-    }
-#endif
-
     DataTypeDecimal(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
         scale(scale_)
