@@ -3,6 +3,7 @@
 #include <common/LocalDateTime.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
@@ -28,7 +29,7 @@ namespace
             size_t max_block_size,
             const ConnectionTimeouts & timeouts)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, ODBCBridgeHelper::MAIN_METHOD, callback, timeouts);
+            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, callback, timeouts);
             reader = FormatFactory::instance().getInput(ODBCBridgeHelper::DEFAULT_FORMAT, *read_buf, sample_block, context, max_block_size);
         }
 
@@ -51,7 +52,6 @@ namespace
         std::unique_ptr<ReadWriteBufferFromHTTP> read_buf;
         BlockInputStreamPtr reader;
     };
-
 }
 
 static const size_t max_block_size = 8192;
@@ -71,7 +71,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()},
     invalidate_query{config.getString(config_prefix + ".invalidate_query", "")},
-    odbc_bridge_helper{context, config.getString(config_prefix + ".connection_string")},
+    odbc_bridge_helper{config, context.getSettingsRef().http_receive_timeout.value, config.getString(config_prefix + ".connection_string")},
     timeouts{ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef())},
     global_context(context)
 {
@@ -83,7 +83,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     bridge_url.setPort(bridge_port);
     bridge_url.setScheme("http");
 
-    auto url_params = odbc_bridge_helper.getURLParams(sample_block.getNamesAndTypesList(), max_block_size);
+    auto url_params = odbc_bridge_helper.getURLParams(sample_block.getNamesAndTypesList().toString(), max_block_size);
     for (const auto & [name, value] : url_params)
         bridge_url.addQueryParameter(name, value);
 }
