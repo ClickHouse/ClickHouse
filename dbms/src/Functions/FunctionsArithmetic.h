@@ -1290,7 +1290,7 @@ public:
             using RightDataType = std::decay_t<decltype(right)>;
             using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
             using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-            return !std::is_same_v<ResultDataType, InvalidType> && OpSpec::compilable;
+            return !std::is_same_v<ResultDataType, InvalidType> && !IsDecimal<ResultDataType> && OpSpec::compilable;
         });
     }
 
@@ -1303,7 +1303,7 @@ public:
             using RightDataType = std::decay_t<decltype(right)>;
             using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
             using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-            if constexpr (!std::is_same_v<ResultDataType, InvalidType> && OpSpec::compilable)
+            if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDecimal<ResultDataType> && OpSpec::compilable)
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                 auto type = std::make_shared<ResultDataType>();
@@ -1435,7 +1435,8 @@ public:
     {
         return castType(arguments[0].get(), [&](const auto & type)
         {
-            return Op<typename std::decay_t<decltype(type)>::FieldType>::compilable;
+            using DataType = std::decay_t<decltype(type)>;
+            return !IsDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
         });
     }
 
@@ -1444,9 +1445,10 @@ public:
         llvm::Value * result = nullptr;
         castType(types[0].get(), [&](const auto & type)
         {
-            using T0 = typename std::decay_t<decltype(type)>::FieldType;
+            using DataType = std::decay_t<decltype(type)>;
+            using T0 = typename DataType::FieldType;
             using T1 = typename Op<T0>::ResultType;
-            if constexpr (Op<T0>::compilable)
+            if constexpr (!std::is_same_v<T1, InvalidType> && !IsDecimal<DataType> && Op<T0>::compilable)
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                 auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
