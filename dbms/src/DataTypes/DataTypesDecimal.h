@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -87,6 +88,15 @@ public:
 
     static constexpr bool is_parametric = true;
 
+#if 1 /// TODO: remove this ctor
+    DataTypeDecimal()
+    :   precision(0),
+        scale(0)
+    {
+        throw Exception("Ctor for success build", ErrorCodes::LOGICAL_ERROR);
+    }
+#endif
+
     DataTypeDecimal(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
         scale(scale_)
@@ -99,7 +109,7 @@ public:
 
     const char * getFamilyName() const override { return "Decimal"; }
     std::string getName() const override;
-    size_t getTypeNumber() const override { return TypeNumber<T>::value; }
+    size_t getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

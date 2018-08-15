@@ -253,14 +253,11 @@ static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Blo
         }
     }
 
-    if (!indexes)
-        throw Exception("Expected column with dictionary for any function argument.", ErrorCodes::LOGICAL_ERROR);
-
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
         if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
-            column.column = column_const->cloneResized(num_rows);
+            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
         else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
         {
             auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
@@ -289,7 +286,9 @@ static void convertColumnsWithDictionaryToFull(Block & block, const ColumnNumber
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+            column.column = column_const->removeLowCardinality();
+        else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
         {
             auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
 
@@ -325,10 +324,17 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             auto * column_with_dictionary = typeid_cast<ColumnWithDictionary *>(res_column.get());
 
             if (!column_with_dictionary)
-                throw Exception("Expected ColumnWithDictionary, got" + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Expected LowCardinality column, got " + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
 
-            const auto & keys = block_without_dicts.safeGetByPosition(result).column;
-            column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
+            auto & keys = block_without_dicts.safeGetByPosition(result).column;
+            if (indexes)
+                column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
+            else
+            {
+                if (auto full_column = keys->convertToFullColumnIfConst())
+                    keys = full_column;
+                column_with_dictionary->insertRangeFromFullColumn(*keys, 0, keys->size());
+            }
 
             res.column = std::move(res_column);
         }
@@ -451,29 +457,28 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
-        bool has_type_with_dictionary = false;
-        bool can_run_function_on_dictionary = true;
+        bool has_low_cardinality = false;
+        size_t num_full_low_cardinality_columns = 0;
 
         ColumnsWithTypeAndName args_without_dictionary(arguments);
 
         for (ColumnWithTypeAndName & arg : args_without_dictionary)
         {
-            if (arg.column && arg.column->isColumnConst())
-                continue;
+            bool is_const = arg.column && arg.column->isColumnConst();
+            if (is_const)
+                arg.column = static_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
 
             if (auto * type_with_dictionary = typeid_cast<const DataTypeWithDictionary *>(arg.type.get()))
             {
-                if (has_type_with_dictionary)
-                    can_run_function_on_dictionary = false;
-
-                has_type_with_dictionary = true;
                 arg.type = type_with_dictionary->getDictionaryType();
+                has_low_cardinality = true;
+
+                if (!is_const)
+                    ++num_full_low_cardinality_columns;
             }
-            else
-                can_run_function_on_dictionary = false;
         }
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_type_with_dictionary && can_run_function_on_dictionary)
+        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1)
             return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
         else
             return getReturnTypeWithoutDictionary(args_without_dictionary);
