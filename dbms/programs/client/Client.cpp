@@ -571,7 +571,8 @@ private:
                     Poco::File(history_file).createFile();
             }
 
-            signal(SIGINT, signalHandler);
+            if (signal(SIGINT, signalHandler) == SIG_ERR)
+                throwFromErrno("Cannot handle signal.", ErrorCodes::CANNOT_WAIT_FOR_SIGNAL);
             loop();     
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
@@ -659,13 +660,15 @@ private:
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
 
+    /// Handle interrupt signal to clear current query by pressing Ctrl+C
+    /// or to exit if query is empty
     static void signalHandler(int signo)
     {
-        if(signo == SIGINT)
+        if (signo == SIGINT)
         {
-            if (strcmp(rl_line_buffer, "") == 0)
+            if (!rl_line_buffer[0])
             {
-                std::cout << std::endl;
+                std::cout << std::endl << "Bye." << std::endl;
                 exit(SIGINT);
             }
             else       
