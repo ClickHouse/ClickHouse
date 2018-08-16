@@ -2028,7 +2028,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
       * If there is at least one block with a bucket number greater than zero, then there was a two-level aggregation.
       */
     auto max_bucket = bucket_to_blocks.rbegin()->first;
-    size_t has_two_level = max_bucket > 0;
+    size_t has_two_level = max_bucket >= 0;
 
     if (has_two_level)
     {
