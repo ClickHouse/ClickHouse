@@ -11,16 +11,16 @@ file(path, format, structure)
 **Входные параметры**
 
 - `path` — относительный путь до файла от [user_files_path](../../operations/server_settings/settings.md#user_files_path).
-- `format` — [формат](../../interfaces/formats.md#formats) файла. Файл должен быть одного из форматов, которые доступны в запросе `INSERT`.
+- `format` — [формат](../../interfaces/formats.md#formats) файла. Поддерживаются те же форматы, что и для запроса `INSERT`.
 - `structure` — структура таблицы. Формат `'colunm-1-name column-1-data-type, colunm-2-name column-2-data-type, ...'`.
 
 **Возвращаемое значение**
 
-Таблица с указанной структурой.
+Таблица с указанной структурой и данными из указанного файла.
 
 **Пример**
 
-Настройка `user_files_path` и содержимое файла `test.csv`.
+Настройка `user_files_path` и содержимое файла `test.csv`:
 
 ```bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
@@ -32,7 +32,7 @@ $ cat /var/lib/clickhouse/user_files/test.csv
     78,43,45
 ```
 
-Таблица из `test.csv` и выборка первых двух строк из неё.
+Таблица из `test.csv` и выборка первых двух строк из неё:
 
 ```sql
 SELECT *

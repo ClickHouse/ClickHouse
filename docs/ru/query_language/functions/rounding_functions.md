@@ -31,13 +31,14 @@ N может быть отрицательным.
 
 **Пример**
 
-```
+```sql
 SELECT
     number / 2 AS x,
     round(x)
 FROM system.numbers
 LIMIT 10
-
+```
+```
 ┌───x─┬─round(divide(number, 2))─┐
 │   0 │                        0 │
 │ 0.5 │                        0 │
