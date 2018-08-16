@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -15,7 +16,11 @@ namespace ErrorCodes
 class ODBCBridgeHelper
 {
 private:
-    const Context & context_global;
+
+    using Configuration = Poco::Util::AbstractConfiguration;
+
+    const Configuration & config;
+    Poco::Timespan http_timeout;
 
     std::string connection_string;
 
@@ -32,9 +37,9 @@ public:
     static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
-    ODBCBridgeHelper(const Context & context_global_, const std::string & connection_string_);
+    ODBCBridgeHelper(const Configuration & config_, const Poco::Timespan & http_timeout_, const std::string & connection_string_);
 
-    std::vector<std::pair<std::string, std::string>> getURLParams(const NamesAndTypesList & cols, size_t max_block_size) const;
+    std::vector<std::pair<std::string, std::string>> getURLParams(const std::string & cols, size_t max_block_size) const;
     bool checkODBCBridgeIsRunning() const;
 
     void startODBCBridge() const;
