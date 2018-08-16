@@ -6,9 +6,11 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Common/ShellCommand.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
+
 
 namespace DB
 {
@@ -16,10 +18,9 @@ namespace ErrorCodes
 {
     extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
 }
-ODBCBridgeHelper::ODBCBridgeHelper(const Context & context_global_, const std::string & connection_string_)
-    : context_global(context_global_), connection_string(validateODBCConnectionString(connection_string_))
+ODBCBridgeHelper::ODBCBridgeHelper(const Configuration & config_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
+    : config(config_), http_timeout(http_timeout_), connection_string(validateODBCConnectionString(connection_string_))
 {
-    const auto & config = context_global.getConfigRef();
     size_t bridge_port = config.getUInt("odbc_bridge.port", DEFAULT_PORT);
     std::string bridge_host = config.getString("odbc_bridge.host", DEFAULT_HOST);
 
@@ -30,8 +31,6 @@ ODBCBridgeHelper::ODBCBridgeHelper(const Context & context_global_, const std::s
 }
 void ODBCBridgeHelper::startODBCBridge() const
 {
-    const auto & config = context_global.getConfigRef();
-    const auto & settings = context_global.getSettingsRef();
     Poco::Path path{config.getString("application.dir", "")};
     path.setFileName("clickhouse-odbc-bridge");
 
@@ -42,7 +41,7 @@ void ODBCBridgeHelper::startODBCBridge() const
     command << path.toString() << ' ';
     command << "--http-port " << config.getUInt("odbc_bridge.port", DEFAULT_PORT) << ' ';
     command << "--listen-host " << config.getString("odbc_bridge.listen_host", DEFAULT_HOST) << ' ';
-    command << "--http-timeout " << settings.http_receive_timeout.value.totalSeconds() << ' ';
+    command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
     if (config.has("logger.odbc_bridge_log"))
         command << "--log-path " << config.getString("logger.odbc_bridge_log") << ' ';
     if (config.has("logger.odbc_bridge_errlog"))
@@ -58,12 +57,12 @@ void ODBCBridgeHelper::startODBCBridge() const
     cmd->wait();
 }
 
-std::vector<std::pair<std::string, std::string>> ODBCBridgeHelper::getURLParams(const NamesAndTypesList & cols, size_t max_block_size) const
+std::vector<std::pair<std::string, std::string>> ODBCBridgeHelper::getURLParams(const std::string & cols, size_t max_block_size) const
 {
     std::vector<std::pair<std::string, std::string>> result;
 
     result.emplace_back("connection_string", connection_string); /// already validated
-    result.emplace_back("columns", cols.toString());
+    result.emplace_back("columns", cols);
     result.emplace_back("max_block_size", std::to_string(max_block_size));
 
     return result;
@@ -73,7 +72,7 @@ bool ODBCBridgeHelper::checkODBCBridgeIsRunning() const
 {
     try
     {
-        ReadWriteBufferFromHTTP buf(ping_url, ODBCBridgeHelper::PING_METHOD, nullptr);
+        ReadWriteBufferFromHTTP buf(ping_url, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
         return checkString(ODBCBridgeHelper::PING_OK_ANSWER, buf);
     }
     catch (...)
