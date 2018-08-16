@@ -334,8 +334,8 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
 
 inline bool greaterOp(DB::Int128 i, DB::Float64 f)
 {
-    static const __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-    static const __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return static_cast<DB::Float64>(i) > f;
@@ -346,8 +346,8 @@ inline bool greaterOp(DB::Int128 i, DB::Float64 f)
 
 inline bool greaterOp(DB::Float64 f, DB::Int128 i)
 {
-    static const __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
-    static const __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
 
     if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
         return f > static_cast<DB::Float64>(i);
