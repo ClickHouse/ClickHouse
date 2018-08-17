@@ -2,6 +2,7 @@
 #include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 
+
 namespace DB
 {
 
@@ -10,6 +11,20 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
+
+
+VersionedCollapsingSortedBlockInputStream::VersionedCollapsingSortedBlockInputStream(
+    const BlockInputStreams & inputs_, const SortDescription & description_,
+    const String & sign_column_, size_t max_block_size_,
+    WriteBuffer * out_row_sources_buf_)
+    : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
+    , max_rows_in_queue(std::min(std::max<size_t>(3, max_block_size_), MAX_ROWS_IN_MULTIVERSION_QUEUE) - 2)
+    , current_keys(max_rows_in_queue + 1)
+{
+    sign_column_number = header.getPositionByName(sign_column_);
+}
+
+
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)
 {
@@ -52,15 +67,8 @@ Block VersionedCollapsingSortedBlockInputStream::readImpl()
     if (finished)
         return {};
 
-    if (children.size() == 1)
-        return children[0]->read();
-
-    Block header;
     MutableColumns merged_columns;
-
-    bool is_initialized = !first;
-
-    init(header, merged_columns);
+    init(merged_columns);
 
     if (has_collation)
         throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::NOT_IMPLEMENTED);
@@ -68,12 +76,7 @@ Block VersionedCollapsingSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return {};
 
-    /// Additional initialization.
-    if (!is_initialized)
-        sign_column_number = header.getPositionByName(sign_column);
-
-
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -127,10 +130,7 @@ void VersionedCollapsingSortedBlockInputStream::merge(MutableColumns & merged_co
             {
                 update_queue(current);
 
-                /// If all the rows was collapsed, we still want to give at least one block in the result.
-                /// If queue is empty then don't collapse two last rows.
-                if (sign == sign_in_queue || (!can_collapse_all_rows && blocks_written == 0
-                                              && merged_rows == 0 && queue.empty() && current_keys.size() == 1))
+                if (sign == sign_in_queue)
                     current_keys.pushBack(next_key);
                 else
                 {

@@ -34,7 +34,7 @@ private:
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
 
-    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {};
+    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {}
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
@@ -104,11 +104,16 @@ public:
 
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
-    MutableColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
+    ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
-    MutableColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
-    MutableColumnPtr replicate(const Offsets & offsets) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+
+    ColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
     {
@@ -120,7 +125,7 @@ public:
     void reserve(size_t size) override
     {
         chars.reserve(n * size);
-    };
+    }
 
     void getExtremes(Field & min, Field & max) const override;
 
@@ -129,7 +134,7 @@ public:
 
     bool isFixedAndContiguous() const override { return true; }
     size_t sizeOfValueIfFixed() const override { return n; }
-
+    StringRef getRawData() const override { return StringRef(chars.data(), chars.size()); }
 
     /// Specialized part of interface, not from IColumn.
 

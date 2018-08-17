@@ -70,12 +70,13 @@ public:
             res.insert({ name_type.type->createColumn(), name_type.type, name_type.name });
 
         return Nested::flatten(res);
-    };
+    }
 
 protected:
     Block readImpl() override;
 
 private:
+
     size_t block_size;
     NamesAndTypesList columns;
     StorageLog & storage;
@@ -101,7 +102,12 @@ private:
     using FileStreams = std::map<std::string, Stream>;
     FileStreams streams;
 
+    using DeserializeState = IDataType::DeserializeBinaryBulkStatePtr;
+    using DeserializeStates = std::map<String, DeserializeState>;
+    DeserializeStates deserialize_states;
+
     void readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read);
+
 };
 
 
@@ -167,6 +173,12 @@ private:
 
     WriteBufferFromFile marks_stream; /// Declared below `lock` to make the file open when rwlock is captured.
 
+    using SerializeState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializeStates = std::map<String, SerializeState>;
+    SerializeStates serialize_states;
+
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenStreams & written_streams);
+
     void writeData(const String & name, const IDataType & type, const IColumn & column,
         MarksForColumns & out_marks,
         WrittenStreams & written_streams);
@@ -225,25 +237,36 @@ Block LogBlockInputStream::readImpl()
 
 void LogBlockInputStream::readData(const String & name, const IDataType & type, IColumn & column, size_t max_rows_to_read)
 {
-    IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+    IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+
+    auto createStringGetter = [&](bool stream_for_prefix)
     {
-        String stream_name = IDataType::getFileNameForStream(name, path);
+        return [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+        {
+            String stream_name = IDataType::getFileNameForStream(name, path);
 
-        const auto & file_it = storage.files.find(stream_name);
-        if (storage.files.end() == file_it)
-            throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
+            const auto & file_it = storage.files.find(stream_name);
+            if (storage.files.end() == file_it)
+                throw Exception("Logical error: no information about file " + stream_name + " in StorageLog", ErrorCodes::LOGICAL_ERROR);
 
-        auto it = streams.try_emplace(stream_name,
-            file_it->second.data_file.path(),
-            mark_number
-                ? file_it->second.marks[mark_number].offset
-                : 0,
-            max_read_buffer_size).first;
+            UInt64 offset = 0;
+            if (!stream_for_prefix && mark_number)
+                offset = file_it->second.marks[mark_number].offset;
 
-        return &it->second.compressed;
+            auto & data_file_path = file_it->second.data_file.path();
+            auto it = streams.try_emplace(stream_name, data_file_path, offset, max_read_buffer_size).first;
+            return &it->second.compressed;
+        };
     };
 
-    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, 0, true, {}); /// TODO Use avg_value_size_hint.
+    if (deserialize_states.count(name) == 0)
+    {
+        settings.getter = createStringGetter(true);
+        type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
+    }
+
+    settings.getter = createStringGetter(false);
+    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
 }
 
 
@@ -273,6 +296,18 @@ void LogBlockOutputStream::writeSuffix()
         return;
     done = true;
 
+    WrittenStreams written_streams;
+    IDataType::SerializeBinaryBulkSettings settings;
+    for (const auto & column : getHeader())
+    {
+        auto it = serialize_states.find(column.name);
+        if (it != serialize_states.end())
+        {
+            settings.getter = createStreamGetter(column.name, written_streams);
+            column.type->serializeBinaryBulkStateSuffix(settings, it->second);
+        }
+    }
+
     /// Finish write.
     marks_stream.next();
 
@@ -290,27 +325,10 @@ void LogBlockOutputStream::writeSuffix()
 }
 
 
-void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
-    MarksForColumns & out_marks,
-    WrittenStreams & written_streams)
+IDataType::OutputStreamGetter LogBlockOutputStream::createStreamGetter(const String & name,
+                                                                       WrittenStreams & written_streams)
 {
-    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
-    {
-        String stream_name = IDataType::getFileNameForStream(name, path);
-        if (written_streams.count(stream_name))
-            return;
-
-        const auto & file = storage.files[stream_name];
-        const auto stream_it = streams.try_emplace(stream_name, storage.files[stream_name].data_file.path(), storage.max_compress_block_size).first;
-
-        Mark mark;
-        mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
-        mark.offset = stream_it->second.plain_offset + stream_it->second.plain.count();
-
-        out_marks.emplace_back(file.column_index, mark);
-    }, {});
-
-    IDataType::OutputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
+    return [&] (const IDataType::SubstreamPath & path) -> WriteBuffer *
     {
         String stream_name = IDataType::getFileNameForStream(name, path);
         if (written_streams.count(stream_name))
@@ -318,11 +336,50 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
 
         auto it = streams.find(stream_name);
         if (streams.end() == it)
-            throw Exception("Logical error: stream was not created when writing data in LogBlockOutputStream", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Logical error: stream was not created when writing data in LogBlockOutputStream",
+                            ErrorCodes::LOGICAL_ERROR);
         return &it->second.compressed;
     };
+}
 
-    type.serializeBinaryBulkWithMultipleStreams(column, stream_getter, 0, 0, true, {});
+
+void LogBlockOutputStream::writeData(const String & name, const IDataType & type, const IColumn & column,
+    MarksForColumns & out_marks,
+    WrittenStreams & written_streams)
+{
+    IDataType::SerializeBinaryBulkSettings settings;
+
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    {
+        String stream_name = IDataType::getFileNameForStream(name, path);
+        if (written_streams.count(stream_name))
+            return;
+
+        streams.try_emplace(stream_name, storage.files[stream_name].data_file.path(), storage.max_compress_block_size);
+    }, settings.path);
+
+    settings.getter = createStreamGetter(name, written_streams);
+
+    if (serialize_states.count(name) == 0)
+         type.serializeBinaryBulkStatePrefix(settings, serialize_states[name]);
+
+    type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
+    {
+        String stream_name = IDataType::getFileNameForStream(name, path);
+        if (written_streams.count(stream_name))
+            return;
+
+        const auto & file = storage.files[stream_name];
+        const auto stream_it = streams.find(stream_name);
+
+        Mark mark;
+        mark.rows = (file.marks.empty() ? 0 : file.marks.back().rows) + column.size();
+        mark.offset = stream_it->second.plain_offset + stream_it->second.plain.count();
+
+        out_marks.emplace_back(file.column_index, mark);
+    }, settings.path);
+
+    type.serializeBinaryBulkWithMultipleStreams(column, 0, 0, settings, serialize_states[name]);
 
     type.enumerateStreams([&] (const IDataType::SubstreamPath & path)
     {
@@ -334,7 +391,7 @@ void LogBlockOutputStream::writeData(const String & name, const IDataType & type
         if (streams.end() == it)
             throw Exception("Logical error: stream was not created when writing data in LogBlockOutputStream", ErrorCodes::LOGICAL_ERROR);
         it->second.compressed.next();
-    }, {});
+    }, settings.path);
 }
 
 
@@ -400,7 +457,8 @@ void StorageLog::addFiles(const String & column_name, const IDataType & type)
         }
     };
 
-    type.enumerateStreams(stream_callback, {});
+    IDataType::SubstreamPath path;
+    type.enumerateStreams(stream_callback, path);
 }
 
 
@@ -462,6 +520,29 @@ void StorageLog::rename(const String & new_path_to_db, const String & /*new_data
     marks_file = Poco::File(path + escapeForFileName(name) + '/' + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
 }
 
+void StorageLog::truncate(const ASTPtr &)
+{
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+
+    String table_dir = path + escapeForFileName(name);
+
+    files.clear();
+    file_count = 0;
+    loaded_marks = false;
+
+    std::vector<Poco::File> data_files;
+    Poco::File(table_dir).list(data_files);
+
+    for (auto & file : data_files)
+        file.remove(false);
+
+    for (const auto  & column : getColumns().getAllPhysical())
+        addFiles(column.name, *column.type);
+
+    file_checker = FileChecker{table_dir + "/" + "sizes.json"};
+    marks_file = Poco::File(table_dir + "/" + DBMS_STORAGE_LOG_MARKS_FILE_NAME);
+}
+
 
 const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 {
@@ -473,11 +554,12 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
       * If this is a data type with multiple stream, get the first stream, that we assume have real row count.
       * (Example: for Array data type, first stream is array sizes; and number of array sizes is the number of arrays).
       */
+    IDataType::SubstreamPath path;
     column_type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
     {
         if (filename.empty())
             filename = IDataType::getFileNameForStream(column_name, substream_path);
-    },  {});
+    }, path);
 
     Files_t::const_iterator it = files.find(filename);
     if (files.end() == it)
@@ -485,7 +567,6 @@ const StorageLog::Marks & StorageLog::getMarksWithRealRowCount() const
 
     return it->second.marks;
 }
-
 
 BlockInputStreams StorageLog::read(
     const Names & column_names,
@@ -532,7 +613,6 @@ BlockInputStreams StorageLog::read(
 
     return res;
 }
-
 
 BlockOutputStreamPtr StorageLog::write(
     const ASTPtr & /*query*/, const Settings & /*settings*/)

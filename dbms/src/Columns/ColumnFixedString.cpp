@@ -1,4 +1,5 @@
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnsCommon.h>
 
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -153,7 +154,7 @@ void ColumnFixedString::insertRangeFrom(const IColumn & src, size_t start, size_
     memcpy(&chars[old_size], &src_concrete.chars[start * n], length * n);
 }
 
-MutableColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t col_size = size();
     if (col_size != filt.size())
@@ -230,7 +231,7 @@ MutableColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t
     return std::move(res);
 }
 
-MutableColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
     size_t col_size = size();
 
@@ -258,7 +259,33 @@ MutableColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t lim
     return std::move(res);
 }
 
-MutableColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
+
+ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+
+template <typename Type>
+ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    if (limit == 0)
+        return ColumnFixedString::create(n);
+
+    auto res = ColumnFixedString::create(n);
+
+    Chars_t & res_chars = res->chars;
+
+    res_chars.resize(n * limit);
+
+    size_t offset = 0;
+    for (size_t i = 0; i < limit; ++i, offset += n)
+        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[indexes[i] * n], n);
+
+    return std::move(res);
+}
+
+ColumnPtr ColumnFixedString::replicate(const Offsets & offsets) const
 {
     size_t col_size = size();
     if (col_size != offsets.size())

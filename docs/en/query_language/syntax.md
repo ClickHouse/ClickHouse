@@ -42,11 +42,11 @@ We recommend using identifiers that do not need to be quoted.
 
 There are numeric literals, string literals, and compound literals.
 
-### Numeric literals
+### Numeric Literals
 
 A numeric literal tries to be parsed:
 
-- first as a 64-bit signed number, using the 'strtoull' function.
+- First as a 64-bit signed number, using the 'strtoull' function.
 - If unsuccessful, as a 64-bit unsigned number, using the 'strtoll' function.
 - If unsuccessful, as a floating-point number using the 'strtod' function.
 - Otherwise, an error is returned.
@@ -56,13 +56,13 @@ For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more informa
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
-### String literals
+### String Literals
 
 Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where "c" is any character, are converted to "c". This means that you can use the sequences `\'`and`\\`. The value will have the String type.
 
 The minimum set of characters that you need to escape in string literals: `'` and `\`.
 
-### Compound literals
+### Compound Literals
 
 Constructions are supported for arrays: `[1, 2, 3]` and tuples: `(1, 'Hello, world!', 2)`..
 Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
@@ -81,7 +81,7 @@ Operators are converted to their corresponding functions during query parsing, t
 For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, multiply(2, 3)), 4)`.
 For more information, see the section "Operators" below.
 
-## Data types and database table engines
+## Data Types and Database Table Engines
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 

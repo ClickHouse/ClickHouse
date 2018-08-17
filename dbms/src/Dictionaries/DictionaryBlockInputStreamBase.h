@@ -7,7 +7,7 @@ namespace DB
 class DictionaryBlockInputStreamBase : public IProfilingBlockInputStream
 {
 protected:
-    Block block;
+    //Block block;
 
     DictionaryBlockInputStreamBase(size_t rows_count, size_t max_block_size);
 

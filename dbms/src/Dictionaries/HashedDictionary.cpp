@@ -114,9 +114,7 @@ void HashedDictionary::get##TYPE(const std::string & attribute_name, const Padde
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
@@ -141,9 +139,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
 {
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -159,9 +155,7 @@ void HashedDictionary::get##TYPE(\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -186,9 +180,7 @@ void HashedDictionary::getString(
 {
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -201,9 +193,7 @@ void HashedDictionary::get##TYPE(\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -228,9 +218,7 @@ void HashedDictionary::getString(
 {
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, ids,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -273,9 +261,7 @@ void HashedDictionary::createAttributes()
             hierarchical_attribute = &attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
-                throw Exception{
-                    name + ": hierarchical attribute must be UInt64.",
-                    ErrorCodes::TYPE_MISMATCH};
+                throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 }
@@ -310,7 +296,7 @@ void HashedDictionary::updateData()
             for (const auto attribute_idx : ext::range(0, attributes.size() + 1))
             {
                 const IColumn & update_column = *block.getByPosition(attribute_idx).column.get();
-                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->mutate();
+                MutableColumnPtr saved_column = saved_block->getByPosition(attribute_idx).column->assumeMutable();
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
@@ -368,7 +354,8 @@ void HashedDictionary::updateData()
 
 void HashedDictionary::loadData()
 {
-    if (!source_ptr->hasUpdateField()) {
+    if (!source_ptr->hasUpdateField())
+    {
         auto stream = source_ptr->loadAll();
         stream->readPrefix();
 
@@ -381,9 +368,7 @@ void HashedDictionary::loadData()
         updateData();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{
-            name + ": dictionary source is empty and 'require_nonempty' property is set.",
-            ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -545,9 +530,7 @@ const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::st
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{
-            name + ": no such attribute '" + attribute_name + "'",
-            ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -583,18 +566,18 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8: return getIds<UInt8>(attribute); break;
-        case AttributeUnderlyingType::UInt16: return getIds<UInt16>(attribute); break;
-        case AttributeUnderlyingType::UInt32: return getIds<UInt32>(attribute); break;
-        case AttributeUnderlyingType::UInt64: return getIds<UInt64>(attribute); break;
-        case AttributeUnderlyingType::UInt128: return getIds<UInt128>(attribute); break;
-        case AttributeUnderlyingType::Int8: return getIds<Int8>(attribute); break;
-        case AttributeUnderlyingType::Int16: return getIds<Int16>(attribute); break;
-        case AttributeUnderlyingType::Int32: return getIds<Int32>(attribute); break;
-        case AttributeUnderlyingType::Int64: return getIds<Int64>(attribute); break;
-        case AttributeUnderlyingType::Float32: return getIds<Float32>(attribute); break;
-        case AttributeUnderlyingType::Float64: return getIds<Float64>(attribute); break;
-        case AttributeUnderlyingType::String: return getIds<StringRef>(attribute); break;
+        case AttributeUnderlyingType::UInt8: return getIds<UInt8>(attribute);
+        case AttributeUnderlyingType::UInt16: return getIds<UInt16>(attribute);
+        case AttributeUnderlyingType::UInt32: return getIds<UInt32>(attribute);
+        case AttributeUnderlyingType::UInt64: return getIds<UInt64>(attribute);
+        case AttributeUnderlyingType::UInt128: return getIds<UInt128>(attribute);
+        case AttributeUnderlyingType::Int8: return getIds<Int8>(attribute);
+        case AttributeUnderlyingType::Int16: return getIds<Int16>(attribute);
+        case AttributeUnderlyingType::Int32: return getIds<Int32>(attribute);
+        case AttributeUnderlyingType::Int64: return getIds<Int64>(attribute);
+        case AttributeUnderlyingType::Float32: return getIds<Float32>(attribute);
+        case AttributeUnderlyingType::Float64: return getIds<Float64>(attribute);
+        case AttributeUnderlyingType::String: return getIds<StringRef>(attribute);
     }
     return PaddedPODArray<Key>();
 }

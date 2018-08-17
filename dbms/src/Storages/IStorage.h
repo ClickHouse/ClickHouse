@@ -9,6 +9,7 @@
 #include <shared_mutex>
 #include <memory>
 #include <optional>
+#include <Common/ActionLock.h>
 
 
 namespace DB
@@ -26,6 +27,8 @@ class IBlockOutputStream;
 class RWLockFIFO;
 using RWLockFIFOPtr = std::shared_ptr<RWLockFIFO>;
 
+using StorageActionBlockType = size_t;
+
 using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 using BlockInputStreams = std::vector<BlockInputStreamPtr>;
@@ -35,10 +38,12 @@ class ASTCreateQuery;
 class IStorage;
 
 using StoragePtr = std::shared_ptr<IStorage>;
+using StorageWeakPtr = std::weak_ptr<IStorage>;
 
 struct Settings;
 
 class AlterCommands;
+class MutationCommands;
 
 
 /** Does not allow changing the table description (including rename and delete the table).
@@ -102,6 +107,9 @@ public:
     /** Returns true if the storage replicates SELECT, INSERT and ALTER commands among replicas. */
     virtual bool supportsReplication() const { return false; }
 
+    /** Returns true if the storage supports deduplication of inserted data blocks . */
+    virtual bool supportsDeduplication() const { return false; }
+
     /** Does not allow you to change the structure or name of the table.
       * If you change the data in the table, you will need to specify will_modify_data = true.
       * This will take an extra lock that does not allow starting ALTER MODIFY.
@@ -123,10 +131,10 @@ public:
     TableFullWriteLock lockForAlter(const std::string & who = "Alter")
     {
         /// The calculation order is important.
-        auto data_lock = lockDataForAlter(who);
-        auto structure_lock = lockStructureForAlter(who);
+        auto res_data_lock = lockDataForAlter(who);
+        auto res_structure_lock = lockStructureForAlter(who);
 
-        return {std::move(data_lock), std::move(structure_lock)};
+        return {std::move(res_data_lock), std::move(res_structure_lock)};
     }
 
     /** Does not allow changing the data in the table. (Moreover, does not give a look at the structure of the table with the intention to change the data).
@@ -194,9 +202,19 @@ public:
     }
 
     /** Delete the table data. Called before deleting the directory with the data.
+      * The method can be called only after detaching table from Context (when no queries are performed with table).
+      * The table is not usable during and after call to this method.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
     virtual void drop() {}
+
+    /** Clear the table data and leave it empty.
+      * Must be called under lockForAlter.
+      */
+    virtual void truncate(const ASTPtr & /*query*/)
+    {
+        throw Exception("Truncate is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Rename the table.
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
@@ -221,6 +239,12 @@ public:
     virtual void clearColumnInPartition(const ASTPtr & /*partition*/, const Field & /*column_name*/, const Context & /*context*/)
     {
         throw Exception("Method dropColumnFromPartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** Execute ALTER TABLE dst.table REPLACE(ATTACH) PARTITION partition FROM src.table */
+    virtual void replacePartitionFrom(const StoragePtr & /*source_table*/, const ASTPtr & /*partition*/, bool /*replace*/, const Context &)
+    {
+        throw Exception("Method replacePartitionFrom is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Run the query (DROP|DETACH) PARTITION.
@@ -259,6 +283,12 @@ public:
         throw Exception("Method optimize is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
+    /// Mutate the table contents
+    virtual void mutate(const MutationCommands &, const Context &)
+    {
+        throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /** If the table have to do some complicated work on startup,
       *  that must be postponed after creation of table object
       *  (like launching some background threads),
@@ -276,6 +306,13 @@ public:
       */
     virtual void shutdown() {}
 
+    /// Asks table to stop executing some action identified by action_type
+    /// If table does not support such type of lock, and empty lock is returned
+    virtual ActionLock getActionLock(StorageActionBlockType /* action_type */)
+    {
+        return {};
+    }
+
     bool is_dropped{false};
 
     /// Does table support index for IN sections
@@ -288,9 +325,14 @@ public:
     virtual bool checkData() const { throw DB::Exception("Check query is not supported for " + getName() + " storage"); }
 
     /// Checks that table could be dropped right now
-    /// If it can - returns true
-    /// Otherwise - throws an exception with detailed information or returns false
-    virtual bool checkTableCanBeDropped() const { return true; }
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkTableCanBeDropped() const {}
+
+    /// Checks that Partition could be dropped right now
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
     /** Notify engine about updated dependencies for this storage. */
     virtual void updateDependencies() {}

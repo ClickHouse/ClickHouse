@@ -1,10 +1,9 @@
 #include <iomanip>
 #include <thread>
 #include <future>
-
+#include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,13 +16,14 @@
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
-
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
+#if __has_include(<Interpreters/config_compile.h>)
 #include <Interpreters/config_compile.h>
+#endif
 
 
 namespace ProfileEvents
@@ -173,6 +173,9 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
     compiled_if_possible = true;
 
+#if !defined(INTERNAL_COMPILER_HEADERS)
+    throw Exception("Cannot compile code: Compiler disabled", ErrorCodes::CANNOT_COMPILE_CODE);
+#else
     std::string method_typename;
     std::string method_typename_two_level;
 
@@ -197,6 +200,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
     else
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
+    auto compiler_headers = Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
+
     /// List of types of aggregate functions.
     std::stringstream aggregate_functions_typenames_str;
     std::stringstream aggregate_functions_headers_args;
@@ -220,12 +225,12 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
             throw Exception("Cannot compile code: unusual path of header file for aggregate function: " + header_path,
                 ErrorCodes::CANNOT_COMPILE_CODE);
 
-        aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src";
+        aggregate_functions_headers_args << "-include '" << compiler_headers << "/dbms/src";
         aggregate_functions_headers_args.write(&header_path[pos], header_path.size() - pos);
         aggregate_functions_headers_args << "' ";
     }
 
-    aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h'";
+    aggregate_functions_headers_args << "-include '" << compiler_headers << "/dbms/src/Interpreters/SpecializedAggregator.h'";
 
     std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
 
@@ -351,6 +356,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
     /// If the result is already ready.
     if (lib)
         on_ready(lib);
+#endif
 }
 
 
@@ -837,6 +843,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants)
     Stopwatch watch;
     size_t rows = data_variants.size();
 
+    Poco::File(params.tmp_path).createDirectories();
     auto file = std::make_unique<Poco::TemporaryFile>(params.tmp_path);
     const std::string & path = file->path();
     WriteBufferFromFile file_buf(path);
@@ -1594,7 +1601,7 @@ public:
 
     Block getHeader() const override { return aggregator.getHeader(final); }
 
-    ~MergingAndConvertingBlockInputStream()
+    ~MergingAndConvertingBlockInputStream() override
     {
         LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
 
@@ -2050,8 +2057,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         };
 
         std::unique_ptr<ThreadPool> thread_pool;
-        if (max_threads > 1 && total_input_rows > 100000    /// TODO Make a custom threshold.
-            && has_two_level)
+        if (max_threads > 1 && total_input_rows > 100000)    /// TODO Make a custom threshold.
             thread_pool = std::make_unique<ThreadPool>(max_threads);
 
         for (const auto & bucket_blocks : bucket_to_blocks)

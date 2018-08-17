@@ -119,21 +119,8 @@ public:
       */
     virtual void cancel(bool kill);
 
-    /** Do you want to abort the receipt of data.
-     */
-    bool isCancelled() const
-    {
-        return is_cancelled.load(std::memory_order_seq_cst);
-    }
-
-    bool isCancelledOrThrowIfKilled() const
-    {
-        if (!isCancelled())
-            return false;
-        if (is_killed)
-            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
-        return true;
-    }
+    bool isCancelled() const;
+    bool isCancelledOrThrowIfKilled() const;
 
     /** What limitations and quotas should be checked.
       * LIMITS_CURRENT - checks amount of data read by current stream only (BlockStreamProfileInfo is used for check).
@@ -189,7 +176,7 @@ public:
 protected:
     BlockStreamProfileInfo info;
     std::atomic<bool> is_cancelled{false};
-    bool is_killed{false};
+    std::atomic<bool> is_killed{false};
     ProgressCallback progress_callback;
     ProcessListElement * process_list_elem = nullptr;
 
@@ -203,7 +190,7 @@ protected:
 
     void addChild(BlockInputStreamPtr & child)
     {
-        std::lock_guard lock(children_mutex);
+        std::unique_lock lock(children_mutex);
         children.push_back(child);
     }
 
@@ -234,17 +221,19 @@ private:
 
     void updateExtremes(Block & block);
 
-    /** Check constraints and quotas.
-      * But only those that can be tested within each separate source.
+    /** Check limits and quotas.
+      * But only those that can be checked within each separate stream.
       */
-    bool checkTimeLimits();
+    bool checkTimeLimit();
     void checkQuota(Block & block);
 
 
     template <typename F>
     void forEachProfilingChild(F && f)
     {
-        std::lock_guard lock(children_mutex);
+        /// NOTE: Acquire a read lock, therefore f() should be thread safe
+        std::shared_lock lock(children_mutex);
+
         for (auto & child : children)
             if (IProfilingBlockInputStream * p_child = dynamic_cast<IProfilingBlockInputStream *>(child.get()))
                 if (f(*p_child))

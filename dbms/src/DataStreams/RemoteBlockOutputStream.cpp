@@ -47,7 +47,27 @@ RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_, const
 void RemoteBlockOutputStream::write(const Block & block)
 {
     assertBlocksHaveEqualStructure(block, header, "RemoteBlockOutputStream");
-    connection.sendData(block);
+
+    try
+    {
+        connection.sendData(block);
+    }
+    catch (const NetException &)
+    {
+        /// Try to get more detailed exception from server
+        if (connection.poll(0))
+        {
+            Connection::Packet packet = connection.receivePacket();
+
+            if (Protocol::Server::Exception == packet.type)
+            {
+                packet.exception->rethrow();
+                return;
+            }
+        }
+
+        throw;
+    }
 }
 
 

@@ -125,7 +125,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING = 115;
     extern const int THERE_IS_NO_DEFAULT_VALUE = 116;
     extern const int INCORRECT_DATA = 117;
-    extern const int TABLE_METADATA_DOESNT_EXIST = 118;
     extern const int ENGINE_REQUIRED = 119;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE = 120;
     extern const int UNKNOWN_SET_DATA_VARIANT = 121;
@@ -274,8 +273,8 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP = 269;
     extern const int CANNOT_COMPRESS = 270;
     extern const int CANNOT_DECOMPRESS = 271;
-    extern const int AIO_SUBMIT_ERROR = 272;
-    extern const int AIO_COMPLETION_ERROR = 273;
+    extern const int CANNOT_IO_SUBMIT = 272;
+    extern const int CANNOT_IO_GETEVENTS = 273;
     extern const int AIO_READ_ERROR = 274;
     extern const int AIO_WRITE_ERROR = 275;
     extern const int INDEX_NOT_USED = 277;
@@ -373,12 +372,27 @@ namespace ErrorCodes
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO = 395;
     extern const int TOO_MANY_ROWS_OR_BYTES = 396;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
-
+    extern const int UNKNOWN_MUTATION_COMMAND = 398;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT = 399;
+    extern const int CANNOT_STAT = 400;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME = 401;
+    extern const int CANNOT_IOSETUP = 402;
+    extern const int INVALID_JOIN_ON_EXPRESSION = 403;
+    extern const int BAD_ODBC_CONNECTION_STRING = 404;
+    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 405;
+    extern const int TOP_AND_LIMIT_TOGETHER = 406;
+    extern const int DECIMAL_OVERFLOW = 407;
+    extern const int BAD_REQUEST_PARAMETER = 408;
+    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 409;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 410;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
     extern const int UNKNOWN_EXCEPTION = 1002;
+
+    extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND = 2001;
+    extern const int ILLEGAL_PROJECTION_MANIPULATOR = 2002;
 }
 
 }

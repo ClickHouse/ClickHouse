@@ -1,3 +1,5 @@
+#include <iomanip>
+
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
@@ -16,6 +18,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
@@ -25,12 +29,12 @@ namespace ErrorCodes
 {
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int TABLE_METADATA_DOESNT_EXIST;
     extern const int CANNOT_CREATE_TABLE_FROM_METADATA;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int SYNTAX_ERROR;
 }
 
 
@@ -45,6 +49,12 @@ namespace detail
     {
         return base_path + (endsWith(base_path, "/") ? "" : "/") + escapeForFileName(table_name) + ".sql";
     }
+
+    String getDatabaseMetadataPath(const String & base_path)
+    {
+        return (endsWith(base_path, "/") ? base_path.substr(0, base_path.size() - 1) : base_path) + ".sql";
+    }
+
 }
 
 static void loadTable(
@@ -94,8 +104,11 @@ static void loadTable(
 }
 
 
-DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context)
-    : DatabaseMemory(name_), metadata_path(metadata_path_), data_path(context.getPath() + "data/" + escapeForFileName(name_) + "/")
+DatabaseOrdinary::DatabaseOrdinary(String name_, const String & metadata_path_, const Context & context)
+    : DatabaseWithOwnTablesBase(std::move(name_))
+    , metadata_path(metadata_path_)
+    , data_path(context.getPath() + "data/" + escapeForFileName(name) + "/")
+    , log(&Logger::get("DatabaseOrdinary (" + name + ")"))
 {
     Poco::File(data_path).createDirectories();
 }
@@ -106,8 +119,6 @@ void DatabaseOrdinary::loadTables(
     ThreadPool * thread_pool,
     bool has_force_restore_data_flag)
 {
-    log = &Logger::get("DatabaseOrdinary (" + name + ")");
-
     using FileNames = std::vector<std::string>;
     FileNames file_names;
 
@@ -146,8 +157,6 @@ void DatabaseOrdinary::loadTables(
 
     size_t total_tables = file_names.size();
     LOG_INFO(log, "Total " << total_tables << " tables.");
-
-    String data_path = context.getPath() + "data/" + escapeForFileName(name) + "/";
 
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed {0};
@@ -329,19 +338,42 @@ void DatabaseOrdinary::removeTable(
     }
 }
 
-
-static ASTPtr getCreateQueryImpl(const String & path, const String & table_name)
+static ASTPtr getQueryFromMetadata(const String & metadata_path, bool throw_on_error = true)
 {
-    String table_metadata_path = detail::getTableMetadataPath(path, table_name);
+    if (!Poco::File(metadata_path).exists())
+        return nullptr;
 
     String query;
+
     {
-        ReadBufferFromFile in(table_metadata_path, 4096);
+        ReadBufferFromFile in(metadata_path, 4096);
         readStringUntilEOF(query, in);
     }
 
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "in file " + table_metadata_path);
+    const char * pos = query.data();
+    std::string error_message;
+    auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message, /* hilite = */ false,
+                             "in file " + metadata_path, /* allow_multi_statements = */ false, 0);
+
+    if (!ast && throw_on_error)
+        throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
+
+    return ast;
+}
+
+static ASTPtr getCreateQueryFromMetadata(const String & metadata_path, const String & database, bool throw_on_error)
+{
+    ASTPtr ast = getQueryFromMetadata(metadata_path, throw_on_error);
+
+    if (ast)
+    {
+        ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
+        ast_create_query.attach = false;
+        ast_create_query.database = database;
+    }
+
+    return ast;
 }
 
 
@@ -368,7 +400,7 @@ void DatabaseOrdinary::renameTable(
             to_database_concrete->name,
             to_table_name);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
         throw;
     }
@@ -378,7 +410,9 @@ void DatabaseOrdinary::renameTable(
         throw Exception{e};
     }
 
-    ASTPtr ast = getCreateQueryImpl(metadata_path, table_name);
+    ASTPtr ast = getQueryFromMetadata(detail::getTableMetadataPath(metadata_path, table_name));
+    if (!ast)
+        throw Exception("There is no metadata file for table " + table_name, ErrorCodes::FILE_DOESNT_EXIST);
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
     ast_create_query.table = to_table_name;
 
@@ -405,28 +439,51 @@ time_t DatabaseOrdinary::getTableMetadataModificationTime(
     }
 }
 
-
-ASTPtr DatabaseOrdinary::getCreateQuery(
-    const Context & context,
-    const String & table_name) const
+ASTPtr DatabaseOrdinary::getCreateTableQueryImpl(const Context & context,
+                                                 const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
-    try
-    {
-        ast = getCreateQueryImpl(metadata_path, table_name);
-    }
-    catch (const Exception & e)
-    {
-        /// Handle system.* tables for which there are no table.sql files
-        if (e.code() == ErrorCodes::FILE_DOESNT_EXIST && tryGetTable(context, table_name) != nullptr)
-            throw Exception("There is no CREATE TABLE query for table " + table_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
 
-        throw;
+    auto table_metadata_path = detail::getTableMetadataPath(metadata_path, table_name);
+    ast = getCreateQueryFromMetadata(table_metadata_path, name, throw_on_error);
+    if (!ast && throw_on_error)
+    {
+        /// Handle system.* tables for which there are no table.sql files.
+        bool has_table = tryGetTable(context, table_name) != nullptr;
+
+        auto msg = has_table
+                   ? "There is no CREATE TABLE query for table "
+                   : "There is no metadata file for table ";
+
+        throw Exception(msg + table_name, ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
     }
 
-    ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
-    ast_create_query.attach = false;
-    ast_create_query.database = name;
+    return ast;
+}
+
+ASTPtr DatabaseOrdinary::getCreateTableQuery(const Context & context, const String & table_name) const
+{
+    return getCreateTableQueryImpl(context, table_name, true);
+}
+
+ASTPtr DatabaseOrdinary::tryGetCreateTableQuery(const Context & context, const String & table_name) const
+{
+    return getCreateTableQueryImpl(context, table_name, false);
+}
+
+ASTPtr DatabaseOrdinary::getCreateDatabaseQuery(const Context & /*context*/) const
+{
+    ASTPtr ast;
+
+    auto database_metadata_path = detail::getDatabaseMetadataPath(metadata_path);
+    ast = getCreateQueryFromMetadata(database_metadata_path, name, true);
+    if (!ast)
+    {
+        /// Handle databases (such as default) for which there are no database.sql files.
+        String query = "CREATE DATABASE " + backQuoteIfNeed(name) + " ENGINE = Ordinary";
+        ParserCreateQuery parser;
+        ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
+    }
 
     return ast;
 }
@@ -452,13 +509,6 @@ void DatabaseOrdinary::shutdown()
     tables.clear();
 }
 
-
-void DatabaseOrdinary::drop()
-{
-    /// No additional removal actions are required.
-}
-
-
 void DatabaseOrdinary::alterTable(
     const Context & context,
     const String & name,
@@ -479,7 +529,7 @@ void DatabaseOrdinary::alterTable(
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path);
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
 
     ASTCreateQuery & ast_create_query = typeid_cast<ASTCreateQuery &>(*ast);
 
@@ -512,6 +562,14 @@ void DatabaseOrdinary::alterTable(
     }
 }
 
+
+void DatabaseOrdinary::drop()
+{
+    Poco::File(data_path).remove(false);
+    Poco::File(metadata_path).remove(false);
+}
+
+
 String DatabaseOrdinary::getDataPath() const
 {
     return data_path;
@@ -520,6 +578,11 @@ String DatabaseOrdinary::getDataPath() const
 String DatabaseOrdinary::getMetadataPath() const
 {
     return metadata_path;
+}
+
+String DatabaseOrdinary::getDatabaseName() const
+{
+    return name;
 }
 
 String DatabaseOrdinary::getTableMetadataPath(const String & table_name) const

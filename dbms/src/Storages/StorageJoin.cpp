@@ -5,6 +5,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Poco/String.h>    /// toLower
+#include <Poco/File.h>
 
 
 namespace DB
@@ -30,15 +31,25 @@ StorageJoin::StorageJoin(
 {
     for (const auto & key : key_names)
         if (!getColumns().hasPhysical(key))
-            throw Exception{
-                "Key column (" + key + ") does not exist in table declaration.",
-                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
+            throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
     /// NOTE StorageJoin doesn't use join_use_nulls setting.
 
-    join = std::make_shared<Join>(key_names, key_names, false /* use_nulls */, SizeLimits(), kind, strictness);
+    join = std::make_shared<Join>(key_names, key_names, NameSet(), false /* use_nulls */, SizeLimits(), kind, strictness);
     join->setSampleBlock(getSampleBlock().sortColumns());
     restore();
+}
+
+
+void StorageJoin::truncate(const ASTPtr &)
+{
+    Poco::File(path).remove(true);
+    Poco::File(path).createDirectories();
+    Poco::File(path + "tmp/").createDirectories();
+
+    increment = 0;
+    join = std::make_shared<Join>(key_names, key_names, NameSet(), false /* use_nulls */, SizeLimits(), kind, strictness);
+    join->setSampleBlock(getSampleBlock().sortColumns());
 }
 
 
@@ -51,7 +62,7 @@ void StorageJoin::assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Stric
 
 
 void StorageJoin::insertBlock(const Block & block) { join->insertFromBlock(block); }
-size_t StorageJoin::getSize() const { return join->getTotalRowCount(); };
+size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 
 void registerStorageJoin(StorageFactory & factory)

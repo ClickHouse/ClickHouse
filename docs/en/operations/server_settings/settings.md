@@ -22,11 +22,8 @@ Default value: 3600.
 
 Data compression settings.
 
-<div class="admonition warning">
-
-Don't use it if you have just started using ClickHouse.
-
-</div>
+!!! warning "Warning"
+    Don't use it if you have just started using ClickHouse.
 
 The configuration looks like this:
 
@@ -67,7 +64,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-Use a [ SHOW DATABASES](../../query_language/queries.md#query_language_queries_show_databases) query to get a list of databases.
+To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases).
 
 **Example**
 
@@ -81,7 +78,7 @@ Use a [ SHOW DATABASES](../../query_language/queries.md#query_language_queries_s
 
 Default settings profile.
 
-Settings profiles are located in the file specified in the [user_config](#server_settings-users_config) parameter.
+Settings profiles are located in the file specified in the parameter [user_config](#server_settings-users_config).
 
 **Example**
 
@@ -100,7 +97,7 @@ Path:
 - Specify the absolute path or the path relative to the server config file.
 - The path can contain wildcards \* and ?.
 
-See also "[External dictionaries](../../dicts/external_dicts.md#dicts-external_dicts)".
+See also "[External dictionaries](../../query_language/dicts/external_dicts.md#dicts-external_dicts)".
 
 **Example**
 
@@ -130,12 +127,12 @@ The default is ` true`.
 
 ## format_schema_path
 
-The path to the directory with the schemas for the input data, such as schemas for the [ CapnProto](../../formats/capnproto.md#format_capnproto) format.
+The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#format_capnproto) format.
 
 **Example**
 
 ```xml
-<!-- Directory containing schema files for various input formats. -->
+  <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
@@ -179,7 +176,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more details, see [ GraphiteMergeTree](../../table_engines/graphitemergetree.md#table_engines-graphitemergetree).
+For more information, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
 
 **Example**
 
@@ -241,7 +238,7 @@ Opens `https://tabix.io/` when accessing ` http://localhost: http_port`.
 
 The path to the file with substitutions.
 
-For details, see the section "[Configuration files](../configuration_files.md#configuration_files)".
+For more information, see the section "[Configuration files](../configuration_files.md#configuration_files)".
 
 **Example**
 
@@ -298,7 +295,8 @@ Restriction on hosts that requests can come from. If you want the server to answ
 Examples:
 
 ```xml
-<listen_host>::1</listen_host><listen_host>127.0.0.1</listen_host>
+<listen_host>::1</listen_host>
+<listen_host>127.0.0.1</listen_host>
 ```
 
 <a name="server_settings-logger"></a>
@@ -327,6 +325,28 @@ Keys:
 </logger>
 ```
 
+Also, logging to syslog is possible. Configuration example:
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname>
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+Keys:
+- user_syslog - activation key, turning on syslog logging.
+- address - host[:port] of syslogd. If not specified, local one would be used.
+- hostname - optional, source host of logs
+- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility),
+in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.).
+Default values: when ``address`` is specified, then ``LOG_USER``, otherwise - ``LOG_DAEMON``
+- format - message format. Possible values are - ``bsd`` and ``syslog``
+
 <a name="server_settings-macros"></a>
 
 ## macros
@@ -335,7 +355,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section "[Creating replicated tables](../../table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
+For more information, see the section "[Creating replicated tables](../../operations/table_engines/replication.md#table_engines-replication-creation_of_rep_tables)".
 
 **Example**
 
@@ -347,7 +367,7 @@ For more information, see the section "[Creating replicated tables](../../table_
 
 ## mark_cache_size
 
-Approximate size (in bytes) of the cache of "marks" used by [ MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) engines.
+Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) engines.
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -403,7 +423,7 @@ We recommend using this option in Mac OS X, since the ` getrlimit()` function re
 
 Restriction on deleting tables.
 
-If the size of a [ MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) type table  exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) type table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
 If you still need to delete the table without restarting the ClickHouse server, create the ` <clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
@@ -421,7 +441,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree
 
-Fine tuning for tables in the [ MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) family.
+Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) family.
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -439,17 +459,17 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `` libpoco`` library. The description of the interface is in the [ SSLManager.h file.](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `` libpoco`` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
 Keys for server/client settings:
 
 - privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
 - certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `` privateKeyFile`` contains the certificate.
 - caConfig – The path to the file or directory that contains trusted root certificates.
-- verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Acceptable values: ``none``, ``relaxed``, ``strict``, ``once``.
+- verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 - loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `` true``, `` false``.  |
-- cipherList - Supported OpenSSL-ciphers. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
+- cipherList – Supported OpenSSL encryptions. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
 - cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `` true``, `` false``.
 - sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended, since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
 - sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
@@ -498,7 +518,7 @@ Keys for server/client settings:
 
 ## part_log
 
-Logging events that are associated with the [MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) data type. For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) data. For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
@@ -518,7 +538,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
-- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 **Example**
@@ -538,11 +558,9 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-<div class="admonition warning">
+!!! warning "Attention"
+    The trailing slash is mandatory.
 
-The end slash is mandatory.
-
-</div>
 
 **Example**
 
@@ -562,7 +580,7 @@ Use the following parameters to configure logging:
 
 - database – Name of the database.
 - table – Name of the table.
-- partition_by - Sets the [custom partition key](../../table_engines/custom_partitioning_key.md#custom-partitioning-key).
+- partition_by – Sets a [custom partitioning key](../../operations/table_engines/custom_partitioning_key.md#custom-partitioning-key).
 - flush_interval_milliseconds – Interval for flushing data from memory to the disk.
 
 If the table doesn't exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -584,7 +602,7 @@ If the table doesn't exist, ClickHouse will create it. If the structure of the q
 
 Configuration of clusters used by the Distributed table engine.
 
-For more information, see the section "[Duplicated table engine](../../table_engines/distributed.md#table_engines-distributed)".
+For more information, see the section "[Table engines/Distributed](../../operations/table_engines/distributed.md#table_engines-distributed)".
 
 **Example**
 
@@ -628,11 +646,8 @@ Port for communicating with clients over the TCP protocol.
 
 Path to temporary data for processing large queries.
 
-<div class="admonition warning">
-
-The end slash is mandatory.
-
-</div>
+!!! warning "Attention"
+    The trailing slash is mandatory.
 
 **Example**
 
@@ -644,7 +659,7 @@ The end slash is mandatory.
 
 ## uncompressed_cache_size
 
-Cache size (in bytes) for uncompressed data used by table engines from the [ MergeTree](../../table_engines/mergetree.md#table_engines-mergetree) family.
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache) is enabled.
 
@@ -654,6 +669,16 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ```xml
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
+```
+
+## user_files_path
+
+A catalog with user files. Used in a [file()](../../query_language/table_functions/file.md#table_functions-file) table function.
+
+**Example**
+
+```xml
+<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
 
 <a name="server_settings-users_config"></a>
@@ -683,7 +708,7 @@ ClickHouse uses ZooKeeper for storing replica metadata when using replicated tab
 
 This parameter can be omitted if replicated tables are not used.
 
-For more information, see the section "[Replication](../../table_engines/replication.md#table_engines-replication)".
+For more information, see the section "[Replication](../../operations/table_engines/replication.md#table_engines-replication)".
 
 **Example**
 

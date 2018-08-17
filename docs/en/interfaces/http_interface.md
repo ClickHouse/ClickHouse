@@ -1,4 +1,4 @@
-# HTTP interface
+# HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
@@ -24,9 +24,6 @@ $ curl 'http://localhost:8123/?query=SELECT%201'
 1
 
 $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
-1
-
-$ GET 'http://localhost:8123/?query=SELECT 1'
 1
 
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
@@ -77,37 +74,37 @@ The POST method of transmitting data is necessary for INSERT queries. In this ca
 Examples: Creating a table:
 
 ```bash
-echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | POST 'http://localhost:8123/'
+echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Using the familiar INSERT query for data insertion:
 
 ```bash
-echo 'INSERT INTO t VALUES (1),(2),(3)' | POST 'http://localhost:8123/'
+echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Data can be sent separately from the query:
 
 ```bash
-echo '(4),(5),(6)' | POST 'http://localhost:8123/?query=INSERT INTO t VALUES'
+echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
 You can specify any data format. The 'Values' format is the same as what is used when writing INSERT INTO t VALUES:
 
 ```bash
-echo '(7),(8),(9)' | POST 'http://localhost:8123/?query=INSERT INTO t FORMAT Values'
+echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
 To insert data from a tab-separated dump, specify the corresponding format:
 
 ```bash
-echo -ne '10\n11\n12\n' | POST 'http://localhost:8123/?query=INSERT INTO t FORMAT TabSeparated'
+echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
 Reading the table contents. Data is output in random order due to parallel query processing:
 
 ```bash
-$ GET 'http://localhost:8123/?query=SELECT a FROM t'
+$ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 7
 8
 9
@@ -125,19 +122,18 @@ $ GET 'http://localhost:8123/?query=SELECT a FROM t'
 Deleting the table.
 
 ```bash
-POST 'http://localhost:8123/?query=DROP TABLE t'
+echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 For successful requests that don't return a data table, an empty response body is returned.
 
-You can use compression when transmitting data.
+You can use the internal ClickHouse compression format when transmitting data. The compressed data has a non-standard format, and you will need to use the special clickhouse-compressor program to work with it (it is installed with the clickhouse-client package).
 
-For using ClickHouse internal compression format, and you will need to use the special clickhouse-compressor program to work with it (installed as a part of clickhouse-client package).
 If you specified 'compress=1' in the URL, the server will compress the data it sends you.
 If you specified 'decompress=1' in the URL, the server will decompress the same data that you pass in the POST method.
 
-Also standard gzip-based HTTP compression can be used. To send gzip compressed POST data just add `Content-Encoding: gzip` to request headers, and gzip POST body.
-To get response compressed, you need to add `Accept-Encoding: gzip` to request headers, and turn on ClickHouse setting called `enable_http_compression`.
+It is also possible to use the standard gzip-based HTTP compression. To send a POST request compressed using gzip, append the request header `Content-Encoding: gzip`.
+In order for ClickHouse to compress the response using gzip, you must append `Accept-Encoding: gzip` to the request headers, and enable the ClickHouse setting `enable_http_compression`.
 
 You can use this to reduce network traffic when transmitting a large amount of data, or for creating dumps that are immediately compressed.
 
@@ -174,7 +170,8 @@ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @
 ```
 
 If the user name is not indicated, the username 'default' is used. If the password is not indicated, an empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:
+http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the section "Settings".
 
@@ -194,18 +191,18 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-You can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` GET parameter in HTTP request. You can use any alphanumeric string as a session_id. By default session will be timed out after 60 seconds of inactivity. You can change that by setting `default_session_timeout` in server config file, or by adding GET parameter `session_timeout`. You can also check the status of the session by using GET parameter `session_check=1`. When using sessions you can't run 2 queries with the same session_id simultaneously.
+Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout, modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
-You can get the progress of query execution in X-ClickHouse-Progress headers, by enabling setting send_progress_in_http_headers.
+You have the option to receive information about the progress of query execution in X-ClickHouse-Progress headers. To do this, enable the setting send_progress_in_http_headers.
 
-Running query are not aborted automatically after closing HTTP connection. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
+Running requests don't stop automatically if the HTTP connection is lost. Parsing and data formatting are performed on the server side, and using the network might be ineffective.
 The optional 'query_id' parameter can be passed as the query ID (any string). For more information, see the section "Settings, replace_running_query".
 
 The optional 'quota_key' parameter can be passed as the quota key (any string). For more information, see the section "Quotas".
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-## Response buffering
+## Response Buffering
 
 You can enable response buffering on the server side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
 
@@ -220,3 +217,4 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 ```
 
 Use buffering to avoid situations where a query processing error occurred after the response code and HTTP headers were sent to the client. In this situation, an error message is written at the end of the response body, and on the client side, the error can only be detected at the parsing stage.
+

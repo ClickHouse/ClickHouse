@@ -10,7 +10,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeArray.h>
 
 
 namespace DB
@@ -19,95 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
-}
-
-/// Some virtual columns routines
-namespace
-{
-
-bool hasColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
-{
-    for (const auto & column : columns)
-    {
-        if (column.name == column_name)
-            return true;
-    }
-
-    return false;
-}
-
-
-NameAndTypePair tryGetColumn(const ColumnsWithTypeAndName & columns, const String & column_name)
-{
-    for (const auto & column : columns)
-    {
-        if (column.name == column_name)
-            return {column.name, column.type};
-    }
-
-    return {};
-}
-
-
-struct VirtualColumnsProcessor
-{
-    explicit VirtualColumnsProcessor(const ColumnsWithTypeAndName & all_virtual_columns_)
-        : all_virtual_columns(all_virtual_columns_), virtual_columns_mask(all_virtual_columns_.size(), 0) {}
-
-    /// Separates real and virtual column names, returns real ones
-    Names process(const Names & column_names, const std::vector<bool *> & virtual_columns_exists_flag = {})
-    {
-        Names real_column_names;
-
-        if (!virtual_columns_exists_flag.empty())
-        {
-            for (size_t i = 0; i < all_virtual_columns.size(); ++i)
-                *virtual_columns_exists_flag.at(i) = false;
-        }
-
-        for (const String & column_name : column_names)
-        {
-            ssize_t virtual_column_index = -1;
-
-            for (size_t i = 0; i < all_virtual_columns.size(); ++i)
-            {
-                if (column_name == all_virtual_columns[i].name)
-                {
-                    virtual_column_index = i;
-                    break;
-                }
-            }
-
-            if (virtual_column_index >= 0)
-            {
-                auto index = static_cast<size_t>(virtual_column_index);
-                virtual_columns_mask[index] = 1;
-                if (!virtual_columns_exists_flag.empty())
-                    *virtual_columns_exists_flag.at(index) = true;
-            }
-            else
-            {
-                real_column_names.emplace_back(column_name);
-            }
-        }
-
-        return real_column_names;
-    }
-
-    void appendVirtualColumns(Block & block)
-    {
-        for (size_t i = 0; i < all_virtual_columns.size(); ++i)
-        {
-            if (virtual_columns_mask[i])
-                block.insert(all_virtual_columns[i].cloneEmpty());
-        }
-    }
-
-protected:
-    const ColumnsWithTypeAndName & all_virtual_columns;
-    std::vector<UInt8> virtual_columns_mask;
-};
-
 }
 
 
@@ -122,14 +35,12 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"is_temporary", std::make_shared<DataTypeUInt8>()},
         {"data_path", std::make_shared<DataTypeString>()},
         {"metadata_path", std::make_shared<DataTypeString>()},
+        {"metadata_modification_time", std::make_shared<DataTypeDateTime>()},
+        {"dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"create_table_query", std::make_shared<DataTypeString>()},
+        {"engine_full", std::make_shared<DataTypeString>()}
     }));
-
-    virtual_columns =
-    {
-        {std::make_shared<DataTypeDateTime>(), "metadata_modification_time"},
-        {std::make_shared<DataTypeString>(), "create_table_query"},
-        {std::make_shared<DataTypeString>(), "engine_full"}
-    };
 }
 
 
@@ -155,17 +66,24 @@ BlockInputStreams StorageSystemTables::read(
 {
     processed_stage = QueryProcessingStage::FetchColumns;
 
-    Names real_column_names;
-    bool has_metadata_modification_time = false;
-    bool has_create_table_query = false;
-    bool has_engine_full = false;
+    check(column_names);
 
-    VirtualColumnsProcessor virtual_columns_processor(virtual_columns);
-    real_column_names = virtual_columns_processor.process(column_names, {&has_metadata_modification_time, &has_create_table_query, &has_engine_full});
-    check(real_column_names);
+    /// Create a mask of what columns are needed in the result.
 
-    Block res_block = getSampleBlock();
-    virtual_columns_processor.appendVirtualColumns(res_block);
+    NameSet names_set(column_names.begin(), column_names.end());
+
+    Block sample_block = getSampleBlock();
+    Block res_block;
+
+    std::vector<UInt8> columns_mask(sample_block.columns());
+    for (size_t i = 0, size = columns_mask.size(); i < size; ++i)
+    {
+        if (names_set.count(sample_block.getByPosition(i).name))
+        {
+            columns_mask[i] = 1;
+            res_block.insert(sample_block.getByPosition(i));
+        }
+    }
 
     MutableColumns res_columns = res_block.cloneEmptyColumns();
 
@@ -177,7 +95,7 @@ BlockInputStreams StorageSystemTables::read(
 
         auto database = context.tryGetDatabase(database_name);
 
-        if (!database)
+        if (!database || !context.hasDatabaseAccessRights(database_name))
         {
             /// Database was deleted just now.
             continue;
@@ -187,35 +105,61 @@ BlockInputStreams StorageSystemTables::read(
         {
             auto table_name = iterator->name();
 
-            size_t j = 0;
-            res_columns[j++]->insert(database_name);
-            res_columns[j++]->insert(table_name);
-            res_columns[j++]->insert(iterator->table()->getName());
-            res_columns[j++]->insert(UInt64(0));
-            res_columns[j++]->insert(iterator->table()->getDataPath());
-            res_columns[j++]->insert(database->getTableMetadataPath(table_name));
+            size_t src_index = 0;
+            size_t res_index = 0;
 
-            if (has_metadata_modification_time)
-                res_columns[j++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(database_name);
 
-            if (has_create_table_query || has_engine_full)
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table_name);
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(iterator->table()->getName());
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(0));
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(iterator->table()->getDataPath());
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(database->getTableMetadataPath(table_name));
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(static_cast<UInt64>(database->getTableMetadataModificationTime(context, table_name)));
+
             {
-                ASTPtr ast;
-
-                try
+                Array dependencies_table_name_array;
+                Array dependencies_database_name_array;
+                if (columns_mask[src_index] || columns_mask[src_index + 1])
                 {
-                    ast = database->getCreateQuery(context, table_name);
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() != ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY)
-                        throw;
+                    const auto dependencies = context.getDependencies(database_name, table_name);
+
+                    dependencies_table_name_array.reserve(dependencies.size());
+                    dependencies_database_name_array.reserve(dependencies.size());
+                    for (const auto & dependency : dependencies)
+                    {
+                        dependencies_table_name_array.push_back(dependency.second);
+                        dependencies_database_name_array.push_back(dependency.first);
+                    }
                 }
 
-                if (has_create_table_query)
-                    res_columns[j++]->insert(ast ? queryToString(ast) : "");
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(dependencies_database_name_array);
 
-                if (has_engine_full)
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(dependencies_table_name_array);
+            }
+
+            if (columns_mask[src_index] || columns_mask[src_index + 1])
+            {
+                ASTPtr ast = database->tryGetCreateTableQuery(context, table_name);
+
+                if (columns_mask[src_index++])
+                    res_columns[res_index++]->insert(ast ? queryToString(ast) : "");
+
+                if (columns_mask[src_index++])
                 {
                     String engine_full;
 
@@ -232,11 +176,13 @@ BlockInputStreams StorageSystemTables::read(
                         }
                     }
 
-                    res_columns[j++]->insert(engine_full);
+                    res_columns[res_index++]->insert(engine_full);
                 }
             }
         }
     }
+
+    /// This is for temporary tables.
 
     if (context.hasSessionContext())
     {
@@ -244,36 +190,46 @@ BlockInputStreams StorageSystemTables::read(
 
         for (auto table : external_tables)
         {
-            size_t j = 0;
-            res_columns[j++]->insertDefault();
-            res_columns[j++]->insert(table.first);
-            res_columns[j++]->insert(table.second->getName());
-            res_columns[j++]->insert(UInt64(1));
+            size_t src_index = 0;
+            size_t res_index = 0;
 
-            if (has_metadata_modification_time)
-                res_columns[j++]->insertDefault();
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
 
-            if (has_create_table_query)
-                res_columns[j++]->insertDefault();
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table.first);
 
-            if (has_engine_full)
-                res_columns[j++]->insert(table.second->getName());
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table.second->getName());
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(UInt64(1));
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insertDefault();
+
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(table.second->getName());
         }
     }
 
     res_block.setColumns(std::move(res_columns));
     return {std::make_shared<OneBlockInputStream>(res_block)};
-}
-
-bool StorageSystemTables::hasColumn(const String & column_name) const
-{
-    return DB::hasColumn(virtual_columns, column_name) || ITableDeclaration::hasColumn(column_name);
-}
-
-NameAndTypePair StorageSystemTables::getColumn(const String & column_name) const
-{
-    auto virtual_column = DB::tryGetColumn(virtual_columns, column_name);
-    return !virtual_column.name.empty() ? virtual_column : ITableDeclaration::getColumn(column_name);
 }
 
 }

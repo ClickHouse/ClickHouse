@@ -53,47 +53,20 @@ class Connection : private boost::noncopyable
     friend class MultiplexedConnections;
 
 public:
-    Connection(const String & host_, UInt16 port_, const String & default_database_,
-        const String & user_, const String & password_,
-        const ConnectionTimeouts & timeouts_,
-        const String & client_name_ = "client",
-        Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
-        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
-        :
-        host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_), resolved_address(host, port),
-        client_name(client_name_),
-        compression(compression_),
-        encryption(encryption_),
-        timeouts(timeouts_),
-        sync_request_timeout(sync_request_timeout_),
-        log_wrapper(*this)
-    {
-        /// Don't connect immediately, only on first need.
-
-        if (user.empty())
-            user = "default";
-
-        setDescription();
-    }
-
-    Connection(const String & host_, UInt16 port_, const Poco::Net::SocketAddress & resolved_address_,
+    Connection(const String & host_, UInt16 port_,
         const String & default_database_,
         const String & user_, const String & password_,
         const ConnectionTimeouts & timeouts_,
         const String & client_name_ = "client",
         Protocol::Compression compression_ = Protocol::Compression::Enable,
-        Protocol::Encryption encryption_ = Protocol::Encryption::Disable,
+        Protocol::Secure secure_ = Protocol::Secure::Disable,
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
         :
-        host(host_), port(port_),
-        default_database(default_database_),
-        user(user_), password(password_),
-        resolved_address(resolved_address_),
+        host(host_), port(port_), default_database(default_database_),
+        user(user_), password(password_), current_resolved_address(host, port),
         client_name(client_name_),
         compression(compression_),
-        encryption(encryption_),
+        secure(secure_),
         timeouts(timeouts_),
         sync_request_timeout(sync_request_timeout_),
         log_wrapper(*this)
@@ -106,7 +79,7 @@ public:
         setDescription();
     }
 
-    virtual ~Connection() {};
+    virtual ~Connection() {}
 
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
@@ -131,7 +104,7 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
-    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
+    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision);
 
     const String & getServerTimezone();
     const String & getServerDisplayName();
@@ -189,6 +162,9 @@ public:
     size_t outBytesCount() const { return out ? out->count() : 0; }
     size_t inBytesCount() const { return in ? in->count() : 0; }
 
+    /// Returns initially resolved address
+    Poco::Net::SocketAddress getResolvedAddress() const;
+
 private:
     String host;
     UInt16 port;
@@ -196,10 +172,9 @@ private:
     String user;
     String password;
 
-    /** Address could be resolved beforehand and passed to constructor. Then 'host' and 'port' fields are used just for logging.
-      * Otherwise address is resolved in constructor. Thus, DNS based load balancing is not supported.
-      */
-    Poco::Net::SocketAddress resolved_address;
+    /// Address is resolved during the first connection (or the following reconnects)
+    /// Use it only for logging purposes
+    Poco::Net::SocketAddress current_resolved_address;
 
     /// For messages in log and in exceptions.
     String description;
@@ -212,6 +187,7 @@ private:
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
+    UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     String server_timezone;
     String server_display_name;
@@ -222,7 +198,7 @@ private:
 
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
-    Protocol::Encryption encryption;             /// Enable data encryption for communication.
+    Protocol::Secure secure;             /// Enable data encryption for communication.
 
     /// What compression settings to use while sending data for INSERT queries and external tables.
     CompressionSettings compression_settings;

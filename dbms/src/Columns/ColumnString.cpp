@@ -5,9 +5,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 
-/// Used in the `reserve` method, when the number of rows is known, but sizes of elements are not.
-#define APPROX_STRING_SIZE 64
-
 
 namespace DB
 {
@@ -97,7 +94,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 }
 
 
-MutableColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (offsets.size() == 0)
         return ColumnString::create();
@@ -112,7 +109,7 @@ MutableColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_h
 }
 
 
-MutableColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
+ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
 {
     size_t size = offsets.size();
 
@@ -149,6 +146,48 @@ MutableColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) c
     for (size_t i = 0; i < limit; ++i)
     {
         size_t j = perm[i];
+        size_t string_offset = j == 0 ? 0 : offsets[j - 1];
+        size_t string_size = offsets[j] - string_offset;
+
+        memcpySmallAllowReadWriteOverflow15(&res_chars[current_new_offset], &chars[string_offset], string_size);
+
+        current_new_offset += string_size;
+        res_offsets[i] = current_new_offset;
+    }
+
+    return std::move(res);
+}
+
+
+ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+template <typename Type>
+ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    if (limit == 0)
+        return ColumnString::create();
+
+    auto res = ColumnString::create();
+
+    Chars_t & res_chars = res->chars;
+    Offsets & res_offsets = res->offsets;
+
+
+    size_t new_chars_size = 0;
+    for (size_t i = 0; i < limit; ++i)
+        new_chars_size += sizeAt(indexes[i]);
+    res_chars.resize(new_chars_size);
+
+    res_offsets.resize(limit);
+
+    Offset current_new_offset = 0;
+
+    for (size_t i = 0; i < limit; ++i)
+    {
+        size_t j = indexes[i];
         size_t string_offset = j == 0 ? 0 : offsets[j - 1];
         size_t string_size = offsets[j] - string_offset;
 
@@ -208,7 +247,7 @@ void ColumnString::getPermutation(bool reverse, size_t limit, int /*nan_directio
 }
 
 
-MutableColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
+ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
 {
     size_t col_size = size();
     if (col_size != replicate_offsets.size())
@@ -260,7 +299,6 @@ void ColumnString::gather(ColumnGathererStream & gatherer)
 void ColumnString::reserve(size_t n)
 {
     offsets.reserve(n);
-    chars.reserve(n * APPROX_STRING_SIZE);
 }
 
 

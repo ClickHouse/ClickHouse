@@ -4,6 +4,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
+#include <Interpreters/evaluateMissingDefaults.h>
 #include <Core/Block.h>
 
 

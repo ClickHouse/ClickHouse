@@ -1,5 +1,5 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
-#include <DataStreams/SquashingBlockOutputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
@@ -18,6 +18,10 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       */
     addTableLock(storage->lockStructure(true, __PRETTY_FUNCTION__));
 
+    /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
+    /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
+    bool disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
+
     if (!table.empty())
     {
         Dependencies dependencies = context.getDependencies(database, table);
@@ -27,7 +31,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         {
             views_context = std::make_unique<Context>(context);
             // Do not deduplicate insertions into MV if the main insertion is Ok
-            views_context->getSettingsRef().insert_deduplicate = false;
+            if (disable_deduplication_for_children)
+                views_context->getSettingsRef().insert_deduplicate = false;
         }
 
         for (const auto & database_table : dependencies)
@@ -36,14 +41,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             auto & materialized_view = dynamic_cast<const StorageMaterializedView &>(*dependent_table);
 
             auto query = materialized_view.getInnerQuery();
-            BlockOutputStreamPtr out;
-            out = std::make_shared<PushingToViewsBlockOutputStream>(
+            BlockOutputStreamPtr out = std::make_shared<PushingToViewsBlockOutputStream>(
                 database_table.first, database_table.second, dependent_table, *views_context, ASTPtr());
-            /// Squashing is needed here because the materialized view query can generate a lot of blocks
-            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-            /// and two-level aggregation is triggered).
-            out = std::make_shared<SquashingBlockOutputStream>(
-                out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
             views.emplace_back(ViewInfo{std::move(query), database_table.first, database_table.second, std::move(out)});
         }
     }
@@ -72,9 +71,20 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         try
         {
             BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(view.query, *views_context, {}, QueryProcessingStage::Complete, 0, from);
-            BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            copyData(*data, *view.out);
+            InterpreterSelectQuery select(view.query, *views_context, from);
+            BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+            /// Squashing is needed here because the materialized view query can generate a lot of blocks
+            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+            /// and two-level aggregation is triggered).
+            in = std::make_shared<SquashingBlockInputStream>(
+                in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+
+            in->readPrefix();
+
+            while (Block result_block = in->read())
+                view.out->write(result_block);
+
+            in->readSuffix();
         }
         catch (Exception & ex)
         {
@@ -82,6 +92,53 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             throw;
         }
     }
+}
+
+void PushingToViewsBlockOutputStream::writePrefix()
+{
+    if (output)
+        output->writePrefix();
+
+    for (auto & view : views)
+    {
+        try
+        {
+            view.out->writePrefix();
+        }
+        catch (Exception & ex)
+        {
+            ex.addMessage("while write prefix to view " + view.database + "." + view.table);
+            throw;
+        }
+    }
+}
+
+void PushingToViewsBlockOutputStream::writeSuffix()
+{
+    if (output)
+        output->writeSuffix();
+
+    for (auto & view : views)
+    {
+        try
+        {
+            view.out->writeSuffix();
+        }
+        catch (Exception & ex)
+        {
+            ex.addMessage("while write prefix to view " + view.database + "." + view.table);
+            throw;
+        }
+    }
+}
+
+void PushingToViewsBlockOutputStream::flush()
+{
+    if (output)
+        output->flush();
+
+    for (auto & view : views)
+        view.out->flush();
 }
 
 }

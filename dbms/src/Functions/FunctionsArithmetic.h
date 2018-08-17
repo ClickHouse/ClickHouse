@@ -1,9 +1,11 @@
 #pragma once
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
@@ -17,7 +19,14 @@
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <common/intExp.h>
-#include <boost/math/common_factor.hpp>
+#include <boost/integer/common_factor.hpp>
+
+#if USE_EMBEDDED_COMPILER
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#include <llvm/IR/IRBuilder.h> // Y_IGNORE
+#pragma GCC diagnostic pop
+#endif
 
 
 namespace DB
@@ -29,6 +38,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
+    extern const int DECIMAL_OVERFLOW;
 }
 
 
@@ -64,9 +74,9 @@ struct BinaryOperationImplBase
             c[i] = Op::template apply<ResultType>(a, b[i]);
     }
 
-    static void constant_constant(A a, B b, ResultType & c)
+    static ResultType constant_constant(A a, B b)
     {
-        c = Op::template apply<ResultType>(a, b);
+        return Op::template apply<ResultType>(a, b);
     }
 };
 
@@ -80,8 +90,10 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayC = typename ColumnVector<ResultType>::Container;
 
-    static void NO_INLINE vector(const PaddedPODArray<A> & a, PaddedPODArray<ResultType> & c)
+    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
         size_t size = a.size();
         for (size_t i = 0; i < size; ++i)
@@ -99,6 +111,7 @@ template <typename A, typename B>
 struct PlusImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+    static const constexpr bool allow_decimal = true;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -106,6 +119,21 @@ struct PlusImpl
         /// Next everywhere, static_cast - so that there is no wrong result in expressions of the form Int64 c = UInt32(a) * Int32(-1).
         return static_cast<Result>(a) + b;
     }
+
+    template <typename Result = ResultType>
+    static inline bool apply(A a, B b, Result & c)
+    {
+        return common::addOverflow(static_cast<Result>(a), b, c);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return left->getType()->isIntegerTy() ? b.CreateAdd(left, right) : b.CreateFAdd(left, right);
+    }
+#endif
 };
 
 
@@ -113,36 +141,80 @@ template <typename A, typename B>
 struct MultiplyImpl
 {
     using ResultType = typename NumberTraits::ResultOfAdditionMultiplication<A, B>::Type;
+    static const constexpr bool allow_decimal = true;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
         return static_cast<Result>(a) * b;
     }
+
+    template <typename Result = ResultType>
+    static inline bool apply(A a, B b, Result & c)
+    {
+        return common::mulOverflow(static_cast<Result>(a), b, c);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return left->getType()->isIntegerTy() ? b.CreateMul(left, right) : b.CreateFMul(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
 struct MinusImpl
 {
     using ResultType = typename NumberTraits::ResultOfSubtraction<A, B>::Type;
+    static const constexpr bool allow_decimal = true;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
         return static_cast<Result>(a) - b;
     }
+
+    template <typename Result = ResultType>
+    static inline bool apply(A a, B b, Result & c)
+    {
+        return common::subOverflow(static_cast<Result>(a), b, c);
+    }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        return left->getType()->isIntegerTy() ? b.CreateSub(left, right) : b.CreateFSub(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
 struct DivideFloatingImpl
 {
     using ResultType = typename NumberTraits::ResultOfFloatingPointDivision<A, B>::Type;
+    static const constexpr bool allow_decimal = true;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
         return static_cast<Result>(a) / b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (left->getType()->isIntegerTy())
+            throw Exception("DivideFloatingImpl expected a floating-point type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateFDiv(left, right);
+    }
+#endif
 };
 
 
@@ -189,6 +261,10 @@ struct DivideIntegralImpl
         throwIfDivisionLeadsToFPE(a, b);
         return a / b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+#endif
 };
 
 template <typename A, typename B>
@@ -201,6 +277,10 @@ struct DivideIntegralOrZeroImpl
     {
         return unlikely(divisionLeadsToFPE(a, b)) ? 0 : a / b;
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// TODO implement the checks
+#endif
 };
 
 template <typename A, typename B>
@@ -212,9 +292,12 @@ struct ModuloImpl
     static inline Result apply(A a, B b)
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
-        return typename NumberTraits::ToInteger<A>::Type(a)
-            % typename NumberTraits::ToInteger<B>::Type(b);
+        return typename NumberTraits::ToInteger<A>::Type(a) % typename NumberTraits::ToInteger<B>::Type(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// don't know how to throw from LLVM IR
+#endif
 };
 
 template <typename A, typename B>
@@ -225,9 +308,19 @@ struct BitAndImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            & static_cast<Result>(b);
+        return static_cast<Result>(a) & static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitAndImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateAnd(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -238,9 +331,19 @@ struct BitOrImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            | static_cast<Result>(b);
+        return static_cast<Result>(a) | static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitOrImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateOr(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -251,9 +354,19 @@ struct BitXorImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            ^ static_cast<Result>(b);
+        return static_cast<Result>(a) ^ static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitXorImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateXor(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -264,9 +377,19 @@ struct BitShiftLeftImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            << static_cast<Result>(b);
+        return static_cast<Result>(a) << static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitShiftLeftImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateShl(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -277,9 +400,19 @@ struct BitShiftRightImpl
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
     {
-        return static_cast<Result>(a)
-            >> static_cast<Result>(b);
+        return static_cast<Result>(a) >> static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitShiftRightImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return is_signed ? b.CreateAShr(left, right) : b.CreateLShr(left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -293,6 +426,19 @@ struct BitRotateLeftImpl
         return (static_cast<Result>(a) << static_cast<Result>(b))
             | (static_cast<Result>(a) >> ((sizeof(Result) * 8) - static_cast<Result>(b)));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitRotateLeftImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        auto * size = llvm::ConstantInt::get(left->getType(), left->getType()->getPrimitiveSizeInBits());
+        /// XXX how is this supposed to behave in signed mode?
+        return b.CreateOr(b.CreateShl(left, right), b.CreateLShr(left, b.CreateSub(size, right)));
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -306,14 +452,19 @@ struct BitRotateRightImpl
         return (static_cast<Result>(a) >> static_cast<Result>(b))
             | (static_cast<Result>(a) << ((sizeof(Result) * 8) - static_cast<Result>(b)));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool)
+    {
+        if (!left->getType()->isIntegerTy())
+            throw Exception("BitRotateRightImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        auto * size = llvm::ConstantInt::get(left->getType(), left->getType()->getPrimitiveSizeInBits());
+        return b.CreateOr(b.CreateLShr(left, right), b.CreateShl(left, b.CreateSub(size, right)));
+    }
+#endif
 };
-
-
-template <typename T>
-std::enable_if_t<std::is_integral_v<T>, T> toInteger(T x) { return x; }
-
-template <typename T>
-std::enable_if_t<std::is_floating_point_v<T>, Int64> toInteger(T x) { return Int64(x); }
 
 template <typename A, typename B>
 struct BitTestImpl
@@ -321,9 +472,15 @@ struct BitTestImpl
     using ResultType = UInt8;
 
     template <typename Result = ResultType>
-    static inline Result apply(A a, B b) { return (toInteger(a) >> toInteger(b)) & 1; };
-};
+    static inline Result apply(A a, B b)
+    {
+        return (typename NumberTraits::ToInteger<A>::Type(a) >> typename NumberTraits::ToInteger<B>::Type(b)) & 1;
+    }
 
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// TODO
+#endif
+};
 
 template <typename A, typename B>
 struct LeastBaseImpl
@@ -336,6 +493,18 @@ struct LeastBaseImpl
         /** gcc 4.9.2 successfully vectorizes a loop from this function. */
         return static_cast<Result>(a) < static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (!left->getType()->isIntegerTy())
+            /// XXX minnum is basically fmin(), it may or may not match whatever apply() does
+            return b.CreateMinNum(left, right);
+        return b.CreateSelect(is_signed ? b.CreateICmpSLT(left, right) : b.CreateICmpULT(left, right), left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -349,6 +518,10 @@ struct LeastSpecialImpl
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::lessOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// ???
+#endif
 };
 
 template <typename A, typename B>
@@ -365,6 +538,19 @@ struct GreatestBaseImpl
     {
         return static_cast<Result>(a) > static_cast<Result>(b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * left, llvm::Value * right, bool is_signed)
+    {
+        if (!left->getType()->isIntegerTy())
+            /// XXX maxnum is basically fmax(), it may or may not match whatever apply() does
+            /// XXX CreateMaxNum is broken on LLVM 5.0 and 6.0 (generates minnum instead; fixed in 7)
+            return b.CreateBinaryIntrinsic(llvm::Intrinsic::maxnum, left, right);
+        return b.CreateSelect(is_signed ? b.CreateICmpSGT(left, right) : b.CreateICmpUGT(left, right), left, right);
+    }
+#endif
 };
 
 template <typename A, typename B>
@@ -378,6 +564,10 @@ struct GreatestSpecialImpl
         static_assert(std::is_same_v<Result, ResultType>, "ResultType != Result");
         return accurate::greaterOp(a, b) ? static_cast<Result>(a) : static_cast<Result>(b);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// ???
+#endif
 };
 
 template <typename A, typename B>
@@ -387,12 +577,21 @@ using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<
 template <typename A>
 struct NegateImpl
 {
-    using ResultType = typename NumberTraits::ResultOfNegate<A>::Type;
+    using ResultType = std::conditional_t<decTrait<A>(), A, typename NumberTraits::ResultOfNegate<A>::Type>;
 
     static inline ResultType apply(A a)
     {
         return -static_cast<ResultType>(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        return arg->getType()->isIntegerTy() ? b.CreateNeg(arg) : b.CreateFNeg(arg);
+    }
+#endif
 };
 
 template <typename A>
@@ -404,22 +603,39 @@ struct BitNotImpl
     {
         return ~static_cast<ResultType>(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        if (!arg->getType()->isIntegerTy())
+            throw Exception("BitNotImpl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateNot(arg);
+    }
+#endif
 };
 
 template <typename A>
 struct AbsImpl
 {
-    using ResultType = typename NumberTraits::ResultOfAbs<A>::Type;
+    using ResultType = std::conditional_t<decTrait<A>(), A, typename NumberTraits::ResultOfAbs<A>::Type>;
 
     static inline ResultType apply(A a)
     {
-        if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
+        if constexpr (decTrait<A>())
+            return a < 0 ? A(-a) : a;
+        else if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
         else if constexpr (std::is_integral_v<A> && std::is_unsigned_v<A>)
             return static_cast<ResultType>(a);
         else if constexpr (std::is_floating_point_v<A>)
             return static_cast<ResultType>(std::abs(a));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// special type handling, some other time
+#endif
 };
 
 template <typename A, typename B>
@@ -432,10 +648,14 @@ struct GCDImpl
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
-        return boost::math::gcd(
+        return boost::integer::gcd(
             typename NumberTraits::ToInteger<Result>::Type(a),
             typename NumberTraits::ToInteger<Result>::Type(b));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
+#endif
 };
 
 template <typename A, typename B>
@@ -448,10 +668,14 @@ struct LCMImpl
     {
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<A>::Type(a), typename NumberTraits::ToInteger<B>::Type(b));
         throwIfDivisionLeadsToFPE(typename NumberTraits::ToInteger<B>::Type(b), typename NumberTraits::ToInteger<A>::Type(a));
-        return boost::math::lcm(
+        return boost::integer::lcm(
             typename NumberTraits::ToInteger<Result>::Type(a),
             typename NumberTraits::ToInteger<Result>::Type(b));
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// exceptions (and a non-trivial algorithm)
+#endif
 };
 
 template <typename A>
@@ -463,6 +687,17 @@ struct IntExp2Impl
     {
         return intExp2(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = true;
+
+    static inline llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool)
+    {
+        if (!arg->getType()->isIntegerTy())
+            throw Exception("IntExp2Impl expected an integral type", ErrorCodes::LOGICAL_ERROR);
+        return b.CreateShl(llvm::ConstantInt::get(arg->getType(), 1), arg);
+    }
+#endif
 };
 
 template <typename A>
@@ -474,29 +709,212 @@ struct IntExp10Impl
     {
         return intExp10(a);
     }
+
+#if USE_EMBEDDED_COMPILER
+    static constexpr bool compilable = false; /// library function
+#endif
 };
 
 
-/// this one is just for convenience
-template <bool B, typename T1, typename T2> using If = std::conditional_t<B, T1, T2>;
-/// these ones for better semantics
-template <typename T> using Then = T;
-template <typename T> using Else = T;
+template <typename T> struct NativeType { using Type = T; };
+template <> struct NativeType<Dec32> { using Type = Int32; };
+template <> struct NativeType<Dec64> { using Type = Int64; };
+template <> struct NativeType<Dec128> { using Type = Int128; };
+
+/// Binary operations for Decimals need scale args
+/// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
+/// *   no agrs scale. ScaleR = Scale1 + Scale2;
+/// /   first arg scale. ScaleR = Scale1 (scale_a = DecimalType<B>::getScale()).
+template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_>
+struct DecimalBinaryOperation
+{
+    using ResultType = ResultType_;
+    using NativeResultType = typename NativeType<ResultType>::Type;
+    using Op = Operation<NativeResultType, NativeResultType>;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayB = typename ColumnVector<B>::Container;
+    using ArrayC = typename ColumnVector<ResultType>::Container;
+
+    static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
+    static constexpr bool is_multiply =     std::is_same_v<Operation<Int32, Int32>, MultiplyImpl<Int32, Int32>>;
+    static constexpr bool is_division =     std::is_same_v<Operation<Int32, Int32>, DivideFloatingImpl<Int32, Int32>>;
+    static constexpr bool is_compare =      std::is_same_v<Operation<Int32, Int32>, LeastBaseImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
+    static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
+    static constexpr bool can_overflow = is_plus_minus || is_multiply;
+
+    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c,
+                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    {
+        size_t size = a.size();
+        if constexpr (is_plus_minus_compare)
+        {
+            if (scale_a != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<true>(a[i], b[i], scale_a);
+                return;
+            }
+            else if (scale_b != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<false>(a[i], b[i], scale_b);
+                return;
+            }
+        }
+        else if constexpr (is_division && decTrait<B>())
+        {
+            for (size_t i = 0; i < size; ++i)
+                c[i] = applyScaledDiv(a[i], b[i], scale_a);
+            return;
+        }
+
+        /// default: use it if no return before
+        for (size_t i = 0; i < size; ++i)
+            c[i] = apply(a[i], b[i]);
+    }
+
+    static void NO_INLINE vector_constant(const ArrayA & a, B b, ArrayC & c,
+                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    {
+        size_t size = a.size();
+        if constexpr (is_plus_minus_compare)
+        {
+            if (scale_a != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<true>(a[i], b, scale_a);
+                return;
+            }
+            else if (scale_b != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<false>(a[i], b, scale_b);
+                return;
+            }
+        }
+        else if constexpr (is_division && decTrait<B>())
+        {
+            for (size_t i = 0; i < size; ++i)
+                c[i] = applyScaledDiv(a[i], b, scale_a);
+            return;
+        }
+
+        /// default: use it if no return before
+        for (size_t i = 0; i < size; ++i)
+            c[i] = apply(a[i], b);
+    }
+
+    static void NO_INLINE constant_vector(A a, const ArrayB & b, ArrayC & c,
+                                        ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    {
+        size_t size = b.size();
+        if constexpr (is_plus_minus_compare)
+        {
+            if (scale_a != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<true>(a, b[i], scale_a);
+                return;
+            }
+            else if (scale_b != 1)
+            {
+                for (size_t i = 0; i < size; ++i)
+                    c[i] = applyScaled<false>(a, b[i], scale_b);
+                return;
+            }
+        }
+        else if constexpr (is_division && decTrait<B>())
+        {
+            for (size_t i = 0; i < size; ++i)
+                c[i] = applyScaledDiv(a, b[i], scale_a);
+            return;
+        }
+
+        /// default: use it if no return before
+        for (size_t i = 0; i < size; ++i)
+            c[i] = apply(a, b[i]);
+    }
+
+    static ResultType constant_constant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    {
+        if constexpr (is_plus_minus_compare)
+        {
+            if (scale_a != 1)
+                return applyScaled<true>(a, b, scale_a);
+            else if (scale_b != 1)
+                return applyScaled<false>(a, b, scale_b);
+        }
+        else if constexpr (is_division && decTrait<B>())
+            return applyScaledDiv(a, b, scale_a);
+        return apply(a, b);
+    }
+
+private:
+    /// there's implicit type convertion here
+    static NativeResultType apply(NativeResultType a, NativeResultType b)
+    {
+        if constexpr (can_overflow)
+        {
+            NativeResultType res;
+            if (Op::template apply<NativeResultType>(a, b, res))
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            return res;
+        }
+        else
+            return Op::template apply<NativeResultType>(a, b);
+    }
+
+    template <bool scale_left>
+    static NativeResultType applyScaled(NativeResultType a, NativeResultType b, NativeResultType scale)
+    {
+        if constexpr (is_plus_minus_compare)
+        {
+            NativeResultType res;
+
+            bool overflow = false;
+            if constexpr (scale_left)
+                overflow |= common::mulOverflow(a, scale, a);
+            else
+                overflow |= common::mulOverflow(b, scale, b);
+
+            if constexpr (can_overflow)
+                overflow |= Op::template apply<NativeResultType>(a, b, res);
+            else
+                res = Op::template apply<NativeResultType>(a, b);
+
+            if (overflow)
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
+            return res;
+        }
+    }
+
+    static NativeResultType applyScaledDiv(NativeResultType a, NativeResultType b, NativeResultType scale)
+    {
+        if constexpr (is_division)
+        {
+            bool overflow = false;
+            if constexpr (!decTrait<A>())
+                overflow |= common::mulOverflow(scale, scale, scale);
+            overflow |= common::mulOverflow(a, scale, a);
+            if (overflow)
+                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+
+            return Op::template apply<NativeResultType>(a, b);
+        }
+    }
+};
+
 
 /// Used to indicate undefined operation
 struct InvalidType;
 
-template <typename T>
-struct DataTypeFromFieldType
-{
-    using Type = DataTypeNumber<T>;
-};
+template <bool V, typename T> struct Case : std::bool_constant<V> { using type = T; };
 
-template <>
-struct DataTypeFromFieldType<NumberTraits::Error>
-{
-    using Type = InvalidType;
-};
+/// Switch<Case<C0, T0>, ...> -- select the first Ti for which Ci is true; InvalidType if none.
+template <typename... Ts> using Switch = typename std::disjunction<Ts..., Case<true, InvalidType>>::type;
 
 template <typename DataType> constexpr bool IsIntegral = false;
 template <> constexpr bool IsIntegral<DataTypeUInt8> = true;
@@ -512,270 +930,106 @@ template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
-/** Returns appropriate result type for binary operator on dates (or datetimes):
- *  Date + Integral -> Date
- *  Integral + Date -> Date
- *  Date - Date     -> Int32
- *  Date - Integral -> Date
- *  least(Date, Date) -> Date
- *  greatest(Date, Date) -> Date
- *  All other operations are not defined and return InvalidType, operations on
- *  distinct date types are also undefined (e.g. DataTypeDate - DataTypeDateTime)
- */
-template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
-struct DateBinaryOperationTraits
-{
-    using T0 = typename LeftDataType::FieldType;
-    using T1 = typename RightDataType::FieldType;
-    using Op = Operation<T0, T1>;
+template <typename DataType> constexpr bool IsDecimal = false;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Dec32>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Dec64>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Dec128>> = true;
 
-    using ResultDataType =
-        If<std::is_same_v<Op, PlusImpl<T0, T1>>,
-            Then<
-                If<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>,
-                    Then<LeftDataType>,
-                    Else<
-                        If<IsIntegral<LeftDataType> && IsDateOrDateTime<RightDataType>,
-                            Then<RightDataType>,
-                            Else<InvalidType>>>>>,
-            Else<
-                If<std::is_same_v<Op, MinusImpl<T0, T1>>,
-                    Then<
-                        If<IsDateOrDateTime<LeftDataType>,
-                            Then<
-                                If<std::is_same_v<LeftDataType, RightDataType>,
-                                    Then<DataTypeInt32>,
-                                    Else<
-                                        If<IsIntegral<RightDataType>,
-                                            Then<LeftDataType>,
-                                            Else<InvalidType>>>>>,
-                            Else<InvalidType>>>,
-                    Else<
-                        If<std::is_same_v<T0, T1>
-                            && (std::is_same_v<Op, LeastImpl<T0, T1>> || std::is_same_v<Op, GreatestImpl<T0, T1>>),
-                            Then<LeftDataType>,
-                            Else<InvalidType>>>>>>;
-};
+template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec32>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec64>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec64>, DataTypeDecimal<Dec32>> = true;
 
+template <typename T> using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>, InvalidType, DataTypeNumber<T>>;
 
-/// Decides among date and numeric operations
 template <template <typename, typename> class Operation, typename LeftDataType, typename RightDataType>
 struct BinaryOperationTraits
 {
-    using ResultDataType =
-        If<IsDateOrDateTime<LeftDataType> || IsDateOrDateTime<RightDataType>,
-            Then<
-                typename DateBinaryOperationTraits<
-                    Operation, LeftDataType, RightDataType>::ResultDataType>,
-            Else<
-                typename DataTypeFromFieldType<
-                    typename Operation<
-                        typename LeftDataType::FieldType,
-                        typename RightDataType::FieldType>::ResultType>::Type>>;
+    using T0 = typename LeftDataType::FieldType;
+    using T1 = typename RightDataType::FieldType;
+private: /// it's not correct for Decimal
+    using Op = Operation<T0, T1>;
+public:
+
+    static constexpr bool allow_decimal =
+        std::is_same_v<Operation<T0, T0>, PlusImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, MinusImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, MultiplyImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, DivideFloatingImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, LeastBaseImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, GreatestBaseImpl<T0, T0>>;
+
+    /// Appropriate result type for binary operator on numeric types. "Date" can also mean
+    /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
+    using ResultDataType = Switch<
+        /// Decimal cases
+        Case<!allow_decimal && (IsDecimal<LeftDataType> || IsDecimal<RightDataType>), InvalidType>,
+        Case<IsDecimal<LeftDataType> && IsDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
+        Case<IsDecimal<LeftDataType> && IsDecimal<RightDataType>, RightDataType>,
+        Case<IsDecimal<LeftDataType> && !IsDecimal<RightDataType> && IsIntegral<RightDataType>, LeftDataType>,
+        Case<!IsDecimal<LeftDataType> && IsDecimal<RightDataType> && IsIntegral<LeftDataType>, RightDataType>,
+        /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
+        Case<IsDecimal<LeftDataType> && !IsDecimal<RightDataType> && !IsIntegral<RightDataType>, InvalidType>,
+        Case<!IsDecimal<LeftDataType> && IsDecimal<RightDataType> && !IsIntegral<LeftDataType>, InvalidType>,
+        /// number <op> number -> see corresponding impl
+        Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
+            DataTypeFromFieldType<typename Op::ResultType>>,
+        /// Date + Integral -> Date
+        /// Integral + Date -> Date
+        Case<std::is_same_v<Op, PlusImpl<T0, T1>>, Switch<
+            Case<IsIntegral<RightDataType>, LeftDataType>,
+            Case<IsIntegral<LeftDataType>, RightDataType>>>,
+        /// Date - Date     -> Int32
+        /// Date - Integral -> Date
+        Case<std::is_same_v<Op, MinusImpl<T0, T1>>, Switch<
+            Case<std::is_same_v<LeftDataType, RightDataType>, DataTypeInt32>,
+            Case<IsDateOrDateTime<LeftDataType> && IsIntegral<RightDataType>, LeftDataType>>>,
+        /// least(Date, Date) -> Date
+        /// greatest(Date, Date) -> Date
+        Case<std::is_same_v<LeftDataType, RightDataType> && (std::is_same_v<Op, LeastImpl<T0, T1>> || std::is_same_v<Op, GreatestImpl<T0, T1>>),
+            LeftDataType>>;
 };
 
 
-template <template <typename, typename> class Op, typename Name>
+template <typename... Ts, typename F>
+static bool castTypeToEither(const IDataType * type, F && f)
+{
+    /// XXX can't use && here because gcc-7 complains about parentheses around && within ||
+    return ((typeid_cast<const Ts *>(type) ? f(*typeid_cast<const Ts *>(type)) : false) || ...);
+}
+
+
+template <template <typename, typename> class Op, typename Name, bool CanBeExecutedOnDefaultArguments = true>
 class FunctionBinaryArithmetic : public IFunction
 {
-public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
-
-    FunctionBinaryArithmetic(const Context & context) : context(context) {}
-
-private:
     const Context & context;
 
-    template <typename ResultDataType>
-    bool checkRightTypeImpl(DataTypePtr & type_res) const
+    template <typename F>
+    static bool castType(const IDataType * type, F && f)
     {
-        /// Overload for InvalidType
-        if constexpr (std::is_same_v<ResultDataType, InvalidType>)
-            return false;
-        else
-        {
-            type_res = std::make_shared<ResultDataType>();
-            return true;
-        }
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeFloat32,
+            DataTypeFloat64,
+            DataTypeDate,
+            DataTypeDateTime,
+            DataTypeDecimal<Dec32>,
+            DataTypeDecimal<Dec64>,
+            DataTypeDecimal<Dec128>
+        >(type, std::forward<F>(f));
     }
 
-    template <typename LeftDataType, typename RightDataType>
-    bool checkRightType(const DataTypes & arguments, DataTypePtr & type_res) const
+    template <typename F>
+    static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
-        using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-
-        if (typeid_cast<const RightDataType *>(arguments[1].get()))
-            return checkRightTypeImpl<ResultDataType>(type_res);
-
-        return false;
-    }
-
-    template <typename T0>
-    bool checkLeftType(const DataTypes & arguments, DataTypePtr & type_res) const
-    {
-        if (typeid_cast<const T0 *>(arguments[0].get()))
-        {
-            if (   checkRightType<T0, DataTypeDate>(arguments, type_res)
-                || checkRightType<T0, DataTypeDateTime>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt8>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt16>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt32>(arguments, type_res)
-                || checkRightType<T0, DataTypeUInt64>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt8>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt16>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt32>(arguments, type_res)
-                || checkRightType<T0, DataTypeInt64>(arguments, type_res)
-                || checkRightType<T0, DataTypeFloat32>(arguments, type_res)
-                || checkRightType<T0, DataTypeFloat64>(arguments, type_res))
-                return true;
-        }
-        return false;
-    }
-
-    /// Overload for date operations
-    template <typename LeftDataType, typename RightDataType, typename ColumnType>
-    bool executeRightType(Block & block, const ColumnNumbers & arguments, const size_t result, const ColumnType * col_left)
-    {
-        if (!typeid_cast<const RightDataType *>(block.getByPosition(arguments[1]).type.get()))
-            return false;
-
-        using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
-
-        return executeRightTypeDispatch<LeftDataType, RightDataType, ResultDataType>(
-            block, arguments, result, col_left);
-    }
-
-    /// Overload for InvalidType
-    template <typename LeftDataType, typename RightDataType, typename ResultDataType, typename ColumnType>
-    bool executeRightTypeDispatch(Block & block, const ColumnNumbers & arguments,
-        [[maybe_unused]] const size_t result, [[maybe_unused]] const ColumnType * col_left)
-    {
-        if constexpr (std::is_same_v<ResultDataType, InvalidType>)
-            throw Exception("Types " + String(TypeName<typename LeftDataType::FieldType>::get())
-                + " and " + String(TypeName<typename LeftDataType::FieldType>::get())
-                + " are incompatible for function " + getName() + " or not upscaleable to common type", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        else
-        {
-            using T0 = typename LeftDataType::FieldType;
-            using T1 = typename RightDataType::FieldType;
-            using ResultType = typename ResultDataType::FieldType;
-
-            return executeRightTypeImpl<T0, T1, ResultType>(block, arguments, result, col_left);
-        }
-    }
-
-    /// ColumnVector overload
-    template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
-    bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnVector<T0> * col_left)
-    {
-        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
-        {
-            auto col_res = ColumnVector<ResultType>::create();
-
-            auto & vec_res = col_res->getData();
-            vec_res.resize(col_left->getData().size());
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_vector(col_left->getData(), col_right->getData(), vec_res);
-
-            block.getByPosition(result).column = std::move(col_res);
-            return true;
-        }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
-        {
-            auto col_res = ColumnVector<ResultType>::create();
-
-            auto & vec_res = col_res->getData();
-            vec_res.resize(col_left->getData().size());
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
-
-            block.getByPosition(result).column = std::move(col_res);
-            return true;
-        }
-
-        throw Exception("Logical error: unexpected type of column", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    /// ColumnConst overload
-    template <typename T0, typename T1, typename ResultType = typename Op<T0, T1>::ResultType>
-    bool executeRightTypeImpl(Block & block, const ColumnNumbers & arguments, size_t result, const ColumnConst * col_left)
-    {
-        if (auto col_right = checkAndGetColumn<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
-        {
-            auto col_res = ColumnVector<ResultType>::create();
-
-            auto & vec_res = col_res->getData();
-            vec_res.resize(col_left->size());
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
-
-            block.getByPosition(result).column = std::move(col_res);
-            return true;
-        }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(block.getByPosition(arguments[1]).column.get()))
-        {
-            ResultType res = 0;
-            BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
-            block.getByPosition(result).column = DataTypeNumber<ResultType>().createColumnConst(col_left->size(), toField(res));
-
-            return true;
-        }
-
-        return false;
-    }
-
-    template <typename LeftDataType>
-    bool executeLeftType(Block & block, const ColumnNumbers & arguments, const size_t result)
-    {
-        if (!typeid_cast<const LeftDataType *>(block.getByPosition(arguments[0]).type.get()))
-            return false;
-
-        return executeLeftTypeImpl<LeftDataType>(block, arguments, result);
-    }
-
-    template <typename LeftDataType>
-    bool executeLeftTypeImpl(Block & block, const ColumnNumbers & arguments, const size_t result)
-    {
-        if (auto col_left = checkAndGetColumn<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
-                return true;
-            else
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                    + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-        else if (auto col_left = checkAndGetColumnConst<ColumnVector<typename LeftDataType::FieldType>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            if (   executeRightType<LeftDataType, DataTypeDate>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeDateTime>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeUInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt8>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt16>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeInt64>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat32>(block, arguments, result, col_left)
-                || executeRightType<LeftDataType, DataTypeFloat64>(block, arguments, result, col_left))
-                return true;
-            else
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                    + " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        return false;
+        return castType(left, [&](const auto & left) { return castType(right, [&](const auto & right) { return f(left, right); }); });
     }
 
     FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
@@ -820,6 +1074,11 @@ private:
     }
 
 public:
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
+
+    FunctionBinaryArithmetic(const Context & context) : context(context) {}
+
     String getName() const override
     {
         return name;
@@ -849,26 +1108,37 @@ public:
         }
 
         DataTypePtr type_res;
-
-        if (!( checkLeftType<DataTypeDate>(arguments, type_res)
-            || checkLeftType<DataTypeDateTime>(arguments, type_res)
-            || checkLeftType<DataTypeUInt8>(arguments, type_res)
-            || checkLeftType<DataTypeUInt16>(arguments, type_res)
-            || checkLeftType<DataTypeUInt32>(arguments, type_res)
-            || checkLeftType<DataTypeUInt64>(arguments, type_res)
-            || checkLeftType<DataTypeInt8>(arguments, type_res)
-            || checkLeftType<DataTypeInt16>(arguments, type_res)
-            || checkLeftType<DataTypeInt32>(arguments, type_res)
-            || checkLeftType<DataTypeInt64>(arguments, type_res)
-            || checkLeftType<DataTypeFloat32>(arguments, type_res)
-            || checkLeftType<DataTypeFloat64>(arguments, type_res)))
+        bool valid = castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+            if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
+            {
+                if constexpr (IsDecimal<LeftDataType> && IsDecimal<RightDataType>)
+                {
+                    constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
+                    constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>>;
+                    ResultDataType result_type = decimalResultType(left, right, is_multiply, is_division);
+                    type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
+                }
+                else if constexpr (IsDecimal<LeftDataType>)
+                    type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
+                else if constexpr (IsDecimal<RightDataType>)
+                    type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                else
+                    type_res = std::make_shared<ResultDataType>();
+                return true;
+            }
+            return false;
+        });
+        if (!valid)
             throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
         return type_res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
@@ -887,28 +1157,168 @@ public:
                     {new_block.getByPosition(new_arguments[0]), new_block.getByPosition(new_arguments[1])};
             auto function = function_builder->build(new_arguments_with_type_and_name);
 
-            function->execute(new_block, new_arguments, result);
+            function->execute(new_block, new_arguments, result, input_rows_count);
             block.getByPosition(result).column = new_block.getByPosition(result).column;
 
             return;
         }
 
-        if (!( executeLeftType<DataTypeDate>(block, arguments, result)
-            || executeLeftType<DataTypeDateTime>(block, arguments, result)
-            || executeLeftType<DataTypeUInt8>(block, arguments, result)
-            || executeLeftType<DataTypeUInt16>(block, arguments, result)
-            || executeLeftType<DataTypeUInt32>(block, arguments, result)
-            || executeLeftType<DataTypeUInt64>(block, arguments, result)
-            || executeLeftType<DataTypeInt8>(block, arguments, result)
-            || executeLeftType<DataTypeInt16>(block, arguments, result)
-            || executeLeftType<DataTypeInt32>(block, arguments, result)
-            || executeLeftType<DataTypeInt64>(block, arguments, result)
-            || executeLeftType<DataTypeFloat32>(block, arguments, result)
-            || executeLeftType<DataTypeFloat64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        auto * left = block.getByPosition(arguments[0]).type.get();
+        auto * right = block.getByPosition(arguments[1]).type.get();
+        bool valid = castBothTypes(left, right, [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+            if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
+            {
+                constexpr bool result_is_decimal = IsDecimal<LeftDataType> || IsDecimal<RightDataType>;
+                constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
+                constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>>;
+
+                using T0 = typename LeftDataType::FieldType;
+                using T1 = typename RightDataType::FieldType;
+                using ResultType = typename ResultDataType::FieldType;
+                using ColVecT0 = ColumnVector<T0>;
+                using ColVecT1 = ColumnVector<T1>;
+                using ColVecResult = ColumnVector<ResultType>;
+
+                /// Decimal operations need scale. Operations are on result type.
+                using OpImpl = std::conditional_t<IsDecimal<ResultDataType>,
+                    DecimalBinaryOperation<T0, T1, Op, ResultType>,
+                    BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>>;
+
+                auto col_left_raw = block.getByPosition(arguments[0]).column.get();
+                auto col_right_raw = block.getByPosition(arguments[1]).column.get();
+                if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
+                {
+                    if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                    {
+                        /// the only case with a non-vector result
+                        if constexpr (result_is_decimal)
+                        {
+                            ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                            typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
+                            typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                            if constexpr (IsDecimal<RightDataType> && is_division)
+                                scale_a = right.getScaleMultiplier();
+                            auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
+                                                                 scale_a, scale_b);
+                            block.getByPosition(result).column =
+                                ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(col_left->size(), toField(res));
+                        }
+                        else
+                        {
+                            auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
+                            block.getByPosition(result).column = ResultDataType().createColumnConst(col_left->size(), toField(res));
+                        }
+                        return true;
+                    }
+                }
+
+                auto col_res = ColVecResult::create();
+                auto & vec_res = col_res->getData();
+                vec_res.resize(block.rows());
+                if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
+                {
+                    if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
+                    {
+                        if constexpr (result_is_decimal)
+                        {
+                            ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                            vec_res.setScale(type.getScale());
+
+                            typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
+                            typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                            if constexpr (IsDecimal<RightDataType> && is_division)
+                                scale_a = right.getScaleMultiplier();
+                            OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
+                        }
+                        else
+                            OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
+                    }
+                    else
+                        return false;
+                }
+                else if (auto col_left = checkAndGetColumn<ColVecT0>(col_left_raw))
+                {
+                    if constexpr (result_is_decimal)
+                    {
+                        ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                        vec_res.setScale(type.getScale());
+
+                        typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
+                        typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
+                        if constexpr (IsDecimal<RightDataType> && is_division)
+                            scale_a = right.getScaleMultiplier();
+                        if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
+                            OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
+                        else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                            OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res, scale_a, scale_b);
+                        else
+                            return false;
+                    }
+                    else
+                    {
+                        if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
+                            OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
+                        else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                            OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
+                        else
+                            return false;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+                block.getByPosition(result).column = std::move(col_res);
+                return true;
+            }
+            return false;
+        });
+        if (!valid)
+            throw Exception(getName() + "'s arguments do not match the expected data types", ErrorCodes::LOGICAL_ERROR);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments) const override
+    {
+        return castBothTypes(arguments[0].get(), arguments[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+            using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+            return !std::is_same_v<ResultDataType, InvalidType> && !IsDecimal<ResultDataType> && OpSpec::compilable;
+        });
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        llvm::Value * result = nullptr;
+        castBothTypes(types[0].get(), types[1].get(), [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+            using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
+            using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
+            if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDecimal<ResultDataType> && OpSpec::compilable)
+            {
+                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                auto type = std::make_shared<ResultDataType>();
+                auto * lval = nativeCast(b, types[0], values[0](), type);
+                auto * rval = nativeCast(b, types[1], values[1](), type);
+                result = OpSpec::compile(b, lval, rval, std::is_signed_v<typename ResultDataType::FieldType>);
+                return true;
+            }
+            return false;
+        });
+        return result;
+    }
+#endif
+
+    bool canBeExecutedOnDefaultArguments() const override { return CanBeExecutedOnDefaultArguments; }
 };
 
 
@@ -919,43 +1329,32 @@ struct FunctionUnaryArithmeticMonotonicity;
 template <template <typename> class Op, typename Name, bool is_injective>
 class FunctionUnaryArithmetic : public IFunction
 {
+    static constexpr bool allow_decimal = std::is_same_v<Op<Int8>, NegateImpl<Int8>> || std::is_same_v<Op<Int8>, AbsImpl<Int8>>;
+
+    template <typename F>
+    static bool castType(const IDataType * type, F && f)
+    {
+        return castTypeToEither<
+            DataTypeUInt8,
+            DataTypeUInt16,
+            DataTypeUInt32,
+            DataTypeUInt64,
+            DataTypeInt8,
+            DataTypeInt16,
+            DataTypeInt32,
+            DataTypeInt64,
+            DataTypeFloat32,
+            DataTypeFloat64,
+            DataTypeDecimal<Dec32>,
+            DataTypeDecimal<Dec64>,
+            DataTypeDecimal<Dec128>
+        >(type, std::forward<F>(f));
+    }
+
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryArithmetic>(); }
 
-private:
-    template <typename T0>
-    bool checkType(const DataTypes & arguments, DataTypePtr & result) const
-    {
-        if (typeid_cast<const T0 *>(arguments[0].get()))
-        {
-            result = std::make_shared<DataTypeNumber<typename Op<typename T0::FieldType>::ResultType>>();
-            return true;
-        }
-        return false;
-    }
-
-    template <typename T0>
-    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
-    {
-        if (const ColumnVector<T0> * col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
-        {
-            using ResultType = typename Op<T0>::ResultType;
-
-            auto col_res = ColumnVector<ResultType>::create();
-
-            typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
-            vec_res.resize(col->getData().size());
-            UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
-
-            block.getByPosition(result).column = std::move(col_res);
-            return true;
-        }
-
-        return false;
-    }
-
-public:
     String getName() const override
     {
         return name;
@@ -969,39 +1368,98 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr result;
+        bool valid = castType(arguments[0].get(), [&](const auto & type)
+        {
+            using DataType = std::decay_t<decltype(type)>;
+            using T0 = typename DataType::FieldType;
 
-        if (!( checkType<DataTypeUInt8>(arguments, result)
-            || checkType<DataTypeUInt16>(arguments, result)
-            || checkType<DataTypeUInt32>(arguments, result)
-            || checkType<DataTypeUInt64>(arguments, result)
-            || checkType<DataTypeInt8>(arguments, result)
-            || checkType<DataTypeInt16>(arguments, result)
-            || checkType<DataTypeInt32>(arguments, result)
-            || checkType<DataTypeInt64>(arguments, result)
-            || checkType<DataTypeFloat32>(arguments, result)
-            || checkType<DataTypeFloat64>(arguments, result)))
+            if constexpr (IsDecimal<DataType>)
+            {
+                if constexpr (!allow_decimal)
+                    return false;
+                result = std::make_shared<DataType>(type.getPrecision(), type.getScale());
+            }
+            else
+                result = std::make_shared<DataTypeNumber<typename Op<T0>::ResultType>>();
+            return true;
+        });
+        if (!valid)
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
         return result;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!( executeType<UInt8>(block, arguments, result)
-            || executeType<UInt16>(block, arguments, result)
-            || executeType<UInt32>(block, arguments, result)
-            || executeType<UInt64>(block, arguments, result)
-            || executeType<Int8>(block, arguments, result)
-            || executeType<Int16>(block, arguments, result)
-            || executeType<Int32>(block, arguments, result)
-            || executeType<Int64>(block, arguments, result)
-            || executeType<Float32>(block, arguments, result)
-            || executeType<Float64>(block, arguments, result)))
-           throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN);
+        bool valid = castType(block.getByPosition(arguments[0]).type.get(), [&](const auto & type)
+        {
+            using DataType = std::decay_t<decltype(type)>;
+            using T0 = typename DataType::FieldType;
+
+            if constexpr (IsDecimal<DataType>)
+            {
+                if constexpr (allow_decimal)
+                {
+                    if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+                    {
+                        auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                        auto & vec_res = col_res->getData();
+                        vec_res.resize(col->getData().size());
+                        UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                        block.getByPosition(result).column = std::move(col_res);
+                        return true;
+                    }
+                }
+            }
+            else
+            {
+                if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+                {
+                    auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                    auto & vec_res = col_res->getData();
+                    vec_res.resize(col->getData().size());
+                    UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
+                    block.getByPosition(result).column = std::move(col_res);
+                    return true;
+                }
+            }
+
+            return false;
+        });
+        if (!valid)
+            throw Exception(getName() + "'s argument does not match the expected data type", ErrorCodes::LOGICAL_ERROR);
     }
+
+#if USE_EMBEDDED_COMPILER
+    bool isCompilableImpl(const DataTypes & arguments) const override
+    {
+        return castType(arguments[0].get(), [&](const auto & type)
+        {
+            using DataType = std::decay_t<decltype(type)>;
+            return !IsDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
+        });
+    }
+
+    llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
+    {
+        llvm::Value * result = nullptr;
+        castType(types[0].get(), [&](const auto & type)
+        {
+            using DataType = std::decay_t<decltype(type)>;
+            using T0 = typename DataType::FieldType;
+            using T1 = typename Op<T0>::ResultType;
+            if constexpr (!std::is_same_v<T1, InvalidType> && !IsDecimal<DataType> && Op<T0>::compilable)
+            {
+                auto & b = static_cast<llvm::IRBuilder<> &>(builder);
+                auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
+                result = Op<T0>::compile(b, v, std::is_signed_v<T1>);
+                return true;
+            }
+            return false;
+        });
+        return result;
+    }
+#endif
 
     bool hasInformationAboutMonotonicity() const override
     {
@@ -1046,9 +1504,9 @@ using FunctionPlus = FunctionBinaryArithmetic<PlusImpl, NamePlus>;
 using FunctionMinus = FunctionBinaryArithmetic<MinusImpl, NameMinus>;
 using FunctionMultiply = FunctionBinaryArithmetic<MultiplyImpl, NameMultiply>;
 using FunctionDivideFloating = FunctionBinaryArithmetic<DivideFloatingImpl, NameDivideFloating>;
-using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral>;
+using FunctionDivideIntegral = FunctionBinaryArithmetic<DivideIntegralImpl, NameDivideIntegral, false>;
 using FunctionDivideIntegralOrZero = FunctionBinaryArithmetic<DivideIntegralOrZeroImpl, NameDivideIntegralOrZero>;
-using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo>;
+using FunctionModulo = FunctionBinaryArithmetic<ModuloImpl, NameModulo, false>;
 using FunctionNegate = FunctionUnaryArithmetic<NegateImpl, NameNegate, true>;
 using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
 using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd>;
@@ -1062,8 +1520,8 @@ using FunctionBitRotateRight = FunctionBinaryArithmetic<BitRotateRightImpl, Name
 using FunctionBitTest = FunctionBinaryArithmetic<BitTestImpl, NameBitTest>;
 using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
-using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD>;
-using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM>;
+using FunctionGCD = FunctionBinaryArithmetic<GCDImpl, NameGCD, false>;
+using FunctionLCM = FunctionBinaryArithmetic<LCMImpl, NameLCM, false>;
 /// Assumed to be injective for the purpose of query optimization, but in fact it is not injective because of possible overflow.
 using FunctionIntExp2 = FunctionUnaryArithmetic<IntExp2Impl, NameIntExp2, true>;
 using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, true>;
@@ -1296,17 +1754,13 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
-            throw Exception{
-                "Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be at least 2.",
-                ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
+            throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be at least 2.", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
         const auto first_arg = arguments.front().get();
 
         if (!first_arg->isInteger())
-            throw Exception{
-                "Illegal type " + first_arg->getName() + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"Illegal type " + first_arg->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 
         for (const auto i : ext::range(1, arguments.size()))
@@ -1314,15 +1768,13 @@ public:
             const auto pos_arg = arguments[i].get();
 
             if (!pos_arg->isUnsignedInteger())
-                throw Exception{
-                    "Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+                throw Exception{"Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block , const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto value_col = block.getByPosition(arguments.front()).column.get();
 
@@ -1334,9 +1786,7 @@ public:
             && !execute<Int16>(block, arguments, result, value_col)
             && !execute<Int32>(block, arguments, result, value_col)
             && !execute<Int64>(block, arguments, result, value_col))
-            throw Exception{
-                "Illegal column " + value_col->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + value_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 
 private:
@@ -1437,9 +1887,7 @@ private:
                 && !addToMaskImpl<UInt16>(mask, pos_col)
                 && !addToMaskImpl<UInt32>(mask, pos_col)
                 && !addToMaskImpl<UInt64>(mask, pos_col))
-                throw Exception{
-                    "Illegal column " + pos_col->getName() + " of argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
+                throw Exception{"Illegal column " + pos_col->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
 
         return mask;
@@ -1476,13 +1924,13 @@ private:
 struct BitTestAnyImpl
 {
     template <typename A, typename B>
-    static inline UInt8 apply(A a, B b) { return (a & b) != 0; };
+    static inline UInt8 apply(A a, B b) { return (a & b) != 0; }
 };
 
 struct BitTestAllImpl
 {
     template <typename A, typename B>
-    static inline UInt8 apply(A a, B b) { return (a & b) == b; };
+    static inline UInt8 apply(A a, B b) { return (a & b) == b; }
 };
 
 

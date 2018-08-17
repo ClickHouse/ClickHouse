@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <tuple>
 #include <Interpreters/IExternalLoadable.h>
@@ -53,9 +54,9 @@ struct ExternalLoaderConfigSettings
 
 /** Manages user-defined objects.
 *    Monitors configuration file and automatically reloads objects in a separate thread.
-*    The monitoring thread wakes up every @check_period_sec seconds and checks
+*    The monitoring thread wakes up every 'check_period_sec' seconds and checks
 *    modification time of objects' configuration file. If said time is greater than
-*    @config_last_modified, the objects are created from scratch using configuration file,
+*    'config_last_modified', the objects are created from scratch using configuration file,
 *    possibly overriding currently existing objects with the same name (previous versions of
 *    overridden objects will live as long as there are any users retaining them).
 *
@@ -104,6 +105,7 @@ public:
     void reload(const std::string & name);
 
     LoadablePtr getLoadable(const std::string & name) const;
+    LoadablePtr tryGetLoadable(const std::string & name) const;
 
 protected:
     virtual std::unique_ptr<IExternalLoadable> create(const std::string & name, const Configuration & config,
@@ -145,6 +147,8 @@ private:
     /// Both for loadable_objects and failed_loadable_objects.
     std::unordered_map<std::string, std::chrono::system_clock::time_point> update_times;
 
+    std::unordered_map<std::string, std::unordered_set<std::string>> loadable_objects_defined_in_config;
+
     pcg64 rnd_engine{randomSeed()};
 
     const Configuration & config;
@@ -165,13 +169,15 @@ private:
     /// Check objects definitions in config files and reload or/and add new ones if the definition is changed
     /// If loadable_name is not empty, load only loadable object with name loadable_name
     void reloadFromConfigFiles(bool throw_on_error, bool force_reload = false, const std::string & loadable_name = "");
-    void reloadFromConfigFile(const std::string & config_path, bool throw_on_error, bool force_reload,
-                              const std::string & loadable_name);
+    void reloadFromConfigFile(const std::string & config_path, const bool throw_on_error,
+                                const bool force_reload, const std::string & loadable_name);
 
     /// Check config files and update expired loadable objects
     void reloadAndUpdate(bool throw_on_error = false);
 
     void reloadPeriodically();
+
+    LoadablePtr getLoadableImpl(const std::string & name, bool throw_on_error) const;
 };
 
 }

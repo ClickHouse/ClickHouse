@@ -1,5 +1,6 @@
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <errno.h>
 
 #include <map>
 #include <optional>
@@ -29,6 +30,7 @@
 
 #include <Storages/StorageStripeLog.h>
 #include <Storages/StorageFactory.h>
+#include <Poco/DirectoryIterator.h>
 
 
 namespace DB
@@ -42,6 +44,7 @@ namespace ErrorCodes
     extern const int CANNOT_CREATE_DIRECTORY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -70,7 +73,7 @@ public:
     Block getHeader() const override
     {
         return header;
-    };
+    }
 
 protected:
     Block readImpl() override
@@ -140,7 +143,7 @@ public:
     {
     }
 
-    ~StripeLogBlockOutputStream()
+    ~StripeLogBlockOutputStream() override
     {
         try
         {
@@ -284,6 +287,20 @@ bool StorageStripeLog::checkData() const
 {
     std::shared_lock<std::shared_mutex> lock(rwlock);
     return file_checker.check();
+}
+
+void StorageStripeLog::truncate(const ASTPtr &)
+{
+    if (name.empty())
+        throw Exception("Logical error: table name is empty", ErrorCodes::LOGICAL_ERROR);
+
+    std::shared_lock<std::shared_mutex> lock(rwlock);
+
+    auto file = Poco::File(path + escapeForFileName(name));
+    file.remove(true);
+    file.createDirectories();
+
+    file_checker = FileChecker{path + escapeForFileName(name) + '/' + "sizes.json"};
 }
 
 

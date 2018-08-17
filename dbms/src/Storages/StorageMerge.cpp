@@ -9,7 +9,6 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -32,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int INCOMPATIBLE_SOURCE_TABLES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -48,22 +48,44 @@ StorageMerge::StorageMerge(
 }
 
 
+/// NOTE Structure of underlying tables as well as their set are not constant,
+///  so the results of these methods may become obsolete after the call.
+
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
-    auto type = VirtualColumnFactory::tryGetType(column_name);
-    if (type)
-        return NameAndTypePair(column_name, type);
+    /// virtual column of the Merge table itself
+    if (column_name == "_table")
+        return { column_name, std::make_shared<DataTypeString>() };
 
-    return IStorage::getColumn(column_name);
+    if (IStorage::hasColumn(column_name))
+        return IStorage::getColumn(column_name);
+
+    /// virtual (and real) columns of the underlying tables
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        return first_table->getColumn(column_name);
+
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 bool StorageMerge::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+    if (column_name == "_table")
+        return true;
+
+    if (IStorage::hasColumn(column_name))
+        return true;
+
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        return first_table->hasColumn(column_name);
+
+    return false;
 }
 
 
-bool StorageMerge::isRemote() const
+template <typename F>
+StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
     auto database = context.getDatabase(source_database);
     auto iterator = database->getIterator(context);
@@ -73,41 +95,21 @@ bool StorageMerge::isRemote() const
         if (table_name_regexp.match(iterator->name()))
         {
             auto & table = iterator->table();
-            if (table.get() != this && table->isRemote())
-                return true;
+            if (table.get() != this && predicate(table))
+                return table;
         }
 
         iterator->next();
     }
 
-    return false;
+    return {};
 }
 
 
-namespace
+bool StorageMerge::isRemote() const
 {
-    using NodeHashToSet = std::map<IAST::Hash, SetPtr>;
-
-    void relinkSetsImpl(const ASTPtr & query, const NodeHashToSet & node_hash_to_set, PreparedSets & new_sets)
-    {
-        auto hash = query->getTreeHash();
-        auto it = node_hash_to_set.find(hash);
-        if (node_hash_to_set.end() != it)
-            new_sets[query.get()] = it->second;
-
-        for (const auto & child : query->children)
-            relinkSetsImpl(child, node_hash_to_set, new_sets);
-    }
-
-    /// Re-link prepared sets onto cloned and modified AST.
-    void relinkSets(const ASTPtr & query, const PreparedSets & old_sets, PreparedSets & new_sets)
-    {
-        NodeHashToSet node_hash_to_set;
-        for (const auto & node_set : old_sets)
-            node_hash_to_set.emplace(node_set.first->getTreeHash(), node_set.second);
-
-        relinkSetsImpl(query, node_hash_to_set, new_sets);
-    }
+    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table->isRemote(); });
+    return first_remote_table != nullptr;
 }
 
 
@@ -210,8 +212,7 @@ BlockInputStreams StorageMerge::read(
 
         SelectQueryInfo modified_query_info;
         modified_query_info.query = modified_query_ast;
-
-        relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
+        modified_query_info.sets = query_info.sets;
 
         BlockInputStreams source_streams;
 
@@ -240,12 +241,10 @@ BlockInputStreams StorageMerge::read(
                         header = getSampleBlockForColumns(column_names);
                         break;
                     case QueryProcessingStage::WithMergeableState:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::WithMergeableState, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
-                        break;
                     case QueryProcessingStage::Complete:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::Complete, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
+                        header = materializeBlock(InterpreterSelectQuery(
+                            query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
+                            processed_stage_in_source_table, true).getSampleBlock());
                         break;
                 }
             }

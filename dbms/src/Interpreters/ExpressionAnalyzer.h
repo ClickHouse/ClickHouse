@@ -3,7 +3,10 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
-
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ProjectionManipulation.h>
+#include <Parsers/StringRange.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 namespace DB
 {
@@ -21,7 +24,9 @@ using ASTPtr = std::shared_ptr<IAST>;
 
 class Set;
 using SetPtr = std::shared_ptr<Set>;
-using PreparedSets = std::unordered_map<IAST*, SetPtr>;
+/// Will compare sets by their position in query string. It's possible because IAST::clone() doesn't chane IAST::range.
+/// It should be taken into account when we want to change AST part which contains sets.
+using PreparedSets = std::unordered_map<StringRange, SetPtr, StringRangePointersHash, StringRangePointersEqualTo>;
 
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
@@ -34,6 +39,8 @@ class ASTFunction;
 class ASTExpressionList;
 class ASTSelectQuery;
 
+struct ProjectionManipulatorBase;
+using ProjectionManipulatorPtr = std::shared_ptr<ProjectionManipulatorBase>;
 
 /** Information on what to do when executing a subquery in the [GLOBAL] IN/JOIN section.
   */
@@ -45,6 +52,10 @@ struct SubqueryForSet
     /// If set, build it from result.
     SetPtr set;
     JoinPtr join;
+    /// Apply this actions to joined block.
+    ExpressionActionsPtr joined_block_actions;
+    /// Rename column from joined block from this list.
+    NamesWithAliases joined_block_aliases;
 
     /// If set, put the result into the table.
     /// This is a temporary table for transferring to remote servers for distributed query processing.
@@ -54,6 +65,44 @@ struct SubqueryForSet
 /// ID of subquery -> what to do with it.
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
 
+struct ScopeStack
+{
+    struct Level
+    {
+        ExpressionActionsPtr actions;
+        NameSet new_columns;
+    };
+
+    using Levels = std::vector<Level>;
+
+    Levels stack;
+    Settings settings;
+
+    ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
+
+    void pushLevel(const NamesAndTypesList & input_columns);
+
+    size_t getColumnLevel(const std::string & name);
+
+    void addAction(const ExpressionAction & action);
+
+    ExpressionActionsPtr popLevel();
+
+    const Block & getSampleBlock() const;
+};
+
+struct DatabaseAndTableWithAlias
+{
+    String database;
+    String table;
+    String alias;
+
+    /// "alias." or "database.table." if alias is empty
+    String getQualifiedNamePrefix() const;
+
+    /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
+    void makeQualifiedName(const ASTPtr & ast) const;
+};
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
@@ -140,6 +189,8 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
+    bool isRewriteSubQueriesPredicate() { return rewrite_sub_queries; }
+
 private:
     ASTPtr ast;
     ASTSelectQuery * select_query;
@@ -154,10 +205,12 @@ private:
 
     /** If non-empty, ignore all expressions in  not from this list.
       */
-    NameSet required_result_columns;
+    Names required_result_columns;
 
     /// Columns after ARRAY JOIN, JOIN, and/or aggregation.
     NamesAndTypesList aggregated_columns;
+
+    NamesAndTypesList array_join_columns;
 
     /// The main table in FROM clause, if exists.
     StoragePtr storage;
@@ -173,19 +226,59 @@ private:
 
     PreparedSets prepared_sets;
 
-    /// NOTE: So far, only one JOIN per query is supported.
+    struct AnalyzedJoin
+    {
 
-    /** Query of the form `SELECT expr(x) AS FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
-      * The join is made by column k.
-      * During the JOIN,
-      *  - in the "right" table, it will be available by alias `k`, since `Project` action for the subquery was executed.
-      *  - in the "left" table, it will be accessible by the name `expr(x)`, since `Project` action has not been executed yet.
-      * You must remember both of these options.
-      */
-    Names join_key_names_left;
-    Names join_key_names_right;
+        /// NOTE: So far, only one JOIN per query is supported.
 
-    NamesAndTypesList columns_added_by_join;
+        /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
+          * The join is made by column k.
+          * During the JOIN,
+          *  - in the "right" table, it will be available by alias `k`, since `Project` action for the subquery was executed.
+          *  - in the "left" table, it will be accessible by the name `expr(x)`, since `Project` action has not been executed yet.
+          * You must remember both of these options.
+          *
+          * Query of the form `SELECT ... from t1 ANY LEFT JOIN (SELECT ... from t2) ON expr(t1 columns) = expr(t2 columns)`
+          *     to the subquery will be added expression `expr(t2 columns)`.
+          * It's possible to use name `expr(t2 columns)`.
+          */
+        Names key_names_left;
+        Names key_names_right;
+        ASTs key_asts_left;
+        ASTs key_asts_right;
+
+        struct JoinedColumn
+        {
+            /// Column will be joined to block.
+            NameAndTypePair name_and_type;
+            /// original column name from joined source.
+            String original_name;
+
+            JoinedColumn(const NameAndTypePair & name_and_type_, const String & original_name_)
+                    : name_and_type(name_and_type_), original_name(original_name_) {}
+        };
+
+        using JoinedColumnsList = std::list<JoinedColumn>;
+
+        /// All columns which can be read from joined table.
+        NamesAndTypesList columns_from_joined_table;
+        /// Columns which will be used in query to the joined query.
+        Names required_columns_from_joined_table;
+        /// Columns which will be added to block, possible including some columns from right join key.
+        JoinedColumnsList columns_added_by_join;
+        /// Such columns will be copied from left join keys during join.
+        NameSet columns_added_by_join_from_right_keys;
+        /// Actions which need to be calculated on joined block.
+        ExpressionActionsPtr joined_block_actions;
+
+        void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
+
+        NamesAndTypesList getColumnsAddedByJoin() const;
+
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query);
+    };
+
+    AnalyzedJoin analyzed_join;
 
     using Aliases = std::unordered_map<String, ASTPtr>;
     Aliases aliases;
@@ -209,6 +302,9 @@ private:
     Tables external_tables;
     size_t external_table_id = 1;
 
+    /// Predicate optimizer overrides the sub queries
+    bool rewrite_sub_queries = false;
+
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
       * as well as the columns added by JOIN (`columns_added_by_join`).
@@ -217,7 +313,9 @@ private:
 
     /** Find the columns that are obtained by JOIN.
       */
-    void collectJoinedColumns(NameSet & joined_columns, NamesAndTypesList & joined_columns_name_type);
+    void collectJoinedColumns(NameSet & joined_columns);
+    /// Parse JOIN ON expression and collect ASTs for joined columns.
+    void collectJoinedColumnsFromJoinOnExpr();
 
     /** Create a dictionary of aliases.
       */
@@ -269,8 +367,13 @@ private:
 
     void addJoinAction(ExpressionActionsPtr & actions, bool only_types) const;
 
-    struct ScopeStack;
-    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack);
+    bool isThereArrayJoin(const ASTPtr & ast);
+
+    void getActionsImpl(const ASTPtr & ast, bool no_subqueries, bool only_consts, ScopeStack & actions_stack,
+                        ProjectionManipulatorPtr projection_manipulator);
+
+    /// If ast is ASTSelectQuery with JOIN, add actions for JOIN key columns.
+    void getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
     void getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions);
 
@@ -309,7 +412,7 @@ private:
       * Create Set from a subuqery or a table expression in the query. The created set is suitable for using the index.
       * The set will not be created if its size hits the limit.
       */
-    void tryMakeSetFromSubquery(const ASTPtr & subquery_or_table_name);
+    void tryMakeSetForIndexFromSubquery(const ASTPtr & subquery_or_table_name);
 
     void makeSetsForIndexImpl(const ASTPtr & node, const Block & sample_block);
 
@@ -318,7 +421,7 @@ private:
       *  only one ("main") table is supported. Ambiguity is not detected or resolved.
       */
     void translateQualifiedNames();
-    void translateQualifiedNamesImpl(ASTPtr & node, const String & database_name, const String & table_name, const String & alias);
+    void translateQualifiedNamesImpl(ASTPtr & node, const std::vector<DatabaseAndTableWithAlias> & tables);
 
     /** Sometimes we have to calculate more columns in SELECT clause than will be returned from query.
       * This is the case when we have DISTINCT or arrayJoin: we require more columns in SELECT even if we need less columns in result.

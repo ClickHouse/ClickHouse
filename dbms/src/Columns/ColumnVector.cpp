@@ -17,6 +17,8 @@
 
 #if __SSE2__
     #include <emmintrin.h>
+#include <Columns/ColumnsCommon.h>
+
 #endif
 
 
@@ -116,7 +118,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
 
         if (size > count)
-            memset(&new_col.data[count], static_cast<int>(value_type()), size - count);
+            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
     }
 
     return std::move(res);
@@ -146,7 +148,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
+ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_size_hint) const
 {
     size_t size = data.size();
     if (size != filt.size())
@@ -210,7 +212,7 @@ MutableColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t r
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     size_t size = data.size();
 
@@ -231,7 +233,13 @@ MutableColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, siz
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
+ColumnPtr ColumnVector<T>::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+template <typename T>
+ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();
     if (size != offsets.size())
@@ -319,6 +327,11 @@ template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
+template class ColumnVector<Int128>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
+
+template class ColumnVector<Dec32>;
+template class ColumnVector<Dec64>;
+template class ColumnVector<Dec128>;
 }

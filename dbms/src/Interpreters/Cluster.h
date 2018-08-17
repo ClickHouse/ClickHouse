@@ -48,18 +48,22 @@ public:
         *     <replica>
         *         <host>example01-01-1</host>
         *         <port>9000</port>
-        *         <!-- <user>, <password>, <default_database> if needed -->
+        *         <!-- <user>, <password>, <default_database>. <secure> if needed -->
         *    </replica>
         * </shard>
         */
-        Poco::Net::SocketAddress resolved_address;
+
         String host_name;
         UInt16 port;
         String user;
         String password;
-        String default_database;    /// this database is selected when no database is specified for Distributed table
+        /// This database is selected when no database is specified for Distributed table
+        String default_database;
         UInt32 replica_num;
+        /// The locality is determined at the initialization, and is not changed even if DNS is changed
         bool is_local;
+        Protocol::Compression compression = Protocol::Compression::Enable;
+        Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
         Address(Poco::Util::AbstractConfiguration & config, const String & config_prefix);
@@ -77,6 +81,15 @@ public:
 
         /// Retrurns escaped user:password@resolved_host_address:resolved_host_port#default_database
         String toStringFull() const;
+
+        /// Returns initially resolved address
+        Poco::Net::SocketAddress getResolvedAddress() const
+        {
+            return initially_resolved_address;
+        }
+
+    private:
+        Poco::Net::SocketAddress initially_resolved_address;
     };
 
     using Addresses = std::vector<Address>;
@@ -86,7 +99,7 @@ public:
     {
     public:
         bool isLocal() const { return !local_addresses.empty(); }
-        bool hasRemoteConnections() const { return pool != nullptr; }
+        bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
 

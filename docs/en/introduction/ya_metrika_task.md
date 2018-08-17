@@ -1,11 +1,12 @@
-# The Yandex.Metrica task
+# Yandex.Metrica Use Case
 
-ClickHouse currently powers [ Yandex.Metrica](https://metrika.yandex.ru/), [ the second largest platform in the world](http://w3techs.com/technologies/overview/traffic_analysis/all) for Web Analytics. With more than 13 trillion records in the database and more than 20 billion events daily, ClickHouse allows you generating custom reports on the fly directly from non-aggregated data.
+ClickHouse has been initially developed to power [Yandex.Metrica](https://metrica.yandex.com/), [the second largest web analytics platform in the world](http://w3techs.com/technologies/overview/traffic_analysis/all), and continues to be it's core component. With more than 13 trillion records in the database and more than 20 billion events daily, ClickHouse allows generating custom reports on the fly directly from non-aggregated data. This article gives a historical background on what was the main goal of ClickHouse before it became an opensource product.
 
-We need to get custom reports based on hits and sessions, with custom segments set by the user. Data for the reports is updated in real-time. Queries must be run immediately (in online mode). We must be able to build reports for any time period. Complex aggregates must be calculated, such as the number of unique visitors.
-At this time (April 2014), Yandex.Metrica receives approximately 12 billion events (pageviews and mouse clicks) daily. All these events must be stored in order to build custom reports. A single query may require scanning hundreds of millions of rows over a few seconds, or millions of rows in no more than a few hundred milliseconds.
+Yandex.Metrica generates custom reports based on hits and sessions on the fly, with arbitrary segments and time periods chosen by the end user. Complex aggregates are often required, such as the number of unique visitors. New data for the reports arrives in real-time.
 
-## Usage in Yandex.Metrica and other Yandex services
+As of April 2014, Yandex.Metrica received approximately 12 billion events (page views and clicks) daily. All these events must be stored in order to build those custom reports. A single query may require scanning millions of rows in no more than a few hundred milliseconds, or hundreds of millions of rows over a few seconds.
+
+## Usage in Yandex.Metrica and Other Yandex Services
 
 ClickHouse is used for multiple purposes in Yandex.Metrica.
 Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
@@ -20,7 +21,7 @@ ClickHouse is also used for:
 
 ClickHouse has at least a dozen installations in other Yandex services: in search verticals, Market, Direct, business analytics, mobile development, AdFox, personal services, and others.
 
-## Aggregated and non-aggregated data
+## Aggregated and Non-aggregated Data
 
 There is a popular opinion that in order to effectively calculate statistics, you must aggregate data, since this reduces the volume of data.
 

@@ -7,14 +7,15 @@
         <errorlog>/tmp/clickhouse/log/clickhouse-server.err.log</errorlog>
         <size>10M</size>
         <count>1</count>
+        <compress>0</compress>
     </logger>
-    <listen_host>0.0.0.0</listen_host>
     <listen_host>::</listen_host>
+    <listen_host>0.0.0.0</listen_host>
     <listen_try>1</listen_try>
     <http_port>58123</http_port>
     <tcp_port>59000</tcp_port>
     <https_port>58443</https_port>
-    <tcp_ssl_port>59440</tcp_ssl_port>
+    <tcp_port_secure>59440</tcp_port_secure>
     <interserver_http_port>59009</interserver_http_port>
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
@@ -60,7 +61,17 @@
                 </replica>
             </shard>
         </test_shard_localhost>
+        <test_shard_localhost_secure>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>59440</port>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </test_shard_localhost_secure>
     </remote_servers>
+    <include_from/>
     <zookeeper incl="zookeeper-servers" optional="true" />
     <macros incl="macros" optional="true" />
     <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>

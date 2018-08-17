@@ -21,13 +21,15 @@ namespace ErrorCodes
 static const size_t MAX_CONNECTIONS = 16;
 
 static ConnectionPoolWithFailoverPtr createPool(
-        const std::string & host, UInt16 port, const std::string & db,
+        const std::string & host, UInt16 port, bool secure, const std::string & db,
         const std::string & user, const std::string & password, const Context & context)
 {
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(context.getSettingsRef());
     ConnectionPoolPtrs pools;
     pools.emplace_back(std::make_shared<ConnectionPool>(
-            MAX_CONNECTIONS, host, port, db, user, password, timeouts, "ClickHouseDictionarySource"));
+            MAX_CONNECTIONS, host, port, db, user, password, timeouts, "ClickHouseDictionarySource",
+            Protocol::Compression::Enable,
+            secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));
     return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
 }
 
@@ -41,16 +43,17 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
         dict_struct{dict_struct_},
         host{config.getString(config_prefix + ".host")},
         port(config.getInt(config_prefix + ".port")),
+        secure(config.getBool(config_prefix + ".secure", false)),
         user{config.getString(config_prefix + ".user", "")},
         password{config.getString(config_prefix + ".password", "")},
         db{config.getString(config_prefix + ".db", "")},
         table{config.getString(config_prefix + ".table")},
         where{config.getString(config_prefix + ".where", "")},
         update_field{config.getString(config_prefix + ".update_field", "")},
-        query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
+        query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks},
         sample_block{sample_block}, context(context),
         is_local{isLocalAddress({ host, port }, config.getInt("tcp_port", 0))},
-        pool{is_local ? nullptr : createPool(host, port, db, user, password, context)},
+        pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)},
         load_all_query{query_builder.composeLoadAllQuery()}
 {}
 
@@ -58,14 +61,16 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 ClickHouseDictionarySource::ClickHouseDictionarySource(const ClickHouseDictionarySource & other)
     : update_time{other.update_time},
         dict_struct{other.dict_struct},
-        host{other.host}, port{other.port}, user{other.user}, password{other.password},
+        host{other.host}, port{other.port},
+        secure{other.secure},
+        user{other.user}, password{other.password},
         db{other.db}, table{other.table},
         where{other.where},
         update_field{other.update_field},
-        query_builder{dict_struct, db, table, where, ExternalQueryBuilder::Backticks},
+        query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks},
         sample_block{other.sample_block}, context(other.context),
         is_local{other.is_local},
-        pool{is_local ? nullptr : createPool(host, port, db, user, password, context)},
+        pool{is_local ? nullptr : createPool(host, port, secure, db, user, password, context)},
         load_all_query{other.load_all_query}
 {}
 

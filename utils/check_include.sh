@@ -3,6 +3,7 @@
 # Small .h isolated compile checker
 # Finds missing #include <...>
 # prints compile time, number of includes, use with sort: ./check_include.sh 2>&1 | sort -rk3
+# use with clang: CXX=`which clang++-7 clang++-7.0 clang++-6.0 clang++-5.0 | head -n1` ./check_include.sh
 pwd=`pwd`
 BUILD_DIR=${BUILD_DIR:=./build}
 inc="-I. \
@@ -12,7 +13,7 @@ inc="-I. \
 -I./contrib/libfarmhash \
 -I./contrib/libmetrohash/src \
 -I./contrib/double-conversion \
--I./contrib/libcityhash/include \
+-I./contrib/cityhash102/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
 -I./contrib/libtcmalloc/include \
@@ -28,6 +29,8 @@ inc="-I. \
 -I./contrib/poco/Foundation/include \
 -I./contrib/boost/libs/*/include \
 -I./contrib/boost \
+-I./contrib/llvm/llvm/include \
+-I${BUILD_DIR}/contrib/llvm/llvm/include \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
 -I./libs/libmysqlxx/include \
@@ -36,6 +39,7 @@ inc="-I. \
 -I./libs/libpocoext/include \
 -I./libs/libzkutil/include \
 -I./libs/libdaemon/include \
+-I./libs/libconsistent-hashing \
 -I./dbms/src \
 -I${BUILD_DIR}/dbms/src"
 

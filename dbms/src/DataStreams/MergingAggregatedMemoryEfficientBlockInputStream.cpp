@@ -320,7 +320,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
               * - or, if no next blocks, set 'exhausted' flag.
               */
             {
-                std::lock_guard<std::mutex> lock(parallel_merge_data->get_next_blocks_mutex);
+                std::lock_guard<std::mutex> lock_next_blocks(parallel_merge_data->get_next_blocks_mutex);
 
                 if (parallel_merge_data->exhausted || parallel_merge_data->finish)
                     break;
@@ -330,7 +330,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
                 if (!blocks_to_merge || blocks_to_merge->empty())
                 {
                     {
-                        std::unique_lock<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
+                        std::unique_lock<std::mutex> lock_merged_blocks(parallel_merge_data->merged_blocks_mutex);
                         parallel_merge_data->exhausted = true;
                     }
 
@@ -344,9 +344,9 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
                     : blocks_to_merge->front().info.bucket_num;
 
                 {
-                    std::unique_lock<std::mutex> lock(parallel_merge_data->merged_blocks_mutex);
+                    std::unique_lock<std::mutex> lock_merged_blocks(parallel_merge_data->merged_blocks_mutex);
 
-                    parallel_merge_data->have_space.wait(lock, [this]
+                    parallel_merge_data->have_space.wait(lock_merged_blocks, [this]
                     {
                         return parallel_merge_data->merged_blocks.size() < merging_threads
                             || parallel_merge_data->finish;
@@ -359,7 +359,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(MemoryTracker
                       * Main thread knows, that there will be result for 'output_order' place.
                       * Main thread must return results exactly in 'output_order', so that is important.
                       */
-                    parallel_merge_data->merged_blocks[output_order];
+                    parallel_merge_data->merged_blocks[output_order];   //-V607
                 }
             }
 

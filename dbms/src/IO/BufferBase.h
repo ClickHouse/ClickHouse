@@ -38,7 +38,7 @@ public:
 
         inline Position begin() const { return begin_pos; }
         inline Position end() const { return end_pos; }
-        inline size_t size() const { return end_pos - begin_pos; }
+        inline size_t size() const { return size_t(end_pos - begin_pos); }
         inline void resize(size_t size) { end_pos = begin_pos + size; }
 
         inline void swap(Buffer & other)
@@ -72,10 +72,13 @@ public:
     inline Buffer & buffer() { return working_buffer; }
 
     /// get (for reading and modifying) the position in the buffer
-    inline Position & position() { return pos; };
+    inline Position & position() { return pos; }
 
     /// offset in bytes of the cursor from the beginning of the buffer
-    inline size_t offset() const { return pos - working_buffer.begin(); }
+    inline size_t offset() const { return size_t(pos - working_buffer.begin()); }
+
+    /// How many bytes are available for read/write
+    inline size_t available() const { return size_t(working_buffer.end() - pos); }
 
     /** How many bytes have been read/written, counting those that are still in the buffer. */
     size_t count() const

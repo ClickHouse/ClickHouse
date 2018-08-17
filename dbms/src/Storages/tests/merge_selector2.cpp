@@ -10,9 +10,9 @@
 /** This program tests merge-selecting algorithm.
  * Usage:
 clickhouse-client --query="
- SELECT bytes, now() - modification_time, level, name
- FROM system.parts
- WHERE table = 'visits' AND active AND partition = '201610'" | ./merge_selector2
+    SELECT bytes, now() - modification_time, level, name
+    FROM system.parts
+    WHERE table = 'visits' AND active AND partition = '201610'" | ./merge_selector2
   */
 
 int main(int, char **)

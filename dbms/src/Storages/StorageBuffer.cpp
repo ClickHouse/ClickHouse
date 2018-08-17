@@ -15,6 +15,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/ProfileEvents.h>
 #include <common/logger_useful.h>
 #include <Poco/Ext/ThreadNumber.h>
 
@@ -72,7 +73,7 @@ public:
 
     String getName() const override { return "Buffer"; }
 
-    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); };
+    Block getHeader() const override { return storage.getSampleBlockForColumns(column_names); }
 
 protected:
     Block readImpl() override
@@ -134,7 +135,7 @@ BlockInputStreams StorageBuffer::read(
       */
     if (processed_stage > QueryProcessingStage::FetchColumns)
         for (auto & stream : streams_from_buffers)
-            stream = InterpreterSelectQuery(query_info.query, context, {}, processed_stage, 0, stream).execute().in;
+            stream = InterpreterSelectQuery(query_info.query, context, stream, processed_stage).execute().in;
 
     streams_from_dst.insert(streams_from_dst.end(), streams_from_buffers.begin(), streams_from_buffers.end());
     return streams_from_dst;
@@ -164,7 +165,7 @@ static void appendBlock(const Block & from, Block & to)
         for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
         {
             const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            MutableColumnPtr col_to = to.getByPosition(column_no).column->mutate();
+            MutableColumnPtr col_to = (*std::move(to.getByPosition(column_no).column)).mutate();
 
             col_to->insertRangeFrom(col_from, 0, rows);
 
@@ -183,7 +184,7 @@ static void appendBlock(const Block & from, Block & to)
             {
                 ColumnPtr & col_to = to.getByPosition(column_no).column;
                 if (col_to->size() != old_rows)
-                    col_to = col_to->mutate()->cut(0, old_rows);
+                    col_to = (*std::move(col_to)).mutate()->cut(0, old_rows);
             }
         }
         catch (...)

@@ -4,8 +4,8 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <condition_variable>
 #include <unordered_map>
-#include <Poco/Condition.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
 #include <IO/Progress.h>
@@ -78,7 +78,7 @@ private:
 
     CurrentMetrics::Increment num_queries {CurrentMetrics::Query};
 
-    std::atomic<bool> is_cancelled { false };
+    std::atomic<bool> is_killed { false };
 
     /// Be careful using it. For example, queries field could be modified concurrently.
     const ProcessListForUser * user_process_list = nullptr;
@@ -91,8 +91,14 @@ private:
     BlockInputStreamPtr query_stream_in;
     BlockOutputStreamPtr query_stream_out;
 
-    bool query_streams_initialized{false};
-    bool query_streams_released{false};
+    enum QueryStreamsStatus
+    {
+        NotInitialized,
+        Initialized,
+        Released
+    };
+
+    QueryStreamsStatus query_streams_status{NotInitialized};
 
 public:
     ProcessListElement(
@@ -140,13 +146,13 @@ public:
         if (priority_handle)
             priority_handle->waitIfNeed(std::chrono::seconds(1));        /// NOTE Could make timeout customizable.
 
-        return !is_cancelled.load(std::memory_order_relaxed);
+        return !is_killed.load(std::memory_order_relaxed);
     }
 
     bool updateProgressOut(const Progress & value)
     {
         progress_out.incrementPiecewiseAtomically(value);
-        return !is_cancelled.load(std::memory_order_relaxed);
+        return !is_killed.load(std::memory_order_relaxed);
     }
 
 
@@ -157,7 +163,7 @@ public:
         res.query             = query;
         res.client_info       = client_info;
         res.elapsed_seconds   = watch.elapsedSeconds();
-        res.is_cancelled      = is_cancelled.load(std::memory_order_relaxed);
+        res.is_cancelled      = is_killed.load(std::memory_order_relaxed);
         res.read_rows         = progress_in.rows;
         res.read_bytes        = progress_in.bytes;
         res.total_rows        = progress_in.total_rows;
@@ -204,7 +210,7 @@ struct ProcessListForUser
     {
         user_memory_tracker.reset();
         if (user_throttler)
-            user_throttler->reset();
+            user_throttler.reset();
     }
 };
 
@@ -249,7 +255,7 @@ public:
 
 private:
     mutable std::mutex mutex;
-    mutable Poco::Condition have_space;        /// Number of currently running queries has become less than maximum.
+    mutable std::condition_variable have_space;        /// Number of currently running queries has become less than maximum.
 
     /// List of queries
     Container cont;
@@ -264,6 +270,9 @@ private:
 
     /// Limit and counter for memory of all simultaneously running queries.
     MemoryTracker total_memory_tracker;
+
+    /// Limit network bandwidth for all users
+    ThrottlerPtr total_network_throttler;
 
     /// Call under lock. Finds process with specified current_user and current_query_id.
     ProcessListElement * tryGetProcessListElement(const String & current_query_id, const String & current_user);

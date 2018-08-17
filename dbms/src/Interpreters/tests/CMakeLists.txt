@@ -11,30 +11,28 @@ add_executable (aggregate aggregate.cpp)
 target_link_libraries (aggregate dbms)
 
 add_executable (hash_map hash_map.cpp)
-target_include_directories (hash_map BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (hash_map SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map dbms)
 
 add_executable (hash_map3 hash_map3.cpp)
-target_link_libraries (hash_map3 dbms)
+target_link_libraries (hash_map3 dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
 
 add_executable (hash_map_string hash_map_string.cpp)
-target_include_directories (hash_map_string BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (hash_map_string SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map_string dbms)
 
 add_executable (hash_map_string_2 hash_map_string_2.cpp)
 target_link_libraries (hash_map_string_2 dbms)
 
 add_executable (hash_map_string_3 hash_map_string_3.cpp)
-target_link_libraries (hash_map_string_3 dbms)
-target_include_directories (hash_map_string_3 BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libfarmhash)
-target_include_directories (hash_map_string_3 BEFORE PRIVATE ${ClickHouse_SOURCE_DIR}/contrib/libmetrohash/src)
+target_link_libraries (hash_map_string_3 dbms ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES})
 
 add_executable (hash_map_string_small hash_map_string_small.cpp)
-target_include_directories (hash_map_string_small BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (hash_map_string_small SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (hash_map_string_small dbms)
 
 add_executable (two_level_hash_map two_level_hash_map.cpp)
-target_include_directories (two_level_hash_map BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (two_level_hash_map SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 target_link_libraries (two_level_hash_map dbms)
 
 add_executable (compiler_test compiler_test.cpp)

@@ -23,12 +23,12 @@ try
         {
             while (true)
             {
-                std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+                std::vector<std::future<zkutil::GetResponse>> futures;
                 for (auto & node : nodes)
-                    futures.push_back(zookeeper.asyncTryGet("/tmp/" + node));
+                    futures.push_back(zookeeper.asyncGet("/tmp/" + node));
 
                 for (auto & future : futures)
-                    std::cerr << (future.get().value.empty() ? ',' : '.');
+                    std::cerr << (future.get().data.empty() ? ',' : '.');
             }
         });
     }
@@ -41,5 +41,5 @@ try
 catch (const Poco::Exception & e)
 {
     std::cout << e.message() << std::endl;
-    throw;
+    return 1;
 }

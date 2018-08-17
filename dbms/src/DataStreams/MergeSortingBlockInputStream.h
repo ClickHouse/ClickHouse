@@ -34,7 +34,6 @@ public:
 
     String getName() const override { return "MergeSortingBlocks"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
@@ -56,7 +55,7 @@ private:
 
     bool has_collation = false;
 
-    std::priority_queue<SortCursor> queue;
+    std::priority_queue<SortCursor> queue_without_collation;
     std::priority_queue<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.
@@ -73,20 +72,14 @@ public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
     MergeSortingBlockInputStream(const BlockInputStreamPtr & input, SortDescription & description_,
         size_t max_merged_block_size_, size_t limit_,
-        size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
-        : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
-        max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
-    {
-        children.push_back(input);
-    }
+        size_t max_bytes_before_external_sort_, const std::string & tmp_path_);
 
     String getName() const override { return "MergeSorting"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
-    Block getHeader() const override { return children.at(0)->getHeader(); }
+    Block getHeader() const override { return header; }
 
 protected:
     Block readImpl() override;
@@ -109,6 +102,7 @@ private:
     /// (to avoid excessive virtual function calls and because constants cannot be serialized in Native format for temporary files)
     /// Save original block structure here.
     Block header;
+    Block header_without_constants;
 
     /// Everything below is for external sorting.
     std::vector<std::unique_ptr<Poco::TemporaryFile>> temporary_files;
@@ -120,8 +114,8 @@ private:
         CompressedReadBuffer compressed_in;
         BlockInputStreamPtr block_in;
 
-        TemporaryFileStream(const std::string & path)
-            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, 0)) {}
+        TemporaryFileStream(const std::string & path, const Block & header)
+            : file_in(path), compressed_in(file_in), block_in(std::make_shared<NativeBlockInputStream>(compressed_in, header, 0)) {}
     };
 
     std::vector<std::unique_ptr<TemporaryFileStream>> temporary_inputs;

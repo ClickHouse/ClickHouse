@@ -22,18 +22,10 @@ class ExternalDictionaries;
  */
 class DatabaseDictionary : public IDatabase
 {
-private:
-    const String name;
-    mutable std::mutex mutex;
-    const ExternalDictionaries & external_dictionaries;
-    std::unordered_set<String> deleted_tables;
-
-    Poco::Logger * log;
-
-    Tables loadTables();
-
 public:
     DatabaseDictionary(const String & name_, const Context & context);
+
+    String getDatabaseName() const override;
 
     String getEngineName() const override
     {
@@ -86,12 +78,29 @@ public:
         const Context & context,
         const String & table_name) override;
 
-    ASTPtr getCreateQuery(
+    ASTPtr getCreateTableQuery(
         const Context & context,
         const String & table_name) const override;
 
+    ASTPtr tryGetCreateTableQuery(
+            const Context & context,
+            const String & table_name) const override;
+
+    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+
     void shutdown() override;
-    void drop() override;
+
+private:
+    const String name;
+    mutable std::mutex mutex;
+    const ExternalDictionaries & external_dictionaries;
+    std::unordered_set<String> deleted_tables;
+
+    Poco::Logger * log;
+
+    Tables loadTables();
+
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const;
 };
 
 }

@@ -37,39 +37,48 @@ public:
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr) const override;
-    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeText(IColumn & column, ReadBuffer & istr) const;
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const override;
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const override;
-    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const;
+    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     /// Tuples in CSV format will be serialized as separate columns (that is, losing their nesting in the tuple).
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const override;
+    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+
+    void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        OutputStreamGetter getter,
-        size_t offset,
-        size_t limit,
-        bool position_independent_encoding,
-        SubstreamPath path) const override;
+            const IColumn & column,
+            size_t offset,
+            size_t limit,
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
-        InputStreamGetter getter,
-        size_t limit,
-        double avg_value_size_hint,
-        bool position_independent_encoding,
-        SubstreamPath path) const override;
+            IColumn & column,
+            size_t limit,
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     MutableColumnPtr createColumn() const override;
 

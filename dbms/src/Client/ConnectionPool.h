@@ -45,33 +45,25 @@ public:
     using Base = PoolBase<Connection>;
 
     ConnectionPool(unsigned max_connections_,
-            const String & host_, UInt16 port_,
+            const String & host_,
+            UInt16 port_,
             const String & default_database_,
-            const String & user_, const String & password_,
+            const String & user_,
+            const String & password_,
             const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Encryption encryption_ = Protocol::Encryption::Disable)
-       : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
-        host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_), resolved_address(host_, port_),
-        client_name(client_name_), compression(compression_), encryption(encryption_),
-        timeouts(timeouts)
-    {
-    }
-
-    ConnectionPool(unsigned max_connections_,
-            const String & host_, UInt16 port_, const Poco::Net::SocketAddress & resolved_address_,
-            const String & default_database_,
-            const String & user_, const String & password_,
-            const ConnectionTimeouts & timeouts,
-            const String & client_name_ = "client",
-            Protocol::Compression compression_ = Protocol::Compression::Enable,
-            Protocol::Encryption encryption_ = Protocol::Encryption::Disable)
-        : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
-        host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_), resolved_address(resolved_address_),
-        client_name(client_name_), compression(compression_), encryption(encryption_),
+            Protocol::Secure secure_ = Protocol::Secure::Disable)
+       : Base(max_connections_,
+        &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        host(host_),
+        port(port_),
+        default_database(default_database_),
+        user(user_),
+        password(password_),
+        client_name(client_name_),
+        compression(compression_),
+        secure{secure_},
         timeouts(timeouts)
     {
     }
@@ -100,9 +92,9 @@ protected:
     ConnectionPtr allocObject() override
     {
         return std::make_shared<Connection>(
-            host, port, resolved_address,
+            host, port,
             default_database, user, password, timeouts,
-            client_name, compression, encryption);
+            client_name, compression, secure);
     }
 
 private:
@@ -112,14 +104,9 @@ private:
     String user;
     String password;
 
-    /** The address can be resolved in advance and passed to the constructor. Then `host` and `port` fields are meaningful only for logging.
-      * Otherwise, address is resolved in constructor. That is, DNS balancing is not supported.
-      */
-    Poco::Net::SocketAddress resolved_address;
-
     String client_name;
     Protocol::Compression compression;        /// Whether to compress data when interacting with the server.
-    Protocol::Encryption encryption;          /// Whether to encrypt data when interacting with the server.
+    Protocol::Secure secure;          /// Whether to encrypt data when interacting with the server.
 
     ConnectionTimeouts timeouts;
 };

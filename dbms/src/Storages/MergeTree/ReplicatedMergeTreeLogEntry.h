@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Common/Exception.h>
+#include <Common/ZooKeeper/Types.h>
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
 
 #include <mutex>
 #include <condition_variable>
-
-
-struct Stat;
 
 
 namespace DB
@@ -35,22 +33,29 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        ATTACH_PART,    /// Move a part from the `detached` directory. Obsolete. TODO: Remove after half year.
         CLEAR_COLUMN,   /// Drop specific column from specified partition.
+        REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
+        MUTATE_PART,    /// Apply one or several mutations to the part.
     };
 
-    String typeToString() const
+    static String typeToString(Type type)
     {
         switch (type)
         {
-            case ReplicatedMergeTreeLogEntryData::GET_PART:     return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:  return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:   return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:  return "ATTACH_PART";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN: return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
+            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
+            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
+            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
+            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
+            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
+    }
+
+    String typeToString() const
+    {
+        return typeToString(type);
     }
 
     void writeText(WriteBuffer & out) const;
@@ -62,18 +67,71 @@ struct ReplicatedMergeTreeLogEntryData
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
 
-    /// The name of resulting part.
-    /// For DROP_RANGE, the name of a non-existent part. You need to remove all the parts covered by it.
+    /// The name of resulting part for GET_PART and MERGE_PARTS
+    /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
 
-    Strings parts_to_merge;
+    Strings source_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     String column_name;
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
     bool detach = false;
+
+    /// REPLACE PARTITION FROM command
+    struct ReplaceRangeEntry
+    {
+        String drop_range_part_name;
+
+        String from_database;
+        String from_table;
+        Strings src_part_names; // as in from_table
+        Strings new_part_names;
+        Strings part_names_checksums;
+        int columns_version;
+
+        void writeText(WriteBuffer & out) const;
+        void readText(ReadBuffer & in);
+    };
+
+    std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
+
+    /// Returns a set of parts that will appear after executing the entry + parts to block
+    /// selection of merges. These parts are added to queue.virtual_parts.
+    Strings getVirtualPartNames() const
+    {
+        /// DROP_RANGE does not add a real part, but we must disable merges in that range
+        if (type == DROP_RANGE)
+            return {new_part_name};
+
+        /// Return {} because selection of merges in the partition where the column is cleared
+        /// should not be blocked (only execution of merges should be blocked).
+        if (type == CLEAR_COLUMN)
+            return {};
+
+        if (type == REPLACE_RANGE)
+        {
+            Strings res = replace_range_entry->new_part_names;
+            res.emplace_back(replace_range_entry->drop_range_part_name);
+            return res;
+        }
+
+        return {new_part_name};
+    }
+
+    /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
+    /// These parts are added to future_parts.
+    Strings getBlockingPartNames() const
+    {
+        Strings res = getVirtualPartNames();
+
+        if (type == CLEAR_COLUMN)
+            res.emplace_back(new_part_name);
+
+        return res;
+    }
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.
@@ -94,14 +152,16 @@ struct ReplicatedMergeTreeLogEntryData
 };
 
 
-struct ReplicatedMergeTreeLogEntry : ReplicatedMergeTreeLogEntryData
+struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std::enable_shared_from_this<ReplicatedMergeTreeLogEntry>
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
     std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
 
-    static Ptr parse(const String & s, const Stat & stat);
+    static Ptr parse(const String & s, const zkutil::Stat & stat);
 };
+
+using ReplicatedMergeTreeLogEntryPtr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
 
 }

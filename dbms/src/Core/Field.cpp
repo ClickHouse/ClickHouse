@@ -5,6 +5,7 @@
 
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
+#include <Functions/FunctionsComparison.h>
 
 
 namespace DB
@@ -143,7 +144,7 @@ namespace DB
 {
     inline void readBinary(Tuple & x_def, ReadBuffer & buf)
     {
-        auto & x = x_def.t;
+        auto & x = x_def.toUnderType();
         size_t size;
         DB::readBinary(size, buf);
 
@@ -214,7 +215,7 @@ namespace DB
 
     void writeBinary(const Tuple & x_def, WriteBuffer & buf)
     {
-        auto & x = x_def.t;
+        auto & x = x_def.toUnderType();
         const size_t size = x.size();
         DB::writeBinary(size, buf);
 
@@ -269,5 +270,24 @@ namespace DB
     {
         DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
         buf.write(res.data(), res.size());
+    }
+
+
+    bool DecField::operator < (const DecField & r) const
+    {
+        using Comparator = DecimalComparison<Dec128, Dec128, LessOp>;
+        return Comparator::compare(Dec128(dec), Dec128(r.dec), scale, r.scale);
+    }
+
+    bool DecField::operator <= (const DecField & r) const
+    {
+        using Comparator = DecimalComparison<Dec128, Dec128, LessOrEqualsOp>;
+        return Comparator::compare(Dec128(dec), Dec128(r.dec), scale, r.scale);
+    }
+
+    bool DecField::operator == (const DecField & r) const
+    {
+        using Comparator = DecimalComparison<Dec128, Dec128, EqualsOp>;
+        return Comparator::compare(Dec128(dec), Dec128(r.dec), scale, r.scale);
     }
 }

@@ -26,6 +26,11 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeFunction.h>
+#include <algorithm>
+#include <sstream>
+#include <unordered_map>
+#include <vector>
+#include <memory>
 
 
 namespace DB
@@ -108,16 +113,16 @@ void processIdentifier(const String & column_name, const ASTPtr & ast, TypeAndCo
     else
     {
         /// Alias
-        auto it = aliases.aliases.find(column_name);
-        if (it != aliases.aliases.end())
+        auto jt = aliases.aliases.find(column_name);
+        if (jt != aliases.aliases.end())
         {
             /// TODO Cyclic aliases.
 
-            if (it->second.kind != CollectAliases::Kind::Expression)
+            if (jt->second.kind != CollectAliases::Kind::Expression)
                 throw Exception("Logical error: unexpected kind of alias", ErrorCodes::LOGICAL_ERROR);
 
-            processImpl(it->second.node, context, aliases, columns, info, lambdas, table_functions);
-            info[column_name] = info[it->second.node->getColumnName()];
+            processImpl(jt->second.node, context, aliases, columns, info, lambdas, table_functions);
+            info[column_name] = info[jt->second.node->getColumnName()];
         }
     }
 }
@@ -251,7 +256,7 @@ void processFunction(const String & column_name, ASTPtr & ast, TypeAndConstantIn
         size_t result_position = argument_numbers.size();
         block_with_constants.insert({nullptr, expression_info.data_type, column_name});
 
-        function_ptr->execute(block_with_constants, argument_numbers, result_position);
+        function_ptr->execute(block_with_constants, argument_numbers, result_position, 1);
 
         const auto & result_column = block_with_constants.getByPosition(result_position).column;
         if (result_column->isColumnConst())

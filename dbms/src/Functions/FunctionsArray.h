@@ -46,6 +46,8 @@ namespace ErrorCodes
   * arrayUniq(arr) - counts the number of different elements in the array,
   * arrayUniq(arr1, arr2, ...) - counts the number of different tuples from the elements in the corresponding positions in several arrays.
   *
+  * arrayDistinct(arr) - retrun different elements in an array
+  *
   * arrayEnumerateUniq(arr)
   *  - outputs an array parallel (having same size) to this, where for each element specified
   *  how many times this element was encountered before (including this element) among elements with the same value.
@@ -92,7 +94,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     String getName() const override;
@@ -121,10 +123,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
-    void perform(Block & block, const ColumnNumbers & arguments, size_t result, ArrayImpl::NullMapBuilder & builder);
+    void perform(Block & block, const ColumnNumbers & arguments, size_t result,
+                     ArrayImpl::NullMapBuilder & builder, size_t input_rows_count);
 
     template <typename DataType>
     bool executeNumberConst(Block & block, const ColumnNumbers & arguments, size_t result, const Field & index,
@@ -149,15 +152,17 @@ private:
         ArrayImpl::NullMapBuilder & builder);
 
     template <typename IndexType>
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result, const PaddedPODArray<IndexType> & indices,
-        ArrayImpl::NullMapBuilder & builder);
+    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result,
+                          const PaddedPODArray <IndexType> & indices, ArrayImpl::NullMapBuilder & builder,
+                          size_t input_rows_count);
 
     template <typename IndexType>
-    bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result, ArrayImpl::NullMapBuilder & builder);
+    bool executeArgument(Block & block, const ColumnNumbers & arguments, size_t result,
+                             ArrayImpl::NullMapBuilder & builder, size_t input_rows_count);
 
     /** For a tuple array, the function is evaluated component-wise for each element of the tuple.
       */
-    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result);
+    bool executeTuple(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count);
 };
 
 
@@ -179,7 +184,7 @@ struct IndexIdentity
 /// For countEqual.
 struct IndexCount
 {
-    using ResultType = UInt32;
+    using ResultType = UInt64;
     static bool apply(size_t, ResultType & current) { ++current; return true; }
 };
 
@@ -201,7 +206,7 @@ private:
 
     static bool hasNull(const PaddedPODArray<UInt8> & null_map, size_t i)
     {
-        return null_map[i] == 1;
+        return null_map[i];
     }
 
     /// Both function arguments are ordinary.
@@ -284,7 +289,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                 }
                 else if (compare(data[current_offset + j], value, i))
@@ -321,7 +326,7 @@ private:
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                     if (hasNull(null_map_item, i))
                         hit = true;
@@ -391,11 +396,6 @@ struct ArrayIndexNumNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -404,7 +404,7 @@ struct ArrayIndexNumNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_ref[current_offset + j] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -430,11 +430,6 @@ struct ArrayIndexStringNullImpl
         const auto size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -443,8 +438,7 @@ struct ArrayIndexStringNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_ref[k] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -484,8 +478,7 @@ struct ArrayIndexStringImpl
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                 }
                 else if (string_size == value_size + 1 && 0 == memcmp(value.data(), &data[string_pos], value_size))
@@ -521,21 +514,20 @@ struct ArrayIndexStringImpl
             for (size_t j = 0; j < array_size; ++j)
             {
                 ColumnArray::Offset string_pos = current_offset == 0 && j == 0
-                                                   ? 0
-                                                   : string_offsets[current_offset + j - 1];
+                    ? 0
+                    : string_offsets[current_offset + j - 1];
 
                 ColumnArray::Offset string_size = string_offsets[current_offset + j] - string_pos;
 
                 bool hit = false;
-                size_t k = (current_offset == 0 && j == 0) ? 0 : current_offset + j - 1;
 
-                if (null_map_data && ((*null_map_data)[k] == 1))
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
-                    if (null_map_item && ((*null_map_item)[i] == 1))
+                    if (null_map_item && (*null_map_item)[i])
                         hit = true;
                 }
                 else if (string_size == value_size && 0 == memcmp(&item_values[value_pos], &data[string_pos], value_size))
-                        hit = true;
+                    hit = true;
 
                 if (hit)
                 {
@@ -635,7 +627,7 @@ private:
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
                 }
                 else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
@@ -671,9 +663,9 @@ private:
             for (size_t j = 0; j < array_size; ++j)
             {
                 bool hit = false;
-                if (null_map_data[current_offset + j] == 1)
+                if (null_map_data[current_offset + j])
                 {
-                    if (null_map_item[i] == 1)
+                    if (null_map_item[i])
                         hit = true;
                 }
                 else if (0 == data.compareAt(current_offset + j, is_value_has_single_element_to_compare ? 0 : i, value, 1))
@@ -721,11 +713,6 @@ struct ArrayIndexGenericNullImpl
         size_t size = offsets.size();
         result.resize(size);
 
-        if (!null_map_data)
-            return;
-
-        const auto & null_map_ref = *null_map_data;
-
         ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
@@ -734,7 +721,7 @@ struct ArrayIndexGenericNullImpl
 
             for (size_t j = 0; j < array_size; ++j)
             {
-                if (null_map_ref[current_offset + j] == 1)
+                if (null_map_data && (*null_map_data)[current_offset + j])
                 {
                     if (!IndexConv::apply(j, current))
                         break;
@@ -928,7 +915,7 @@ private:
 
                     if (arr[i].isNull())
                     {
-                        if (null_map && ((*null_map)[row] == 1))
+                        if (null_map && (*null_map)[row])
                             hit = true;
                     }
                     else if (applyVisitor(FieldVisitorAccurateEquals(), arr[i], value))
@@ -1024,10 +1011,11 @@ public:
             DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
             DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
-            if (!(observed_type0->isNumber() && observed_type1->isNumber())
+            /// We also support arrays of Enum type (that are represented by number) to search numeric values.
+            if (!(observed_type0->isValueRepresentedByNumber() && observed_type1->isNumber())
                 && !observed_type0->equals(*observed_type1))
                 throw Exception("Types of array and 2nd argument of function "
-                    + getName() + " must be identical up to nullability. Passed: "
+                    + getName() + " must be identical up to nullability or numeric types or Enum and numeric type. Passed: "
                     + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -1035,8 +1023,7 @@ public:
         return std::make_shared<DataTypeNumber<typename IndexConv::ResultType>>();
     }
 
-    /// Perform function on the given block.
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// If one or both arguments passed to this function are nullable,
         /// we create a new block that contains non-nullable arguments:
@@ -1053,8 +1040,7 @@ public:
         /// values.
         bool is_nullable;
 
-        const ColumnArray * col_array = nullptr;
-        col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
+        const ColumnArray * col_array = checkAndGetColumn<ColumnArray>(block.getByPosition(arguments[0]).column.get());
         if (col_array)
             is_nullable = col_array->getData().isColumnNullable();
         else
@@ -1163,10 +1149,8 @@ private:
             || executeConst(block, arguments, result)
             || executeString(block, arguments, result)
             || executeGeneric(block, arguments, result)))
-            throw Exception{
-                "Illegal column " + block.getByPosition(arguments[0]).column->getName()
-                + " of first argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 
@@ -1184,7 +1168,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 };
 
 
@@ -1204,7 +1188,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -1229,6 +1213,53 @@ private:
 };
 
 
+/// Find different elements in an array.
+class FunctionArrayDistinct : public IFunction
+{
+public:
+    static constexpr auto name = "arrayDistinct";
+    static FunctionPtr create(const Context & context);
+
+    String getName() const override;
+
+    bool isVariadic() const override { return false; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
+
+private:
+    /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
+    static constexpr size_t INITIAL_SIZE_DEGREE = 9;
+
+    template <typename T>
+    bool executeNumber(
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+
+    bool executeString(
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+
+    void executeHashed(
+        const ColumnArray::Offsets & offsets,
+        const ColumnRawPtrs & columns,
+        IColumn & res_data_col,
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
+};
+
+
 class FunctionArrayEnumerateUniq : public IFunction
 {
 public:
@@ -1243,7 +1274,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     /// Initially allocate a piece of memory for 512 elements. NOTE: This is just a guess.
@@ -1295,13 +1326,13 @@ private:
         return std::make_shared<DataTypeArray>(std::make_shared<DataType>());
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         using UnderlyingColumnType = typename TypeToColumnType<typename DataType::FieldType>::ColumnType;
 
         block.getByPosition(result).column = ColumnArray::create(
             UnderlyingColumnType::create(),
-            ColumnArray::ColumnOffsets::create(block.rows(), 0));
+            ColumnArray::ColumnOffsets::create(input_rows_count, 0));
     }
 };
 
@@ -1325,7 +1356,7 @@ private:
     template <typename T>
     bool executeInternal(Block & block, const IColumn * arg, const size_t result);
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 };
 
 
@@ -1342,7 +1373,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 };
 
 
@@ -1359,10 +1390,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
-    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result);
+    bool executeConst(Block & block, const ColumnNumbers & arguments, size_t result,
+                          size_t input_rows_count);
 
     template <typename T>
     bool executeNumber(
@@ -1402,9 +1434,12 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 private:
     /// lazy initialization in getReturnTypeImpl
     /// TODO: init in FunctionBuilder
@@ -1426,7 +1461,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -1448,7 +1483,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -1468,7 +1503,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -1509,7 +1544,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -1553,7 +1588,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -1610,7 +1645,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -1655,7 +1690,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForNulls() const override { return false; }

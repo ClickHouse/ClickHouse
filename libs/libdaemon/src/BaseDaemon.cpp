@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <cxxabi.h>
 #include <execinfo.h>
+#include <unistd.h>
 
 #if USE_UNWIND
     #define UNW_LOCAL_ONLY
@@ -54,6 +55,7 @@
 #include <Poco/NumberFormatter.h>
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
+#include <Poco/DirectoryIterator.h>
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -61,7 +63,9 @@
 #include <IO/WriteHelpers.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <daemon/OwnPatternFormatter.h>
+#include <Poco/Net/RemoteSyslogChannel.h>
 
 
 using Poco::Logger;
@@ -706,17 +710,18 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
     Poco::AutoPtr<SplitterChannel> split = new SplitterChannel;
 
     auto log_level = config.getString("logger.level", "trace");
-    if (config.hasProperty("logger.log"))
+    const auto log_path = config.getString("logger.log", "");
+    if (!log_path.empty())
     {
-        createDirectory(config.getString("logger.log"));
-        std::cerr << "Logging " << log_level << " to " << config.getString("logger.log") << std::endl;
+        createDirectory(log_path);
+        std::cerr << "Logging " << log_level << " to " << log_path << std::endl;
 
         // Set up two channel chains.
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
         log_file = new FileChannel;
-        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.log")).absolute().toString());
+        log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(log_path).absolute().toString());
         log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
@@ -728,17 +733,18 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         log_file->open();
     }
 
-    if (config.hasProperty("logger.errorlog"))
+    const auto errorlog_path = config.getString("logger.errorlog", "");
+    if (!errorlog_path.empty())
     {
-        createDirectory(config.getString("logger.errorlog"));
-        std::cerr << "Logging errors to " << config.getString("logger.errorlog") << std::endl;
+        createDirectory(errorlog_path);
+        std::cerr << "Logging errors to " << errorlog_path << std::endl;
         Poco::AutoPtr<Poco::LevelFilterChannel> level = new Poco::LevelFilterChannel;
         level->setLevel(Message::PRIO_NOTICE);
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> errorlog = new FormattingChannel(pf);
         error_log_file = new FileChannel;
-        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(config.getString("logger.errorlog")).absolute().toString());
+        error_log_file->setProperty(Poco::FileChannel::PROP_PATH, Poco::Path(errorlog_path).absolute().toString());
         error_log_file->setProperty(Poco::FileChannel::PROP_ROTATION, config.getRawString("logger.size", "100M"));
         error_log_file->setProperty(Poco::FileChannel::PROP_ARCHIVE, "number");
         error_log_file->setProperty(Poco::FileChannel::PROP_COMPRESS, config.getRawString("logger.compress", "true"));
@@ -759,7 +765,29 @@ void BaseDaemon::buildLoggers(Poco::Util::AbstractConfiguration & config)
         Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter(this, OwnPatternFormatter::ADD_LAYER_TAG);
         pf->setProperty("times", "local");
         Poco::AutoPtr<FormattingChannel> log = new FormattingChannel(pf);
-        syslog_channel = new Poco::SyslogChannel(commandName(), Poco::SyslogChannel::SYSLOG_CONS | Poco::SyslogChannel::SYSLOG_PID, Poco::SyslogChannel::SYSLOG_DAEMON);
+
+        const std::string & cmd_name = commandName();
+
+        if (config.has("logger.syslog.address"))
+        {
+            syslog_channel = new Poco::Net::RemoteSyslogChannel();
+            // syslog address
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_LOGHOST, config.getString("logger.syslog.address"));
+            if (config.has("logger.syslog.hostname"))
+            {
+                syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_HOST, config.getString("logger.syslog.hostname"));
+            }
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FORMAT, config.getString("logger.syslog.format", "syslog"));
+            syslog_channel->setProperty(Poco::Net::RemoteSyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_USER"));
+        }
+        else
+        {
+            syslog_channel = new Poco::SyslogChannel();
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_NAME, cmd_name);
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_OPTIONS, config.getString("logger.syslog.options", "LOG_CONS|LOG_PID"));
+            syslog_channel->setProperty(Poco::SyslogChannel::PROP_FACILITY, config.getString("logger.syslog.facility", "LOG_DAEMON"));
+        }
+
         log->setChannel(syslog_channel);
         split->addChannel(log);
         syslog_channel->open();
@@ -819,8 +847,40 @@ std::string BaseDaemon::getDefaultCorePath() const
     return "/opt/cores/";
 }
 
+void BaseDaemon::closeFDs()
+{
+#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(__MACH__))
+    Poco::File proc_path{"/dev/fd"};
+#else
+    Poco::File proc_path{"/proc/self/fd"};
+#endif
+    if (proc_path.isDirectory()) /// Hooray, proc exists
+    {
+        Poco::DirectoryIterator itr(proc_path), end;
+        for (; itr != end; ++itr)
+        {
+            long fd = DB::parse<long>(itr.name());
+            if (fd > 2 && fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+                ::close(fd);
+        }
+    }
+    else
+    {
+        long max_fd = -1;
+#ifdef _SC_OPEN_MAX
+        max_fd = sysconf(_SC_OPEN_MAX);
+        if (max_fd == -1)
+#endif
+            max_fd = 256; /// bad fallback
+        for (long fd = 3; fd < max_fd; ++fd)
+            if (fd != signal_pipe.read_fd && fd != signal_pipe.write_fd)
+                ::close(fd);
+    }
+}
+
 void BaseDaemon::initialize(Application & self)
 {
+    closeFDs();
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
 
@@ -941,33 +1001,34 @@ void BaseDaemon::initialize(Application & self)
     if (!log_path.empty())
         log_path = Poco::Path(log_path).setFileName("").toString();
 
-    if (is_daemon)
+    /** Redirect stdout, stderr to separate files in the log directory (or in the specified file).
+      * Some libraries write to stderr in case of errors in debug mode,
+      *  and this output makes sense even if the program is run in daemon mode.
+      * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
+      * If logger.stderr is specified then stderr will be forcibly redirected to that file.
+      */
+    if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
-        /** Redirect stdout, stderr to separate files in the log directory.
-          * Some libraries write to stderr in case of errors in debug mode,
-          *  and this output makes sense even if the program is run in daemon mode.
-          * We have to do it before buildLoggers, for errors on logger initialization will be written to these files.
-          */
-        if (!log_path.empty())
-        {
-            std::string stdout_path = log_path + "/stdout";
-            if (!freopen(stdout_path.c_str(), "a+", stdout))
-                throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
-
-            std::string stderr_path = log_path + "/stderr";
-            if (!freopen(stderr_path.c_str(), "a+", stderr))
-                throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
-        }
-
-        /// Create pid file.
-        if (is_daemon && config().has("pid"))
-            pid.seed(config().getString("pid"));
+        std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr");
+        if (!freopen(stderr_path.c_str(), "a+", stderr))
+            throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
     }
 
-    /// Change path for logging.
-    if (config().hasProperty("logger.log"))
+    if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
-        std::string path = createDirectory(config().getString("logger.log"));
+        std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout");
+        if (!freopen(stdout_path.c_str(), "a+", stdout))
+            throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
+    }
+
+    /// Create pid file.
+    if (is_daemon && config().has("pid"))
+        pid.seed(config().getString("pid"));
+
+    /// Change path for logging.
+    if (!log_path.empty())
+    {
+        std::string path = createDirectory(log_path);
         if (is_daemon
             && chdir(path.c_str()) != 0)
             throw Poco::Exception("Cannot change directory to " + path);
@@ -1004,6 +1065,19 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to " + core_path);
     }
 
+    initializeTerminationAndSignalProcessing();
+
+    logRevision();
+
+    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
+    {
+        graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
+    }
+}
+
+
+void BaseDaemon::initializeTerminationAndSignalProcessing()
+{
     std::set_terminate(terminate_handler);
 
     /// We want to avoid SIGPIPE when working with sockets and pipes, and just handle return value/errno instead.
@@ -1044,20 +1118,14 @@ void BaseDaemon::initialize(Application & self)
     static KillingErrorHandler killing_error_handler;
     Poco::ErrorHandler::set(&killing_error_handler);
 
-    logRevision();
-
     signal_listener.reset(new SignalListener(*this));
     signal_listener_thread.start(*signal_listener);
 
-    for (const auto & key : DB::getMultipleKeysFromConfig(config(), "", "graphite"))
-    {
-        graphite_writers.emplace(key, std::make_unique<GraphiteWriter>(key));
-    }
 }
 
 void BaseDaemon::logRevision() const
 {
-    Logger::root().information("Starting daemon with revision " + Poco::NumberFormatter::format(ClickHouseRevision::get()));
+    Logger::root().information("Starting " + std::string{VERSION_FULL} + " with revision " + Poco::NumberFormatter::format(ClickHouseRevision::get()));
 }
 
 /// Makes server shutdown if at least one Poco::Task have failed.

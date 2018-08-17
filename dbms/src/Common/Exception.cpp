@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <string.h>
 #include <cxxabi.h>
 
@@ -11,7 +10,7 @@
 #include <IO/ReadBufferFromString.h>
 
 #include <Common/Exception.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB
@@ -131,11 +130,11 @@ int getCurrentExceptionCode()
     {
         return e.code();
     }
-    catch (const Poco::Exception & e)
+    catch (const Poco::Exception &)
     {
         return ErrorCodes::POCO_EXCEPTION;
     }
-    catch (const std::exception & e)
+    catch (const std::exception &)
     {
         return ErrorCodes::STD_EXCEPTION;
     }

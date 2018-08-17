@@ -70,9 +70,7 @@ CacheDictionary::CacheDictionary(const std::string & name, const DictionaryStruc
         rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
-        throw Exception{
-            name + ": source cannot be used with CacheDictionary",
-            ErrorCodes::UNSUPPORTED_METHOD};
+        throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
     createAttributes();
 }
@@ -103,12 +101,12 @@ void CacheDictionary::isInImpl(
 {
     /// Transform all children to parents until ancestor id or null_value will be reached.
 
-    size_t size = out.size();
-    memset(out.data(), 0xFF, size);        /// 0xFF means "not calculated"
+    size_t out_size = out.size();
+    memset(out.data(), 0xFF, out_size);        /// 0xFF means "not calculated"
 
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    PaddedPODArray<Key> children(size);
+    PaddedPODArray<Key> children(out_size);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
     while (true)
@@ -117,7 +115,7 @@ void CacheDictionary::isInImpl(
         size_t parents_idx = 0;
         size_t new_children_idx = 0;
 
-        while (out_idx < size)
+        while (out_idx < out_size)
         {
             /// Already calculated
             if (out[out_idx] != 0xFF)
@@ -205,7 +203,7 @@ void CacheDictionary::isInConstantVector(
     }
 
     /// Assuming short hierarchy, so linear search is Ok.
-    for (size_t i = 0, size = out.size(); i < size; ++i)
+    for (size_t i = 0, out_size = out.size(); i < out_size; ++i)
         out[i] = std::find(ancestors.begin(), ancestors.end(), ancestor_ids[i]) != ancestors.end();
 }
 
@@ -215,9 +213,7 @@ void CacheDictionary::get##TYPE(const std::string & attribute_name, const Padded
 {\
     auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
@@ -240,9 +236,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
 {
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     const auto null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -256,9 +250,7 @@ void CacheDictionary::get##TYPE(\
 {\
     auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids, out, [&] (const size_t row) { return def[row]; });\
 }
@@ -281,9 +273,7 @@ void CacheDictionary::getString(
 {
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsString(attribute, ids, out, [&] (const size_t row) { return def->getDataAt(row); });
 }
@@ -294,9 +284,7 @@ void CacheDictionary::get##TYPE(\
 {\
     auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, ids, out, [&] (const size_t) { return def; });\
 }
@@ -319,9 +307,7 @@ void CacheDictionary::getString(
 {
     auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsString(attribute, ids, out, [&] (const size_t) { return StringRef{def}; });
 }
@@ -449,9 +435,7 @@ void CacheDictionary::createAttributes()
             hierarchical_attribute = &attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
-                throw Exception{
-                    name + ": hierarchical attribute must be UInt64.",
-                    ErrorCodes::TYPE_MISMATCH};
+                throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 }
@@ -624,12 +608,12 @@ void CacheDictionary::getItemsNumberImpl(
     {
         const auto attribute_value = attribute_array[cell_idx];
 
-        for (const auto row : outdated_ids[id])
+        for (const size_t row : outdated_ids[id])
             out[row] = static_cast<OutputType>(attribute_value);
     },
     [&] (const auto id, const auto)
     {
-        for (const auto row : outdated_ids[id])
+        for (const size_t row : outdated_ids[id])
             out[row] = get_default(row);
     });
 }
@@ -798,9 +782,7 @@ void CacheDictionary::update(
         {
             const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
             if (!id_column)
-                throw Exception{
-                    name + ": id column has type different from UInt64.",
-                    ErrorCodes::TYPE_MISMATCH};
+                throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
 
             const auto & ids = id_column->getData();
 
@@ -854,7 +836,7 @@ void CacheDictionary::update(
 
     const auto now = std::chrono::system_clock::now();
     /// Check which ids have not been found and require setting null_value
-    for (const auto id_found_pair : remaining_ids)
+    for (const auto & id_found_pair : remaining_ids)
     {
         if (id_found_pair.second)
         {
@@ -954,12 +936,12 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
             if (string_ref.data && string_ref.data != null_value_ref.data())
                 string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
 
-            const auto size = string.size();
-            if (size != 0)
+            const auto str_size = string.size();
+            if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(size + 1);
-                std::copy(string.data(), string.data() + size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, size};
+                auto string_ptr = string_arena->alloc(str_size + 1);
+                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
+                string_ref = StringRef{string_ptr, str_size};
             }
             else
                 string_ref = {};
@@ -973,10 +955,7 @@ CacheDictionary::Attribute & CacheDictionary::getAttribute(const std::string & a
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{
-            name + ": no such attribute '" + attribute_name + "'",
-            ErrorCodes::BAD_ARGUMENTS
-        };
+        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }

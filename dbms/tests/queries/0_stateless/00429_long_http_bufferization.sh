@@ -14,7 +14,7 @@ function query {
 }
 
 function ch_url() {
-    ${CLICKHOUSE_CURL} -sS "$URL?max_block_size=$max_block_size&$1" -d "`query $2`"
+    ${CLICKHOUSE_CURL_COMMAND} -sS "$URL?max_block_size=$max_block_size&$1" -d "`query $2`"
 }
 
 

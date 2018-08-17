@@ -1,4 +1,3 @@
-#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
 
@@ -23,12 +22,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/executeQuery.h>
+#include "DNSCacheUpdater.h"
 
-
-namespace ProfileEvents
-{
-    extern const Event Query;
-}
 
 namespace DB
 {
@@ -108,26 +103,24 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     bool log_queries = context.getSettingsRef().log_queries;
 
     /// Log the start of query execution into the table if necessary.
+    QueryLogElement elem;
+
+    elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
+
+    elem.event_time = current_time;
+    elem.query_start_time = current_time;
+
+    elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
+    elem.exception = getCurrentExceptionMessage(false);
+
+    elem.client_info = context.getClientInfo();
+
+    setExceptionStackTrace(elem);
+    logException(context, elem);
+
     if (log_queries)
-    {
-        QueryLogElement elem;
-
-        elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
-
-        elem.event_time = current_time;
-        elem.query_start_time = current_time;
-
-        elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
-        elem.exception = getCurrentExceptionMessage(false);
-
-        elem.client_info = context.getClientInfo();
-
-        setExceptionStackTrace(elem);
-        logException(context, elem);
-
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
-    }
 }
 
 
@@ -138,7 +131,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     bool internal,
     QueryProcessingStage::Enum stage)
 {
-    ProfileEvents::increment(ProfileEvents::Query);
     time_t current_time = time(nullptr);
 
     context.setQueryContext(context);
@@ -157,16 +149,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     try
     {
         /// TODO Parser should fail early when max_query_size limit is reached.
-        ast = parseQuery(parser, begin, end, "");
+        ast = parseQuery(parser, begin, end, "", max_query_size);
 
         /// Copy query into string. It will be written to log and presented in processlist. If an INSERT query, string will not include data to insertion.
         if (!(begin <= ast->range.first && ast->range.second <= end))
             throw Exception("Unexpected behavior: AST chars range is not inside source range", ErrorCodes::LOGICAL_ERROR);
         query_size = ast->range.second - begin;
-
-        if (max_query_size && query_size > max_query_size)
-            throw Exception("Query is too large (" + toString(query_size) + ")."
-                " max_query_size = " + toString(max_query_size), ErrorCodes::QUERY_IS_TOO_LARGE);
     }
     catch (...)
     {
@@ -381,6 +369,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (!internal)
             onExceptionBeforeStart(query, context, current_time);
 
+        DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
+
         throw;
     }
 
@@ -417,7 +407,7 @@ void executeQuery(
 
     size_t max_query_size = context.getSettingsRef().max_query_size;
 
-    if (istr.buffer().end() - istr.position() >= static_cast<ssize_t>(max_query_size))
+    if (istr.buffer().end() - istr.position() > static_cast<ssize_t>(max_query_size))
     {
         /// If remaining buffer space in 'istr' is enough to parse query up to 'max_query_size' bytes, then parse inplace.
         begin = istr.position();
@@ -427,8 +417,8 @@ void executeQuery(
     else
     {
         /// If not - copy enough data into 'parse_buf'.
-        parse_buf.resize(max_query_size);
-        parse_buf.resize(istr.read(&parse_buf[0], max_query_size));
+        parse_buf.resize(max_query_size + 1);
+        parse_buf.resize(istr.read(&parse_buf[0], max_query_size + 1));
         begin = &parse_buf[0];
         end = begin + parse_buf.size();
     }

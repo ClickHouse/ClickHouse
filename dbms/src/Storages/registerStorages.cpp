@@ -17,13 +17,14 @@ void registerStorageBuffer(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
+void registerStorageURL(StorageFactory & factory);
 void registerStorageDictionary(StorageFactory & factory);
 void registerStorageSet(StorageFactory & factory);
 void registerStorageJoin(StorageFactory & factory);
 void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 
-#if Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerStorageODBC(StorageFactory & factory);
 #endif
 
@@ -50,13 +51,14 @@ void registerStorages()
     registerStorageDistributed(factory);
     registerStorageMemory(factory);
     registerStorageFile(factory);
+    registerStorageURL(factory);
     registerStorageDictionary(factory);
     registerStorageSet(factory);
     registerStorageJoin(factory);
     registerStorageView(factory);
     registerStorageMaterializedView(factory);
 
-    #if Poco_DataODBC_FOUND
+    #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerStorageODBC(factory);
     #endif
 

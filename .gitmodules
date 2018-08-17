@@ -1,6 +1,3 @@
-[submodule "contrib/zookeeper"]
-	path = contrib/zookeeper
-	url = https://github.com/ClickHouse-Extras/zookeeper.git
 [submodule "contrib/poco"]
 	path = contrib/poco
 	url = https://github.com/ClickHouse-Extras/poco
@@ -18,7 +15,7 @@
 	url = https://github.com/google/cctz.git
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
-	url = https://github.com/Dead2/zlib-ng.git
+	url = https://github.com/ClickHouse-Extras/zlib-ng.git
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest.git
@@ -37,3 +34,15 @@
 [submodule "contrib/boost"]
 	path = contrib/boost
 	url = https://github.com/ClickHouse-Extras/boost.git
+[submodule "contrib/llvm"]
+	path = contrib/llvm
+	url = https://github.com/ClickHouse-Extras/llvm
+[submodule "contrib/mariadb-connector-c"]
+	path = contrib/mariadb-connector-c
+	url = https://github.com/MariaDB/mariadb-connector-c.git
+[submodule "contrib/jemalloc"]
+	path = contrib/jemalloc
+	url = https://github.com/jemalloc/jemalloc.git
+[submodule "contrib/unixodbc"]
+	path = contrib/unixodbc
+	url = https://github.com/ClickHouse-Extras/UnixODBC.git

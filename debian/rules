@@ -9,15 +9,16 @@ export DEB_BUILD_MAINT_OPTIONS=hardening=+all,-pie
 
 # because copy_headers.sh have hardcoded path to build/include_directories.txt
 BUILDDIR = build
-DESTDIR = debian/tmp
+CURDIR = $(shell pwd)
+DESTDIR = $(CURDIR)/debian/tmp
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 #TODO: why it not working? (maybe works in debhelper 10+)
-#ifndef THREADS_COUNT
-#    THREADS_COUNT:=$(shell nproc || grep -c ^processor /proc/cpuinfo)
-#endif
-#DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
+ifndef THREADS_COUNT
+    THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
+endif
+DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 
 ifndef ENABLE_TESTS
     CMAKE_FLAGS += -DENABLE_TESTS=0
@@ -42,15 +43,35 @@ endif
 
 CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
 
+ifndef DISABLE_NINJA
+    NINJA=$(shell which ninja)
+ifneq ($(NINJA),)
+        CMAKE_FLAGS += -GNinja
+        export MAKE=$(NINJA)
+endif
+endif
+
 ifndef DH_VERBOSE
     CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
 endif
 
+# Useful for bulding on low memory systems
+ifndef DISABLE_PARALLEL
+    DH_FLAGS += --parallel
+else
+    THREADS_COUNT = 1
+endif
+
 %:
-	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
+	dh $@ $(DH_FLAGS) --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
+
+override_dh_auto_build:
+	# Fix for ninja. Do not add -O.
+	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
+	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:
 	#TODO, use ENABLE_TESTS=1
@@ -59,44 +80,40 @@ override_dh_auto_test:
 override_dh_clean:
 	rm -rf $(BUILDDIR)
 	rm -rf $(DESTDIR)
-	rm -rf debian/copyright debian/clickhouse-server-common.docs debian/clickhouse-client.docs
+	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
 	dh_clean
 
 override_dh_strip:
-	dh_strip -pclickhouse-server-base --dbg-package=clickhouse-common-dbg
+	dh_strip -pclickhouse-common-static --dbg-package=clickhouse-common-static-dbg
 
 override_dh_install:
 	# Making docs
 	cp LICENSE debian/copyright
 
-	ln -sf clickhouse-server-base.docs debian/clickhouse-client.docs
-	ln -sf clickhouse-server-base.docs debian/clickhouse-server-common.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-client.docs
+	ln -sf clickhouse-server.docs debian/clickhouse-common-static.docs
 
 	mkdir -p $(DESTDIR)/etc/security/limits.d
 	cp debian/clickhouse.limits $(DESTDIR)/etc/security/limits.d/clickhouse.conf
 
-	# todo: remove after renaming package:
-	mkdir -p $(DESTDIR)/etc/init.d
-	cp debian/clickhouse-server.init $(DESTDIR)/etc/init.d/clickhouse-server
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
 
-	mkdir -p $(DESTDIR)/etc/cron.d
+	# fake metrika files when private dir is empty
+	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika
+	touch $(DESTDIR)/etc/clickhouse-server/metrika/config.xml
+	touch $(DESTDIR)/etc/clickhouse-server/metrika/users.xml
+
+	# todo: remove after removing clickhouse-server-base package:
+	mkdir -p $(DESTDIR)/etc/init.d $(DESTDIR)/etc/cron.d
+	cp debian/clickhouse-server.init $(DESTDIR)/etc/init.d/clickhouse-server
 	cp debian/clickhouse-server.cron.d $(DESTDIR)/etc/cron.d/clickhouse-server
 
-	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
-
-#	CLANG=$(DEB_CLANG) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
-	CLANG=$(DESTDIR)/usr/bin/clickhouse-clang ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
-
-	# fake metrika files when private dir is empty
-	mkdir -p debian/tmp/etc/clickhouse-server/metrika
-	touch debian/tmp/etc/clickhouse-server/metrika/config.xml
-	touch debian/tmp/etc/clickhouse-server/metrika/users.xml
-
 	dh_install --list-missing --sourcedir=$(DESTDIR)
+
+override_dh_auto_install:
+	env DESTDIR=$(DESTDIR) $(MAKE) -C $(BUILDDIR) install
 
 override_dh_shlibdeps:
 	true # We depend only on libc and dh_shlibdeps gives us wrong (too strict) dependency.

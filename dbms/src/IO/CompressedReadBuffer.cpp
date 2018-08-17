@@ -1,4 +1,6 @@
 #include <IO/CompressedReadBuffer.h>
+#include <IO/CompressedStream.h>
+#include <IO/LZ4_decompress_faster.h>
 
 
 namespace DB
@@ -12,7 +14,7 @@ bool CompressedReadBuffer::nextImpl()
     if (!size_compressed)
         return false;
 
-    memory.resize(size_decompressed);
+    memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
     working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
 
     decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
@@ -38,7 +40,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
             return bytes_read;
 
         /// If the decompressed block is placed entirely where it needs to be copied.
-        if (size_decompressed <= n - bytes_read)
+        if (size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER <= n - bytes_read)
         {
             decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
@@ -47,7 +49,7 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
         else
         {
             bytes += offset();
-            memory.resize(size_decompressed);
+            memory.resize(size_decompressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
             working_buffer = Buffer(&memory[0], &memory[size_decompressed]);
             pos = working_buffer.begin();
 

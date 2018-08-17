@@ -144,7 +144,7 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
 
     /// If not ordinary table, skip it.
-    if (!table_expression || !table_expression->database_and_table_name)
+    if (!table_expression->database_and_table_name)
         return;
 
     /// If not really distributed table, skip it.

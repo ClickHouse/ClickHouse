@@ -10,7 +10,7 @@
 #include <Poco/Event.h>
 #include <Core/Types.h>
 #include <common/logger_useful.h>
-
+#include <Common/BackgroundSchedulePool.h>
 
 namespace DB
 {
@@ -29,6 +29,7 @@ class ReplicatedMergeTreePartCheckThread
 {
 public:
     ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_);
+    ~ReplicatedMergeTreePartCheckThread();
 
     /// Processing of the queue to be checked is done in the background thread, which you must first start.
     void start();
@@ -65,10 +66,7 @@ public:
     /// Get the number of parts in the queue for check.
     size_t size() const;
 
-    ~ReplicatedMergeTreePartCheckThread()
-    {
-        stop();
-    }
+
 
 private:
     void run();
@@ -77,6 +75,7 @@ private:
     void searchForMissingPart(const String & part_name);
 
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
 
     using StringSet = std::set<String>;
@@ -91,11 +90,10 @@ private:
     mutable std::mutex parts_mutex;
     StringSet parts_set;
     PartsToCheckQueue parts_queue;
-    Poco::Event wakeup_event;
 
     std::mutex start_stop_mutex;
     std::atomic<bool> need_stop { false };
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
 };
 
 }

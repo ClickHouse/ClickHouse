@@ -25,23 +25,9 @@ public:
     Block getHeader() const override { return storage->getSampleBlock(); }
     void write(const Block & block) override;
 
-    void flush() override
-    {
-        if (output)
-            output->flush();
-    }
-
-    void writePrefix() override
-    {
-        if (output)
-            output->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        if (output)
-            output->writeSuffix();
-    }
+    void flush() override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
     StoragePtr storage;

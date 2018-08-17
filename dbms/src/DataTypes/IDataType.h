@@ -13,7 +13,7 @@ class ReadBuffer;
 class WriteBuffer;
 
 class IDataType;
-struct FormatSettingsJSON;
+struct FormatSettings;
 
 class IColumn;
 using ColumnPtr = COWPtr<IColumn>::Ptr;
@@ -40,10 +40,13 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    virtual String getName() const { return getFamilyName(); };
+    virtual String getName() const { return getFamilyName(); }
 
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
+
+    /// Unique type number or zero
+    virtual size_t getTypeId() const { return 0; }
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -79,6 +82,9 @@ public:
             NullMap,
 
             TupleElement,
+
+            DictionaryKeys,
+            DictionaryIndexes,
         };
         Type type;
 
@@ -91,13 +97,63 @@ public:
     using SubstreamPath = std::vector<Substream>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
-    virtual void enumerateStreams(StreamCallback callback, SubstreamPath path) const
+    virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
     {
         callback(path);
     }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
+    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
+
+    struct SerializeBinaryBulkState
+    {
+        virtual ~SerializeBinaryBulkState() = default;
+    };
+    struct DeserializeBinaryBulkState
+    {
+        virtual ~DeserializeBinaryBulkState() = default;
+    };
+
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
+    struct SerializeBinaryBulkSettings
+    {
+        OutputStreamGetter getter;
+        SubstreamPath path;
+
+        size_t low_cardinality_max_dictionary_size = 0;
+        bool low_cardinality_use_single_dictionary_for_part = true;
+
+        bool position_independent_encoding = true;
+    };
+
+    struct DeserializeBinaryBulkSettings
+    {
+        InputStreamGetter getter;
+        SubstreamPath path;
+
+        bool position_independent_encoding = true;
+        /// If not zero, may be used to avoid reallocations while reading column of String type.
+        double avg_value_size_hint = 0;
+    };
+
+    /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    virtual void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & /*settings*/,
+            SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
+    virtual void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & /*settings*/,
+        SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
+    virtual void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & /*settings*/,
+        DeserializeBinaryBulkStatePtr & /*state*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -107,29 +163,24 @@ public:
       */
     virtual void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
-        OutputStreamGetter getter,
         size_t offset,
         size_t limit,
-        bool /*position_independent_encoding*/,
-        SubstreamPath path) const
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & /*state*/) const
     {
-        if (WriteBuffer * stream = getter(path))
+        if (WriteBuffer * stream = settings.getter(settings.path))
             serializeBinaryBulk(column, *stream, offset, limit);
     }
 
-    /** Read no more than limit values and append them into column.
-      * avg_value_size_hint - if not zero, may be used to avoid reallocations while reading column of String type.
-      */
+    /// Read no more than limit values and append them into column.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        InputStreamGetter getter,
         size_t limit,
-        double avg_value_size_hint,
-        bool /*position_independent_encoding*/,
-        SubstreamPath path) const
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & /*state*/) const
     {
-        if (ReadBuffer * stream = getter(path))
-            deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
+        if (ReadBuffer * stream = settings.getter(settings.path))
+            deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
     }
 
     /** Override these methods for data types that require just single stream (most of data types).
@@ -163,41 +214,41 @@ public:
 
     /** Text serialization with escaping but without quoting.
       */
-    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
-    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization as a literal that may be inserted into a query.
       */
-    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
-    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization for the CSV format.
       */
-    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     /** delimiter - the delimiter we expect when reading a string value that is not double-quoted
       * (the delimiter is not consumed).
       */
-    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const = 0;
+    virtual void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization for displaying on a terminal or saving into a text file, and the like.
       * Without escaping or quoting.
       */
-    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const = 0;
+    virtual void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
 
     /** Text serialization intended for using in JSON format.
       * force_quoting_64bit_integers parameter forces to brace UInt64 and Int64 types into quotes.
       */
-    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON & settings) const = 0;
-    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr) const = 0;
+    virtual void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const = 0;
+    virtual void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 
     /** Text serialization for putting into the XML format.
       */
-    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+    virtual void serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
     {
-        serializeText(column, row_num, ostr);
+        serializeText(column, row_num, ostr, settings);
     }
 
     /** Create empty column for corresponding type.
@@ -241,71 +292,75 @@ public:
     /** Can appear in table definition.
       * Counterexamples: Interval, Nothing.
       */
-    virtual bool cannotBeStoredInTables() const { return false; };
+    virtual bool cannotBeStoredInTables() const { return false; }
 
     /** In text formats that render "pretty" tables,
       *  is it better to align value right in table cell.
       * Examples: numbers, even nullable.
       */
-    virtual bool shouldAlignRightInPrettyFormats() const { return false; };
+    virtual bool shouldAlignRightInPrettyFormats() const { return false; }
 
     /** Does formatted value in any text format can contain anything but valid UTF8 sequences.
       * Example: String (because it can contain arbitary bytes).
       * Counterexamples: numbers, Date, DateTime.
       * For Enum, it depends.
       */
-    virtual bool textCanContainOnlyValidUTF8() const { return false; };
+    virtual bool textCanContainOnlyValidUTF8() const { return false; }
 
     /** Is it possible to compare for less/greater, to calculate min/max?
       * Not necessarily totally comparable. For example, floats are comparable despite the fact that NaNs compares to nothing.
       * The same for nullable of comparable types: they are comparable (but not totally-comparable).
       */
-    virtual bool isComparable() const { return false; };
+    virtual bool isComparable() const { return false; }
 
     /** Does it make sense to use this type with COLLATE modifier in ORDER BY.
       * Example: String, but not FixedString.
       */
-    virtual bool canBeComparedWithCollation() const { return false; };
+    virtual bool canBeComparedWithCollation() const { return false; }
 
     /** If the type is totally comparable (Ints, Date, DateTime, not nullable, not floats)
       *  and "simple" enough (not String, FixedString) to be used as version number
       *  (to select rows with maximum version).
       */
-    virtual bool canBeUsedAsVersion() const { return false; };
+    virtual bool canBeUsedAsVersion() const { return false; }
 
     /** Values of data type can be summed (possibly with overflow, within the same data type).
       * Example: numbers, even nullable. Not Date/DateTime. Not Enum.
       * Enums can be passed to aggregate function 'sum', but the result is Int64, not Enum, so they are not summable.
       */
-    virtual bool isSummable() const { return false; };
+    virtual bool isSummable() const { return false; }
 
     /** Can be used in operations like bit and, bit shift, bit not, etc.
       */
-    virtual bool canBeUsedInBitOperations() const { return false; };
+    virtual bool canBeUsedInBitOperations() const { return false; }
 
     /** Can be used in boolean context (WHERE, HAVING).
       * UInt8, maybe nullable.
       */
-    virtual bool canBeUsedInBooleanContext() const { return false; };
+    virtual bool canBeUsedInBooleanContext() const { return false; }
 
     /** Integers, floats, not Nullable. Not Enums. Not Date/DateTime.
       */
-    virtual bool isNumber() const { return false; };
+    virtual bool isNumber() const { return false; }
 
     /** Integers. Not Nullable. Not Enums. Not Date/DateTime.
       */
-    virtual bool isInteger() const { return false; };
-    virtual bool isUnsignedInteger() const { return false; };
+    virtual bool isInteger() const { return false; }
+    virtual bool isUnsignedInteger() const { return false; }
 
-    virtual bool isDateOrDateTime() const { return false; };
+    virtual bool isDateOrDateTime() const { return false; }
 
     /** Numbers, Enums, Date, DateTime. Not nullable.
       */
-    virtual bool isValueRepresentedByNumber() const { return false; };
+    virtual bool isValueRepresentedByNumber() const { return false; }
 
     /** Integers, Enums, Date, DateTime. Not nullable.
       */
-    virtual bool isValueRepresentedByInteger() const { return false; };
+    virtual bool isValueRepresentedByInteger() const { return false; }
+
+    /** Unsigned Integers, Date, DateTime. Not nullable.
+      */
+    virtual bool isValueRepresentedByUnsignedInteger() const { return false; }
 
     /** Values are unambiguously identified by contents of contiguous memory region,
       *  that can be obtained by IColumn::getDataAt method.
@@ -314,22 +369,22 @@ public:
       *  (because Array(String) values became ambiguous if you concatenate Strings).
       * Counterexamples: Nullable, Tuple.
       */
-    virtual bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const { return false; };
+    virtual bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const { return false; }
 
     virtual bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const
     {
         return isValueRepresentedByNumber() || isFixedString();
-    };
+    }
 
-    virtual bool isString() const { return false; };
-    virtual bool isFixedString() const { return false; };
-    virtual bool isStringOrFixedString() const { return isString() || isFixedString(); };
+    virtual bool isString() const { return false; }
+    virtual bool isFixedString() const { return false; }
+    virtual bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
     /** Example: numbers, Date, DateTime, FixedString, Enum... Nullable and Tuple of such types.
       * Counterexamples: String, Array.
       * It's Ok to return false for AggregateFunction despite the fact that some of them have fixed size state.
       */
-    virtual bool haveMaximumSizeOfValue() const { return false; };
+    virtual bool haveMaximumSizeOfValue() const { return false; }
 
     /** Size in amount of bytes in memory. Throws an exception if not haveMaximumSizeOfValue.
       */
@@ -341,9 +396,9 @@ public:
 
     /** Integers (not floats), Enum, String, FixedString.
       */
-    virtual bool isCategorial() const { return false; };
+    virtual bool isCategorial() const { return false; }
 
-    virtual bool isEnum() const { return false; };
+    virtual bool isEnum() const { return false; }
 
     virtual bool isNullable() const { return false; }
 
@@ -353,7 +408,9 @@ public:
 
     /** If this data type cannot be wrapped in Nullable data type.
       */
-    virtual bool canBeInsideNullable() const { return false; };
+    virtual bool canBeInsideNullable() const { return false; }
+
+    virtual bool withDictionary() const { return false; }
 
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.

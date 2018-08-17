@@ -1,9 +1,6 @@
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -19,10 +16,9 @@ namespace DB
 {
 
 
-StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemZooKeeper::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         { "name",           std::make_shared<DataTypeString>() },
         { "value",          std::make_shared<DataTypeString>() },
         { "czxid",          std::make_shared<DataTypeInt64>() },
@@ -37,7 +33,7 @@ StorageSystemZooKeeper::StorageSystemZooKeeper(const std::string & name_)
         { "numChildren",    std::make_shared<DataTypeInt32>() },
         { "pzxid",          std::make_shared<DataTypeInt64>() },
         { "path",           std::make_shared<DataTypeString>() },
-    }));
+    };
 }
 
 
@@ -103,17 +99,8 @@ static String extractPath(const ASTPtr & query)
 }
 
 
-BlockInputStreams StorageSystemZooKeeper::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     String path = extractPath(query_info.query);
     if (path.empty())
         throw Exception("SELECT from system.zookeeper table must contain condition like path = 'path' in WHERE clause.");
@@ -131,24 +118,22 @@ BlockInputStreams StorageSystemZooKeeper::read(
     if (path_part == "/")
         path_part.clear();
 
-    std::vector<zkutil::ZooKeeper::TryGetFuture> futures;
+    std::vector<std::future<zkutil::GetResponse>> futures;
     futures.reserve(nodes.size());
     for (const String & node : nodes)
         futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
 
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
-        if (!res.exists)
+        if (res.error == ZooKeeperImpl::ZooKeeper::ZNONODE)
             continue;   /// Node was deleted meanwhile.
 
         const zkutil::Stat & stat = res.stat;
 
         size_t col_num = 0;
         res_columns[col_num++]->insert(nodes[i]);
-        res_columns[col_num++]->insert(res.value);
+        res_columns[col_num++]->insert(res.data);
         res_columns[col_num++]->insert(Int64(stat.czxid));
         res_columns[col_num++]->insert(Int64(stat.mzxid));
         res_columns[col_num++]->insert(UInt64(stat.ctime / 1000));
@@ -162,8 +147,6 @@ BlockInputStreams StorageSystemZooKeeper::read(
         res_columns[col_num++]->insert(Int64(stat.pzxid));
         res_columns[col_num++]->insert(path);          /// This is the original path. In order to process the request, condition in WHERE should be triggered.
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 

@@ -2,6 +2,7 @@
 
 #include <Poco/Event.h>
 #include <common/logger_useful.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <Core/Types.h>
 #include <thread>
 #include <atomic>
@@ -22,39 +23,24 @@ class ReplicatedMergeTreeRestartingThread
 {
 public:
     ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
+    ~ReplicatedMergeTreeRestartingThread();
 
-    ~ReplicatedMergeTreeRestartingThread()
-    {
-        if (thread.joinable())
-            thread.join();
-    }
-
-    void wakeup()
-    {
-        wakeup_event.set();
-    }
-
-    Poco::Event & getWakeupEvent()
-    {
-        return wakeup_event;
-    }
-
-    void stop()
-    {
-        need_stop = true;
-        wakeup();
-    }
+    void wakeup() { task->schedule(); }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    Poco::Event wakeup_event;
     std::atomic<bool> need_stop {false};
 
     /// The random data we wrote into `/replicas/me/is_active`.
     String active_node_identifier;
 
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
+    Int64 check_period_ms;                  /// The frequency of checking expiration of session in ZK.
+    bool first_time = true;                 /// Activate replica for the first time.
+    time_t prev_time_of_check_delay = 0;
+    bool startup_completed = false;
 
     void run();
 

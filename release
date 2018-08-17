@@ -1,5 +1,30 @@
 #!/bin/bash
 
+# If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
+
+# Advanced usage:
+# Test gcc-8:
+# env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang6 build:
+# env DIST=bionic EXTRAPACKAGES="clang-6.0 libstdc++-8-dev lld-6.0 liblld-6.0-dev libclang-6.0-dev liblld-6.0" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang7 build:
+# env DIST=unstable EXTRAPACKAGES="clang-7 libstdc++-8-dev lld-7 liblld-7-dev libclang-7-dev liblld-7" DEB_CC=clang-7 DEB_CXX=clang++-7 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Clang6 without internal compiler (for low memory arm64):
+# env DIST=bionic DISABLE_PARALLEL=1 EXTRAPACKAGES="clang-6.0 libstdc++-8-dev" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+
+# Build with ASan:
+# env SANITIZER=address ./release
+
+# Version increment:
+# Default release: 18.1.2 -> 18.2.0:
+# ./release --version
+# or
+# ./release --version minor
+# Bugfix release (only with small patches to previous release): 18.1.2 -> 18.1.3:
+# ./release --version patch
+# Do this once per year: 18.1.2 -> 19.0.0:
+# ./release --version major
+
 set -e
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -9,13 +34,14 @@ source "./release_lib.sh"
 
 DEB_CC=${DEB_CC:=gcc-7}
 DEB_CXX=${DEB_CXX:=g++-7}
+PBUILDER_AUTOUPDATE=${PBUILDER_AUTOUPDATE=4320}
 
 CONTROL=debian/control
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
 DEBUILD_NODEPS_OPTIONS="-d"
 USE_PBUILDER=1
 
-if [ -z "$REVISION" ] ; then
+if [ -z "$VERSION_STRING" ] ; then
     get_revision_author
 fi
 
@@ -23,18 +49,14 @@ while [[ $1 == --* ]]
 do
     if [[ $1 == '--test' ]]; then
         TEST='yes'
-        VERSION_POSTFIX+=-test
+        VERSION_POSTFIX+=+test
         shift
     elif [[ $1 == '--check-build-dependencies' ]]; then
         DEBUILD_NODEPS_OPTIONS=""
         shift
     elif [[ $1 == '--version' ]]; then
-        gen_revision_author
-        git push
+        gen_revision_author $2
         exit 0
-    elif [[ $1 == '--head' ]]; then
-        REVISION=`git rev-parse HEAD`
-        shift
     elif [[ $1 == '--pbuilder' ]]; then
         # Default
         shift
@@ -43,7 +65,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor curl perl sudo openssl"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
         shift
     else
         echo "Unknown option $1"
@@ -51,50 +73,59 @@ do
     fi
 done
 
-
 # Build options
 if [ -n "$SANITIZER" ]
 then
-    CMAKE_BUILD_TYPE=$SANITIZER
-    VERSION_POSTFIX+=-${SANITIZER,,}
-    # todo: нужно ли отключить libtcmalloc?
-    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    # GLIBC_COMPATIBILITY отключен по умолчанию
-    export DEB_CC=clang-5.0
-    export DEB_CXX=clang++-5.0
-    EXTRAPACKAGES="$EXTRAPACKAGES clang-5.0 lld-5.0"
+    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="+asan"
+    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
+    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
+    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
+    else
+        echo "Unknown value of SANITIZER variable: $SANITIZER"
+        exit 3
+    fi
+
+    export DEB_CC=${DEB_CC=clang-6.0}
+    export DEB_CXX=${DEB_CXX=clang++-6.0}
+    EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
-    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    VERSION_POSTFIX+=-$BUILD_TYPE
+    MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
+    VERSION_POSTFIX+="+valgrind"
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
-    LIBTCMALLOC_OPTS="-DDEBUG_TCMALLOC=1"
-    VERSION_POSTFIX+=-$BUILD_TYPE
+    VERSION_POSTFIX+="+debug"
 fi
 
-if [ -z "$THREAD_COUNT" ] ; then
-    THREAD_COUNT=`nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4`
-fi
+CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+[[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
+#[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 export CMAKE_FLAGS
 export EXTRAPACKAGES
 
-REVISION+=$VERSION_POSTFIX
-echo -e "\nCurrent revision is $REVISION"
+VERSION_STRING+=$VERSION_POSTFIX
+echo -e "\nCurrent version is $VERSION_STRING"
 
-gen_changelog "$REVISION" "" "$AUTHOR" ""
+gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
 
 if [ -z "$USE_PBUILDER" ] ; then
     # Build (only binary packages).
-    debuild -e PATH -e SSH_AUTH_SOCK -e DEB_BUILD_OPTIONS=parallel=$THREAD_COUNT \
+    debuild -e PATH -e SSH_AUTH_SOCK \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \
     -b ${DEBUILD_NOSIGN_OPTIONS} ${DEBUILD_NODEPS_OPTIONS}
 else
-    export DIST=${DIST:=artful}
+    export DIST=${DIST:=bionic}
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
+
+    if [[ -z `which pbuilder` ]] ; then
+        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring lsb-release
+    fi
+
     . $CURDIR/debian/.pbuilderrc
 
+    if [[ ! -e "/usr/share/debootstrap/scripts/${DIST}" ]] ; then
+        sudo ln -s gutsy /usr/share/debootstrap/scripts/${DIST}
+    fi
 
     if [[ -n "$FORCE_PBUILDER_CREATE" || ! -e "$BASETGZ" ]] ; then
         echo Creating base system $BASETGZ
@@ -102,10 +133,12 @@ else
         sudo --preserve-env bash -x pbuilder create --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
     fi
 
-    # Update every 3 days (60*24*3 minutes)
-    if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +4320` ; then
-        echo Updating base system $BASETGZ
-        sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+    if [ "$PBUILDER_AUTOUPDATE" -gt 0 ]; then
+        # Update every 3 days (60*24*3 minutes)
+        if [[ -n "$PBUILDER_UPDATE" ]] || test `find "$BASETGZ" -mmin +$PBUILDER_AUTOUPDATE` ; then
+            echo Updating base system $BASETGZ
+            sudo --preserve-env pbuilder update --configfile $CURDIR/debian/.pbuilderrc $PBUILDER_OPT
+        fi
     fi
 
     pdebuild --configfile $CURDIR/debian/.pbuilderrc -- $PBUILDER_OPT

@@ -1,8 +1,8 @@
-# Data about New York taxis
+# New York Taxi Data
 
-## How to import raw data
+## How to Import The Raw Data
 
-See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for description of the dataset and loading instructions.
+See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for the description of the dataset and instructions for downloading.
 
 Downloading will result in about 227 GB of uncompressed data in CSV files. The download takes about an hour over a 1 Gbit connection (parallel downloading from s3.amazonaws.com recovers at least half of a 1 Gbit channel).
 Some of the files might not download fully. Check the file sizes and re-download any that seem doubtful.
@@ -26,7 +26,7 @@ You can check the number of downloaded rows as follows:
 
 ```text
 time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
-##    count
+## Count
  1298979494
 (1 row)
 
@@ -272,7 +272,7 @@ WHERE (table = 'trips_mergetree') AND active
 
 Among other things, you can run the OPTIMIZE query on MergeTree. But it's not required, since everything will be fine without it.
 
-## Results on single server
+## Results on Single Server
 
 Q1:
 
@@ -360,10 +360,8 @@ We ran queries using a client located in a Yandex datacenter in Finland on a clu
 
 ## Summary
 
-```text
-nodes   Q1     Q2     Q3     Q4
-  1  0.490  1.224  2.104  3.593
-  3  0.212  0.438  0.733  1.241
-140  0.028  0.043  0.051  0.072
-```
-
+| nodes | Q1    | Q2    | Q3    | Q4    |
+| ----- | ----- | ----- | ----- | ----- |
+|     1 | 0.490 | 1.224 | 2.104 | 3.593 |
+|     3 | 0.212 | 0.438 | 0.733 | 1.241 |
+|   140 | 0.028 | 0.043 | 0.051 | 0.072 |

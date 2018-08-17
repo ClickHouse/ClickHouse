@@ -54,7 +54,7 @@ void Block::insert(size_t position, const ColumnWithTypeAndName & elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, elem);
 }
 
@@ -68,20 +68,20 @@ void Block::insert(size_t position, ColumnWithTypeAndName && elem)
         if (name_pos.second >= position)
             ++name_pos.second;
 
-    index_by_name[elem.name] = position;
+    index_by_name.emplace(elem.name, position);
     data.emplace(data.begin() + position, std::move(elem));
 }
 
 
 void Block::insert(const ColumnWithTypeAndName & elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(elem);
 }
 
 void Block::insert(ColumnWithTypeAndName && elem)
 {
-    index_by_name[elem.name] = data.size();
+    index_by_name.emplace(elem.name, data.size());
     data.emplace_back(std::move(elem));
 }
 
@@ -307,12 +307,22 @@ MutableColumns Block::cloneEmptyColumns() const
 }
 
 
+Columns Block::getColumns() const
+{
+    size_t num_columns = data.size();
+    Columns columns(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        columns[i] = data[i].column;
+    return columns;
+}
+
+
 MutableColumns Block::mutateColumns() const
 {
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i] = data[i].column ? data[i].column->mutate() : data[i].type->createColumn();
+        columns[i] = data[i].column ? (*std::move(data[i].column)).mutate() : data[i].type->createColumn();
     return columns;
 }
 
@@ -325,6 +335,15 @@ void Block::setColumns(MutableColumns && columns)
 }
 
 
+void Block::setColumns(const Columns & columns)
+{
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        data[i].column = columns[i];
+}
+
+
+
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;
@@ -332,6 +351,30 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
     size_t num_columns = data.size();
     for (size_t i = 0; i < num_columns; ++i)
         res.insert({ std::move(columns[i]), data[i].type, data[i].name });
+
+    return res;
+}
+
+
+Block Block::cloneWithColumns(const Columns & columns) const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ columns[i], data[i].type, data[i].name });
+
+    return res;
+}
+
+
+Block Block::cloneWithoutColumns() const
+{
+    Block res;
+
+    size_t num_columns = data.size();
+    for (size_t i = 0; i < num_columns; ++i)
+        res.insert({ nullptr, data[i].type, data[i].name });
 
     return res;
 }
