@@ -1,4 +1,4 @@
-# Libraries from third-party developers
+# Libraries from Third-party Developers
 
 There are libraries for working with ClickHouse for:
 

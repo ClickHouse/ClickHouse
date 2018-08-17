@@ -1,6 +1,6 @@
-# Getting started
+# Getting Started
 
-## System requirements
+## System Requirements
 
 This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, with x86_64 architecture and support for the SSE 4.2 instruction set.
 To check for SSE 4.2:
@@ -16,7 +16,7 @@ The terminal must use UTF-8 encoding (the default in Ubuntu).
 
 For testing and development, the system can be installed on a single server or on a desktop computer.
 
-### Installing from packages for Debian/Ubuntu
+### Installing from Packages for Debian/Ubuntu
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
@@ -40,7 +40,7 @@ ClickHouse contains access restriction settings. They are located in the 'users.
 By default, access is allowed from anywhere for the 'default' user, without a password. See 'user/default/networks'.
 For more information, see the section "Configuration files".
 
-### Installing from sources
+### Installing from Sources
 
 To compile, follow the instructions: build.md
 
@@ -64,7 +64,7 @@ Run 'chown' for the desired user.
 
 Note the path to logs in the server config (src/dbms/programs/config.xml).
 
-### Other installation methods
+### Other Installation Methods
 
 Docker image: <https://hub.docker.com/r/yandex/clickhouse-server/>
 

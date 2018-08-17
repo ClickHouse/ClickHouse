@@ -1546,6 +1546,7 @@ public:
             ("stacktrace", "print stack traces of exceptions")
             ("progress", "print progress even in non-interactive mode")
             ("version,V", "print version information and exit")
+            ("version-clean", "print version in machine-readable format and exit")
             ("echo", "in batch mode, print query before execution")
             ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
             ("compression", boost::program_options::value<bool>(), "enable or disable compression")
@@ -1572,6 +1573,12 @@ public:
         if (options.count("version") || options.count("V"))
         {
             showClientVersion();
+            exit(0);
+        }
+
+        if (options.count("version-clean"))
+        {
+            std::cout << VERSION_STRING;
             exit(0);
         }
 
