@@ -174,7 +174,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
     {
         ::nlmsgerr * err = static_cast<::nlmsgerr *>(NLMSG_DATA(&msg));
         if (throw_on_error)
-            throw Exception("Can't get Netlink response, error=" + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
+            throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
         else
             return false;
     }
@@ -198,16 +198,16 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
             {
                 if (na->nla_type == TASKSTATS_TYPE_STATS)
                 {
-                    ::taskstats *ts = static_cast<::taskstats *>(NLA_DATA(na));
+                    ::taskstats * ts = static_cast<::taskstats *>(NLA_DATA(na));
                     out_stats = *ts;
                 }
 
                 len2 += NLA_ALIGN(na->nla_len);
-                na = reinterpret_cast<::nlattr *>((char *) na + len2);
+                na = reinterpret_cast<::nlattr *>(reinterpret_cast<char *>(na) + len2);
             }
         }
 
-        na = reinterpret_cast<::nlattr *>((char *) GENLMSG_DATA(&msg) + len);
+        na = reinterpret_cast<::nlattr *>(reinterpret_cast<char *>(GENLMSG_DATA(&msg)) + len);
     }
 
     return true;
@@ -215,13 +215,13 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
 
 void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
 {
-    tid = tid < 0 ? getDefaultTid() : tid;
+    tid = tid < 0 ? getDefaultTID() : tid;
     getStatImpl(tid, stat, true);
 }
 
 bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid)
 {
-    tid = tid < 0 ? getDefaultTid() : tid;
+    tid = tid < 0 ? getDefaultTID() : tid;
     return getStatImpl(tid, stat, false);
 }
 
@@ -233,10 +233,11 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 
 int TaskStatsInfoGetter::getCurrentTID()
 {
+    /// This call is always successful. - man gettid
     return static_cast<int>(syscall(SYS_gettid));
 }
 
-int TaskStatsInfoGetter::getDefaultTid()
+int TaskStatsInfoGetter::getDefaultTID()
 {
     if (default_tid < 0)
         default_tid = getCurrentTID();

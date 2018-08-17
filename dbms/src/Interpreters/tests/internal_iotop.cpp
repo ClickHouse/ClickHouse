@@ -99,7 +99,7 @@ void do_io(size_t id)
     get_info.getStat(stat, tid);
     {
         std::lock_guard<std::mutex> lock(mutex);
-        std::cerr << "#" << id << ", tid " << tid << ", step2\n" << stat << "\n";
+        std::cerr << "#" << id << ", tid " << tid << ", step3\n" << stat << "\n";
     }
 
     Poco::File(path_dst).remove(false);
@@ -113,16 +113,12 @@ void test_perf()
     TaskStatsInfoGetter get_info;
 
     rusage rusage;
-    timespec ts;
 
     constexpr size_t num_samples = 1000000;
     {
         Stopwatch watch;
         for (size_t i = 0; i < num_samples; ++i)
-        {
             getrusage(RUSAGE_THREAD, &rusage);
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-        }
 
         auto ms = watch.elapsedMilliseconds();
         if (ms > 0)
@@ -151,13 +147,9 @@ try
     ThreadPool pool(num_threads);
     for (size_t i = 0; i < num_threads; ++i)
         pool.schedule([i]() { do_io(i); });
-
     pool.wait();
 
-
     test_perf();
-
-
     return 0;
 }
 catch (...)

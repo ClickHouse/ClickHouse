@@ -10,11 +10,10 @@ namespace DB
 class Exception;
 
 
-/// Get taskstat infor from OS kernel via Netlink protocol
+/// Get taskstat info from OS kernel via Netlink protocol.
 class TaskStatsInfoGetter
 {
 public:
-
     TaskStatsInfoGetter();
     TaskStatsInfoGetter(const TaskStatsInfoGetter &) = delete;
 
@@ -30,9 +29,8 @@ public:
     static bool checkProcessHasRequiredPermissions();
 
 private:
-
     /// Caches current thread tid to avoid extra sys calls
-    int getDefaultTid();
+    int getDefaultTID();
     int default_tid = -1;
 
     bool getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error = false);
