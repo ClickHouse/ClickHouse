@@ -1569,7 +1569,7 @@ public:
 
         String pattern = pattern_column->getValue<String>();
 
-        std::vector<std::function<void (String &, UInt32, DateLUTImpl)>> instructions = {};
+        std::vector<std::function<void (String &, UInt32, const DateLUTImpl &)>> instructions = {};
         parsePattern(pattern, instructions);
 
         const DateLUTImpl * time_zone_tmp = nullptr;
@@ -1584,11 +1584,11 @@ public:
         const ColumnUInt32::Container & vec = times->getData();
         res_column->reserve(vec.size());
 
-        for(size_t i = 0; i < input_rows_count; ++i)
+        String formatted_string = "";
+        for (size_t i = 0; i < input_rows_count; ++i)
         {
+            formatted_string.clear();
             UInt32 date_time_value = vec[i];
-
-            String formatted_string = "";
 
             for(auto & instruction : instructions) {
                 instruction(formatted_string, date_time_value, time_zone);
@@ -1601,115 +1601,283 @@ public:
 
     }
 
-    void parsePattern(String & pattern, std::vector<std::function<void (String &, UInt32, DateLUTImpl)>> & instructions)
+    void parsePattern(String & pattern, std::vector<std::function<void (String &, UInt32, const DateLUTImpl &)>> & instructions)
     {
-        unsigned long last_pos = 0;
-        for (unsigned long s = 0; s < pattern.length(); s++) {
+        size_t last_pos = 0;
+        for (size_t s = 0; s < pattern.length(); s++) {
             if(pattern[s] == '%')
             {
                 if (last_pos > 0)
                 {
                     instructions.push_back(
-                            [last_pos, s, &pattern](auto & receiver, auto , DateLUTImpl ) {
+                            [last_pos, s, &pattern](auto & receiver, auto ,const auto &) {
                                 receiver.append(pattern, last_pos - 1, 1 + s - last_pos);
                             }
                     );
                     last_pos = 0;
                 }
 
-                if (++s == pattern.length()) {
+                if (++s == pattern.length())
                     throw Exception("Sign '%' is last in pattern, if you need it, use '%%'");
-                }
 
                 switch(pattern[s])
                 {
+                    // Year, divided by 100, zero-padded
+                    case 'C':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    auto year = ToYearImpl::execute(date_or_ts, time_zone);
+
+                                    int s = static_cast<int>(floor(year/100));
+                                    if(s < 10)
+                                        receiver.append("0");
+
+                                    receiver.append(toString(s));
+                                }
+                        );
+                        break;
+
                     // Day of the month, zero-padded (01-31)
                     case 'd':
                         instructions.push_back(
-                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
                                     auto day = ToDayOfMonthImpl::execute(date_or_ts, time_zone);
 
-                                    if (day < 10) {
+                                    if (day < 10)
                                         receiver.append("0");
-                                    }
 
                                     receiver.append(toString(day));
                                 }
                         );
                         break;
 
-                        // Four digits year
-                    case 'G':
+                    // Short MM/DD/YY date, equivalent to %m/%d/%y
+                    case 'D':
                         instructions.push_back(
-                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    auto month = ToMonthImpl::execute(date_or_ts, time_zone);
+                                    auto day = ToDayOfMonthImpl::execute(date_or_ts, time_zone);
+                                    auto year = ToYearImpl::execute(date_or_ts, time_zone) % 1000;
+
+                                    char buf[20];
+                                    auto written = sprintf(buf, "%02d/%02d/%02d", month, day, year);
+                                    receiver.append(buf, written);
+                                }
+                        );
+                        break;
+
+                    // Day of the month, space-padded ( 1-31)  23
+                    case 'e':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    auto day = ToDayOfMonthImpl::execute(date_or_ts, time_zone);
+
+                                    if(day < 10)
+                                        receiver.append(" ");
+                                    receiver.append(toString(day));
+                                }
+                        );
+                    break;
+
+                    // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
+                    case 'F':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    auto year = ToYearImpl::execute(date_or_ts, time_zone);
+                                    auto month = ToMonthImpl::execute(date_or_ts, time_zone);
+                                    auto day = ToDayOfMonthImpl::execute(date_or_ts, time_zone);
+
+                                    char buf[20];
+                                    auto written = sprintf(buf, "%04d-%02d-%02d", year, month, day);
+                                    receiver.append(buf, written);
+                                }
+                        );
+                    break;
+
+                    // Hour in 24h format (00-23)
+                    case 'H':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    auto x = ToHourImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10) {
+                                        receiver.append("0");
+                                    }
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                    // Hour in 12h format (01-12)
+                    case 'I':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    auto x = (ToHourImpl::execute(date_or_ts, time_zone) % 12) + 1;
+                                    if (x < 10)
+                                        receiver.append("0");
+
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                    // Day of the year (001-366)   235
+                    case 'j':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    auto x = (ToHourImpl::execute(date_or_ts, time_zone) % 12) + 1;
+                                    if (x < 10)
+                                        receiver.append("0");
+
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                    // Month as a decimal number (01-12)
+                    case 'm':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    UInt8 x = ToMonthImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10)
+                                        receiver.append("0");
+
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                    // Minute (00-59)
+                    case 'M':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    UInt8 x = ToMinuteImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10)
+                                        receiver.append("0");
+
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                    // New line character "\n"
+                    case 'n':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto , const auto &) {
+                                    receiver.append("\n");
+                                }
+                        );
+                        break;
+
+                    // AM or PM
+                    case 'p':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    receiver.append(ToHourImpl::execute(date_or_ts, time_zone) < 12 ? "AM" : "PM");
+                                }
+                        );
+                        break;
+
+                    // 24-hour HH:MM time, equivalent to %H:%M 14:55
+                    case 'R':
+
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    auto hour = ToHourImpl::execute(date_or_ts, time_zone);
+                                    auto minute = ToMinuteImpl::execute(date_or_ts, time_zone);
+
+                                    char buf[10];
+
+                                    auto written = sprintf(buf, "%02d:%02d", hour, minute);
+
+                                    receiver.append(buf, written);
+                                }
+                        );
+                        break;
+
+                    // Seconds
+                    case 'S':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    UInt8 x = ToSecondImpl::execute(date_or_ts, time_zone);
+                                    if (x < 10)
+                                        receiver.append("0");
+
+                                    receiver.append(toString(x));
+                                }
+                        );
+                        break;
+
+                    // Horizontal-tab character ('\t')
+                    case 't':
+                        instructions.push_back(
+                                [](auto & receiver, auto , const auto & ) {
+                                    receiver.append("\t");
+                                }
+                        );
+                        break;
+
+                    // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
+                    case 'T':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+
+                                    auto hour = ToHourImpl::execute(date_or_ts, time_zone);
+                                    auto minute = ToMinuteImpl::execute(date_or_ts, time_zone);
+                                    auto second = ToSecondImpl::execute(date_or_ts, time_zone);
+
+                                    char buffer[20];
+                                    auto written = sprintf(buffer, "%02d:%02d:%02d", hour, minute, second);
+                                    receiver.append(buffer, written);
+
+                                }
+                        );
+                        break;
+
+                    // ISO 8601 weekday as number with Monday as 1 (1-7)
+                    case 'u':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    receiver.append(toString(ToDayOfWeekImpl::execute(date_or_ts, time_zone)));
+                                }
+                        );
+
+                        break;
+
+                    // Weekday as a decimal number with Sunday as 0 (0-6)  4
+                    case 'w':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
+                                    auto day = ToDayOfWeekImpl::execute(date_or_ts, time_zone);
+                                    receiver.append(toString(day == 7 ? 0 : day));
+                                }
+                        );
+
+                        break;
+
+                    // Four digits year
+                    case 'Y':
+                        instructions.push_back(
+                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
                                     receiver.append(toString(ToYearImpl::execute(date_or_ts, time_zone)));
                                 }
                         );
 
                         break;
 
-                        // Hour in 24h format (00-23)
-                    case 'H':
-                        instructions.push_back(
-                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
-
-                                    UInt8 x = ToHourImpl::execute(date_or_ts, time_zone);
-                                    if (x < 10) {
-                                        receiver.append("0");
-                                    }
-                                    receiver.append(toString(x));
-                                }
-                        );
-                        break;
-
-                        // Month as a decimal number (01-12)
-                    case 'm':
-
-                        instructions.push_back(
-                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
-
-                                    UInt8 x = ToMonthImpl::execute(date_or_ts, time_zone);
-                                    if (x < 10) {
-                                        receiver.append("0");
-                                    }
-                                    receiver.append(toString(x));
-                                }
-                        );
-                        break;
-
-                        // Minute (00-59)
-                    case 'M':
-
-                        instructions.push_back(
-                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
-
-                                    UInt8 x = ToMinuteImpl::execute(date_or_ts, time_zone);
-                                    if (x < 10) {
-                                        receiver.append("0");
-                                    }
-                                    receiver.append(toString(x));
-                                }
-                        );
-                        break;
-
-                        // Seconds
-                    case 'S':
-                        instructions.push_back(
-                                [](auto & receiver, auto date_or_ts, DateLUTImpl time_zone) {
-
-                                    UInt8 x = ToSecondImpl::execute(date_or_ts, time_zone);
-                                    if (x < 10) {
-                                        receiver.append("0");
-                                    }
-                                    receiver.append(toString(x));
-                                }
-                        );
-                        break;
-
-
                     case '%':
                         instructions.push_back(
-                                [](auto & receiver, auto , DateLUTImpl ) {
+                                [](auto & receiver, auto , const auto &) {
                                     receiver.append("%");
                                 }
                         );
@@ -1731,7 +1899,7 @@ public:
         {
             auto s = pattern.length();
             instructions.push_back(
-                    [last_pos, s, &pattern](auto & receiver, auto , DateLUTImpl ) {
+                    [last_pos, s, &pattern](auto & receiver, auto , const auto &) {
                         receiver.append(pattern, last_pos - 1, 1 + s - last_pos);
                     }
             );
