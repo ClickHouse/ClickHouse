@@ -59,9 +59,10 @@ namespace ProfileEvents
             } while (current != nullptr);
         }
 
+        /// Every single value is fetched atomically, but not all values as a whole.
         Counters getPartiallyAtomicSnapshot() const;
 
-        /// Reset metrics and parent
+        /// Reset all counters to zero and reset parent.
         void reset();
 
         /// Get parent (thread unsafe)

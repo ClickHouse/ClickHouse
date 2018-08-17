@@ -56,7 +56,7 @@ public:
     static void attachQueryContext(Context & query_context);
 
     /// You must call one of these methods when create a query child thread:
-    /// Add current thread to a group associated with thr thread group
+    /// Add current thread to a group associated with the thread group
     static void attachTo(const ThreadGroupStatusPtr & thread_group);
     /// Is useful for a ThreadPool tasks
     static void attachToIfDetached(const ThreadGroupStatusPtr & thread_group);
