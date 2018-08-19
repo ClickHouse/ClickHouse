@@ -5,7 +5,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageODBC.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 
@@ -38,13 +37,7 @@ StorageODBC::StorageODBC(const std::string & table_name_,
     , remote_table_name(remote_table_name_)
     , log(&Poco::Logger::get("StorageODBC"))
 {
-    const auto & config = context_global.getConfigRef();
-    size_t bridge_port = config.getUInt("odbc_bridge.port", ODBCBridgeHelper::DEFAULT_PORT);
-    std::string bridge_host = config.getString("odbc_bridge.host", ODBCBridgeHelper::DEFAULT_HOST);
-
-    uri.setHost(bridge_host);
-    uri.setPort(bridge_port);
-    uri.setScheme("http");
+    uri = odbc_bridge_helper.getMainURI();
 }
 
 std::string StorageODBC::getReadMethod() const
