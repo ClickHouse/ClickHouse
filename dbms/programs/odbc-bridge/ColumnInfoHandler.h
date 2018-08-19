@@ -5,9 +5,10 @@
 #include <Poco/Net/HTTPRequestHandler.h>
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-/** The structure of the table is taken from the mysql query "SELECT * FROM table WHERE 1=0".
- * If there is no such table, an exception is thrown.
- */
+/** The structure of the table is taken from the query "SELECT * FROM table WHERE 1=0".
+  * TODO: It would be much better to utilize ODBC methods dedicated for columns description.
+  * If there is no such table, an exception is thrown.
+  */
 namespace DB
 {
 class ODBCColumnsInfoHandler : public Poco::Net::HTTPRequestHandler
