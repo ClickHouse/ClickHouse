@@ -75,13 +75,7 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     timeouts{ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef())},
     global_context(context)
 {
-    const auto & global_config = context.getConfigRef();
-    size_t bridge_port = global_config.getUInt("odbc_bridge.port", ODBCBridgeHelper::DEFAULT_PORT);
-    std::string bridge_host = global_config.getString("odbc_bridge.host", ODBCBridgeHelper::DEFAULT_HOST);
-
-    bridge_url.setHost(bridge_host);
-    bridge_url.setPort(bridge_port);
-    bridge_url.setScheme("http");
+    bridge_url = odbc_bridge_helper.getMainURI();
 
     auto url_params = odbc_bridge_helper.getURLParams(sample_block.getNamesAndTypesList().toString(), max_block_size);
     for (const auto & [name, value] : url_params)
