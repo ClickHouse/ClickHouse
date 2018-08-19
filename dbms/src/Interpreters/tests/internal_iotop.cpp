@@ -68,7 +68,7 @@ void do_io(size_t id)
 
     {
         ReadBufferFromFile rb("/dev/urandom");
-        WriteBufferFromFile wb(path_dst, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT);
+        WriteBufferFromFile wb(path_dst, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT, 0666, nullptr, 4096);
         copyData(rb, wb, copy_size);
         wb.close();
     }
