@@ -16,7 +16,7 @@
 #include <unistd.h>
 #include <syscall.h>
 
-/// Based on: https://github.com/Tomas-M/iotop/tree/master/src
+/// Basic idea: https://github.com/Tomas-M/iotop/tree/master/src
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
 
 /*
