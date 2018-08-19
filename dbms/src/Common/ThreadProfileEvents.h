@@ -66,8 +66,8 @@ struct RUsageCounters
     void set(const ::rusage & rusage, UInt64 real_time_)
     {
         real_time = real_time_;
-        user_time = rusage.ru_utime.tv_sec * 1000000000UL + rusage.ru_utime.tv_usec;
-        sys_time = rusage.ru_stime.tv_sec * 1000000000UL + rusage.ru_stime.tv_usec;
+        user_time = rusage.ru_utime.tv_sec * 1000000000UL + rusage.ru_utime.tv_usec * 1000UL;
+        sys_time = rusage.ru_stime.tv_sec * 1000000000UL + rusage.ru_stime.tv_usec * 1000UL;
 
         soft_page_faults = static_cast<UInt64>(rusage.ru_minflt);
         hard_page_faults = static_cast<UInt64>(rusage.ru_majflt);

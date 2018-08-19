@@ -41,7 +41,7 @@ WITH
     sumIf(PV, PN = 'RealTimeMicroseconds') AS threads_realtime,
     sumIf(PV, PN IN ('UserTimeMicroseconds', 'SystemTimeMicroseconds', 'OSIOWaitMicroseconds', 'OSCPUWaitMicroseconds')) AS threads_time_user_system_io
 SELECT
-    --duration, threads_realtime, threads_time_user_system_io,
+    -- duration, threads_realtime, threads_time_user_system_io,
     threads_realtime >= 0.99 * duration,
     threads_realtime >= threads_time_user_system_io,
     any(length(thread_numbers)) >= 1
@@ -96,7 +96,7 @@ ANY INNER JOIN
     WHERE event_date >= today()-1 AND query_id='$query_id'
 )
 USING PN
-WHERE 
+WHERE
     NOT PN IN ('ContextLock') AND
     NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
 "
@@ -131,5 +131,5 @@ $CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS test.null"
 (( $lines_two_servers > $lines_one_server )) || echo "Fail: $lines_two_servers $lines_one_server"
 
 
-# Clean 
+# Clean
 rm "$server_logs_file"

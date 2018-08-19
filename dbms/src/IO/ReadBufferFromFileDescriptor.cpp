@@ -118,7 +118,7 @@ off_t ReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
     else
     {
         ProfileEvents::increment(ProfileEvents::Seek);
-        StopWatchRUsage watch_ru;
+        Stopwatch watch(profile_callback ? clock_type : CLOCK_MONOTONIC);
 
         pos = working_buffer.end();
         off_t res = ::lseek(fd, new_pos, SEEK_SET);
@@ -126,7 +126,8 @@ off_t ReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
             throwFromErrno("Cannot seek through file " + getFileName(), ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
         pos_in_file = new_pos;
 
-        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch_ru.elapsedMicroseconds());
+        watch.stop();
+        ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
         return res;
     }
