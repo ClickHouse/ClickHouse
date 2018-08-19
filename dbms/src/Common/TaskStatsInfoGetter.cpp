@@ -17,11 +17,6 @@
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
 
-/*
- * Generic macros for dealing with netlink sockets. Might be duplicated
- * elsewhere. It is recommended that commercial grade applications use
- * libnl or libnetlink and use the interfaces provided by the library
- */
 #define GENLMSG_DATA(glh)       ((void *)((char*)NLMSG_DATA(glh) + GENL_HDRLEN))
 #define GENLMSG_PAYLOAD(glh)    (NLMSG_PAYLOAD(glh, 0) - GENL_HDRLEN)
 #define NLA_DATA(na)            ((void *)((char*)(na) + NLA_HDRLEN))

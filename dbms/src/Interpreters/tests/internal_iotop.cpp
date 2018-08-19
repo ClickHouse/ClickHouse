@@ -63,13 +63,14 @@ void do_io(size_t id)
         std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
     }
 
-    size_t copy_size = DBMS_DEFAULT_BUFFER_SIZE * (1 + id);
+    size_t copy_size = 1048576 * (1 + id);
     std::string path_dst = "test_out_" + std::to_string(id);
 
     {
         ReadBufferFromFile rb("/dev/urandom");
         WriteBufferFromFile wb(path_dst, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC | O_DIRECT);
         copyData(rb, wb, copy_size);
+        wb.close();
     }
 
     get_info.getStat(stat, tid);
