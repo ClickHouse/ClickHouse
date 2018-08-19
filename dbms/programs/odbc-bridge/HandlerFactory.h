@@ -14,7 +14,7 @@
 
 namespace DB
 {
-/** Factory for '/ping', '/' and '/colinfo' handlers.
+/** Factory for '/ping', '/' and '/columns_info' handlers.
   * Also stores Session pools for ODBC connections
   */
 class HandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
