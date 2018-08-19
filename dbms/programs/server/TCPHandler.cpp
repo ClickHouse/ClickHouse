@@ -186,8 +186,6 @@ void TCPHandler::runImpl()
             else
                 processOrdinaryQuery();
 
-            /// Reset BlockIO in advance to log destruction actions
-            state.io.reset();
             sendLogs();
 
             sendEndOfStream();
