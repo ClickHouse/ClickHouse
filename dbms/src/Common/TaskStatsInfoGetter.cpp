@@ -6,8 +6,6 @@
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <linux/taskstats.h>
-#include <linux/unistd.h>
-#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
