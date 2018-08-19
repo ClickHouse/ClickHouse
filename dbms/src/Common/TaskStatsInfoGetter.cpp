@@ -1,7 +1,7 @@
-#include "TaskStatsInfoGetter.h"
+#include <Common/TaskStatsInfoGetter.h>
 #include <Common/Exception.h>
+#include <Core/Types.h>
 
-#include <asm/types.h>
 #include <errno.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
@@ -16,7 +16,7 @@
 #include <unistd.h>
 #include <syscall.h>
 
-/// Basic idea: https://github.com/Tomas-M/iotop/tree/master/src
+/// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
 
 /*
@@ -53,15 +53,16 @@ struct NetlinkMessage
 };
 
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
-
-int send_cmd(int sock_fd, __u16 nlmsg_type, __u32 nlmsg_pid,
-             __u8 genl_cmd, __u16 nla_type,
-             void * nla_data, int nla_len) noexcept
+int sendCommand(
+    int sock_fd,
+    UInt16 nlmsg_type,
+    UInt32 nlmsg_pid,
+    UInt8 genl_cmd,
+    UInt16 nla_type,
+    void * nla_data,
+    int nla_len) noexcept
 {
-    NetlinkMessage msg;
-    memset(&msg, 0, sizeof(msg));
+    NetlinkMessage msg{};
 
     msg.n.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);
     msg.n.nlmsg_type = nlmsg_type;
@@ -69,25 +70,24 @@ int send_cmd(int sock_fd, __u16 nlmsg_type, __u32 nlmsg_pid,
     msg.n.nlmsg_seq = 0;
     msg.n.nlmsg_pid = nlmsg_pid;
     msg.g.cmd = genl_cmd;
-    msg.g.version = 0x1;
+    msg.g.version = 1;
 
-    ::nlattr * na = static_cast<::nlattr *>(GENLMSG_DATA(&msg));
-    na->nla_type = nla_type;
-    na->nla_len = nla_len + 1 + NLA_HDRLEN;
+    ::nlattr * attr = static_cast<::nlattr *>(GENLMSG_DATA(&msg));
+    attr->nla_type = nla_type;
+    attr->nla_len = nla_len + 1 + NLA_HDRLEN;
 
-    memcpy(NLA_DATA(na), nla_data, nla_len);
-    msg.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+    memcpy(NLA_DATA(attr), nla_data, nla_len);
+    msg.n.nlmsg_len += NLMSG_ALIGN(attr->nla_len);
 
     char * buf = reinterpret_cast<char *>(&msg);
     ssize_t buflen = msg.n.nlmsg_len;
 
-    ::sockaddr_nl nladdr;
-    memset(&nladdr, 0, sizeof(nladdr));
+    ::sockaddr_nl nladdr{};
     nladdr.nl_family = AF_NETLINK;
 
     while (true)
     {
-        ssize_t r = ::sendto(sock_fd, buf, buflen, 0, reinterpret_cast<::sockaddr *>(&nladdr), sizeof(nladdr));
+        ssize_t r = ::sendto(sock_fd, buf, buflen, 0, reinterpret_cast<const ::sockaddr *>(&nladdr), sizeof(nladdr));
 
         if (r >= buflen)
             break;
@@ -105,37 +105,37 @@ int send_cmd(int sock_fd, __u16 nlmsg_type, __u32 nlmsg_pid,
 }
 
 
-UInt16 get_family_id(int nl_sock_fd) noexcept
+UInt16 getFamilyId(int nl_sock_fd) noexcept
 {
     struct
     {
-        ::nlmsghdr n;
-        ::genlmsghdr g;
+        ::nlmsghdr header;
+        ::genlmsghdr ge_header;
         char buf[256];
-    } ans;
+    } answer;
 
     static char name[] = TASKSTATS_GENL_NAME;
 
-    if (send_cmd(nl_sock_fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY,
-                 CTRL_ATTR_FAMILY_NAME, (void *) name,
-                 strlen(TASKSTATS_GENL_NAME) + 1))
+    if (sendCommand(
+        nl_sock_fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY,
+        CTRL_ATTR_FAMILY_NAME, (void *) name,
+        strlen(TASKSTATS_GENL_NAME) + 1))
         return 0;
 
     UInt16 id = 0;
-    ssize_t rep_len = ::recv(nl_sock_fd, &ans, sizeof(ans), 0);
-    if (ans.n.nlmsg_type == NLMSG_ERROR || (rep_len < 0) || !NLMSG_OK((&ans.n), rep_len))
+    ssize_t rep_len = ::recv(nl_sock_fd, &answer, sizeof(answer), 0);
+    if (answer.header.nlmsg_type == NLMSG_ERROR || (rep_len < 0) || !NLMSG_OK((&answer.header), rep_len))
         return 0;
 
-    ::nlattr * na;
-    na = static_cast<::nlattr *>(GENLMSG_DATA(&ans));
-    na = reinterpret_cast<::nlattr *>((char *) na + NLA_ALIGN(na->nla_len));
-    if (na->nla_type == CTRL_ATTR_FAMILY_ID)
-        id = *static_cast<__u16 *>(NLA_DATA(na));
+    const ::nlattr * attr;
+    attr = static_cast<const ::nlattr *>(GENLMSG_DATA(&answer));
+    attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(attr) + NLA_ALIGN(attr->nla_len));
+    if (attr->nla_type == CTRL_ATTR_FAMILY_ID)
+        id = *static_cast<const UInt16 *>(NLA_DATA(attr));
 
     return id;
 }
 
-#pragma GCC diagnostic pop
 }
 
 
@@ -150,21 +150,20 @@ void TaskStatsInfoGetter::init()
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket");
 
-    ::sockaddr_nl addr;
-    memset(&addr, 0, sizeof(addr));
+    ::sockaddr_nl addr{};
     addr.nl_family = AF_NETLINK;
 
-    if (::bind(netlink_socket_fd, reinterpret_cast<::sockaddr *>(&addr), sizeof(addr)) < 0)
+    if (::bind(netlink_socket_fd, reinterpret_cast<const ::sockaddr *>(&addr), sizeof(addr)) < 0)
         throwFromErrno("Can't bind PF_NETLINK socket");
 
-    netlink_family_id = get_family_id(netlink_socket_fd);
+    netlink_family_id = getFamilyId(netlink_socket_fd);
 }
 
 bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error)
 {
     init();
 
-    if (send_cmd(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t)))
+    if (sendCommand(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t)))
         throwFromErrno("Can't send a Netlink command");
 
     NetlinkMessage msg;
@@ -172,7 +171,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
 
     if (msg.n.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&msg.n), rv))
     {
-        ::nlmsgerr * err = static_cast<::nlmsgerr *>(NLMSG_DATA(&msg));
+        const ::nlmsgerr * err = static_cast<const ::nlmsgerr *>(NLMSG_DATA(&msg));
         if (throw_on_error)
             throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
         else
@@ -181,33 +180,33 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
 
     rv = GENLMSG_PAYLOAD(&msg.n);
 
-    ::nlattr * na = static_cast<::nlattr *>(GENLMSG_DATA(&msg));
+    const ::nlattr * attr = static_cast<const ::nlattr *>(GENLMSG_DATA(&msg));
     ssize_t len = 0;
 
     while (len < rv)
     {
-        len += NLA_ALIGN(na->nla_len);
+        len += NLA_ALIGN(attr->nla_len);
 
-        if (na->nla_type == TASKSTATS_TYPE_AGGR_TGID || na->nla_type == TASKSTATS_TYPE_AGGR_PID)
+        if (attr->nla_type == TASKSTATS_TYPE_AGGR_TGID || attr->nla_type == TASKSTATS_TYPE_AGGR_PID)
         {
-            int aggr_len = NLA_PAYLOAD(na->nla_len);
+            int aggr_len = NLA_PAYLOAD(attr->nla_len);
             int len2 = 0;
 
-            na = static_cast<::nlattr *>(NLA_DATA(na));
+            attr = static_cast<const ::nlattr *>(NLA_DATA(attr));
             while (len2 < aggr_len)
             {
-                if (na->nla_type == TASKSTATS_TYPE_STATS)
+                if (attr->nla_type == TASKSTATS_TYPE_STATS)
                 {
-                    ::taskstats * ts = static_cast<::taskstats *>(NLA_DATA(na));
+                    const ::taskstats * ts = static_cast<const ::taskstats *>(NLA_DATA(attr));
                     out_stats = *ts;
                 }
 
-                len2 += NLA_ALIGN(na->nla_len);
-                na = reinterpret_cast<::nlattr *>(reinterpret_cast<char *>(na) + len2);
+                len2 += NLA_ALIGN(attr->nla_len);
+                attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(attr) + len2);
             }
         }
 
-        na = reinterpret_cast<::nlattr *>(reinterpret_cast<char *>(GENLMSG_DATA(&msg)) + len);
+        attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(GENLMSG_DATA(&msg)) + len);
     }
 
     return true;
