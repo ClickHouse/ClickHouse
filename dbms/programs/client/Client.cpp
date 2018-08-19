@@ -414,20 +414,10 @@ private:
             /// If exception code isn't zero, we should return non-zero return code anyway.
             return e.code() ? e.code() : -1;
         }
-        catch (const Poco::Exception & e)
-        {
-            std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-            return ErrorCodes::POCO_EXCEPTION;
-        }
-        catch (const std::exception & e)
-        {
-            std::cerr << "std::exception: " << e.what() << std::endl;
-            return ErrorCodes::STD_EXCEPTION;
-        }
         catch (...)
         {
-            std::cerr << "Unknown exception" << std::endl;
-            return ErrorCodes::UNKNOWN_EXCEPTION;
+            std::cerr << getCurrentExceptionMessage(false) << std::endl;
+            return getCurrentExceptionCode();
         }
     }
 
