@@ -50,9 +50,8 @@ public:
     {
         initReadBuffer();
         initSampleBlock();
-        ExternalTableData res = std::make_pair(std::make_shared<AsynchronousBlockInputStream>(context.getInputFormat(
-            format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE)), name);
-        return res;
+        auto input = context.getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
+        return std::make_pair(std::make_shared<AsynchronousBlockInputStream>(input), name);
     }
 
 protected:
@@ -169,9 +168,8 @@ public:
 class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 {
 public:
-    std::vector<std::string> names;
 
-    ExternalTablesHandler(Context & context_, Poco::Net::NameValueCollection params_) : context(context_), params(params_) { }
+    ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) { }
 
     void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
     {
@@ -211,14 +209,13 @@ public:
         data.first->readSuffix();
         output->writeSuffix();
 
-        names.push_back(name);
         /// We are ready to receive the next file, for this we clear all the information received
         clean();
     }
 
 private:
     Context & context;
-    Poco::Net::NameValueCollection params;
+    const Poco::Net::NameValueCollection & params;
 };
 
 

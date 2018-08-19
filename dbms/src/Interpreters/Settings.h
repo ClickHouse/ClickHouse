@@ -15,6 +15,7 @@ namespace Poco
 namespace DB
 {
 
+class IColumn;
 class Field;
 
 /** Settings of query execution.
@@ -266,8 +267,11 @@ struct Settings
     M(SettingBool, format_csv_allow_double_quotes, 1, "If it is set to true, allow strings in double quotes.") \
     \
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
-    \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
+    M(SettingBool, log_profile_events, true, "Log query performance statistics into the query_log and query_thread_log.") \
+    M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \
+    M(SettingBool, log_query_threads, true, "Log query threads into system.query_thread_log table.") \
+    M(SettingString, send_logs_level, "none", "Send server text logs with specified minumum level to client. Valid values: 'trace', 'debug', 'info', 'warning', 'error', 'none'") \
     M(SettingBool, enable_optimize_predicate_expression, 0, "If it is set to true, optimize predicates to subqueries.") \
     \
     M(SettingUInt64, low_cardinality_max_dictionary_size, 8192, "Maximum size (in rows) of shared global dictionary for LowCardinality type.") \
@@ -318,6 +322,9 @@ struct Settings
 
     /// Write changed settings to buffer. (For example, to be sent to remote server.)
     void serialize(WriteBuffer & buf) const;
+
+    /// Dumps profile events to two column Array(String) and Array(UInt64)
+    void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
 };
 
 

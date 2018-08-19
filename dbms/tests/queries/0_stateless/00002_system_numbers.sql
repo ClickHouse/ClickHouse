@@ -1,3 +1,5 @@
+SET send_logs_level = 'none';
+
 SELECT * FROM system.numbers LIMIT 3;
 SELECT sys_num.number FROM system.numbers AS sys_num WHERE number > 2 LIMIT 2;
 SELECT number FROM system.numbers WHERE number >= 5 LIMIT 2;
