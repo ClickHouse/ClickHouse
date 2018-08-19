@@ -116,16 +116,16 @@ Poco::URI ODBCBridgeHelper::getMainURI() const
     return main_uri;
 }
 
-Poco::URI ODBCBridgeHelper::getColInfoURI() const
+Poco::URI ODBCBridgeHelper::getColumnsInfoURI() const
 {
     size_t bridge_port = config.getUInt("odbc_bridge.port", DEFAULT_PORT);
     std::string bridge_host = config.getString("odbc_bridge.host", DEFAULT_HOST);
 
-    Poco::URI col_info_uri;
-    col_info_uri.setHost(bridge_host);
-    col_info_uri.setPort(bridge_port);
-    col_info_uri.setScheme("http");
-    col_info_uri.setPath(COL_INFO_HANDLER);
-    return col_info_uri;
+    Poco::URI columns_info_uri;
+    columns_info_uri.setHost(bridge_host);
+    columns_info_uri.setPort(bridge_port);
+    columns_info_uri.setScheme("http");
+    columns_info_uri.setPath(COL_INFO_HANDLER);
+    return columns_info_uri;
 }
 }

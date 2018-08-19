@@ -48,15 +48,15 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
     ODBCBridgeHelper helper(config, context.getSettingsRef().http_receive_timeout.value, connection_string);
     helper.startODBCBridgeSync();
 
-    Poco::URI col_info_uri = helper.getColInfoURI();
-    col_info_uri.addQueryParameter("connection_string", connection_string);
-    col_info_uri.addQueryParameter("table", table_name);
+    Poco::URI columns_info_uri = helper.getColumnsInfoURI();
+    columns_info_uri.addQueryParameter("connection_string", connection_string);
+    columns_info_uri.addQueryParameter("table", table_name);
 
-    ReadWriteBufferFromHTTP buf(col_info_uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
+    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
 
-    std::string col_info;
-    readStringBinary(col_info, buf);
-    NamesAndTypesList columns = NamesAndTypesList::parse(col_info);
+    std::string columns_info;
+    readStringBinary(columns_info, buf);
+    NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
     auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns}, context);
     result->startup();

@@ -20,7 +20,7 @@ Poco::Net::HTTPRequestHandler * HandlerFactory::createRequestHandler(const Poco:
     if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
 
-        if (uri.getPath() == "/colinfo")
+        if (uri.getPath() == "/columns_info")
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
             return new ODBCColumnsInfoHandler(keep_alive_timeout, context);
 #else
