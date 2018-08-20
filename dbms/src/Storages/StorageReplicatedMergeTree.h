@@ -397,7 +397,10 @@ private:
 
     void mutationsUpdatingTask();
 
-    /// Clone data from another replica.
+    /** Clone data from another replica.
+     * return true, if replica wil be cloned
+     * else return false (when source_replica was lost or log was empty).
+     */
     bool cloneReplica(const String & source_replica, zkutil::ZooKeeperPtr & zookeeper);
 
     /// Clone replica if it is lost.
