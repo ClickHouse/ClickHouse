@@ -123,11 +123,26 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Set
     return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
-bool StorageMergeTree::checkTableCanBeDropped() const
+void StorageMergeTree::checkTableCanBeDropped() const
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
-    return true;
+}
+
+void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
+
+    const String partition_id = data.getPartitionIDFromQuery(partition, context);
+    auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
+    UInt64 partition_size = 0;
+
+    for (const auto & part : parts_to_remove)
+    {
+        partition_size += part->bytes_on_disk;
+    }
+    context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
 void StorageMergeTree::drop()
@@ -631,7 +646,7 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
         return 0;
     --it;
     return it->first;
-};
+}
 
 void StorageMergeTree::clearOldMutations()
 {

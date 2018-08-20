@@ -18,6 +18,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/ConvertColumnWithDictionaryToFullBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -43,6 +44,7 @@
 #include <Core/Field.h>
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -195,6 +197,10 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         for (const auto & it : query_analyzer->getExternalTables())
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
+
+        if (query_analyzer->isRewriteSubQueriesPredicate())
+            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+                table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
     }
 
     if (interpreter_subquery)
@@ -212,7 +218,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Calculate structure of the result.
     {
         Pipeline pipeline;
-        executeImpl(pipeline, input, true);
+        executeImpl(pipeline, nullptr, true);
         result_header = pipeline.firstStream()->getHeader();
     }
 }
@@ -387,9 +393,6 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
 
 void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run)
 {
-    if (input)
-        pipeline.streams.push_back(input);
-
     /** Streams of data. When the query is executed in parallel, we have several data streams.
      *  If there is no GROUP BY, then perform all operations before ORDER BY and LIMIT in parallel, then
      *  if there is an ORDER BY, then glue the streams using UnionBlockInputStream, and then MergeSortingBlockInputStream,
@@ -438,6 +441,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     }
     else
     {
+        if (input)
+            pipeline.streams.push_back(input);
+
         expressions = analyzeExpressions(from_stage, false);
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
@@ -710,7 +716,6 @@ void InterpreterSelectQuery::executeFetchColumns(
     else if (interpreter_subquery)
     {
         /// Subquery.
-
         /// If we need less number of columns that subquery have - update the interpreter.
         if (required_columns.size() < source_header.columns())
         {
@@ -819,7 +824,8 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
+        stream = std::make_shared<ConvertColumnWithDictionaryToFullBlockInputStream>(
+                std::make_shared<ExpressionBlockInputStream>(stream, expression));
     });
 
     Names key_names;

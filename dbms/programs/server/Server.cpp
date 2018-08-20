@@ -22,6 +22,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/TaskStatsInfoGetter.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -301,6 +302,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (config().has("max_table_size_to_drop"))
         global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
 
+    if (config().has("max_partition_size_to_drop"))
+        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
+
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
     if (uncompressed_cache_size)
@@ -360,6 +364,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Initialize a watcher updating DNS cache in case of network errors
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+    }
+
+    if (!TaskStatsInfoGetter::checkProcessHasRequiredPermissions())
+    {
+        LOG_INFO(log, "It looks like the process has not CAP_NET_ADMIN capability, some performance statistics will be disabled."
+                      " It could happen due to incorrect clickhouse package installation."
+                      " You could resolve the problem manually calling 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'");
     }
 
     {

@@ -85,7 +85,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-if (ARCH_FREEBSD)
+if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
 endif ()
 
@@ -156,7 +156,6 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
-    ${OPENSSL_CRYPTO_LIBRARY}
     ${BTRIE_LIBRARIES}
 )
 
@@ -218,6 +217,8 @@ if (USE_RDKAFKA)
         target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
 endif ()
+
+target_link_libraries(dbms ${OPENSSL_CRYPTO_LIBRARY})
 
 target_link_libraries (dbms
     Threads::Threads

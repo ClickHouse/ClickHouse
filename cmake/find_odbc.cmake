@@ -15,8 +15,8 @@
 # ODBC_LIBRARIES, the libraries to link against to use ODBC
 # ODBC_FOUND.  If false, you cannot build anything that requires ODBC.
 
-option (ENABLE_ODBC "Enable ODBC" ${ARCH_LINUX})
-if (ARCH_LINUX)
+option (ENABLE_ODBC "Enable ODBC" ${OS_LINUX})
+if (OS_LINUX)
     option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" ${NOT_UNBUNDLED})
 else ()
     option (USE_INTERNAL_ODBC_LIBRARY "Set to FALSE to use system odbc library instead of bundled" OFF)

@@ -59,7 +59,10 @@ public:
             /// Add column 'database'.
             MutableColumnPtr database_column_mut = ColumnString::create();
             for (const auto & database : databases)
-                database_column_mut->insert(database.first);
+            {
+                if (context.hasDatabaseAccessRights(database.first))
+                    database_column_mut->insert(database.first);
+            }
             block_to_filter.insert(ColumnWithTypeAndName(
                     std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 

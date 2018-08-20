@@ -279,7 +279,8 @@ target_link_libraries(unixodbc ltdl)
 
 # SYSTEM_FILE_PATH was changed to /etc
 
-target_include_directories(unixodbc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64)
+target_include_directories(unixodbc PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/private)
+target_include_directories(unixodbc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64)
 target_include_directories(unixodbc PUBLIC ${ODBC_SOURCE_DIR}/include)
 
 target_compile_definitions(unixodbc PRIVATE -DHAVE_CONFIG_H)

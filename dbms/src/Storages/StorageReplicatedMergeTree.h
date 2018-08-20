@@ -138,7 +138,9 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
+
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
