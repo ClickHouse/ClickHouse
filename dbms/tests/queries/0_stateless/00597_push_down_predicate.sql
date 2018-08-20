@@ -1,3 +1,5 @@
+SET send_logs_level = 'none';
+
 DROP TABLE IF EXISTS test.test;
 DROP TABLE IF EXISTS test.test_union_1;
 DROP TABLE IF EXISTS test.test_union_2;
