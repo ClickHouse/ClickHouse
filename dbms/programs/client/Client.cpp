@@ -91,6 +91,7 @@ namespace ErrorCodes
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int CANNOT_READLINE;
 }
 
 
@@ -1518,6 +1519,9 @@ public:
         }
 
 #if USE_READLINE
+        if (rl_initialize())
+            throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
+
         auto clear_prompt_or_exit = [](int)
         {
             /// This is signal safe.
@@ -1526,7 +1530,8 @@ public:
             if (res == 1 && rl_line_buffer[0])
             {
                 rl_replace_line("", 0);
-                rl_forced_update_display();
+                if (rl_forced_update_display())
+                    _exit(0);
             }
             else
             {
