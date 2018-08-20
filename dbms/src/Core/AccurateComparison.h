@@ -332,10 +332,32 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
     return equalsOp(static_cast<DB::Float64>(f), u);
 }
 
-inline bool greaterOp(DB::Int128 i, DB::Float64 f) { return static_cast<DB::Int128>(f) < i; }
-inline bool greaterOp(DB::Int128 i, DB::Float32 f) { return static_cast<DB::Int128>(f) < i; }
-inline bool greaterOp(DB::Float64 f, DB::Int128 i) { return static_cast<DB::Int128>(f) > i; }
-inline bool greaterOp(DB::Float32 f, DB::Int128 i) { return static_cast<DB::Int128>(f) > i; }
+inline bool greaterOp(DB::Int128 i, DB::Float64 f)
+{
+    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+
+    if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
+        return static_cast<DB::Float64>(i) > f;
+
+    return (f < static_cast<DB::Float64>(min_int128))
+        || (f < static_cast<DB::Float64>(max_int128) && i > static_cast<DB::Int128>(f));
+}
+
+inline bool greaterOp(DB::Float64 f, DB::Int128 i)
+{
+    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+
+    if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
+        return f > static_cast<DB::Float64>(i);
+
+    return (f >= static_cast<DB::Float64>(max_int128))
+        || (f > static_cast<DB::Float64>(min_int128) && static_cast<DB::Int128>(f) > i);
+}
+
+inline bool greaterOp(DB::Int128 i, DB::Float32 f) { return greaterOp(i, static_cast<DB::Float64>(f)); }
+inline bool greaterOp(DB::Float32 f, DB::Int128 i) { return greaterOp(static_cast<DB::Float64>(f), i); }
 
 inline bool equalsOp(DB::Int128 i, DB::Float64 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float64>(i) == f; }
 inline bool equalsOp(DB::Int128 i, DB::Float32 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float32>(i) == f; }

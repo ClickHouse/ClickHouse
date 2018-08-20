@@ -164,6 +164,8 @@ start()
     else
         mkdir -p $CLICKHOUSE_PIDDIR
         chown -R $CLICKHOUSE_USER:$CLICKHOUSE_GROUP $CLICKHOUSE_PIDDIR
+        # Set net_admin capabilities to support ClickHouse better introspection
+        su -s setcap cap_net_admin=+ep "$BINDIR/$PROGRAM"
         initdb
         if ! is_running; then
             # Lock should not be held while running child process, so we release the lock. Note: obviously, there is race condition.

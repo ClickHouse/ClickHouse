@@ -12,6 +12,7 @@
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/CurrentThread.h>
 
 namespace DB
 {
@@ -138,6 +139,9 @@ private:
     std::thread delayed_thread;
     /// Tasks ordered by scheduled time.
     DelayedTasks delayed_tasks;
+
+    /// Thread group used for profiling purposes
+    ThreadGroupStatusPtr thread_group;
 };
 
 using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;

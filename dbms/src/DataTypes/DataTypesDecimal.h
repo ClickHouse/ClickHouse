@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
@@ -99,7 +100,7 @@ public:
 
     const char * getFamilyName() const override { return "Decimal"; }
     std::string getName() const override;
-    size_t getTypeNumber() const override { return TypeNumber<T>::value; }
+    size_t getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

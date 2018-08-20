@@ -2063,7 +2063,9 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
 
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
         {
-            restarting_thread->wakeup();
+            /// Can be called before starting restarting_thread
+            if (restarting_thread)
+                restarting_thread->wakeup();
             return;
         }
 

@@ -14,10 +14,10 @@
 2	facebook.com
 1	google.com
 2	yandex.ru
-1	baidu.com
-1	google.com
-2	facebook.com
-2	yandex.ru
+1	baidu.com	1	baidu.com
+1	google.com	1	google.com
+2	facebook.com	2	facebook.com
+2	yandex.ru	2	yandex.ru
 1
 1
 2

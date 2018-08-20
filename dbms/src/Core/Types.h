@@ -57,21 +57,21 @@ template <> struct TypeName<Float32> { static const char * get() { return "Float
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
 
-template <typename T> struct TypeNumber;
+template <typename T> struct TypeId;
 
 /// 0 reserved for types without number
-template <> struct TypeNumber<UInt8>    { static constexpr const size_t value = 1;  };
-template <> struct TypeNumber<UInt16>   { static constexpr const size_t value = 2;  };
-template <> struct TypeNumber<UInt32>   { static constexpr const size_t value = 3;  };
-template <> struct TypeNumber<UInt64>   { static constexpr const size_t value = 4;  };
-/// 5 reserved for TypeNumber<UInt128>
-template <> struct TypeNumber<Float32>  { static constexpr const size_t value = 7;  };
-template <> struct TypeNumber<Float64>  { static constexpr const size_t value = 8;  };
-template <> struct TypeNumber<Int8>     { static constexpr const size_t value = 9;  };
-template <> struct TypeNumber<Int16>    { static constexpr const size_t value = 10; };
-template <> struct TypeNumber<Int32>    { static constexpr const size_t value = 11; };
-template <> struct TypeNumber<Int64>    { static constexpr const size_t value = 12; };
-/// 13 reserved for TypeNumber<Int128>
+template <> struct TypeId<UInt8>    { static constexpr const size_t value = 1;  };
+template <> struct TypeId<UInt16>   { static constexpr const size_t value = 2;  };
+template <> struct TypeId<UInt32>   { static constexpr const size_t value = 3;  };
+template <> struct TypeId<UInt64>   { static constexpr const size_t value = 4;  };
+/// 5 reserved for TypeId<UInt128>
+template <> struct TypeId<Float32>  { static constexpr const size_t value = 7;  };
+template <> struct TypeId<Float64>  { static constexpr const size_t value = 8;  };
+template <> struct TypeId<Int8>     { static constexpr const size_t value = 9;  };
+template <> struct TypeId<Int16>    { static constexpr const size_t value = 10; };
+template <> struct TypeId<Int32>    { static constexpr const size_t value = 11; };
+template <> struct TypeId<Int64>    { static constexpr const size_t value = 12; };
+/// 13 reserved for TypeId<Int128>
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
@@ -85,7 +85,7 @@ namespace DB
 using Int128 = __int128;
 template <> constexpr bool IsNumber<Int128> = true;
 template <> struct TypeName<Int128>  { static const char * get() { return "Int128";  } };
-template <> struct TypeNumber<Int128>   { static constexpr const size_t value = 13; };
+template <> struct TypeId<Int128>   { static constexpr const size_t value = 13; };
 
 }
 
@@ -120,9 +120,8 @@ namespace DB
 {
     /// Own FieldType for Decimal
     template <typename T>
-    class Dec
+    struct Dec
     {
-    public:
         using NativeType = T;
 
         Dec() = default;
@@ -149,7 +148,6 @@ namespace DB
         const Dec<T> & operator /= (const T & x) { value /= x; return *this; }
         const Dec<T> & operator %= (const T & x) { value %= x; return *this; }
 
-    private:
         T value;
     };
 
@@ -161,9 +159,9 @@ namespace DB
     template <> struct TypeName<Dec64>   { static const char * get() { return "Dec64";   } };
     template <> struct TypeName<Dec128>  { static const char * get() { return "Dec128";  } };
 
-    template <> struct TypeNumber<Dec32>    { static constexpr const size_t value = 16; };
-    template <> struct TypeNumber<Dec64>    { static constexpr const size_t value = 17; };
-    template <> struct TypeNumber<Dec128>   { static constexpr const size_t value = 18; };
+    template <> struct TypeId<Dec32>    { static constexpr const size_t value = 16; };
+    template <> struct TypeId<Dec64>    { static constexpr const size_t value = 17; };
+    template <> struct TypeId<Dec128>   { static constexpr const size_t value = 18; };
 
     template <typename T>
     inline constexpr bool decTrait() { return false; }
