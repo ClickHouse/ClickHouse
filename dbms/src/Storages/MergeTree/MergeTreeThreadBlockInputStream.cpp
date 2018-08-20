@@ -45,7 +45,7 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
     injectVirtualColumns(res);
     executePrewhereActions(res, prewhere_info);
     return res;
-};
+}
 
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one

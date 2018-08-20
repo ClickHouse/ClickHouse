@@ -1619,7 +1619,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, data.format_version);
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     LOG_DEBUG(log, (entry.detach ? "Detaching" : "Removing") << " parts.");
 
@@ -1728,7 +1728,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     /// Range with only one block has special meaning ATTACH PARTITION
     bool replace = drop_range.getBlocksCount() > 1;
 
-    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range);
+    queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
 
     struct PartDescription
     {
@@ -1822,7 +1822,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             src_data = data.checkStructureAndGetMergeTreeData(source_table);
         }
-        catch (Exception & e)
+        catch (Exception &)
         {
             LOG_INFO(log, "Can't use " << source_table_name << " as source table for REPLACE PARTITION command. Will fetch all parts."
                            << " Reason: " << getCurrentExceptionMessage(false));
@@ -2063,7 +2063,9 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
 
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
         {
-            restarting_thread->wakeup();
+            /// Can be called before starting restarting_thread
+            if (restarting_thread)
+                restarting_thread->wakeup();
             return;
         }
 
@@ -3345,12 +3347,28 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 }
 
 
-bool StorageReplicatedMergeTree::checkTableCanBeDropped() const
+void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
     /// Consider only synchronized data
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
-    return true;
+}
+
+
+void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
+
+    const String partition_id = data.getPartitionIDFromQuery(partition, context);
+    auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+
+    UInt64 partition_size = 0;
+
+    for (const auto & part : parts_to_remove)
+    {
+        partition_size += part->bytes_on_disk;
+    }
+    context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
 }
 
 
@@ -3926,7 +3944,7 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
         if (try_no)
             LOG_INFO(log, "Some of parts (" << missing_parts.size() << ") are missing. Will try to fetch covering parts.");
 
-        if (try_no >= 5)
+        if (try_no >= context.getSettings().max_fetch_partition_retries_count)
             throw Exception("Too many retries to fetch parts from " + best_replica_path, ErrorCodes::TOO_MANY_RETRIES_TO_FETCH_PARTS);
 
         Strings parts = getZooKeeper()->getChildren(best_replica_path + "/parts");
@@ -3973,7 +3991,8 @@ void StorageReplicatedMergeTree::fetchPartition(const ASTPtr & partition, const 
             }
             catch (const DB::Exception & e)
             {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS)
+                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                    && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
                     throw;
 
                 LOG_INFO(log, e.displayText());
@@ -4477,7 +4496,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     }
 
     /// We are almost ready to commit changes, remove fetches and merges from drop range
-    queue.removePartProducingOpsInRange(zookeeper, drop_range);
+    queue.removePartProducingOpsInRange(zookeeper, drop_range, entry);
 
     /// Remove deduplication block_ids of replacing parts
     if (replace)

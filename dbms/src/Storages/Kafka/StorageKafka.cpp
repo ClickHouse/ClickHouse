@@ -135,7 +135,7 @@ public:
         LOG_TRACE(log, "Row delimiter is: " << row_delimiter);
     }
 
-    ~ReadBufferFromKafkaConsumer() { reset(); }
+    ~ReadBufferFromKafkaConsumer() override { reset(); }
 
     /// Commit messages read with this consumer
     void commit()
@@ -144,7 +144,7 @@ public:
         if (read_messages == 0)
             return;
 
-        auto err = rd_kafka_commit(consumer, NULL, 1 /* async */);
+        auto err = rd_kafka_commit(consumer, nullptr, 1 /* async */);
         if (err)
             throw Exception("Failed to commit offsets: " + String(rd_kafka_err2str(err)), ErrorCodes::UNKNOWN_EXCEPTION);
 
@@ -199,7 +199,7 @@ public:
         return reader->read();
     }
 
-    Block getHeader() const override { return reader->getHeader(); };
+    Block getHeader() const override { return reader->getHeader(); }
 
     void readPrefixImpl() override
     {
