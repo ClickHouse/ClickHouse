@@ -144,7 +144,7 @@ Pipe signal_pipe;
 static void call_default_signal_handler(int sig)
 {
     signal(sig, SIG_DFL);
-    kill(getpid(), sig);
+    raise(sig);
 }
 
 
@@ -677,16 +677,15 @@ BaseDaemon::~BaseDaemon()
 void BaseDaemon::terminate()
 {
     getTaskManager().cancelAll();
-    if (::kill(Poco::Process::id(), SIGTERM) != 0)
-    {
+    if (::raise(SIGTERM) != 0)
         throw Poco::SystemException("cannot terminate process");
-    }
 }
 
 void BaseDaemon::kill()
 {
     pid.clear();
-    Poco::Process::kill(getpid());
+    if (::raise(SIGKILL) != 0)
+        throw Poco::SystemException("cannot kill process");
 }
 
 void BaseDaemon::sleep(double seconds)
@@ -1104,7 +1103,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
                         throw Poco::Exception("Cannot set signal handler.");
 
                 for (auto signal : signals)
-                    if (sigaction(signal, &sa, 0))
+                    if (sigaction(signal, &sa, nullptr))
                         throw Poco::Exception("Cannot set signal handler.");
             }
         };
