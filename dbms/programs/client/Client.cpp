@@ -108,7 +108,7 @@ public:
         size_t pos = query.find("--");
 
         if (pos != String::npos && query.find("--", pos + 2) != String::npos)
-            return; /// It's not last comment. Hint belongs to commented query.
+            return; /// It's not last comment. Hint belongs to commented query. /// TODO Absolutely wrong: there maybe the following comment for the next query.
 
         if (pos != String::npos)
         {
