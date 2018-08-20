@@ -10,7 +10,6 @@ int main(int argc, char ** argv) { return 0; }
 #include <iomanip>
 #include <vector>
 #include <Poco/NumberParser.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
 #include <common/ThreadPool.h>
