@@ -19,6 +19,8 @@ public:
         return "String";
     }
 
+    TypeIndex getTypeId() const override { return TypeIndex::String; }
+
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;

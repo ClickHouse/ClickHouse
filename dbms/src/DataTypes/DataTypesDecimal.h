@@ -100,7 +100,7 @@ public:
 
     const char * getFamilyName() const override { return "Decimal"; }
     std::string getName() const override;
-    size_t getTypeId() const override { return TypeId<T>::value; }
+    TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
