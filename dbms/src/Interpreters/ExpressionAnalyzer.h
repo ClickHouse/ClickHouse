@@ -189,7 +189,7 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
-    bool isRewriteSubQueriesPredicate() { return rewrite_sub_queries; }
+    bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
 private:
     ASTPtr ast;
@@ -303,7 +303,7 @@ private:
     size_t external_table_id = 1;
 
     /// Predicate optimizer overrides the sub queries
-    bool rewrite_sub_queries = false;
+    bool rewrite_subqueries = false;
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),

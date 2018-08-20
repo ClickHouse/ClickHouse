@@ -198,7 +198,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             if (!context.tryGetExternalTable(it.first))
                 context.addExternalTable(it.first, it.second);
 
-        if (query_analyzer->isRewriteSubQueriesPredicate())
+        if (query_analyzer->isRewriteSubqueriesPredicate())
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
                 table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
     }
