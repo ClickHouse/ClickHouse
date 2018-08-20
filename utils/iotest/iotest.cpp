@@ -8,7 +8,6 @@
 #include <random>
 #include <pcg_random.hpp>
 #include <Poco/NumberParser.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
