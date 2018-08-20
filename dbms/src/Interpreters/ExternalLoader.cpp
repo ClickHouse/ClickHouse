@@ -66,7 +66,7 @@ void ExternalLoader::init(bool throw_on_error)
     {
         /// During synchronous loading of external dictionaries at moment of query execution,
         /// we should not use per query memory limit.
-        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         reloadAndUpdate(throw_on_error);
     }
