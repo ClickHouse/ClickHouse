@@ -1079,10 +1079,25 @@ void ExpressionActionsChain::finalize()
     for (int i = static_cast<int>(steps.size()) - 1; i >= 0; --i)
     {
         Names required_output = steps[i].required_output;
+        std::unordered_map<String, size_t> required_output_indexes;
+        for (size_t j = 0; j < required_output.size(); ++j)
+            required_output_indexes[required_output[j]] = j;
+        auto & can_remove_required_output = steps[i].can_remove_required_output;
+
         if (i + 1 < static_cast<int>(steps.size()))
         {
+            const NameSet & additional_input = steps[i + 1].additional_input;
             for (const auto & it : steps[i + 1].actions->getRequiredColumnsWithTypes())
-                required_output.push_back(it.name);
+            {
+                if (additional_input.count(it.name) == 0)
+                {
+                    auto iter = required_output_indexes.find(it.name);
+                    if (iter == required_output_indexes.end())
+                        required_output.push_back(it.name);
+                    else if (!can_remove_required_output.empty())
+                        can_remove_required_output[iter->second] = false;
+                }
+            }
         }
         steps[i].actions->finalize(required_output);
     }

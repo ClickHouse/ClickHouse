@@ -2826,10 +2826,11 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
+    checkQueryProcessingStage(processed_stage, context);
     const Settings & settings = context.getSettingsRef();
 
     /** The `select_sequential_consistency` setting has two meanings:
@@ -2867,8 +2868,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         }
     }
 
-    return reader.read(
-        column_names, query_info, context, processed_stage, max_block_size, num_streams, max_block_number_to_read);
+    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_block_number_to_read);
 }
 
 

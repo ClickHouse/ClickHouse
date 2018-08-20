@@ -24,20 +24,20 @@ bool PredicateExpressionsOptimizer::optimize()
     if (!settings.enable_optimize_predicate_expression || !ast_select || !ast_select->tables)
         return false;
 
-    SubQueriesProjectionColumns all_subquery_projection_columns;
+    SubqueriesProjectionColumns all_subquery_projection_columns;
     getAllSubqueryProjectionColumns(ast_select->tables.get(), all_subquery_projection_columns);
 
-    bool is_rewrite_sub_queries = false;
+    bool is_rewrite_subqueries = false;
     if (!all_subquery_projection_columns.empty())
     {
-        is_rewrite_sub_queries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, false);
-        is_rewrite_sub_queries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, true);
+        is_rewrite_subqueries |= optimizeImpl(ast_select->where_expression, all_subquery_projection_columns, false);
+        is_rewrite_subqueries |= optimizeImpl(ast_select->prewhere_expression, all_subquery_projection_columns, true);
     }
-    return is_rewrite_sub_queries;
+    return is_rewrite_subqueries;
 }
 
 bool PredicateExpressionsOptimizer::optimizeImpl(
-    ASTPtr & outer_expression, SubQueriesProjectionColumns & sub_queries_projection_columns, bool is_prewhere)
+    ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, bool is_prewhere)
 {
     /// split predicate with `and`
     PredicateExpressions outer_predicate_expressions = splitConjunctionPredicate(outer_expression);
@@ -49,7 +49,7 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
         getExpressionDependentColumns(outer_predicate, outer_predicate_dependent);
 
         /// TODO: remove origin expression
-        for (const auto & subquery_projection_columns : sub_queries_projection_columns)
+        for (const auto & subquery_projection_columns : subqueries_projection_columns)
         {
             auto subquery = static_cast<ASTSelectQuery *>(subquery_projection_columns.first);
             const ProjectionsWithAliases projection_columns = subquery_projection_columns.second;
@@ -168,7 +168,7 @@ bool PredicateExpressionsOptimizer::isAggregateFunction(ASTPtr & node)
     return false;
 }
 
-void PredicateExpressionsOptimizer::getAllSubqueryProjectionColumns(IAST * node, SubQueriesProjectionColumns & all_subquery_projection_columns)
+void PredicateExpressionsOptimizer::getAllSubqueryProjectionColumns(IAST * node, SubqueriesProjectionColumns & all_subquery_projection_columns)
 {
     if (auto ast_subquery = typeid_cast<ASTSubquery *>(node))
     {
@@ -221,7 +221,7 @@ bool PredicateExpressionsOptimizer::optimizeExpression(const ASTPtr & outer_expr
     return true;
 }
 
-void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(IAST * subquery, SubQueriesProjectionColumns & all_subquery_projection_columns, ASTs & output_projections)
+void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(IAST * subquery, SubqueriesProjectionColumns & all_subquery_projection_columns, ASTs & output_projections)
 {
     if (auto * with_union_subquery = typeid_cast<ASTSelectWithUnionQuery *>(subquery))
         for (auto & select : with_union_subquery->list_of_selects->children)

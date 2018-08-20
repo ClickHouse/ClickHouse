@@ -103,15 +103,30 @@ private:
 };
 
 
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context) const
+{
+    if (!no_destination)
+    {
+        auto destination = context.getTable(destination_database, destination_table);
+
+        if (destination.get() == this)
+            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
+
+        return destination->getQueryProcessingStage(context);
+    }
+
+    return QueryProcessingStage::FetchColumns;
+}
+
 BlockInputStreams StorageBuffer::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    processed_stage = QueryProcessingStage::FetchColumns;
+    checkQueryProcessingStage(processed_stage, context);
 
     BlockInputStreams streams_from_dst;
 
