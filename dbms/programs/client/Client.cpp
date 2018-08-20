@@ -1532,7 +1532,7 @@ public:
             {
                 /// A little dirty, but we struggle to find better way to correctly
                 /// force readline to exit after returning from the signal handler.
-                exit(0);
+                _exit(0);
             }
         };
 
