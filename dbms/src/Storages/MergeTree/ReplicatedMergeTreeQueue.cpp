@@ -51,10 +51,13 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
         log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
+        
+        std::unordered_set<String> already_loaded_paths;
+        for (const LogEntryPtr & log_entry : queue)
+            already_loaded_paths.insert(log_entry->znode_name);
 
         Strings children = zookeeper->getChildren(queue_path);
 
-        std::unordered_set<String> already_loaded_paths;
         auto to_remove_it = std::remove_if(
                 children.begin(), children.end(), [&](const String & path)
                 {

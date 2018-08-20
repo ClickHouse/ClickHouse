@@ -230,7 +230,10 @@ public:
       */
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
-    /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
+    /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
+      * If queue was not empty load() would not load duplicate records.
+      * return true, if we update queue.
+      */
     bool load(zkutil::ZooKeeperPtr zookeeper);
 
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
