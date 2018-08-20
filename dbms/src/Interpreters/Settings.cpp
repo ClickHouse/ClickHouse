@@ -3,6 +3,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Settings.h>
+#include <Columns/ColumnArray.h>
+#include <Common/typeid_cast.h>
+#include <string.h>
 
 
 namespace DB
@@ -174,6 +177,42 @@ void Settings::serialize(WriteBuffer & buf) const
     writeStringBinary("", buf);
 
 #undef WRITE
+}
+
+void Settings::dumpToArrayColumns(IColumn * column_names_, IColumn * column_values_, bool changed_only)
+{
+    /// Convert ptr and make simple check
+    auto column_names = (column_names_) ? &typeid_cast<ColumnArray &>(*column_names_) : nullptr;
+    auto column_values = (column_values_) ? &typeid_cast<ColumnArray &>(*column_values_) : nullptr;
+
+    size_t size = 0;
+
+#define ADD_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION)               \
+    if (!changed_only || NAME.changed)                              \
+    {                                                               \
+        if (column_names)                                           \
+            column_names->getData().insertData(#NAME, strlen(#NAME)); \
+        if (column_values)                                          \
+            column_values->getData().insert(NAME.toString());       \
+        ++size;                                                     \
+    }
+    APPLY_FOR_SETTINGS(ADD_SETTING)
+#undef ADD_SETTING
+
+    if (column_names)
+    {
+        auto & offsets = column_names->getOffsets();
+        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+    }
+
+    /// Nested columns case
+    bool the_same_offsets = column_names && column_values && column_names->getOffsetsPtr() == column_values->getOffsetsPtr();
+
+    if (column_values && !the_same_offsets)
+    {
+        auto & offsets = column_values->getOffsets();
+        offsets.push_back((offsets.empty() ? 0 : offsets.back()) + size);
+    }
 }
 
 }

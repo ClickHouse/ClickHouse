@@ -25,6 +25,7 @@
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
 #include <Common/StatusFile.h>
+#include <Common/ThreadStatus.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -269,6 +270,9 @@ void LocalServer::processQueries()
     context->setUser("default", "", Poco::Net::SocketAddress{}, "");
     context->setCurrentQueryId("");
     applyCmdSettings(*context);
+
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(*context);
 
     bool echo_query = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;

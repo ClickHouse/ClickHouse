@@ -22,9 +22,15 @@ namespace common
     }
 
     template <>
-    inline bool addOverflow(Int64 x, Int64 y, Int64 & res)
+    inline bool addOverflow(long x, long y, long & res)
     {
         return __builtin_saddl_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool addOverflow(long long x, long long y, long long & res)
+    {
+        return __builtin_saddll_overflow(x, y, &res);
     }
 
     template <>
@@ -47,9 +53,15 @@ namespace common
     }
 
     template <>
-    inline bool subOverflow(Int64 x, Int64 y, Int64 & res)
+    inline bool subOverflow(long x, long y, long & res)
     {
         return __builtin_ssubl_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool subOverflow(long long x, long long y, long long & res)
+    {
+        return __builtin_ssubll_overflow(x, y, &res);
     }
 
     template <>
@@ -72,9 +84,15 @@ namespace common
     }
 
     template <>
-    inline bool mulOverflow(Int64 x, Int64 y, Int64 & res)
+    inline bool mulOverflow(long x, long y, long & res)
     {
         return __builtin_smull_overflow(x, y, &res);
+    }
+
+    template <>
+    inline bool mulOverflow(long long x, long long y, long long & res)
+    {
+        return __builtin_smulll_overflow(x, y, &res);
     }
 
     template <>
@@ -171,62 +189,60 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 /// Similar function as above. Additionally transform the result type if needed.
 Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
-template <typename T, template <typename, typename, template <typename, typename> typename> typename Apply,
-          template <typename, typename> typename Op, typename... Args>
-void callByTypeAndNumber(UInt8 number, bool & done, Args &... args)
+template <typename T, typename F>
+bool callByTypeAndNumber(UInt8 number, F && f)
 {
-    done = true;
     switch (number)
     {
-        case TypeNumber<UInt8>::value:        Apply<T, UInt8, Op>(args...); break;
-        case TypeNumber<UInt16>::value:       Apply<T, UInt16, Op>(args...); break;
-        case TypeNumber<UInt32>::value:       Apply<T, UInt32, Op>(args...); break;
-        case TypeNumber<UInt64>::value:       Apply<T, UInt64, Op>(args...); break;
-        //case TypeNumber<UInt128>::value:      Apply<T, UInt128, Op>(args...); break;
+        case TypeId<UInt8>::value:        f(T(), UInt8()); break;
+        case TypeId<UInt16>::value:       f(T(), UInt16()); break;
+        case TypeId<UInt32>::value:       f(T(), UInt32()); break;
+        case TypeId<UInt64>::value:       f(T(), UInt64()); break;
+        //case TypeId<UInt128>::value:      f(T(), UInt128()); break;
 
-        case TypeNumber<Int8>::value:         Apply<T, Int8, Op>(args...); break;
-        case TypeNumber<Int16>::value:        Apply<T, Int16, Op>(args...); break;
-        case TypeNumber<Int32>::value:        Apply<T, Int32, Op>(args...); break;
-        case TypeNumber<Int64>::value:        Apply<T, Int64, Op>(args...); break;
-        case TypeNumber<Int128>::value:       Apply<T, Int128, Op>(args...); break;
+        case TypeId<Int8>::value:         f(T(), Int8()); break;
+        case TypeId<Int16>::value:        f(T(), Int16()); break;
+        case TypeId<Int32>::value:        f(T(), Int32()); break;
+        case TypeId<Int64>::value:        f(T(), Int64()); break;
+        case TypeId<Int128>::value:       f(T(), Int128()); break;
 
-        case TypeNumber<Dec32>::value:        Apply<T, Dec32, Op>(args...); break;
-        case TypeNumber<Dec64>::value:        Apply<T, Dec64, Op>(args...); break;
-        case TypeNumber<Dec128>::value:       Apply<T, Dec128, Op>(args...); break;
+        case TypeId<Dec32>::value:        f(T(), Dec32()); break;
+        case TypeId<Dec64>::value:        f(T(), Dec64()); break;
+        case TypeId<Dec128>::value:       f(T(), Dec128()); break;
         default:
-            done = false;
+            return false;
     }
+
+    return true;
 }
 
 /// Unroll template using TypeNumber<T>
-template <template <typename, typename, template <typename, typename> typename> typename Apply,
-          template <typename, typename> typename Op, typename... Args>
-inline bool callByNumbers(UInt8 type_num1, UInt8 type_num2, Args &... args)
+template <typename F>
+inline bool callByNumbers(UInt8 type_num1, UInt8 type_num2, F && f)
 {
-    bool done = false;
     switch (type_num1)
     {
-        case TypeNumber<UInt8>::value: callByTypeAndNumber<UInt8, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<UInt16>::value: callByTypeAndNumber<UInt16, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<UInt32>::value: callByTypeAndNumber<UInt32, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<UInt64>::value: callByTypeAndNumber<UInt64, Apply, Op, Args...>(type_num2, done, args...); break;
-        //case TypeNumber<UInt128>::value: callByTypeAndNumber<UInt128, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeId<UInt8>::value: return callByTypeAndNumber<UInt8>(type_num2, std::forward<F>(f));
+        case TypeId<UInt16>::value: return callByTypeAndNumber<UInt16>(type_num2, std::forward<F>(f));
+        case TypeId<UInt32>::value: return callByTypeAndNumber<UInt32>(type_num2, std::forward<F>(f));
+        case TypeId<UInt64>::value: return callByTypeAndNumber<UInt64>(type_num2, std::forward<F>(f));
+        //case TypeId<UInt128>::value: return callByTypeAndNumber<UInt128>(type_num2, std::forward<F>(f));
 
-        case TypeNumber<Int8>::value: callByTypeAndNumber<Int8, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<Int16>::value: callByTypeAndNumber<Int16, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<Int32>::value: callByTypeAndNumber<Int32, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<Int64>::value: callByTypeAndNumber<Int64, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<Int128>::value: callByTypeAndNumber<Int128, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeId<Int8>::value: return callByTypeAndNumber<Int8>(type_num2, std::forward<F>(f));
+        case TypeId<Int16>::value: return callByTypeAndNumber<Int16>(type_num2, std::forward<F>(f));
+        case TypeId<Int32>::value: return callByTypeAndNumber<Int32>(type_num2, std::forward<F>(f));
+        case TypeId<Int64>::value: return callByTypeAndNumber<Int64>(type_num2, std::forward<F>(f));
+        case TypeId<Int128>::value: return callByTypeAndNumber<Int128>(type_num2, std::forward<F>(f));
 
-        case TypeNumber<Dec32>::value: callByTypeAndNumber<Dec32, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<Dec64>::value: callByTypeAndNumber<Dec64, Apply, Op, Args...>(type_num2, done, args...); break;
-        case TypeNumber<Dec128>::value: callByTypeAndNumber<Dec128, Apply, Op, Args...>(type_num2, done, args...); break;
+        case TypeId<Dec32>::value: return callByTypeAndNumber<Dec32>(type_num2, std::forward<F>(f));
+        case TypeId<Dec64>::value: return callByTypeAndNumber<Dec64>(type_num2, std::forward<F>(f));
+        case TypeId<Dec128>::value: return callByTypeAndNumber<Dec128>(type_num2, std::forward<F>(f));
 
         default:
             break;
     };
 
-    return done;
+    return false;
 }
 
 }

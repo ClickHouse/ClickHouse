@@ -24,12 +24,12 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-StorageURL::StorageURL(const Poco::URI & uri_,
+IStorageURLBase::IStorageURLBase(const Poco::URI & uri_,
+    const Context & context_,
     const std::string & table_name_,
     const String & format_name_,
-    const ColumnsDescription & columns_,
-    Context & context_)
-    : IStorage(columns_), uri(uri_), format_name(format_name_), table_name(table_name_), context_global(context_)
+    const ColumnsDescription & columns_)
+    : IStorage(columns_), uri(uri_), context_global(context_), format_name(format_name_), table_name(table_name_)
 {
 }
 
@@ -39,6 +39,8 @@ namespace
     {
     public:
         StorageURLBlockInputStream(const Poco::URI & uri,
+            const std::string & method,
+            std::function<void(std::ostream &)> callback,
             const String & format,
             const String & name_,
             const Block & sample_block,
@@ -47,7 +49,7 @@ namespace
             const ConnectionTimeouts & timeouts)
             : name(name_)
         {
-            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_GET, nullptr, timeouts);
+            read_buf = std::make_unique<ReadWriteBufferFromHTTP>(uri, method, callback, timeouts);
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
         }
@@ -89,7 +91,7 @@ namespace
         StorageURLBlockOutputStream(const Poco::URI & uri,
             const String & format,
             const Block & sample_block_,
-            Context & context,
+            const Context & context,
             const ConnectionTimeouts & timeouts)
             : sample_block(sample_block_)
         {
@@ -127,16 +129,45 @@ namespace
 }
 
 
-BlockInputStreams StorageURL::read(
-    const Names & /*column_names*/,
+std::string IStorageURLBase::getReadMethod() const
+{
+    return Poco::Net::HTTPRequest::HTTP_GET;
+}
+
+std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
-    const Context & context,
+    const Context & /*context*/,
     QueryProcessingStage::Enum & /*processed_stage*/,
+    size_t /*max_block_size*/) const
+{
+    return {};
+}
+
+std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(const Names & /*column_names*/,
+    const SelectQueryInfo & /*query_info*/,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum & /*processed_stage*/,
+    size_t /*max_block_size*/) const
+{
+    return nullptr;
+}
+
+
+BlockInputStreams IStorageURLBase::read(const Names & column_names,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    return {std::make_shared<StorageURLBlockInputStream>(
-        uri,
+    auto request_uri = uri;
+    auto params = getReadURIParams(column_names, query_info, context, processed_stage, max_block_size);
+    for (const auto & [param, value] : params)
+        request_uri.addQueryParameter(param, value);
+
+    return {std::make_shared<StorageURLBlockInputStream>(request_uri,
+        getReadMethod(),
+        getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
         getName(),
         getSampleBlock(),
@@ -145,9 +176,9 @@ BlockInputStreams StorageURL::read(
         ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};
 }
 
-void StorageURL::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
+void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & /*new_database_name*/, const String & /*new_table_name*/) {}
 
-BlockOutputStreamPtr StorageURL::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
+BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
 {
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global, ConnectionTimeouts::getHTTPTimeouts(context_global.getSettingsRef()));
@@ -155,8 +186,7 @@ BlockOutputStreamPtr StorageURL::write(const ASTPtr & /*query*/, const Settings 
 
 void registerStorageURL(StorageFactory & factory)
 {
-    factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
-    {
+    factory.registerStorage("URL", [](const StorageFactory::Arguments & args) {
         ASTs & engine_args = args.engine_args;
 
         if (!(engine_args.size() == 1 || engine_args.size() == 2))
@@ -175,5 +205,4 @@ void registerStorageURL(StorageFactory & factory)
         return StorageURL::create(uri, args.table_name, format_name, args.columns, args.context);
     });
 }
-
 }
