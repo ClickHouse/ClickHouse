@@ -260,6 +260,12 @@ void StorageMaterializedView::freezePartition(const ASTPtr & partition, const St
     getTargetTable()->freezePartition(partition, with_name, context);
 }
 
+void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->mutate(commands, context);
+}
+
 void StorageMaterializedView::shutdown()
 {
     /// Make sure the dependency is removed after DETACH TABLE
