@@ -1520,10 +1520,10 @@ public:
 #if USE_READLINE
         auto clear_prompt_or_exit = [](int)
         {
-            /// This is signal safe. Error code is not checked.
-            (void) write(STDOUT_FILENO, "\n", 1);
+            /// This is signal safe.
+            ssize_t res = write(STDOUT_FILENO, "\n", 1);
 
-            if (rl_line_buffer[0])
+            if (res == 1 && rl_line_buffer[0])
             {
                 rl_replace_line("", 0);
                 rl_forced_update_display();
