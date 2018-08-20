@@ -185,7 +185,7 @@ bool ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
             /// If log pointer and host change version we can not mark replicas, so we check it.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/host", hosts_version.at(replica)));
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer", log_pointers_version.at(replica)));
-            ops.emplace_back(zkutil::makeCreateRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", zkutil::CreateMode::Persistent));
             futures.push_back(zookeeper->tryAsyncMulti(ops));
         }
     }

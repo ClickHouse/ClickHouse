@@ -377,6 +377,8 @@ namespace ErrorCodes
     extern const int CANNOT_STAT = 400;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME = 401;
     extern const int CANNOT_IOSETUP = 402;
+    extern const int ALL_REPLICAS_LOST = 413;
+    extern const int CAN_NOT_CLONE_REPLICA = 414;
 
 
     extern const int KEEPER_EXCEPTION = 999;
