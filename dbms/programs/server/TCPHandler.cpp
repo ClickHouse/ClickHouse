@@ -6,6 +6,10 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/ClickHouseRevision.h>
+#include <Common/Stopwatch.h>
+#include <Common/NetException.h>
+#include <Common/config_version.h>
 #include <IO/Progress.h>
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
@@ -22,11 +26,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ClickHouseRevision.h>
-#include <Common/Stopwatch.h>
-#include <Common/ExternalTable.h>
-#include <Common/NetException.h>
-#include <Common/config_version.h>
+#include <Core/ExternalTable.h>
 
 #include "TCPHandler.h"
 

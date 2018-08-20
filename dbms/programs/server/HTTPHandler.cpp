@@ -9,7 +9,7 @@
 
 #include <ext/scope_guard.h>
 
-#include <Common/ExternalTable.h>
+#include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
