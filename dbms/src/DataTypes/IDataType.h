@@ -46,7 +46,7 @@ public:
     virtual const char * getFamilyName() const = 0;
 
     /// Unique type number or zero
-    virtual size_t getTypeId() const { return 0; }
+    virtual TypeIndex getTypeId() const { return TypeIndex::None; }
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *

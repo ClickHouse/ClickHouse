@@ -1021,18 +1021,20 @@ private:
 
     void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        size_t left_number = col_left.type->getTypeId();
-        size_t right_number = col_right.type->getTypeId();
+        TypeIndex left_number = col_left.type->getTypeId();
+        TypeIndex right_number = col_right.type->getTypeId();
 
-        auto call = [&](const auto & left, const auto & right)
+        auto call = [&](const auto & types) -> bool
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
+            using Types = std::decay_t<decltype(types)>;
+            using LeftDataType = typename Types::LeftType;
+            using RightDataType = typename Types::RightType;
 
             DecimalComparison<LeftDataType, RightDataType, Op>(block, result, col_left, col_right);
+            return true;
         };
 
-        if (!callByNumbers(left_number, right_number, call))
+        if (!callOnBasicTypes(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
