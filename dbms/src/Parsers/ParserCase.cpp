@@ -50,8 +50,20 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!has_branch)
             return false;
 
-        if (!s_else.ignore(pos, expected))
-            return false;
+         if (s_else.ignore(pos, expected))
+        {
+            ASTPtr expr_else;
+            if (!p_expr.parse(pos, expr_else, expected))
+                return false;
+            args.push_back(expr_else);
+        }
+        else
+        {
+            Field field;
+            ASTLiteral null_literal(field);
+            DB::IAST ptr_ = &null_literal; 
+            args.push_back(ptr_);
+        }
 
         ASTPtr expr_else;
         if (!p_expr.parse(pos, expr_else, expected))
