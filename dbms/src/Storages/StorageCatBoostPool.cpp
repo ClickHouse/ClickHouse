@@ -57,10 +57,9 @@ public:
         reader->readSuffix();
     }
 
-    Block getHeader() const override { return sample_block; }
+    Block getHeader() const override { return reader->getHeader(); }
 
 private:
-    Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
     std::string file_name;
