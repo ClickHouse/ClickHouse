@@ -106,6 +106,8 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;
+    extern const int ALL_REPLICAS_LOST;
+    extern const int CAN_NOT_CLONE_REPLICA;
 }
 
 namespace ActionLocks
@@ -1970,19 +1972,25 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
 
     /// The order of the following three actions is important. Entries in the log can be duplicated, but they can not be lost.
 
-    /// We must check is_active and set log_pointer atomically in order to cleanupThread can not clear log with our log_pointer.
-    zookeeper->set(replica_path + "/log_pointer", zookeeper->get(source_path + "/log_pointer"), -1);
+    /// We must set log_pointer atomically in order to cleanupThread can not clear log with our log_pointer.
+    String raw_log_pointer = zookeeper->get(source_path + "/log_pointer");
+    zookeeper->set(replica_path + "/log_pointer", raw_log_pointer, -1);
 
-    String raw_log_pointer = zookeeper->get(replica_path + "/log_pointer");
-
+    /// Check that log_pointer in entries.
     Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
 
     if (entries.empty())
+        LOG_DEBUG(log, "Can not clone replica, because log is empty");
         return false;
-
-    std::sort(entries.begin(), entries.end());
-    if ("log-" + padIndex(parse<UInt64>(raw_log_pointer)) < entries[0])
+    
+    auto min_record = std::min_element(entries.begin(), entries.end());
+    
+    /// If log_pointer out of log, we must retry cloneReplica();
+    if ("log-" + padIndex(parse<UInt64>(raw_log_pointer)) < *min_record)
+    {
+        LOG_DEBUG(log, "Can not clone replica, because log_pointer out of log");
         return false;
+    }
 
     /// Let's remember the queue of the reference/master replica.
     Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
@@ -2019,8 +2027,6 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
         zookeeper->create(replica_path + "/queue/queue-", entry, zkutil::CreateMode::PersistentSequential);
     }
 
-    /// It will then be loaded into the queue variable in `queue.initialize` method.
-
     LOG_DEBUG(log, "Copied " << source_queue.size() << " queue entries");
     return true;
 }
@@ -2036,28 +2042,25 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
     if (entries.empty())
         return;
 
-    std::sort(entries.begin(), entries.end());
-
-    if (!raw_log_pointer.empty() && "log-" + padIndex(parse<UInt64>(raw_log_pointer)) >= entries[0])
+    if (!raw_log_pointer.empty() && !zookeeper->exists(replica_path + "/is_lost"))
         return;
 
     String source_replica;
 
-    do
+    for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
     {
-        /// It is really needed?
-        while (source_replica == "")
-        {
-            for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
-            {
-                String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
-                String source_log_pointer_raw = zookeeper->get(source_replica_path + "/log_pointer");
-                if ((source_replica_path != replica_path) && (!zookeeper->exists(source_replica_path + "/is_lost")))
-                    source_replica = replica_name;
-            }
-        }
+        String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
+        if ((source_replica_path != replica_path) && (!zookeeper->exists(source_replica_path + "/is_lost")))
+            source_replica = replica_name;
+    }
+    
+    if (source_replica == "")
+        throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
+    
+    if (!cloneReplica(source_replica, zookeeper))
+        throw Exception("Can not clone replica from" + source_replica, ErrorCodes::CAN_NOT_CLONE_REPLICA);
 
-    } while (!cloneReplica(source_replica, zookeeper));
+    zookeeper->remove(replica_path + "/is_lost", -1);
 }
 
 

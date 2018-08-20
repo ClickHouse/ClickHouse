@@ -26,6 +26,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
+    extern const int ALL_REPLICAS_LOST;
+    extern const int CAN_NOT_CLONE_REPLICA;
 }
 
 namespace
@@ -206,10 +208,9 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         /// pullLogsToQueue() after we mark replica 'is_active' and clone();
         /// because cleanup_thread don't del our log_pointer.
-        storage.queue.pullLogsToQueue(storage.getZooKeeper());
+        storage.queue.pullLogsToQueue(zookeeper);
         storage.last_queue_update_finish_time.store(time(nullptr));
 
-        storage.cloneReplicaIfNeeded();
         updateQuorumIfWeHavePart();
 
         if (storage.data.settings.replicated_can_become_leader)
