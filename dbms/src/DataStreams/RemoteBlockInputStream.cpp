@@ -1,8 +1,10 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/IStorage.h>
 
 
@@ -137,7 +139,7 @@ void RemoteBlockInputStream::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
-                QueryProcessingStage::Enum read_from_table_stage = QueryProcessingStage::Complete;
+                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
                 BlockInputStreams input = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
                 if (input.size() == 0)
@@ -230,6 +232,12 @@ Block RemoteBlockInputStream::readImpl()
 
             case Protocol::Server::Extremes:
                 extremes = packet.block;
+                break;
+
+            case Protocol::Server::Log:
+                /// Pass logs from remote server to client
+                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                    log_queue->pushBlock(std::move(packet.block));
                 break;
 
             default:
