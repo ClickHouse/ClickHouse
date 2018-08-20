@@ -402,6 +402,9 @@ private:
      * else return false (when source_replica was lost or log was empty).
      */
     bool cloneReplica(const String & source_replica, zkutil::ZooKeeperPtr & zookeeper);
+    
+    /// Check that source replica does not change;
+    bool checkStat(const zkutil::ZooKeeperPtr & zookeeper, const String & source_replica, zkutil::Stat stat);
 
     /// Clone replica if it is lost.
     void cloneReplicaIfNeeded();
