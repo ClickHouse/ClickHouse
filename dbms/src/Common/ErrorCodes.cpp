@@ -388,6 +388,7 @@ namespace ErrorCodes
     extern const int PTHREAD_ERROR = 411;
     extern const int NETLINK_ERROR = 412;
     extern const int CANNOT_SET_SIGNAL_HANDLER = 413;
+    extern const int CANNOT_READLINE = 414;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
