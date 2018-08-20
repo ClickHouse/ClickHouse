@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/DDLWorker.h>
@@ -17,6 +28,8 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/StorageLiveChannel.h>
+
 #include <Poco/FileStream.h>
 
 #include <algorithm>
@@ -31,6 +44,7 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
+    extern const int UNKNOWN_STORAGE;
 }
 
 
@@ -52,7 +66,10 @@ BlockIO InterpreterAlterQuery::execute()
 
     AlterCommands alter_commands;
     PartitionCommands partition_commands;
-    parseAlter(alter.parameters, alter_commands, partition_commands);
+    ParameterCommands parameter_commands;
+    ChannelCommands channel_commands;
+
+    parseAlter(alter.parameters, alter_commands, partition_commands, parameter_commands, channel_commands);
 
     partition_commands.validate(table.get());
     for (const PartitionCommand & command : partition_commands)
@@ -87,6 +104,57 @@ BlockIO InterpreterAlterQuery::execute()
         }
     }
 
+    parameter_commands.validate(table.get());
+    for (const ParameterCommand & command : parameter_commands)
+    {
+        switch (command.type)
+        {
+            case ParameterCommand::ADD_TO_PARAMETER:
+                table->addToParameter(command.parameter, command.values, context);
+                break;
+
+            case ParameterCommand::DROP_FROM_PARAMETER:
+                table->dropFromParameter(command.parameter, command.values, context);
+                break;
+
+            case ParameterCommand::MODIFY_PARAMETER:
+                table->modifyParameter(command.parameter, command.values, context);
+                break;
+        }
+    }
+
+    channel_commands.validate(table.get());
+    for (const ChannelCommand & command : channel_commands)
+    {
+        auto channel = std::dynamic_pointer_cast<StorageLiveChannel>(table);
+        switch (command.type)
+        {
+            case ChannelCommand::ADD:
+                channel->addToChannel(command.values, context);
+                break;
+
+            case ChannelCommand::DROP:
+                channel->dropFromChannel(command.values, context);
+                break;
+
+            case ChannelCommand::SUSPEND:
+                channel->suspendInChannel(command.values, context);
+                break;
+
+            case ChannelCommand::RESUME:
+                channel->resumeInChannel(command.values, context);
+                break;
+
+            case ChannelCommand::REFRESH:
+                channel->refreshInChannel(command.values, context);
+                break;
+
+            case ChannelCommand::MODIFY:
+                channel->modifyChannel(command.values, context);
+                break;
+        }
+    }
+
     if (alter_commands.empty())
         return {};
 
@@ -98,7 +166,8 @@ BlockIO InterpreterAlterQuery::execute()
 
 void InterpreterAlterQuery::parseAlter(
     const ASTAlterQuery::ParameterContainer & params_container,
-    AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands)
+    AlterCommands & out_alter_commands, PartitionCommands & out_partition_commands,
+    ParameterCommands & out_parameter_commands, ChannelCommands & out_channel_commands)
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
@@ -182,6 +251,42 @@ void InterpreterAlterQuery::parseAlter(
             command.primary_key = params.primary_key;
             out_alter_commands.emplace_back(std::move(command));
         }
+        else if (params.type == ASTAlterQuery::ADD_TO_PARAMETER)
+        {
+            out_parameter_commands.emplace_back(ParameterCommand::addToParameter(params.parameter, params.values));
+        }
+        else if (params.type == ASTAlterQuery::DROP_FROM_PARAMETER)
+        {
+            out_parameter_commands.emplace_back(ParameterCommand::dropFromParameter(params.parameter, params.values));
+        }
+        else if (params.type == ASTAlterQuery::MODIFY_PARAMETER)
+        {
+            out_parameter_commands.emplace_back(ParameterCommand::modifyParameter(params.parameter, params.values));
+        }
+        else if (params.type == ASTAlterQuery::CHANNEL_ADD)
+        {
+            out_channel_commands.emplace_back(ChannelCommand::add(params.values));
+        }
+        else if (params.type == ASTAlterQuery::CHANNEL_DROP)
+        {
+            out_channel_commands.emplace_back(ChannelCommand::drop(params.values));
+        }
+        else if (params.type == ASTAlterQuery::CHANNEL_SUSPEND)
+        {
+            out_channel_commands.emplace_back(ChannelCommand::suspend(params.values));
+        }
+        else if (params.type == ASTAlterQuery::CHANNEL_RESUME)
+        {
+            out_channel_commands.emplace_back(ChannelCommand::resume(params.values));
+        }
+        else if (params.type == ASTAlterQuery::CHANNEL_REFRESH)
+        {
+            out_channel_commands.emplace_back(ChannelCommand::refresh(params.values));
+        }
+        else if (params.type == ASTAlterQuery::CHANNEL_MODIFY)
+        {
+            out_channel_commands.emplace_back(ChannelCommand::modify(params.values));
+        }
         else if (params.type == ASTAlterQuery::DROP_PARTITION)
         {
             out_partition_commands.emplace_back(PartitionCommand::dropPartition(params.partition, params.detach));
@@ -222,7 +327,6 @@ void InterpreterAlterQuery::parseAlter(
     }
 }
 
-
 void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
 {
     for (const PartitionCommand & command : *this)
@@ -240,5 +344,15 @@ void InterpreterAlterQuery::PartitionCommands::validate(const IStorage * table)
     }
 }
 
+void InterpreterAlterQuery::ParameterCommands::validate(const IStorage * table)
+{
+    //FIXME: add check
+}
+
+void InterpreterAlterQuery::ChannelCommands::validate(const IStorage * table)
+{
+    if ( !dynamic_cast<const StorageLiveChannel *>(table))
+        throw Exception("Wrong storage type. Must be StorageLiveChannel", DB::ErrorCodes::UNKNOWN_STORAGE);
+}
 
 }

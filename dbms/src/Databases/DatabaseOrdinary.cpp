@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Poco/DirectoryIterator.h>
 #include <common/logger_useful.h>
 
@@ -449,7 +460,7 @@ void DatabaseOrdinary::alterTable(
     const NamesAndTypesList & materialized_columns,
     const NamesAndTypesList & alias_columns,
     const ColumnDefaults & column_defaults,
-    const ASTModifier & storage_modifier)
+    const ASTModifier & ast_modifier)
 {
     /// Read the definition of the table and replace the necessary parts with new ones.
 
@@ -472,8 +483,8 @@ void DatabaseOrdinary::alterTable(
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(columns, materialized_columns, alias_columns, column_defaults);
     ast_create_query.replace(ast_create_query.columns, new_columns);
 
-    if (storage_modifier)
-        storage_modifier(*ast_create_query.storage);
+    if (ast_modifier)
+        ast_modifier(ast_create_query);
 
     statement = getTableDefinitionFromCreateQuery(ast);
 

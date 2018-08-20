@@ -223,3 +223,20 @@ Setting the value too low may result in excessive insertion frequency and lower 
 schema
 ------
 This parameter only applies when used in conjunction with formats requiring a schema definition, for example Cap'n Proto. The parameter value is specific to the format.
+
+temporary_live_view_timeout
+---------------------------
+Timeout in seconds after which temporary live view table is deleted if there are no active WATCH queries.
+
+temporary_live_channel_timeout
+------------------------------
+Timeout in seconds after which temporary live channel table is deleted if there are no active WATCH queries.
+
+heartbeat_delay
+---------------
+The interval in microseconds of inactivity after which heartbeat is sent to keep live query or channel WATCH query
+connection alive.
+
+alter_channel_wait_ms
+---------------------
+The maximum timeout to wait in milliseconds for ALTER CHANNEL query to complete.

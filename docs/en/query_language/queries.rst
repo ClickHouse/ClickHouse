@@ -107,9 +107,9 @@ At the moment, ``ALTER`` queries for replicated tables are not supported yet.
 
 CREATE VIEW
 ~~~~~~~~~~~
-``CREATE [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...``
+``CREATE [MATERIALIZED|[[TEMPORARY] LIVE]] VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...``
 
-Creates a view. There are two types of views: normal and MATERIALIZED.
+Creates a view. There are three types of views: normal, MATERIALIZED.
 
 Normal views don't store any data, but just perform a read from another table. In other words, a normal view is nothing more than a saved query. When reading from a view, this saved query is used as a subquery in the FROM clause.
 
@@ -147,6 +147,109 @@ If the materialized view uses a ``TO [db.]name`` to specify a target table, it i
 Views look the same as normal tables. For example, they are listed in the result of the SHOW TABLES query.
 
 There isn't a separate query for deleting views. To delete a view, use DROP TABLE.
+
+CREATE LIVE VIEW
+~~~~~~~~~~~~~~~~
+``CREATE [TEMPORARY] LIVE VIEW [IF NOT EXISTS] [db.]name AS SELECT ...``
+
+Creates a live view. Live views do not store any data but similar to normal views have saved query that is specified during table creation.
+However, in addition to supporting reading the table, it allows to WATCH the table
+to get updated saved query results. Query result is updated when changes are made to the table, specified in the SELECT during table creation, if the change affects saved query result.
+
+As an example, you can create a LIVE VIEW table similar to the normal view:
+
+.. code-block:: sql
+
+    CREATE LIVE VIEW view AS SELECT ...
+
+where the SELECT specifies the saved query whose result the live view will contain.
+
+If TEMPORARY live view table is created then table is automatically removed if there are no active WATCH queries after timeout specified by the
+``'temporary_live_view_timeout'`` setting.
+
+Multiple live views could be grouped into a channel using LIVE CHANNEL table.
+
+Because multiple query results are sent when live view is watched it is best to use the FORMAT that supports query result framing
+such as JSON or JSONOneLine.
+
+When LIVE VIEW table is watched with WATCH query, it produces heartbeats if there are no updates within time period specified by ``'heartbeat_delay'`` setting.
+Currently only JSON and JSONOneLine formats support heartbeats. Hearbeats are used to keep the long lived connection executing WATCH query alive.
+
+Similar to normal views, LIVE VIEW table can be deleted using DROP TABLE.
+
+CREATE LIVE CHANNEL
+~~~~~~~~~~~~~~~~~~~
+``CREATE [TEMPORARY] LIVE CHANNEL [IF NOT EXISTS] [db.]name WITH ...``
+
+Creates a live channel to group one or more live views. When table is being created existing live views could be specified in the WITH clause
+
+For example, to create a channel:
+
+.. code-block:: sql
+
+    CREATE LIVE CHANNEL channel WITH view, ...
+
+Similar to live views, live channels can be TEMPORARY and in that case the table will be automatically removed if there are no active WATCH queries
+after timeout specified by the ``'temporary_live_channel_timeout'`` setting.
+
+Live channel only supports WATCH query, it does not support reading using SELECT, and the result of WATCH query is a multiplexed stream of live view query results. Live views can be added or
+removed from the channel using ALTER CHANNEL command.
+
+When multiple live views are added to the channel, live views are checked for updated results in round-robin fashion to ensure that no
+one live view consumes all the channel bandwidth.
+
+Because multiple query results are multiplexed on the same channel, it is best to use the output FORMAT that supports query result framing
+such as JSON or JSONOneLine.
+
+When live channel is watched it produces heartbeats if are no updates within time period specified by ``'heartbeat_delay'`` setting.
+Currently only JSON and JSONOneLine formats support heartbeats. Hearbeats are used to keep the long lived connection executing WATCH query alive.
+
+Similar to views, live channels can be deleted using DROP TABLE.
+
+ALTER CHANNEL
+~~~~~~~~~~~~~~
+``ALTER CHANNEL channel ADD|REMOVE|MODIFY|REFRESH ...``
+
+Modifies channel state. One or more live views can be added or removed using ADD or REMOVE commands. To specify new group of live views that belong
+to the channel use MODIFY command. If refreshed live view query result is needed to be sent on the channel then REFRESH command can be used.
+
+For example, to add LIVE VIEW to a channel:
+
+.. code-block:: sql
+
+    ALTER CHANNEL channel ADD view
+
+to remove LIVE VIEW from a channel:
+
+.. code-block:: sql
+
+    ALTER CHANNEL channel REMOVE view
+
+to modify channel LIVE VIEW list:
+
+.. code-block:: sql
+
+    ALTER CHANNEL channel MODIFY view, ...
+
+to refresh LIVE VIEW query results:
+
+.. code-block:: sql
+
+    ALTER CHANNEL channel REFRESH view, ...
+
+The command timeout is determined by the ``'alter_channel_wait_ms'`` setting. If the timeout is reached then command is aborted
+while partial changes to the channel might have been applied. The timeout is present because channels can have large number
+of live views and the changes have to be propagated to all the active WATCH queries to keep consistent channel state.
+
+WATCH
+~~~~~
+``WATCH [db.]name [LIMIT n] [FORMAT format]``
+
+This query is used to watch either LIVE VIEW or LIVE CHANNEL tables. The LIMIT can be specified to set number of updates to receive
+before terminating the query. By default, number of updates is not limited.
+
+Similar to the SELECT query the output format is specified using FORMAT clause. Because multiple query results are sent
+as the result of WATCH query, it is best to use the FORMAT that supports query result framing such as JSON or JSONOneLine.
 
 ATTACH
 ~~~~~~

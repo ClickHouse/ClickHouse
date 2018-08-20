@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <experimental/optional>
 
 #include <DataStreams/ExpressionBlockInputStream.h>
@@ -69,7 +80,7 @@ namespace ErrorCodes
 InterpreterSelectQuery::~InterpreterSelectQuery() = default;
 
 
-void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names & required_column_names)
+void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const BlockInputStreams & inputs, const Names & required_column_names)
 {
     ProfileEvents::increment(ProfileEvents::SelectQuery);
 
@@ -104,7 +115,7 @@ void InterpreterSelectQuery::init(const BlockInputStreamPtr & input, const Names
     if (!required_column_names.empty())
         rewriteExpressionList(required_column_names);
 
-    basicInit(input);
+    basicInit(input, inputs);
 }
 
 bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
@@ -116,7 +127,7 @@ bool InterpreterSelectQuery::hasAggregation(const ASTSelectQuery & query_ptr)
     return false;
 }
 
-void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
+void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input, const BlockInputStreams & inputs)
 {
     auto query_table = query.table();
 
@@ -161,6 +172,8 @@ void InterpreterSelectQuery::basicInit(const BlockInputStreamPtr & input)
         if (!context.tryGetExternalTable(it.first))
             context.addExternalTable(it.first, it.second);
 
+    streams.insert(streams.end(), inputs.begin(), inputs.end());
+
     if (input)
         streams.push_back(input);
 
@@ -190,16 +203,17 @@ void InterpreterSelectQuery::initQueryAnalyzer()
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_, QueryProcessingStage::Enum to_stage_,
-    size_t subquery_depth_, BlockInputStreamPtr input)
+    size_t subquery_depth_, BlockInputStreamPtr input, BlockInputStreams inputs, QueryProcessingStage::Enum input_stage_)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
+    , input_stage(input_stage_)
     , is_first_select_inside_union_all(query.isUnionAllHead())
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init(input);
+    init(input, inputs);
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & query_ptr_, const Context & context_)
@@ -208,32 +222,36 @@ InterpreterSelectQuery::InterpreterSelectQuery(OnlyAnalyzeTag, const ASTPtr & qu
     , context(context_)
     , to_stage(QueryProcessingStage::Complete)
     , subquery_depth(0)
+    , input_stage(QueryProcessingStage::FetchColumns)
     , is_first_select_inside_union_all(false), only_analyze(true)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init({});
+    init(nullptr, {}, {});
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
-    QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input)
-    : InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input)
+    QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input,
+    BlockInputStreams inputs, QueryProcessingStage::Enum input_stage_)
+    : InterpreterSelectQuery(query_ptr_, context_, required_column_names_, {}, to_stage_, subquery_depth_, input, inputs, input_stage_)
 {
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(const ASTPtr & query_ptr_, const Context & context_,
     const Names & required_column_names_,
-    const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_, BlockInputStreamPtr input)
+    const NamesAndTypesList & table_column_names_, QueryProcessingStage::Enum to_stage_, size_t subquery_depth_,
+    BlockInputStreamPtr input, BlockInputStreams inputs, QueryProcessingStage::Enum input_stage_)
     : query_ptr(query_ptr_)
     , query(typeid_cast<ASTSelectQuery &>(*query_ptr))
     , context(context_)
     , to_stage(to_stage_)
     , subquery_depth(subquery_depth_)
+    , input_stage(input_stage_)
     , table_column_names(table_column_names_)
     , is_first_select_inside_union_all(query.isUnionAllHead())
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    init(input, required_column_names_);
+    init(input, inputs, required_column_names_);
 }
 
 bool InterpreterSelectQuery::hasAsterisk() const
@@ -688,7 +706,7 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns()
 {
     if (!hasNoData())
-        return QueryProcessingStage::FetchColumns;
+        return input_stage;
 
     /// The subquery interpreter, if the subquery
     std::experimental::optional<InterpreterSelectQuery> interpreter_subquery;

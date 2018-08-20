@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <iomanip>
 
 #include <Poco/Net/NetException.h>
@@ -7,6 +18,7 @@
 #include <Common/Stopwatch.h>
 
 #include <Core/Progress.h>
+#include <Core/Heartbeat.h>
 
 #include <IO/CompressedReadBuffer.h>
 #include <IO/CompressedWriteBuffer.h>
@@ -114,6 +126,7 @@ void TCPHandler::runImpl()
     sendHello();
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    connection_context.setHeartbeatCallback([this] (const Heartbeat & value) { return this->sendHeartbeat(value); });
 
     while (1)
     {
@@ -322,11 +335,14 @@ void TCPHandler::processOrdinaryQuery()
                 }
                 else
                 {
-                    if (state.progress.rows && after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
+                    if (after_send_progress.elapsed() / 1000 >= query_context.getSettingsRef().interactive_delay)
                     {
-                        /// Some time passed and there is a progress.
-                        after_send_progress.restart();
-                        sendProgress();
+                        if (state.progress.rows)
+                        {
+                            /// Some time passed and there is a progress.
+                            after_send_progress.restart();
+                            sendProgress();
+                        }
                     }
 
                     if (async_in.poll(query_context.getSettingsRef().interactive_delay / 1000))
@@ -354,6 +370,14 @@ void TCPHandler::processOrdinaryQuery()
             }
 
             sendData(block);
+
+            /// Send progress after sending last block in the frame
+            if (block.info.is_end_frame)
+            {
+                after_send_progress.restart();
+                sendProgress();
+            }
+
             if (!block)
                 break;
         }
@@ -393,6 +417,12 @@ void TCPHandler::processTablesStatusRequest()
     response.write(*out, client_revision);
 }
 
+void TCPHandler::sendHeartbeat(const Heartbeat & heartbeat)
+{
+    writeVarUInt(Protocol::Server::Heartbeat, *out);
+    heartbeat.write(*out, client_revision);
+    out->next();
+}
 
 void TCPHandler::sendProfileInfo()
 {

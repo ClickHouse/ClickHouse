@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <Core/QueryProcessingStage.h>
@@ -32,6 +43,9 @@ public:
      * input
      * - if given - read not from the table specified in the query, but from ready source.
      *
+     * input_stage
+     * - input processed stage
+     *
      * required_column_names
      * - delete all columns except the specified ones from the query - it is used to delete unnecessary columns from subqueries.
      *
@@ -45,7 +59,9 @@ public:
         const Context & context_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        BlockInputStreamPtr input = nullptr);
+        BlockInputStreamPtr input = nullptr,
+        BlockInputStreams inputs = {},
+        QueryProcessingStage::Enum input_stage_ = QueryProcessingStage::FetchColumns);
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -53,7 +69,9 @@ public:
         const Names & required_column_names,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        BlockInputStreamPtr input = nullptr);
+        BlockInputStreamPtr input = nullptr,
+        BlockInputStreams inputs = {},
+        QueryProcessingStage::Enum input_stage_ = QueryProcessingStage::FetchColumns);
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -62,7 +80,9 @@ public:
         const NamesAndTypesList & table_column_names_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
-        BlockInputStreamPtr input = nullptr);
+        BlockInputStreamPtr input = nullptr,
+        BlockInputStreams inputs = {},
+        QueryProcessingStage::Enum input_stage_ = QueryProcessingStage::FetchColumns);
 
     ~InterpreterSelectQuery();
 
@@ -93,8 +113,8 @@ private:
         const ASTPtr & query_ptr_,
         const Context & context_);
 
-    void init(const BlockInputStreamPtr & input, const Names & required_column_names = Names{});
-    void basicInit(const BlockInputStreamPtr & input);
+    void init(const BlockInputStreamPtr & input, const BlockInputStreams & inputs, const Names & required_column_names = Names{});
+    void basicInit(const BlockInputStreamPtr & input, const BlockInputStreams & inputs);
     void initQueryAnalyzer();
     bool hasAggregation(const ASTSelectQuery & query_ptr);
 
@@ -170,6 +190,7 @@ private:
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth;
+    QueryProcessingStage::Enum input_stage;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
     NamesAndTypesList table_column_names;
 

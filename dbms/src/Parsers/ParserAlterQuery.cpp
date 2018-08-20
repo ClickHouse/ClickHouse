@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -15,11 +26,23 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     Pos begin = pos;
 
     ParserKeyword s_alter_table("ALTER TABLE");
+    ParserKeyword s_alter_channel("ALTER CHANNEL");
     ParserKeyword s_add_column("ADD COLUMN");
     ParserKeyword s_drop_column("DROP COLUMN");
     ParserKeyword s_clear_column("CLEAR COLUMN");
     ParserKeyword s_modify_column("MODIFY COLUMN");
     ParserKeyword s_modify_primary_key("MODIFY PRIMARY KEY");
+
+    ParserKeyword s_add("ADD");
+    ParserKeyword s_drop("DROP");
+    ParserKeyword s_suspend("SUSPEND");
+    ParserKeyword s_resume("RESUME");
+    ParserKeyword s_refresh("REFRESH");
+    ParserKeyword s_modify("MODIFY");
+
+    ParserKeyword s_add_to_parameter("ADD TO PARAMETER");
+    ParserKeyword s_drop_from_parameter("DROP FROM PARAMETER");
+    ParserKeyword s_modify_parameter("MODIFY PARAMETER");
 
     ParserKeyword s_attach_partition("ATTACH PARTITION");
     ParserKeyword s_detach_partition("DETACH PARTITION");
@@ -48,6 +71,8 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserPartition parser_partition;
     ParserStringLiteral parser_string_literal;
+    ParserNameList values_p;
+    ParserIdentifier parser_identifier;
 
     ASTPtr table;
     ASTPtr database;
@@ -55,11 +80,17 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr col_type;
     ASTPtr col_after;
     ASTPtr col_drop;
+    bool is_channel = false;
 
     auto query = std::make_shared<ASTAlterQuery>();
 
     if (!s_alter_table.ignore(pos, expected))
-        return false;
+    {
+        if (!s_alter_channel.ignore(pos, expected))
+            return false;
+        else
+            is_channel = true;
+    }
 
     if (!table_parser.parse(pos, database, expected))
         return false;
@@ -85,174 +116,257 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    if (is_channel)
+        query->is_channel = true;
+
     bool parsing_finished = false;
     do
     {
         ASTAlterQuery::Parameters params;
-
-        if (s_add_column.ignore(pos, expected))
+        if (!is_channel)
         {
-            if (!parser_col_decl.parse(pos, params.col_decl, expected))
-                return false;
 
-            if (s_after.ignore(pos, expected))
+            if (s_add_column.ignore(pos, expected))
             {
-                if(!parser_name.parse(pos, params.column, expected))
+                if (!parser_col_decl.parse(pos, params.col_decl, expected))
                     return false;
+
+                if (s_after.ignore(pos, expected))
+                {
+                    if(!parser_name.parse(pos, params.column, expected))
+                        return false;
+                }
+
+                params.type = ASTAlterQuery::ADD_COLUMN;
             }
+            else if (s_add_to_parameter.ignore(pos, expected))
+            {
+                if (!parser_identifier.parse(pos, params.parameter, expected))
+                    return false;
 
-            params.type = ASTAlterQuery::ADD_COLUMN;
-        }
-        else if (s_drop_partition.ignore(pos, expected))
-        {
-            if (!parser_partition.parse(pos, params.partition, expected))
-                return false;
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
 
-            params.type = ASTAlterQuery::DROP_PARTITION;
-        }
-        else if (s_drop_column.ignore(pos, expected))
-        {
-            if (!parser_name.parse(pos, params.column, expected))
-                return false;
-
-            params.type = ASTAlterQuery::DROP_COLUMN;
-            params.detach = false;
-        }
-        else if (s_clear_column.ignore(pos, expected))
-        {
-            if (!parser_name.parse(pos, params.column, expected))
-                return false;
-
-            params.type = ASTAlterQuery::DROP_COLUMN;
-            params.clear_column = true;
-            params.detach = false;
-
-            if (s_in_partition.ignore(pos, expected))
+                params.type = ASTAlterQuery::ADD_TO_PARAMETER;
+            }
+            else if (s_drop_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, params.partition, expected))
                     return false;
+
+                params.type = ASTAlterQuery::DROP_PARTITION;
             }
-        }
-        else if (s_detach_partition.ignore(pos, expected))
-        {
-            if (!parser_partition.parse(pos, params.partition, expected))
-                return false;
-
-            params.type = ASTAlterQuery::DROP_PARTITION;
-            params.detach = true;
-        }
-        else if (s_attach_partition.ignore(pos, expected))
-        {
-            if (!parser_partition.parse(pos, params.partition, expected))
-                return false;
-
-            params.type = ASTAlterQuery::ATTACH_PARTITION;
-        }
-        else if (s_attach_part.ignore(pos, expected))
-        {
-            if (!parser_string_literal.parse(pos, params.partition, expected))
-                return false;
-
-            params.part = true;
-            params.type = ASTAlterQuery::ATTACH_PARTITION;
-        }
-        else if (s_fetch_partition.ignore(pos, expected))
-        {
-            if (!parser_partition.parse(pos, params.partition, expected))
-                return false;
-
-            if (!s_from.ignore(pos, expected))
-                return false;
-
-            ASTPtr ast_from;
-            if (!parser_string_literal.parse(pos, ast_from, expected))
-                return false;
-
-            params.from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
-            params.type = ASTAlterQuery::FETCH_PARTITION;
-        }
-        else if (s_freeze_partition.ignore(pos, expected))
-        {
-            if (!parser_partition.parse(pos, params.partition, expected))
-                return false;
-
-            /// WITH NAME 'name' - place local backup to directory with specified name
-            if (s_with.ignore(pos, expected))
+            else if (s_drop_column.ignore(pos, expected))
             {
-                if (!s_name.ignore(pos, expected))
+                if (!parser_name.parse(pos, params.column, expected))
                     return false;
 
-                ASTPtr ast_with_name;
-                if (!parser_string_literal.parse(pos, ast_with_name, expected))
-                    return false;
-
-                params.with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
+                params.type = ASTAlterQuery::DROP_COLUMN;
+                params.detach = false;
             }
+            else if (s_drop_from_parameter.ignore(pos, expected))
+            {
+                if (!parser_identifier.parse(pos, params.parameter, expected))
+                    return false;
 
-            params.type = ASTAlterQuery::FREEZE_PARTITION;
-        }
-        else if (s_modify_column.ignore(pos, expected))
-        {
-            if (!parser_col_decl.parse(pos, params.col_decl, expected))
-                return false;
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
 
-            params.type = ASTAlterQuery::MODIFY_COLUMN;
-        }
-        else if (s_modify_primary_key.ignore(pos, expected))
-        {
-            if (pos->type != TokenType::OpeningRoundBracket)
-                return false;
-            ++pos;
+                params.type = ASTAlterQuery::DROP_FROM_PARAMETER;
+            }
+            else if (s_clear_column.ignore(pos, expected))
+            {
+                if (!parser_name.parse(pos, params.column, expected))
+                    return false;
 
-            if (!ParserNotEmptyExpressionList(false).parse(pos, params.primary_key, expected))
-                return false;
+                params.type = ASTAlterQuery::DROP_COLUMN;
+                params.clear_column = true;
+                params.detach = false;
 
-            if (pos->type != TokenType::ClosingRoundBracket)
-                return false;
-            ++pos;
-
-            params.type = ASTAlterQuery::MODIFY_PRIMARY_KEY;
-        }
-        else if (s_reshard.ignore(pos, expected))
-        {
-            ParserList weighted_zookeeper_paths_p(std::make_unique<ParserWeightedZooKeeperPath>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-            ParserExpression parser_sharding_key_expr;
-            ParserStringLiteral parser_coordinator;
-
-            if (s_copy.ignore(pos, expected))
-                params.do_copy = true;
-
-            if (s_partition.ignore(pos, expected))
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, params.partition, expected))
+                        return false;
+                }
+            }
+            else if (s_detach_partition.ignore(pos, expected))
             {
                 if (!parser_partition.parse(pos, params.partition, expected))
                     return false;
+
+                params.type = ASTAlterQuery::DROP_PARTITION;
+                params.detach = true;
             }
-
-            if (!s_to.ignore(pos, expected))
-                return false;
-
-            if (!weighted_zookeeper_paths_p.parse(pos, params.weighted_zookeeper_paths, expected))
-                return false;
-
-            if (!s_using.ignore(pos, expected))
-                return false;
-
-            if (!parser_sharding_key_expr.parse(pos, params.sharding_key_expr, expected))
-                return false;
-
-            if (s_coordinate.ignore(pos, expected))
+            else if (s_attach_partition.ignore(pos, expected))
             {
-                if (!s_with.ignore(pos, expected))
+                if (!parser_partition.parse(pos, params.partition, expected))
                     return false;
 
-                if (!parser_coordinator.parse(pos, params.coordinator, expected))
-                    return false;
+                params.type = ASTAlterQuery::ATTACH_PARTITION;
             }
+            else if (s_attach_part.ignore(pos, expected))
+            {
+                if (!parser_string_literal.parse(pos, params.partition, expected))
+                    return false;
 
-            params.type = ASTAlterQuery::RESHARD_PARTITION;
+                params.part = true;
+                params.type = ASTAlterQuery::ATTACH_PARTITION;
+            }
+            else if (s_fetch_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, params.partition, expected))
+                    return false;
+
+                if (!s_from.ignore(pos, expected))
+                    return false;
+
+                ASTPtr ast_from;
+                if (!parser_string_literal.parse(pos, ast_from, expected))
+                    return false;
+
+                params.from = typeid_cast<const ASTLiteral &>(*ast_from).value.get<const String &>();
+                params.type = ASTAlterQuery::FETCH_PARTITION;
+            }
+            else if (s_freeze_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, params.partition, expected))
+                    return false;
+
+                /// WITH NAME 'name' - place local backup to directory with specified name
+                if (s_with.ignore(pos, expected))
+                {
+                    if (!s_name.ignore(pos, expected))
+                        return false;
+
+                    ASTPtr ast_with_name;
+                    if (!parser_string_literal.parse(pos, ast_with_name, expected))
+                        return false;
+
+                    params.with_name = typeid_cast<const ASTLiteral &>(*ast_with_name).value.get<const String &>();
+                }
+
+                params.type = ASTAlterQuery::FREEZE_PARTITION;
+            }
+            else if (s_modify_column.ignore(pos, expected))
+            {
+                if (!parser_col_decl.parse(pos, params.col_decl, expected))
+                    return false;
+
+                params.type = ASTAlterQuery::MODIFY_COLUMN;
+            }
+            else if (s_modify_parameter.ignore(pos, expected))
+            {
+                if (!parser_identifier.parse(pos, params.parameter, expected))
+                    return false;
+
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::MODIFY_PARAMETER;
+            }
+            else if (s_modify_primary_key.ignore(pos, expected))
+            {
+                if (pos->type != TokenType::OpeningRoundBracket)
+                    return false;
+                ++pos;
+
+                if (!ParserNotEmptyExpressionList(false).parse(pos, params.primary_key, expected))
+                    return false;
+
+                if (pos->type != TokenType::ClosingRoundBracket)
+                    return false;
+                ++pos;
+
+                params.type = ASTAlterQuery::MODIFY_PRIMARY_KEY;
+            }
+            else if (s_reshard.ignore(pos, expected))
+            {
+                ParserList weighted_zookeeper_paths_p(std::make_unique<ParserWeightedZooKeeperPath>(), std::make_unique<ParserToken>(TokenType::Comma), false);
+                ParserExpression parser_sharding_key_expr;
+                ParserStringLiteral parser_coordinator;
+
+                if (s_copy.ignore(pos, expected))
+                    params.do_copy = true;
+
+                if (s_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, params.partition, expected))
+                        return false;
+                }
+
+                if (!s_to.ignore(pos, expected))
+                    return false;
+
+                if (!weighted_zookeeper_paths_p.parse(pos, params.weighted_zookeeper_paths, expected))
+                    return false;
+
+                if (!s_using.ignore(pos, expected))
+                    return false;
+
+                if (!parser_sharding_key_expr.parse(pos, params.sharding_key_expr, expected))
+                    return false;
+
+                if (s_coordinate.ignore(pos, expected))
+                {
+                    if (!s_with.ignore(pos, expected))
+                        return false;
+
+                    if (!parser_coordinator.parse(pos, params.coordinator, expected))
+                        return false;
+                }
+
+                params.type = ASTAlterQuery::RESHARD_PARTITION;
+            }
+            else
+                return false;
         }
         else
-            return false;
+        {
+            if (s_add.ignore(pos, expected))
+            {
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::CHANNEL_ADD;
+            }
+            else if (s_drop.ignore(pos, expected))
+            {
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::CHANNEL_DROP;
+            }
+            else if (s_suspend.ignore(pos, expected))
+            {
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::CHANNEL_SUSPEND;
+            }
+            else if (s_resume.ignore(pos, expected))
+            {
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::CHANNEL_RESUME;
+            }
+            else if (s_refresh.ignore(pos, expected))
+            {
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::CHANNEL_REFRESH;
+            }
+            else if (s_modify.ignore(pos, expected))
+            {
+                if (!values_p.parse(pos, params.values, expected))
+                        return false;
+
+                params.type = ASTAlterQuery::CHANNEL_MODIFY;
+            }
+            else
+                return false;
+        }
 
         if (!s_comma.ignore(pos, expected))
             parsing_finished = true;

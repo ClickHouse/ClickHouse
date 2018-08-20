@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -115,6 +126,7 @@ private:
     size_t insert_format_max_block_size = 0; /// Max block size when reading INSERT data.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
+    bool open_frame = false;             /// Stream open frame flag
 
     Context context = Context::createGlobal();
 
@@ -903,6 +915,10 @@ private:
                 onExtremes(packet.block);
                 return true;
 
+            case Protocol::Server::Heartbeat:
+                onHeartbeat(packet.heartbeat);
+                return true;
+
             case Protocol::Server::Exception:
                 onException(*packet.exception);
                 last_exception = std::move(packet.exception);
@@ -986,7 +1002,7 @@ private:
                 current_format = "Vertical";
 
             block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
-            block_out_stream->writePrefix();
+            open_frame = false;
         }
     }
 
@@ -1003,10 +1019,22 @@ private:
         initBlockOutputStream(block);
 
         /// The header block containing zero rows was used to initialize block_out_stream, do not output it.
-        if (block.rows() != 0)
+        if (block.rows() != 0 || block.info.is_start_frame)
         {
+            if (!open_frame || block.info.is_start_frame)
+            {
+                block_out_stream->setSampleBlock(block);
+                block_out_stream->writePrefix();
+                open_frame = true;
+            }
             block_out_stream->write(block);
             written_first_block = true;
+        }
+
+        if (block.info.is_end_frame)
+        {
+            block_out_stream->writeSuffix();
+            open_frame = false;
         }
 
         /// Received data block is immediately displayed to the user.
@@ -1026,6 +1054,10 @@ private:
         block_out_stream->setExtremes(block);
     }
 
+    void onHeartbeat(const Heartbeat & heartbeat)
+    {
+        block_out_stream->onHeartbeat(heartbeat);
+    }
 
     void onProgress(const Progress & value)
     {
@@ -1117,6 +1149,7 @@ private:
         }
 
         std::cerr << ENABLE_LINE_WRAPPING;
+        std::cerr << "\n";
         ++increment;
     }
 
@@ -1162,8 +1195,16 @@ private:
 
     void onEndOfStream()
     {
-        if (block_out_stream)
+        if (block_out_stream && !processed_rows)
+        {
+            block_out_stream->writePrefix();
+            open_frame = true;
+        }
+        if (block_out_stream && open_frame)
+        {
             block_out_stream->writeSuffix();
+            open_frame = false;
+        }
 
         resetOutput();
 

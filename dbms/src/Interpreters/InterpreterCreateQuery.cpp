@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <memory>
 
 #include <Poco/File.h>
@@ -26,6 +37,7 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLog.h>
+#include <Storages/StorageLiveView.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -56,6 +68,8 @@ namespace ErrorCodes
     extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
+    extern const int UNKNOWN_STORAGE;
+    extern const int DDL_GUARD_IS_ACTIVE;
 }
 
 
@@ -385,8 +399,73 @@ InterpreterCreateQuery::ColumnsInfo InterpreterCreateQuery::setColumns(
         for (size_t i = 0; i < as_select_sample.columns(); ++i)
             res.columns->push_back(NameAndTypePair(as_select_sample.safeGetByPosition(i).name, as_select_sample.safeGetByPosition(i).type));
     }
+    else if (create.is_live_channel && create.tables)
+    {
+        StoragePtr storage;
+        String current_database = context.getCurrentDatabase();
+        String table_name;
+        String database_name;
+
+        std::set<String> all_channel_columns;
+
+        for (auto & ast : create.tables->children)
+        {
+            auto & table_identifier = typeid_cast<ASTIdentifier &>(*ast);
+
+            if ( table_identifier.children.size() > 2 )
+                throw Exception("Incorrect CREATE query: invalid table identifier must be of the form [db.]name", ErrorCodes::INCORRECT_QUERY);
+
+            if ( table_identifier.children.size() > 1 )
+            {
+                database_name = static_cast<const ASTIdentifier &>(*table_identifier.children[0].get()).name;
+                table_name = static_cast<const ASTIdentifier &>(*table_identifier.children[1].get()).name;
+            }
+            else
+            {
+                database_name = current_database;
+                table_name = table_identifier.name;
+            }
+
+            storage = context.getTable(database_name, table_name);
+
+            /// Check storage is StorageLiveView
+            if ( !(std::dynamic_pointer_cast<StorageLiveView>(storage)) )
+                throw Exception("Cannot CREATE channel table: unknown storage, must be StorageLiveView", ErrorCodes::UNKNOWN_STORAGE);
+
+            NamesAndTypesList columns = storage->getColumnsListNonMaterialized();
+
+            for (auto & pair : columns)
+            {
+                if (!all_channel_columns.emplace(pair.name).second)
+                    continue;
+                res.columns->insert(res.columns->end(), pair);
+            }
+
+            for (auto & pair : storage->materialized_columns)
+            {
+                if (!all_channel_columns.emplace(pair.name).second)
+                    continue;
+                res.materialized_columns.insert(res.materialized_columns.end(), pair);
+            }
+
+            for (auto & pair : storage->alias_columns)
+            {
+                if (!all_channel_columns.emplace(pair.name).second)
+                    continue;
+                res.alias_columns.insert(res.alias_columns.end(), pair);
+            }
+
+            for (auto & pair : storage->column_defaults)
+            {
+                if (!all_channel_columns.emplace(pair.first).second)
+                    continue;
+                res.column_defaults.insert({ pair.first, pair.second });
+            }
+
+        }
+    }
     else
-        throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
+        throw Exception("Incorrect CREATE query: required list of column descriptions, AS section, SELECT or WITH section.", ErrorCodes::INCORRECT_QUERY);
 
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     ASTPtr new_columns = formatColumns(*res.columns, res.materialized_columns, res.alias_columns, res.column_defaults);
@@ -426,7 +505,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.is_temporary)
+    if (create.is_temporary && !(create.is_live_view || create.is_live_channel))
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -447,6 +526,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.is_view)
             throw Exception(
                 "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a View",
+                ErrorCodes::INCORRECT_QUERY);
+
+        if (as_create.is_live_view)
+            throw Exception(
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a LiveView",
+                ErrorCodes::INCORRECT_QUERY);
+
+        if (as_create.is_live_channel)
+            throw Exception(
+                "Cannot CREATE a table AS " + as_database_name + "." + as_table_name + ", it is a LiveChannel",
                 ErrorCodes::INCORRECT_QUERY);
 
         create.set(create.storage, as_create.storage->ptr());
@@ -486,10 +575,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;
     Block as_select_sample;
     /// For `view` type tables, you may need `sample_block` to get the columns.
-    if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view))))
+    if (create.select && (!create.attach || (!create.columns && (create.is_view || create.is_materialized_view || create.is_live_view))))
     {
         create.select->setDatabaseIfNeeded(current_database);
-        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->ptr(), context);
+        interpreter_select = std::make_unique<InterpreterSelectQuery>(create.select->clone(), context);
         as_select_sample = interpreter_select->getSampleBlock();
     }
 
@@ -515,7 +604,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         std::unique_ptr<DDLGuard> guard;
 
-        if (!create.is_temporary)
+        if (!create.is_temporary || (create.is_temporary && (create.is_live_view || create.is_live_channel)))
         {
             context.assertDatabaseExists(database_name);
 
@@ -524,9 +613,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
               * Otherwise, concurrent queries for creating a table, if the table does not exist,
               *  can throw an exception, even if IF NOT EXISTS is specified.
               */
-            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
-                "Table " + database_name + "." + table_name + " is creating or attaching right now");
-
+            try
+            {
+                guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
+                    "Table " + database_name + "." + table_name + " is creating or attaching right now");
+            }
+            catch (const DB::Exception & ex)
+            {
+                /// Do not throw an exception if not exists clause is specified
+                if (ex.code() == ErrorCodes::DDL_GUARD_IS_ACTIVE && create.if_not_exists)
+                    return {};
+                throw;
+            }
             if (!guard)
             {
                 if (create.if_not_exists)
@@ -541,7 +639,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             columns.columns, columns.materialized_columns, columns.alias_columns, columns.column_defaults,
             create.attach, false);
 
-        if (create.is_temporary)
+        if (create.is_temporary && !(create.is_live_view || create.is_live_channel))
             context.getSessionContext().addExternalTable(table_name, res);
         else
             context.getDatabase(database_name)->createTable(context, table_name, res, query_ptr);
@@ -550,7 +648,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     res->startup();
 
     /// If the CREATE SELECT query is, insert the data into the table
-    if (create.select && !create.is_view && (!create.is_materialized_view || create.is_populate))
+    if (create.select && !create.is_view && !create.is_live_view && !create.is_live_channel && (!create.is_materialized_view || create.is_populate))
     {
         auto table_lock = res->lockStructure(true, __PRETTY_FUNCTION__);
 

@@ -83,5 +83,42 @@ If the query contains GROUP BY, ``rows_before_limit_at_least`` is the exact numb
 
 ``extremes`` - Extreme values (when extremes is set to 1).
 
+When used in WATCH query, ``hash`` attribute is added to the result:
+
+.. code-block:: json
+
+  {
+          "hash": "687d4e26eeadf6dfe009b66f0c22edf",
+
+          "meta":
+          [
+                  {
+                          "name": "SearchPhrase",
+                          "type": "String"
+                  },
+                  {
+                          "name": "c",
+                          "type": "UInt64"
+                  }
+          ],
+          ...
+  }
+
+also in WATCH query, heartbeat objects are supported:
+
+.. code-block:: json
+
+  {
+          "heartbeat":
+          {
+                  "timestamp": "1517023310853606",
+
+                  "hash":
+                  {
+                          "blocks": "687d4e26eeadf6dfe009b66f0c22edf"
+                  }
+          }
+  }
+
 This format is only appropriate for outputting a query result, not for parsing.
 See JSONEachRow format for INSERT queries.

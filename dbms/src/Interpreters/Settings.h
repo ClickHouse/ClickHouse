@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <Poco/Timespan.h>
@@ -53,6 +64,14 @@ struct Settings
     M(SettingUInt64, max_query_size, DEFAULT_MAX_QUERY_SIZE) \
     /** The interval in microseconds to check if the request is cancelled, and to send progress info. */ \
     M(SettingUInt64, interactive_delay, DEFAULT_INTERACTIVE_DELAY) \
+    /** The interval in microseconds to indicate live query is alive. */ \
+    M(SettingUInt64, heartbeat_delay, DEFAULT_HEARTBEAT_DELAY) \
+    /** Timeout after which temporary view is deleted. */ \
+    M(SettingSeconds, temporary_live_view_timeout, DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC) \
+    /** Timeout after which temporary channel is deleted. */ \
+    M(SettingSeconds, temporary_live_channel_timeout, DEFAULT_TEMPORARY_LIVE_CHANNEL_TIMEOUT_SEC) \
+    /** The wait time for alter channel request */ \
+    M(SettingMilliseconds, alter_channel_wait_ms, DEFAULT_ALTER_CHANNEL_WAIT_MS) \
     M(SettingSeconds, connect_timeout, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC) \
     /** If you should select one of the working replicas. */ \
     M(SettingMilliseconds, connect_timeout_with_failover_ms, DBMS_DEFAULT_CONNECT_TIMEOUT_WITH_FAILOVER_MS) \

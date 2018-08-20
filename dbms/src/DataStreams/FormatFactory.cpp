@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Common/config.h>
 #include <Interpreters/Context.h>
 #include <DataStreams/NativeBlockInputStream.h>
@@ -21,6 +32,7 @@
 #include <DataStreams/JSONCompactRowOutputStream.h>
 #include <DataStreams/JSONEachRowRowOutputStream.h>
 #include <DataStreams/JSONEachRowRowInputStream.h>
+#include <DataStreams/JSONOneLineOutputStream.h>
 #include <DataStreams/XMLRowOutputStream.h>
 #include <DataStreams/TSKVRowOutputStream.h>
 #include <DataStreams/TSKVRowInputStream.h>
@@ -125,6 +137,7 @@ BlockInputStreamPtr FormatFactory::getInput(const String & name, ReadBuffer & bu
         || name == "Null"
         || name == "JSON"
         || name == "JSONCompact"
+        || name == "JSONOneLine"
         || name == "XML"
         || name == "ODBCDriver")
     {
@@ -195,6 +208,9 @@ static BlockOutputStreamPtr getOutputImpl(const String & name, WriteBuffer & buf
     else if (name == "JSONEachRow")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONEachRowRowOutputStream>(
             buf, sample, json_settings));
+    else if (name == "JSONOneLine")
+        return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<JSONOneLineOutputStream>(
+            buf, sample, settings.output_format_write_statistics, json_settings));
     else if (name == "XML")
         return std::make_shared<BlockOutputStreamFromRowOutputStream>(std::make_shared<XMLRowOutputStream>(buf, sample,
             settings.output_format_write_statistics));
