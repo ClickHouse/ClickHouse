@@ -1954,8 +1954,14 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     String source_path = zookeeper_path + "/replicas/" + source_replica;
     
     zkutil::Stat is_lost_stat;
-    if (zookeeper->get(source_path + "/is_lost", &is_lost_stat) == "1")
-        return false;
+    /// 
+    is_lost_stat.version = -2;
+    String res;
+    if (zookeeper->tryGet(source_path + "/is_lost", res, &is_lost_stat))
+        if (res == "1")
+            return false;
+        
+    std::cout << is_lost_stat.version << "1111111111111111111111";
 
     /** If the reference/master replica is not yet fully created, let's wait.
         * NOTE: If something went wrong while creating it, we can hang around forever.
@@ -1978,23 +1984,14 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     }
 
     /// The order of the following three actions is important. Entries in the log can be duplicated, but they can not be lost.
-
-    zkutil::Requests ops;
     
     /// We must set log_pointer atomically in order to cleanupThread can not clear log with our log_pointer.
     String raw_log_pointer = zookeeper->get(source_path + "/log_pointer");
 
-    zkutil::Responses resp;
-    ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", is_lost_stat.version));
-    ops.push_back(zkutil::makeSetRequest(replica_path + "/log_pointer", raw_log_pointer, -1));
-    auto error = zookeeper->tryMulti(ops, resp);
-    if (error != ZooKeeperImpl::ZooKeeper::ZOK)
-    {
-        LOG_DEBUG(log, "Can not clone replica, because a source replica is lost");
+    zookeeper->set(replica_path + "/log_pointer", raw_log_pointer, -1);
+
+    if (!checkStat(zookeeper, source_path, is_lost_stat))
         return false;
-    }
-    ops.clear();
-    resp.clear();
 
     /// Check that log_pointer in entries.
     Strings entries = zookeeper->getChildren(zookeeper_path + "/log");
@@ -2023,15 +2020,8 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
         source_queue.push_back(entry);
     }
     
-    ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", is_lost_stat.version));
-    error = zookeeper->tryMulti(ops, resp);
-    if (error != ZooKeeperImpl::ZooKeeper::ZOK)
-    {
-        LOG_DEBUG(log, "Can not clone replica, because a source replica is lost");
+    if (!checkStat(zookeeper, source_path, is_lost_stat))
         return false;
-    }
-    ops.clear();
-    resp.clear();
 
     /// Add to the queue jobs to receive all the active parts that the reference/master replica has.
     Strings parts = zookeeper->getChildren(source_path + "/parts");
@@ -2046,16 +2036,10 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
         log_entry.new_part_name = name;
         log_entry.create_time = tryGetPartCreateTime(zookeeper, source_path, name);
 
-        ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", is_lost_stat.version));
-        ops.push_back(zkutil::makeCreateRequest(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-        auto error = zookeeper->tryMulti(ops, resp);
-        if (error != ZooKeeperImpl::ZooKeeper::ZOK)
-        {
-            LOG_DEBUG(log, "Can not clone replica, because a source replica is lost");
+        zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
+        
+        if (!checkStat(zookeeper, source_path, is_lost_stat))
             return false;
-        }
-        ops.clear();
-        resp.clear();
     }
     
     LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
@@ -2071,20 +2055,58 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
 }
 
 
+bool StorageReplicatedMergeTree::checkStat(const zkutil::ZooKeeperPtr & zookeeper, const String & source_path, zkutil::Stat stat)
+{
+    zkutil::Requests ops;
+    zkutil::Responses resp;
+    
+    ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", stat.version));
+    
+    auto error = zookeeper->tryMulti(ops, resp);
+    
+    if (error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+    {
+        LOG_DEBUG(log, "Can not clone replica, because a source replica is lost");
+        return false;
+    }
+    return true;
+}
+
+
 void StorageReplicatedMergeTree::cloneReplicaIfNeeded()
 {
     auto zookeeper = getZooKeeper();
 
-    if ((zookeeper->get(replica_path + "/is_lost") == "0"))
+    String res;
+    if (zookeeper->tryGet(replica_path + "/is_lost", res))
+    {
+        if (res == "0")
+            return;
+    }
+    else
+    {
+        /// replica is_active, and we can create is_lost (for old version).
+        zookeeper->create(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent);
         return;
+    }
 
     String source_replica;
 
     for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
     {
         String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
-        if ((source_replica_path != replica_path) && (zookeeper->get(source_replica_path + "/is_lost") == "0"))
+        
+        if ((source_replica_path != replica_path) && !zookeeper->exists(source_replica_path + "/is_lost"))
+        {
             source_replica = replica_name;
+            break;
+        }
+        
+        if ((source_replica_path != replica_path) && (zookeeper->get(source_replica_path + "/is_lost") == "0"))
+        {
+            source_replica = replica_name;
+            break;
+        }
     }
     
     if (source_replica == "")

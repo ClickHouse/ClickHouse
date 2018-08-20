@@ -67,6 +67,25 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 {
     auto zookeeper = storage.getZooKeeper();
+    
+    auto replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
+    
+    for (auto replica : replicas)
+    {
+        auto replica_path = storage.zookeeper_path + "/replicas/" + replica;
+        if (!zookeeper->exists(replica_path + "/is_lost"))
+        {
+            oldCleaner();
+            return;
+        }
+    }
+    newCleaner();
+}
+
+
+void ReplicatedMergeTreeCleanupThread::newCleaner()
+{
+    auto zookeeper = storage.getZooKeeper();
 
     zkutil::Stat stat;
     if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
@@ -145,7 +164,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         return;
 
     /// We must mark lost replicas.
-    if (!markLostReplicas(hosts_version, log_pointers_lost_replicas, log_pointers_version, entries[0], zookeeper))
+    if (!markLostReplicas(hosts_version, log_pointers_lost_replicas, entries.back(), zookeeper))
     {
         LOG_DEBUG(log, "Can not mark lost replicas");
         return;
@@ -169,9 +188,61 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 }
 
 
+void ReplicatedMergeTreeCleanupThread::oldCleaner()
+{
+    auto zookeeper = storage.getZooKeeper();
+
+    zkutil::Stat stat;
+    if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
+        throw Exception(storage.zookeeper_path + "/log doesn't exist", ErrorCodes::NOT_FOUND_NODE);
+
+    int children_count = stat.numChildren;
+
+    /// We will wait for 1.1 times more records to accumulate than necessary.
+    if (static_cast<double>(children_count) < storage.data.settings.max_replicated_logs_to_keep * 1.1)
+        return;
+
+    Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
+    UInt64 min_pointer = std::numeric_limits<UInt64>::max();
+    for (const String & replica : replicas)
+    {
+        String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
+        if (pointer.empty())
+            return;
+        min_pointer = std::min(min_pointer, parse<UInt64>(pointer));
+    }
+
+    Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
+    std::sort(entries.begin(), entries.end());
+
+    /// We will not touch the last `max_replicated_logs_to_keep` records.
+    entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.max_replicated_logs_to_keep.value), entries.end());
+    /// We will not touch records that are no less than `min_pointer`.
+    entries.erase(std::lower_bound(entries.begin(), entries.end(), "log-" + padIndex(min_pointer)), entries.end());
+
+    if (entries.empty())
+        return;
+
+    zkutil::Requests ops;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/log/" + entries[i], -1));
+
+        if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
+        {
+            /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
+            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
+            zookeeper->multi(ops);
+            ops.clear();
+        }
+    }
+
+    LOG_DEBUG(log, "Removed " << entries.size() << " old log entries: " << entries.front() << " - " << entries.back());
+}
+
+
 bool ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map<String, UInt32> & hosts_version,
                                                         const std::unordered_map<String, String> & log_pointers_lost_replicas,
-                                                        const std::unordered_map<String, UInt32> & log_pointers_version,
                                                         const String & remove_border, const zkutil::ZooKeeperPtr & zookeeper)
 {
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
@@ -184,15 +255,16 @@ bool ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
             zkutil::Requests ops;
             /// If log pointer and host change version we can not mark replicas, so we check it.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/host", hosts_version.at(replica)));
-            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer", log_pointers_version.at(replica)));
-            ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", zkutil::CreateMode::Persistent));
+            ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", -1));
             futures.push_back(zookeeper->tryAsyncMulti(ops));
         }
     }
     
     /// We must return if all replicas will be lost.
     if (futures.size() == (zookeeper->getChildren(storage.zookeeper_path + "/replicas")).size())
+    {
         return false;
+    }
 
     for (auto & future : futures)
     {
