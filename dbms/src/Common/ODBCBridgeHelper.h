@@ -35,6 +35,7 @@ public:
     static constexpr inline auto DEFAULT_FORMAT = "RowBinary";
     static constexpr inline auto PING_HANDLER = "/ping";
     static constexpr inline auto MAIN_HANDLER = "/";
+    static constexpr inline auto COL_INFO_HANDLER = "/columns_info";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
     ODBCBridgeHelper(const Configuration & config_, const Poco::Timespan & http_timeout_, const std::string & connection_string_);
@@ -44,5 +45,8 @@ public:
 
     void startODBCBridge() const;
     void startODBCBridgeSync() const;
+
+    Poco::URI getMainURI() const;
+    Poco::URI getColumnsInfoURI() const;
 };
 }

@@ -1,30 +1,24 @@
-#include "Handlers.h"
-#include <Common/HTMLForm.h>
+#include "MainHandler.h"
+
+#include "validateODBCConnectionString.h"
 
 #include <memory>
-#include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Dictionaries/ODBCBlockInputStream.h>
 #include <Formats/BinaryRowInputStream.h>
 #include <Formats/FormatFactory.h>
-#include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/tokenizer.hpp>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
+#include <Common/HTMLForm.h>
 #include <common/logger_useful.h>
+
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_REQUEST_PARAMETER;
-}
-
 namespace
 {
     std::unique_ptr<Block> parseColumns(std::string && column_string)
@@ -44,7 +38,7 @@ ODBCHandler::PoolPtr ODBCHandler::getPool(const std::string & connection_str)
     if (!pool_map->count(connection_str))
     {
         pool_map->emplace(connection_str, createAndCheckResizePocoSessionPool([connection_str] {
-            return std::make_shared<Poco::Data::SessionPool>("ODBC", connection_str);
+            return std::make_shared<Poco::Data::SessionPool>("ODBC", validateODBCConnectionString(connection_str));
         }));
     }
     return pool_map->at(connection_str);
@@ -127,20 +121,6 @@ void ODBCHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
             Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR); // can't call process_error, bacause of too soon response sending
         writeStringBinary(message, out);
         tryLogCurrentException(log);
-    }
-}
-
-void PingHandler::handleRequest(Poco::Net::HTTPServerRequest & /*request*/, Poco::Net::HTTPServerResponse & response)
-{
-    try
-    {
-        setResponseDefaultHeaders(response, keep_alive_timeout);
-        const char * data = "Ok.\n";
-        response.sendBuffer(data, strlen(data));
-    }
-    catch (...)
-    {
-        tryLogCurrentException("PingHandler");
     }
 }
 }

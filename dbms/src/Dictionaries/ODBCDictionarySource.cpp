@@ -71,17 +71,11 @@ ODBCDictionarySource::ODBCDictionarySource(const DictionaryStructure & dict_stru
     query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::None},    /// NOTE Better to obtain quoting style via ODBC interface.
     load_all_query{query_builder.composeLoadAllQuery()},
     invalidate_query{config.getString(config_prefix + ".invalidate_query", "")},
-    odbc_bridge_helper{config, context.getSettingsRef().http_receive_timeout.value, config.getString(config_prefix + ".connection_string")},
+    odbc_bridge_helper{context.getConfigRef(), context.getSettingsRef().http_receive_timeout.value, config.getString(config_prefix + ".connection_string")},
     timeouts{ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef())},
     global_context(context)
 {
-    const auto & global_config = context.getConfigRef();
-    size_t bridge_port = global_config.getUInt("odbc_bridge.port", ODBCBridgeHelper::DEFAULT_PORT);
-    std::string bridge_host = global_config.getString("odbc_bridge.host", ODBCBridgeHelper::DEFAULT_HOST);
-
-    bridge_url.setHost(bridge_host);
-    bridge_url.setPort(bridge_port);
-    bridge_url.setScheme("http");
+    bridge_url = odbc_bridge_helper.getMainURI();
 
     auto url_params = odbc_bridge_helper.getURLParams(sample_block.getNamesAndTypesList().toString(), max_block_size);
     for (const auto & [name, value] : url_params)

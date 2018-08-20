@@ -30,6 +30,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/formatReadable.h>
 #include <Common/DNSResolver.h>
+#include <Common/CurrentThread.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Client/Connection.h>
@@ -2142,6 +2143,9 @@ void ClusterCopierApp::mainImpl()
     static const std::string default_database = "_local";
     context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
+
+    /// Initialize query scope just in case.
+    CurrentThread::QueryScope query_scope(*context);
 
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
