@@ -104,16 +104,22 @@ public:
         if (!enabled_)
             return;
 
+        /// TODO: This is absolutely wrong. Fragment may be contained inside string literal.
         size_t pos = query.find("--");
+
         if (pos != String::npos && query.find("--", pos + 2) != String::npos)
             return; /// It's not last comment. Hint belongs to commented query.
 
         if (pos != String::npos)
         {
+            /// TODO: This is also wrong. Comment may already have ended by line break.
             pos = query.find('{', pos + 2);
+
             if (pos != String::npos)
             {
                 String hint = query.substr(pos + 1);
+
+                /// TODO: And this is wrong for the same reason.
                 pos = hint.find('}');
                 hint.resize(pos);
                 parse(hint);
@@ -783,6 +789,7 @@ private:
             {
                 const char * pos = begin;
                 ASTPtr ast = parseQuery(pos, end, true);
+
                 if (!ast)
                 {
                     if (ignore_error)
@@ -798,7 +805,7 @@ private:
                     return true;
                 }
 
-                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
+                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
 
                 if (insert && insert->data)
                 {
