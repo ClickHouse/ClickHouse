@@ -8,6 +8,7 @@
 #include <IO/copyData.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
 #include <Client/Connection.h>
 #include <Poco/Net/HTMLForm.h>
@@ -45,7 +46,7 @@ public:
     /// Initialize read_buffer, depending on the data source. By default, does nothing.
     virtual void initReadBuffer() {}
 
-    /// Get the table data - a pair (a thread with the contents of the table, the name of the table)
+    /// Get the table data - a pair (a stream with the contents of the table, the name of the table)
     ExternalTableData getData(const Context & context)
     {
         initReadBuffer();
@@ -168,13 +169,21 @@ public:
 class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 {
 public:
-
     ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) { }
 
     void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
     {
+        const Settings & settings = context.getSettingsRef();
+
         /// The buffer is initialized here, not in the virtual function initReadBuffer
-        read_buffer = std::make_unique<ReadBufferFromIStream>(stream);
+        read_buffer_impl = std::make_unique<ReadBufferFromIStream>(stream);
+
+        if (settings.http_max_multipart_form_data_size)
+            read_buffer = std::make_unique<LimitReadBuffer>(
+                *read_buffer_impl, settings.http_max_multipart_form_data_size,
+                true, "the maximum size of multipart/form-data. This limit can be tuned by 'http_max_multipart_form_data_size' setting");
+        else
+            read_buffer = std::move(read_buffer_impl);
 
         /// Retrieve a collection of parameters from MessageHeader
         Poco::Net::NameValueCollection content;
@@ -199,7 +208,7 @@ public:
         StoragePtr storage = StorageMemory::create(data.second, ColumnsDescription{columns});
         storage->startup();
         context.addExternalTable(data.second, storage);
-        BlockOutputStreamPtr output = storage->write(ASTPtr(), context.getSettingsRef());
+        BlockOutputStreamPtr output = storage->write(ASTPtr(), settings);
 
         /// Write data
         data.first->readPrefix();
@@ -216,6 +225,7 @@ public:
 private:
     Context & context;
     const Poco::Net::NameValueCollection & params;
+    std::unique_ptr<ReadBufferFromIStream> read_buffer_impl;
 };
 
 
