@@ -196,7 +196,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             context.setProcessListElement(&process_list_entry->get());
         }
 
-        /// Load external tables if they were provided
+        /// Load external tables (and possibly the query) from multipart/form data if they were provided
         context.initializeExternalTablesIfSet();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);

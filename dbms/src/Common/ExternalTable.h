@@ -169,7 +169,7 @@ class ExternalTablesHandler : public Poco::Net::PartHandler, BaseExternalTable
 {
 public:
 
-    ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) { }
+    ExternalTablesHandler(Context & context_, const Poco::Net::NameValueCollection & params_) : context(context_), params(params_) {}
 
     void handlePart(const Poco::Net::MessageHeader & header, std::istream & stream)
     {
@@ -204,7 +204,7 @@ public:
         /// Write data
         data.first->readPrefix();
         output->writePrefix();
-        while(Block block = data.first->read())
+        while (Block block = data.first->read())
             output->write(block);
         data.first->readSuffix();
         output->writeSuffix();

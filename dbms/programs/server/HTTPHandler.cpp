@@ -40,6 +40,9 @@
 
 #include "HTTPHandler.h"
 
+#include <Core/iostream_debug_helpers.h>
+
+
 namespace DB
 {
 
@@ -444,32 +447,42 @@ void HTTPHandler::processQuery(
         return false;
     };
 
-    /// Used in case of POST request with form-data, but it not to be expectd to be deleted after that scope
-    std::string full_query;
+    /// Used in case of POST request with form-data, but it's not expected to be deleted after that scope.
+    std::string query_inside_form_data;
+    std::unique_ptr<ReadBuffer> in_query_inside_form_data;
 
-    /// Support for "external data for query processing".
+    /// Support for "external data for query processing" and for query param in form data.
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
-        context.setExternalTablesInitializer([&params, &request, &istr] (Context & context_query)
-        {
-            ExternalTablesHandler handler(context_query, params);
-            params.load(request, istr, handler);
-        });
+        /// Query from form data will may be appended to this stream.
+        /// This stream must not be read before call to context.initializeExternalTablesIfSet()
+        /// because it will be enriched from this method via the callback below.
+        in = std::make_unique<ConcatReadBuffer>({in_param.get()});
+
+        context.setExternalTablesInitializer(
+            [&params, &request, &istr, &query_inside_form_data, &in_query_inside_form_data, &in] (Context & context_query)
+            {
+                ExternalTablesHandler handler(context_query, params);
+
+                /// It will call handler to read external tables data and create corresponding temporary tables.
+                params.load(request, istr, handler);
+
+                /// Params may contain the query.
+                for (const auto & it : params)
+                {
+                    if (it.first == "query")
+                    {
+                        query_inside_form_data = it.first;
+                        in_query_inside_form_data = std::make_unique<ReadBufferFromMemory>(query_inside_form_data.data(), query_inside_form_data.size());
+                        static_cast<ConcatReadBuffer &>(*in).pushBack(in_query_inside_form_data);
+                    }
+                }
+            });
 
         /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
         reserved_param_suffixes.emplace_back("_format");
         reserved_param_suffixes.emplace_back("_types");
         reserved_param_suffixes.emplace_back("_structure");
-
-        /// Params are of both form params POST and uri (GET params)
-        for (const auto & it : params)
-        {
-            if (it.first == "query")
-            {
-                full_query += it.second;
-            }
-        }
-        in = std::make_unique<ReadBufferFromString>(full_query);
     }
     else
         in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);

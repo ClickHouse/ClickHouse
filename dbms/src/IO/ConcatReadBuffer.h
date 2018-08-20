@@ -59,6 +59,14 @@ public:
         buffers.push_back(&buf2);
         current = buffers.begin();
     }
+
+    /// Add another buffer to the end.
+    void pushBack(ReadBuffer & buf)
+    {
+        auto distance = current - buffers.begin();
+        buffers.push_back(&buf);
+        current = buffers.begin() + distance;
+    }
 };
 
 }
