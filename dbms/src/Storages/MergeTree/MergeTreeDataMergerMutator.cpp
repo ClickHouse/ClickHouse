@@ -572,6 +572,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     LOG_DEBUG(log, "Selected MergeAlgorithm: " << ((merge_alg == MergeAlgorithm::Vertical) ? "Vertical" : "Horizontal"));
 
+    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
+    /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
+    /// (which is locked in shared mode when input streams are created) and when inserting new data
+    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
+    /// deadlock is impossible.
+    auto compression_settings = data.context.chooseCompressionSettings(
+        merge_entry->total_size_bytes_compressed,
+        static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
+
     String rows_sources_file_path;
     std::unique_ptr<WriteBuffer> rows_sources_uncompressed_write_buf;
     std::unique_ptr<WriteBuffer> rows_sources_write_buf;
@@ -673,10 +682,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
-
-    auto compression_settings = data.context.chooseCompressionSettings(
-            merge_entry->total_size_bytes_compressed,
-            static_cast<double> (merge_entry->total_size_bytes_compressed) / data.getTotalActiveSizeInBytes());
 
     MergedBlockOutputStream to{
         data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, aio_threshold};
@@ -969,6 +974,15 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     String new_part_tmp_path = new_data_part->getFullPath();
 
+    /// Note: this is done before creating input streams, because otherwise data.data_parts_mutex
+    /// (which is locked in data.getTotalActiveSizeInBytes()) is locked after part->columns_lock
+    /// (which is locked in shared mode when input streams are created) and when inserting new data
+    /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
+    /// deadlock is impossible.
+    auto compression_settings = context.chooseCompressionSettings(
+        source_part->bytes_on_disk,
+        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
+
     auto in = createInputStreamWithMutatedData(storage_from_source_part, commands, context_for_reading);
 
     if (data.hasPrimaryKey())
@@ -978,10 +992,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     Poco::File(new_part_tmp_path).createDirectories();
 
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-
-    auto compression_settings = context.chooseCompressionSettings(
-        source_part->bytes_on_disk,
-        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
 
     MergedBlockOutputStream out(data, new_part_tmp_path, all_columns, compression_settings);
 
