@@ -82,3 +82,26 @@ select a1, copy.a1 from test.tab1 any left join test.tab1_copy copy on tab1.b1 +
 select a1, tab1_copy.a1 from test.tab1 any left join test.tab1_copy copy on tab1.b1 + 3 = b1 + 2 FORMAT JSONEachRow;
 select a1, test.tab1_copy.a1 from test.tab1 any left join test.tab1_copy copy on tab1.b1 + 3 = b1 + 2 FORMAT JSONEachRow;
 
+select 'subquery';
+select a1 from test.tab1 any left join (select * from test.tab2) on b1 = a2;
+select a1 from test.tab1 any left join (select a2 from test.tab2) on b1 = a2;
+select a1, b1 from test.tab1 any left join (select * from test.tab2) on b1 = a2;
+select a1, b1, a2, b2 from test.tab1 any left join (select * from test.tab2) on b1 = a2;
+select a1, a2 from test.tab1 any left join (select a2 from test.tab2) on b1 = a2;
+
+select 'subquery expression';
+select b1 from test.tab1 any left join (select * from test.tab2) on toInt32(a1 + 1) = a2;
+select a1, b1, a2, b2 from test.tab1 any left join (select * from test.tab2) on b1 + 1 = a2 + 1;
+select a1, b1, a2 from test.tab1 any left join (select * from test.tab2) on b1 + 1 = a2 + 1;
+
+select 'subquery column alias';
+select a1, b1, a2, b2 from test.tab1 any left join (select *, a2 as z from test.tab2) on b1 + 1 = z + 1;
+select a1, b1, a2, b2 from test.tab1 any left join (select *, a2 + 1 as z from test.tab2) on b1 + 1 = z;
+select a1, b1, a2, b2 from test.tab1 any left join (select *, a2 + 1 as z from test.tab2) on b1 + 2 = z + 1 format TSV;
+
+select 'subquery alias';
+select a1, a2, b1, b2 from test.tab1 first any left join (select * from test.tab2) second on first.b1 = second.a2;
+select a1, a2, b1, b2 from test.tab1 first any left join (select *, a2 as z from test.tab2) second on first.b1 = second.z;
+select a1, a2, b1, b2 from test.tab1 first any left join (select *, a2 + 1 as z from test.tab2) second on first.b1 + 1 = second.z;
+select tab1.a1, a2, test.tab1.b1, second.b2 from test.tab1 first any left join (select * from test.tab2) second on first.b1 = second.a2;
+select a1, s.a1 from test.tab1 any left join (select * from test.tab1_copy) s on tab1.b1 + 3 = b1 + 2 FORMAT JSONEachRow;

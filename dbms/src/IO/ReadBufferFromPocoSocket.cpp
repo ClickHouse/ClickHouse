@@ -4,6 +4,13 @@
 
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <Common/NetException.h>
+#include <Common/Stopwatch.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event NetworkReceiveElapsedMicroseconds;
+}
 
 
 namespace DB
@@ -20,6 +27,7 @@ namespace ErrorCodes
 bool ReadBufferFromPocoSocket::nextImpl()
 {
     ssize_t bytes_read = 0;
+    Stopwatch watch;
 
     /// Add more details to exceptions.
     try
@@ -41,6 +49,9 @@ bool ReadBufferFromPocoSocket::nextImpl()
 
     if (bytes_read < 0)
         throw NetException("Cannot read from socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_READ_FROM_SOCKET);
+
+    /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
 
     if (bytes_read)
         working_buffer.resize(bytes_read);

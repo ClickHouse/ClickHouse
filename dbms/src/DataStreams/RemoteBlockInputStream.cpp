@@ -1,8 +1,10 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
+#include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/IStorage.h>
 
 
@@ -230,6 +232,12 @@ Block RemoteBlockInputStream::readImpl()
 
             case Protocol::Server::Extremes:
                 extremes = packet.block;
+                break;
+
+            case Protocol::Server::Log:
+                /// Pass logs from remote server to client
+                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                    log_queue->pushBlock(std::move(packet.block));
                 break;
 
             default:
