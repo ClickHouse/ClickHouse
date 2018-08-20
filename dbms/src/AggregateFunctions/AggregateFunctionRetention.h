@@ -129,15 +129,16 @@ public:
         auto & data_to = static_cast<ColumnArray &>(to).getData();
         auto & offsets_to = static_cast<ColumnArray &>(to).getOffsets();
 
-        const auto first_flag = this->data(place).events.test(0);
-        data_to.insert(first_flag ?  Field(static_cast<UInt64>(1)) : Field(static_cast<UInt64>(0)));
+        const bool first_flag = this->data(place).events.test(0);
+        data_to.insert(first_flag ? Field(static_cast<UInt64>(1)) : Field(static_cast<UInt64>(0)));
         for (const auto i : ext::range(1, events_size))
         {
             if (first_flag && this->data(place).events.test(i))
                 data_to.insert(Field(static_cast<UInt64>(1)));
-            else data_to.insert(Field(static_cast<UInt64>(0)));
+            else
+                data_to.insert(Field(static_cast<UInt64>(0)));
         }
-        offsets_to.push_back(offsets_to.size() == 0 ?  events_size : offsets_to.back() +  events_size);
+        offsets_to.push_back(offsets_to.size() == 0 ? events_size : offsets_to.back() +  events_size);
     }
 
     const char * getHeaderFilePath() const override
