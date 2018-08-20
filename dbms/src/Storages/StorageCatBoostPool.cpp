@@ -78,8 +78,8 @@ static std::string resolvePath(const boost::filesystem::path & base_path, std::s
 {
     boost::filesystem::path resolved_path(path);
     if (!resolved_path.is_absolute())
-        return (base_path / resolved_path).string();
-    return resolved_path.string();
+        return boost::filesystem::canonical(resolved_path, base_path).string();
+    return boost::filesystem::canonical(resolved_path).string();
 }
 
 static void checkCreationIsAllowed(const String & base_path, const String & path)
