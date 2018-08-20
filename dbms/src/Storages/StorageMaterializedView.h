@@ -39,17 +39,20 @@ public:
     void clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context) override;
     void attachPartition(const ASTPtr & partition, bool part, const Context & context) override;
     void freezePartition(const ASTPtr & partition, const String & with_name, const Context & context) override;
+    void mutate(const MutationCommands & commands, const Context & context) override;
 
     void shutdown() override;
 
     void checkTableCanBeDropped() const override;
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 

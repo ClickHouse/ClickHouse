@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB

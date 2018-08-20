@@ -20,7 +20,7 @@ namespace ErrorCodes
 using PredicateExpressions = std::vector<ASTPtr>;
 using ProjectionWithAlias = std::pair<ASTPtr, String>;
 using ProjectionsWithAliases = std::vector<ProjectionWithAlias>;
-using SubQueriesProjectionColumns = std::map<IAST *, ProjectionsWithAliases>;
+using SubqueriesProjectionColumns = std::map<IAST *, ProjectionsWithAliases>;
 
 
 /** This class provides functions for Push-Down predicate expressions
@@ -61,7 +61,7 @@ private:
 
     bool optimizeExpression(const ASTPtr & outer_expression, ASTPtr & subquery_expression, ASTSelectQuery * subquery);
 
-    bool optimizeImpl(ASTPtr & outer_expression, SubQueriesProjectionColumns & sub_queries_projection_columns, bool is_prewhere);
+    bool optimizeImpl(ASTPtr & outer_expression, SubqueriesProjectionColumns & subqueries_projection_columns, bool is_prewhere);
 
     bool cannotPushDownOuterPredicate(
         const ProjectionsWithAliases & subquery_projection_columns, ASTSelectQuery * subquery,
@@ -72,9 +72,9 @@ private:
         ASTPtr & inner_predicate);
 
 
-    void getAllSubqueryProjectionColumns(IAST * node, SubQueriesProjectionColumns & all_subquery_projection_columns);
+    void getAllSubqueryProjectionColumns(IAST * node, SubqueriesProjectionColumns & all_subquery_projection_columns);
 
-    void getSubqueryProjectionColumns(IAST * subquery, SubQueriesProjectionColumns & all_subquery_projection_columns, ASTs & output_projections);
+    void getSubqueryProjectionColumns(IAST * subquery, SubqueriesProjectionColumns & all_subquery_projection_columns, ASTs & output_projections);
 };
 
 }
