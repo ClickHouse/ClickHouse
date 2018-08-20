@@ -8,6 +8,7 @@
 #include <Columns/ColumnArray.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
@@ -35,11 +36,17 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int DECIMAL_OVERFLOW;
+}
+
+
 /** Comparison functions: ==, !=, <, >, <=, >=.
   * The comparison functions always return 0 or 1 (UInt8).
   *
   * You can compare the following types:
-  * - numbers;
+  * - numbers and decimals;
   * - strings and fixed strings;
   * - dates;
   * - datetimes;
@@ -185,6 +192,289 @@ struct NumComparisonImpl
     static void constant_constant(A a, B b, UInt8 & c)
     {
         c = Op::apply(a, b);
+    }
+};
+
+///
+inline bool allowDecimalComparison(const IDataType & left_type, const IDataType & right_type)
+{
+    if (isDecimal(left_type))
+    {
+        if (isDecimal(right_type) || notDecimalButComparableToDecimal(right_type))
+            return true;
+    }
+    else if (notDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
+        return true;
+    return false;
+}
+
+template <size_t > struct ConstructDecInt { using Type = Int32; };
+template <> struct ConstructDecInt<8> { using Type = Int64; };
+template <> struct ConstructDecInt<16> { using Type = Int128; };
+
+template <typename T, typename U>
+struct DecCompareInt
+{
+    using Type = typename ConstructDecInt<(!decTrait<U>() || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
+    using TypeA = Type;
+    using TypeB = Type;
+};
+
+///
+template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = decTrait<A>() || decTrait<B>()>
+class DecimalComparison
+{
+public:
+    using CompareInt = typename DecCompareInt<A, B>::Type;
+    using Op = Operation<CompareInt, CompareInt>;
+    using ColVecA = ColumnVector<A>;
+    using ColVecB = ColumnVector<B>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayB = typename ColVecB::Container;
+
+    DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        if (!apply(block, result, col_left, col_right))
+            throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
+    }
+
+    static bool apply(Block & block, size_t result [[maybe_unused]],
+                      const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        if constexpr (_actual)
+        {
+            ColumnPtr c_res;
+            Shift shift = getScales<A, B>(col_left.type, col_right.type);
+
+            c_res = applyWithScale(col_left.column, col_right.column, shift);
+            if (c_res)
+                block.getByPosition(result).column = std::move(c_res);
+            return true;
+        }
+        return false;
+    }
+
+    static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
+    {
+        static const UInt32 max_scale = maxDecimalPrecision<Dec128>();
+        if (scale_a > max_scale || scale_b > max_scale)
+            throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
+
+        Shift shift;
+        if (scale_a < scale_b)
+            shift.a = DataTypeDecimal<B>(maxDecimalPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
+        if (scale_a > scale_b)
+            shift.b = DataTypeDecimal<A>(maxDecimalPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
+
+        return applyWithScale(a, b, shift);
+    }
+
+private:
+    struct Shift
+    {
+        CompareInt a = 1;
+        CompareInt b = 1;
+
+        bool none() const { return a == 1 && b == 1; }
+        bool left() const { return a != 1; }
+        bool right() const { return b != 1; }
+    };
+
+    template <typename T, typename U>
+    static auto applyWithScale(T a, U b, const Shift & shift)
+    {
+        if (shift.left())
+            return apply<true, false>(a, b, shift.a);
+        else if (shift.right())
+            return apply<false, true>(a, b, shift.b);
+        return apply<false, false>(a, b, 1);
+    }
+
+    template <typename T, typename U>
+    static std::enable_if_t<decTrait<T>() && decTrait<U>(), Shift>
+    getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
+    {
+        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
+        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
+
+        Shift shift;
+        if (decimal0 && decimal1)
+        {
+            auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
+            shift.a = result_type.scaleFactorFor(*decimal0, false);
+            shift.b = result_type.scaleFactorFor(*decimal1, false);
+        }
+        else if (decimal0)
+            shift.b = decimal0->getScaleMultiplier();
+        else if (decimal1)
+            shift.a = decimal1->getScaleMultiplier();
+
+        return shift;
+    }
+
+    template <typename T, typename U>
+    static std::enable_if_t<decTrait<T>() && !decTrait<U>(), Shift>
+    getScales(const DataTypePtr & left_type, const DataTypePtr &)
+    {
+        Shift shift;
+        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
+        if (decimal0)
+            shift.b = decimal0->getScaleMultiplier();
+        return shift;
+    }
+
+    template <typename T, typename U>
+    static std::enable_if_t<!decTrait<T>() && decTrait<U>(), Shift>
+    getScales(const DataTypePtr &, const DataTypePtr & right_type)
+    {
+        Shift shift;
+        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
+        if (decimal1)
+            shift.a = decimal1->getScaleMultiplier();
+        return shift;
+    }
+
+    template <bool scale_left, bool scale_right>
+    static ColumnPtr apply(const ColumnPtr & c0, const ColumnPtr & c1, CompareInt scale)
+    {
+        auto c_res = ColumnUInt8::create();
+
+        if constexpr (_actual)
+        {
+            bool c0_const = c0->isColumnConst();
+            bool c1_const = c1->isColumnConst();
+
+            if (c0_const && c1_const)
+            {
+                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
+                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
+
+                A a = c0_const->template getValue<A>();
+                B b = c1_const->template getValue<B>();
+                UInt8 res = apply<scale_left, scale_right>(a, b, scale);
+                return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
+            }
+
+            ColumnUInt8::Container & vec_res = c_res->getData();
+            vec_res.resize(c0->size());
+
+            if (c0_const)
+            {
+                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
+                A a = c0_const->template getValue<A>();
+                if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+                else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+            }
+            else if (c1_const)
+            {
+                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
+                B b = c1_const->template getValue<B>();
+                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+            }
+            else
+            {
+                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                {
+                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                }
+                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
+                {
+                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
+                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                }
+            }
+        }
+
+        return c_res;
+    }
+
+    template <bool scale_left, bool scale_right>
+    static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
+    {
+        CompareInt x = a;
+        CompareInt y = b;
+        bool overflow = false;
+
+        if constexpr (sizeof(A) > sizeof(CompareInt))
+            overflow |= (A(x) != a);
+        if constexpr (sizeof(B) > sizeof(CompareInt))
+            overflow |= (B(y) != b);
+        if constexpr (std::is_unsigned_v<A>)
+            overflow |= (x < 0);
+        if constexpr (std::is_unsigned_v<B>)
+            overflow |= (y < 0);
+
+        if constexpr (scale_left)
+            overflow |= common::mulOverflow(x, scale, x);
+        if constexpr (scale_right)
+            overflow |= common::mulOverflow(y, scale, y);
+
+        if (overflow)
+            throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+
+        return Op::apply(x, y);
+    }
+
+    template <bool scale_left, bool scale_right>
+    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
+                                        CompareInt scale)
+    {
+        size_t size = a.size();
+        const A * a_pos = &a[0];
+        const B * b_pos = &b[0];
+        UInt8 * c_pos = &c[0];
+        const A * a_end = a_pos + size;
+
+        while (a_pos < a_end)
+        {
+            *c_pos = apply<scale_left, scale_right>(*a_pos, *b_pos, scale);
+            ++a_pos;
+            ++b_pos;
+            ++c_pos;
+        }
+    }
+
+    template <bool scale_left, bool scale_right>
+    static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    {
+        size_t size = a.size();
+        const A * a_pos = &a[0];
+        UInt8 * c_pos = &c[0];
+        const A * a_end = a_pos + size;
+
+        while (a_pos < a_end)
+        {
+            *c_pos = apply<scale_left, scale_right>(*a_pos, b, scale);
+            ++a_pos;
+            ++c_pos;
+        }
+    }
+
+    template <bool scale_left, bool scale_right>
+    static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    {
+        size_t size = b.size();
+        const B * b_pos = &b[0];
+        UInt8 * c_pos = &c[0];
+        const B * b_end = b_pos + size;
+
+        while (b_pos < b_end)
+        {
+            *c_pos = apply<scale_left, scale_right>(a, *b_pos, scale);
+            ++b_pos;
+            ++c_pos;
+        }
     }
 };
 
@@ -696,6 +986,7 @@ private:
                 || executeNumRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+                || executeNumRightType<T0, Int128>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float32>(block, result, col_left, col_right_untyped)
                 || executeNumRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
@@ -715,6 +1006,7 @@ private:
                 || executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
+                || executeNumConstRightType<T0, Int128>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
                 || executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
                 return true;
@@ -725,6 +1017,24 @@ private:
         }
 
         return false;
+    }
+
+    void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
+    {
+        size_t left_number = col_left.type->getTypeId();
+        size_t right_number = col_right.type->getTypeId();
+
+        auto call = [&](const auto & left, const auto & right)
+        {
+            using LeftDataType = std::decay_t<decltype(left)>;
+            using RightDataType = std::decay_t<decltype(right)>;
+
+            DecimalComparison<LeftDataType, RightDataType, Op>(block, result, col_left, col_right);
+        };
+
+        if (!callByNumbers(left_number, right_number, call))
+            throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
+                            ErrorCodes::LOGICAL_ERROR);
     }
 
     bool executeString(Block & block, size_t result, const IColumn * c0, const IColumn * c1)
@@ -1172,6 +1482,8 @@ public:
         const auto & col_with_type_and_name_right = block.getByPosition(arguments[1]);
         const IColumn * col_left_untyped = col_with_type_and_name_left.column.get();
         const IColumn * col_right_untyped = col_with_type_and_name_right.column.get();
+        const DataTypePtr & left_type = col_with_type_and_name_left.type;
+        const DataTypePtr & right_type = col_with_type_and_name_right.type;
 
         const bool left_is_num = col_left_untyped->isNumeric();
         const bool right_is_num = col_right_untyped->isNumeric();
@@ -1187,26 +1499,35 @@ public:
                 || executeNumLeftType<Int16>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Int64>(block, result, col_left_untyped, col_right_untyped)
+                || executeNumLeftType<Int128>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float32>(block, result, col_left_untyped, col_right_untyped)
                 || executeNumLeftType<Float64>(block, result, col_left_untyped, col_right_untyped)))
                 throw Exception("Illegal column " + col_left_untyped->getName()
                     + " of first argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (checkAndGetDataType<DataTypeTuple>(col_with_type_and_name_left.type.get()))
+        else if (checkAndGetDataType<DataTypeTuple>(left_type.get()))
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
+        else if (isDecimal(*left_type) || isDecimal(*right_type))
+        {
+            if (!allowDecimalComparison(*left_type, *right_type))
+                throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+            executeDecimal(block, result, col_with_type_and_name_left, col_with_type_and_name_right);
         }
         else if (!left_is_num && !right_is_num && executeString(block, result, col_left_untyped, col_right_untyped))
         {
         }
-        else if (col_with_type_and_name_left.type->equals(*col_with_type_and_name_right.type))
+        else if (left_type->equals(*right_type))
         {
             executeGenericIdenticalTypes(block, result, col_left_untyped, col_right_untyped);
         }
         else if (executeDateOrDateTimeOrEnumOrUUIDWithConstString(
                 block, result, col_left_untyped, col_right_untyped,
-                col_with_type_and_name_left.type, col_with_type_and_name_right.type,
+                left_type, right_type,
                 left_is_num, input_rows_count))
         {
         }

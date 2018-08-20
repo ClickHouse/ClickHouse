@@ -33,23 +33,26 @@ void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context &
 {
     for (const auto & merge : context.getMergeList().get())
     {
-        size_t i = 0;
-        res_columns[i++]->insert(merge.database);
-        res_columns[i++]->insert(merge.table);
-        res_columns[i++]->insert(merge.elapsed);
-        res_columns[i++]->insert(merge.progress);
-        res_columns[i++]->insert(merge.num_parts);
-        res_columns[i++]->insert(merge.source_part_names);
-        res_columns[i++]->insert(merge.result_part_name);
-        res_columns[i++]->insert(merge.total_size_bytes_compressed);
-        res_columns[i++]->insert(merge.total_size_marks);
-        res_columns[i++]->insert(merge.bytes_read_uncompressed);
-        res_columns[i++]->insert(merge.rows_read);
-        res_columns[i++]->insert(merge.bytes_written_uncompressed);
-        res_columns[i++]->insert(merge.rows_written);
-        res_columns[i++]->insert(merge.columns_written);
-        res_columns[i++]->insert(merge.memory_usage);
-        res_columns[i++]->insert(merge.thread_number);
+        if (context.hasDatabaseAccessRights(merge.database))
+        {
+            size_t i = 0;
+            res_columns[i++]->insert(merge.database);
+            res_columns[i++]->insert(merge.table);
+            res_columns[i++]->insert(merge.elapsed);
+            res_columns[i++]->insert(merge.progress);
+            res_columns[i++]->insert(merge.num_parts);
+            res_columns[i++]->insert(merge.source_part_names);
+            res_columns[i++]->insert(merge.result_part_name);
+            res_columns[i++]->insert(merge.total_size_bytes_compressed);
+            res_columns[i++]->insert(merge.total_size_marks);
+            res_columns[i++]->insert(merge.bytes_read_uncompressed);
+            res_columns[i++]->insert(merge.rows_read);
+            res_columns[i++]->insert(merge.bytes_written_uncompressed);
+            res_columns[i++]->insert(merge.rows_written);
+            res_columns[i++]->insert(merge.columns_written);
+            res_columns[i++]->insert(merge.memory_usage);
+            res_columns[i++]->insert(merge.thread_number);
+        }
     }
 }
 
