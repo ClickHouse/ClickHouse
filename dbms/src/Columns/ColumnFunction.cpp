@@ -1,7 +1,9 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
+#include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
+
 
 namespace DB
 {
@@ -82,6 +84,15 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)
         column.column = column.column->permute(perm, limit);
+
+    return ColumnFunction::create(limit, function, capture);
+}
+
+ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
+{
+    ColumnsWithTypeAndName capture = captured_columns;
+    for (auto & column : capture)
+        column.column = column.column->index(indexes, limit);
 
     return ColumnFunction::create(limit, function, capture);
 }
@@ -194,7 +205,7 @@ ColumnWithTypeAndName ColumnFunction::reduce() const
     for (size_t i = 0; i < captured_columns.size(); ++i)
         arguments[i] = i;
 
-    function->execute(block, arguments, captured_columns.size());
+    function->execute(block, arguments, captured_columns.size(), size_);
 
     return block.getByPosition(captured_columns.size());
 }

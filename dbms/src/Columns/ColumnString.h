@@ -47,7 +47,7 @@ private:
 
     ColumnString(const ColumnString & src)
         : offsets(src.offsets.begin(), src.offsets.end()),
-        chars(src.chars.begin(), src.chars.end()) {};
+        chars(src.chars.begin(), src.chars.end()) {}
 
 public:
     const char * getFamilyName() const override { return "String"; }
@@ -219,6 +219,11 @@ public:
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     void insertDefault() override
     {

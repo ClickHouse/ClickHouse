@@ -4,9 +4,9 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <thread>
 #include <map>
-
 #include <pcg_random.hpp>
 
 
@@ -23,12 +23,21 @@ class ReplicatedMergeTreeCleanupThread
 public:
     ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_);
 
-    ~ReplicatedMergeTreeCleanupThread();
+    void start()
+    {
+        task->activate();
+        task->schedule();
+    }
+
+    void wakeup() { task->schedule(); }
+
+    void stop() { task->deactivate(); }
 
 private:
     StorageReplicatedMergeTree & storage;
+    String log_name;
     Logger * log;
-    std::thread thread;
+    BackgroundSchedulePool::TaskHolder task;
     pcg64 rng;
 
     void run();
@@ -40,6 +49,9 @@ private:
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
 
+    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
+    void clearOldMutations();
+
     using NodeCTimeCache = std::map<String, Int64>;
     NodeCTimeCache cached_block_stats;
 
@@ -48,7 +60,6 @@ private:
     void getBlocksSortedByTime(zkutil::ZooKeeper & zookeeper, std::vector<NodeWithStat> & timed_blocks);
 
     /// TODO Removing old quorum/failed_parts
-    /// TODO Removing old nonincrement_block_numbers
 };
 
 

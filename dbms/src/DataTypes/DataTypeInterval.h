@@ -51,7 +51,7 @@ public:
         }
     }
 
-    DataTypeInterval(Kind kind) : kind(kind) {};
+    DataTypeInterval(Kind kind) : kind(kind) {}
 
     std::string getName() const override { return std::string("Interval") + kindToString(); }
     const char * getFamilyName() const override { return "Interval"; }

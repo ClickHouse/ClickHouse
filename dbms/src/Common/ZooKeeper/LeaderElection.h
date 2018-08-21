@@ -1,10 +1,12 @@
 #pragma once
 
 #include "ZooKeeper.h"
+#include "KeeperException.h"
 #include <functional>
 #include <memory>
 #include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace ProfileEvents
@@ -35,9 +37,12 @@ public:
       * It means that different participants of leader election have different identifiers
       *  and existence of more than one ephemeral node with same identifier indicates an error.
       */
-    LeaderElection(const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
-        : path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+    LeaderElection(DB::BackgroundSchedulePool & pool_, const std::string & path_, ZooKeeper & zookeeper_, LeadershipHandler handler_, const std::string & identifier_ = "")
+        : pool(pool_), path(path_), zookeeper(zookeeper_), handler(handler_), identifier(identifier_)
+        , log_name("LeaderElection (" + path + ")")
+        , log(&Logger::get(log_name))
     {
+        task = pool.createTask(log_name, [this] { threadFunction(); });
         createNode();
     }
 
@@ -47,9 +52,7 @@ public:
             return;
 
         shutdown_called = true;
-        event->set();
-        if (thread.joinable())
-            thread.join();
+        task->deactivate();
     }
 
     ~LeaderElection()
@@ -58,17 +61,19 @@ public:
     }
 
 private:
+    DB::BackgroundSchedulePool & pool;
+    DB::BackgroundSchedulePool::TaskHolder task;
     std::string path;
     ZooKeeper & zookeeper;
     LeadershipHandler handler;
     std::string identifier;
+    std::string log_name;
+    Logger * log;
 
     EphemeralNodeHolderPtr node;
     std::string node_name;
 
-    std::thread thread;
     std::atomic<bool> shutdown_called {false};
-    zkutil::EventPtr event = std::make_shared<Poco::Event>();
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::LeaderElection};
 
@@ -80,7 +85,8 @@ private:
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);
 
-        thread = std::thread(&LeaderElection::threadFunction, this);
+        task->activate();
+        task->schedule();
     }
 
     void releaseNode()
@@ -91,38 +97,42 @@ private:
 
     void threadFunction()
     {
-        while (!shutdown_called)
+        bool success = false;
+
+        try
         {
-            bool success = false;
+            Strings children = zookeeper.getChildren(path);
+            std::sort(children.begin(), children.end());
+            auto it = std::lower_bound(children.begin(), children.end(), node_name);
+            if (it == children.end() || *it != node_name)
+                throw Poco::Exception("Assertion failed in LeaderElection");
 
-            try
+            if (it == children.begin())
             {
-                Strings children = zookeeper.getChildren(path);
-                std::sort(children.begin(), children.end());
-                auto it = std::lower_bound(children.begin(), children.end(), node_name);
-                if (it == children.end() || *it != node_name)
-                    throw Poco::Exception("Assertion failed in LeaderElection");
-
-                if (it == children.begin())
-                {
-                    ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
-                    handler();
-                    return;
-                }
-
-                if (zookeeper.exists(path + "/" + *(it - 1), nullptr, event))
-                    event->wait();
-
-                success = true;
-            }
-            catch (...)
-            {
-                DB::tryLogCurrentException("LeaderElection");
+                ProfileEvents::increment(ProfileEvents::LeaderElectionAcquiredLeadership);
+                handler();
+                return;
             }
 
-            if (!success)
-                event->tryWait(10 * 1000);
+            if (!zookeeper.existsWatch(path + "/" + *(it - 1), nullptr, task->getWatchCallback()))
+                task->schedule();
+
+            success = true;
         }
+        catch (const KeeperException & e)
+        {
+            DB::tryLogCurrentException(log);
+
+            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+                return;
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(log);
+        }
+
+        if (!success)
+            task->scheduleAfter(10 * 1000);
     }
 };
 

@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Storages/ColumnDefault.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/evaluateMissingDefaults.h>
 
 
 namespace DB

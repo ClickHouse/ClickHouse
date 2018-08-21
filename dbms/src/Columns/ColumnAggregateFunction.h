@@ -88,7 +88,7 @@ private:
     }
 
 public:
-    ~ColumnAggregateFunction();
+    ~ColumnAggregateFunction() override;
 
     void set(const AggregateFunctionPtr & func_)
     {
@@ -155,6 +155,11 @@ public:
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 

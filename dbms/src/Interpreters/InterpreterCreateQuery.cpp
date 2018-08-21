@@ -34,6 +34,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
@@ -50,10 +51,10 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
     extern const int ENGINE_REQUIRED;
-    extern const int TABLE_METADATA_ALREADY_EXISTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
     extern const int READONLY;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -66,7 +67,7 @@ InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+        return executeDDLQueryOnCluster(query_ptr, context, {create.database});
 
     String database_name = create.database;
 
@@ -291,7 +292,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         const auto end = pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type");
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
         columns_list->children.emplace_back(column_declaration);
     }
@@ -315,7 +316,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         const auto end = pos + type_name->size();
 
         ParserIdentifierWithOptionalParameters storage_p;
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type");
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
         column_declaration->type->owned_string = type_name;
 
         const auto it = columns.defaults.find(column.name);
@@ -346,6 +347,40 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         throw Exception{"Cannot CREATE table without physical columns", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED};
 
     return res;
+}
+
+
+void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & columns, const Context & context)
+{
+    const auto & settings = context.getSettingsRef();
+    bool allow_low_cardinality = settings.allow_experimental_low_cardinality_type != 0;
+    bool allow_decimal = settings.allow_experimental_decimal_type;
+
+    if (allow_low_cardinality && allow_decimal)
+        return;
+
+    auto check_types = [&](const NamesAndTypesList & list)
+    {
+        for (const auto & column : list)
+        {
+            if (!allow_low_cardinality && column.type && column.type->withDictionary())
+            {
+                String message = "Cannot create table with column " + column.name + " which type is "
+                                 + column.type->getName() + " because LowCardinality type is not allowed. "
+                                 + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+            if (!allow_decimal && column.type && isDecimal(*column.type))
+            {
+                String message = "Cannot create table with column " + column.name + " which type is " + column.type->getName()
+                                 + ". Set setting allow_experimental_decimal_type = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    };
+
+    check_types(columns.ordinary);
+    check_types(columns.materialized);
 }
 
 
@@ -439,7 +474,13 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     if (!create.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+    {
+        NameSet databases{create.database};
+        if (!create.to_table.empty())
+            databases.emplace(create.to_database);
+
+        return executeDDLQueryOnCluster(query_ptr, context, databases);
+    }
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();
@@ -482,6 +523,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
 
+    /// Some column types may be not allowed according to settings.
+    if (!create.attach)
+        checkSupportedTypes(columns, context);
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
@@ -516,7 +561,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         }
         else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
              return {};
-             
+
         res = StorageFactory::instance().get(create,
             data_path,
             table_name,

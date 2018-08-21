@@ -396,14 +396,14 @@ def generate_dictionaries(args):
     <library>
         <path>{filename}</path>
     </library>
-    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dictionary_library/libdictionary_library.so'))
+    '''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dictionary_library/dictionary_library.so'))
 
     # Todo?
     #source_library_c = '''
     #<library>
     #    <path>{filename}</path>
     #</library>
-    #'''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dict_lib/libdict_library_c.so'))
+    #'''.format(filename=os.path.abspath('../../../build/dbms/tests/external_dictionaries/dictionary_library/dictionary_library_c.so'))
 
 
     layout_flat = '<flat />'

@@ -128,11 +128,11 @@ struct FastHash64
 };
 
 
+#if __x86_64__
 struct CrapWow
 {
     size_t operator() (CompactStringRef x) const
     {
-#if __x86_64__
         const char * key = x.data();
         size_t len = x.size;
         size_t seed = 0;
@@ -196,11 +196,9 @@ struct CrapWow
             : "%r12", "%r13", "%r14", "%r15", "cc"
         );
         return hash;
-#else
-        return 0;
-#endif
     }
 };
+#endif
 
 
 struct SimpleHash
@@ -380,6 +378,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
+#if __x86_64__
     if (!m || m == 3)
     {
         Stopwatch watch;
@@ -408,6 +407,7 @@ int main(int argc, char ** argv)
 #endif
             << std::endl;
     }
+#endif
 
     if (!m || m == 4)
     {

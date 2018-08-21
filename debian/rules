@@ -15,10 +15,10 @@ DESTDIR = $(CURDIR)/debian/tmp
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
 #TODO: why it not working? (maybe works in debhelper 10+)
-#ifndef THREADS_COUNT
-#    THREADS_COUNT:=$(shell nproc || grep -c ^processor /proc/cpuinfo)
-#endif
-#DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
+ifndef THREADS_COUNT
+    THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
+endif
+DEB_BUILD_OPTIONS+=parallel=$(THREADS_COUNT)
 
 ifndef ENABLE_TESTS
     CMAKE_FLAGS += -DENABLE_TESTS=0
@@ -43,21 +43,35 @@ endif
 
 CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
 
-NINJA=$(shell which ninja)
+ifndef DISABLE_NINJA
+    NINJA=$(shell which ninja)
 ifneq ($(NINJA),)
-    CMAKE_FLAGS += -GNinja
-    export MAKE=$(NINJA)
+        CMAKE_FLAGS += -GNinja
+        export MAKE=$(NINJA)
+endif
 endif
 
 ifndef DH_VERBOSE
     CMAKE_FLAGS += -DCMAKE_VERBOSE_MAKEFILE=0
 endif
 
+# Useful for bulding on low memory systems
+ifndef DISABLE_PARALLEL
+    DH_FLAGS += --parallel
+else
+    THREADS_COUNT = 1
+endif
+
 %:
-	dh $@ --parallel --buildsystem=cmake --builddirectory=$(BUILDDIR)
+	dh $@ $(DH_FLAGS) --buildsystem=cmake --builddirectory=$(BUILDDIR)
 
 override_dh_auto_configure:
 	dh_auto_configure -- $(CMAKE_FLAGS)
+
+override_dh_auto_build:
+	# Fix for ninja. Do not add -O.
+	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
+	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:
 	#TODO, use ENABLE_TESTS=1
@@ -85,12 +99,6 @@ override_dh_install:
 	# systemd compatibility
 	mkdir -p $(DESTDIR)/etc/systemd/system/
 	cp debian/clickhouse-server.service $(DESTDIR)/etc/systemd/system/
-
-	# In case building clickhouse-server, adding to package binary of clang, ld and header files - for dynamic compilation.
-	mkdir -p $(DESTDIR)/usr/share/clickhouse/headers
-
-#	CLANG=$(DEB_CLANG) ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
-	CLANG=$(DESTDIR)/usr/bin/clickhouse-clang ./copy_headers.sh . $(DESTDIR)/usr/share/clickhouse/headers
 
 	# fake metrika files when private dir is empty
 	mkdir -p $(DESTDIR)/etc/clickhouse-server/metrika

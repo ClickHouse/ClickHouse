@@ -9,7 +9,6 @@
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Storages/VirtualColumnFactory.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -32,6 +31,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_PREWHERE;
     extern const int INCOMPATIBLE_SOURCE_TABLES;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 
@@ -48,22 +48,44 @@ StorageMerge::StorageMerge(
 }
 
 
+/// NOTE Structure of underlying tables as well as their set are not constant,
+///  so the results of these methods may become obsolete after the call.
+
 NameAndTypePair StorageMerge::getColumn(const String & column_name) const
 {
-    auto type = VirtualColumnFactory::tryGetType(column_name);
-    if (type)
-        return NameAndTypePair(column_name, type);
+    /// virtual column of the Merge table itself
+    if (column_name == "_table")
+        return { column_name, std::make_shared<DataTypeString>() };
 
-    return IStorage::getColumn(column_name);
+    if (IStorage::hasColumn(column_name))
+        return IStorage::getColumn(column_name);
+
+    /// virtual (and real) columns of the underlying tables
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        return first_table->getColumn(column_name);
+
+    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 }
 
 bool StorageMerge::hasColumn(const String & column_name) const
 {
-    return VirtualColumnFactory::hasColumn(column_name) || IStorage::hasColumn(column_name);
+    if (column_name == "_table")
+        return true;
+
+    if (IStorage::hasColumn(column_name))
+        return true;
+
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        return first_table->hasColumn(column_name);
+
+    return false;
 }
 
 
-bool StorageMerge::isRemote() const
+template <typename F>
+StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
     auto database = context.getDatabase(source_database);
     auto iterator = database->getIterator(context);
@@ -73,41 +95,21 @@ bool StorageMerge::isRemote() const
         if (table_name_regexp.match(iterator->name()))
         {
             auto & table = iterator->table();
-            if (table.get() != this && table->isRemote())
-                return true;
+            if (table.get() != this && predicate(table))
+                return table;
         }
 
         iterator->next();
     }
 
-    return false;
+    return {};
 }
 
 
-namespace
+bool StorageMerge::isRemote() const
 {
-    using NodeHashToSet = std::map<IAST::Hash, SetPtr>;
-
-    void relinkSetsImpl(const ASTPtr & query, const NodeHashToSet & node_hash_to_set, PreparedSets & new_sets)
-    {
-        auto hash = query->getTreeHash();
-        auto it = node_hash_to_set.find(hash);
-        if (node_hash_to_set.end() != it)
-            new_sets[query.get()] = it->second;
-
-        for (const auto & child : query->children)
-            relinkSetsImpl(child, node_hash_to_set, new_sets);
-    }
-
-    /// Re-link prepared sets onto cloned and modified AST.
-    void relinkSets(const ASTPtr & query, const PreparedSets & old_sets, PreparedSets & new_sets)
-    {
-        NodeHashToSet node_hash_to_set;
-        for (const auto & node_set : old_sets)
-            node_hash_to_set.emplace(node_set.first->getTreeHash(), node_set.second);
-
-        relinkSetsImpl(query, node_hash_to_set, new_sets);
-    }
+    auto first_remote_table = getFirstTable([](const StoragePtr & table) { return table->isRemote(); });
+    return first_remote_table != nullptr;
 }
 
 
@@ -132,11 +134,46 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) cons
 }
 
 
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context) const
+{
+    auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
+
+    auto database = context.getDatabase(source_database);
+    auto iterator = database->getIterator(context);
+
+    bool first = true;
+
+    while (iterator->isValid())
+    {
+        if (table_name_regexp.match(iterator->name()))
+        {
+            auto & table = iterator->table();
+            if (table.get() != this)
+            {
+                auto stage = table->getQueryProcessingStage(context);
+
+                if (first)
+                    stage_in_source_tables = stage;
+                else if (stage != stage_in_source_tables)
+                    throw Exception("Source tables for Merge table are processing data up to different stages",
+                                    ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+                first = false;
+            }
+        }
+
+        iterator->next();
+    }
+
+    return stage_in_source_tables;
+}
+
+
 BlockInputStreams StorageMerge::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -156,8 +193,6 @@ BlockInputStreams StorageMerge::read(
             real_column_names.push_back(name);
     }
 
-    std::optional<QueryProcessingStage::Enum> processed_stage_in_source_tables;
-
     /** First we make list of selected tables to find out its size.
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
@@ -165,11 +200,20 @@ BlockInputStreams StorageMerge::read(
 
     const ASTPtr & query = query_info.query;
 
-    /// If PREWHERE is used in query, you need to make sure that all tables support this.
-    if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
-        for (const auto & elem : selected_tables)
+    for (const auto & elem : selected_tables)
+    {
+        /// Check processing stage again in case new table was added after getQueryProcessingStage call.
+        auto stage = elem.first->getQueryProcessingStage(context);
+        if (stage != processed_stage)
+            throw Exception("Source tables for Merge table are processing data up to different stages",
+                            ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
+
+        /// If PREWHERE is used in query, you need to make sure that all tables support this.
+        if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
             if (!elem.first->supportsPrewhere())
-                throw Exception("Storage " + elem.first->getName() + " doesn't support PREWHERE.", ErrorCodes::ILLEGAL_PREWHERE);
+                throw Exception("Storage " + elem.first->getName() + " doesn't support PREWHERE.",
+                                ErrorCodes::ILLEGAL_PREWHERE);
+    }
 
     Block virtual_columns_block = getBlockWithVirtualColumns(selected_tables);
 
@@ -210,42 +254,33 @@ BlockInputStreams StorageMerge::read(
 
         SelectQueryInfo modified_query_info;
         modified_query_info.query = modified_query_ast;
-
-        relinkSets(modified_query_info.query, query_info.sets, modified_query_info.sets);
+        modified_query_info.prewhere_info = query_info.prewhere_info;
+        modified_query_info.sets = query_info.sets;
 
         BlockInputStreams source_streams;
 
         if (curr_table_number < num_streams)
         {
-            QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
             source_streams = table->read(
                 real_column_names,
                 modified_query_info,
                 modified_context,
-                processed_stage_in_source_table,
+                processed_stage,
                 max_block_size,
                 tables_count >= num_streams ? 1 : (num_streams / tables_count));
 
-            if (!processed_stage_in_source_tables)
-                processed_stage_in_source_tables.emplace(processed_stage_in_source_table);
-            else if (processed_stage_in_source_table != *processed_stage_in_source_tables)
-                throw Exception("Source tables for Merge table are processing data up to different stages",
-                    ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
-
             if (!header)
             {
-                switch (processed_stage_in_source_table)
+                switch (processed_stage)
                 {
                     case QueryProcessingStage::FetchColumns:
                         header = getSampleBlockForColumns(column_names);
                         break;
                     case QueryProcessingStage::WithMergeableState:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::WithMergeableState, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
-                        break;
                     case QueryProcessingStage::Complete:
-                        header = materializeBlock(InterpreterSelectQuery(query_info.query, context, {}, QueryProcessingStage::Complete, 0,
-                            std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)), true).getSampleBlock());
+                        header = materializeBlock(InterpreterSelectQuery(
+                            query_info.query, context, std::make_shared<OneBlockInputStream>(getSampleBlockForColumns(column_names)),
+                            processed_stage, true).getSampleBlock());
                         break;
                 }
             }
@@ -262,24 +297,16 @@ BlockInputStreams StorageMerge::read(
         }
         else
         {
-            if (!processed_stage_in_source_tables)
-                throw Exception("Logical error: unknown processed stage in source tables", ErrorCodes::LOGICAL_ERROR);
-
             /// If many streams, initialize it lazily, to avoid long delay before start of query processing.
             source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(header, [=]() -> BlockInputStreamPtr
             {
-                QueryProcessingStage::Enum processed_stage_in_source_table = processed_stage;
                 BlockInputStreams streams = table->read(
                     real_column_names,
                     modified_query_info,
                     modified_context,
-                    processed_stage_in_source_table,
+                    processed_stage,
                     max_block_size,
                     1);
-
-                if (processed_stage_in_source_table != *processed_stage_in_source_tables)
-                    throw Exception("Source tables for Merge table are processing data up to different stages",
-                        ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
 
                 if (streams.empty())
                 {
@@ -303,9 +330,6 @@ BlockInputStreams StorageMerge::read(
 
         res.insert(res.end(), source_streams.begin(), source_streams.end());
     }
-
-    if (processed_stage_in_source_tables)
-        processed_stage = *processed_stage_in_source_tables;
 
     if (res.empty())
         return res;

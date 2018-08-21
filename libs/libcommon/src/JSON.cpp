@@ -1,7 +1,7 @@
+#include <string>
 #include <string.h>
 
 #include <Poco/UTF8Encoding.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/NumberParser.h>
 #include <common/JSON.h>
 #include <common/find_first_symbols.h>
@@ -418,7 +418,7 @@ JSON::Pos JSON::skipElement() const
         case TYPE_OBJECT:
             return skipObject();
         default:
-            throw JSONException("Logical error in JSON: unknown element type: " + Poco::NumberFormatter::format(type));
+            throw JSONException("Logical error in JSON: unknown element type: " + std::to_string(type));
     }
 }
 
@@ -456,7 +456,7 @@ JSON JSON::operator[] (size_t n) const
         ++it, ++i;
 
     if (i != n)
-        throw JSONException("JSON: array index " + Poco::NumberFormatter::format(Poco::UInt64(n)) + " out of bounds.");
+        throw JSONException("JSON: array index " + std::to_string(n) + " out of bounds.");
 
     return *it;
 }
@@ -636,7 +636,7 @@ std::string JSON::getString() const
                         int res = utf8.convert(unicode,
                             reinterpret_cast<unsigned char *>(const_cast<char*>(buf.data())) + buf.size() - 6, 6);
                         if (!res)
-                            throw JSONException("JSON: cannot convert unicode " + Poco::NumberFormatter::format(unicode)
+                            throw JSONException("JSON: cannot convert unicode " + std::to_string(unicode)
                                 + " to UTF8.");
                         buf.resize(buf.size() - 6 + res);
                         break;

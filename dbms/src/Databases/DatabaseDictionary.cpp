@@ -39,15 +39,15 @@ Tables DatabaseDictionary::loadTables()
     Tables tables;
     for (const auto & pair : dictionaries)
     {
-        const std::string & name = pair.first;
-        if (deleted_tables.count(name))
+        const std::string & dict_name = pair.first;
+        if (deleted_tables.count(dict_name))
             continue;
         auto dict_ptr = std::static_pointer_cast<IDictionaryBase>(pair.second.loadable);
         if (dict_ptr)
         {
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[name] = StorageDictionary::create(name, ColumnsDescription{columns}, dictionary_structure, name);
+            tables[dict_name] = StorageDictionary::create(dict_name, ColumnsDescription{columns}, dictionary_structure, dict_name);
         }
     }
 
@@ -180,7 +180,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     const char * pos = query.data();
     std::string error_message;
     auto ast = tryParseQuery(parser, pos, pos + query.size(), error_message,
-            /* hilite = */ false, "", /* allow_multi_statements = */ false);
+            /* hilite = */ false, "", /* allow_multi_statements = */ false, 0);
 
     if (!ast && throw_on_error)
         throw Exception(error_message, ErrorCodes::SYNTAX_ERROR);
@@ -206,16 +206,16 @@ ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & /*context*/) c
         buffer << "CREATE DATABASE " << backQuoteIfNeed(name) << " ENGINE = Dictionary";
     }
     ParserCreateQuery parser;
-    return parseQuery(parser, query.data(), query.data() + query.size(), "");
+    return parseQuery(parser, query.data(), query.data() + query.size(), "", 0);
 }
 
 void DatabaseDictionary::shutdown()
 {
 }
 
-void DatabaseDictionary::drop()
+String DatabaseDictionary::getDatabaseName() const
 {
-    /// Additional actions to delete database are not required.
+    return name;
 }
 
 }

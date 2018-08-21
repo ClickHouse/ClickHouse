@@ -20,7 +20,15 @@ from .client import Client, CommandRequest
 
 
 HELPERS_DIR = p.dirname(__file__)
+DEFAULT_ENV_NAME = 'env_file'
 
+
+def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
+    full_path = os.path.join(path, fname)
+    with open(full_path, 'w') as f:
+        for var, value in variables.items():
+            f.write("=".join([var, value]) + "\n")
+    return full_path
 
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
@@ -48,16 +56,19 @@ class ClickHouseCluster:
 
         self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
+        self.base_mysql_cmd = []
+        self.base_kafka_cmd = []
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
+        self.with_mysql = False
+        self.with_kafka = False
 
         self.docker_client = None
         self.is_up = False
 
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macroses={}, with_zookeeper=False,
-        clickhouse_path_dir=None, hostname=None):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, hostname=None, env_variables={}):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -74,8 +85,8 @@ class ClickHouseCluster:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
         instance = ClickHouseInstance(
-            self, self.base_dir, name, config_dir, main_configs, user_configs, macroses, with_zookeeper,
-            self.zookeeper_config_path, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname)
+            self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
+            self.zookeeper_config_path, with_mysql, with_kafka, self.base_configs_dir, self.server_bin_path, clickhouse_path_dir, hostname=hostname, env_variables=env_variables)
 
         self.instances[name] = instance
         self.base_cmd.extend(['--file', instance.docker_compose_path])
@@ -84,6 +95,18 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                        self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+
+        if with_mysql and not self.with_mysql:
+            self.with_mysql = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+            self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+
+        if with_kafka and not self.with_kafka:
+            self.with_kafka = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
+            self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
 
         return instance
 
@@ -124,8 +147,15 @@ class ClickHouseCluster:
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
 
+        if self.with_mysql and self.base_mysql_cmd:
+            subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
+
+        if self.with_kafka and self.base_kafka_cmd:
+            subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
+            self.kafka_docker_id = self.get_instance_docker_id('kafka1')
+
         # Uncomment for debugging
-        # print ' '.join(self.base_cmd + ['up', '--no-recreate'])
+        #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
 
         subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
 
@@ -137,6 +167,7 @@ class ClickHouseCluster:
             instance.wait_for_start(start_deadline)
 
             instance.client = Client(instance.ip_address, command=self.client_bin_path)
+
 
         self.is_up = True
 
@@ -194,14 +225,17 @@ services:
             -  server
             -  --config-file=/etc/clickhouse-server/config.xml
             -  --log-file=/var/log/clickhouse-server/clickhouse-server.log
+            -  --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log
         depends_on: {depends_on}
+        env_file:
+            - {env_file}
 '''
 
 
 class ClickHouseInstance:
     def __init__(
-            self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macroses,
-            with_zookeeper, zookeeper_config_path, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None):
+            self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path, clickhouse_path_dir, hostname=None, env_variables={}):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
@@ -213,15 +247,19 @@ class ClickHouseInstance:
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
-        self.macroses = macroses if macroses is not None else {}
+        self.macros = macros if macros is not None else {}
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
 
         self.base_configs_dir = base_configs_dir
         self.server_bin_path = server_bin_path
 
+        self.with_mysql = with_mysql
+        self.with_kafka = with_kafka
+
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
+        self.env_variables = env_variables
 
         self.docker_client = None
         self.ip_address = None
@@ -268,10 +306,10 @@ class ClickHouseInstance:
             deadline = start_time + timeout
 
         while True:
-            status = self.get_docker_handle().status
-
+            handle = self.get_docker_handle()
+            status = handle.status;
             if status == 'exited':
-                raise Exception("Instance `{}' failed to start. Container status: {}".format(self.name, status))
+                raise Exception("Instance `{}' failed to start. Container status: {}, logs: {}".format(self.name, status, handle.logs()))
 
             current_time = time.time()
             time_left = deadline - current_time
@@ -326,11 +364,11 @@ class ClickHouseInstance:
 
         shutil.copy(p.join(HELPERS_DIR, 'common_instance_config.xml'), config_d_dir)
 
-        # Generate and write macroses file
-        macroses = self.macroses.copy()
-        macroses['instance'] = self.name
+        # Generate and write macros file
+        macros = self.macros.copy()
+        macros['instance'] = self.name
         with open(p.join(config_d_dir, 'macros.xml'), 'w') as macros_config:
-            macros_config.write(self.dict_to_xml({"macros" : macroses}))
+            macros_config.write(self.dict_to_xml({"macros" : macros}))
 
         # Put ZooKeeper config
         if self.with_zookeeper:
@@ -356,9 +394,20 @@ class ClickHouseInstance:
         logs_dir = p.abspath(p.join(self.path, 'logs'))
         os.mkdir(logs_dir)
 
-        depends_on = '[]'
+        depends_on = []
+
+        if self.with_mysql:
+            depends_on.append("mysql1")
+
+        if self.with_kafka:
+            depends_on.append("kafka1")
+
         if self.with_zookeeper:
-            depends_on = '["zoo1", "zoo2", "zoo3"]'
+            depends_on.append("zoo1")
+            depends_on.append("zoo2")
+            depends_on.append("zoo3")
+
+        env_file = _create_env_file(os.path.dirname(self.docker_compose_path), self.env_variables)
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -370,7 +419,8 @@ class ClickHouseInstance:
                 config_d_dir=config_d_dir,
                 db_dir=db_dir,
                 logs_dir=logs_dir,
-                depends_on=depends_on))
+                depends_on=str(depends_on),
+                env_file=env_file))
 
 
     def destroy_dir(self):

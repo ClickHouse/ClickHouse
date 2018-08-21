@@ -23,6 +23,7 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -98,6 +99,22 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
     writeChar(x ? '1' : '0', buf);
 }
 
+template <typename T>
+inline size_t writeFloatTextFastPath(T x, char * buffer, int len)
+{
+    using Converter = DoubleConverter<false>;
+    double_conversion::StringBuilder builder{buffer, len};
+
+    bool result = false;
+    if constexpr (std::is_same_v<T, double>)
+        result = Converter::instance().ToShortest(x, &builder);
+    else
+        result = Converter::instance().ToShortestSingle(x, &builder);
+
+    if (!result)
+        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
+    return builder.position();
+}
 
 template <typename T>
 inline void writeFloatText(T x, WriteBuffer & buf)
@@ -105,6 +122,11 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for writeFloatText must be float or double");
 
     using Converter = DoubleConverter<false>;
+    if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
+    {
+        buf.position() += writeFloatTextFastPath(x, buf.position(), Converter::MAX_REPRESENTATION_LENGTH);
+        return;
+    }
 
     Converter::BufferType buffer;
     double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
@@ -118,7 +140,6 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     if (!result)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
 
-    /// TODO Excessive copy. Use optimistic path if buffer have enough bytes.
     buf.write(buffer, builder.position());
 }
 
@@ -153,7 +174,7 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeChar('"', buf);
     for (const char * it = begin; it != end; ++it)
@@ -185,7 +206,8 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 writeChar('\\', buf);
                 break;
             case '/':
-                writeChar('\\', buf);
+                if (settings.json.escape_forward_slashes)
+                    writeChar('\\', buf);
                 writeChar('/', buf);
                 break;
             case '"':
@@ -291,15 +313,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const String & s, WriteBuffer & buf)
+inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(s.data(), s.data() + s.size(), buf);
+    writeJSONString(s.data(), s.data() + s.size(), buf, settings);
 }
 
 
-inline void writeJSONString(const StringRef & ref, WriteBuffer & buf)
+inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(ref.data, ref.data + ref.size, buf);
+    writeJSONString(ref.data, ref.data + ref.size, buf, settings);
 }
 
 
@@ -374,11 +396,13 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'`'>(s, buf);
 }
 
-/// The same, but backquotes apply only if there are characters that do not match the identifier without backquotes.
-inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+
+/// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
+template <typename F>
+inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F && write_quoted_string)
 {
     if (s.empty() || !isValidIdentifierBegin(s[0]))
-        writeBackQuotedString(s, buf);
+        write_quoted_string(s, buf);
     else
     {
         const char * pos = s.data() + 1;
@@ -387,10 +411,20 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
             if (!isWordCharASCII(*pos))
                 break;
         if (pos != end)
-            writeBackQuotedString(s, buf);
+            write_quoted_string(s, buf);
         else
             writeString(s, buf);
     }
+}
+
+inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+}
+
+inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
 
@@ -537,7 +571,7 @@ inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 }
 
 template <char delimiter = '-'>
-inline void writeDateText(DayNum_t date, WriteBuffer & buf)
+inline void writeDateText(DayNum date, WriteBuffer & buf)
 {
     if (unlikely(!date))
     {
@@ -640,6 +674,7 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }

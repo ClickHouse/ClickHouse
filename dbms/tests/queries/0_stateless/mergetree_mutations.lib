@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+
+function wait_for_mutation()
+{
+    local table=$1
+    local mutation_id=$2
+
+    for i in {1..100}
+    do
+        sleep 0.1
+        if [[ $(${CLICKHOUSE_CLIENT} --query="SELECT is_done FROM system.mutations WHERE table='$table' AND mutation_id='$mutation_id'") -eq 1 ]]; then
+            break
+        fi
+
+        if [[ $i -eq 100 ]]; then
+            echo "Timed out while waiting for mutation to execute!"
+        fi
+
+    done
+}

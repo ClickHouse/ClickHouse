@@ -1,8 +1,23 @@
 set +e
 
-function get_revision {
+function gen_version_string {
+    if [ -n "$TEST" ]; then
+        VERSION_STRING="$VERSION_MAJOR.$VERSION_MINOR.$VERSION_PATCH.$VERSION_REVISION"
+    else
+        VERSION_STRING="$VERSION_MAJOR.$VERSION_MINOR.$VERSION_PATCH"
+    fi
+}
+
+function get_version {
     BASEDIR=$(dirname "${BASH_SOURCE[0]}")
-    grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\))$/\1/'
+    VERSION_REVISION=`grep "set(VERSION_REVISION" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_REVISION \(.*\)$/\1/' | sed 's/[) ].*//'`
+    VERSION_MAJOR=`grep "set(VERSION_MAJOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MAJOR \(.*\)/\1/' | sed 's/[) ].*//'`
+    VERSION_MINOR=`grep "set(VERSION_MINOR" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_MINOR \(.*\)/\1/' | sed 's/[) ].*//'`
+    VERSION_PATCH=`grep "set(VERSION_PATCH" ${BASEDIR}/dbms/cmake/version.cmake | sed 's/^.*VERSION_PATCH \(.*\)/\1/' | sed 's/[) ].*//'`
+    VERSION_PREFIX="${VERSION_PREFIX:-v}"
+    VERSION_POSTFIX_TAG="${VERSION_POSTFIX:--testing}"
+
+    gen_version_string
 }
 
 function get_author {
@@ -13,9 +28,8 @@ function get_author {
 # Generate revision number.
 # set environment variables REVISION, AUTHOR
 function gen_revision_author {
-    REVISION=$(get_revision)
-    VERSION_PREFIX="${VERSION_PREFIX:-v1.1.}"
-    VERSION_POSTFIX="${VERSION_POSTFIX:--testing}"
+    TYPE=$1
+    get_version
 
     if [[ $STANDALONE != 'yes' ]]; then
 
@@ -26,32 +40,66 @@ function gen_revision_author {
         max_attempts=1000
         while [ $succeeded -eq 0 ] && [ $attempts -le $max_attempts ]; do
             attempts=$(($attempts + 1))
-            REVISION=$(($REVISION + 1))
-            git_tag_grep=`git tag | grep "$VERSION_PREFIX$REVISION$VERSION_POSTFIX"`
+
+            if [ "$TYPE" == "major" ]; then
+                VERSION_REVISION=$(($VERSION_REVISION + 1))
+                VERSION_MAJOR=$(($VERSION_MAJOR + 1))
+                VERSION_MINOR=1
+                VERSION_PATCH=0
+            elif [ "$TYPE" == "minor" ] || [ "$TYPE" == "" ]; then
+                VERSION_REVISION=$(($VERSION_REVISION + 1))
+                VERSION_MINOR=$(($VERSION_MINOR + 1))
+                VERSION_PATCH=0
+            elif [ "$TYPE" == "patch" ] || [ "$TYPE" == "bugfix" ]; then
+                # VERSION_REVISION not incremented in new scheme.
+                if [ "$VERSION_MAJOR" -eq "1" ] && [ "$VERSION_MINOR" -eq "1" ]; then
+                    VERSION_REVISION=$(($VERSION_REVISION + 1))
+                fi
+
+                VERSION_PATCH=$(($VERSION_PATCH + 1))
+            else
+                echo "Unknown version type $TYPE"
+                exit 1
+            fi
+
+            gen_version_string
+
+            git_tag_grep=`git tag | grep "$VERSION_PREFIX$VERSION_STRING$VERSION_POSTFIX_TAG"`
             if [ "$git_tag_grep" == "" ]; then
                 succeeded=1
             fi
         done
         if [ $succeeded -eq 0 ]; then
-            echo "Fail to create revision up to $REVISION"
+            echo "Fail to create revision up to $VERSION_REVISION"
             exit 1
         fi
 
         auto_message="Auto version update to"
         git_log_grep=`git log --oneline --max-count=1 | grep "$auto_message"`
         if [ "$git_log_grep" == "" ]; then
-            tag="$VERSION_PREFIX$REVISION$VERSION_POSTFIX"
+            tag="$VERSION_PREFIX$VERSION_STRING$VERSION_POSTFIX_TAG"
 
             # First tag for correct git describe
             echo -e "\nTrying to create tag: $tag"
             git tag -a "$tag" -m "$tag"
 
             git_describe=`git describe`
-            sed -i -- "s/VERSION_REVISION .*)/VERSION_REVISION $REVISION)/g;s/VERSION_DESCRIBE .*)/VERSION_DESCRIBE $git_describe)/g" dbms/cmake/version.cmake
+            git_hash=`git rev-parse HEAD`
+            sed -i -e "s/set(VERSION_REVISION [^) ]*/set(VERSION_REVISION $VERSION_REVISION/g;" \
+                -e "s/set(VERSION_DESCRIBE [^) ]*/set(VERSION_DESCRIBE $git_describe/g;" \
+                -e "s/set(VERSION_GITHASH [^) ]*/set(VERSION_GITHASH $git_hash/g;" \
+                -e "s/set(VERSION_MAJOR [^) ]*/set(VERSION_MAJOR $VERSION_MAJOR/g;" \
+                -e "s/set(VERSION_MINOR [^) ]*/set(VERSION_MINOR $VERSION_MINOR/g;" \
+                -e "s/set(VERSION_PATCH [^) ]*/set(VERSION_PATCH $VERSION_PATCH/g;" \
+                -e "s/set(VERSION_STRING [^) ]*/set(VERSION_STRING $VERSION_STRING/g;" \
+                dbms/cmake/version.cmake
 
-            gen_changelog "$REVISION" "" "$AUTHOR" ""
-            git commit -m "$auto_message [$REVISION]" dbms/cmake/version.cmake debian/changelog
-            #git push
+            gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
+            gen_dockerfiles "$VERSION_STRING"
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile
+            git push
+
+            echo "Generated version: ${VERSION_STRING}, revision: ${VERSION_REVISION}."
 
             # Second tag for correct version information in version.cmake inside tag
             if git tag --force -a "$tag" -m "$tag"
@@ -66,35 +114,34 @@ function gen_revision_author {
                 fi
             fi
 
-        else
-            REVISION=$(get_revision)
-            echo reusing old version $REVISION
-        fi
+            # Reset testing branch to current commit.
+            git checkout testing
+            git reset --hard "$tag"
+            git push
 
+        else
+            get_version
+            echo reusing old version $VERSION_STRING
+        fi
     fi
 
     AUTHOR=$(git config --get user.name || echo ${USER})
-    export REVISION
     export AUTHOR
 }
 
 function get_revision_author {
-    REVISION=$(get_revision)
+    get_version
     AUTHOR=$(get_author)
-    export REVISION
     export AUTHOR
 }
 
 # Generate changelog from changelog.in.
-# changes
-#   programs/CMakeLists.txt
-#   dbms/src/CMakeLists.txt
 function gen_changelog {
-    REVISION="$1"
+    VERSION_STRING="$1"
     CHDATE="$2"
     AUTHOR="$3"
     CHLOG="$4"
-    if [ -z "REVISION" ] ; then
+    if [ -z "$VERSION_STRING" ] ; then
         get_revision_author
     fi
 
@@ -107,9 +154,15 @@ function gen_changelog {
     fi
 
     sed \
-        -e "s/[@]REVISION[@]/$REVISION/g" \
+        -e "s/[@]VERSION_STRING[@]/$VERSION_STRING/g" \
         -e "s/[@]DATE[@]/$CHDATE/g" \
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
         -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
         < $CHLOG.in > $CHLOG
+}
+
+# Change package versions that are installed for Docker images.
+function gen_dockerfiles {
+    VERSION_STRING="$1"
+    ls -1 docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='$VERSION_STRING'/'
 }

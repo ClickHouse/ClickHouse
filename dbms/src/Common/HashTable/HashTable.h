@@ -74,7 +74,7 @@ bool check(const T x) { return x == 0; }
 template <typename T>
 void set(T & x) { x = 0; }
 
-};
+}
 
 
 /** Compile-time interface for cell of the hash table.
@@ -108,6 +108,7 @@ struct HashTableCell
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return key == key_; }
     bool keyEquals(const Key & key_, size_t /*hash_*/) const { return key == key_; }
+    bool keyEquals(const Key & key_, size_t /*hash_*/, const State & /*state*/) const { return key == key_; }
 
     /// If the cell can remember the value of the hash function, then remember it.
     void setHash(size_t /*hash_value*/) {}
@@ -280,9 +281,10 @@ protected:
 #endif
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and further along the collision resolution chain.
-    size_t ALWAYS_INLINE findCell(const Key & x, size_t hash_value, size_t place_value) const
+    template <typename ObjectToCompareWith>
+    size_t ALWAYS_INLINE findCell(const ObjectToCompareWith & x, size_t hash_value, size_t place_value) const
     {
-        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value))
+        while (!buf[place_value].isZero(*this) && !buf[place_value].keyEquals(x, hash_value, *this))
         {
             place_value = grower.next(place_value);
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
@@ -408,7 +410,7 @@ protected:
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
-        memcpy(&buf[place_value], &x, sizeof(x));
+        memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x));
         x.setZero();
 
         /// Then the elements that previously were in collision with this can move to the old place.
@@ -726,7 +728,7 @@ public:
     {
         size_t place_value = findEmptyCell(grower.place(hash_value));
 
-        memcpy(&buf[place_value], cell, sizeof(*cell));
+        memcpy(static_cast<void*>(&buf[place_value]), cell, sizeof(*cell));
         ++m_size;
 
         if (unlikely(grower.overflow(m_size)))
@@ -734,7 +736,8 @@ public:
     }
 
 
-    iterator ALWAYS_INLINE find(Key x)
+    template <typename ObjectToCompareWith>
+    iterator ALWAYS_INLINE find(ObjectToCompareWith x)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -745,7 +748,8 @@ public:
     }
 
 
-    const_iterator ALWAYS_INLINE find(Key x) const
+    template <typename ObjectToCompareWith>
+    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -756,7 +760,8 @@ public:
     }
 
 
-    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
+    template <typename ObjectToCompareWith>
+    iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value)
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -766,7 +771,8 @@ public:
     }
 
 
-    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
+    template <typename ObjectToCompareWith>
+    const_iterator ALWAYS_INLINE find(ObjectToCompareWith x, size_t hash_value) const
     {
         if (Cell::isZero(x, *this))
             return this->hasZero() ? iteratorToZero() : end();
@@ -897,7 +903,7 @@ public:
         this->clearHasZero();
         m_size = 0;
 
-        memset(buf, 0, grower.bufSize() * sizeof(*buf));
+        memset(static_cast<void*>(buf), 0, grower.bufSize() * sizeof(*buf));
     }
 
     /// After executing this function, the table can only be destroyed,

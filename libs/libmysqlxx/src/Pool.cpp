@@ -1,11 +1,15 @@
+#if __has_include(<mariadb/mysql.h>)
+#include <mariadb/mysql.h>
+#include <mariadb/mysqld_error.h>
+#else
 #include <mysql/mysql.h>
 #include <mysql/mysqld_error.h>
+#endif
 
 #include <mysqlxx/Pool.h>
 
 #include <Poco/Util/Application.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Poco/NumberFormatter.h>
 
 
 namespace mysqlxx
@@ -198,7 +202,7 @@ void Pool::initialize()
 {
     if (!initialized)
     {
-        description = db + "@" + server + ":" + Poco::NumberFormatter::format(port) + " as user " + user;
+        description = db + "@" + server + ":" + std::to_string(port) + " as user " + user;
 
         for (unsigned i = 0; i < default_connections; ++i)
             allocConnection();

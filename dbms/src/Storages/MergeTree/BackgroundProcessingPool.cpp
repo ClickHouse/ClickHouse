@@ -6,7 +6,10 @@
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/DNSCacheUpdater.h>
 
+#include <ext/scope_guard.h>
 #include <pcg_random.hpp>
 #include <random>
 
@@ -25,7 +28,7 @@ constexpr double BackgroundProcessingPool::sleep_seconds;
 constexpr double BackgroundProcessingPool::sleep_seconds_random_part;
 
 
-void BackgroundProcessingPool::TaskInfo::wake()
+void BackgroundProcessingPoolTaskInfo::wake()
 {
     if (removed)
         return;
@@ -36,7 +39,7 @@ void BackgroundProcessingPool::TaskInfo::wake()
         std::unique_lock<std::mutex> lock(pool.tasks_mutex);
 
         auto next_time_to_execute = iterator->first;
-        TaskHandle this_task_handle = iterator->second;
+        auto this_task_handle = iterator->second;
 
         /// If this task was done nothing at previous time and it has to sleep, then cancel sleep time.
         if (next_time_to_execute > current_time)
@@ -54,6 +57,12 @@ void BackgroundProcessingPool::TaskInfo::wake()
 BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 {
     LOG_INFO(&Logger::get("BackgroundProcessingPool"), "Create BackgroundProcessingPool with " << size << " threads");
+
+    /// Put all threads to one thread group
+    /// The master thread exits immediately
+    CurrentThread::initializeQuery();
+    thread_group = CurrentThread::getGroup();
+    CurrentThread::detachQuery();
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -113,9 +122,11 @@ void BackgroundProcessingPool::threadFunction()
 {
     setThreadName("BackgrProcPool");
 
-    MemoryTracker memory_tracker;
-    memory_tracker.setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
-    current_memory_tracker = &memory_tracker;
+    /// Put all threads to one thread pool
+    CurrentThread::attachTo(thread_group);
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
+
+    CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
 
     pcg64 rng(randomSeed());
     std::this_thread::sleep_for(std::chrono::duration<double>(std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
@@ -180,6 +191,7 @@ void BackgroundProcessingPool::threadFunction()
         catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
+            DNSCacheUpdater::incrementNetworkErrorEventsIfNeeded();
         }
 
         if (shutdown)
@@ -199,8 +211,6 @@ void BackgroundProcessingPool::threadFunction()
             task->iterator = tasks.emplace(next_time_to_execute, task);
         }
     }
-
-    current_memory_tracker = nullptr;
 }
 
 }

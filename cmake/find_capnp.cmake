@@ -1,7 +1,6 @@
-option (ENABLE_CAPNP "Enable Cap'n Proto" ${NOT_MSVC})
+option (ENABLE_CAPNP "Enable Cap'n Proto" ON)
 
 if (ENABLE_CAPNP)
-
     # cmake 3.5.1 bug:
     # capnproto uses this cmake feature:
     # target_compile_features(kj PUBLIC cxx_constexpr)
@@ -42,7 +41,6 @@ if (ENABLE_CAPNP)
         set (CAPNP_LIBRARY capnpc)
         set (USE_CAPNP 1)
     endif ()
-
 endif ()
 
 if (USE_CAPNP)

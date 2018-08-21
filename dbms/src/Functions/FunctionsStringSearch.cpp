@@ -14,7 +14,7 @@
 #include <re2/stringpiece.h>
 
 #if USE_RE2_ST
-    #include <re2_st/re2.h>
+    #include <re2_st/re2.h> // Y_IGNORE
 #else
     #define re2_st re2
 #endif
@@ -962,7 +962,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnPtr column_src = block.getByPosition(arguments[0]).column;
         const ColumnPtr column_needle = block.getByPosition(arguments[1]).column;

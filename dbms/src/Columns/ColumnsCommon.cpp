@@ -3,6 +3,10 @@
 #endif
 
 #include <Columns/IColumn.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnVector.h>
+#include <Common/HashTable/HashSet.h>
+#include <Common/HashTable/HashMap.h>
 
 
 namespace DB
@@ -307,5 +311,23 @@ INSTANTIATE(Float32)
 INSTANTIATE(Float64)
 
 #undef INSTANTIATE
+
+namespace detail
+{
+    template <typename T>
+    const PaddedPODArray<T> * getIndexesData(const IColumn & indexes)
+    {
+        auto * column = typeid_cast<const ColumnVector<T> *>(&indexes);
+        if (column)
+            return &column->getData();
+
+        return nullptr;
+    }
+
+    template const PaddedPODArray<UInt8> * getIndexesData<UInt8>(const IColumn & indexes);
+    template const PaddedPODArray<UInt16> * getIndexesData<UInt16>(const IColumn & indexes);
+    template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
+    template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
+}
 
 }

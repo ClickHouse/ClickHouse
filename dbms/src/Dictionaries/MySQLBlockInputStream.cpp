@@ -4,6 +4,7 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <vector>
 
@@ -24,9 +25,7 @@ MySQLBlockInputStream::MySQLBlockInputStream(
         max_block_size{max_block_size}
 {
     if (sample_block.columns() != result.getNumFields())
-        throw Exception{
-            "mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " +
-                toString(sample_block.columns()) + " expected",
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " + toString(sample_block.columns()) + " expected",
             ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
     description.init(sample_block);

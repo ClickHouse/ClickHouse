@@ -10,7 +10,7 @@
 namespace DB
 {
 
-bool isLocalAddress(const Poco::Net::SocketAddress & address)
+bool isLocalAddress(const Poco::Net::IPAddress & address)
 {
     static auto interfaces = Poco::Net::NetworkInterface::list();
 
@@ -21,14 +21,14 @@ bool isLocalAddress(const Poco::Net::SocketAddress & address)
                       * Theoretically, this may not be correct - depends on `route` setting
                       *  - through which interface we will actually access the specified address.
                       */
-                    return interface.address().length() == address.host().length()
-                        && 0 == memcmp(interface.address().addr(), address.host().addr(), address.host().length());
+                    return interface.address().length() == address.length()
+                        && 0 == memcmp(interface.address().addr(), address.addr(), address.length());
                 });
 }
 
 bool isLocalAddress(const Poco::Net::SocketAddress & address, UInt16 clickhouse_port)
 {
-    return clickhouse_port == address.port() && isLocalAddress(address);
+    return clickhouse_port == address.port() && isLocalAddress(address.host());
 }
 
 

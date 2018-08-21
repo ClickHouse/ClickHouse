@@ -1,4 +1,5 @@
 #include <Dictionaries/DictionaryStructure.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/IColumn.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -83,9 +84,7 @@ AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type)
     if (it != std::end(dictionary))
         return it->second;
 
-    throw Exception{
-        "Unknown type " + type,
-        ErrorCodes::UNKNOWN_TYPE};
+    throw Exception{"Unknown type " + type, ErrorCodes::UNKNOWN_TYPE};
 }
 
 
@@ -107,9 +106,7 @@ std::string toString(const AttributeUnderlyingType type)
         case AttributeUnderlyingType::String: return "String";
     }
 
-    throw Exception{
-        "Unknown attribute_type " + toString(static_cast<int>(type)),
-        ErrorCodes::ARGUMENT_OUT_OF_BOUND};
+    throw Exception{"Unknown attribute_type " + toString(static_cast<int>(type)), ErrorCodes::ARGUMENT_OUT_OF_BOUND};
 }
 
 
@@ -118,9 +115,7 @@ DictionarySpecialAttribute::DictionarySpecialAttribute(const Poco::Util::Abstrac
       expression{config.getString(config_prefix + ".expression", "")}
 {
     if (name.empty() && !expression.empty())
-        throw Exception{
-            "Element " + config_prefix + ".name is empty",
-            ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{"Element " + config_prefix + ".name is empty", ErrorCodes::BAD_ARGUMENTS};
 }
 
 
@@ -169,9 +164,7 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
 {
     if (key_types.size() != key->size())
-        throw Exception{
-            "Key structure does not match, expected " + getKeyDescription(),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{"Key structure does not match, expected " + getKeyDescription(), ErrorCodes::TYPE_MISMATCH};
 
     for (const auto i : ext::range(0, key_types.size()))
     {
@@ -179,10 +172,8 @@ void DictionaryStructure::validateKeyTypes(const DataTypes & key_types) const
         const auto & actual_type = key_types[i]->getName();
 
         if (expected_type != actual_type)
-            throw Exception{
-                "Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
-                    ", found " + actual_type,
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{"Key type at position " + std::to_string(i) + " does not match, expected " + expected_type +
+                ", found " + actual_type, ErrorCodes::TYPE_MISMATCH};
     }
 }
 
@@ -232,7 +223,7 @@ size_t DictionaryStructure::getKeySize() const
 }
 
 
-static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
+static void checkAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & keys)
 {
     static const std::unordered_set<std::string> valid_keys =
         { "name", "type", "expression", "null_value", "hierarchical", "injective", "is_object_id" };
@@ -240,32 +231,33 @@ static void CheckAttributeKeys(const Poco::Util::AbstractConfiguration::Keys & k
     for (const auto & key : keys)
     {
         if (valid_keys.find(key) == valid_keys.end())
-            throw Exception{
-                "Unknown key '" + key + "' inside attribute section",
-                ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Unknown key '" + key + "' inside attribute section", ErrorCodes::BAD_ARGUMENTS};
     }
 }
+
 
 std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     const bool hierarchy_allowed, const bool allow_null_values)
 {
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(config_prefix, keys);
+    Poco::Util::AbstractConfiguration::Keys config_elems;
+    config.keys(config_prefix, config_elems);
     auto has_hierarchy = false;
 
-    std::vector<DictionaryAttribute> attributes;
+    std::vector<DictionaryAttribute> res_attributes;
 
-    for (const auto & key : keys)
+    const FormatSettings format_settings;
+
+    for (const auto & config_elem : config_elems)
     {
-        if (!startsWith(key.data(), "attribute"))
+        if (!startsWith(config_elem.data(), "attribute"))
             continue;
 
-        const auto prefix = config_prefix + '.' + key + '.';
+        const auto prefix = config_prefix + '.' + config_elem + '.';
         Poco::Util::AbstractConfiguration::Keys attribute_keys;
-        config.keys(config_prefix + '.' + key, attribute_keys);
+        config.keys(config_prefix + '.' + config_elem, attribute_keys);
 
-        CheckAttributeKeys(attribute_keys);
+        checkAttributeKeys(attribute_keys);
 
         const auto name = config.getString(prefix + "name");
         const auto type_string = config.getString(prefix + "type");
@@ -284,7 +276,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
             {
                 ReadBufferFromString null_value_buffer{null_value_string};
                 auto column_with_null_value = type->createColumn();
-                type->deserializeTextEscaped(*column_with_null_value, null_value_buffer);
+                type->deserializeTextEscaped(*column_with_null_value, null_value_buffer, format_settings);
                 null_value = (*column_with_null_value)[0];
             }
             catch (Exception & e)
@@ -298,28 +290,22 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
         const auto injective = config.getBool(prefix + "injective", false);
         const auto is_object_id = config.getBool(prefix + "is_object_id", false);
         if (name.empty())
-            throw Exception{
-                "Properties 'name' and 'type' of an attribute cannot be empty",
-                ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Properties 'name' and 'type' of an attribute cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
         if (has_hierarchy && !hierarchy_allowed)
-            throw Exception{
-                "Hierarchy not allowed in '" + prefix,
-                ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Hierarchy not allowed in '" + prefix, ErrorCodes::BAD_ARGUMENTS};
 
         if (has_hierarchy && hierarchical)
-            throw Exception{
-                "Only one hierarchical attribute supported",
-                ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{"Only one hierarchical attribute supported", ErrorCodes::BAD_ARGUMENTS};
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        attributes.emplace_back(DictionaryAttribute{
+        res_attributes.emplace_back(DictionaryAttribute{
             name, underlying_type, type, expression, null_value, hierarchical, injective, is_object_id
         });
     }
 
-    return attributes;
+    return res_attributes;
 }
 
 }

@@ -6,12 +6,12 @@
 # curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/build/build_debian.sh | sh
 
 # install compiler and libs
-sudo apt install -y git bash cmake gcc-7 g++-7 libicu-dev libreadline-dev libmysqlclient-dev unixodbc-dev libltdl-dev libssl-dev
+sudo apt install -y git bash cmake gcc-7 g++-7 libicu-dev libreadline-dev
 # for -DUNBUNDLED=1 mode:
-#sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev libzookeeper-mt-dev libsparsehash-dev librdkafka-dev libcapnp-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
+#sudo apt install -y libboost-program-options-dev libboost-system-dev libboost-filesystem-dev libboost-thread-dev zlib1g-dev liblz4-dev libdouble-conversion-dev libzstd-dev libre2-dev libsparsehash-dev librdkafka-dev libcapnp-dev libpoco-dev libsparsehash-dev libgoogle-perftools-dev libunwind-dev googletest libcctz-dev
 
 # install testing only stuff if you want:
-sudo apt install -y python python-lxml python-termcolor curl perl
+sudo apt install -y python python-lxml python-termcolor python-requests curl perl
 
 # Checkout ClickHouse sources
 git clone --recursive https://github.com/yandex/ClickHouse.git

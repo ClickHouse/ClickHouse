@@ -34,7 +34,6 @@ public:
 
     String getName() const override { return "MergeSortingBlocks"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 
@@ -56,7 +55,7 @@ private:
 
     bool has_collation = false;
 
-    std::priority_queue<SortCursor> queue;
+    std::priority_queue<SortCursor> queue_without_collation;
     std::priority_queue<SortCursorWithCollation> queue_with_collation;
 
     /** Two different cursors are supported - with and without Collation.
@@ -77,7 +76,6 @@ public:
 
     String getName() const override { return "MergeSorting"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
     const SortDescription & getSortDescription() const override { return description; }
 

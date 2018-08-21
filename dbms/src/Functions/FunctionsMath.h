@@ -16,18 +16,18 @@
   */
 
 #if USE_VECTORCLASS
-       #if __clang__
-               #pragma clang diagnostic push
-               #pragma clang diagnostic ignored "-Wshift-negative-value"
-       #endif
+    #ifdef __clang__
+            #pragma clang diagnostic push
+            #pragma clang diagnostic ignored "-Wshift-negative-value"
+    #endif
 
-       #include <vectorf128.h>
-       #include <vectormath_exp.h>
-       #include <vectormath_trig.h>
+    #include <vectorf128.h> // Y_IGNORE
+    #include <vectormath_exp.h> // Y_IGNORE
+    #include <vectormath_trig.h> // Y_IGNORE
 
-       #if __clang__
-               #pragma clang diagnostic pop
-       #endif
+    #ifdef __clang__
+            #pragma clang diagnostic pop
+    #endif
 #endif
 
 
@@ -56,9 +56,9 @@ private:
         return std::make_shared<DataTypeFloat64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(block.rows(), Impl::value);
+        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, Impl::value);
     }
 };
 
@@ -79,9 +79,7 @@ private:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments.front()->isNumber())
-            throw Exception{
-                "Illegal type " + arguments.front()->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+            throw Exception{"Illegal type " + arguments.front()->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeFloat64>();
     }
@@ -125,7 +123,7 @@ private:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto arg = block.getByPosition(arguments[0]).column.get();
 
@@ -140,9 +138,7 @@ private:
             !execute<Float32>(block, arg, result) &&
             !execute<Float64>(block, arg, result))
         {
-            throw Exception{
-                "Illegal column " + arg->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_COLUMN};
+            throw Exception{"Illegal column " + arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
         }
     }
 };
@@ -204,8 +200,7 @@ private:
         const auto check_argument_type = [this] (const IDataType * arg)
         {
             if (!arg->isNumber())
-                throw Exception{
-                    "Illegal type " + arg->getName() + " of argument of function " + getName(),
+                throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         };
 
@@ -352,8 +347,7 @@ private:
             }
             else
             {
-                throw Exception{
-                    "Illegal column " + block.getByPosition(arguments[1]).column->getName() +
+                throw Exception{"Illegal column " + block.getByPosition(arguments[1]).column->getName() +
                     " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN};
             }
@@ -377,8 +371,7 @@ private:
             }
             else
             {
-                throw Exception{
-                    "Illegal column " + block.getByPosition(arguments[1]).column->getName() +
+                throw Exception{"Illegal column " + block.getByPosition(arguments[1]).column->getName() +
                     " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN};
             }
@@ -387,7 +380,7 @@ private:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto left_arg = block.getByPosition(arguments[0]).column.get();
 
@@ -402,8 +395,7 @@ private:
             !executeLeft<Float32>(block, arguments, result, left_arg) &&
             !executeLeft<Float64>(block, arguments, result, left_arg))
         {
-            throw Exception{
-                "Illegal column " + left_arg->getName() + " of argument of function " + getName(),
+            throw Exception{"Illegal column " + left_arg->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
         }
     }
@@ -484,18 +476,17 @@ using FunctionExp = FunctionMathUnaryFloat64<UnaryFunctionVectorized<ExpName, ex
 using FunctionLog = FunctionMathUnaryFloat64<UnaryFunctionVectorized<LogName, log>>;
 using FunctionExp2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp2Name, exp2>>;
 using FunctionLog2 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log2Name, log2>>;
-using FunctionExp10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp10Name, preciseExp10>>;
-using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name, log10>>;
-using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
-
-using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName,
+using FunctionExp10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Exp10Name,
 #if USE_VECTORCLASS
-    Power_rational<1, 3>::pow
+    exp10
 #else
-    cbrt
+    preciseExp10
 #endif
 >>;
 
+using FunctionLog10 = FunctionMathUnaryFloat64<UnaryFunctionVectorized<Log10Name, log10>>;
+using FunctionSqrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SqrtName, sqrt>>;
+using FunctionCbrt = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CbrtName, cbrt>>;
 using FunctionSin = FunctionMathUnaryFloat64<UnaryFunctionVectorized<SinName, sin>>;
 using FunctionCos = FunctionMathUnaryFloat64<UnaryFunctionVectorized<CosName, cos>>;
 using FunctionTan = FunctionMathUnaryFloat64<UnaryFunctionVectorized<TanName, tan>>;

@@ -23,6 +23,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -32,6 +33,7 @@
 #include <future>
 #include <condition_variable>
 #include <mutex>
+
 
 
 namespace CurrentMetrics
@@ -51,6 +53,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -190,9 +193,12 @@ void DistributedBlockOutputStream::waitForJobs()
 
 ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
-    auto memory_tracker = current_memory_tracker;
-    return [this, memory_tracker, &job, &current_block]()
+    auto thread_group = CurrentThread::getGroup();
+    return [this, thread_group, &job, &current_block]()
     {
+        CurrentThread::attachToIfDetached(thread_group);
+        setThreadName("DistrOutStrProc");
+
         ++job.blocks_started;
 
         SCOPE_EXIT({
@@ -202,12 +208,6 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             job.elapsed_time_ms += elapsed_time_for_block_ms;
             job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
-
-        if (!current_memory_tracker)
-        {
-            current_memory_tracker = memory_tracker;
-            setThreadName("DistrOutStrProc");
-        }
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
         size_t num_shards = cluster->getShardsInfo().size();
@@ -358,6 +358,14 @@ void DistributedBlockOutputStream::writeSync(const Block & block)
 
 void DistributedBlockOutputStream::writeSuffix()
 {
+    auto log_performance = [this] ()
+    {
+        double elapsed = watch.elapsedSeconds();
+        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
+                   << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
+                   << ". " << getCurrentStateDescription());
+    };
+
     if (insert_sync && pool)
     {
         finished_jobs_count = 0;
@@ -365,23 +373,25 @@ void DistributedBlockOutputStream::writeSuffix()
             for (JobReplica & job : shard_jobs.replicas_jobs)
             {
                 if (job.stream)
-                    pool->schedule([&job] () { job.stream->writeSuffix(); });
+                {
+                    pool->schedule([&job] ()
+                    {
+                        job.stream->writeSuffix();
+                    });
+                }
             }
 
         try
         {
             pool->wait();
+            log_performance();
         }
         catch (Exception & exception)
         {
+            log_performance();
             exception.addMessage(getCurrentStateDescription());
             throw;
         }
-
-        double elapsed = watch.elapsedSeconds();
-        LOG_DEBUG(log, "It took " << std::fixed << std::setprecision(1) << elapsed << " sec. to insert " << inserted_blocks << " blocks"
-                       << ", " << std::fixed << std::setprecision(1) << inserted_rows / elapsed << " rows per second"
-                       << ". " << getCurrentStateDescription());
     }
 }
 

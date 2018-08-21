@@ -39,7 +39,16 @@ BlockIO InterpreterRenameQuery::execute()
     ASTRenameQuery & rename = typeid_cast<ASTRenameQuery &>(*query_ptr);
 
     if (!rename.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context);
+    {
+        NameSet databases;
+        for (const auto & elem : rename.elements)
+        {
+            databases.emplace(elem.from.database);
+            databases.emplace(elem.to.database);
+        }
+
+        return executeDDLQueryOnCluster(query_ptr, context, databases);
+    }
 
     String path = context.getPath();
     String current_database = context.getCurrentDatabase();

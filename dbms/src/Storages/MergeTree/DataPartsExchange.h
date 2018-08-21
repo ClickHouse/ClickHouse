@@ -54,7 +54,11 @@ public:
         const String & host,
         int port,
         const ConnectionTimeouts & timeouts,
-        bool to_detached = false);
+        const String & user,
+        const String & password,
+        const String & interserver_scheme,
+        bool to_detached = false,
+        const String & tmp_prefix_ = "");
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
