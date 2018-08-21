@@ -164,7 +164,7 @@ void TaskStatsInfoGetter::init()
 }
 
 
-bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error)
+void TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats)
 {
     init();
 
@@ -176,10 +176,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
     if (msg.n.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&msg.n), rv))
     {
         const ::nlmsgerr * err = static_cast<const ::nlmsgerr *>(NLMSG_DATA(&msg));
-        if (throw_on_error)
-            throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
-        else
-            return false;
+        throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
     }
 
     rv = GENLMSG_PAYLOAD(&msg.n);
@@ -212,22 +209,15 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
 
         attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(GENLMSG_DATA(&msg)) + len);
     }
-
-    return true;
 }
 
 
 void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
 {
     tid = tid < 0 ? getDefaultTID() : tid;
-    getStatImpl(tid, stat, true);
+    getStatImpl(tid, stat);
 }
 
-bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid)
-{
-    tid = tid < 0 ? getDefaultTID() : tid;
-    return getStatImpl(tid, stat, false);
-}
 
 int TaskStatsInfoGetter::getCurrentTID()
 {
