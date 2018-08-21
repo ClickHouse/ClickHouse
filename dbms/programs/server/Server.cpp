@@ -368,9 +368,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     if (!TaskStatsInfoGetter::checkProcessHasRequiredPermissions())
     {
-        LOG_INFO(log, "It looks like the process has not CAP_NET_ADMIN capability, some performance statistics will be disabled."
-                      " It could happen due to incorrect clickhouse package installation."
-                      " You could resolve the problem manually calling 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'");
+        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, some performance statistics will be disabled."
+                      " It could happen due to incorrect ClickHouse package installation."
+                      " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'");
     }
 
     {

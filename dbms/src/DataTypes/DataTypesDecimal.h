@@ -65,9 +65,9 @@ class DataTypeSimpleSerialization : public IDataType
 
 static constexpr size_t minDecimalPrecision() { return 1; }
 template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
-template <> constexpr size_t maxDecimalPrecision<Dec32>() { return 9; }
-template <> constexpr size_t maxDecimalPrecision<Dec64>() { return 18; }
-template <> constexpr size_t maxDecimalPrecision<Dec128>() { return 38; }
+template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
+template <> constexpr size_t maxDecimalPrecision<Decimal64>() { return 18; }
+template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
 
 
 DataTypePtr createDecimal(UInt64 precision, UInt64 scale);
@@ -254,22 +254,22 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
 
 inline bool isDecimal(const IDataType & data_type)
 {
-    if (typeid_cast<const DataTypeDecimal<Dec32> *>(&data_type))
+    if (typeid_cast<const DataTypeDecimal<Decimal32> *>(&data_type))
         return true;
-    if (typeid_cast<const DataTypeDecimal<Dec64> *>(&data_type))
+    if (typeid_cast<const DataTypeDecimal<Decimal64> *>(&data_type))
         return true;
-    if (typeid_cast<const DataTypeDecimal<Dec128> *>(&data_type))
+    if (typeid_cast<const DataTypeDecimal<Decimal128> *>(&data_type))
         return true;
     return false;
 }
 
 inline UInt32 getDecimalScale(const IDataType & data_type)
 {
-    if (auto * decimal_type = checkDecimal<Dec32>(data_type))
+    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Dec64>(data_type))
+    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
         return decimal_type->getScale();
-    if (auto * decimal_type = checkDecimal<Dec128>(data_type))
+    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getScale();
     return std::numeric_limits<UInt32>::max();
 }
@@ -291,9 +291,9 @@ inline bool comparableToDecimal(const IDataType & data_type)
 }
 
 template <typename DataType> constexpr bool IsDecimal = false;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec32>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec64>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec128>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal32>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal64>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal128>> = true;
 
 template <typename FromDataType, typename ToDataType>
 inline std::enable_if_t<IsDecimal<FromDataType> && IsDecimal<ToDataType>, typename ToDataType::FieldType>

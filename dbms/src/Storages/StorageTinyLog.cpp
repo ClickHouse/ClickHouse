@@ -384,12 +384,12 @@ BlockInputStreams StorageTinyLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
+    checkQueryProcessingStage(processed_stage, context);
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
     return BlockInputStreams(1, std::make_shared<TinyLogBlockInputStream>(
         max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 }

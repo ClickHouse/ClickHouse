@@ -215,13 +215,13 @@ template <> struct ConstructDecInt<16> { using Type = Int128; };
 template <typename T, typename U>
 struct DecCompareInt
 {
-    using Type = typename ConstructDecInt<(!decTrait<U>() || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
+    using Type = typename ConstructDecInt<(!IsDecimalNumber<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
     using TypeA = Type;
     using TypeB = Type;
 };
 
 ///
-template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = decTrait<A>() || decTrait<B>()>
+template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
 class DecimalComparison
 {
 public:
@@ -257,7 +257,7 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = maxDecimalPrecision<Dec128>();
+        static const UInt32 max_scale = maxDecimalPrecision<Decimal128>();
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
@@ -292,7 +292,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<decTrait<T>() && decTrait<U>(), Shift>
+    static std::enable_if_t<IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
     {
         const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
@@ -314,7 +314,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<decTrait<T>() && !decTrait<U>(), Shift>
+    static std::enable_if_t<IsDecimalNumber<T> && !IsDecimalNumber<U>, Shift>
     getScales(const DataTypePtr & left_type, const DataTypePtr &)
     {
         Shift shift;
@@ -325,7 +325,7 @@ private:
     }
 
     template <typename T, typename U>
-    static std::enable_if_t<!decTrait<T>() && decTrait<U>(), Shift>
+    static std::enable_if_t<!IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
     getScales(const DataTypePtr &, const DataTypePtr & right_type)
     {
         Shift shift;

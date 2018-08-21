@@ -23,8 +23,7 @@ public:
         size_t preferred_max_column_in_block_size_bytes,
         MergeTreeData & storage,
         const bool use_uncompressed_cache,
-        const ExpressionActionsPtr & prewhere_actions,
-        const String & prewhere_column,
+        const PrewhereInfoPtr & prewhere_info,
         const Settings & settings,
         const Names & virt_column_names);
 
@@ -38,11 +37,15 @@ protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
     bool getNewTask() override;
 
+private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])
     size_t thread;
 
     std::shared_ptr<MergeTreeReadPool> pool;
     size_t min_marks_to_read;
+
+    /// Names from header. Used in order to order columns in read blocks.
+    Names ordered_names;
 };
 
 }

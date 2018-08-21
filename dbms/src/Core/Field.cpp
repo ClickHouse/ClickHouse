@@ -273,21 +273,21 @@ namespace DB
     }
 
 
-    bool DecField::operator < (const DecField & r) const
+    bool DecimalField::operator < (const DecimalField & r) const
     {
-        using Comparator = DecimalComparison<Dec128, Dec128, LessOp>;
-        return Comparator::compare(Dec128(dec), Dec128(r.dec), scale, r.scale);
+        using Comparator = DecimalComparison<Decimal128, Decimal128, LessOp>;
+        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
     }
 
-    bool DecField::operator <= (const DecField & r) const
+    bool DecimalField::operator <= (const DecimalField & r) const
     {
-        using Comparator = DecimalComparison<Dec128, Dec128, LessOrEqualsOp>;
-        return Comparator::compare(Dec128(dec), Dec128(r.dec), scale, r.scale);
+        using Comparator = DecimalComparison<Decimal128, Decimal128, LessOrEqualsOp>;
+        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
     }
 
-    bool DecField::operator == (const DecField & r) const
+    bool DecimalField::operator == (const DecimalField & r) const
     {
-        using Comparator = DecimalComparison<Dec128, Dec128, EqualsOp>;
-        return Comparator::compare(Dec128(dec), Dec128(r.dec), scale, r.scale);
+        using Comparator = DecimalComparison<Decimal128, Decimal128, EqualsOp>;
+        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
     }
 }

@@ -78,7 +78,7 @@ if (USE_STATIC_LIBRARIES)
     list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
 endif ()
 
-if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "amd64.*|x86_64.*|AMD64.*")
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
 
     if (OS_LINUX)

@@ -139,15 +139,22 @@ void TaskStatsInfoGetter::init()
     if (netlink_socket_fd >= 0)
         return;
 
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
+
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
-        throwFromErrno("Can't create PF_NETLINK socket");
+        throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+
+    if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
+        throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
     ::sockaddr_nl addr{};
     addr.nl_family = AF_NETLINK;
 
     if (::bind(netlink_socket_fd, reinterpret_cast<const ::sockaddr *>(&addr), sizeof(addr)) < 0)
-        throwFromErrno("Can't bind PF_NETLINK socket");
+        throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
     netlink_family_id = getFamilyId(netlink_socket_fd);
 }
@@ -157,7 +164,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
     init();
 
     if (sendCommand(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t)))
-        throwFromErrno("Can't send a Netlink command");
+        throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
 
     NetlinkMessage msg;
     ssize_t rv = ::recv(netlink_socket_fd, &msg, sizeof(msg), 0);
