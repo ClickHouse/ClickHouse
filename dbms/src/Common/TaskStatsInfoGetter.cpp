@@ -97,7 +97,7 @@ void sendCommand(
 }
 
 
-UInt16 getFamilyId(int nl_sock_fd) noexcept
+UInt16 getFamilyId(int nl_sock_fd)
 {
     struct
     {
