@@ -47,3 +47,11 @@ std::enable_if_t<std::is_class_v<T>, T> NaNOrZero()
 {
     return T{};
 }
+
+#if 1 /// __int128
+template <typename T>
+std::enable_if_t<std::is_same_v<T, __int128> && !std::numeric_limits<T>::is_integer, __int128> NaNOrZero()
+{
+    return __int128(0);
+}
+#endif

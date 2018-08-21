@@ -2063,7 +2063,9 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
 
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
         {
-            restarting_thread->wakeup();
+            /// Can be called before starting restarting_thread
+            if (restarting_thread)
+                restarting_thread->wakeup();
             return;
         }
 
@@ -2886,10 +2888,11 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
+    checkQueryProcessingStage(processed_stage, context);
     const Settings & settings = context.getSettingsRef();
 
     /** The `select_sequential_consistency` setting has two meanings:
@@ -2924,9 +2927,8 @@ BlockInputStreams StorageReplicatedMergeTree::read(
                         " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
         }
     }
-
-    return reader.read(
-        column_names, query_info, context, processed_stage, max_block_size, num_streams, max_blocks_number_to_read);
+  
+    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_blocks_number_to_read);
 }
 
 
@@ -4320,7 +4322,7 @@ bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const St
                 if (response.error == 0 || response.error == ZooKeeperImpl::ZooKeeper::ZNONODE)
                     continue;
 
-                if (zkutil::isHardwareError(response.error))
+                if (ZooKeeperImpl::ZooKeeper::isHardwareError(response.error))
                 {
                     sucess = false;
                     continue;
@@ -4333,7 +4335,7 @@ bool StorageReplicatedMergeTree::tryRemovePartsFromZooKeeperWithRetries(const St
         {
             sucess = false;
 
-            if (zkutil::isHardwareError(e.code))
+            if (ZooKeeperImpl::ZooKeeper::isHardwareError(e.code))
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
             else
                 throw;
@@ -4379,7 +4381,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     {
                         LOG_DEBUG(log, "There is no part " << *it_in_batch << " in ZooKeeper, it was only in filesystem");
                     }
-                    else if (parts_should_be_retried && zkutil::isHardwareError(cur_code))
+                    else if (parts_should_be_retried && ZooKeeperImpl::ZooKeeper::isHardwareError(cur_code))
                     {
                         parts_should_be_retried->emplace(*it_in_batch);
                     }
@@ -4389,7 +4391,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
                     }
                 }
             }
-            else if (parts_should_be_retried && zkutil::isHardwareError(code))
+            else if (parts_should_be_retried && ZooKeeperImpl::ZooKeeper::isHardwareError(code))
             {
                 for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
                     parts_should_be_retried->emplace(*it_in_batch);

@@ -22,6 +22,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/TaskStatsInfoGetter.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -363,6 +364,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Initialize a watcher updating DNS cache in case of network errors
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+    }
+
+    if (!TaskStatsInfoGetter::checkProcessHasRequiredPermissions())
+    {
+        LOG_INFO(log, "It looks like the process has not CAP_NET_ADMIN capability, some performance statistics will be disabled."
+                      " It could happen due to incorrect clickhouse package installation."
+                      " You could resolve the problem manually calling 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'");
     }
 
     {
