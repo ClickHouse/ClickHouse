@@ -39,9 +39,8 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 }
 
 template <typename T>
-void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeDecimal<T>::writeText(T value, WriteBuffer & ostr) const
 {
-    T value = static_cast<const ColumnType &>(column).getData()[row_num];
     if (value < T(0))
     {
         value *= T(-1);
@@ -59,14 +58,26 @@ void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, W
     }
 }
 
+template <typename T>
+void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+{
+    T value = static_cast<const ColumnType &>(column).getData()[row_num];
+    writeText(value, ostr);
+}
+
+template <typename T>
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+{
+    UInt32 unread_scale = scale;
+    readDecimalText(istr, x, precision, unread_scale);
+    x *= getScaleMultiplier(unread_scale);
+}
 
 template <typename T>
 void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
-    UInt32 unread_scale = scale;
-    readDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
+    readText(x, istr);
     static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -156,6 +167,21 @@ MutableColumnPtr DataTypeDecimal<T>::createColumn() const
 
 //
 
+DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
+{
+    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Dec128>())
+        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (static_cast<UInt64>(scale_value) > precision_value)
+        throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (precision_value <= maxDecimalPrecision<Dec32>())
+        return std::make_shared<DataTypeDecimal<Dec32>>(precision_value, scale_value);
+    else if (precision_value <= maxDecimalPrecision<Dec64>())
+        return std::make_shared<DataTypeDecimal<Dec64>>(precision_value, scale_value);
+    return std::make_shared<DataTypeDecimal<Dec128>>(precision_value, scale_value);
+}
+
 static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.size() != 2)
@@ -170,19 +196,9 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     UInt64 precision_value = precision->value.get<UInt64>();
-    Int64 scale_value = scale->value.get<Int64>();
+    UInt64 scale_value = scale->value.get<UInt64>();
 
-    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Dec128>())
-        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    if (scale_value < 0 || static_cast<UInt64>(scale_value) > precision_value)
-        throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    if (precision_value <= maxDecimalPrecision<Dec32>())
-        return std::make_shared<DataTypeDecimal<Dec32>>(precision_value, scale_value);
-    else if (precision_value <= maxDecimalPrecision<Dec64>())
-        return std::make_shared<DataTypeDecimal<Dec64>>(precision_value, scale_value);
-    return std::make_shared<DataTypeDecimal<Dec128>>(precision_value, scale_value);
+    return createDecimal(precision_value, scale_value);
 }
 
 

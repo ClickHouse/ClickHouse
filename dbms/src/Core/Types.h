@@ -191,10 +191,4 @@ namespace DB
     template <> constexpr bool decTrait<Dec32>() { return true; }
     template <> constexpr bool decTrait<Dec64>() { return true; }
     template <> constexpr bool decTrait<Dec128>() { return true; }
-
-    template <typename T>
-    inline constexpr bool decBaseTrait() { return false; }
-    template <> constexpr bool decBaseTrait<Int32>() { return true; }
-    template <> constexpr bool decBaseTrait<Int64>() { return true; }
-    template <> constexpr bool decBaseTrait<Int128>() { return true; }
 }

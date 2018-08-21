@@ -305,6 +305,7 @@ class DataTypeFixedString;
 class DataTypeUUID;
 template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
+template <typename T> class DataTypeDecimal;
 
 template <typename T, typename F>
 bool callOnDataTypeAndIndex(TypeIndex number, F && f)
@@ -323,6 +324,10 @@ bool callOnDataTypeAndIndex(TypeIndex number, F && f)
 
         case TypeIndex::Float32:        return f(TypePair<T, DataTypeNumber<Float32>>());
         case TypeIndex::Float64:        return f(TypePair<T, DataTypeNumber<Float64>>());
+
+        case TypeIndex::Dec32:          return f(TypePair<T, DataTypeDecimal<Dec32>>());
+        case TypeIndex::Dec64:          return f(TypePair<T, DataTypeDecimal<Dec64>>());
+        case TypeIndex::Dec128:         return f(TypePair<T, DataTypeDecimal<Dec128>>());
 
         case TypeIndex::Date:           return f(TypePair<T, DataTypeDate>());
         case TypeIndex::DateTime:       return f(TypePair<T, DataTypeDateTime>());
@@ -359,6 +364,10 @@ bool callOnIndexAndDataType(TypeIndex number, F && f)
 
         case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>());
         case TypeIndex::Float64:        return f(TypePair<DataTypeNumber<Float64>, T>());
+
+        case TypeIndex::Dec32:          return f(TypePair<DataTypeDecimal<Dec32>, T>());
+        case TypeIndex::Dec64:          return f(TypePair<DataTypeDecimal<Dec64>, T>());
+        case TypeIndex::Dec128:         return f(TypePair<DataTypeDecimal<Dec128>, T>());
 
         case TypeIndex::Date:           return f(TypePair<DataTypeDate, T>());
         case TypeIndex::DateTime:       return f(TypePair<DataTypeDateTime, T>());
