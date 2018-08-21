@@ -930,11 +930,6 @@ template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
-template <typename DataType> constexpr bool IsDecimal = false;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec32>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec64>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec128>> = true;
-
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
 template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec32>> = true;
 template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec64>> = true;
