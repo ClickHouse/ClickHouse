@@ -42,7 +42,7 @@ ${LIBRARY_DIR}/libs/filesystem/src/windows_file_codecvt.cpp)
 add_library(boost_system_internal ${SPLIT_SHARED}
 ${LIBRARY_DIR}/libs/system/src/error_code.cpp)
 
-target_link_libraries (boost_filesystem_internal PRIVATE boost_system_internal)
+target_link_libraries (boost_filesystem_internal PUBLIC boost_system_internal)
 
 target_include_directories (boost_program_options_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 target_include_directories (boost_filesystem_internal SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
