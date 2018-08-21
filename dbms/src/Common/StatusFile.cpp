@@ -30,7 +30,7 @@ StatusFile::StatusFile(const std::string & path_)
         std::string contents;
         {
             ReadBufferFromFile in(path, 1024);
-            LimitReadBuffer limit_in(in, 1024);
+            LimitReadBuffer limit_in(in, 1024, false);
             readStringUntilEOF(contents, limit_in);
         }
 

@@ -60,11 +60,11 @@ BlockInputStreams StorageSystemTables::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    processed_stage = QueryProcessingStage::FetchColumns;
+    checkQueryProcessingStage(processed_stage, context);
 
     check(column_names);
 
@@ -95,7 +95,7 @@ BlockInputStreams StorageSystemTables::read(
 
         auto database = context.tryGetDatabase(database_name);
 
-        if (!database)
+        if (!database || !context.hasDatabaseAccessRights(database_name))
         {
             /// Database was deleted just now.
             continue;

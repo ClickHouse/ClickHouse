@@ -181,6 +181,17 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
     return ColumnTuple::create(new_columns);
 }
 
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
+{
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->index(indexes, limit);
+
+    return ColumnTuple::create(new_columns);
+}
+
 ColumnPtr ColumnTuple::replicate(const Offsets & offsets) const
 {
     const size_t tuple_size = columns.size();

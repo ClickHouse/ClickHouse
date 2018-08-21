@@ -152,6 +152,8 @@ public:
     /// Before aggregation:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
+    /// remove_filter is set in ExpressionActionsChain::finalize();
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -189,6 +191,7 @@ public:
     /// Create Set-s that we can from IN section to use the index on them.
     void makeSetsForIndex();
 
+    bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
 private:
     ASTPtr ast;
@@ -273,6 +276,8 @@ private:
         void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
+
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query);
     };
 
     AnalyzedJoin analyzed_join;
@@ -298,6 +303,9 @@ private:
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
     Tables external_tables;
     size_t external_table_id = 1;
+
+    /// Predicate optimizer overrides the sub queries
+    bool rewrite_subqueries = false;
 
     /** Remove all unnecessary columns from the list of all available columns of the table (`columns`).
       * At the same time, form a set of unknown columns (`unknown_required_source_columns`),
