@@ -38,12 +38,15 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
     std::map<String, std::map<String, StoragePtr>> merge_tree_tables;
     for (const auto & db : context.getDatabases())
     {
-        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+        if (context.hasDatabaseAccessRights(db.first))
         {
-            if (dynamic_cast<const StorageMergeTree *>(iterator->table().get())
-                || dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
             {
-                merge_tree_tables[db.first][iterator->name()] = iterator->table();
+                if (dynamic_cast<const StorageMergeTree *>(iterator->table().get())
+                    || dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+                {
+                    merge_tree_tables[db.first][iterator->name()] = iterator->table();
+                }
             }
         }
     }

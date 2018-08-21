@@ -2,14 +2,11 @@
 #if USE_POCO_MONGODB
 #include <Poco/Util/AbstractConfiguration.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/MongoDB/Connection.h>
-    #include <Poco/MongoDB/Database.h>
-    #include <Poco/MongoDB/Cursor.h>
-    #include <Poco/MongoDB/Array.h>
-    #include <Poco/MongoDB/ObjectId.h>
-#pragma GCC diagnostic pop
+#include <Poco/MongoDB/Connection.h>
+#include <Poco/MongoDB/Database.h>
+#include <Poco/MongoDB/Cursor.h>
+#include <Poco/MongoDB/Array.h>
+#include <Poco/MongoDB/ObjectId.h>
 
 #include <Poco/Version.h>
 

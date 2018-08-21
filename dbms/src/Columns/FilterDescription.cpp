@@ -27,14 +27,14 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     if (column.isColumnConst())
     {
         const ColumnConst & column_const = static_cast<const ColumnConst &>(column);
-        const IColumn & column_nested = column_const.getDataColumn();
+        ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfWithDictionary();
 
-        if (!typeid_cast<const ColumnUInt8 *>(&column_nested))
+        if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))
         {
-            const ColumnNullable * column_nested_nullable = typeid_cast<const ColumnNullable *>(&column_nested);
+            const ColumnNullable * column_nested_nullable = typeid_cast<const ColumnNullable *>(column_nested.get());
             if (!column_nested_nullable || !typeid_cast<const ColumnUInt8 *>(&column_nested_nullable->getNestedColumn()))
             {
-                throw Exception("Illegal type " + column_nested.getName() + " of column for constant filter. Must be UInt8 or Nullable(UInt8).",
+                throw Exception("Illegal type " + column_nested->getName() + " of column for constant filter. Must be UInt8 or Nullable(UInt8).",
                                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
             }
         }
@@ -48,8 +48,13 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 }
 
 
-FilterDescription::FilterDescription(const IColumn & column)
+FilterDescription::FilterDescription(const IColumn & column_)
 {
+    if (column_.withDictionary())
+        data_holder = column_.convertToFullColumnIfWithDictionary();
+
+    const auto & column = data_holder ? *data_holder : column_;
+
     if (const ColumnUInt8 * concrete_column = typeid_cast<const ColumnUInt8 *>(&column))
     {
         data = &concrete_column->getData();

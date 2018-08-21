@@ -168,11 +168,16 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
     return getTargetTable()->hasColumn(column_name);
 }
 
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
+{
+    return getTargetTable()->getQueryProcessingStage(context);
+}
+
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -255,6 +260,12 @@ void StorageMaterializedView::freezePartition(const ASTPtr & partition, const St
     getTargetTable()->freezePartition(partition, with_name, context);
 }
 
+void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->mutate(commands, context);
+}
+
 void StorageMaterializedView::shutdown()
 {
     /// Make sure the dependency is removed after DETACH TABLE
@@ -280,19 +291,31 @@ String StorageMaterializedView::getDataPath() const
     return {};
 }
 
-bool StorageMaterializedView::checkTableCanBeDropped() const
+void StorageMaterializedView::checkTableCanBeDropped() const
 {
     /// Don't drop the target table if it was created manually via 'TO inner_table' statement
     if (!has_inner_table)
-        return true;
+        return;
 
     auto target_table = tryGetTargetTable();
     if (!target_table)
-        return true;
+        return;
 
-    return target_table->checkTableCanBeDropped();
+    target_table->checkTableCanBeDropped();
 }
 
+void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkPartitionCanBeDropped(partition);
+}
 
 void registerStorageMaterializedView(StorageFactory & factory)
 {

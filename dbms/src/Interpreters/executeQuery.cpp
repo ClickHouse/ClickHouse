@@ -62,7 +62,6 @@ static void logQuery(const String & query, const Context & context)
 
     LOG_DEBUG(&Logger::get("executeQuery"), "(from " << context.getClientInfo().current_address.toString()
     << (current_user != "default" ? ", user: " + context.getClientInfo().current_user : "")
-    << ", query_id: " << current_query_id
     << (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string())
     << ") "
     << joinLines(query)
@@ -118,6 +117,9 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     setExceptionStackTrace(elem);
     logException(context, elem);
 
+    /// Update performance counters before logging to query_log
+    CurrentThread::finalizePerformanceCounters();
+
     if (log_queries)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
@@ -134,6 +136,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     time_t current_time = time(nullptr);
 
     context.setQueryContext(context);
+    CurrentThread::attachQueryContext(context);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -189,14 +192,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         ProcessList::EntryPtr process_list_entry;
         if (!internal && nullptr == typeid_cast<const ASTShowProcesslistQuery *>(&*ast))
         {
-            process_list_entry = context.getProcessList().insert(
-                query,
-                ast.get(),
-                context.getClientInfo(),
-                settings);
-
+            process_list_entry = context.getProcessList().insert(query, ast.get(), context);
             context.setProcessListElement(&process_list_entry->get());
         }
+
+        /// Load external tables if they were provided
+        context.initializeExternalTablesIfSet();
 
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         res = interpreter->execute();
@@ -255,6 +256,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Log into system table start of query execution, if need.
             if (log_queries)
             {
+                if (settings.log_query_settings)
+                    elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
+
                 if (auto query_log = context.getQueryLog())
                     query_log->add(elem);
             }
@@ -262,12 +266,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             /// Also make possible for caller to log successful query finish and exception during execution.
             res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
-                ProcessListElement * process_list_elem = context.getProcessListElement();
+                QueryStatus * process_list_elem = context.getProcessListElement();
+                const Settings & settings = context.getSettingsRef();
 
                 if (!process_list_elem)
                     return;
 
-                ProcessInfo info = process_list_elem->getInfo();
+                /// Update performance counters before logging to query_log
+                CurrentThread::finalizePerformanceCounters();
+
+                QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events);
 
                 double elapsed_seconds = info.elapsed_seconds;
 
@@ -288,18 +296,18 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 {
                     if (auto profiling_stream = dynamic_cast<const IProfilingBlockInputStream *>(stream_in))
                     {
-                        const BlockStreamProfileInfo & info = profiling_stream->getProfileInfo();
+                        const BlockStreamProfileInfo & stream_in_info = profiling_stream->getProfileInfo();
 
                         /// NOTE: INSERT SELECT query contains zero metrics
-                        elem.result_rows = info.rows;
-                        elem.result_bytes = info.bytes;
+                        elem.result_rows = stream_in_info.rows;
+                        elem.result_bytes = stream_in_info.bytes;
                     }
                 }
                 else if (stream_out) /// will be used only for ordinary INSERT queries
                 {
                     if (auto counting_stream = dynamic_cast<const CountingBlockOutputStream *>(stream_out))
                     {
-                        /// NOTE: Redundancy. The same values could be extracted from process_list_elem->progress_out.
+                        /// NOTE: Redundancy. The same values coulld be extracted from process_list_elem->progress_out.query_settings = process_list_elem->progress_in
                         elem.result_rows = counting_stream->getProgress().rows;
                         elem.result_bytes = counting_stream->getProgress().bytes;
                     }
@@ -313,6 +321,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                         << static_cast<size_t>(elem.read_rows / elapsed_seconds) << " rows/sec., "
                         << formatReadableSizeWithBinarySuffix(elem.read_bytes / elapsed_seconds) << "/sec.");
                 }
+
+                elem.thread_numbers = std::move(info.thread_numbers);
+                elem.profile_counters = std::move(info.profile_counters);
 
                 if (log_queries)
                 {
@@ -331,11 +342,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
                 elem.exception = getCurrentExceptionMessage(false);
 
-                ProcessListElement * process_list_elem = context.getProcessListElement();
+                QueryStatus * process_list_elem = context.getProcessListElement();
+                const Settings & settings = context.getSettingsRef();
+
+                /// Update performance counters before logging to query_log
+                CurrentThread::finalizePerformanceCounters();
 
                 if (process_list_elem)
                 {
-                    ProcessInfo info = process_list_elem->getInfo();
+                    QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events, false);
 
                     elem.query_duration_ms = info.elapsed_seconds * 1000;
 
@@ -343,11 +358,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.read_bytes = info.read_bytes;
 
                     elem.memory_usage = info.peak_memory_usage > 0 ? info.peak_memory_usage : 0;
+
+                    elem.thread_numbers = std::move(info.thread_numbers);
+                    elem.profile_counters = std::move(info.profile_counters);
                 }
 
                 setExceptionStackTrace(elem);
                 logException(context, elem);
 
+                /// In case of exception we log internal queries also
                 if (log_queries)
                 {
                     if (auto query_log = context.getQueryLog())
