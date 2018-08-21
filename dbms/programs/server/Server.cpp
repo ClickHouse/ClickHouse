@@ -366,7 +366,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
     }
 
-    if (!TaskStatsInfoGetter::checkProcessHasRequiredPermissions())
+    if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, some performance statistics will be disabled."
                       " It could happen due to incorrect ClickHouse package installation."
