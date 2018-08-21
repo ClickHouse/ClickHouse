@@ -7,7 +7,10 @@
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromString.h>
 
+#if defined(__linux__)
 #include <linux/taskstats.h>
+#endif
+
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
@@ -48,6 +51,7 @@ using namespace DB;
 
 void do_io(size_t id)
 {
+#if defined(__linux__)
     ::taskstats stat;
     int tid = TaskStatsInfoGetter::getCurrentTID();
     TaskStatsInfoGetter get_info;
@@ -104,6 +108,7 @@ void do_io(size_t id)
     }
 
     Poco::File(path_dst).remove(false);
+#endif
 }
 
 void test_perf()

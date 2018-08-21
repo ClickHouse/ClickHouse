@@ -77,7 +77,7 @@ $GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
     $INTERNAL_COMPILER_PARAMS \
     > $LOG_DIR/stdout 2>&1 &
 CH_PID=$!
-sleep ${TEST_SERVER_STARTUP_WAIT:=5}
+sleep ${TEST_SERVER_STARTUP_WAIT:=10}
 
 if [ "$GDB" ]; then
     # Long symbols read

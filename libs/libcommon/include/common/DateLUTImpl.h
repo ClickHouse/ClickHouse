@@ -3,8 +3,8 @@
 #include <common/Types.h>
 #include <common/likely.h>
 #include <common/strong_typedef.h>
-
 #include <ctime>
+#include <string>
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
