@@ -124,30 +124,16 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 
 
 /// PaddedPODArray extended by Decimal scale
-template <typename T, size_t INITIAL_SIZE = 4096>
-class DecPaddedPODArray : public PODArray<T, INITIAL_SIZE, Allocator<false>, sizeof(T)-1>
+template <typename T>
+class DecPaddedPODArray : public PaddedPODArray<T>
 {
 public:
-    using Base = PODArray<T, INITIAL_SIZE, Allocator<false>, sizeof(T)-1>;
+    using Base = PaddedPODArray<T>;
     using Base::operator[];
-
-    DecPaddedPODArray()
-    {}
-
-    DecPaddedPODArray(size_t n)
-    :   Base(n)
-    {}
-
-    DecPaddedPODArray(size_t n, const T & x)
-    :   Base(n, x)
-    {}
-
-    DecPaddedPODArray(typename Base::const_iterator from_begin, typename Base::const_iterator from_end)
-    :   Base(from_begin, from_end)
-    {}
+    using Base::Base;
 
     DecPaddedPODArray(std::initializer_list<T> il)
-    :   DecPaddedPODArray(std::begin(il), std::end(il))
+        : DecPaddedPODArray(std::begin(il), std::end(il))
     {}
 
     DecPaddedPODArray(DecPaddedPODArray && other)
@@ -156,7 +142,7 @@ public:
         std::swap(scale, other.scale);
     }
 
-    DecPaddedPODArray & operator= (DecPaddedPODArray && other)
+    DecPaddedPODArray & operator=(DecPaddedPODArray && other)
     {
         this->swap(other);
         std::swap(scale, other.scale);
@@ -167,7 +153,7 @@ public:
     UInt32 getScale() const { return scale; }
 
 private:
-    UInt32 scale = std::numeric_limits<UInt32>::max();
+    UInt32 scale = DecField::wrongScale();
 };
 
 
@@ -272,7 +258,7 @@ public:
         if constexpr (decTrait<T>())
         {
             UInt32 scale = data.getScale();
-            if (scale == std::numeric_limits<UInt32>::max())
+            if (scale == DecField::wrongScale())
                 throw Exception("Extracting Decimal field with unknown scale. Scale is lost.", ErrorCodes::LOGICAL_ERROR);
             return DecField(data[n], scale);
         }
