@@ -864,7 +864,7 @@ void DDLWorker::run()
             }
             catch (const zkutil::KeeperException & e)
             {
-                if (!zkutil::isHardwareError(e.code))
+                if (!ZooKeeperImpl::ZooKeeper::isHardwareError(e.code))
                     throw;
             }
         }
@@ -892,7 +892,7 @@ void DDLWorker::run()
         }
         catch (zkutil::KeeperException & e)
         {
-            if (zkutil::isHardwareError(e.code))
+            if (ZooKeeperImpl::ZooKeeper::isHardwareError(e.code))
             {
                 LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 

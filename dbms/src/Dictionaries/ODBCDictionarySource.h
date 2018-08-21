@@ -1,10 +1,15 @@
 #pragma once
 
 #include <Poco/Data/SessionPool.h>
+#include <Poco/URI.h>
+
+#include <Common/ODBCBridgeHelper.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/DictionaryStructure.h>
+
+#include <IO/ConnectionTimeouts.h>
 
 
 namespace Poco
@@ -58,6 +63,8 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
+    BlockInputStreamPtr loadBase(const std::string & query) const;
+
     Poco::Logger * log;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
@@ -67,11 +74,16 @@ private:
     const std::string where;
     const std::string update_field;
     Block sample_block;
-    std::shared_ptr<Poco::Data::SessionPool> pool = nullptr;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
+
+    ODBCBridgeHelper odbc_bridge_helper;
+    Poco::URI bridge_url;
+    ConnectionTimeouts timeouts;
+    const Context & global_context;
+
 };
 
 

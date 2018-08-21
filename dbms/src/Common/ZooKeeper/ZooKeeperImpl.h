@@ -549,6 +549,12 @@ public:
         ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
     };
 
+    /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
+    static bool isHardwareError(int32_t code);
+
+    /// Valid errors sent from the server about database state (like "no node"). Logical and authentication errors (like "bad arguments") are not here.
+    static bool isUserError(int32_t code);
+
     static const char * errorMessage(int32_t code);
 
     /// For watches.
