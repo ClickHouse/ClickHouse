@@ -141,7 +141,7 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
 {
     return readFromParts(
         data.getDataPartsVector(), column_names_to_return, query_info, context,
-        max_block_size, num_streams, max_block_number_to_read);
+        max_block_size, num_streams, max_blocks_number_to_read);
 }
 
 BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
