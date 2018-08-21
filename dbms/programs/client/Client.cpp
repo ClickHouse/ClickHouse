@@ -1527,7 +1527,9 @@ public:
             /// This is signal safe.
             ssize_t res = write(STDOUT_FILENO, "\n", 1);
 
-            if (res == 1 && rl_line_buffer[0])
+            /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
+            /// (First press to Ctrl+C will try to cancel query by InterruptListener).
+            if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
             {
                 rl_replace_line("", 0);
                 if (rl_forced_update_display())
