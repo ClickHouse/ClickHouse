@@ -64,7 +64,7 @@ void sendCommand(
     UInt8 genl_cmd,
     UInt16 nla_type,
     void * nla_data,
-    int nla_len) noexcept
+    int nla_len)
 {
 #if defined(__linux__)
     NetlinkMessage msg{};
@@ -109,7 +109,7 @@ void sendCommand(
 }
 
 
-UInt16 getFamilyId(int nl_sock_fd) noexcept
+UInt16 getFamilyId(int nl_sock_fd)
 {
 #if defined(__linux__)
     struct
