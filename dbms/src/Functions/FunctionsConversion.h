@@ -1205,9 +1205,9 @@ using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToI
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToIntMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
-using FunctionToDecimal9 = FunctionConvert<DataTypeDecimal<Dec32>, NameToDecimal9, ToIntMonotonicity<Int32>>;
-using FunctionToDecimal18 = FunctionConvert<DataTypeDecimal<Dec64>, NameToDecimal18, ToIntMonotonicity<Int64>>;
-using FunctionToDecimal38 = FunctionConvert<DataTypeDecimal<Dec128>, NameToDecimal38, ToIntMonotonicity<Int128>>;
+using FunctionToDecimal9 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal9, ToIntMonotonicity<Int32>>;
+using FunctionToDecimal18 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal18, ToIntMonotonicity<Int64>>;
+using FunctionToDecimal38 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal38, ToIntMonotonicity<Int128>>;
 
 
 template <typename DataType> struct FunctionTo;
@@ -1227,9 +1227,9 @@ template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTim
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
-template <> struct FunctionTo<DataTypeDecimal<Int32>> { using Type = FunctionToDecimal9; };
-template <> struct FunctionTo<DataTypeDecimal<Int64>> { using Type = FunctionToDecimal18; };
-template <> struct FunctionTo<DataTypeDecimal<Int128>> { using Type = FunctionToDecimal38; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal9; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal64>> { using Type = FunctionToDecimal18; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal128>> { using Type = FunctionToDecimal38; };
 
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
     : FunctionTo<DataTypeNumber<FieldType>>

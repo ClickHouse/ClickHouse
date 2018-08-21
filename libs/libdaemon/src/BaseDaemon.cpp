@@ -55,7 +55,6 @@
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
@@ -144,7 +143,7 @@ Pipe signal_pipe;
 static void call_default_signal_handler(int sig)
 {
     signal(sig, SIG_DFL);
-    kill(getpid(), sig);
+    raise(sig);
 }
 
 
@@ -677,16 +676,15 @@ BaseDaemon::~BaseDaemon()
 void BaseDaemon::terminate()
 {
     getTaskManager().cancelAll();
-    if (::kill(Poco::Process::id(), SIGTERM) != 0)
-    {
+    if (::raise(SIGTERM) != 0)
         throw Poco::SystemException("cannot terminate process");
-    }
 }
 
 void BaseDaemon::kill()
 {
     pid.clear();
-    Poco::Process::kill(getpid());
+    if (::raise(SIGKILL) != 0)
+        throw Poco::SystemException("cannot kill process");
 }
 
 void BaseDaemon::sleep(double seconds)
@@ -1104,7 +1102,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
                         throw Poco::Exception("Cannot set signal handler.");
 
                 for (auto signal : signals)
-                    if (sigaction(signal, &sa, 0))
+                    if (sigaction(signal, &sa, nullptr))
                         throw Poco::Exception("Cannot set signal handler.");
             }
         };
@@ -1124,7 +1122,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    Logger::root().information("Starting " + std::string{VERSION_FULL} + " with revision " + Poco::NumberFormatter::format(ClickHouseRevision::get()));
+    Logger::root().information("Starting " + std::string{VERSION_FULL} + " with revision " + std::to_string(ClickHouseRevision::get()));
 }
 
 /// Makes server shutdown if at least one Poco::Task have failed.

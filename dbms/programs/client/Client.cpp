@@ -90,6 +90,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int CANNOT_READLINE;
 }
 
 
@@ -1516,6 +1518,33 @@ public:
             }
         }
 
+#if USE_READLINE
+        if (rl_initialize())
+            throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
+
+        auto clear_prompt_or_exit = [](int)
+        {
+            /// This is signal safe.
+            ssize_t res = write(STDOUT_FILENO, "\n", 1);
+
+            if (res == 1 && rl_line_buffer[0])
+            {
+                rl_replace_line("", 0);
+                if (rl_forced_update_display())
+                    _exit(0);
+            }
+            else
+            {
+                /// A little dirty, but we struggle to find better way to correctly
+                /// force readline to exit after returning from the signal handler.
+                _exit(0);
+            }
+        };
+
+        if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
+            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+#endif
+
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
         namespace po = boost::program_options;
@@ -1656,7 +1685,7 @@ public:
             config().setInt("port", options["port"].as<int>());
         if (options.count("secure"))
             config().setBool("secure", true);
-        if (options.count("user"))
+        if (options.count("user") && !options["user"].defaulted())
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
             config().setString("password", options["password"].as<std::string>());

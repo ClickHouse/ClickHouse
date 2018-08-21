@@ -13,7 +13,6 @@
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
