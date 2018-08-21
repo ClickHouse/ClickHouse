@@ -140,8 +140,8 @@ void TaskStatsInfoGetter::init()
         return;
 
     struct timeval tv;
-    tv.tv_sec = 5;
-    tv.tv_usec = 0;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
 
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv));
