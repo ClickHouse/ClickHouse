@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_layout"></a>
 
-# Storing dictionaries in memory
+# Storing Dictionaries in Memory
 
 There are a [variety of ways](#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
 
@@ -38,7 +38,7 @@ The configuration looks like this:
 
 <a name="dicts-external_dicts_dict_layout-manner"></a>
 
-## Ways to store dictionaries in memory
+## Ways to Store Dictionaries in Memory
 
 - [flat](#dicts-external_dicts_dict_layout-flat)
 - [hashed](#dicts-external_dicts_dict_layout-hashed)
@@ -72,7 +72,7 @@ Configuration example:
 
 ### hashed
 
-The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
 
 All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
 

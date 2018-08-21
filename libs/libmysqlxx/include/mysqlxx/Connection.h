@@ -148,7 +148,8 @@ public:
 
 private:
     std::unique_ptr<MYSQL> driver;
-    bool is_connected;
+    bool is_initialized = false;
+    bool is_connected = false;
 };
 
 

@@ -46,4 +46,7 @@ target_link_libraries (in_join_subqueries_preprocessor dbms)
 add_check(in_join_subqueries_preprocessor)
 
 add_executable (users users.cpp)
-target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY} dbms)
+target_link_libraries (users dbms ${Boost_FILESYSTEM_LIBRARY})
+
+add_executable (internal_iotop internal_iotop.cpp)
+target_link_libraries (internal_iotop dbms)

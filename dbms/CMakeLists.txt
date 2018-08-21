@@ -157,6 +157,7 @@ target_link_libraries (dbms
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
     ${BTRIE_LIBRARIES}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
 )
 
 if (NOT USE_INTERNAL_RE2_LIBRARY)

@@ -85,6 +85,36 @@ ORDER BY level
 
 Simply, the level value could only be 0, 1, 2, 3, it means the maxium event action stage that one user could reach.
 
+## retention(cond1, cond2, ...)
+
+Retention refers to the ability of a company or product to retain its customers over some specified periods.
+
+`cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event
+
+Example: 
+
+Consider you are doing a website analytics, intend to calculate the retention of customers
+
+This could be easily calculate by `retention`
+
+```
+SELECT 
+    sum(r[1]) AS r1, 
+    sum(r[2]) AS r2, 
+    sum(r[3]) AS r3
+FROM 
+(
+    SELECT 
+        uid, 
+        retention(date = '2018-08-10', date = '2018-08-11', date = '2018-08-12') AS r
+    FROM events 
+    WHERE date IN ('2018-08-10', '2018-08-11', '2018-08-12')
+    GROUP BY uid
+) 
+```
+
+Simply, `r1` means the number of unique visitors who met the `cond1` condition, `r2` means the number of unique visitors who met `cond1` and `cond2` conditions, `r3` means the number of unique visitors who met `cond1` and `cond3` conditions.
+
 
 ## uniqUpTo(N)(x)
 
