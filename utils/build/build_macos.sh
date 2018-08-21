@@ -12,7 +12,7 @@ fi
 
 ## Install required compilers, tools, libraries
 
-brew install cmake gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline
+brew install cmake gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline librdkafka
 
 ## Checkout ClickHouse sources
 

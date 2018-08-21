@@ -72,7 +72,7 @@ struct HalfMD5Impl
         union
         {
             unsigned char char_data[16];
-            Poco::UInt64 uint64_data;
+            uint64_t uint64_data;
         } buf;
 
         MD5_CTX ctx;

@@ -5,8 +5,10 @@
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
-#include <linux/taskstats.h>
 
+#if defined(__linux__)
+#include <linux/taskstats.h>
+#endif
 
 namespace ProfileEvents
 {
@@ -83,7 +85,12 @@ struct RUsageCounters
     static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
         ::rusage rusage;
+#if defined(__APPLE__)
+        ::getrusage(RUSAGE_SELF, &rusage);
+#else
         ::getrusage(RUSAGE_THREAD, &rusage);
+#endif
+
         return RUsageCounters(rusage, real_time_);
     }
 
@@ -108,14 +115,16 @@ struct RUsageCounters
 
 struct TasksStatsCounters
 {
+#if defined(__linux__)
     ::taskstats stat;
-
+#endif
     TasksStatsCounters() = default;
 
     static TasksStatsCounters current();
 
     static void incrementProfileEvents(const TasksStatsCounters & prev, const TasksStatsCounters & curr, ProfileEvents::Counters & profile_events)
     {
+#if defined(__linux__)
         profile_events.increment(ProfileEvents::OSCPUWaitMicroseconds,
                                  safeDiff(prev.stat.cpu_delay_total, curr.stat.cpu_delay_total) / 1000U);
         profile_events.increment(ProfileEvents::OSIOWaitMicroseconds,
@@ -131,6 +140,7 @@ struct TasksStatsCounters
         profile_events.increment(ProfileEvents::OSWriteChars, safeDiff(prev.stat.write_char, curr.stat.write_char));
         profile_events.increment(ProfileEvents::OSReadBytes,  safeDiff(prev.stat.read_bytes, curr.stat.read_bytes));
         profile_events.increment(ProfileEvents::OSWriteBytes, safeDiff(prev.stat.write_bytes, curr.stat.write_bytes));
+#endif
     }
 
     static void updateProfileEvents(TasksStatsCounters & last_counters, ProfileEvents::Counters & profile_events)

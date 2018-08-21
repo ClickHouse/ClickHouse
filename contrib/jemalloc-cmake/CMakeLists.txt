@@ -40,7 +40,7 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   list(APPEND SRCS ${JEMALLOC_SOURCE_DIR}/src/zone.c)
 endif()
 
-add_library(jemalloc STATIC ${SRCS})
+add_library(jemalloc ${SPLIT_SHARED} ${SRCS})
 
 target_include_directories(jemalloc PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include

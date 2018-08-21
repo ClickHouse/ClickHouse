@@ -3,16 +3,24 @@
 #include <Core/Types.h>
 
 #include <errno.h>
+#if defined(__linux__)
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <linux/taskstats.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#if __has_include(<sys/syscall.h>)
+#include <sys/syscall.h>
+#else
 #include <syscall.h>
+#endif
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
@@ -40,9 +48,11 @@ static size_t constexpr MAX_MSG_SIZE = 1024;
 
 struct NetlinkMessage
 {
+#if defined(__linux__)
     ::nlmsghdr n;
     ::genlmsghdr g;
     char buf[MAX_MSG_SIZE];
+#endif
 };
 
 
@@ -55,6 +65,7 @@ int sendCommand(
     void * nla_data,
     int nla_len) noexcept
 {
+#if defined(__linux__)
     NetlinkMessage msg{};
 
     msg.n.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);
@@ -93,6 +104,7 @@ int sendCommand(
         else if (errno != EAGAIN)
             return -1;
     }
+#endif
 
     return 0;
 }
@@ -100,6 +112,7 @@ int sendCommand(
 
 UInt16 getFamilyId(int nl_sock_fd) noexcept
 {
+#if defined(__linux__)
     struct
     {
         ::nlmsghdr header;
@@ -127,6 +140,9 @@ UInt16 getFamilyId(int nl_sock_fd) noexcept
         id = *static_cast<const UInt16 *>(NLA_DATA(attr));
 
     return id;
+#else
+    return 0;
+#endif
 }
 
 }
@@ -136,6 +152,7 @@ TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
 
 void TaskStatsInfoGetter::init()
 {
+#if defined(__linux__)
     if (netlink_socket_fd >= 0)
         return;
 
@@ -150,8 +167,11 @@ void TaskStatsInfoGetter::init()
         throwFromErrno("Can't bind PF_NETLINK socket");
 
     netlink_family_id = getFamilyId(netlink_socket_fd);
+#endif
 }
 
+
+#if defined(__linux__)
 bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error)
 {
     init();
@@ -216,6 +236,7 @@ bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid)
     tid = tid < 0 ? getDefaultTID() : tid;
     return getStatImpl(tid, stat, false);
 }
+#endif
 
 TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
@@ -225,8 +246,12 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 
 int TaskStatsInfoGetter::getCurrentTID()
 {
+#if defined(__linux__)
     /// This call is always successful. - man gettid
     return static_cast<int>(syscall(SYS_gettid));
+#else
+    return 0;
+#endif
 }
 
 int TaskStatsInfoGetter::getDefaultTID()
@@ -239,9 +264,13 @@ int TaskStatsInfoGetter::getDefaultTID()
 
 static bool tryGetTaskStats()
 {
+#if defined(__linux__)
     TaskStatsInfoGetter getter;
     ::taskstats stat;
     return getter.tryGetStat(stat);
+#else
+    return false;
+#endif
 }
 
 bool TaskStatsInfoGetter::checkProcessHasRequiredPermissions()
@@ -250,5 +279,6 @@ bool TaskStatsInfoGetter::checkProcessHasRequiredPermissions()
     static bool res = tryGetTaskStats();
     return res;
 }
+
 
 }
