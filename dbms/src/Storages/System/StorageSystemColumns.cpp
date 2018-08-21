@@ -15,10 +15,9 @@
 namespace DB
 {
 
-StorageSystemColumns::StorageSystemColumns(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemColumns::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         { "database",           std::make_shared<DataTypeString>() },
         { "table",              std::make_shared<DataTypeString>() },
         { "name",               std::make_shared<DataTypeString>() },
@@ -28,21 +27,11 @@ StorageSystemColumns::StorageSystemColumns(const std::string & name_)
         { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>() },
         { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>() },
         { "marks_bytes",                std::make_shared<DataTypeUInt64>() },
-    }));
+    };
 }
 
-
-BlockInputStreams StorageSystemColumns::read(
-    const Names & column_names,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemColumns::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     Block block_to_filter;
 
     std::map<std::pair<std::string, std::string>, StoragePtr> storages;
@@ -53,14 +42,18 @@ BlockInputStreams StorageSystemColumns::read(
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
-            database_column_mut->insert(database.first);
+        {
+            if (context.hasDatabaseAccessRights(database.first))
+                database_column_mut->insert(database.first);
+        }
+
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
         VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
         if (!block_to_filter.rows())
-            return BlockInputStreams();
+            return;
 
         ColumnPtr database_column = block_to_filter.getByName("database").column;
         size_t rows = database_column->size();
@@ -98,19 +91,17 @@ BlockInputStreams StorageSystemColumns::read(
     VirtualColumnUtils::filterBlockWithQuery(query_info.query, block_to_filter, context);
 
     if (!block_to_filter.rows())
-        return BlockInputStreams();
+        return;
 
     ColumnPtr filtered_database_column = block_to_filter.getByName("database").column;
     ColumnPtr filtered_table_column = block_to_filter.getByName("table").column;
 
     /// We compose the result.
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     size_t rows = filtered_database_column->size();
-    for (size_t i = 0; i < rows; ++i)
+    for (size_t row_no = 0; row_no < rows; ++row_no)
     {
-        const std::string database_name = (*filtered_database_column)[i].get<std::string>();
-        const std::string table_name = (*filtered_table_column)[i].get<std::string>();
+        const std::string database_name = (*filtered_database_column)[row_no].get<std::string>();
+        const std::string table_name = (*filtered_table_column)[row_no].get<std::string>();
 
         NamesAndTypesList columns;
         ColumnDefaults column_defaults;
@@ -143,13 +134,13 @@ BlockInputStreams StorageSystemColumns::read(
             /** Info about sizes of columns for tables of MergeTree family.
               * NOTE: It is possible to add getter for this info to IStorage interface.
               */
-            if (auto storage_concrete = dynamic_cast<StorageMergeTree *>(storage.get()))
+            if (auto storage_concrete_plain = dynamic_cast<StorageMergeTree *>(storage.get()))
             {
-                column_sizes = storage_concrete->getData().getColumnSizes();
+                column_sizes = storage_concrete_plain->getData().getColumnSizes();
             }
-            else if (auto storage_concrete = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+            else if (auto storage_concrete_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
             {
-                column_sizes = storage_concrete->getData().getColumnSizes();
+                column_sizes = storage_concrete_replicated->getData().getColumnSizes();
             }
         }
 
@@ -193,8 +184,6 @@ BlockInputStreams StorageSystemColumns::read(
             }
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

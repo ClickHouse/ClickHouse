@@ -16,5 +16,17 @@
                 </replica>
             </shard>
         </test_local_cluster>
+        <shard_with_local_replica>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </shard_with_local_replica>
     </remote_servers>
 </yandex>

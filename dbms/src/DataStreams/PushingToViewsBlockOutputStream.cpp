@@ -71,7 +71,7 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         try
         {
             BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(view.query, *views_context, {}, QueryProcessingStage::Complete, 0, from);
+            InterpreterSelectQuery select(view.query, *views_context, from);
             BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
             /// Squashing is needed here because the materialized view query can generate a lot of blocks
             /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY

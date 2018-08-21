@@ -73,7 +73,7 @@ public:
     Block getHeader() const override
     {
         return header;
-    };
+    }
 
 protected:
     Block readImpl() override
@@ -143,7 +143,7 @@ public:
     {
     }
 
-    ~StripeLogBlockOutputStream()
+    ~StripeLogBlockOutputStream() override
     {
         try
         {
@@ -235,14 +235,14 @@ BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t /*max_block_size*/,
     unsigned num_streams)
 {
+    checkQueryProcessingStage(processed_stage, context);
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     NameSet column_names_set(column_names.begin(), column_names.end());
 

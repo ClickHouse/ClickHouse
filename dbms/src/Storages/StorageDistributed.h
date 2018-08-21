@@ -9,6 +9,7 @@
 #include <Interpreters/Settings.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/ASTFunction.h>
 #include <common/logger_useful.h>
 
 
@@ -36,8 +37,15 @@ public:
     static StoragePtr createWithOwnCluster(
         const std::string & table_name_,
         const ColumnsDescription & columns_,
-        const String & remote_database_,      /// database on remote servers.
-        const String & remote_table_,         /// The name of the table on the remote servers.
+        const String & remote_database_,       /// database on remote servers.
+        const String & remote_table_,          /// The name of the table on the remote servers.
+        ClusterPtr owned_cluster_,
+        const Context & context_);
+
+    static StoragePtr createWithOwnCluster(
+        const std::string & table_name_,
+        const ColumnsDescription & columns_,
+        ASTPtr & remote_table_function_ptr_,     /// Table function ptr.
         ClusterPtr & owned_cluster_,
         const Context & context_);
 
@@ -52,11 +60,14 @@ public:
 
     bool isRemote() const override { return true; }
 
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -76,9 +87,6 @@ public:
     void shutdown() override;
 
     String getDataPath() const override { return path; }
-
-    /// From each replica, get a description of the corresponding local table.
-    BlockInputStreams describe(const Context & context, const Settings & settings);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }
@@ -101,6 +109,7 @@ public:
     String table_name;
     String remote_database;
     String remote_table;
+    ASTPtr remote_table_function_ptr;
 
     const Context & context;
     Logger * log = &Logger::get("StorageDistributed");
@@ -141,6 +150,17 @@ protected:
         const ColumnsDescription & columns_,
         const String & remote_database_,
         const String & remote_table_,
+        const String & cluster_name_,
+        const Context & context_,
+        const ASTPtr & sharding_key_,
+        const String & data_path_,
+        bool attach);
+
+    StorageDistributed(
+        const String & database_name,
+        const String & table_name_,
+        const ColumnsDescription & columns_,
+        ASTPtr remote_table_function_ptr_,
         const String & cluster_name_,
         const Context & context_,
         const ASTPtr & sharding_key_,

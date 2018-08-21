@@ -4,12 +4,9 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Dictionaries/ExternalResultDescription.h>
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-    #include <Poco/Data/Session.h>
-    #include <Poco/Data/Statement.h>
-    #include <Poco/Data/RecordSet.h>
-#pragma GCC diagnostic pop
+#include <Poco/Data/Session.h>
+#include <Poco/Data/Statement.h>
+#include <Poco/Data/RecordSet.h>
 
 #include <string>
 

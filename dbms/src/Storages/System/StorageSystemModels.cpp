@@ -2,44 +2,28 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalModels.h>
 #include <Dictionaries/CatBoostModel.h>
 namespace DB
 {
 
-StorageSystemModels::StorageSystemModels(const std::string & name)
-    : name{name}
+NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         { "name", std::make_shared<DataTypeString>() },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "creation_time", std::make_shared<DataTypeDateTime>() },
         { "last_exception", std::make_shared<DataTypeString>() },
-    }));
+    };
 }
 
-
-BlockInputStreams StorageSystemModels::read(
-        const Names & column_names,
-        const SelectQueryInfo &,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        const size_t,
-        const unsigned)
+void StorageSystemModels::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     const auto & external_models = context.getExternalModels();
     auto objects_map = external_models.getObjectsMap();
     const auto & models = objects_map.get();
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
 
     for (const auto & model_info : models)
     {
@@ -73,8 +57,6 @@ BlockInputStreams StorageSystemModels::read(
         else
             res_columns[4]->insertDefault();
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

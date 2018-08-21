@@ -22,6 +22,7 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/TaskStatsInfoGetter.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
@@ -58,6 +59,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
 }
 
 
@@ -209,25 +211,49 @@ int Server::main(const std::vector<std::string> & /*args*/)
         Poco::File(user_files_path).createDirectories();
     }
 
-    if (config().has("interserver_http_port"))
+    if (config().has("interserver_http_port") && config().has("interserver_https_port"))
+        throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+    static const auto interserver_tags =
     {
-        String this_host = config().getString("interserver_http_host", "");
+        std::make_tuple("interserver_http_host", "interserver_http_port", "http"),
+        std::make_tuple("interserver_https_host", "interserver_https_port", "https")
+    };
 
-        if (this_host.empty())
+    for (auto [host_tag, port_tag, scheme] : interserver_tags)
+    {
+        if (config().has(port_tag))
         {
-            this_host = getFQDNOrHostName();
-            LOG_DEBUG(log,
-                "Configuration parameter 'interserver_http_host' doesn't exist or exists and empty. Will use '" + this_host
-                    + "' as replica host.");
+            String this_host = config().getString(host_tag, "");
+
+            if (this_host.empty())
+            {
+                this_host = getFQDNOrHostName();
+                LOG_DEBUG(log,
+                    "Configuration parameter '" + String(host_tag) + "' doesn't exist or exists and empty. Will use '" + this_host
+                        + "' as replica host.");
+            }
+
+            String port_str = config().getString(port_tag);
+            int port = parse<int>(port_str);
+
+            if (port < 0 || port > 0xFFFF)
+                throw Exception("Out of range '" + String(port_tag) + "': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+            global_context->setInterserverIOAddress(this_host, port);
+            global_context->setInterserverScheme(scheme);
         }
+    }
 
-        String port_str = config().getString("interserver_http_port");
-        int port = parse<int>(port_str);
+    if (config().has("interserver_http_credentials"))
+    {
+        String user = config().getString("interserver_http_credentials.user", "");
+        String password = config().getString("interserver_http_credentials.password", "");
 
-        if (port < 0 || port > 0xFFFF)
-            throw Exception("Out of range 'interserver_http_port': " + toString(port), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+        if (user.empty())
+            throw Exception("Configuration parameter interserver_http_credentials user can't be empty", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-        global_context->setInterserverIOAddress(this_host, port);
+        global_context->setInterserverCredentials(user, password);
     }
 
     if (config().has("macros"))
@@ -275,6 +301,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Setup protection to avoid accidental DROP for big tables (that are greater than 50 GB by default)
     if (config().has("max_table_size_to_drop"))
         global_context->setMaxTableSizeToDrop(config().getUInt64("max_table_size_to_drop"));
+
+    if (config().has("max_partition_size_to_drop"))
+        global_context->setMaxPartitionSizeToDrop(config().getUInt64("max_partition_size_to_drop"));
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
     size_t uncompressed_cache_size = config().getUInt64("uncompressed_cache_size", 0);
@@ -335,6 +364,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
     {
         /// Initialize a watcher updating DNS cache in case of network errors
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context);
+    }
+
+    if (!TaskStatsInfoGetter::checkProcessHasRequiredPermissions())
+    {
+        LOG_INFO(log, "It looks like the process has not CAP_NET_ADMIN capability, some performance statistics will be disabled."
+                      " It could happen due to incorrect clickhouse package installation."
+                      " You could resolve the problem manually calling 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'");
     }
 
     {
@@ -504,6 +540,27 @@ int Server::main(const std::vector<std::string> & /*args*/)
                         http_params));
 
                     LOG_INFO(log, "Listening interserver http: " + address.toString());
+                }
+
+                if (config().has("interserver_https_port"))
+                {
+#if USE_POCO_NETSSL
+                    initSSL();
+                    Poco::Net::SecureServerSocket socket;
+                    auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
+                    socket.setReceiveTimeout(settings.http_receive_timeout);
+                    socket.setSendTimeout(settings.http_send_timeout);
+                    servers.emplace_back(new Poco::Net::HTTPServer(
+                        new InterserverIOHTTPHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
+                        server_pool,
+                        socket,
+                        http_params));
+
+                    LOG_INFO(log, "Listening interserver https: " + address.toString());
+#else
+                    throw Exception{"SSL support for TCP protocol is disabled because Poco library was built without NetSSL support.",
+                            ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
                 }
             }
             catch (const Poco::Net::NetException & e)

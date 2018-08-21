@@ -1,17 +1,26 @@
 #include <daemon/OwnPatternFormatter.h>
 
-#include <functional>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Common/CurrentThread.h>
+#include <Interpreters/InternalTextLogsQueue.h>
+
+#include <functional>
 #include <optional>
 #include <sys/time.h>
 #include <Poco/Ext/ThreadNumber.h>
 #include <daemon/BaseDaemon.h>
 
 
-void OwnPatternFormatter::format(const Poco::Message & msg, std::string & text)
+OwnPatternFormatter::OwnPatternFormatter(const BaseDaemon * daemon_, OwnPatternFormatter::Options options_)
+        : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
+
+
+void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text)
 {
     DB::WriteBufferFromString wb(text);
+
+    const Poco::Message & msg = msg_ext.base;
 
     /// For syslog: tag must be before message and first whitespace.
     if (options & ADD_LAYER_TAG && daemon)
@@ -25,28 +34,37 @@ void OwnPatternFormatter::format(const Poco::Message & msg, std::string & text)
         }
     }
 
-    /// Output time with microsecond resolution.
-    timeval tv;
-    if (0 != gettimeofday(&tv, nullptr))
-        DB::throwFromErrno("Cannot gettimeofday");
-
     /// Change delimiters in date for compatibility with old logs.
-    DB::writeDateTimeText<'.', ':'>(tv.tv_sec, wb);
+    DB::writeDateTimeText<'.', ':'>(msg_ext.time_seconds, wb);
 
     DB::writeChar('.', wb);
-    DB::writeChar('0' + ((tv.tv_usec / 100000) % 10), wb);
-    DB::writeChar('0' + ((tv.tv_usec / 10000) % 10), wb);
-    DB::writeChar('0' + ((tv.tv_usec / 1000) % 10), wb);
-    DB::writeChar('0' + ((tv.tv_usec / 100) % 10), wb);
-    DB::writeChar('0' + ((tv.tv_usec / 10) % 10), wb);
-    DB::writeChar('0' + ((tv.tv_usec / 1) % 10), wb);
+    DB::writeChar('0' + ((msg_ext.time_microseconds / 100000) % 10), wb);
+    DB::writeChar('0' + ((msg_ext.time_microseconds / 10000) % 10), wb);
+    DB::writeChar('0' + ((msg_ext.time_microseconds / 1000) % 10), wb);
+    DB::writeChar('0' + ((msg_ext.time_microseconds / 100) % 10), wb);
+    DB::writeChar('0' + ((msg_ext.time_microseconds / 10) % 10), wb);
+    DB::writeChar('0' + ((msg_ext.time_microseconds / 1) % 10), wb);
 
     writeCString(" [ ", wb);
-    DB::writeIntText(Poco::ThreadNumber::get(), wb);
-    writeCString(" ] <", wb);
+    DB::writeIntText(msg_ext.thread_number, wb);
+    writeCString(" ] ", wb);
+
+    if (!msg_ext.query_id.empty())
+    {
+        writeCString("{", wb);
+        DB::writeString(msg_ext.query_id, wb);
+        writeCString("} ", wb);
+    }
+
+    writeCString("<", wb);
     DB::writeString(getPriorityName(static_cast<int>(msg.getPriority())), wb);
     writeCString("> ", wb);
     DB::writeString(msg.getSource(), wb);
     writeCString(": ", wb);
     DB::writeString(msg.getText(), wb);
+}
+
+void OwnPatternFormatter::format(const Poco::Message & msg, std::string & text)
+{
+    formatExtended(DB::ExtendedLogMessage::getFrom(msg), text);
 }

@@ -1,10 +1,9 @@
 #include <iomanip>
 #include <thread>
 #include <future>
-
+#include <Poco/Util/Application.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnsNumber.h>
@@ -17,10 +16,10 @@
 #include <DataStreams/materializeBlock.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
-
 #include <Interpreters/Aggregator.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/MemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
 #include <common/demangle.h>
 #if __has_include(<Interpreters/config_compile.h>)
@@ -141,8 +140,9 @@ Aggregator::Aggregator(const Params & params_)
     : params(params_),
     isCancelled([]() { return false; })
 {
-    if (current_memory_tracker)
-        memory_usage_before_aggregation = current_memory_tracker->get();
+    /// Use query-level memory tracker
+    if (auto memory_tracker = CurrentThread::getMemoryTracker().getParent())
+        memory_usage_before_aggregation = memory_tracker->get();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -202,6 +202,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
     else
         throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
 
+    auto compiler_headers = Poco::Util::Application::instance().config().getString("compiler_headers", INTERNAL_COMPILER_HEADERS);
+
     /// List of types of aggregate functions.
     std::stringstream aggregate_functions_typenames_str;
     std::stringstream aggregate_functions_headers_args;
@@ -225,12 +227,12 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
             throw Exception("Cannot compile code: unusual path of header file for aggregate function: " + header_path,
                 ErrorCodes::CANNOT_COMPILE_CODE);
 
-        aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src";
+        aggregate_functions_headers_args << "-include '" << compiler_headers << "/dbms/src";
         aggregate_functions_headers_args.write(&header_path[pos], header_path.size() - pos);
         aggregate_functions_headers_args << "' ";
     }
 
-    aggregate_functions_headers_args << "-include '" INTERNAL_COMPILER_HEADERS "/dbms/src/Interpreters/SpecializedAggregator.h'";
+    aggregate_functions_headers_args << "-include '" << compiler_headers << "/dbms/src/Interpreters/SpecializedAggregator.h'";
 
     std::string aggregate_functions_typenames = aggregate_functions_typenames_str.str();
 
@@ -804,8 +806,8 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
     size_t result_size = result.sizeWithoutOverflowRow();
     Int64 current_memory_usage = 0;
-    if (current_memory_tracker)
-        current_memory_usage = current_memory_tracker->get();
+    if (auto memory_tracker = CurrentThread::getMemoryTracker().getParent())
+        current_memory_usage = memory_tracker->get();
 
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;    /// Here all the results in the sum are taken into account, from different threads.
 
@@ -1278,9 +1280,9 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
     bool final,
     ThreadPool * thread_pool) const
 {
-    auto converter = [&](size_t bucket, MemoryTracker * memory_tracker)
+    auto converter = [&](size_t bucket, ThreadGroupStatusPtr thread_group)
     {
-        current_memory_tracker = memory_tracker;
+        CurrentThread::attachToIfDetached(thread_group);
         return convertOneBucketToBlock(data_variants, method, final, bucket);
     };
 
@@ -1295,7 +1297,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(
             if (method.data.impls[bucket].empty())
                 continue;
 
-            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, current_memory_tracker));
+            tasks[bucket] = std::packaged_task<Block()>(std::bind(converter, bucket, CurrentThread::getGroup()));
 
             if (thread_pool)
                 thread_pool->schedule([bucket, &tasks] { tasks[bucket](); });
@@ -1601,7 +1603,7 @@ public:
 
     Block getHeader() const override { return aggregator.getHeader(final); }
 
-    ~MergingAndConvertingBlockInputStream()
+    ~MergingAndConvertingBlockInputStream() override
     {
         LOG_TRACE(&Logger::get(__PRETTY_FUNCTION__), "Waiting for threads to finish");
 
@@ -1725,17 +1727,17 @@ private:
             return;
 
         parallel_merge_data->pool.schedule(std::bind(&MergingAndConvertingBlockInputStream::thread, this,
-            max_scheduled_bucket_num, current_memory_tracker));
+            max_scheduled_bucket_num, CurrentThread::getGroup()));
     }
 
-    void thread(Int32 bucket_num, MemoryTracker * memory_tracker)
+    void thread(Int32 bucket_num, ThreadGroupStatusPtr thread_group)
     {
-        current_memory_tracker = memory_tracker;
-        setThreadName("MergingAggregtd");
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
-
         try
         {
+            setThreadName("MergingAggregtd");
+            CurrentThread::attachToIfDetached(thread_group);
+            CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
+
             /// TODO: add no_more_keys support maybe
 
             auto & merged_data = *data[0];
@@ -2035,9 +2037,9 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, MemoryTracker * memory_tracker)
+        auto merge_bucket = [&bucket_to_blocks, &result, this](Int32 bucket, Arena * aggregates_pool, ThreadGroupStatusPtr thread_group)
         {
-            current_memory_tracker = memory_tracker;
+            CurrentThread::attachToIfDetached(thread_group);
 
             for (Block & block : bucket_to_blocks[bucket])
             {
@@ -2070,7 +2072,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
             result.aggregates_pools.push_back(std::make_shared<Arena>());
             Arena * aggregates_pool = result.aggregates_pools.back().get();
 
-            auto task = std::bind(merge_bucket, bucket, aggregates_pool, current_memory_tracker);
+            auto task = std::bind(merge_bucket, bucket, aggregates_pool, CurrentThread::getGroup());
 
             if (thread_pool)
                 thread_pool->schedule(task);
