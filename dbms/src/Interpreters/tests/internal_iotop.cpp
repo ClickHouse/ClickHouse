@@ -52,7 +52,7 @@ void do_io(size_t id)
     int tid = TaskStatsInfoGetter::getCurrentTID();
     TaskStatsInfoGetter get_info;
 
-    get_info.getStat(stat, tid))
+    get_info.getStat(stat, tid);
     std::lock_guard<std::mutex> lock(mutex);
     std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
 
