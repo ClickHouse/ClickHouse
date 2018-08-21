@@ -74,7 +74,9 @@
     M(ZooKeeperCheck) \
     M(ZooKeeperClose) \
     M(ZooKeeperWatchResponse) \
-    M(ZooKeeperExceptions) \
+    M(ZooKeeperUserExceptions) \
+    M(ZooKeeperHardwareExceptions) \
+    M(ZooKeeperOtherExceptions) \
     M(ZooKeeperWaitMicroseconds) \
     M(ZooKeeperBytesSent) \
     M(ZooKeeperBytesReceived) \
