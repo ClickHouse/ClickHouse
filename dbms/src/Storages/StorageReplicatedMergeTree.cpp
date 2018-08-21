@@ -1954,14 +1954,13 @@ bool StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     String source_path = zookeeper_path + "/replicas/" + source_replica;
     
     zkutil::Stat is_lost_stat;
-    /// 
+    /// If the replica gets the is_lost, it'll help us check.
     is_lost_stat.version = -2;
+
     String res;
     if (zookeeper->tryGet(source_path + "/is_lost", res, &is_lost_stat))
         if (res == "1")
             return false;
-        
-    std::cout << is_lost_stat.version << "1111111111111111111111";
 
     /** If the reference/master replica is not yet fully created, let's wait.
         * NOTE: If something went wrong while creating it, we can hang around forever.
