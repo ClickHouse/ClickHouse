@@ -206,9 +206,9 @@ bool callByTypeAndNumber(UInt8 number, F && f)
         case TypeId<Int64>::value:        f(T(), Int64()); break;
         case TypeId<Int128>::value:       f(T(), Int128()); break;
 
-        case TypeId<Dec32>::value:        f(T(), Dec32()); break;
-        case TypeId<Dec64>::value:        f(T(), Dec64()); break;
-        case TypeId<Dec128>::value:       f(T(), Dec128()); break;
+        case TypeId<Decimal32>::value:        f(T(), Decimal32()); break;
+        case TypeId<Decimal64>::value:        f(T(), Decimal64()); break;
+        case TypeId<Decimal128>::value:       f(T(), Decimal128()); break;
         default:
             return false;
     }
@@ -234,9 +234,9 @@ inline bool callByNumbers(UInt8 type_num1, UInt8 type_num2, F && f)
         case TypeId<Int64>::value: return callByTypeAndNumber<Int64>(type_num2, std::forward<F>(f));
         case TypeId<Int128>::value: return callByTypeAndNumber<Int128>(type_num2, std::forward<F>(f));
 
-        case TypeId<Dec32>::value: return callByTypeAndNumber<Dec32>(type_num2, std::forward<F>(f));
-        case TypeId<Dec64>::value: return callByTypeAndNumber<Dec64>(type_num2, std::forward<F>(f));
-        case TypeId<Dec128>::value: return callByTypeAndNumber<Dec128>(type_num2, std::forward<F>(f));
+        case TypeId<Decimal32>::value: return callByTypeAndNumber<Decimal32>(type_num2, std::forward<F>(f));
+        case TypeId<Decimal64>::value: return callByTypeAndNumber<Decimal64>(type_num2, std::forward<F>(f));
+        case TypeId<Decimal128>::value: return callByTypeAndNumber<Decimal128>(type_num2, std::forward<F>(f));
 
         default:
             break;
