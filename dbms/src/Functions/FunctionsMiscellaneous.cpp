@@ -11,6 +11,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnWithDictionary.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
@@ -24,6 +25,8 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
 #include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
@@ -34,7 +37,7 @@
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include <Storages/getStructureOfRemoteTable.h>
-#include <DataTypes/DataTypeNullable.h>
+#include <Common/DNSResolver.h>
 
 
 namespace DB
@@ -111,7 +114,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -135,9 +138,9 @@ public:
         return name;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -158,7 +161,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-            input_rows_count, Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
+            input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };
 
@@ -213,6 +216,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -404,9 +408,9 @@ public:
         return name;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -448,9 +452,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -497,9 +501,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -541,9 +545,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -914,9 +918,9 @@ public:
     }
 
     /** It could return many different values for single argument. */
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1317,7 +1321,7 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -1354,7 +1358,7 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -1388,9 +1392,9 @@ public:
         return 1;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1557,7 +1561,7 @@ public:
         return 1;
     }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1698,7 +1702,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
@@ -1866,6 +1870,119 @@ public:
 };
 
 
+class FunctionToLowCardinality: public IFunction
+{
+public:
+    static constexpr auto name = "toLowCardinality";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToLowCardinality>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments[0]->withDictionary())
+            return arguments[0];
+
+        return std::make_shared<DataTypeWithDictionary>(arguments[0]);
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+
+        if (arg.type->withDictionary())
+            res.column = arg.column;
+        else
+        {
+            auto column = res.type->createColumn();
+            typeid_cast<ColumnWithDictionary &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
+            res.column = std::move(column);
+        }
+    }
+};
+
+class FunctionLowCardinalityIndexes: public IFunction
+{
+public:
+    static constexpr auto name = "lowCardinalityIndexes";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityIndexes>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        if (!type)
+            throw Exception("First first argument of function lowCardinalityIndexes must be ColumnWithDictionary, but got"
+                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        auto indexes_col = typeid_cast<const ColumnWithDictionary *>(arg.column.get())->getIndexesPtr();
+        auto new_indexes_col = ColumnUInt64::create(indexes_col->size());
+        auto & data = new_indexes_col->getData();
+        for (size_t i = 0; i < data.size(); ++i)
+            data[i] = indexes_col->getUInt(i);
+
+        res.column = std::move(new_indexes_col);
+    }
+};
+
+class FunctionLowCardinalityKeys: public IFunction
+{
+public:
+    static constexpr auto name = "lowCardinalityKeys";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityKeys>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        if (!type)
+            throw Exception("First first argument of function lowCardinalityKeys must be ColumnWithDictionary, but got"
+                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return type->getDictionaryType();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        const auto * column_with_dictionary = typeid_cast<const ColumnWithDictionary *>(arg.column.get());
+        res.column = column_with_dictionary->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
+    }
+};
+
+
 std::string FunctionVersion::getVersion() const
 {
     return VERSION_STRING;
@@ -1915,5 +2032,9 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionRunningDifference>();
     factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
+
+    factory.registerFunction<FunctionToLowCardinality>();
+    factory.registerFunction<FunctionLowCardinalityIndexes>();
+    factory.registerFunction<FunctionLowCardinalityKeys>();
 }
 }

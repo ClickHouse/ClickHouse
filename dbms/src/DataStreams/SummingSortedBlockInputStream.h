@@ -134,7 +134,6 @@ private:
     Row current_row;
     bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
 
-    bool output_is_non_empty = false;   /// Have we given out at least one row as a result.
     size_t merged_rows = 0;             /// Number of rows merged into current result block
 
     /** We support two different cursors - with Collation and without.
@@ -143,8 +142,7 @@ private:
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
-    /// If force_insertion=true, then the row will be inserted even if it is "zero"
-    void insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion);
+    void insertCurrentRowIfNeeded(MutableColumns & merged_columns);
 
     /// Returns true if merge result is not empty
     bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);

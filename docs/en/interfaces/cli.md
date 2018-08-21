@@ -1,4 +1,4 @@
-# Command-line client
+# Command-line Client
 
 To work from the command line, you can use ` clickhouse-client`:
 
@@ -78,7 +78,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
    Settings in the configuration files override the default values.
 
-### Command line options
+### Command Line Options
 
 - `--host, -h` -– The server name, 'localhost' by default.  You can use either the name or the IPv4 or IPv6 address.
 - `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
@@ -94,7 +94,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `-config-file` – The name of the configuration file.
 
-### Configuration files
+### Configuration Files
 
 `clickhouse-client`  uses the first existing file of the following:
 

@@ -22,12 +22,12 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         size_t max_block_size,
         unsigned num_streams) override
     {
         return MergeTreeDataSelectExecutor(part->storage).readFromParts(
-            {part}, column_names, query_info, context, processed_stage, max_block_size, num_streams, 0);
+            {part}, column_names, query_info, context, max_block_size, num_streams, 0);
     }
 
 protected:

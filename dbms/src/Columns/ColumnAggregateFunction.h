@@ -156,6 +156,11 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+
     ColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override;

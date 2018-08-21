@@ -4,6 +4,13 @@
 
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Common/NetException.h>
+#include <Common/Stopwatch.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event NetworkSendElapsedMicroseconds;
+}
 
 
 namespace DB
@@ -22,6 +29,8 @@ void WriteBufferFromPocoSocket::nextImpl()
     if (!offset())
         return;
 
+    Stopwatch watch;
+
     size_t bytes_written = 0;
     while (bytes_written < offset())
     {
@@ -36,7 +45,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         {
             throw NetException(e.displayText() + " while writing to socket (" + peer_address.toString() + ")", ErrorCodes::NETWORK_ERROR);
         }
-        catch (const Poco::TimeoutException & e)
+        catch (const Poco::TimeoutException &)
         {
             throw NetException("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
         }
@@ -47,8 +56,11 @@ void WriteBufferFromPocoSocket::nextImpl()
 
         if (res < 0)
             throw NetException("Cannot write to socket (" + peer_address.toString() + ")", ErrorCodes::CANNOT_WRITE_TO_SOCKET);
+
         bytes_written += res;
     }
+
+    ProfileEvents::increment(ProfileEvents::NetworkSendElapsedMicroseconds, watch.elapsedMicroseconds());
 }
 
 WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size)
