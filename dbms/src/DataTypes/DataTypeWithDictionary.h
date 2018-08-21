@@ -167,4 +167,6 @@ private:
     static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
 
+DataTypePtr removeLowCardinality(const DataTypePtr & type);
+
 }
