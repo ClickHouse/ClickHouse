@@ -69,4 +69,14 @@ String Macros::expand(const String & s, size_t level) const
     return expand(res, level + 1);
 }
 
+Names Macros::expand(const Names & source_names, size_t level) const
+{
+    Names result_names;
+    result_names.reserve(source_names.size());
+
+    for (const String & name : source_names)
+        result_names.push_back(expand(name, level));
+
+    return result_names;
+}
 }

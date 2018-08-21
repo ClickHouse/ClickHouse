@@ -31,9 +31,11 @@ StorageSystemParts::StorageSystemParts(const std::string & name)
         {"refcount",                                   std::make_shared<DataTypeUInt32>()},
         {"min_date",                                   std::make_shared<DataTypeDate>()},
         {"max_date",                                   std::make_shared<DataTypeDate>()},
+        {"partition_id",                               std::make_shared<DataTypeString>()},
         {"min_block_number",                           std::make_shared<DataTypeInt64>()},
         {"max_block_number",                           std::make_shared<DataTypeInt64>()},
         {"level",                                      std::make_shared<DataTypeUInt32>()},
+        {"data_version",                               std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory",                std::make_shared<DataTypeUInt64>()},
         {"primary_key_bytes_in_memory_allocated",      std::make_shared<DataTypeUInt64>()},
 
@@ -59,7 +61,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
         size_t i = 0;
         {
             WriteBufferFromOwnString out;
-            part->partition.serializeTextQuoted(*info.data, out);
+            part->partition.serializeTextQuoted(*info.data, out, format_settings);
             columns[i++]->insert(out.str());
         }
         columns[i++]->insert(part->name);
@@ -80,9 +82,11 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns, const Stor
 
         columns[i++]->insert(static_cast<UInt64>(part->getMinDate()));
         columns[i++]->insert(static_cast<UInt64>(part->getMaxDate()));
+        columns[i++]->insert(part->info.partition_id);
         columns[i++]->insert(part->info.min_block);
         columns[i++]->insert(part->info.max_block);
         columns[i++]->insert(static_cast<UInt64>(part->info.level));
+        columns[i++]->insert(static_cast<UInt64>(part->info.getDataVersion()));
         columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInBytes()));
         columns[i++]->insert(static_cast<UInt64>(part->getIndexSizeInAllocatedBytes()));
 

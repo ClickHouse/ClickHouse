@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int TOO_BIG_AST;
     extern const int TOO_DEEP_AST;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -33,18 +34,6 @@ String backQuoteIfNeed(const String & x)
         writeProbablyBackQuotedString(x, wb);
     }
     return res;
-}
-
-
-void IAST::writeAlias(const String & name, std::ostream & s, bool hilite) const
-{
-    s << (hilite ? hilite_keyword : "") << " AS " << (hilite ? hilite_alias : "");
-
-    WriteBufferFromOStream wb(s, 32);
-    writeProbablyBackQuotedString(name, wb);
-    wb.next();
-
-    s << (hilite ? hilite_none : "");
 }
 
 
@@ -92,6 +81,53 @@ size_t IAST::checkDepthImpl(size_t max_depth, size_t level) const
     }
 
     return res;
+}
+
+
+void IAST::cloneChildren()
+{
+    for (auto & child : children)
+        child = child->clone();
+}
+
+
+String IAST::getColumnName() const
+{
+    WriteBufferFromOwnString write_buffer;
+    appendColumnName(write_buffer);
+    return write_buffer.str();
+}
+
+
+void IAST::FormatSettings::writeIdentifier(const String & name, WriteBuffer & out) const
+{
+    switch (identifier_quoting_style)
+    {
+        case IdentifierQuotingStyle::None:
+        {
+            if (always_quote_identifiers)
+                throw Exception("Incompatible arguments: always_quote_identifiers = true && identifier_quoting_style == IdentifierQuotingStyle::None",
+                    ErrorCodes::BAD_ARGUMENTS);
+            writeString(name, out);
+            break;
+        }
+        case IdentifierQuotingStyle::Backticks:
+        {
+            if (always_quote_identifiers)
+                writeBackQuotedString(name, out);
+            else
+                writeProbablyBackQuotedString(name, out);
+            break;
+        }
+        case IdentifierQuotingStyle::DoubleQuotes:
+        {
+            if (always_quote_identifiers)
+                writeDoubleQuotedString(name, out);
+            else
+                writeProbablyDoubleQuotedString(name, out);
+            break;
+        }
+    }
 }
 
 }

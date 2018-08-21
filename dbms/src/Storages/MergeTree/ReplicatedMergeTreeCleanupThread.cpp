@@ -16,35 +16,35 @@ namespace ErrorCodes
 
 
 ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplicatedMergeTree & storage_)
-    : storage(storage_),
-    log(&Logger::get(storage.database_name + "." + storage.table_name + " (StorageReplicatedMergeTree, CleanupThread)")),
-    thread([this] { run(); })
+    : storage(storage_)
+    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeCleanupThread)")
+    , log(&Logger::get(log_name))
 {
+    task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
 }
-
 
 void ReplicatedMergeTreeCleanupThread::run()
 {
-    setThreadName("ReplMTCleanup");
-
     const auto CLEANUP_SLEEP_MS = storage.data.settings.cleanup_delay_period * 1000
         + std::uniform_int_distribution<UInt64>(0, storage.data.settings.cleanup_delay_period_random_add * 1000)(rng);
 
-    while (!storage.shutdown_called)
+    try
     {
-        try
-        {
-            iterate();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, __PRETTY_FUNCTION__);
-        }
+        iterate();
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        storage.cleanup_thread_event.tryWait(CLEANUP_SLEEP_MS);
+        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            return;
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    LOG_DEBUG(log, "Cleanup thread finished");
+    task->scheduleAfter(CLEANUP_SLEEP_MS);
 }
 
 
@@ -59,6 +59,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
     {
         clearOldLogs();
         clearOldBlocks();
+        clearOldMutations();
     }
 }
 
@@ -151,7 +152,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
-    std::vector<std::pair<String, std::future<zkutil::RemoveResponse>>> try_remove_futures;
+    zkutil::AsyncResponses<zkutil::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
@@ -206,7 +207,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
                                    << " to clear old ones from ZooKeeper.");
     }
 
-    std::vector<std::pair<String, std::future<zkutil::ExistsResponse>>> exists_futures;
+    zkutil::AsyncResponses<zkutil::ExistsResponse> exists_futures;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);
@@ -237,10 +238,62 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
 }
 
 
-ReplicatedMergeTreeCleanupThread::~ReplicatedMergeTreeCleanupThread()
+void ReplicatedMergeTreeCleanupThread::clearOldMutations()
 {
-    if (thread.joinable())
-        thread.join();
+    if (!storage.data.settings.finished_mutations_to_keep)
+        return;
+
+    if (storage.queue.countFinishedMutations() <= storage.data.settings.finished_mutations_to_keep)
+    {
+        /// Not strictly necessary, but helps to avoid unnecessary ZooKeeper requests.
+        /// If even this replica hasn't finished enough mutations yet, then we don't need to clean anything.
+        return;
+    }
+
+    auto zookeeper = storage.getZooKeeper();
+
+    zkutil::Stat replicas_stat;
+    Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &replicas_stat);
+
+    UInt64 min_pointer = std::numeric_limits<UInt64>::max();
+    for (const String & replica : replicas)
+    {
+        String pointer;
+        zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/mutation_pointer", pointer);
+        if (pointer.empty())
+            return; /// One replica hasn't done anything yet so we can't delete any mutations.
+        min_pointer = std::min(parse<UInt64>(pointer), min_pointer);
+    }
+
+    Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/mutations");
+    std::sort(entries.begin(), entries.end());
+
+    /// Do not remove entries that are greater than `min_pointer` (they are not done yet).
+    entries.erase(std::upper_bound(entries.begin(), entries.end(), padIndex(min_pointer)), entries.end());
+    /// Do not remove last `storage.data.settings.finished_mutations_to_keep` entries.
+    if (entries.size() <= storage.data.settings.finished_mutations_to_keep)
+        return;
+    entries.erase(entries.end() - storage.data.settings.finished_mutations_to_keep, entries.end());
+
+    if (entries.empty())
+        return;
+
+    zkutil::Requests ops;
+    size_t batch_start_i = 0;
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/mutations/" + entries[i], -1));
+
+        if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
+        {
+            /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
+            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", replicas_stat.version));
+            zookeeper->multi(ops);
+            LOG_DEBUG(log, "Removed " << (i + 1 - batch_start_i) << " old mutation entries: " << entries[batch_start_i] << " - " << entries[i]);
+            batch_start_i = i + 1;
+            ops.clear();
+        }
+    }
 }
 
 }

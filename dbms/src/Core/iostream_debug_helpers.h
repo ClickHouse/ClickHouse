@@ -45,4 +45,4 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
 }
 
 /// some operator<< should be declared before operator<<(... std::shared_ptr<>)
-#include <Common/iostream_debug_helpers.h>
+#include <common/iostream_debug_helpers.h>

@@ -6,6 +6,7 @@
 
 #include <Common/typeid_cast.h>
 
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFactory.h>
 
@@ -206,13 +207,13 @@ void DataTypeString::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, 
 }
 
 
-void DataTypeString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
@@ -243,51 +244,51 @@ static inline void read(IColumn & column, Reader && reader)
 }
 
 
-void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeString::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(column, [&](ColumnString::Chars_t & data) { readEscapedStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeQuotedString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(column, [&](ColumnString::Chars_t & data) { readQuotedStringInto<true>(data, istr); });
 }
 
 
-void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
-void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeString::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     read(column, [&](ColumnString::Chars_t & data) { readJSONStringInto(data, istr); });
 }
 
 
-void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeString::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeCSVString<>(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
 }
 
 
-void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char /*delimiter*/) const
+void DataTypeString::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars_t & data) { readCSVStringInto(data, istr, settings.csv); });
 }
 
 
@@ -311,16 +312,16 @@ void registerDataTypeString(DataTypeFactory & factory)
 
     /// These synonims are added for compatibility.
 
-    factory.registerSimpleDataType("CHAR", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("VARCHAR", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("TEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("TINYTEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("MEDIUMTEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("LONGTEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("BLOB", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("TINYBLOB", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("MEDIUMBLOB", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("LONGBLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("LONGTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYBLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
 }
 
 }

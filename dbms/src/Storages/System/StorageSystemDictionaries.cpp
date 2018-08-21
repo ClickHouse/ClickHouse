@@ -1,27 +1,23 @@
-#include <Storages/System/StorageSystemDictionaries.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnArray.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeString.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionaries.h>
+#include <Storages/System/StorageSystemDictionaries.h>
+
 #include <ext/map.h>
 #include <mutex>
 
 namespace DB
 {
 
-StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
-    : name{name}
+NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         { "name", std::make_shared<DataTypeString>() },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
@@ -36,27 +32,14 @@ StorageSystemDictionaries::StorageSystemDictionaries(const std::string & name)
         { "creation_time", std::make_shared<DataTypeDateTime>() },
         { "source", std::make_shared<DataTypeString>() },
         { "last_exception", std::make_shared<DataTypeString>() },
-    }));
+    };
 }
 
-
-BlockInputStreams StorageSystemDictionaries::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t,
-    const unsigned)
+void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
     const auto & external_dictionaries = context.getExternalDictionaries();
     auto objects_map = external_dictionaries.getObjectsMap();
     const auto & dictionaries = objects_map.get();
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     for (const auto & dict_info : dictionaries)
     {
         size_t i = 0;
@@ -102,8 +85,6 @@ BlockInputStreams StorageSystemDictionaries::read(
         else
             res_columns[i++]->insertDefault();
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

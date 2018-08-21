@@ -65,4 +65,4 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-  Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY](../query_language/queries.md#query_language-queries-order_by).
+  Смотрите правила сортировки `NaN` в разделе [Секция ORDER BY](../query_language/select.md#query_language-queries-order_by).

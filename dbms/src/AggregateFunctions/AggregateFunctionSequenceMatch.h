@@ -242,9 +242,7 @@ private:
 
         auto throw_exception = [&](const std::string & msg)
         {
-            throw Exception{
-                msg + " '" + std::string(pos, end) + "' at position " + toString(pos - begin),
-                ErrorCodes::SYNTAX_ERROR};
+            throw Exception{msg + " '" + std::string(pos, end) + "' at position " + toString(pos - begin), ErrorCodes::SYNTAX_ERROR};
         };
 
         auto match = [&pos, end](const char * str) mutable
@@ -286,9 +284,7 @@ private:
                     if (actions.back().type != PatternActionType::SpecificEvent &&
                         actions.back().type != PatternActionType::AnyEvent &&
                         actions.back().type != PatternActionType::KleeneStar)
-                        throw Exception{
-                            "Temporal condition should be preceeded by an event condition",
-                            ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception{"Temporal condition should be preceeded by an event condition", ErrorCodes::BAD_ARGUMENTS};
 
                     actions.emplace_back(type, duration);
                 }
@@ -301,9 +297,7 @@ private:
                         throw_exception("Could not parse number");
 
                     if (event_number > arg_count - 1)
-                        throw Exception{
-                            "Event number " + toString(event_number) + " is out of range",
-                            ErrorCodes::BAD_ARGUMENTS};
+                        throw Exception{"Event number " + toString(event_number) + " is out of range", ErrorCodes::BAD_ARGUMENTS};
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
                 }
@@ -428,13 +422,10 @@ protected:
                     break;
             }
             else
-                throw Exception{
-                    "Unknown PatternActionType",
-                    ErrorCodes::LOGICAL_ERROR};
+                throw Exception{"Unknown PatternActionType", ErrorCodes::LOGICAL_ERROR};
 
             if (++i > sequence_match_max_iterations)
-                throw Exception{
-                    "Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
+                throw Exception{"Pattern application proves too difficult, exceeding max iterations (" + toString(sequence_match_max_iterations) + ")",
                     ErrorCodes::TOO_SLOW};
         }
 

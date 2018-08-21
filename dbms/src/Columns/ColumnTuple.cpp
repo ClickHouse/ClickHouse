@@ -1,7 +1,9 @@
 #include <Columns/ColumnTuple.h>
+#include <DataStreams/ColumnGathererStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <ext/map.h>
 #include <ext/range.h>
-#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -17,7 +19,7 @@ namespace ErrorCodes
 
 std::string ColumnTuple::getName() const
 {
-    std::stringstream res;
+    WriteBufferFromOwnString res;
     res << "Tuple(";
     bool is_first = true;
     for (const auto & column : columns)
@@ -74,7 +76,7 @@ void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
     res = Tuple(TupleBackend(tuple_size));
-    TupleBackend & res_arr = DB::get<Tuple &>(res).t;
+    TupleBackend & res_arr = DB::get<Tuple &>(res).toUnderType();
     for (const auto i : ext::range(0, tuple_size))
         columns[i]->get(n, res_arr[i]);
 }
@@ -91,7 +93,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    const TupleBackend & tuple = DB::get<const Tuple &>(x).t;
+    const TupleBackend & tuple = DB::get<const Tuple &>(x).toUnderType();
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -175,6 +177,17 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->permute(perm, limit);
+
+    return ColumnTuple::create(new_columns);
+}
+
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
+{
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->index(indexes, limit);
 
     return ColumnTuple::create(new_columns);
 }
@@ -309,8 +322,8 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     min = Tuple(TupleBackend(tuple_size));
     max = Tuple(TupleBackend(tuple_size));
 
-    auto & min_backend = min.get<Tuple &>().t;
-    auto & max_backend = max.get<Tuple &>().t;
+    auto & min_backend = min.get<Tuple &>().toUnderType();
+    auto & max_backend = max.get<Tuple &>().toUnderType();
 
     for (const auto i : ext::range(0, tuple_size))
         columns[i]->getExtremes(min_backend[i], max_backend[i]);

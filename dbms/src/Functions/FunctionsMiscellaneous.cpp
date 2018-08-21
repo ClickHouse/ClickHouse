@@ -11,10 +11,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnWithDictionary.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/FieldVisitors.h>
+#include <Common/config_version.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -23,7 +25,10 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NumberTraits.h>
+#include <Formats/FormatSettings.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -31,7 +36,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
-#include <TableFunctions/getStructureOfRemoteTable.h>
+#include <Storages/getStructureOfRemoteTable.h>
+#include <Common/DNSResolver.h>
 
 
 namespace DB
@@ -108,11 +114,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), db_name);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, db_name);
     }
 };
 
@@ -132,9 +138,9 @@ public:
         return name;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -152,10 +158,10 @@ public:
     /** convertToFullColumn needed because in distributed query processing,
       *    each server returns its own value.
       */
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(
-            block.rows(), Poco::Net::DNS::hostName())->convertToFullColumnIfConst();
+            input_rows_count, DNSResolver::instance().getHostName())->convertToFullColumnIfConst();
     }
 };
 
@@ -190,7 +196,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     /// Execute the function on the block.
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override;
 };
 
 
@@ -210,6 +216,7 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
 
     size_t getNumberOfArguments() const override
     {
@@ -222,10 +229,10 @@ public:
     }
 
     /// Execute the function on the block.
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column
-            = DataTypeString().createColumnConst(block.rows(), block.getByPosition(arguments[0]).type->getName());
+            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).type->getName());
     }
 };
 
@@ -262,12 +269,12 @@ public:
         throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         if (auto type = checkAndGetDataType<DataTypeEnum8>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(type->getValues().size()));
+            block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(type->getValues().size()));
         else if (auto type = checkAndGetDataType<DataTypeEnum16>(block.getByPosition(arguments[0]).type.get()))
-            block.getByPosition(result).column = DataTypeUInt16().createColumnConst(block.rows(), UInt64(type->getValues().size()));
+            block.getByPosition(result).column = DataTypeUInt16().createColumnConst(input_rows_count, UInt64(type->getValues().size()));
         else
             throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -302,10 +309,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         block.getByPosition(result).column
-            = DataTypeString().createColumnConst(block.rows(), block.getByPosition(arguments[0]).column->getName());
+            = DataTypeString().createColumnConst(input_rows_count, block.getByPosition(arguments[0]).column->getName());
     }
 };
 
@@ -338,14 +345,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const auto & elem = block.getByPosition(arguments[0]);
 
         /// Note that the result is not a constant, because it contains block size.
 
         block.getByPosition(result).column
-            = DataTypeString().createColumnConst(block.rows(),
+            = DataTypeString().createColumnConst(input_rows_count,
                 elem.type->getName() + ", " + elem.column->dumpStructure())->convertToFullColumnIfConst();
     }
 };
@@ -378,10 +385,10 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IDataType & type = *block.getByPosition(arguments[0]).type;
-        block.getByPosition(result).column = type.createColumnConst(block.rows(), type.getDefault());
+        block.getByPosition(result).column = type.createColumnConst(input_rows_count, type.getDefault());
     }
 };
 
@@ -401,9 +408,9 @@ public:
         return name;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -418,10 +425,9 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        size_t size = block.rows();
-        block.getByPosition(result).column = ColumnUInt64::create(size, size);
+        block.getByPosition(result).column = ColumnUInt64::create(input_rows_count, input_rows_count);
     }
 };
 
@@ -446,9 +452,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -458,13 +464,12 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        size_t size = block.rows();
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
-        data.resize(size);
-        for (size_t i = 0; i < size; ++i)
+        data.resize(input_rows_count);
+        for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = i;
 
         block.getByPosition(result).column = std::move(column);
@@ -496,9 +501,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -508,10 +513,10 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         size_t current_block_number = block_number++;
-        block.getByPosition(result).column = ColumnUInt64::create(block.rows(), current_block_number);
+        block.getByPosition(result).column = ColumnUInt64::create(input_rows_count, current_block_number);
     }
 };
 
@@ -540,9 +545,9 @@ public:
         return 0;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -552,15 +557,14 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        size_t rows_in_block = block.rows();
-        size_t current_row_number = rows.fetch_add(rows_in_block);
+        size_t current_row_number = rows.fetch_add(input_rows_count);
 
         auto column = ColumnUInt64::create();
         auto & data = column->getData();
-        data.resize(rows_in_block);
-        for (size_t i = 0; i < rows_in_block; ++i)
+        data.resize(input_rows_count);
+        for (size_t i = 0; i < input_rows_count; ++i)
             data[i] = current_row_number + i;
 
         block.getByPosition(result).column = std::move(column);
@@ -614,7 +618,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IColumn * col = block.getByPosition(arguments[0]).column.get();
 
@@ -671,7 +675,7 @@ public:
         return arguments[0];
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto & src = block.getByPosition(arguments[0]).column;
         if (ColumnPtr converted = src->convertToFullColumnIfConst())
@@ -734,7 +738,7 @@ public:
         return false;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         /// Second argument must be ColumnSet.
         ColumnPtr column_set_ptr = block.getByPosition(arguments[1]).column;
@@ -758,7 +762,9 @@ public:
             tuple = typeid_cast<const ColumnTuple *>(materialized_tuple.get());
         }
 
-        if (tuple)
+        auto set = column_set->getData();
+        auto set_types = set->getDataTypes();
+        if (tuple && (set_types.size() != 1 || !set_types[0]->equals(*type_tuple)))
         {
             const Columns & tuple_columns = tuple->getColumns();
             const DataTypes & tuple_types = type_tuple->getElements();
@@ -769,7 +775,7 @@ public:
         else
             block_of_key_columns.insert(left_arg);
 
-        block.getByPosition(result).column = column_set->getData()->execute(block_of_key_columns, negative);
+        block.getByPosition(result).column = set->execute(block_of_key_columns, negative);
     }
 };
 
@@ -804,16 +810,16 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(0));
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(0));
     }
 };
 
 
 /** The `indexHint` function takes any number of any arguments and always returns one.
   *
-  * This function has a special meaning (see ExpressionAnalyzer, PKCondition)
+  * This function has a special meaning (see ExpressionAnalyzer, KeyCondition)
   * - the expressions inside it are not evaluated;
   * - but when analyzing the index (selecting ranges for reading), this function is treated the same way,
   *   as if instead of using it the expression itself would be.
@@ -852,9 +858,9 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(1));
+        block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(1));
     }
 };
 
@@ -883,7 +889,7 @@ public:
         return arguments.front();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         block.getByPosition(result).column = block.getByPosition(arguments.front()).column;
     }
@@ -912,9 +918,9 @@ public:
     }
 
     /** It could return many different values for single argument. */
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -928,7 +934,7 @@ public:
         return arr->getNestedType();
     }
 
-    void executeImpl(Block & /*block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) override
+    void executeImpl(Block &, const ColumnNumbers &, size_t, size_t /*input_rows_count*/) override
     {
         throw Exception("Function " + getName() + " must not be executed directly.", ErrorCodes::FUNCTION_IS_SPECIAL);
     }
@@ -955,7 +961,7 @@ DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) co
     return std::make_shared<DataTypeArray>(arguments[0]);
 }
 
-void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionReplicate::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     ColumnPtr first_column = block.getByPosition(arguments[0]).column;
 
@@ -1019,7 +1025,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         Int64 min = extractConstant<Int64>(block, arguments, 1, "Second"); /// The level at which the line has zero length.
         Int64 max = extractConstant<Int64>(block, arguments, 2, "Third"); /// The level at which the line has the maximum length.
@@ -1145,7 +1151,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto in = block.getByPosition(arguments.front()).column.get();
 
@@ -1239,7 +1245,7 @@ struct IsNaNImpl
     template <typename T>
     static bool execute(const T t)
     {
-        return t != t;
+        return t != t;  //-V501
     }
 };
 
@@ -1274,10 +1280,10 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         static const std::string version = getVersion();
-        block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), version);
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, version);
     }
 
 private:
@@ -1315,11 +1321,11 @@ public:
         return std::make_shared<DataTypeUInt32>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeUInt32().createColumnConst(block.rows(), static_cast<UInt64>(uptime));
+        block.getByPosition(result).column = DataTypeUInt32().createColumnConst(input_rows_count, static_cast<UInt64>(uptime));
     }
 
 private:
@@ -1352,11 +1358,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
-        block.getByPosition(result).column = DataTypeString().createColumnConst(block.rows(), DateLUT::instance().getTimeZone());
+        block.getByPosition(result).column = DataTypeString().createColumnConst(input_rows_count, DateLUT::instance().getTimeZone());
     }
 };
 
@@ -1386,9 +1392,9 @@ public:
         return 1;
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
@@ -1403,7 +1409,7 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
@@ -1468,7 +1474,7 @@ private:
     /// It is possible to track value from previous block, to calculate continuously across all blocks. Not implemented.
 
     template <typename Src, typename Dst>
-    static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst)
+    static void process(const PaddedPODArray<Src> & src, PaddedPODArray<Dst> & dst, const NullMap * null_map)
     {
         size_t size = src.size();
         dst.resize(size);
@@ -1478,13 +1484,26 @@ private:
 
         /// It is possible to SIMD optimize this loop. By no need for that in practice.
 
-        dst[0] = is_first_line_zero ? 0 : src[0];
-        Src prev = src[0];
-        for (size_t i = 1; i < size; ++i)
+        Src prev;
+        bool has_prev_value = false;
+
+        for (size_t i = 0; i < size; ++i)
         {
-            auto cur = src[i];
-            dst[i] = static_cast<Dst>(cur) - prev;
-            prev = cur;
+            if (null_map && (*null_map)[i])
+                continue;
+
+            if (!has_prev_value)
+            {
+                dst[i] = is_first_line_zero ? 0 : src[i];
+                prev = src[i];
+                has_prev_value = true;
+            }
+            else
+            {
+                auto cur = src[i];
+                dst[i] = static_cast<Dst>(cur) - prev;
+                prev = cur;
+            }
         }
     }
 
@@ -1542,23 +1561,28 @@ public:
         return 1;
     }
 
-    bool isDeterministicInScopeOfQuery() override
+    bool isDeterministicInScopeOfQuery() const override
     {
         return false;
     }
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         DataTypePtr res;
-        dispatchForSourceType(*arguments[0], [&](auto field_type_tag)
+        dispatchForSourceType(*removeNullable(arguments[0]), [&](auto field_type_tag)
         {
             res = std::make_shared<DataTypeNumber<DstFieldType<decltype(field_type_tag)>>>();
         });
 
+        if (arguments[0]->isNullable())
+            res = makeNullable(res);
+
         return res;
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         auto & src = block.getByPosition(arguments.at(0));
         const auto & res_type = block.getByPosition(result).type;
@@ -1566,20 +1590,33 @@ public:
         /// When column is constant, its difference is zero.
         if (src.column->isColumnConst())
         {
-            block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(block.rows());
+            block.getByPosition(result).column = res_type->createColumnConstWithDefaultValue(input_rows_count);
             return;
         }
 
-        auto res_column = res_type->createColumn();
+        auto res_column = removeNullable(res_type)->createColumn();
+        auto * src_column = src.column.get();
+        ColumnPtr null_map_column = nullptr;
+        const NullMap * null_map = nullptr;
+        if (auto * nullable_column = checkAndGetColumn<ColumnNullable>(src_column))
+        {
+            src_column = &nullable_column->getNestedColumn();
+            null_map_column = nullable_column->getNullMapColumnPtr();
+            null_map = &nullable_column->getNullMapData();
+        }
 
-        dispatchForSourceType(*src.type, [&](auto field_type_tag)
+        dispatchForSourceType(*removeNullable(src.type), [&](auto field_type_tag)
         {
             using SrcFieldType = decltype(field_type_tag);
-            process(static_cast<const ColumnVector<SrcFieldType> &>(*src.column).getData(),
-                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData());
+
+            process(static_cast<const ColumnVector<SrcFieldType> &>(*src_column).getData(),
+                static_cast<ColumnVector<DstFieldType<SrcFieldType>> &>(*res_column).getData(), null_map);
         });
 
-        block.getByPosition(result).column = std::move(res_column);
+        if (null_map_column)
+            block.getByPosition(result).column = ColumnNullable::create(std::move(res_column), null_map_column);
+        else
+            block.getByPosition(result).column = std::move(res_column);
     }
 };
 
@@ -1618,7 +1655,7 @@ public:
         return type->getReturnType();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const ColumnAggregateFunction * column_with_states
             = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
@@ -1665,19 +1702,19 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     const Context & global_context;
 };
 
 
-void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     auto & src = block.getByPosition(arguments[0]);
-    size_t size = block.rows();
+    size_t size = input_rows_count;
 
     auto res_col = ColumnUInt64::create(size);
     auto & res_data = static_cast<ColumnUInt64 &>(*res_col).getData();
@@ -1685,11 +1722,12 @@ void FunctionVisibleWidth::executeImpl(Block & block, const ColumnNumbers & argu
     /// For simplicity reasons, function is implemented by serializing into temporary buffer.
 
     String tmp;
+    FormatSettings format_settings;
     for (size_t i = 0; i < size; ++i)
     {
         {
             WriteBufferFromString out(tmp);
-            src.type->serializeTextEscaped(*src.column, i, out);
+            src.type->serializeText(*src.column, i, out, format_settings);
         }
 
         res_data[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(tmp.data()), tmp.size());
@@ -1721,7 +1759,7 @@ DataTypePtr FunctionHasColumnInTable::getReturnTypeImpl(const ColumnsWithTypeAnd
 }
 
 
-void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result)
+void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     auto get_string_from_block = [&](size_t column_pos) -> String
     {
@@ -1762,7 +1800,7 @@ void FunctionHasColumnInTable::executeImpl(Block & block, const ColumnNumbers & 
         has_column = remote_columns.hasPhysical(column_name);
     }
 
-    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(block.rows(), UInt64(has_column));
+    block.getByPosition(result).column = DataTypeUInt8().createColumnConst(input_rows_count, UInt64(has_column));
 }
 
 
@@ -1796,7 +1834,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const auto in = block.getByPosition(arguments.front()).column.get();
 
@@ -1832,11 +1870,122 @@ public:
 };
 
 
+class FunctionToLowCardinality: public IFunction
+{
+public:
+    static constexpr auto name = "toLowCardinality";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToLowCardinality>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments[0]->withDictionary())
+            return arguments[0];
+
+        return std::make_shared<DataTypeWithDictionary>(arguments[0]);
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+
+        if (arg.type->withDictionary())
+            res.column = arg.column;
+        else
+        {
+            auto column = res.type->createColumn();
+            typeid_cast<ColumnWithDictionary &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
+            res.column = std::move(column);
+        }
+    }
+};
+
+class FunctionLowCardinalityIndexes: public IFunction
+{
+public:
+    static constexpr auto name = "lowCardinalityIndexes";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityIndexes>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        if (!type)
+            throw Exception("First first argument of function lowCardinalityIndexes must be ColumnWithDictionary, but got"
+                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        auto indexes_col = typeid_cast<const ColumnWithDictionary *>(arg.column.get())->getIndexesPtr();
+        auto new_indexes_col = ColumnUInt64::create(indexes_col->size());
+        auto & data = new_indexes_col->getData();
+        for (size_t i = 0; i < data.size(); ++i)
+            data[i] = indexes_col->getUInt(i);
+
+        res.column = std::move(new_indexes_col);
+    }
+};
+
+class FunctionLowCardinalityKeys: public IFunction
+{
+public:
+    static constexpr auto name = "lowCardinalityKeys";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionLowCardinalityKeys>(); }
+
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        if (!type)
+            throw Exception("First first argument of function lowCardinalityKeys must be ColumnWithDictionary, but got"
+                            + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return type->getDictionaryType();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        auto arg_num = arguments[0];
+        const auto & arg = block.getByPosition(arg_num);
+        auto & res = block.getByPosition(result);
+        const auto * column_with_dictionary = typeid_cast<const ColumnWithDictionary *>(arg.column.get());
+        res.column = column_with_dictionary->getDictionary().getNestedColumn()->cloneResized(arg.column->size());
+    }
+};
+
+
 std::string FunctionVersion::getVersion() const
 {
-    std::ostringstream os;
-    os << DBMS_VERSION_MAJOR << "." << DBMS_VERSION_MINOR << "." << ClickHouseRevision::get();
-    return os.str();
+    return VERSION_STRING;
 }
 
 
@@ -1883,5 +2032,9 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     factory.registerFunction<FunctionRunningDifference>();
     factory.registerFunction<FunctionRunningIncome>();
     factory.registerFunction<FunctionFinalizeAggregation>();
+
+    factory.registerFunction<FunctionToLowCardinality>();
+    factory.registerFunction<FunctionLowCardinalityIndexes>();
+    factory.registerFunction<FunctionLowCardinalityKeys>();
 }
 }

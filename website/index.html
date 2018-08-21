@@ -92,7 +92,7 @@
 </div>
 <div id="announcement" class="colored-block">
     <div class="page">
-        ClickHouse Meetup in <a id="announcement-link" href="https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/events/248898966/" rel="external nofollow" target="_blank">Sunnyvale</a> &amp; <a id="announcement-link" href="https://www.meetup.com/San-Francisco-Bay-Area-ClickHouse-Meetup/events/249162518/" rel="external nofollow" target="_blank">San Francisco</a>, April 23-27</a>
+        ClickHouse Meetup in <a id="announcement-link" href="https://events.yandex.ru/events/ClickHouse/16-aug-2018/" rel="external nofollow" target="_blank">Saint Petersburg on August 16</a>
     </div>
 </div>
 <div class="page">
@@ -390,10 +390,10 @@
 <pre>
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 
-sudo apt-add-repository "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
+echo "deb http://repo.yandex.ru/clickhouse/deb/stable/ main/" | sudo tee /etc/apt/sources.list.d/clickhouse.list
 sudo apt-get update
 
-sudo apt-get install clickhouse-server-common clickhouse-client -y
+sudo apt-get install -y clickhouse-server clickhouse-client
 
 sudo service clickhouse-server start
 clickhouse-client
@@ -416,10 +416,8 @@ clickhouse-client
 
     <h2 id="contacts">Contacts</h2>
     <ul class="dashed">
-        <li>Subscribe to the <a href="https://yandex.com/blog/clickhouse"
-                            rel="external nofollow" target="_blank">official ClickHouse blog</a>
-        and its <a href="https://yandex.ru/blog/clickhouse"
-                    rel="external nofollow" target="_blank">counterpart in Russian</a>.</li>
+        <li>Subscribe to the <a href="https://clickhouse.yandex/blog/en" target="_blank">official ClickHouse blog</a>
+        and its <a href="https://clickhouse.yandex/blog/ru" target="_blank">counterpart in Russian</a>.</li>
         <li>Ask any questions on <a href="https://stackoverflow.com/questions/tagged/clickhouse"
                                     rel="external nofollow" target="_blank">Stack Overflow</a> or
             <a href="https://groups.google.com/group/clickhouse"

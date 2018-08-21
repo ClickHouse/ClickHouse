@@ -108,6 +108,7 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
+                Poco::File(tmp_path).createDirectories();
                 temporary_files.emplace_back(new Poco::TemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
                 WriteBufferFromFile file_buf(path);
@@ -182,7 +183,7 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
     if (!has_collation)
     {
         for (size_t i = 0; i < cursors.size(); ++i)
-            queue.push(SortCursor(&cursors[i]));
+            queue_without_collation.push(SortCursor(&cursors[i]));
     }
     else
     {
@@ -205,7 +206,7 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
     }
 
     return !has_collation
-        ? mergeImpl<SortCursor>(queue)
+        ? mergeImpl<SortCursor>(queue_without_collation)
         : mergeImpl<SortCursorWithCollation>(queue_with_collation);
 }
 

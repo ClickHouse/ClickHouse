@@ -188,10 +188,29 @@ Strings ZooKeeper::getChildren(
     return res;
 }
 
+Strings ZooKeeper::getChildrenWatch(
+    const std::string & path, Stat * stat, WatchCallback watch_callback)
+{
+    Strings res;
+    check(tryGetChildrenWatch(path, res, stat, watch_callback), path);
+    return res;
+}
+
 int32_t ZooKeeper::tryGetChildren(const std::string & path, Strings & res,
                                 Stat * stat, const EventPtr & watch)
 {
     int32_t code = getChildrenImpl(path, res, stat, callbackForEvent(watch));
+
+    if (!(code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNONODE))
+        throw KeeperException(code, path);
+
+    return code;
+}
+
+int32_t ZooKeeper::tryGetChildrenWatch(const std::string & path, Strings & res,
+                                Stat * stat, WatchCallback watch_callback)
+{
+    int32_t code = getChildrenImpl(path, res, stat, watch_callback);
 
     if (!(code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNONODE))
         throw KeeperException(code, path);
@@ -367,6 +386,16 @@ std::string ZooKeeper::get(const std::string & path, Stat * stat, const EventPtr
         throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
 }
 
+std::string ZooKeeper::getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback)
+{
+    int32_t code = 0;
+    std::string res;
+    if (tryGetWatch(path, res, stat, watch_callback, &code))
+        return res;
+    else
+        throw KeeperException("Can't get data for node " + path + ": node doesn't exist", code);
+}
+
 bool ZooKeeper::tryGet(const std::string & path, std::string & res, Stat * stat, const EventPtr & watch, int * return_code)
 {
     return tryGetWatch(path, res, stat, callbackForEvent(watch), return_code);
@@ -464,7 +493,7 @@ Responses ZooKeeper::multi(const Requests & requests)
 int32_t ZooKeeper::tryMulti(const Requests & requests, Responses & responses)
 {
     int32_t code = multiImpl(requests, responses);
-    if (code && !isUserError(code))
+    if (code && !ZooKeeperImpl::ZooKeeper::isUserError(code))
         throw KeeperException(code);
     return code;
 }
@@ -603,9 +632,27 @@ Int64 ZooKeeper::getClientID()
 }
 
 
-std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std::string & path)
+std::future<ZooKeeperImpl::ZooKeeper::CreateResponse> ZooKeeper::asyncCreate(const std::string & path, const std::string & data, int32_t mode)
 {
     /// https://stackoverflow.com/questions/25421346/how-to-create-an-stdfunction-from-a-move-capturing-lambda-expression
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::CreateResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::CreateResponse & response) mutable
+    {
+        if (response.error)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->create(path, data, mode & 1, mode & 2, {}, std::move(callback));
+    return future;
+}
+
+
+std::future<ZooKeeperImpl::ZooKeeper::GetResponse> ZooKeeper::asyncGet(const std::string & path)
+{
     auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::GetResponse>>();
     auto future = promise->get_future();
 
@@ -656,6 +703,22 @@ std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse> ZooKeeper::asyncExists(con
     return future;
 }
 
+std::future<ZooKeeperImpl::ZooKeeper::SetResponse> ZooKeeper::asyncSet(const std::string & path, const std::string & data, int32_t version)
+{
+    auto promise = std::make_shared<std::promise<ZooKeeperImpl::ZooKeeper::SetResponse>>();
+    auto future = promise->get_future();
+
+    auto callback = [promise, path](const ZooKeeperImpl::ZooKeeper::SetResponse & response) mutable
+    {
+        if (response.error)
+            promise->set_exception(std::make_exception_ptr(KeeperException(path, response.error)));
+        else
+            promise->set_value(response);
+    };
+
+    impl->set(path, data, version, std::move(callback));
+    return future;
+}
 
 std::future<ZooKeeperImpl::ZooKeeper::ListResponse> ZooKeeper::asyncGetChildren(const std::string & path)
 {
@@ -739,8 +802,20 @@ std::future<ZooKeeperImpl::ZooKeeper::MultiResponse> ZooKeeper::asyncMulti(const
     return future;
 }
 
+int32_t ZooKeeper::tryMultiNoThrow(const Requests & requests, Responses & responses)
+{
+    try
+    {
+        return multiImpl(requests, responses);
+    }
+    catch (const ZooKeeperImpl::Exception & e)
+    {
+        return e.code;
+    }
+}
 
-size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses) const
+
+size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & responses)
 {
     if (responses.empty())
         throw DB::Exception("Responses for multi transaction is empty", DB::ErrorCodes::LOGICAL_ERROR);
@@ -749,7 +824,7 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & re
         if (responses[index]->error)
             return index;
 
-    if (!isUserError(code))
+    if (!ZooKeeperImpl::ZooKeeper::isUserError(code))
         throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(code) + "' is not valid response code for that",
             DB::ErrorCodes::LOGICAL_ERROR);
 
@@ -758,15 +833,16 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & re
 
 
 KeeperMultiException::KeeperMultiException(int32_t code, const Requests & requests, const Responses & responses)
-    : KeeperException("Transaction failed at op #" + std::to_string(getFailedOpIndex(code, responses)), code),
-    requests(requests), responses(responses)
+    : KeeperException("Transaction failed", code),
+    requests(requests), responses(responses), failed_op_index(getFailedOpIndex(code, responses))
 {
+    addMessage("Op #" + std::to_string(failed_op_index) + ", path: " + getPathForFirstFailedOp());
 }
+
 
 std::string KeeperMultiException::getPathForFirstFailedOp() const
 {
     return requests[failed_op_index]->getPath();
-
 }
 
 void KeeperMultiException::check(int32_t code, const Requests & requests, const Responses & responses)
@@ -774,7 +850,7 @@ void KeeperMultiException::check(int32_t code, const Requests & requests, const 
     if (!code)
         return;
 
-    if (isUserError(code))
+    if (ZooKeeperImpl::ZooKeeper::isUserError(code))
         throw KeeperMultiException(code, requests, responses);
     else
         throw KeeperException(code);

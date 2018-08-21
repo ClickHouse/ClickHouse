@@ -91,11 +91,15 @@ protected:
 
 class ParserCastExpression : public IParserBase
 {
-    /// this name is used for identifying CAST expression among other function calls
-    static constexpr auto name = "CAST";
-
 protected:
-    const char * getName() const override { return name; }
+    const char * getName() const override { return "CAST expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+class ParserExtractExpression : public IParserBase
+{
+protected:
+    const char * getName() const override { return "EXTRACT expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
@@ -165,32 +169,19 @@ protected:
 
 /** The alias is the identifier before which `AS` comes. For example: AS x_yz123.
   */
-struct ParserAliasBase
-{
-    static const char * restricted_keywords[];
-};
-
-template <typename ParserIdentifier>
-class ParserAliasImpl : public IParserBase, ParserAliasBase
+class ParserAlias : public IParserBase
 {
 public:
-    ParserAliasImpl(bool allow_alias_without_as_keyword_)
+    ParserAlias(bool allow_alias_without_as_keyword_)
         : allow_alias_without_as_keyword(allow_alias_without_as_keyword_) {}
-protected:
+private:
+    static const char * restricted_keywords[];
+
     bool allow_alias_without_as_keyword;
 
     const char * getName() const { return "alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
-
-
-class ParserTypeInCastExpression;
-
-extern template class ParserAliasImpl<ParserIdentifier>;
-extern template class ParserAliasImpl<ParserTypeInCastExpression>;
-
-using ParserAlias = ParserAliasImpl<ParserIdentifier>;
-using ParserCastExpressionAlias = ParserAliasImpl<ParserTypeInCastExpression>;
 
 
 /** The expression element is one of: an expression in parentheses, an array, a literal, a function, an identifier, an asterisk.
@@ -205,11 +196,10 @@ protected:
 
 /** An expression element, possibly with an alias, if appropriate.
   */
-template <typename ParserAlias>
-class ParserWithOptionalAliasImpl : public IParserBase
+class ParserWithOptionalAlias : public IParserBase
 {
 public:
-    ParserWithOptionalAliasImpl(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
+    ParserWithOptionalAlias(ParserPtr && elem_parser_, bool allow_alias_without_as_keyword_, bool prefer_alias_to_column_name_ = false)
     : elem_parser(std::move(elem_parser_)), allow_alias_without_as_keyword(allow_alias_without_as_keyword_),
       prefer_alias_to_column_name(prefer_alias_to_column_name_) {}
 protected:
@@ -220,12 +210,6 @@ protected:
     const char * getName() const { return "element of expression with optional alias"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
-
-extern template class ParserWithOptionalAliasImpl<ParserAlias>;
-extern template class ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
-
-using ParserWithOptionalAlias = ParserWithOptionalAliasImpl<ParserAlias>;
-using ParserCastExpressionWithOptionalAlias = ParserWithOptionalAliasImpl<ParserCastExpressionAlias>;
 
 
 /** Element of ORDER BY expression - same as expression element, but in addition, ASC[ENDING] | DESC[ENDING] could be specified

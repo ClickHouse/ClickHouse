@@ -116,7 +116,7 @@ namespace detail
 
         while (x >= 100)
         {
-            const UInt32 i = (x % 100) * 2;
+            const auto i = (x % 100) * 2;
             x /= 100;
             dst[next] = digits[i + 1];
             dst[next - 1] = digits[i];
@@ -129,7 +129,7 @@ namespace detail
         }
         else
         {
-            const UInt32 i = x * 2;
+            const auto i = x * 2;
             dst[next] = digits[i + 1];
             dst[next - 1] = digits[i];
         }
@@ -149,6 +149,13 @@ namespace detail
             writeUIntTextFallback(x, buf);
     }
 
+
+    inline void writeLeadingMinus(WriteBuffer & buf)
+    {
+        buf.nextIfAtEnd();
+        *buf.position() = '-';
+        ++buf.position();
+    }
 
     /** Wrapper for signed numbers.
       */
@@ -172,14 +179,32 @@ namespace detail
         if (x < 0)
         {
             x = -x;
-            buf.nextIfAtEnd();
-            *buf.position() = '-';
-            ++buf.position();
+            writeLeadingMinus(buf);
         }
 
         writeUIntText(static_cast<std::make_unsigned_t<T>>(x), buf);
     }
 
+#if 1
+    inline void writeSIntText(__int128 x, WriteBuffer & buf)
+    {
+        static const __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+
+        if (unlikely(x == min_int128))
+        {
+            buf.write("-170141183460469231731687303715884105728", 40);
+            return;
+        }
+
+        if (x < 0)
+        {
+            x = -x;
+            writeLeadingMinus(buf);
+        }
+
+        writeUIntText(static_cast<unsigned __int128>(x), buf);
+    }
+#endif
 }
 
 
@@ -187,7 +212,9 @@ template <typename T>
 std::enable_if_t<std::is_signed_v<T>, void> writeIntText(T x, WriteBuffer & buf)
 {
     detail::writeSIntText(x, buf);
+
 }
+
 
 template <typename T>
 std::enable_if_t<std::is_unsigned_v<T>, void> writeIntText(T x, WriteBuffer & buf)

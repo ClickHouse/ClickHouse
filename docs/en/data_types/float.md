@@ -5,18 +5,17 @@
 Types are equivalent to types of C:
 
 - `Float32` - `float`
-- `Float64`  - ` double`
+- `Float64`  - `double`
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
 
-## Using floating-point numbers
+## Using Floating-point Numbers
 
 - Computations with floating-point numbers might produce a rounding error.
 
 ```sql
 SELECT 1 - 0.9
 ```
-
 ```
 ┌───────minus(1, 0.9)─┐
 │ 0.09999999999999998 │
@@ -67,5 +66,5 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-See the rules for ` NaN` sorting in the section [ORDER BY clause](../query_language/queries.md#query_language-queries-order_by).
+See the rules for ` NaN` sorting in the section [ORDER BY clause](../query_language/select.md#query_language-queries-order_by).
 

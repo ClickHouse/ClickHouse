@@ -21,7 +21,7 @@ try
     readStringUntilEOF(query, in);
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query");
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "query", 0);
 
     CollectAliases collector;
     collector.process(ast);

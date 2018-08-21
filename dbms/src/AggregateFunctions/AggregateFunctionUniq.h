@@ -3,6 +3,8 @@
 #include <city.h>
 #include <type_traits>
 
+#include <ext/bit_cast.h>
+
 #include <AggregateFunctions/UniquesHashSet.h>
 
 #include <IO/WriteHelpers.h>
@@ -185,9 +187,7 @@ template <> struct AggregateFunctionUniqTraits<Float32>
 {
     static UInt64 hash(Float32 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-        return res;
+        return ext::bit_cast<UInt64>(x);
     }
 };
 
@@ -195,9 +195,7 @@ template <> struct AggregateFunctionUniqTraits<Float64>
 {
     static UInt64 hash(Float64 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
-        return res;
+        return ext::bit_cast<UInt64>(x);
     }
 };
 
@@ -220,8 +218,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float32>
 {
     static UInt32 hash(Float32 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+        UInt64 res = ext::bit_cast<UInt64>(x);
         return static_cast<UInt32>(intHash64(res));
     }
 };
@@ -230,8 +227,7 @@ template <> struct AggregateFunctionUniqCombinedTraits<Float64>
 {
     static UInt32 hash(Float64 x)
     {
-        UInt64 res = 0;
-        memcpy(reinterpret_cast<char *>(&res), reinterpret_cast<char *>(&x), sizeof(x));
+        UInt64 res = ext::bit_cast<UInt64>(x);
         return static_cast<UInt32>(intHash64(res));
     }
 };
@@ -341,12 +337,10 @@ public:
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */
-template <typename Data, bool argument_is_tuple>
-class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, argument_is_tuple>>
+template <typename Data, bool is_exact, bool argument_is_tuple>
+class AggregateFunctionUniqVariadic final : public IAggregateFunctionDataHelper<Data, AggregateFunctionUniqVariadic<Data, is_exact, argument_is_tuple>>
 {
 private:
-    static constexpr bool is_exact = std::is_same_v<Data, AggregateFunctionUniqExactData<String>>;
-
     size_t num_args = 0;
 
 public:
@@ -367,7 +361,7 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).set.insert(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num));
+        this->data(place).set.insert(typename Data::Set::value_type(UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

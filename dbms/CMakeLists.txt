@@ -53,9 +53,10 @@ add_headers_and_sources(dbms src/Interpreters/ClusterProxy)
 add_headers_and_sources(dbms src/Columns)
 add_headers_and_sources(dbms src/Storages)
 add_headers_and_sources(dbms src/Storages/Distributed)
+add_headers_and_sources(dbms src/Storages/Kafka)
 add_headers_and_sources(dbms src/Storages/MergeTree)
 add_headers_and_sources(dbms src/Client)
-add_headers_only(dbms src/Server)
+add_headers_and_sources(dbms src/Formats)
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
@@ -84,7 +85,7 @@ list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions
 
 add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
-if (ARCH_FREEBSD)
+if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
 endif ()
 
@@ -97,6 +98,12 @@ else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
     set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
     install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
+endif ()
+
+if (USE_EMBEDDED_COMPILER)
+    llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
+    target_link_libraries (dbms ${REQUIRED_LLVM_LIBRARIES})
+    target_include_directories (dbms SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
 
@@ -122,7 +129,7 @@ if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELW
 endif ()
 
 if (NOT ARCH_ARM)
-    set (LINK_LIBRARIES_ONLY_ON_X86_64 cpuid)
+    set (LINK_LIBRARIES_ONLY_ON_X86_64 ${CPUID_LIBRARY})
 endif()
 
 target_link_libraries (clickhouse_common_io
@@ -136,7 +143,9 @@ target_link_libraries (clickhouse_common_io
     ${Poco_Data_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
+    ${ELF_LIBRARY}
     ${Boost_SYSTEM_LIBRARY}
+    apple_rt
     ${CMAKE_DL_LIBS}
 )
 
@@ -147,104 +156,104 @@ target_link_libraries (dbms
     ${MYSQLXX_LIBRARY}
     ${RE2_LIBRARY}
     ${RE2_ST_LIBRARY}
-    ${OPENSSL_CRYPTO_LIBRARY}
     ${BTRIE_LIBRARIES}
+    ${Boost_PROGRAM_OPTIONS_LIBRARY}
 )
 
 if (NOT USE_INTERNAL_RE2_LIBRARY)
-    target_include_directories (dbms BEFORE PRIVATE ${RE2_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RE2_INCLUDE_DIR})
 endif ()
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
-    target_include_directories (clickhouse_common_io BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
+    target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
-if (Poco_SQLODBC_FOUND)
+if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
     target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
-        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
     endif()
 endif()
 
 if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-    target_include_directories (clickhouse_common_io PRIVATE ${Poco_Data_INCLUDE_DIRS})
-    target_include_directories (dbms PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
 endif()
 
-if (Poco_DataODBC_FOUND)
+if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (dbms PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
     endif()
 endif()
 
-
-if (Poco_MongoDB_FOUND)
+if (USE_POCO_MONGODB)
     target_link_libraries (dbms ${Poco_MongoDB_LIBRARY})
 endif()
 
-if (Poco_NetSSL_FOUND)
-    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY})
+if (USE_POCO_NETSSL)
+    target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
     target_link_libraries (dbms ${ICU_LIBS})
-    target_include_directories (dbms PRIVATE ${ICU_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM PRIVATE ${ICU_INCLUDE_DIR})
 endif ()
 
 if (USE_CAPNP)
     target_link_libraries (dbms ${CAPNP_LIBRARY})
     if (NOT USE_INTERNAL_CAPNP_LIBRARY)
-        target_include_directories (dbms BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${CAPNP_INCLUDE_DIR})
     endif ()
 endif ()
 
 if (USE_RDKAFKA)
     target_link_libraries (dbms ${RDKAFKA_LIBRARY})
     if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
-        target_include_directories (dbms BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM BEFORE PRIVATE ${RDKAFKA_INCLUDE_DIR})
     endif ()
 endif ()
+
+target_link_libraries(dbms ${OPENSSL_CRYPTO_LIBRARY})
 
 target_link_libraries (dbms
     Threads::Threads
 )
 
-target_include_directories (dbms BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
-target_include_directories (dbms BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
+target_include_directories (dbms SYSTEM BEFORE PRIVATE ${DIVIDE_INCLUDE_DIR})
+target_include_directories (dbms SYSTEM BEFORE PRIVATE ${SPARCEHASH_INCLUDE_DIR})
 
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
-    target_include_directories (dbms BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${LZ4_INCLUDE_DIR})
 endif ()
 if (NOT USE_INTERNAL_ZSTD_LIBRARY)
-    target_include_directories (dbms BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM BEFORE PRIVATE ${ZSTD_INCLUDE_DIR})
 endif ()
 
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
-target_include_directories (clickhouse_common_io PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-target_include_directories (clickhouse_common_io PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
-target_include_directories (clickhouse_common_io BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
+target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
+target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:
 target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
+add_subdirectory (programs)
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
-    include (${ClickHouse_SOURCE_DIR}/cmake/find_gtest.cmake)
-
     if (USE_INTERNAL_GTEST_LIBRARY)
         # Google Test from sources
         add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
         # avoid problems with <regexp.h>
         target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
-        target_include_directories (gtest INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
+        target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
     endif ()
 
     macro(grep_gtest_sources BASE_DIR DST_VAR)

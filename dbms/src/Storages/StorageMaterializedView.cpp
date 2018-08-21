@@ -11,8 +11,6 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageFactory.h>
 
-#include <Storages/VirtualColumnFactory.h>
-
 #include <Common/typeid_cast.h>
 
 
@@ -170,11 +168,16 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
     return getTargetTable()->hasColumn(column_name);
 }
 
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
+{
+    return getTargetTable()->getQueryProcessingStage(context);
+}
+
 BlockInputStreams StorageMaterializedView::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
@@ -186,22 +189,37 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
     return getTargetTable()->write(query, settings);
 }
 
+
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const String & target_database_name, const String & target_table_name)
+{
+    if (global_context.tryGetTable(target_database_name, target_table_name))
+    {
+        /// We create and execute `drop` query for internal table.
+        auto drop_query = std::make_shared<ASTDropQuery>();
+        drop_query->database = target_database_name;
+        drop_query->table = target_table_name;
+        drop_query->kind = kind;
+        ASTPtr ast_drop_query = drop_query;
+        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
+        drop_interpreter.execute();
+    }
+}
+
+
 void StorageMaterializedView::drop()
 {
     global_context.removeDependency(
         DatabaseAndTableName(select_database_name, select_table_name),
         DatabaseAndTableName(database_name, table_name));
 
-    if (has_inner_table && global_context.tryGetTable(target_database_name, target_table_name))
-    {
-        /// We create and execute `drop` query for internal table.
-        auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = target_database_name;
-        drop_query->table = target_table_name;
-        ASTPtr ast_drop_query = drop_query;
-        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
-        drop_interpreter.execute();
-    }
+    if (has_inner_table && tryGetTargetTable())
+        executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_database_name, target_table_name);
+}
+
+void StorageMaterializedView::truncate(const ASTPtr &)
+{
+    if (has_inner_table)
+        executeDropQuery(ASTDropQuery::Kind::Truncate, global_context, target_database_name, target_table_name);
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
@@ -242,6 +260,12 @@ void StorageMaterializedView::freezePartition(const ASTPtr & partition, const St
     getTargetTable()->freezePartition(partition, with_name, context);
 }
 
+void StorageMaterializedView::mutate(const MutationCommands & commands, const Context & context)
+{
+    checkStatementCanBeForwarded();
+    getTargetTable()->mutate(commands, context);
+}
+
 void StorageMaterializedView::shutdown()
 {
     /// Make sure the dependency is removed after DETACH TABLE
@@ -255,12 +279,43 @@ StoragePtr StorageMaterializedView::getTargetTable() const
     return global_context.getTable(target_database_name, target_table_name);
 }
 
-bool StorageMaterializedView::checkTableCanBeDropped() const
+StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
-    return has_inner_table ? getTargetTable()->checkTableCanBeDropped() : true;
+    return global_context.tryGetTable(target_database_name, target_table_name);
 }
 
+String StorageMaterializedView::getDataPath() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->getDataPath();
+    return {};
+}
+
+void StorageMaterializedView::checkTableCanBeDropped() const
+{
+    /// Don't drop the target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkTableCanBeDropped();
+}
+
+void StorageMaterializedView::checkPartitionCanBeDropped(const ASTPtr & partition)
+{
+    /// Don't drop the partition in target table if it was created manually via 'TO inner_table' statement
+    if (!has_inner_table)
+        return;
+
+    auto target_table = tryGetTargetTable();
+    if (!target_table)
+        return;
+
+    target_table->checkPartitionCanBeDropped(partition);
+}
 
 void registerStorageMaterializedView(StorageFactory & factory)
 {

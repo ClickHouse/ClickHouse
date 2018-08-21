@@ -7,12 +7,19 @@
 #include <sstream>
 
 #include <Common/StackTrace.h>
-#include <Common/demangle.h>
+#include <common/demangle.h>
 
+/// Arcadia compatibility DEVTOOLS-3976
+#if defined(BACKTRACE_INCLUDE)
+#include BACKTRACE_INCLUDE
+#endif
+#if !defined(BACKTRACE_FUNC)
+    #define BACKTRACE_FUNC backtrace
+#endif
 
 StackTrace::StackTrace()
 {
-    frames_size = backtrace(frames, STACK_TRACE_MAX_DEPTH);
+    frames_size = BACKTRACE_FUNC(frames, STACK_TRACE_MAX_DEPTH);
 }
 
 std::string StackTrace::toString() const
