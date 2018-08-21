@@ -1208,7 +1208,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         MarkRanges ranges{MarkRange(0, part->marks_count)};
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
-            false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+            false, nullptr, false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
             part->bytes_on_disk,
@@ -1781,6 +1781,21 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
     }
 
     return res;
+}
+
+
+std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
+{
+    std::lock_guard lock(data_parts_mutex);
+
+    std::optional<Int64> result;
+    for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (!result || *result > part->info.getDataVersion())
+            result = part->info.getDataVersion();
+    }
+
+    return result;
 }
 
 

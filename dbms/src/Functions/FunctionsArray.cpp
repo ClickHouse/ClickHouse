@@ -1339,7 +1339,7 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
         || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
-        executeHashed(offsets, original_data_columns, res_data, res_offsets);
+        executeHashed(offsets, original_data_columns, res_data, res_offsets, nullable_col);
 
     block.getByPosition(result).column = std::move(res_ptr);
 }
@@ -1449,12 +1449,20 @@ void FunctionArrayDistinct::executeHashed(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
     IColumn & res_data_col,
-    ColumnArray::Offsets & res_offsets)
+    ColumnArray::Offsets & res_offsets,
+    const ColumnNullable * nullable_col)
 {
     size_t count = columns.size();
 
     using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
+
+    const PaddedPODArray<UInt8> * src_null_map = nullptr;
+
+    if (nullable_col)
+    {
+        src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
+    }
 
     Set set;
     size_t prev_off = 0;
@@ -1465,7 +1473,7 @@ void FunctionArrayDistinct::executeHashed(
         for (size_t j = prev_off; j < off; ++j)
         {
             auto hash = hash128(j, count, columns);
-            if (set.find(hash) == set.end())
+            if (set.find(hash) == set.end() && (!nullable_col || (*src_null_map)[j] == 0))
             {
                 set.insert(hash);
                 res_data_col.insertFrom(*columns[0], j);

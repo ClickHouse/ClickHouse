@@ -290,7 +290,7 @@ namespace ZeroTraits
 {
     inline bool check(StringRef x) { return 0 == x.size; }
     inline void set(StringRef & x) { x.size = 0; }
-};
+}
 
 
 inline bool operator==(StringRef lhs, const char * rhs)

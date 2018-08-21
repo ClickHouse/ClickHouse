@@ -15,6 +15,7 @@ namespace Poco
 namespace DB
 {
 
+class IColumn;
 class Field;
 
 /** Settings of query execution.
@@ -154,6 +155,8 @@ struct Settings
     \
     M(SettingBool, output_format_json_quote_denormals, false, "Enables '+nan', '-nan', '+inf', '-inf' outputs in JSON output format.") \
     \
+    M(SettingBool, output_format_json_escape_forward_slashes, true, "Controls escaping forward slashes for string outputs in JSON output format. This is intended for compatibility with JavaScript. Don't confuse with backslashes that are always escaped.") \
+    \
     M(SettingUInt64, output_format_pretty_max_rows, 10000, "Rows limit for Pretty formats.") \
     M(SettingBool, output_format_pretty_color, true, "Use ANSI escape sequences to paint colors in Pretty formats") \
     \
@@ -264,8 +267,23 @@ struct Settings
     M(SettingBool, format_csv_allow_double_quotes, 1, "If it is set to true, allow strings in double quotes.") \
     \
     M(SettingUInt64, enable_conditional_computation, 0, "Enable conditional computations") \
-    \
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
+    M(SettingBool, log_profile_events, true, "Log query performance statistics into the query_log and query_thread_log.") \
+    M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \
+    M(SettingBool, log_query_threads, true, "Log query threads into system.query_thread_log table.") \
+    M(SettingString, send_logs_level, "none", "Send server text logs with specified minumum level to client. Valid values: 'trace', 'debug', 'info', 'warning', 'error', 'none'") \
+    M(SettingBool, enable_optimize_predicate_expression, 0, "If it is set to true, optimize predicates to subqueries.") \
+    \
+    M(SettingUInt64, low_cardinality_max_dictionary_size, 8192, "Maximum size (in rows) of shared global dictionary for LowCardinality type.") \
+    M(SettingBool, low_cardinality_use_single_dictionary_for_part, false, "LowCardinality type serialization setting. If is true, than will use additional keys when global dictionary overflows. Otherwise, will create several shared dictionaries.") \
+    M(SettingBool, allow_experimental_low_cardinality_type, false, "Allows to create table with LowCardinality types.") \
+    M(SettingBool, allow_experimental_decimal_type, false, "Enables Decimal data type.") \
+    \
+    M(SettingBool, prefer_localhost_replica, 1, "1 - always send query to local replica, if it exists. 0 - choose replica to send query between local and remote ones according to load_balancing") \
+    M(SettingUInt64, max_fetch_partition_retries_count, 5, "Amount of retries while fetching partition from another host.") \
+    M(SettingBool, asterisk_left_columns_only, 0, "If it is set to true, the asterisk only return left of join query.") \
+    M(SettingUInt64, http_max_multipart_form_data_size, 1024 * 1024 * 1024, "Limit on size of multipart/form-data content. This setting cannot be parsed from URL parameters and should be set in user profile. Note that content is parsed and external tables are created in memory before start of query execution. And this is the only limit that has effect on that stage (limits on max memory usage and max execution time have no effect while reading HTTP form data).") \
+
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \
     TYPE NAME {DEFAULT};
@@ -305,6 +323,9 @@ struct Settings
 
     /// Write changed settings to buffer. (For example, to be sent to remote server.)
     void serialize(WriteBuffer & buf) const;
+
+    /// Dumps profile events to two column Array(String) and Array(UInt64)
+    void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
 };
 
 

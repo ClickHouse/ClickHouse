@@ -378,7 +378,17 @@ namespace ErrorCodes
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME = 401;
     extern const int CANNOT_IOSETUP = 402;
     extern const int INVALID_JOIN_ON_EXPRESSION = 403;
-
+    extern const int BAD_ODBC_CONNECTION_STRING = 404;
+    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 405;
+    extern const int TOP_AND_LIMIT_TOGETHER = 406;
+    extern const int DECIMAL_OVERFLOW = 407;
+    extern const int BAD_REQUEST_PARAMETER = 408;
+    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 409;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 410;
+    extern const int PTHREAD_ERROR = 411;
+    extern const int NETLINK_ERROR = 412;
+    extern const int CANNOT_SET_SIGNAL_HANDLER = 413;
+    extern const int CANNOT_READLINE = 414;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
