@@ -5,7 +5,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageODBC.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <common/logger_useful.h>
 
@@ -33,23 +32,17 @@ StorageODBC::StorageODBC(const std::string & table_name_,
     const ColumnsDescription & columns_,
     const Context & context_)
     : IStorageURLBase(Poco::URI(), context_, table_name_, ODBCBridgeHelper::DEFAULT_FORMAT, columns_)
-    , odbc_bridge_helper(context_, connection_string)
+    , odbc_bridge_helper(context_global.getConfigRef(), context_global.getSettingsRef().http_receive_timeout.value, connection_string)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , log(&Poco::Logger::get("StorageODBC"))
 {
-    const auto & config = context_global.getConfigRef();
-    size_t bridge_port = config.getUInt("odbc_bridge.port", ODBCBridgeHelper::DEFAULT_PORT);
-    std::string bridge_host = config.getString("odbc_bridge.host", ODBCBridgeHelper::DEFAULT_HOST);
-
-    uri.setHost(bridge_host);
-    uri.setPort(bridge_port);
-    uri.setScheme("http");
+    uri = odbc_bridge_helper.getMainURI();
 }
 
 std::string StorageODBC::getReadMethod() const
 {
-    return ODBCBridgeHelper::MAIN_METHOD;
+    return Poco::Net::HTTPRequest::HTTP_POST;
 }
 
 std::vector<std::pair<std::string, std::string>> StorageODBC::getReadURIParams(const Names & column_names,
@@ -64,7 +57,7 @@ std::vector<std::pair<std::string, std::string>> StorageODBC::getReadURIParams(c
         auto column_data = getColumn(name);
         cols.emplace_back(column_data.name, column_data.type);
     }
-    return odbc_bridge_helper.getURLParams(cols, max_block_size);
+    return odbc_bridge_helper.getURLParams(cols.toString(), max_block_size);
 }
 
 std::function<void(std::ostream &)> StorageODBC::getReadPOSTDataCallback(const Names & /*column_names*/,
@@ -82,10 +75,12 @@ std::function<void(std::ostream &)> StorageODBC::getReadPOSTDataCallback(const N
 BlockInputStreams StorageODBC::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
+    check(column_names);
+    checkQueryProcessingStage(processed_stage, context);
 
     odbc_bridge_helper.startODBCBridgeSync();
     return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);

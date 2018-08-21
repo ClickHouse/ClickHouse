@@ -35,6 +35,7 @@ namespace DB
 {
 
 struct ContextShared;
+class Context;
 class IRuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
@@ -49,11 +50,12 @@ class Compiler;
 class MarkCache;
 class UncompressedCache;
 class ProcessList;
-class ProcessListElement;
+class QueryStatus;
 class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class QueryThreadLog;
 class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
@@ -86,6 +88,9 @@ using Dependencies = std::vector<DatabaseAndTableName>;
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
 
+/// Callback for external tables initializer
+using ExternalTablesInitializer = std::function<void(Context &)>;
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -101,13 +106,14 @@ private:
     std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     ClientInfo client_info;
+    ExternalTablesInitializer external_tables_initializer_callback;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
-    ProcessListElement * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -165,6 +171,11 @@ public:
     void setUser(const String & name, const String & password, const Poco::Net::SocketAddress & address, const String & quota_key);
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
+
+    /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
+    void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
+    /// This method is called in executeQuery() and will call the external tables initializer.
+    void initializeExternalTablesIfSet();
 
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
@@ -311,9 +322,9 @@ public:
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
       */
-    void setProcessListElement(ProcessListElement * elem);
+    void setProcessListElement(QueryStatus * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    ProcessListElement * getProcessListElement() const;
+    QueryStatus * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -366,11 +377,12 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog();
+    QueryLog * getQueryLog(bool create_if_not_exists = true);
+    QueryThreadLog * getQueryThreadLog(bool create_if_not_exists = true);
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database);
+    PartLog * getPartLog(const String & part_database, bool create_if_not_exists = true);
 
     const MergeTreeSettings & getMergeTreeSettings() const;
 

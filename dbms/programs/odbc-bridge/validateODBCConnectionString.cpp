@@ -5,7 +5,7 @@
 #include <common/find_first_symbols.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/validateODBCConnectionString.h>
+#include "validateODBCConnectionString.h"
 
 
 namespace DB

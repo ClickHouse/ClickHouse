@@ -2,7 +2,7 @@ option (ENABLE_RDKAFKA "Enable kafka" ON)
 
 if (ENABLE_RDKAFKA)
 
-if (OS_LINUX_X86_64)
+if (OS_LINUX)
     option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
 endif ()
 
