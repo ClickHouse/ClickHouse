@@ -70,7 +70,7 @@ void ThreadStatus::initPerformanceCounters()
     ++queries_started;
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
-    has_permissions_for_taskstats = TaskStatsInfoGetter::checkProcessHasRequiredPermissions();
+    has_permissions_for_taskstats = TaskStatsInfoGetter::checkPermissions();
     if (has_permissions_for_taskstats)
         *last_taskstats = TasksStatsCounters::current();
 }
