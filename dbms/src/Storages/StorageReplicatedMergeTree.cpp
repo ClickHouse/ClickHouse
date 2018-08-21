@@ -2690,13 +2690,23 @@ std::unordered_map<String, String> StorageReplicatedMergeTree::getLastPartsWithQ
     
     if (!last_parts_str.empty())
     {
-        in >> "parts_count " >> count >> "\n";
-        for (size_t i = 0; i < count; ++i)
+        try
         {
-            String partition_id;
-            String part_name;
-            in  >> partition_id >> "\t" >> part_name >> "\n";
-            last_blocks[partition_id] = part_name;
+            in >> "parts_count " >> count >> "\n";
+            for (size_t i = 0; i < count; ++i)
+            {
+                String partition_id;
+                String part_name;
+                in  >> partition_id >> "\t" >> part_name >> "\n";
+                last_blocks[partition_id] = part_name;
+            }
+        }
+        catch (Exception e)
+        {
+            String last_part;
+            in >> last_part;
+            auto partition_info = MergeTreePartInfo::fromPartName(last_part, data.format_version);
+            last_blocks[partition_info.partition_id] = last_part;
         }
     }
     
@@ -2927,7 +2937,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
                         " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
         }
     }
-  
+
     return reader.read(column_names, query_info, context, max_block_size, num_streams, max_blocks_number_to_read);
 }
 
