@@ -1208,7 +1208,7 @@ MergeTreeData::AlterDataPartTransactionPtr MergeTreeData::alterDataPart(
         MarkRanges ranges{MarkRange(0, part->marks_count)};
         BlockInputStreamPtr part_in = std::make_shared<MergeTreeBlockInputStream>(
             *this, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, expression->getRequiredColumns(), ranges,
-            false, nullptr, "", false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
+            false, nullptr, false, 0, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         auto compression_settings = this->context.chooseCompressionSettings(
             part->bytes_on_disk,
@@ -1784,6 +1784,21 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 }
 
 
+std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
+{
+    std::lock_guard lock(data_parts_mutex);
+
+    std::optional<Int64> result;
+    for (const DataPartPtr & part : getDataPartsStateRange(DataPartState::Committed))
+    {
+        if (!result || *result > part->info.getDataVersion())
+            result = part->info.getDataVersion();
+    }
+
+    return result;
+}
+
+
 void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event *until) const
 {
     const size_t parts_count = getMaxPartsCountForPartition();
@@ -2354,12 +2369,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPart(const Merg
                                                                       const String & tmp_part_prefix,
                                                                       const MergeTreePartInfo & dst_part_info)
 {
-    String dst_part_name;
-    if (format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-            dst_part_name = dst_part_info.getPartNameV0(src_part->getMinDate(), src_part->getMaxDate());
-        else
-            dst_part_name = dst_part_info.getPartName();
-
+    String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
     Poco::Path dst_part_absolute_path = Poco::Path(full_path + tmp_dst_part_name).absolute();

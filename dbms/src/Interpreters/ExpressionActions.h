@@ -34,11 +34,14 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class IBlockInputStream;
 using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
 
+class ExpressionActions;
 
 /** Action on the block.
   */
 struct ExpressionAction
 {
+private:
+    using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 public:
     enum Type
     {
@@ -85,6 +88,7 @@ public:
 
     /// For JOIN
     std::shared_ptr<const Join> join;
+    Names join_key_names_left;
     NamesAndTypesList columns_added_by_join;
 
     /// For PROJECT.
@@ -103,7 +107,8 @@ public:
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const NamesAndTypesList & columns_added_by_join_);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
+                                         const NamesAndTypesList & columns_added_by_join_);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
@@ -236,7 +241,14 @@ struct ExpressionActionsChain
     struct Step
     {
         ExpressionActionsPtr actions;
+        /// Columns were added to the block before current step in addition to prev step output.
+        NameSet additional_input;
+        /// Columns which are required in the result of current step.
         Names required_output;
+        /// True if column from required_output is needed only for current step and not used in next actions
+        /// (and can be removed from block). Example: filter column for where actions.
+        /// If not empty, has the same size with required_output; is filled in finalize().
+        std::vector<bool> can_remove_required_output;
 
         Step(const ExpressionActionsPtr & actions_ = nullptr, const Names & required_output_ = Names())
             : actions(actions_), required_output(required_output_) {}

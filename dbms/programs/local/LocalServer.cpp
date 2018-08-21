@@ -17,6 +17,7 @@
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/escapeForFileName.h>
 #include <Common/ClickHouseRevision.h>
+#include <Common/config_version.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
@@ -24,6 +25,7 @@
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
 #include <Common/StatusFile.h>
+#include <Common/ThreadStatus.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -269,6 +271,9 @@ void LocalServer::processQueries()
     context->setCurrentQueryId("");
     applyCmdSettings(*context);
 
+    /// Use the same query_id (and thread group) for all queries
+    CurrentThread::QueryScope query_scope_holder(*context);
+
     bool echo_query = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
 
@@ -355,10 +360,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << "ClickHouse client version " << DBMS_VERSION_MAJOR
-        << "." << DBMS_VERSION_MINOR
-        << "." << ClickHouseRevision::get()
-        << "." << std::endl;
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
 }
 
 std::string LocalServer::getHelpHeader() const

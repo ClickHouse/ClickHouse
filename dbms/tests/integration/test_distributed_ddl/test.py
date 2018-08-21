@@ -72,7 +72,7 @@ def init_cluster(cluster):
             cluster.add_instance(
                 'ch{}'.format(i+1),
                 config_dir="configs",
-                macroses={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
+                macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
                 with_zookeeper=True)
 
         cluster.start()
@@ -332,6 +332,26 @@ def test_allowed_databases(started_cluster):
 
     instance.query("DROP DATABASE db1 ON CLUSTER cluster", settings={"user" : "restricted_user"})
 
+def test_kill_query(started_cluster):
+    instance = cluster.instances['ch3']
+
+    ddl_check_query(instance, "KILL QUERY ON CLUSTER 'cluster' WHERE NOT elapsed FORMAT TSV")
+
+def test_detach_query(started_cluster):
+    instance = cluster.instances['ch3']
+
+    ddl_check_query(instance, "DROP TABLE IF EXISTS test_attach ON CLUSTER cluster FORMAT TSV")
+    ddl_check_query(instance, "CREATE TABLE test_attach ON CLUSTER cluster (i Int8)ENGINE = Log")
+    ddl_check_query(instance, "DETACH TABLE test_attach ON CLUSTER cluster FORMAT TSV")
+    ddl_check_query(instance, "ATTACH TABLE test_attach ON CLUSTER cluster")
+
+
+def test_optimize_query(started_cluster):
+    instance = cluster.instances['ch3']
+
+    ddl_check_query(instance, "DROP TABLE IF EXISTS test_optimize ON CLUSTER cluster FORMAT TSV")
+    ddl_check_query(instance, "CREATE TABLE test_optimize ON CLUSTER cluster (p Date, i Int32) ENGINE = MergeTree(p, p, 8192)")
+    ddl_check_query(instance, "OPTIMIZE TABLE test_optimize ON CLUSTER cluster FORMAT TSV")
 
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:

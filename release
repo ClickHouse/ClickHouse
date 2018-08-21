@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# If you have "no space left" error, you can change the location of temporary files with BUILDPLACE environment variable.
+
 # Advanced usage:
 # Test gcc-8:
 # env DIST=bionic EXTRAPACKAGES="gcc-8 g++-8" DEB_CC=gcc-8 DEB_CXX=g++-8 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
@@ -9,6 +11,9 @@
 # env DIST=unstable EXTRAPACKAGES="clang-7 libstdc++-8-dev lld-7 liblld-7-dev libclang-7-dev liblld-7" DEB_CC=clang-7 DEB_CXX=clang++-7 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
 # Clang6 without internal compiler (for low memory arm64):
 # env DIST=bionic DISABLE_PARALLEL=1 EXTRAPACKAGES="clang-6.0 libstdc++-8-dev" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+
+# Build with ASan:
+# env SANITIZER=address ./release
 
 # Version increment:
 # Default release: 18.1.2 -> 18.2.0:
@@ -52,10 +57,6 @@ do
     elif [[ $1 == '--version' ]]; then
         gen_revision_author $2
         exit 0
-    # who use this?
-    #elif [[ $1 == '--head' ]]; then
-    #    VERSION_STRING=`git rev-parse HEAD`
-    #    shift
     elif [[ $1 == '--pbuilder' ]]; then
         # Default
         shift
@@ -64,7 +65,7 @@ do
         shift
     elif [[ $1 == '--fast' ]]; then
         # Wrong but fast pbuilder mode: create base package with all depends
-        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libmariadbclient-dev libicu-dev libltdl-dev libreadline-dev libssl-dev unixodbc-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
+        EXTRAPACKAGES="$EXTRAPACKAGES debhelper cmake ninja-build gcc-7 g++-7 libc6-dev libicu-dev libreadline-dev psmisc bash expect python python-lxml python-termcolor python-requests curl perl sudo openssl netcat-openbsd"
         shift
     else
         echo "Unknown option $1"
@@ -75,24 +76,27 @@ done
 # Build options
 if [ -n "$SANITIZER" ]
 then
-    CMAKE_BUILD_TYPE=$SANITIZER
-    VERSION_POSTFIX+=+${SANITIZER,,}
-    # todo: нужно ли отключить libtcmalloc?
-    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    # GLIBC_COMPATIBILITY отключен по умолчанию
+    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="+asan"
+    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
+    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
+    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
+    else
+        echo "Unknown value of SANITIZER variable: $SANITIZER"
+        exit 3
+    fi
+
     export DEB_CC=${DEB_CC=clang-6.0}
     export DEB_CXX=${DEB_CXX=clang++-6.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
-    LIBTCMALLOC_OPTS="-DENABLE_TCMALLOC=0"
-    VERSION_POSTFIX+=+$BUILD_TYPE
+    MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
+    VERSION_POSTFIX+="+valgrind"
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
-    LIBTCMALLOC_OPTS="-DDEBUG_TCMALLOC=1"
-    VERSION_POSTFIX+=+$BUILD_TYPE
+    VERSION_POSTFIX+="+debug"
 fi
 
-CMAKE_FLAGS=" $LIBTCMALLOC_OPTS -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
+CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"
 [[ -n "$CMAKE_BUILD_TYPE" ]] && CMAKE_FLAGS=" -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE $CMAKE_FLAGS"
 #[[ "$CMAKE_FLAGS" =~ "USE_INTERNAL_LLVM_LIBRARY" ]] || CMAKE_FLAGS=" -DUSE_INTERNAL_LLVM_LIBRARY=1 $CMAKE_FLAGS"
 
@@ -112,11 +116,12 @@ if [ -z "$USE_PBUILDER" ] ; then
 else
     export DIST=${DIST:=bionic}
     export SET_BUILDRESULT=${SET_BUILDRESULT:=$CURDIR/..}
-    . $CURDIR/debian/.pbuilderrc
 
     if [[ -z `which pbuilder` ]] ; then
-        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring
+        sudo apt install -y pbuilder fakeroot debhelper debian-archive-keyring debian-keyring lsb-release
     fi
+
+    . $CURDIR/debian/.pbuilderrc
 
     if [[ ! -e "/usr/share/debootstrap/scripts/${DIST}" ]] ; then
         sudo ln -s gutsy /usr/share/debootstrap/scripts/${DIST}
