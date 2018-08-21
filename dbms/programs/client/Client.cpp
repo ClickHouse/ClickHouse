@@ -1685,7 +1685,7 @@ public:
             config().setInt("port", options["port"].as<int>());
         if (options.count("secure"))
             config().setBool("secure", true);
-        if (options.count("user"))
+        if (options.count("user") && !options["user"].defaulted())
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
             config().setString("password", options["password"].as<std::string>());
