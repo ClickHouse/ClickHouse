@@ -118,60 +118,55 @@ template <> struct is_arithmetic<__int128>
 
 namespace DB
 {
-    /// Own FieldType for Decimal
+    /// Own FieldType for Decimal.
+    /// It is only a "storage" for decimal. To perform operations, you also have to provide a scale (number of digits after point).
     template <typename T>
-    struct Dec
+    struct Decimal
     {
         using NativeType = T;
 
-        Dec() = default;
-        Dec(Dec<T> &&) = default;
-        Dec(const Dec<T> &) = default;
+        Decimal() = default;
+        Decimal(Decimal<T> &&) = default;
+        Decimal(const Decimal<T> &) = default;
 
-        Dec(const T & value_)
+        Decimal(const T & value_)
         :   value(value_)
         {}
 
         template <typename U>
-        Dec(const Dec<U> & x)
+        Decimal(const Decimal<U> & x)
         :   value(x)
         {}
 
-        constexpr Dec<T> & operator = (Dec<T> &&) = default;
-        constexpr Dec<T> & operator = (const Dec<T> &) = default;
+        constexpr Decimal<T> & operator = (Decimal<T> &&) = default;
+        constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
 
         operator T () const { return value; }
 
-        const Dec<T> & operator += (const T & x) { value += x; return *this; }
-        const Dec<T> & operator -= (const T & x) { value -= x; return *this; }
-        const Dec<T> & operator *= (const T & x) { value *= x; return *this; }
-        const Dec<T> & operator /= (const T & x) { value /= x; return *this; }
-        const Dec<T> & operator %= (const T & x) { value %= x; return *this; }
+        const Decimal<T> & operator += (const T & x) { value += x; return *this; }
+        const Decimal<T> & operator -= (const T & x) { value -= x; return *this; }
+        const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }
+        const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
+        const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
         T value;
     };
 
-    using Dec32 = Dec<Int32>;
-    using Dec64 = Dec<Int64>;
-    using Dec128 = Dec<Int128>;
+    using Decimal32 = Decimal<Int32>;
+    using Decimal64 = Decimal<Int64>;
+    using Decimal128 = Decimal<Int128>;
 
-    template <> struct TypeName<Dec32>   { static const char * get() { return "Dec32";   } };
-    template <> struct TypeName<Dec64>   { static const char * get() { return "Dec64";   } };
-    template <> struct TypeName<Dec128>  { static const char * get() { return "Dec128";  } };
+    template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
+    template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };
+    template <> struct TypeName<Decimal128>  { static const char * get() { return "Decimal128";  } };
 
-    template <> struct TypeId<Dec32>    { static constexpr const size_t value = 16; };
-    template <> struct TypeId<Dec64>    { static constexpr const size_t value = 17; };
-    template <> struct TypeId<Dec128>   { static constexpr const size_t value = 18; };
-
-    template <typename T>
-    inline constexpr bool decTrait() { return false; }
-    template <> constexpr bool decTrait<Dec32>() { return true; }
-    template <> constexpr bool decTrait<Dec64>() { return true; }
-    template <> constexpr bool decTrait<Dec128>() { return true; }
+    template <> struct TypeId<Decimal32>    { static constexpr const size_t value = 16; };
+    template <> struct TypeId<Decimal64>    { static constexpr const size_t value = 17; };
+    template <> struct TypeId<Decimal128>   { static constexpr const size_t value = 18; };
 
     template <typename T>
-    inline constexpr bool decBaseTrait() { return false; }
-    template <> constexpr bool decBaseTrait<Int32>() { return true; }
-    template <> constexpr bool decBaseTrait<Int64>() { return true; }
-    template <> constexpr bool decBaseTrait<Int128>() { return true; }
+    constexpr bool IsDecimalNumber = false;
+    template <> constexpr bool IsDecimalNumber<Decimal32> = true;
+    template <> constexpr bool IsDecimalNumber<Decimal64> = true;
+    template <> constexpr bool IsDecimalNumber<Decimal128> = true;
 }
