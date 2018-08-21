@@ -64,9 +64,9 @@ class DataTypeSimpleSerialization : public IDataType
 
 static constexpr size_t minDecimalPrecision() { return 1; }
 template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
-template <> constexpr size_t maxDecimalPrecision<Dec32>() { return 9; }
-template <> constexpr size_t maxDecimalPrecision<Dec64>() { return 18; }
-template <> constexpr size_t maxDecimalPrecision<Dec128>() { return 38; }
+template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
+template <> constexpr size_t maxDecimalPrecision<Decimal64>() { return 18; }
+template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
 
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
@@ -87,15 +87,6 @@ public:
     using ColumnType = ColumnVector<T>;
 
     static constexpr bool is_parametric = true;
-
-#if 1 /// TODO: remove this ctor
-    DataTypeDecimal()
-    :   precision(0),
-        scale(0)
-    {
-        throw Exception("Ctor for success build", ErrorCodes::LOGICAL_ERROR);
-    }
-#endif
 
     DataTypeDecimal(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
@@ -253,11 +244,11 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
 
 inline bool isDecimal(const IDataType & data_type)
 {
-    if (typeid_cast<const DataTypeDecimal<Dec32> *>(&data_type))
+    if (typeid_cast<const DataTypeDecimal<Decimal32> *>(&data_type))
         return true;
-    if (typeid_cast<const DataTypeDecimal<Dec64> *>(&data_type))
+    if (typeid_cast<const DataTypeDecimal<Decimal64> *>(&data_type))
         return true;
-    if (typeid_cast<const DataTypeDecimal<Dec128> *>(&data_type))
+    if (typeid_cast<const DataTypeDecimal<Decimal128> *>(&data_type))
         return true;
     return false;
 }

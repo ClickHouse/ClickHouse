@@ -1,3 +1,5 @@
+#include "TestHint.h"
+
 #include <port/unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -20,7 +22,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommand.h>
-#include <Common/ExternalTable.h>
 #include <Common/UnicodeBar.h>
 #include <Common/formatReadable.h>
 #include <Common/NetException.h>
@@ -31,6 +32,7 @@
 #include <Common/config_version.h>
 #include <Core/Types.h>
 #include <Core/QueryProcessingStage.h>
+#include <Core/ExternalTable.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFile.h>
@@ -39,6 +41,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
@@ -87,103 +90,9 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int CANNOT_READLINE;
 }
-
-
-/// Checks expected server and client error codes in testmode.
-/// To enable it add special comment after the query: "-- { serverError 60 }" or "-- { clientError 20 }".
-class TestHint
-{
-public:
-    TestHint(bool enabled_, const String & query)
-    :   enabled(enabled_),
-        server_error(0),
-        client_error(0)
-    {
-        if (!enabled_)
-            return;
-
-        size_t pos = query.find("--");
-        if (pos != String::npos && query.find("--", pos + 2) != String::npos)
-            return; /// It's not last comment. Hint belongs to commented query.
-
-        if (pos != String::npos)
-        {
-            pos = query.find('{', pos + 2);
-            if (pos != String::npos)
-            {
-                String hint = query.substr(pos + 1);
-                pos = hint.find('}');
-                hint.resize(pos);
-                parse(hint);
-            }
-        }
-    }
-
-    /// @returns true if it's possible to continue without reconnect
-    bool checkActual(int & actual_server_error, int & actual_client_error,
-                     bool & got_exception, std::unique_ptr<Exception> & last_exception) const
-    {
-        if (!enabled)
-            return true;
-
-        if (allErrorsExpected(actual_server_error, actual_client_error))
-        {
-            got_exception = false;
-            last_exception.reset();
-            actual_server_error = 0;
-            actual_client_error = 0;
-            return false;
-        }
-
-        if (lostExpectedError(actual_server_error, actual_client_error))
-        {
-            std::cerr << "Success when error expected. It expects server error "
-                << server_error << ", client error " << client_error << "." << std::endl;
-            got_exception = true;
-            last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::LOGICAL_ERROR); /// return error to OS
-            return false;
-        }
-
-        return true;
-    }
-
-    int serverError() const { return server_error; }
-    int clientError() const { return client_error; }
-
-private:
-    bool enabled;
-    int server_error;
-    int client_error;
-
-    void parse(const String & hint)
-    {
-        std::stringstream ss;
-        ss << hint;
-        while (!ss.eof())
-        {
-            String item;
-            ss >> item;
-            if (item.empty())
-                break;
-
-            if (item == "serverError")
-                ss >> server_error;
-            else if (item == "clientError")
-                ss >> client_error;
-        }
-    }
-
-    bool allErrorsExpected(int actual_server_error, int actual_client_error) const
-    {
-        return (server_error || client_error) && (server_error == actual_server_error) && (client_error == actual_client_error);
-    }
-
-    bool lostExpectedError(int actual_server_error, int actual_client_error) const
-    {
-        return (server_error && !actual_server_error) || (client_error && !actual_client_error);
-    }
-};
 
 
 class Client : public Poco::Util::Application
@@ -234,6 +143,11 @@ private:
     /// The user can specify to redirect query output to a file.
     std::optional<WriteBufferFromFile> out_file_buf;
     BlockOutputStreamPtr block_out_stream;
+
+    /// The user could specify special file for server logs (stderr by default)
+    std::unique_ptr<WriteBuffer> out_logs_buf;
+    String server_logs_file;
+    BlockOutputStreamPtr logs_out_stream;
 
     String home_path;
 
@@ -408,20 +322,10 @@ private:
             /// If exception code isn't zero, we should return non-zero return code anyway.
             return e.code() ? e.code() : -1;
         }
-        catch (const Poco::Exception & e)
-        {
-            std::cerr << "Poco::Exception: " << e.displayText() << std::endl;
-            return ErrorCodes::POCO_EXCEPTION;
-        }
-        catch (const std::exception & e)
-        {
-            std::cerr << "std::exception: " << e.what() << std::endl;
-            return ErrorCodes::STD_EXCEPTION;
-        }
         catch (...)
         {
-            std::cerr << "Unknown exception" << std::endl;
-            return ErrorCodes::UNKNOWN_EXCEPTION;
+            std::cerr << getCurrentExceptionMessage(false) << std::endl;
+            return getCurrentExceptionCode();
         }
     }
 
@@ -469,7 +373,12 @@ private:
         format_max_block_size = config().getInt("format_max_block_size", context.getSettingsRef().max_block_size);
 
         insert_format = "Values";
-        insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
+
+        /// Setting value from cmd arg overrides one from config
+        if (context.getSettingsRef().max_insert_block_size.changed)
+            insert_format_max_block_size = context.getSettingsRef().max_insert_block_size;
+        else
+            insert_format_max_block_size = config().getInt("insert_format_max_block_size", context.getSettingsRef().max_insert_block_size);
 
         if (!is_interactive)
         {
@@ -782,6 +691,7 @@ private:
             {
                 const char * pos = begin;
                 ASTPtr ast = parseQuery(pos, end, true);
+
                 if (!ast)
                 {
                     if (ignore_error)
@@ -797,7 +707,7 @@ private:
                     return true;
                 }
 
-                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(&*ast);
+                ASTInsertQuery * insert = typeid_cast<ASTInsertQuery *>(ast.get());
 
                 if (insert && insert->data)
                 {
@@ -990,7 +900,7 @@ private:
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
             sendData(sample);
-            receivePacket();
+            receiveEndOfQuery();
         }
     }
 
@@ -1072,6 +982,11 @@ private:
             connection->sendData(block);
             processed_rows += block.rows();
 
+            /// Check if server send Log packet
+            auto packet_type = connection->checkPacket();
+            if (packet_type && *packet_type == Protocol::Server::Log)
+                receiveAndProcessPacket();
+
             if (!block)
                 break;
         }
@@ -1083,18 +998,28 @@ private:
     /// Flush all buffers.
     void resetOutput()
     {
-        block_out_stream = nullptr;
+        block_out_stream.reset();
+        logs_out_stream.reset();
+
         if (pager_cmd)
         {
             pager_cmd->in.close();
             pager_cmd->wait();
         }
         pager_cmd = nullptr;
+
         if (out_file_buf)
         {
             out_file_buf->next();
             out_file_buf.reset();
         }
+
+        if (out_logs_buf)
+        {
+            out_logs_buf->next();
+            out_logs_buf.reset();
+        }
+
         std_out.next();
     }
 
@@ -1127,7 +1052,7 @@ private:
                     continue;    /// If there is no new data, continue checking whether the query was cancelled after a timeout.
             }
 
-            if (!receivePacket())
+            if (!receiveAndProcessPacket())
                 break;
         }
 
@@ -1138,7 +1063,7 @@ private:
 
     /// Receive a part of the result, or progress info or an exception and process it.
     /// Returns true if one should continue receiving packets.
-    bool receivePacket()
+    bool receiveAndProcessPacket()
     {
         Connection::Packet packet = connection->receivePacket();
 
@@ -1169,6 +1094,10 @@ private:
                 last_exception = std::move(packet.exception);
                 return false;
 
+            case Protocol::Server::Log:
+                onLogData(packet.block);
+                return true;
+
             case Protocol::Server::EndOfStream:
                 onEndOfStream();
                 return false;
@@ -1182,22 +1111,59 @@ private:
     /// Receive the block that serves as an example of the structure of table where data will be inserted.
     bool receiveSampleBlock(Block & out)
     {
-        Connection::Packet packet = connection->receivePacket();
-
-        switch (packet.type)
+        while (true)
         {
-            case Protocol::Server::Data:
-                out = packet.block;
-                return true;
+            Connection::Packet packet = connection->receivePacket();
 
-            case Protocol::Server::Exception:
-                onException(*packet.exception);
-                last_exception = std::move(packet.exception);
-                return false;
+            switch (packet.type)
+            {
+                case Protocol::Server::Data:
+                    out = packet.block;
+                    return true;
 
-            default:
-                throw NetException("Unexpected packet from server (expected Data, got "
-                    + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+                case Protocol::Server::Exception:
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
+                    return false;
+
+                case Protocol::Server::Log:
+                    onLogData(packet.block);
+                    break;
+
+                default:
+                    throw NetException("Unexpected packet from server (expected Data, Exception or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            }
+        }
+    }
+
+
+    /// Process Log packets, exit when recieve Exception or EndOfStream
+    bool receiveEndOfQuery()
+    {
+        while (true)
+        {
+            Connection::Packet packet = connection->receivePacket();
+
+            switch (packet.type)
+            {
+                case Protocol::Server::EndOfStream:
+                    onEndOfStream();
+                    return true;
+
+                case Protocol::Server::Exception:
+                    onException(*packet.exception);
+                    last_exception = std::move(packet.exception);
+                    return false;
+
+                case Protocol::Server::Log:
+                    onLogData(packet.block);
+                    break;
+
+                default:
+                    throw NetException("Unexpected packet from server (expected Exception, EndOfStream or Log, got "
+                        + String(Protocol::Server::toString(packet.type)) + ")", ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
+            }
         }
     }
 
@@ -1253,6 +1219,38 @@ private:
     }
 
 
+    void initLogsOutputStream()
+    {
+        if (!logs_out_stream)
+        {
+            WriteBuffer * wb = out_logs_buf.get();
+
+            if (!out_logs_buf)
+            {
+                if (server_logs_file.empty())
+                {
+                    /// Use stderr by default
+                    out_logs_buf = std::make_unique<WriteBufferFromFileDescriptor>(STDERR_FILENO);
+                    wb = out_logs_buf.get();
+                }
+                else if (server_logs_file == "-")
+                {
+                    /// Use stdout if --server_logs_file=- specified
+                    wb = &std_out;
+                }
+                else
+                {
+                    out_logs_buf = std::make_unique<WriteBufferFromFile>(server_logs_file, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
+                    wb = out_logs_buf.get();
+                }
+            }
+
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
+            logs_out_stream->writePrefix();
+        }
+    }
+
+
     void onData(Block & block)
     {
         if (written_progress_chars)
@@ -1273,6 +1271,14 @@ private:
 
         /// Received data block is immediately displayed to the user.
         block_out_stream->flush();
+    }
+
+
+    void onLogData(Block & block)
+    {
+        initLogsOutputStream();
+        logs_out_stream->write(block);
+        logs_out_stream->flush();
     }
 
 
@@ -1436,6 +1442,9 @@ private:
         if (block_out_stream)
             block_out_stream->writeSuffix();
 
+        if (logs_out_stream)
+            logs_out_stream->writeSuffix();
+
         resetOutput();
 
         if (is_interactive && !written_first_block)
@@ -1509,9 +1518,38 @@ public:
             }
         }
 
+#if USE_READLINE
+        if (rl_initialize())
+            throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
+
+        auto clear_prompt_or_exit = [](int)
+        {
+            /// This is signal safe.
+            ssize_t res = write(STDOUT_FILENO, "\n", 1);
+
+            if (res == 1 && rl_line_buffer[0])
+            {
+                rl_replace_line("", 0);
+                if (rl_forced_update_display())
+                    _exit(0);
+            }
+            else
+            {
+                /// A little dirty, but we struggle to find better way to correctly
+                /// force readline to exit after returning from the signal handler.
+                _exit(0);
+            }
+        };
+
+        if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
+            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+#endif
+
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
-        unsigned line_length = boost::program_options::options_description::m_default_line_length;
+        namespace po = boost::program_options;
+
+        unsigned line_length = po::options_description::m_default_line_length;
         unsigned min_description_length = line_length / 2;
         if (!stdin_is_not_tty)
         {
@@ -1519,28 +1557,28 @@ public:
             min_description_length = std::min(min_description_length, line_length - 2);
         }
 
-#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, boost::program_options::value<std::string> (), DESCRIPTION)
+#define DECLARE_SETTING(TYPE, NAME, DEFAULT, DESCRIPTION) (#NAME, po::value<std::string> (), DESCRIPTION)
 
         /// Main commandline options related to client functionality and all parameters from Settings.
-        boost::program_options::options_description main_description("Main options", line_length, min_description_length);
+        po::options_description main_description("Main options", line_length, min_description_length);
         main_description.add_options()
             ("help", "produce help message")
-            ("config-file,c", boost::program_options::value<std::string>(), "config-file path")
-            ("host,h", boost::program_options::value<std::string>()->default_value("localhost"), "server host")
-            ("port", boost::program_options::value<int>()->default_value(9000), "server port")
+            ("config-file,c", po::value<std::string>(), "config-file path")
+            ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
+            ("port", po::value<int>()->default_value(9000), "server port")
             ("secure,s", "secure")
-            ("user,u", boost::program_options::value<std::string>()->default_value("default"), "user")
-            ("password", boost::program_options::value<std::string>(), "password")
+            ("user,u", po::value<std::string>()->default_value("default"), "user")
+            ("password", po::value<std::string>(), "password")
             ("ask-password", "ask-password")
-            ("query_id", boost::program_options::value<std::string>(), "query_id")
-            ("query,q", boost::program_options::value<std::string>(), "query")
-            ("database,d", boost::program_options::value<std::string>(), "database")
-            ("pager", boost::program_options::value<std::string>(), "pager")
+            ("query_id", po::value<std::string>(), "query_id")
+            ("query,q", po::value<std::string>(), "query")
+            ("database,d", po::value<std::string>(), "database")
+            ("pager", po::value<std::string>(), "pager")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
+            ("format,f", po::value<std::string>(), "default output format")
             ("testmode,T", "enable test hints in comments")
             ("ignore-error", "do not stop processing in multiquery mode")
-            ("format,f", boost::program_options::value<std::string>(), "default output format")
             ("vertical,E", "vertical output format, same as --format=Vertical or FORMAT Vertical or \\G at end of command")
             ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
             ("stacktrace", "print stack traces of exceptions")
@@ -1548,27 +1586,29 @@ public:
             ("version,V", "print version information and exit")
             ("version-clean", "print version in machine-readable format and exit")
             ("echo", "in batch mode, print query before execution")
-            ("max_client_network_bandwidth", boost::program_options::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
-            ("compression", boost::program_options::value<bool>(), "enable or disable compression")
+            ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
+            ("compression", po::value<bool>(), "enable or disable compression")
+            ("log-level", po::value<std::string>(), "client log level")
+            ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
             APPLY_FOR_SETTINGS(DECLARE_SETTING)
         ;
 #undef DECLARE_SETTING
 
         /// Commandline options related to external tables.
-        boost::program_options::options_description external_description("External tables options");
+        po::options_description external_description("External tables options");
         external_description.add_options()
-            ("file", boost::program_options::value<std::string>(), "data file or - for stdin")
-            ("name", boost::program_options::value<std::string>()->default_value("_data"), "name of the table")
-            ("format", boost::program_options::value<std::string>()->default_value("TabSeparated"), "data format")
-            ("structure", boost::program_options::value<std::string>(), "structure")
-            ("types", boost::program_options::value<std::string>(), "types")
+            ("file", po::value<std::string>(), "data file or - for stdin")
+            ("name", po::value<std::string>()->default_value("_data"), "name of the table")
+            ("format", po::value<std::string>()->default_value("TabSeparated"), "data format")
+            ("structure", po::value<std::string>(), "structure")
+            ("types", po::value<std::string>(), "types")
         ;
 
         /// Parse main commandline options.
-        boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
+        po::parsed_options parsed = po::command_line_parser(
             common_arguments.size(), common_arguments.data()).options(main_description).run();
-        boost::program_options::variables_map options;
-        boost::program_options::store(parsed, options);
+        po::variables_map options;
+        po::store(parsed, options);
 
         if (options.count("version") || options.count("V"))
         {
@@ -1591,14 +1631,17 @@ public:
             exit(0);
         }
 
+        if (options.count("log-level"))
+            Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+
         size_t number_of_external_tables_with_stdin_source = 0;
         for (size_t i = 0; i < external_tables_arguments.size(); ++i)
         {
             /// Parse commandline options related to external tables.
-            boost::program_options::parsed_options parsed = boost::program_options::command_line_parser(
+            po::parsed_options parsed = po::command_line_parser(
                 external_tables_arguments[i].size(), external_tables_arguments[i].data()).options(external_description).run();
-            boost::program_options::variables_map external_options;
-            boost::program_options::store(parsed, external_options);
+            po::variables_map external_options;
+            po::store(parsed, external_options);
 
             try
             {
@@ -1672,6 +1715,8 @@ public:
             max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
         if (options.count("compression"))
             config().setBool("compression", options["compression"].as<bool>());
+        if (options.count("server_logs_file"))
+            server_logs_file = options["server_logs_file"].as<std::string>();
     }
 };
 
@@ -1689,6 +1734,11 @@ int mainEntryClickHouseClient(int argc, char ** argv)
     catch (const boost::program_options::error & e)
     {
         std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return 1;
+    }
+    catch (...)
+    {
+        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
     }
 

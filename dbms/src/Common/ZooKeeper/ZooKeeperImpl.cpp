@@ -25,7 +25,9 @@ namespace DB
 
 namespace ProfileEvents
 {
-    extern const Event ZooKeeperExceptions;
+    extern const Event ZooKeeperUserExceptions;
+    extern const Event ZooKeeperHardwareExceptions;
+    extern const Event ZooKeeperOtherExceptions;
     extern const Event ZooKeeperInit;
     extern const Event ZooKeeperTransactions;
     extern const Event ZooKeeperCreate;
@@ -267,7 +269,12 @@ namespace ZooKeeperImpl
 Exception::Exception(const std::string & msg, const int32_t code, int)
     : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code)
 {
-    ProfileEvents::increment(ProfileEvents::ZooKeeperExceptions);
+    if (ZooKeeper::isUserError(code))
+        ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
+    else if (ZooKeeper::isHardwareError(code))
+        ProfileEvents::increment(ProfileEvents::ZooKeeperHardwareExceptions);
+    else
+        ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
 }
 
 Exception::Exception(const std::string & msg, const int32_t code)
@@ -513,6 +520,25 @@ const char * ZooKeeper::errorMessage(int32_t code)
         return strerror(code);
 
     return "unknown error";
+}
+
+bool ZooKeeper::isHardwareError(int32_t zk_return_code)
+{
+    return zk_return_code == ZooKeeperImpl::ZooKeeper::ZINVALIDSTATE
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZSESSIONMOVED
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZMARSHALLINGERROR
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZOPERATIONTIMEOUT;
+}
+
+bool ZooKeeper::isUserError(int32_t zk_return_code)
+{
+    return zk_return_code == ZooKeeperImpl::ZooKeeper::ZNONODE
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZBADVERSION
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZNOCHILDRENFOREPHEMERALS
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS
+        || zk_return_code == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY;
 }
 
 

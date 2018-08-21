@@ -6,9 +6,19 @@
 #else
 #include <sys/prctl.h>
 #endif
+#include <pthread.h>
+#include <cstring>
 
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
+
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int PTHREAD_ERROR;
+}
+}
 
 
 void setThreadName(const char * name)
@@ -22,5 +32,21 @@ void setThreadName(const char * name)
 #else
     if (0 != prctl(PR_SET_NAME, name, 0, 0, 0))
 #endif
-        DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME...)");
+        DB::throwFromErrno("Cannot set thread name with prctl(PR_SET_NAME, ...)");
+}
+
+std::string getThreadName()
+{
+    std::string name(16, '\0');
+
+#if defined(__FreeBSD__) || defined(__APPLE__)
+    if (pthread_get_name_np(pthread_self(), name.data(), name.size());
+        throw DB::Exception("Cannot get thread name with pthread_get_name_np()", DB::ErrorCodes::PTHREAD_ERROR);
+#else
+    if (0 != prctl(PR_GET_NAME, name.data(), 0, 0, 0))
+#endif
+        DB::throwFromErrno("Cannot get thread name with prctl(PR_GET_NAME)");
+
+    name.resize(std::strlen(name.data()));
+    return name;
 }
