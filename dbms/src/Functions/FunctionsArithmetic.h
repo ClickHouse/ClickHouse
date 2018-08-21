@@ -577,7 +577,7 @@ using GreatestImpl = std::conditional_t<!NumberTraits::LeastGreatestSpecialCase<
 template <typename A>
 struct NegateImpl
 {
-    using ResultType = std::conditional_t<decTrait<A>(), A, typename NumberTraits::ResultOfNegate<A>::Type>;
+    using ResultType = std::conditional_t<IsDecimalNumber<A>, A, typename NumberTraits::ResultOfNegate<A>::Type>;
 
     static inline ResultType apply(A a)
     {
@@ -619,11 +619,11 @@ struct BitNotImpl
 template <typename A>
 struct AbsImpl
 {
-    using ResultType = std::conditional_t<decTrait<A>(), A, typename NumberTraits::ResultOfAbs<A>::Type>;
+    using ResultType = std::conditional_t<IsDecimalNumber<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
 
     static inline ResultType apply(A a)
     {
-        if constexpr (decTrait<A>())
+        if constexpr (IsDecimalNumber<A>)
             return a < 0 ? A(-a) : a;
         else if constexpr (std::is_integral_v<A> && std::is_signed_v<A>)
             return a < 0 ? static_cast<ResultType>(~a) + 1 : a;
@@ -717,9 +717,9 @@ struct IntExp10Impl
 
 
 template <typename T> struct NativeType { using Type = T; };
-template <> struct NativeType<Dec32> { using Type = Int32; };
-template <> struct NativeType<Dec64> { using Type = Int64; };
-template <> struct NativeType<Dec128> { using Type = Int128; };
+template <> struct NativeType<Decimal32> { using Type = Int32; };
+template <> struct NativeType<Decimal64> { using Type = Int64; };
+template <> struct NativeType<Decimal128> { using Type = Int128; };
 
 /// Binary operations for Decimals need scale args
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
@@ -763,7 +763,7 @@ struct DecimalBinaryOperation
                 return;
             }
         }
-        else if constexpr (is_division && decTrait<B>())
+        else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
                 c[i] = applyScaledDiv(a[i], b[i], scale_a);
@@ -794,7 +794,7 @@ struct DecimalBinaryOperation
                 return;
             }
         }
-        else if constexpr (is_division && decTrait<B>())
+        else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
                 c[i] = applyScaledDiv(a[i], b, scale_a);
@@ -825,7 +825,7 @@ struct DecimalBinaryOperation
                 return;
             }
         }
-        else if constexpr (is_division && decTrait<B>())
+        else if constexpr (is_division && IsDecimalNumber<B>)
         {
             for (size_t i = 0; i < size; ++i)
                 c[i] = applyScaledDiv(a, b[i], scale_a);
@@ -846,7 +846,7 @@ struct DecimalBinaryOperation
             else if (scale_b != 1)
                 return applyScaled<false>(a, b, scale_b);
         }
-        else if constexpr (is_division && decTrait<B>())
+        else if constexpr (is_division && IsDecimalNumber<B>)
             return applyScaledDiv(a, b, scale_a);
         return apply(a, b);
     }
@@ -896,7 +896,7 @@ private:
         if constexpr (is_division)
         {
             bool overflow = false;
-            if constexpr (!decTrait<A>())
+            if constexpr (!IsDecimalNumber<A>)
                 overflow |= common::mulOverflow(scale, scale, scale);
             overflow |= common::mulOverflow(a, scale, a);
             if (overflow)
@@ -931,14 +931,14 @@ template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
 
 template <typename DataType> constexpr bool IsDecimal = false;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec32>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec64>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Dec128>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal32>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal64>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal128>> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec32>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec128>, DataTypeDecimal<Dec64>> = true;
-template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Dec64>, DataTypeDecimal<Dec32>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal64>> = true;
+template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal64>, DataTypeDecimal<Decimal32>> = true;
 
 template <typename T> using DataTypeFromFieldType = std::conditional_t<std::is_same_v<T, NumberTraits::Error>, InvalidType, DataTypeNumber<T>>;
 
@@ -1020,9 +1020,9 @@ class FunctionBinaryArithmetic : public IFunction
             DataTypeFloat64,
             DataTypeDate,
             DataTypeDateTime,
-            DataTypeDecimal<Dec32>,
-            DataTypeDecimal<Dec64>,
-            DataTypeDecimal<Dec128>
+            DataTypeDecimal<Decimal32>,
+            DataTypeDecimal<Decimal64>,
+            DataTypeDecimal<Decimal128>
         >(type, std::forward<F>(f));
     }
 
@@ -1345,9 +1345,9 @@ class FunctionUnaryArithmetic : public IFunction
             DataTypeInt64,
             DataTypeFloat32,
             DataTypeFloat64,
-            DataTypeDecimal<Dec32>,
-            DataTypeDecimal<Dec64>,
-            DataTypeDecimal<Dec128>
+            DataTypeDecimal<Decimal32>,
+            DataTypeDecimal<Decimal64>,
+            DataTypeDecimal<Decimal128>
         >(type, std::forward<F>(f));
     }
 
