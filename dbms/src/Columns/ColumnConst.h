@@ -36,6 +36,8 @@ public:
         return convertToFullColumn();
     }
 
+    ColumnPtr removeLowCardinality() const;
+
     std::string getName() const override
     {
         return "Const(" + data->getName() + ")";

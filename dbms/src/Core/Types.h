@@ -57,21 +57,21 @@ template <> struct TypeName<Float32> { static const char * get() { return "Float
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
 
-template <typename T> struct TypeNumber;
+template <typename T> struct TypeId;
 
 /// 0 reserved for types without number
-template <> struct TypeNumber<UInt8>    { static constexpr const size_t value = 1;  };
-template <> struct TypeNumber<UInt16>   { static constexpr const size_t value = 2;  };
-template <> struct TypeNumber<UInt32>   { static constexpr const size_t value = 3;  };
-template <> struct TypeNumber<UInt64>   { static constexpr const size_t value = 4;  };
-/// 5 reserved for TypeNumber<UInt128>
-template <> struct TypeNumber<Float32>  { static constexpr const size_t value = 7;  };
-template <> struct TypeNumber<Float64>  { static constexpr const size_t value = 8;  };
-template <> struct TypeNumber<Int8>     { static constexpr const size_t value = 9;  };
-template <> struct TypeNumber<Int16>    { static constexpr const size_t value = 10; };
-template <> struct TypeNumber<Int32>    { static constexpr const size_t value = 11; };
-template <> struct TypeNumber<Int64>    { static constexpr const size_t value = 12; };
-/// 13 reserved for TypeNumber<Int128>
+template <> struct TypeId<UInt8>    { static constexpr const size_t value = 1;  };
+template <> struct TypeId<UInt16>   { static constexpr const size_t value = 2;  };
+template <> struct TypeId<UInt32>   { static constexpr const size_t value = 3;  };
+template <> struct TypeId<UInt64>   { static constexpr const size_t value = 4;  };
+/// 5 reserved for TypeId<UInt128>
+template <> struct TypeId<Float32>  { static constexpr const size_t value = 7;  };
+template <> struct TypeId<Float64>  { static constexpr const size_t value = 8;  };
+template <> struct TypeId<Int8>     { static constexpr const size_t value = 9;  };
+template <> struct TypeId<Int16>    { static constexpr const size_t value = 10; };
+template <> struct TypeId<Int32>    { static constexpr const size_t value = 11; };
+template <> struct TypeId<Int64>    { static constexpr const size_t value = 12; };
+/// 13 reserved for TypeId<Int128>
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
@@ -85,7 +85,7 @@ namespace DB
 using Int128 = __int128;
 template <> constexpr bool IsNumber<Int128> = true;
 template <> struct TypeName<Int128>  { static const char * get() { return "Int128";  } };
-template <> struct TypeNumber<Int128>   { static constexpr const size_t value = 13; };
+template <> struct TypeId<Int128>   { static constexpr const size_t value = 13; };
 
 }
 
@@ -118,62 +118,55 @@ template <> struct is_arithmetic<__int128>
 
 namespace DB
 {
-    /// Own FieldType for Decimal
+    /// Own FieldType for Decimal.
+    /// It is only a "storage" for decimal. To perform operations, you also have to provide a scale (number of digits after point).
     template <typename T>
-    class Dec
+    struct Decimal
     {
-    public:
         using NativeType = T;
 
-        Dec() = default;
-        Dec(Dec<T> &&) = default;
-        Dec(const Dec<T> &) = default;
+        Decimal() = default;
+        Decimal(Decimal<T> &&) = default;
+        Decimal(const Decimal<T> &) = default;
 
-        Dec(const T & value_)
+        Decimal(const T & value_)
         :   value(value_)
         {}
 
         template <typename U>
-        Dec(const Dec<U> & x)
+        Decimal(const Decimal<U> & x)
         :   value(x)
         {}
 
-        constexpr Dec<T> & operator = (Dec<T> &&) = default;
-        constexpr Dec<T> & operator = (const Dec<T> &) = default;
+        constexpr Decimal<T> & operator = (Decimal<T> &&) = default;
+        constexpr Decimal<T> & operator = (const Decimal<T> &) = default;
 
         operator T () const { return value; }
 
-        const Dec<T> & operator += (const T & x) { value += x; return *this; }
-        const Dec<T> & operator -= (const T & x) { value -= x; return *this; }
-        const Dec<T> & operator *= (const T & x) { value *= x; return *this; }
-        const Dec<T> & operator /= (const T & x) { value /= x; return *this; }
-        const Dec<T> & operator %= (const T & x) { value %= x; return *this; }
+        const Decimal<T> & operator += (const T & x) { value += x; return *this; }
+        const Decimal<T> & operator -= (const T & x) { value -= x; return *this; }
+        const Decimal<T> & operator *= (const T & x) { value *= x; return *this; }
+        const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
+        const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
-    private:
         T value;
     };
 
-    using Dec32 = Dec<Int32>;
-    using Dec64 = Dec<Int64>;
-    using Dec128 = Dec<Int128>;
+    using Decimal32 = Decimal<Int32>;
+    using Decimal64 = Decimal<Int64>;
+    using Decimal128 = Decimal<Int128>;
 
-    template <> struct TypeName<Dec32>   { static const char * get() { return "Dec32";   } };
-    template <> struct TypeName<Dec64>   { static const char * get() { return "Dec64";   } };
-    template <> struct TypeName<Dec128>  { static const char * get() { return "Dec128";  } };
+    template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };
+    template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };
+    template <> struct TypeName<Decimal128>  { static const char * get() { return "Decimal128";  } };
 
-    template <> struct TypeNumber<Dec32>    { static constexpr const size_t value = 16; };
-    template <> struct TypeNumber<Dec64>    { static constexpr const size_t value = 17; };
-    template <> struct TypeNumber<Dec128>   { static constexpr const size_t value = 18; };
-
-    template <typename T>
-    inline constexpr bool decTrait() { return false; }
-    template <> constexpr bool decTrait<Dec32>() { return true; }
-    template <> constexpr bool decTrait<Dec64>() { return true; }
-    template <> constexpr bool decTrait<Dec128>() { return true; }
+    template <> struct TypeId<Decimal32>    { static constexpr const size_t value = 16; };
+    template <> struct TypeId<Decimal64>    { static constexpr const size_t value = 17; };
+    template <> struct TypeId<Decimal128>   { static constexpr const size_t value = 18; };
 
     template <typename T>
-    inline constexpr bool decBaseTrait() { return false; }
-    template <> constexpr bool decBaseTrait<Int32>() { return true; }
-    template <> constexpr bool decBaseTrait<Int64>() { return true; }
-    template <> constexpr bool decBaseTrait<Int128>() { return true; }
+    constexpr bool IsDecimalNumber = false;
+    template <> constexpr bool IsDecimalNumber<Decimal32> = true;
+    template <> constexpr bool IsDecimalNumber<Decimal64> = true;
+    template <> constexpr bool IsDecimalNumber<Decimal128> = true;
 }

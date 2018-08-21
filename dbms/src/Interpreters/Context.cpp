@@ -1,21 +1,18 @@
 #include <map>
 #include <set>
-
 #include <boost/functional/hash/hash.hpp>
 #include <Poco/Mutex.h>
 #include <Poco/File.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
-
 #include <common/logger_useful.h>
 #include <pcg_random.hpp>
-
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
@@ -39,6 +36,7 @@
 #include <Interpreters/Compiler.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
+#include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
@@ -1529,7 +1527,7 @@ void Context::initializeSystemLogs()
 }
 
 
-QueryLog * Context::getQueryLog()
+QueryLog * Context::getQueryLog(bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1538,29 +1536,49 @@ QueryLog * Context::getQueryLog()
 
     if (!system_logs->query_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
         if (!global_context)
             throw Exception("Logical error: no global context for query log", ErrorCodes::LOGICAL_ERROR);
 
-        auto & config = getConfigRef();
-
-        String database     = config.getString("query_log.database",     "system");
-        String table        = config.getString("query_log.table",        "query_log");
-        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-
-        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
-
-        system_logs->query_log = std::make_unique<QueryLog>(*global_context, database, table, engine, flush_interval_milliseconds);
+        system_logs->query_log = createDefaultSystemLog<QueryLog>(*global_context, "system", "query_log", getConfigRef(), "query_log");
     }
 
     return system_logs->query_log.get();
 }
 
 
-PartLog * Context::getPartLog(const String & part_database)
+QueryThreadLog * Context::getQueryThreadLog(bool create_if_not_exists)
+{
+    auto lock = getLock();
+
+    if (!system_logs)
+        return nullptr;
+
+    if (!system_logs->query_thread_log)
+    {
+        if (!create_if_not_exists)
+            return nullptr;
+
+        if (shared->shutdown_called)
+            throw Exception("Logical error: query log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
+
+        if (!global_context)
+            throw Exception("Logical error: no global context for query thread log", ErrorCodes::LOGICAL_ERROR);
+
+        system_logs->query_thread_log = createDefaultSystemLog<QueryThreadLog>(
+                *global_context, "system", "query_thread_log", getConfigRef(), "query_thread_log");
+    }
+
+    return system_logs->query_thread_log.get();
+}
+
+
+PartLog * Context::getPartLog(const String & part_database, bool create_if_not_exists)
 {
     auto lock = getLock();
 
@@ -1577,24 +1595,21 @@ PartLog * Context::getPartLog(const String & part_database)
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == database)
+    if (!part_database.empty() && part_database == database)
         return nullptr;
 
     if (!system_logs->part_log)
     {
+        if (!create_if_not_exists)
+            return nullptr;
+
         if (shared->shutdown_called)
             throw Exception("Logical error: part log should be destroyed before tables shutdown", ErrorCodes::LOGICAL_ERROR);
 
         if (!global_context)
             throw Exception("Logical error: no global context for part log", ErrorCodes::LOGICAL_ERROR);
 
-        String table = config.getString("part_log.table", "part_log");
-        String partition_by = config.getString("query_log.partition_by", "toYYYYMM(event_date)");
-        size_t flush_interval_milliseconds = config.getUInt64("part_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
-
-        String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
-
-        system_logs->part_log = std::make_unique<PartLog>(*global_context, database, table, engine, flush_interval_milliseconds);
+        system_logs->part_log = createDefaultSystemLog<PartLog>(*global_context, "system", "part_log", getConfigRef(), "part_log");
     }
 
     return system_logs->part_log.get();
@@ -1798,6 +1813,25 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
         shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
 
     return shared->action_locks_manager;
+}
+
+
+void Context::setExternalTablesInitializer(ExternalTablesInitializer && initializer)
+{
+    if (external_tables_initializer_callback)
+        throw Exception("External tables initializer is already set", ErrorCodes::LOGICAL_ERROR);
+
+    external_tables_initializer_callback = std::move(initializer);
+}
+
+void Context::initializeExternalTablesIfSet()
+{
+    if (external_tables_initializer_callback)
+    {
+        external_tables_initializer_callback(*this);
+        /// Reset callback
+        external_tables_initializer_callback = {};
+    }
 }
 
 
