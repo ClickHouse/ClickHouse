@@ -38,6 +38,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
+    ParserKeyword s_rollup("ROLLUP");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false, true); /// Set prefer_alias_to_column_name for each alias.
@@ -97,10 +98,14 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// WITH TOTALS
     if (s_with.ignore(pos, expected))
     {
-        if (!s_totals.ignore(pos, expected))
+        if (!s_totals.ignore(pos, expected) && !s_rollup.ignore(pos, expected))
             return false;
 
-        select_query->group_by_with_totals = true;
+        // if (s_totals.ignore(pos, expected))
+            select_query->group_by_with_totals = true;
+
+        // if (s_rollup.ignore(pos, expected))
+            select_query->group_by_with_rollup = true;
     }
 
     /// HAVING expr

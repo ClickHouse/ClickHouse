@@ -18,6 +18,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/RollupBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -467,7 +468,12 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeMergeAggregated(pipeline, aggregate_overflow_row, aggregate_final);
 
                 if (!aggregate_final)
-                    executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row);
+                {
+                    if (query.group_by_with_rollup)
+                        executeRollup(pipeline);
+                    if (query.group_by_with_totals)
+                        executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row);
+                }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
 
@@ -482,6 +488,8 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
 
                 if (query.group_by_with_totals && !aggregate_final)
                     executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row);
+                if (query.group_by_with_rollup && !aggregate_final)
+                    executeRollup(pipeline);
             }
 
             if (expressions.has_order_by)
@@ -627,7 +635,7 @@ QueryProcessingStage::Enum InterpreterSelectQuery::executeFetchColumns(Pipeline 
 
     size_t max_block_size = settings.max_block_size;
 
-    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
+    /** Optimization - if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, if not specified DISTINCT, WHERE, GROUP, HAVING, ORDER, LIMIT BY but LIMIT is specified, and limit + offset < max_block_size,
      *  then as the block size we will use limit + offset (not to read more from the table than requested),
      *  and also set the number of threads to 1.
      */
@@ -790,9 +798,9 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
                 descr.arguments.push_back(header.getPositionByName(name));
-
+                
     const Settings & settings = context.getSettingsRef();
-
+ 
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
@@ -908,6 +916,47 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
     pipeline.firstStream() = std::make_shared<TotalsHavingBlockInputStream>(
         pipeline.firstStream(), overflow_row, expression,
         has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold);
+}
+
+void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
+{
+    executeUnion(pipeline);
+
+    Names key_names;
+    AggregateDescriptions aggregates;
+    query_analyzer->getAggregateInfo(key_names, aggregates);
+
+    Block header = pipeline.firstStream()->getHeader();
+    ColumnNumbers keys;
+
+    for (const auto & name : key_names)
+        keys.push_back(header.getPositionByName(name));
+
+    for (auto & descr : aggregates)
+        if (descr.arguments.empty())
+            for (const auto & elem : header)
+            {
+                if (typeid_cast<const ColumnAggregateFunction *>(elem.column.get()))
+                    descr.arguments.push_back(header.getPositionByName(elem.name));
+            }
+                
+    const Settings & settings = context.getSettingsRef();
+ 
+    /** Two-level aggregation is useful in two cases:
+      * 1. Parallel aggregation is done, and the results should be merged in parallel.
+      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
+      */
+    bool allow_to_use_two_level_group_by = pipeline.streams.size() > 1 || settings.max_bytes_before_external_group_by != 0;
+
+    Aggregator::Params params(header, keys, aggregates,
+        false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+        settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
+        allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
+        allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
+        settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+        context.getTemporaryPath());
+
+    pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
 }
 
 

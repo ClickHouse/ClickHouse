@@ -98,6 +98,12 @@ Block Aggregator::getHeader(bool final) const
 
     if (params.src_header)
     {
+
+        for (const auto & key : params.keys)
+            LOG_DEBUG(log, "key: " << key);
+        
+        LOG_DEBUG(log, "key_size: " << params.keys_size);
+        
         for (size_t i = 0; i < params.keys_size; ++i)
             res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
 
