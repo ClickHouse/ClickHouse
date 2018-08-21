@@ -20,15 +20,8 @@ public:
     MergeTreeDataSelectExecutor(MergeTreeData & data_);
 
     /** When reading, selects a set of parts that covers the desired range of the index.
-      * max_block_number_to_read - if not zero, do not read all the parts whose right border is greater than this threshold.
-      */
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        size_t max_block_size,
-        unsigned num_streams) const;
-        
+      * max_blocks_number_to_read - if not empty, do not read all the parts whose right border is greater than max_block in partition.
+      */        
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
