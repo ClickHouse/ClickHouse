@@ -22,6 +22,7 @@
 #include <syscall.h>
 #endif
 
+
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
 
@@ -56,7 +57,7 @@ struct NetlinkMessage
 };
 
 
-int sendCommand(
+void sendCommand(
     int sock_fd,
     UInt16 nlmsg_type,
     UInt32 nlmsg_pid,
@@ -102,11 +103,9 @@ int sendCommand(
             buflen -= r;
         }
         else if (errno != EAGAIN)
-            return -1;
+            throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
     }
 #endif
-
-    return 0;
 }
 
 
@@ -122,16 +121,19 @@ UInt16 getFamilyId(int nl_sock_fd) noexcept
 
     static char name[] = TASKSTATS_GENL_NAME;
 
-    if (sendCommand(
+    sendCommand(
         nl_sock_fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY,
         CTRL_ATTR_FAMILY_NAME, (void *) name,
-        strlen(TASKSTATS_GENL_NAME) + 1))
-        return 0;
+        strlen(TASKSTATS_GENL_NAME) + 1);
 
     UInt16 id = 0;
     ssize_t rep_len = ::recv(nl_sock_fd, &answer, sizeof(answer), 0);
-    if (answer.header.nlmsg_type == NLMSG_ERROR || (rep_len < 0) || !NLMSG_OK((&answer.header), rep_len))
-        return 0;
+    if (rep_len < 0)
+        throwFromErrno("Cannot get the family id for " + std::string(TASKSTATS_GENL_NAME) + " from the Netlink socket", ErrorCodes::NETLINK_ERROR);
+
+    if (answer.header.nlmsg_type == NLMSG_ERROR ||!NLMSG_OK((&answer.header), rep_len))
+        throw Exception("Received an error instead of the family id for " + std::string(TASKSTATS_GENL_NAME)
+            + " from the Netlink socket", ErrorCodes::NETLINK_ERROR);
 
     const ::nlattr * attr;
     attr = static_cast<const ::nlattr *>(GENLMSG_DATA(&answer));
@@ -150,19 +152,20 @@ UInt16 getFamilyId(int nl_sock_fd) noexcept
 
 TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
 
+
 void TaskStatsInfoGetter::init()
 {
 #if defined(__linux__)
     if (netlink_socket_fd >= 0)
         return;
 
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 50000;
-
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
 
     if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
         throwFromErrno("Can't set timeout on PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
@@ -183,8 +186,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
 {
     init();
 
-    if (sendCommand(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t)))
-        throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
+    sendCommand(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t));
 
     NetlinkMessage msg;
     ssize_t rv = ::recv(netlink_socket_fd, &msg, sizeof(msg), 0);
@@ -232,6 +234,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
     return true;
 }
 
+
 void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
 {
     tid = tid < 0 ? getDefaultTID() : tid;
@@ -244,12 +247,6 @@ bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid)
     return getStatImpl(tid, stat, false);
 }
 #endif
-
-TaskStatsInfoGetter::~TaskStatsInfoGetter()
-{
-    if (netlink_socket_fd >= 0)
-        close(netlink_socket_fd);
-}
 
 int TaskStatsInfoGetter::getCurrentTID()
 {
@@ -280,12 +277,18 @@ static bool tryGetTaskStats()
 #endif
 }
 
-bool TaskStatsInfoGetter::checkProcessHasRequiredPermissions()
+bool TaskStatsInfoGetter::checkPermissions()
 {
     /// It is thread- and exception- safe since C++11
     static bool res = tryGetTaskStats();
     return res;
 }
 
+
+TaskStatsInfoGetter::~TaskStatsInfoGetter()
+{
+    if (netlink_socket_fd >= 0)
+        close(netlink_socket_fd);
+}
 
 }
