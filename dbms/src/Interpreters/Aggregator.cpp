@@ -25,6 +25,7 @@
 #if __has_include(<Interpreters/config_compile.h>)
 #include <Interpreters/config_compile.h>
 #include <Columns/ColumnWithDictionary.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 #endif
 
@@ -100,7 +101,15 @@ Block Aggregator::getHeader(bool final) const
     if (params.src_header)
     {
         for (size_t i = 0; i < params.keys_size; ++i)
-            res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
+        {
+            auto col = params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty();
+//            if (auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(col.column.get()))
+//            {
+//                col.column = col_with_dict->getDictionary().getNestedColumn()->cloneEmpty();
+//                col.type = removeLowCardinality(col.type);
+//            }
+            res.insert(std::move(col));
+        }
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
         {
@@ -374,18 +383,25 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     DataTypes types_removed_nullable;
     types_removed_nullable.reserve(params.keys.size());
     bool has_nullable_key = false;
+    bool has_low_cardinality = false;
 
     for (const auto & pos : params.keys)
     {
-        const auto & type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+        DataTypePtr type = (params.src_header ? params.src_header : params.intermediate_header).safeGetByPosition(pos).type;
+
+        if (type->withDictionary())
+        {
+            has_low_cardinality = true;
+            type = removeLowCardinality(type);
+        }
 
         if (type->isNullable())
         {
             has_nullable_key = true;
-            types_removed_nullable.push_back(removeNullable(type));
+            type = removeNullable(type);
         }
-        else
-            types_removed_nullable.push_back(type);
+
+        types_removed_nullable.push_back(type);
     }
 
     /** Returns ordinary (not two-level) methods, because we start from them.
@@ -441,6 +457,19 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     if (params.keys_size == 1 && types_removed_nullable[0]->isValueRepresentedByNumber())
     {
         size_t size_of_field = types_removed_nullable[0]->getSizeOfValueInMemory();
+
+        if (has_low_cardinality)
+        {
+            if (size_of_field == 1)
+                return AggregatedDataVariants::Type::low_cardinality_key8;
+            if (size_of_field == 2)
+                return AggregatedDataVariants::Type::low_cardinality_key16;
+            if (size_of_field == 4)
+                return AggregatedDataVariants::Type::low_cardinality_key32;
+            if (size_of_field == 8)
+                return AggregatedDataVariants::Type::low_cardinality_key64;
+        }
+
         if (size_of_field == 1)
             return AggregatedDataVariants::Type::key8;
         if (size_of_field == 2)
@@ -455,7 +484,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
-    if (params.keys_size == num_fixed_contiguous_keys)
+    if (params.keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
     {
         if (keys_bytes <= 16)
             return AggregatedDataVariants::Type::keys128;
@@ -465,10 +494,20 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
     if (params.keys_size == 1 && types_removed_nullable[0]->isString())
-        return AggregatedDataVariants::Type::key_string;
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_string;
+        else
+            return AggregatedDataVariants::Type::key_string;
+    }
 
     if (params.keys_size == 1 && types_removed_nullable[0]->isFixedString())
-        return AggregatedDataVariants::Type::key_fixed_string;
+    {
+        if (has_low_cardinality)
+            return AggregatedDataVariants::Type::low_cardinality_key_fixed_string;
+        else
+            return AggregatedDataVariants::Type::key_fixed_string;
+    }
 
     /** If it is possible to use 'concat' method due to one-to-one correspondense. Otherwise the method will be 'serialized'.
       */
@@ -785,6 +824,21 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        result.init(method);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+
+        if (params.compiler)
+            compileIfPossible(result.type);
+    }
+
+    if (isCancelled())
+        return true;
+
     for (size_t i = 0; i < params.aggregates_size; ++i)
         aggregate_columns[i].resize(params.aggregates[i].arguments.size());
 
@@ -792,7 +846,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
       * To make them work anyway, we materialize them.
       */
     Columns materialized_columns;
-    ColumnRawPtrs key_counts;
+    // ColumnRawPtrs key_counts;
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
@@ -807,16 +861,12 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 
         if (const auto * column_with_dictionary = typeid_cast<const ColumnWithDictionary *>(key_columns[i]))
         {
-            if (params.keys_size == 1)
-            {
-                materialized_columns.push_back(column_with_dictionary->countKeys());
-                key_columns[i] = column_with_dictionary->getDictionary().getNestedColumn().get();
-            }
-            else
+            if (!result.isLowCardinality())
             {
                 materialized_columns.push_back(column_with_dictionary->convertToFullColumn());
+                key_columns[i] = materialized_columns.back().get();
             }
-            key_counts.push_back(materialized_columns.back().get());
+            //key_counts.push_back(materialized_columns.back().get());
         }
     }
 
@@ -834,6 +884,12 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                 materialized_columns.push_back(converted);
                 aggregate_columns[i][j] = materialized_columns.back().get();
             }
+
+            if (auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(aggregate_columns[i][j]))
+            {
+                materialized_columns.push_back(col_with_dict->convertToFullColumn());
+                aggregate_columns[i][j] = materialized_columns.back().get();
+            }
         }
 
         aggregate_functions_instructions[i].that = aggregate_functions[i];
@@ -846,21 +902,6 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         return true;
 
     size_t rows = block.rows();
-
-    /// How to perform the aggregation?
-    if (result.empty())
-    {
-        result.init(method);
-        result.keys_size = params.keys_size;
-        result.key_sizes = key_sizes;
-        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
-
-        if (params.compiler)
-            compileIfPossible(result.type);
-    }
-
-    if (isCancelled())
-        return true;
 
     if ((params.overflow_row || result.type == AggregatedDataVariants::Type::without_key) && !result.without_key)
     {
@@ -926,14 +967,14 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         /// When there is no dynamically compiled code.
         else
         {
-        #define M(NAME, IS_TWO_LEVEL) \
-            else if (result.type == AggregatedDataVariants::Type::NAME) \
-                executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
-                    result.key_sizes, key, no_more_keys, overflow_row_ptr);
+            #define M(NAME, IS_TWO_LEVEL) \
+                else if (result.type == AggregatedDataVariants::Type::NAME) \
+                    executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
+                        result.key_sizes, key, no_more_keys, overflow_row_ptr);
 
-            if (false) {}
-            APPLY_FOR_AGGREGATED_VARIANTS(M)
-        #undef M
+                if (false) {}
+                APPLY_FOR_AGGREGATED_VARIANTS(M)
+            #undef M
         }
     }
 

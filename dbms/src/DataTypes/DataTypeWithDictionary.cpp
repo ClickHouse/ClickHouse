@@ -841,4 +841,12 @@ void registerDataTypeWithDictionary(DataTypeFactory & factory)
     factory.registerDataType("LowCardinality", create);
 }
 
+
+DataTypePtr removeLowCardinality(const DataTypePtr & type)
+{
+    if (auto * type_with_dictionary = typeid_cast<const DataTypeWithDictionary *>(type.get()))
+        return type_with_dictionary->getDictionaryType();
+    return type;
+}
+
 }

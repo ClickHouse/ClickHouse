@@ -205,7 +205,7 @@ public:
         typename ColumnVector<IndexType>::Container & getPositionsData();
 
         template <typename IndexType>
-        typename const ColumnVector<IndexType>::Container & getPositionsData() const;
+        const typename ColumnVector<IndexType>::Container & getPositionsData() const;
 
         template <typename IndexType>
         void convertPositions();
