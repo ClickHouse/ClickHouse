@@ -1,4 +1,4 @@
-# Table engines
+# Table Engines
 
 The table engine (type of table) determines:
 

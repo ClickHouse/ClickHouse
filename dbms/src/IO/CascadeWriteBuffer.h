@@ -44,7 +44,7 @@ public:
         return curr_buffer;
     }
 
-    ~CascadeWriteBuffer();
+    ~CascadeWriteBuffer() override;
 
 private:
 

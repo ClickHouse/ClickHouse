@@ -4,12 +4,12 @@ ClickHouse is a columnar database management system (DBMS) for online analytical
 
 In a "normal" row-oriented DBMS, data is stored in this order:
 
-| Row | WatchID             | JavaEnable | Title              | GoodEvent | EventTime           |
-| --- | ------------------- | ---------- | ------------------ | --------- | ------------------- |
-| #0  | 5385521489354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
-| #1  | 5385521490329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
-| #2  | 5385521489953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
-| #N  | ...                 | ...        | ...                | ...       | ...                 |
+| Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+| --- | ----------- | ---------- | ------------------ | --------- | ------------------- |
+| #0  | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+| #1  | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+| #2  | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+| #N  | ...         | ...        | ...                | ...       | ...                 |
 
 In order words, all the values related to a row are physically stored next to each other.
 
@@ -21,7 +21,7 @@ In a column-oriented DBMS, data is stored like this:
 
 | Row:        | #0                  | #1                  | #2                  | #N                  |
 | ----------- | ------------------- | ------------------- | ------------------- | ------------------- |
-| WatchID:    | 5385521489354350662 | 5385521490329509958 | 5385521489953706054 | ...                 |
+| WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...                 |
 | JavaEnable: | 1                   | 0                   | 1                   | ...                 |
 | Title:      | Investor Relations  | Contact us          | Mission             | ...                 |
 | GoodEvent:  | 1                   | 1                   | 1                   | ...                 |
@@ -38,7 +38,7 @@ Different orders for storing data are better suited to different scenarios. The 
 
 The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-## Key properties of OLAP scenario
+## Key Properties of OLAP Scenario
 
 - The vast majority of requests are for read access.
 - Data is ingested in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
@@ -56,7 +56,7 @@ The higher the load on the system, the more important it is to customize the sys
 
 It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
 
-## Reasons why columnar databases are better suited for OLAP scenario
+## Reasons Why Columnar Databases Are Better Suited for OLAP Scenario
 
 Column-oriented databases are better suited to OLAP scenarios (at least 100 times better in processing speed for most queries). The reasons for that are explained below in detail, but it's easier to be demonstrated visually:
 

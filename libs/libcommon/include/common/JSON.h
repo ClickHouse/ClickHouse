@@ -38,7 +38,7 @@
   */
 
 
-POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception);
+POCO_DECLARE_EXCEPTION(Foundation_API, JSONException, Poco::Exception)
 
 
 class JSON
@@ -79,13 +79,13 @@ public:
 
     ElementType getType() const;
 
-    bool isObject() const        { return getType() == TYPE_OBJECT; };
-    bool isArray() const         { return getType() == TYPE_ARRAY; };
-    bool isNumber() const        { return getType() == TYPE_NUMBER; };
-    bool isString() const        { return getType() == TYPE_STRING; };
-    bool isBool() const          { return getType() == TYPE_BOOL; };
-    bool isNull() const          { return getType() == TYPE_NULL; };
-    bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; };
+    bool isObject() const        { return getType() == TYPE_OBJECT; }
+    bool isArray() const         { return getType() == TYPE_ARRAY; }
+    bool isNumber() const        { return getType() == TYPE_NUMBER; }
+    bool isString() const        { return getType() == TYPE_STRING; }
+    bool isBool() const          { return getType() == TYPE_BOOL; }
+    bool isNull() const          { return getType() == TYPE_NULL; }
+    bool isNameValuePair() const { return getType() == TYPE_NAME_VALUE_PAIR; }
 
     /// Количество элементов в массиве или объекте; если элемент - не массив или объект, то исключение.
     size_t size() const;

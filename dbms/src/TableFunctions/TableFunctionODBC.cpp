@@ -1,27 +1,21 @@
 #include <TableFunctions/TableFunctionODBC.h>
-
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #include <type_traits>
 #include <ext/scope_guard.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Storages/StorageODBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Common/ODBCBridgeHelper.h>
 #include <Core/Defines.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-    #include <Poco/Data/ODBC/ODBCException.h>
-    #include <Poco/Data/ODBC/SessionImpl.h>
-    #include <Poco/Data/ODBC/Utility.h>
-#pragma GCC diagnostic pop
 
 
 namespace DB
@@ -30,33 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-DataTypePtr getDataType(SQLSMALLINT type)
-{
-    const auto & factory = DataTypeFactory::instance();
-
-    switch (type)
-    {
-        case SQL_INTEGER:
-            return factory.get("Int32");
-        case SQL_SMALLINT:
-            return factory.get("Int16");
-        case SQL_FLOAT:
-            return factory.get("Float32");
-        case SQL_REAL:
-            return factory.get("Float32");
-        case SQL_DOUBLE:
-            return factory.get("Float64");
-        case SQL_DATETIME:
-            return factory.get("DateTime");
-        case SQL_TYPE_TIMESTAMP:
-            return factory.get("DateTime");
-        case SQL_TYPE_DATE:
-            return factory.get("Date");
-        default:
-            return factory.get("String");
-    }
 }
 
 StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
@@ -77,43 +44,21 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
 
     std::string connection_string = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
     std::string table_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+    const auto & config = context.getConfigRef();
+    ODBCBridgeHelper helper(config, context.getSettingsRef().http_receive_timeout.value, connection_string);
+    helper.startODBCBridgeSync();
 
-    Poco::Data::ODBC::SessionImpl session(connection_string, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-    SQLHDBC hdbc = session.dbc().handle();
+    Poco::URI columns_info_uri = helper.getColumnsInfoURI();
+    columns_info_uri.addQueryParameter("connection_string", connection_string);
+    columns_info_uri.addQueryParameter("table", table_name);
 
-    SQLHSTMT hstmt = nullptr;
+    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
 
-    if (Poco::Data::ODBC::Utility::isError(SQLAllocStmt(hdbc, &hstmt)))
-        throw Poco::Data::ODBC::ODBCException("Could not allocate connection handle.");
+    std::string columns_info;
+    readStringBinary(columns_info, buf);
+    NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
-    SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
-
-    /// TODO Why not do SQLColumns instead?
-    std::string query = "SELECT * FROM " + table_name + " WHERE 1 = 0";
-    if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(&query[0]), query.size())))
-        throw Poco::Data::ODBC::DescriptorException(session.dbc());
-
-    if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
-        throw Poco::Data::ODBC::StatementException(hstmt);
-
-    SQLSMALLINT cols = 0;
-    if (Poco::Data::ODBC::Utility::isError(SQLNumResultCols(hstmt, &cols)))
-        throw Poco::Data::ODBC::StatementException(hstmt);
-
-    /// TODO cols not checked
-
-    NamesAndTypesList columns;
-    for (SQLSMALLINT ncol = 1; ncol <= cols; ++ncol)
-    {
-        SQLSMALLINT type = 0;
-        /// TODO Why 301?
-        SQLCHAR column_name[301];
-        /// TODO Result is not checked.
-        Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
-        columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
-    }
-
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns});
+    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns}, context);
     result->startup();
     return result;
 }
@@ -124,5 +69,3 @@ void registerTableFunctionODBC(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionODBC>();
 }
 }
-
-#endif
