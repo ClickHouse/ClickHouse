@@ -135,19 +135,6 @@ BlockInputStreams MergeTreeDataSelectExecutor::read(
     const Names & column_names_to_return,
     const SelectQueryInfo & query_info,
     const Context & context,
-    const size_t max_block_size,
-    const unsigned num_streams) const
-{
-    return readFromParts(
-        data.getDataPartsVector(), column_names_to_return, query_info, context, processed_stage,
-        max_block_size, num_streams, std::unordered_map<String, Int64>());
-}
-
-
-BlockInputStreams MergeTreeDataSelectExecutor::read(
-    const Names & column_names_to_return,
-    const SelectQueryInfo & query_info,
-    const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams,
