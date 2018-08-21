@@ -54,7 +54,7 @@ void sendCommand(
     UInt8 genl_cmd,
     UInt16 nla_type,
     void * nla_data,
-    int nla_len) noexcept
+    int nla_len)
 {
     NetlinkMessage msg{};
 
