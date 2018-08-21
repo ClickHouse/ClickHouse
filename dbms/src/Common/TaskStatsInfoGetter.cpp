@@ -139,9 +139,16 @@ void TaskStatsInfoGetter::init()
     if (netlink_socket_fd >= 0)
         return;
 
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 50000;
+
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket");
+    
+    if (0 != ::setsockopt(netlink_socket_fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&tv), sizeof(tv)))
+        throwFromErrno("Can't set timeout on PF_NETLINK socket");
 
     ::sockaddr_nl addr{};
     addr.nl_family = AF_NETLINK;
