@@ -267,7 +267,7 @@ void MergeTreeReader::Stream::loadMarks()
     auto load = [&]() -> MarkCache::MappedPtr
     {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(path).getSize();
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
@@ -427,6 +427,7 @@ void MergeTreeReader::readData(
     }
 
     settings.getter = get_stream_getter(false);
+    settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
     type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
@@ -542,7 +543,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
     }
 }
 
-void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
+void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names, const String * filter_name)
 {
     try
     {
@@ -551,6 +552,9 @@ void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
         for (const auto & name : ordered_names)
             if (res.has(name))
                 ordered_block.insert(res.getByName(name));
+
+        if (filter_name && !ordered_block.has(*filter_name) && res.has(*filter_name))
+            ordered_block.insert(res.getByName(*filter_name));
 
         std::swap(res, ordered_block);
     }

@@ -12,6 +12,9 @@
 # Clang6 without internal compiler (for low memory arm64):
 # env DIST=bionic DISABLE_PARALLEL=1 EXTRAPACKAGES="clang-6.0 libstdc++-8-dev" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
 
+# Build with ASan:
+# env SANITIZER=address ./release
+
 # Version increment:
 # Default release: 18.1.2 -> 18.2.0:
 # ./release --version
@@ -73,16 +76,24 @@ done
 # Build options
 if [ -n "$SANITIZER" ]
 then
-    VERSION_POSTFIX+="+${SANITIZER,,}"
+    if [[ "$SANITIZER" == "address" ]]; then VERSION_POSTFIX+="+asan"
+    elif [[ "$SANITIZER" == "thread" ]]; then VERSION_POSTFIX+="+tsan"
+    elif [[ "$SANITIZER" == "memory" ]]; then VERSION_POSTFIX+="+msan"
+    elif [[ "$SANITIZER" == "undefined" ]]; then VERSION_POSTFIX+="+ubsan"
+    else
+        echo "Unknown value of SANITIZER variable: $SANITIZER"
+        exit 3
+    fi
+
     export DEB_CC=${DEB_CC=clang-6.0}
     export DEB_CXX=${DEB_CXX=clang++-6.0}
     EXTRAPACKAGES="$EXTRAPACKAGES clang-6.0 lld-6.0"
 elif [[ $BUILD_TYPE == 'valgrind' ]]; then
     MALLOC_OPTS="-DENABLE_TCMALLOC=0 -DENABLE_JEMALLOC=0"
-    VERSION_POSTFIX+=+$BUILD_TYPE
+    VERSION_POSTFIX+="+valgrind"
 elif [[ $BUILD_TYPE == 'debug' ]]; then
     CMAKE_BUILD_TYPE=Debug
-    VERSION_POSTFIX+=+$BUILD_TYPE
+    VERSION_POSTFIX+="+debug"
 fi
 
 CMAKE_FLAGS=" $MALLOC_OPTS -DSANITIZE=$SANITIZER -DENABLE_EMBEDDED_COMPILER=1 $CMAKE_FLAGS"

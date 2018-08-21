@@ -45,6 +45,9 @@ public:
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
+    /// Unique type number or zero
+    virtual size_t getTypeId() const { return 0; }
+
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
       * Some data types are represented in multiple streams while being serialized.
@@ -131,6 +134,9 @@ public:
     {
         InputStreamGetter getter;
         SubstreamPath path;
+
+        /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
+        bool continuous_reading = true;
 
         bool position_independent_encoding = true;
         /// If not zero, may be used to avoid reallocations while reading column of String type.

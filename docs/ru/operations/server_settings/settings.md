@@ -345,7 +345,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 - hostname - опционально, имя хоста, с которого отсылаются логи
 - facility - [категория syslog](https://en.wikipedia.org/wiki/Syslog#Facility),
 записанная в верхнем регистре, с префиксом "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` и прочие).
-Значения по-умолчанию: при указанном ``address`` - ``LOG_USER``, иначе - ``LOG_DAEMON``
+Значения по умолчанию: при указанном ``address`` - ``LOG_USER``, иначе - ``LOG_DAEMON``
 - format - формат сообщений. Возможные значения - ``bsd`` и ``syslog``
 
 

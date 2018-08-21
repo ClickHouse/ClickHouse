@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SYNTAX_ERROR;
+    extern const int TOP_AND_LIMIT_TOGETHER;
 }
 
 
@@ -38,6 +39,8 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_limit("LIMIT");
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
+    ParserKeyword s_top("TOP");
+    ParserKeyword s_offset("OFFSET");
 
     ParserNotEmptyExpressionList exp_list(false);
     ParserNotEmptyExpressionList exp_list_for_with_clause(false, true); /// Set prefer_alias_to_column_name for each alias.
@@ -61,6 +64,26 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_distinct.ignore(pos, expected))
             select_query->distinct = true;
+
+        if (s_top.ignore(pos, expected))
+        {
+            ParserToken open_bracket(TokenType::OpeningRoundBracket);
+            ParserToken close_bracket(TokenType::ClosingRoundBracket);
+            ParserNumber num;
+
+            if (open_bracket.ignore(pos, expected))
+            {
+                if (!num.parse(pos, select_query->limit_length, expected))
+                    return false;
+                if (!close_bracket.ignore(pos, expected))
+                    return false;
+            }
+            else
+            {
+                if (!num.parse(pos, select_query->limit_length, expected))
+                    return false;
+            }
+        }
 
         if (!exp_list_for_select_clause.parse(pos, select_query->select_expression_list, expected))
             return false;
@@ -120,6 +143,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// LIMIT length | LIMIT offset, length | LIMIT count BY expr-list
     if (s_limit.ignore(pos, expected))
     {
+        if (select_query->limit_length)
+            throw Exception("Can not use TOP and LIMIT together", ErrorCodes::TOP_AND_LIMIT_TOGETHER);
+
         ParserToken s_comma(TokenType::Comma);
         ParserNumber num;
 
@@ -138,6 +164,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             select_query->limit_length = nullptr;
 
             if (!exp_list.parse(pos, select_query->limit_by_expression_list, expected))
+                return false;
+        }
+        else if (s_offset.ignore(pos, expected))
+        {
+            if (!num.parse(pos, select_query->limit_offset, expected))
                 return false;
         }
     }
