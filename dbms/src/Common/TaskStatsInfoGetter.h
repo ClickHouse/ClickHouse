@@ -26,7 +26,7 @@ public:
     static int getCurrentTID();
 
     /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
-    static bool checkProcessHasRequiredPermissions();
+    static bool checkPermissions();
 
 private:
     /// Caches current thread tid to avoid extra sys calls
