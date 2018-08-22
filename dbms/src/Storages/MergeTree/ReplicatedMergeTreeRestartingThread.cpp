@@ -198,10 +198,10 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     {
         removeFailedQuorumParts();
         activateReplica();
-
-        storage.cloneReplicaIfNeeded();
-
+        
         const auto & zookeeper = storage.getZooKeeper();
+
+        storage.cloneReplicaIfNeeded(zookeeper);
 
         storage.queue.load(zookeeper);
 
