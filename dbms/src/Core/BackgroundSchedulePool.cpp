@@ -43,17 +43,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
     if (deactivated || scheduled)
         return false;
 
-    scheduled = true;
-
-    if (delayed)
-        pool.cancelDelayedTask(shared_from_this(), lock);
-
-    /// If the task is not executing at the moment, enqueue it for immediate execution.
-    /// But if it is currently executing, do nothing because it will be enqueued
-    /// at the end of the execute() method.
-    if (!executing)
-        pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
-
+    scheduleImpl(lock);
     return true;
 }
 
@@ -87,6 +77,18 @@ void BackgroundSchedulePool::TaskInfo::activate()
 {
     std::lock_guard lock(schedule_mutex);
     deactivated = false;
+}
+
+bool BackgroundSchedulePool::TaskInfo::activateAndSchedule()
+{
+    std::lock_guard lock(schedule_mutex);
+
+    deactivated = false;
+    if (scheduled)
+        return false;
+
+    scheduleImpl(lock);
+    return true;
 }
 
 void BackgroundSchedulePool::TaskInfo::execute()
@@ -127,6 +129,20 @@ void BackgroundSchedulePool::TaskInfo::execute()
         if (scheduled)
             pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
     }
+}
+
+void BackgroundSchedulePool::TaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock)
+{
+    scheduled = true;
+
+    if (delayed)
+        pool.cancelDelayedTask(shared_from_this(), schedule_mutex_lock);
+
+    /// If the task is not executing at the moment, enqueue it for immediate execution.
+    /// But if it is currently executing, do nothing because it will be enqueued
+    /// at the end of the execute() method.
+    if (!executing)
+        pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
 }
 
 zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
