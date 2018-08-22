@@ -36,7 +36,7 @@ void ODBCBridgeHelper::startODBCBridge() const
     path.setFileName("clickhouse");
 
     if (!Poco::File(path).exists())
-        throw Exception("clickhouse-odbc-bridge is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
+        throw Exception("clickhouse binary is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
 
     std::stringstream command;
     command << path.toString() << " odbc-bridge ";
