@@ -8,6 +8,8 @@
 
 #if defined(__linux__)
 #include <linux/taskstats.h>
+#else
+struct taskstats {};
 #endif
 
 
@@ -154,7 +156,7 @@ struct TasksStatsCounters
 {
     ::taskstats stat;
 
-    static TasksStatsCounters current() { return {}; }
+    static TasksStatsCounters current();
     static void incrementProfileEvents(const TasksStatsCounters &, const TasksStatsCounters &, ProfileEvents::Counters &) {}
     static void updateProfileEvents(TasksStatsCounters &, ProfileEvents::Counters &) {}
 };

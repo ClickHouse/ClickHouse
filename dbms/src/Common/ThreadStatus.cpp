@@ -30,9 +30,7 @@ thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-#if __linux__
     current_thread->taskstats_getter->getStat(res.stat, current_thread->os_thread_id);
-#endif
     return res;
 }
 
