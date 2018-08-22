@@ -42,7 +42,7 @@ void registerFunctionsConversion(FunctionFactory & factory)
 
     factory.registerFunction<FunctionToDecimal32>();
     factory.registerFunction<FunctionToDecimal64>();
-    //factory.registerFunction<FunctionToDecimal128>(); /// TODO
+    factory.registerFunction<FunctionToDecimal128>();
 
     factory.registerFunction<FunctionToDate>();
     factory.registerFunction<FunctionToDateTime>();

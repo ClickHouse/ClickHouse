@@ -1069,6 +1069,15 @@ struct PositiveMonotonicity
     }
 };
 
+struct UnknownMonotonicity
+{
+    static bool has() { return false; }
+    static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
+    {
+        return { false };
+    }
+};
+
 template <typename T>
 struct ToIntMonotonicity
 {
@@ -1205,9 +1214,9 @@ using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToI
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToIntMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
-using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, ToIntMonotonicity<Int32>>;
-using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, ToIntMonotonicity<Int64>>;
-using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, ToIntMonotonicity<Int128>>;
+using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, UnknownMonotonicity>;
+using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, UnknownMonotonicity>;
+using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, UnknownMonotonicity>;
 
 
 template <typename DataType> struct FunctionTo;
