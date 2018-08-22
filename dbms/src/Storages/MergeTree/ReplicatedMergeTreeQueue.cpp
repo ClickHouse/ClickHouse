@@ -412,7 +412,6 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
     if (!log_entries.empty())
     {
-
         std::sort(log_entries.begin(), log_entries.end());
 
         /// ZK contains a limit on the number or total size of operations in a multi-request.
