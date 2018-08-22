@@ -1,4 +1,5 @@
 SET allow_experimental_decimal_type = 1;
+SET send_logs_level = 'none';
 
 SELECT toDecimal9('1.1', 1), toDecimal9('1.1', 2), toDecimal9('1.1', 8);
 SELECT toDecimal9('1.1', 0); -- { serverError 69 }
