@@ -31,6 +31,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NETLINK_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -170,7 +171,8 @@ bool TaskStatsInfoGetter::checkPermissions()
 TaskStatsInfoGetter::TaskStatsInfoGetter()
 {
     if (!checkPermissions())
-        return;
+        throw Exception("Logical error: TaskStatsInfoGetter is not usable without CAP_NET_ADMIN. Check permissions before creating the object.",
+            ErrorCodes::LOGICAL_ERROR);
 
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
@@ -195,9 +197,6 @@ TaskStatsInfoGetter::TaskStatsInfoGetter()
 
 void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 {
-    if (!checkPermissions())
-        return;
-
     sendCommand(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t));
 
     NetlinkMessage msg;

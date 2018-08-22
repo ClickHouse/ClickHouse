@@ -126,7 +126,6 @@ public:
     ~ThreadStatus();
 
 protected:
-
     ThreadStatus();
 
     void initPerformanceCounters();
@@ -160,11 +159,11 @@ protected:
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
+
+    /// Set only if we have enough capabilities.
     std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
-    bool has_permissions_for_taskstats = false;
 
 public:
-
     /// Implicitly finalizes current thread in the destructor
     class CurrentThreadScope
     {
