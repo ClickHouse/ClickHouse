@@ -152,6 +152,8 @@ struct TasksStatsCounters
 
 struct TasksStatsCounters
 {
+    ::taskstats stat;
+
     static TasksStatsCounters current();
     static void incrementProfileEvents(const TasksStatsCounters &, const TasksStatsCounters &, ProfileEvents::Counters &) {}
     static void updateProfileEvents(TasksStatsCounters &, ProfileEvents::Counters &) {}
