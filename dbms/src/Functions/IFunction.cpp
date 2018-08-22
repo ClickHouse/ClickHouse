@@ -5,6 +5,9 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Native.h>
+#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnWithDictionary.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
@@ -187,7 +190,7 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
     for (size_t i = 0; i < arguments_size; ++i)
         temporary_argument_numbers[i] = i;
 
-    execute(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
+    executeWithoutColumnsWithDictionary(temporary_block, temporary_argument_numbers, arguments_size, temporary_block.rows());
 
     block.getByPosition(result).column = ColumnConst::create(temporary_block.getByPosition(arguments_size).column, input_rows_count);
     return true;
@@ -211,7 +214,7 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
     if (null_presence.has_nullable)
     {
         Block temporary_block = createBlockWithNestedColumns(block, args, result);
-        execute(temporary_block, args, result, temporary_block.rows());
+        executeWithoutColumnsWithDictionary(temporary_block, args, result, temporary_block.rows());
         block.getByPosition(result).column = wrapInNullable(temporary_block.getByPosition(result).column, block, args,
                                                             result, input_rows_count);
         return true;
@@ -220,7 +223,7 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
     return false;
 }
 
-void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
+void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
 {
     if (defaultImplementationForConstantArguments(block, args, result, input_rows_count))
         return;
@@ -229,6 +232,121 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         return;
 
     executeImpl(block, args, result, input_rows_count);
+}
+
+static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Block & block, const ColumnNumbers & args, 
+                                                                             bool can_be_executed_on_default_arguments)
+{
+    size_t num_rows = 0;
+    ColumnPtr indexes;
+
+    for (auto arg : args)
+    {
+        ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        {
+            if (indexes)
+                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+
+            indexes = column_with_dict->getIndexesPtr();
+            num_rows = column_with_dict->getDictionary().size();
+        }
+    }
+
+    for (auto arg : args)
+    {
+        ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+            column.column = column_const->removeLowCardinality()->cloneResized(num_rows);
+        else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        {
+            auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
+
+            if (!type_with_dict)
+                throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
+
+            if (can_be_executed_on_default_arguments)
+                column.column = column_with_dict->getDictionary().getNestedColumn();
+            else
+            {
+                auto dict_encoded = column_with_dict->getMinimalDictionaryEncodedColumn(0, column_with_dict->size());
+                column.column = dict_encoded.dictionary;
+                indexes = dict_encoded.indexes;
+            }
+            column.type = type_with_dict->getDictionaryType();
+        }
+    }
+
+    return indexes;
+}
+
+static void convertColumnsWithDictionaryToFull(Block & block, const ColumnNumbers & args)
+{
+    for (auto arg : args)
+    {
+        ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
+            column.column = column_const->removeLowCardinality();
+        else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        {
+            auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
+
+            if (!type_with_dict)
+                throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
+                                ErrorCodes::LOGICAL_ERROR);
+
+            column.column = column_with_dict->convertToFullColumn();
+            column.type = type_with_dict->getDictionaryType();
+        }
+    }
+}
+
+void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count)
+{
+    if (useDefaultImplementationForColumnsWithDictionary())
+    {
+        auto & res = block.safeGetByPosition(result);
+        Block block_without_dicts = block.cloneWithoutColumns();
+
+        for (auto arg : args)
+            block_without_dicts.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
+
+        if (auto * res_type_with_dict = typeid_cast<const DataTypeWithDictionary *>(res.type.get()))
+        {
+            block_without_dicts.safeGetByPosition(result).type = res_type_with_dict->getDictionaryType();
+            ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
+                    block_without_dicts, args, canBeExecutedOnDefaultArguments());
+
+            executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
+
+            auto res_column = res.type->createColumn();
+            auto * column_with_dictionary = typeid_cast<ColumnWithDictionary *>(res_column.get());
+
+            if (!column_with_dictionary)
+                throw Exception("Expected LowCardinality column, got " + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
+
+            auto & keys = block_without_dicts.safeGetByPosition(result).column;
+            if (indexes)
+                column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
+            else
+            {
+                if (auto full_column = keys->convertToFullColumnIfConst())
+                    keys = full_column;
+                column_with_dictionary->insertRangeFromFullColumn(*keys, 0, keys->size());
+            }
+
+            res.column = std::move(res_column);
+        }
+        else
+        {
+            convertColumnsWithDictionaryToFull(block_without_dicts, args);
+            executeWithoutColumnsWithDictionary(block_without_dicts, args, result, input_rows_count);
+            res.column = block_without_dicts.safeGetByPosition(result).column;
+        }
+    }
+    else
+        executeWithoutColumnsWithDictionary(block, args, result, input_rows_count);
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
@@ -244,19 +362,19 @@ void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) con
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
-DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutDictionary(const ColumnsWithTypeAndName & arguments) const
 {
     checkNumberOfArguments(arguments.size());
 
     if (!arguments.empty() && useDefaultImplementationForNulls())
     {
-        NullPresence null_presense = getNullPresense(arguments);
+        NullPresence null_presence = getNullPresense(arguments);
 
-        if (null_presense.has_null_constant)
+        if (null_presence.has_null_constant)
         {
             return makeNullable(std::make_shared<DataTypeNothing>());
         }
-        if (null_presense.has_nullable)
+        if (null_presence.has_nullable)
         {
             Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
             auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
@@ -334,4 +452,38 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
 
 #endif
 
+
+DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
+{
+    if (useDefaultImplementationForColumnsWithDictionary())
+    {
+        bool has_low_cardinality = false;
+        size_t num_full_low_cardinality_columns = 0;
+
+        ColumnsWithTypeAndName args_without_dictionary(arguments);
+
+        for (ColumnWithTypeAndName & arg : args_without_dictionary)
+        {
+            bool is_const = arg.column && arg.column->isColumnConst();
+            if (is_const)
+                arg.column = static_cast<const ColumnConst &>(*arg.column).removeLowCardinality();
+
+            if (auto * type_with_dictionary = typeid_cast<const DataTypeWithDictionary *>(arg.type.get()))
+            {
+                arg.type = type_with_dictionary->getDictionaryType();
+                has_low_cardinality = true;
+
+                if (!is_const)
+                    ++num_full_low_cardinality_columns;
+            }
+        }
+
+        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1)
+            return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
+        else
+            return getReturnTypeWithoutDictionary(args_without_dictionary);
+    }
+
+    return getReturnTypeWithoutDictionary(arguments);
+}
 }

@@ -128,13 +128,13 @@ This is similar to the DUAL table found in other DBMSs.
 
 ## system.parts
 
-Contains information about parts of [MergeTree](../table_engines/mergetree.md#table_engines-mergetree) tables.
+Contains information about parts of [MergeTree](table_engines/mergetree.md#table_engines-mergetree) tables.
 
 Each row describes one part of the data.
 
 Columns:
 
-- partition (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/queries.md#query_language_queries_alter) query.
+- partition (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
 
 Formats:
 - `YYYYMM` for automatic partitioning by month.
@@ -435,4 +435,3 @@ numChildren:    7
 pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
-

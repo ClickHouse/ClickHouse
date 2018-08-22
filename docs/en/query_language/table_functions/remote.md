@@ -49,7 +49,7 @@ example01-{01..02}-1
 
 If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
 
-Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. The replicas are evaluated in the order currently set in the [load_balancing]( setting./../operations/settings/settings.md#settings-load_balancing).
+Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. The replicas are evaluated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing).
 
 Example:
 
@@ -72,4 +72,3 @@ The `remote` table function can be useful in the following cases:
 
 If the user is not specified, `default` is used.
 If the password is not specified, an empty password is used.
-

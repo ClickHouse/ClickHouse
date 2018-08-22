@@ -49,6 +49,10 @@
 * Fixed a bug in the `anyHeavy`  aggregate function ([a2101df2](https://github.com/yandex/ClickHouse/commit/a2101df25a6a0fba99aa71f8793d762af2b801ee))
 * Fixed server crash when using the `countArray()` aggregate function.
 
+### Backward incompatible changes:
+
+* Parameters for `Kafka` engine was changed from `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_schema, kafka_num_consumers])` to `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_row_delimiter, kafka_schema, kafka_num_consumers])`. If your tables use `kafka_schema` or `kafka_num_consumers` parameters, you have to manually edit the metadata files `path/metadata/database/table.sql` and add `kafka_row_delimiter` parameter with `''` value.
+
 ## ClickHouse release 18.1.0, 2018-07-23
 
 ### New features:
@@ -134,7 +138,7 @@
 ### New features:
 
 * Support for the `ALTER TABLE t DELETE WHERE` query for replicated tables. Added the `system.mutations` table to track progress of this type of queries.
-* Support for the `ALTER TABLE t [REPLACE|ATTACH] PARTITION` query for *MergeTree tables.
+* Support for the `ALTER TABLE t [REPLACE|ATTACH] PARTITION` query for \*MergeTree tables.
 * Support for the `TRUNCATE TABLE` query ([Winter Zhang](https://github.com/yandex/ClickHouse/pull/2260))
 * Several new `SYSTEM` queries for replicated tables (`RESTART REPLICAS`, `SYNC REPLICA`, `[STOP|START] [MERGES|FETCHES|SENDS REPLICATED|REPLICATION QUEUES]`).
 * Added the ability to write to a table with the MySQL engine and the corresponding table function ([sundy-li](https://github.com/yandex/ClickHouse/pull/2294)).
@@ -567,8 +571,8 @@ This release contains bug fixes for the previous release 1.1.54310:
 ### New features:
 
 * Custom partitioning key for the MergeTree family of table engines.
-* [ Kafka](https://clickhouse.yandex/docs/en/single/index.html# document-table_engines/kafka)  table engine.
-* Added support for loading [ CatBoost]( https://catboost.yandex/)  models and applying them to data stored in ClickHouse.
+* [ Kafka](https://clickhouse.yandex/docs/en/single/index.html#document-table_engines/kafka)  table engine.
+* Added support for loading [CatBoost](https://catboost.yandex/)  models and applying them to data stored in ClickHouse.
 * Added support for time zones with non-integer offsets from UTC.
 * Added support for arithmetic operations with time intervals.
 * The range of values for the Date and DateTime types is extended to the year 2105.
@@ -741,7 +745,7 @@ This release contains bug fixes for the previous release 1.1.54276:
 
 ### Bug fixes:
 
-* Distributed tables using a Merge table now work correctly for a SELECT query with a condition on the  _table field.
+* Distributed tables using a Merge table now work correctly for a SELECT query with a condition on the  `_table` field.
 * Fixed a rare race condition in ReplicatedMergeTree when checking data parts.
 * Fixed possible freezing on "leader election" when starting a server.
 * The max_replica_delay_for_distributed_queries setting was ignored when using a local replica of the data source. This has been fixed.
@@ -807,4 +811,3 @@ This release contains bug fixes for the previous release 1.1.54276:
 * Previously, a Replicated table could remain in the invalid state after a failed DROP TABLE.
 * Aliases for scalar subqueries with empty results are no longer lost.
 * Now a query that used compilation does not fail with an error if the .so file gets damaged.
-

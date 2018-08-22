@@ -68,11 +68,10 @@ In [clickhouse-local](../utils/clickhouse-local.md#utils-clickhouse-local) the e
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-## Usage
+## Details of Implementation
 
 - Multi-stream reading and single-stream writing are supported.
 - Not supported:
     - `ALTER` and `SELECT...SAMPLE` operations.
     - Indexes.
     - Replication.
-

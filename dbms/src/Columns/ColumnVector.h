@@ -8,6 +8,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
+
 /** Stuff for comparing numbers.
   * Integer values are compared as usual.
   * Floating-point numbers are compared this way that NaNs always end up at the end
@@ -117,22 +123,55 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 }
 
 
+/// PaddedPODArray extended by Decimal scale
+template <typename T>
+class DecimalPaddedPODArray : public PaddedPODArray<T>
+{
+public:
+    using Base = PaddedPODArray<T>;
+    using Base::operator[];
+    using Base::Base;
+
+    DecimalPaddedPODArray(std::initializer_list<T> il)
+        : DecimalPaddedPODArray(std::begin(il), std::end(il))
+    {}
+
+    DecimalPaddedPODArray(DecimalPaddedPODArray && other)
+    {
+        this->swap(other);
+        std::swap(scale, other.scale);
+    }
+
+    DecimalPaddedPODArray & operator=(DecimalPaddedPODArray && other)
+    {
+        this->swap(other);
+        std::swap(scale, other.scale);
+        return *this;
+    }
+
+    void setScale(UInt32 s) { scale = s; }
+    UInt32 getScale() const { return scale; }
+
+private:
+    UInt32 scale = DecimalField::wrongScale();
+};
+
+
 /** A template for columns that use a simple array to store.
-  */
+ */
 template <typename T>
 class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
 {
 private:
-    friend class COWPtrHelper<IColumn, ColumnVector<T>>;
-
     using Self = ColumnVector<T>;
+    friend class COWPtrHelper<IColumn, Self>;
 
     struct less;
     struct greater;
 
 public:
     using value_type = T;
-    using Container = PaddedPODArray<value_type>;
+    using Container = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<value_type>, PaddedPODArray<value_type>>;
 
 private:
     ColumnVector() {}
@@ -216,12 +255,20 @@ public:
 
     Field operator[](size_t n) const override
     {
-        return typename NearestFieldType<T>::Type(data[n]);
+        if constexpr (IsDecimalNumber<T>)
+        {
+            UInt32 scale = data.getScale();
+            if (scale == DecimalField::wrongScale())
+                throw Exception("Extracting Decimal field with unknown scale. Scale is lost.", ErrorCodes::LOGICAL_ERROR);
+            return DecimalField(data[n], scale);
+        }
+        else
+            return typename NearestFieldType<T>::Type(data[n]);
     }
 
     void get(size_t n, Field & res) const override
     {
-        res = typename NearestFieldType<T>::Type(data[n]);
+        res = (*this)[n];
     }
 
     UInt64 get64(size_t n) const override;
@@ -251,6 +298,11 @@ public:
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
 
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
@@ -295,5 +347,23 @@ protected:
     Container data;
 };
 
+template <typename T>
+template <typename Type>
+ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    size_t size = indexes.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    auto res = this->create(limit);
+    typename Self::Container & res_data = res->getData();
+    for (size_t i = 0; i < limit; ++i)
+        res_data[i] = data[indexes[i]];
+
+    return std::move(res);
+}
 
 }

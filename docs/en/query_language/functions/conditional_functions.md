@@ -9,7 +9,7 @@ Returns `then` if `cond != 0`, or `else` if `cond = 0`.
 
 ## multiIf
 
-Allows you to write the [CASE](../operators/index.html#operator_case) operator more compactly in the query.
+Allows you to write the [CASE](../operators.md#operator_case) operator more compactly in the query.
 
 ```
 multiIf(cond_1, then_1, cond_2, then_2...else)
@@ -46,4 +46,3 @@ Run the query `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`. Result:
 │                                       ᴺᵁᴸᴸ │
 └────────────────────────────────────────────┘
 ```
-

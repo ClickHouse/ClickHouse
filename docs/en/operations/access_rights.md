@@ -1,4 +1,4 @@
-# Access rights
+# Access Rights
 
 Users and access rights are set up in the user config. This is usually `users.xml`.
 

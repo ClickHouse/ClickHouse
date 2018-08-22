@@ -36,7 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-};
+}
 
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
@@ -190,10 +190,11 @@ BlockInputStreams StorageFile::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum & /*processed_stage*/,
+    QueryProcessingStage::Enum processed_stage,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
+    checkQueryProcessingStage(processed_stage, context);
     return BlockInputStreams(1, std::make_shared<StorageFileBlockInputStream>(*this, context, max_block_size));
 }
 

@@ -9,7 +9,7 @@ Types are equivalent to types of C:
 
 We recommend that you store data in integer form whenever possible. For example, convert fixed precision numbers to integer values, such as monetary amounts or page load times in milliseconds.
 
-## Using floating-point numbers
+## Using Floating-point Numbers
 
 - Computations with floating-point numbers might produce a rounding error.
 

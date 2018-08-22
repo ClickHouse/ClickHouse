@@ -1,5 +1,7 @@
 #include <Common/ProfileEvents.h>
-
+#include <Common/CurrentThread.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnArray.h>
 
 /// Available events. Add something here as you wish.
 #define APPLY_FOR_EVENTS(M) \
@@ -37,6 +39,11 @@
     M(CreatedReadBufferAIO) \
     M(CreatedWriteBufferOrdinary) \
     M(CreatedWriteBufferAIO) \
+    M(DiskReadElapsedMicroseconds) \
+    M(DiskWriteElapsedMicroseconds) \
+    M(NetworkReceiveElapsedMicroseconds) \
+    M(NetworkSendElapsedMicroseconds) \
+    M(ThrottlerSleepMicroseconds) \
     \
     M(ReplicatedPartFetches) \
     M(ReplicatedPartFailedFetches) \
@@ -67,7 +74,9 @@
     M(ZooKeeperCheck) \
     M(ZooKeeperClose) \
     M(ZooKeeperWatchResponse) \
-    M(ZooKeeperExceptions) \
+    M(ZooKeeperUserExceptions) \
+    M(ZooKeeperHardwareExceptions) \
+    M(ZooKeeperOtherExceptions) \
     M(ZooKeeperWaitMicroseconds) \
     M(ZooKeeperBytesSent) \
     M(ZooKeeperBytesReceived) \
@@ -143,31 +152,93 @@
     M(RWLockAcquiredWriteLocks) \
     M(RWLockReadersWaitMilliseconds) \
     M(RWLockWritersWaitMilliseconds) \
+    M(NetworkErrors) \
     \
-    M(NetworkErrors)
+    M(RealTimeMicroseconds) \
+    M(UserTimeMicroseconds) \
+    M(SystemTimeMicroseconds) \
+    M(SoftPageFaults) \
+    M(HardPageFaults) \
+    M(VoluntaryContextSwitches) \
+    M(InvoluntaryContextSwitches) \
+    \
+    M(OSIOWaitMicroseconds) \
+    M(OSCPUWaitMicroseconds) \
+    M(OSCPUVirtualTimeMicroseconds) \
+    M(OSReadBytes) \
+    M(OSWriteBytes) \
+    M(OSReadChars) \
+    M(OSWriteChars) \
+
 
 namespace ProfileEvents
 {
-    #define M(NAME) extern const Event NAME = __COUNTER__;
+
+#define M(NAME) extern const Event NAME = __COUNTER__;
+    APPLY_FOR_EVENTS(M)
+#undef M
+constexpr Event END = __COUNTER__;
+
+/// Global variable, initialized by zeros.
+Counter global_counters_array[END] {};
+/// Initialize global counters statically
+Counters global_counters(global_counters_array);
+
+const Event Counters::num_counters = END;
+
+
+Counters::Counters(VariableContext level, Counters * parent)
+    : counters_holder(new Counter[num_counters] {}),
+      parent(parent),
+      level(level)
+{
+    counters = counters_holder.get();
+}
+
+void Counters::resetCounters()
+{
+    if (counters)
+    {
+        for (Event i = 0; i < num_counters; ++i)
+            counters[i].store(0, std::memory_order_relaxed);
+    }
+}
+
+void Counters::reset()
+{
+    parent = nullptr;
+    resetCounters();
+}
+
+Counters Counters::getPartiallyAtomicSnapshot() const
+{
+    Counters res(VariableContext::Snapshot, nullptr);
+    for (Event i = 0; i < num_counters; ++i)
+        res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return res;
+}
+
+const char * getDescription(Event event)
+{
+    static const char * descriptions[] =
+    {
+    #define M(NAME) #NAME,
         APPLY_FOR_EVENTS(M)
     #undef M
-    constexpr Event END = __COUNTER__;
+    };
 
-    std::atomic<Count> counters[END] {};    /// Global variable, initialized by zeros.
+    return descriptions[event];
+}
 
-    const char * getDescription(Event event)
-    {
-        static const char * descriptions[] =
-        {
-        #define M(NAME) #NAME,
-            APPLY_FOR_EVENTS(M)
-        #undef M
-        };
 
-        return descriptions[event];
-    }
+Event end() { return END; }
 
-    Event end() { return END; }
+
+void increment(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
 }
 
 #undef APPLY_FOR_EVENTS

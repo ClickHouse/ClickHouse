@@ -1,6 +1,6 @@
 <a name="table_engines-replication"></a>
 
-# Data replication
+# Data Replication
 
 Replication is only supported for tables in the MergeTree family:
 
@@ -48,7 +48,7 @@ You can specify any existing ZooKeeper cluster and the system will use a directo
 
 If ZooKeeper isn't set in the config file, you can't create replicated tables, and any existing replicated tables will be read-only.
 
-ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](../settings/settings/settings.md#settings_settings_max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](../settings/settings/settings.md#settings-settings-fallback_to_stale_replicas_for_distributed_queries).
+ZooKeeper is not used in `SELECT` queries because replication does not affect the performance of `SELECT` and queries run just as fast as they do for non-replicated tables. When querying distributed replicated tables, ClickHouse behavior is controlled by the settings [max_replica_delay_for_distributed_queries](../settings/settings.md#settings_settings_max_replica_delay_for_distributed_queries) and [fallback_to_stale_replicas_for_distributed_queries](../settings/settings.md#settings-settings-fallback_to_stale_replicas_for_distributed_queries).
 
 For each `INSERT` query, approximately ten entries are added to ZooKeeper through several transactions. (To be more precise, this is for each inserted block of data; an INSERT query contains one block or one block per `max_insert_block_size = 1048576` rows.) This leads to slightly longer latencies for `INSERT` compared to non-replicated tables. But if you follow the recommendations to insert data in batches of no more than one `INSERT` per second, it doesn't create any problems. The entire ClickHouse cluster used for coordinating one ZooKeeper cluster has a total of several hundred `INSERTs` per second. The throughput on data inserts (the number of rows per second) is just as high as for non-replicated data.
 
@@ -70,7 +70,7 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 <a name="table_engines-replication-creation_of_rep_tables"></a>
 
-## Creating replicated tables
+## Creating Replicated Tables
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
@@ -113,7 +113,7 @@ If you add a new replica after the table already contains some data on other rep
 
 To delete a replica, run `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recovery after failures
+## Recovery After Failures
 
 If ZooKeeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ZooKeeper.
 
@@ -137,7 +137,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then restart the server. On start, the server deletes these flags and starts recovery.
 
-## Recovery after complete data loss
+## Recovery After Complete Data Loss
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -175,7 +175,6 @@ If you want to get rid of a `ReplicatedMergeTree` table without launching the se
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
-## Recovery when metadata in the ZooKeeper cluster is lost or damaged
+## Recovery When Metadata in The ZooKeeper Cluster is Lost or Damaged
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
-

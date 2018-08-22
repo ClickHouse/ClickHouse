@@ -23,7 +23,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -106,7 +106,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -138,7 +138,9 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
+
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -196,7 +198,6 @@ private:
     void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
-    friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -301,7 +302,7 @@ private:
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
-    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
+    ReplicatedMergeTreeRestartingThread restarting_thread;
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();

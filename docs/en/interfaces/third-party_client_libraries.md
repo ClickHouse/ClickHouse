@@ -1,4 +1,4 @@
-# Libraries from third-party developers
+# Libraries from Third-party Developers
 
 We have not tested the libraries listed below.
 

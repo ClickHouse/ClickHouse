@@ -4,7 +4,7 @@
 
 The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`and`Distributed`. The query has several variations.
 
-### Column manipulations
+### Column Manipulations
 
 Changing the table structure.
 
@@ -68,7 +68,7 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-### Manipulations with partitions and parts
+### Manipulations With Partitions and Parts
 
 It only works for tables in the `MergeTree` family. The following operations are available:
 
@@ -187,7 +187,7 @@ To restore from a backup:
 In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
 
-### Backups and replication
+### Backups and Replication
 
 Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
 
@@ -213,7 +213,7 @@ Before downloading, the system checks that the partition exists and the table st
 
 The `ALTER ... FETCH PARTITION` query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the `ALTER TABLE ... ATTACH` query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
 
-### Synchronicity of ALTER queries
+### Synchronicity of ALTER Queries
 
 For non-replicatable tables, all `ALTER` queries are performed synchronously. For replicatable tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
@@ -246,7 +246,9 @@ The mutations have a linear order and they are applied to each part in the order
 
 The query is completed immediately after adding information about the mutation (for replicated tables, in Zookeeper; for non-replicated tables, in the file system). The mutation itself is executed asynchronously using the system profile settings. You can monitor the progress in the `system.mutations` table. Added mutations are fully completed even if ClickHouse is restarted. You can't revert a mutation after it has been added.
 
-#### system.mutations table
+Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+
+#### system.mutations Table
 
 This table contains information about the progress of mutations on MergeTree tables. Each mutation command corresponds to a single row. The table has the following columns:
 

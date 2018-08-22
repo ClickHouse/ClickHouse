@@ -1,6 +1,6 @@
-# General questions
+# General Questions
 
-## Why not use something like MapReduce?
+## Why Not Use Something Like MapReduce?
 
 We can refer to systems like MapReduce as distributed computing systems in which the reduce operation is based on distributed sorting. The most common open source solution in this class is [Apache Hadoop](http://hadoop.apache.org). Yandex uses their in-house solution, YT.
 

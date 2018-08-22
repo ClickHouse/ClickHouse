@@ -1,4 +1,6 @@
-option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
+if (NOT OS_FREEBSD AND NOT APPLE)
+    option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
+endif ()
 
 if (NOT USE_INTERNAL_ZLIB_LIBRARY)
     find_package (ZLIB)
@@ -17,7 +19,7 @@ if (NOT ZLIB_FOUND)
     set (USE_INTERNAL_ZLIB_LIBRARY 1)
     set (ZLIB_COMPAT 1) # for zlib-ng, also enables WITH_GZFILEOP
     set (WITH_NATIVE_INSTRUCTIONS ${ARCHNATIVE})
-    if (ARCH_FREEBSD OR ARCH_I386)
+    if (OS_FREEBSD OR ARCH_I386)
         set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
     endif ()
     if (ARCH_AARCH64)
