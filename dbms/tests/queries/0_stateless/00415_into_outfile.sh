@@ -28,10 +28,11 @@ perform "describe_table" "DESCRIBE TABLE system.one INTO OUTFILE '${CLICKHOUSE_T
 
 echo "performing test: clickhouse-local"
 echo -e '1\t2' | ${CLICKHOUSE_LOCAL} -s --structure 'col1 UInt32, col2 UInt32' --query "SELECT col1 + 1, col2 + 1 FROM table INTO OUTFILE '${CLICKHOUSE_TMP}/test_into_outfile_clickhouse-local.out'"
-if [ "$?" -eq 0 ]; then
+err=$?
+if [ "$err" -eq 0 ]; then
     cat "${CLICKHOUSE_TMP}/test_into_outfile_clickhouse-local.out"
 else
-    echo "query failed"
+    echo "query failed with exit code $err"
 fi
 rm -f "${CLICKHOUSE_TMP}/test_into_outfile_clickhouse-local.out"
 
