@@ -11,8 +11,8 @@ file(path, format, structure)
 **Входные параметры**
 
 - `path` — относительный путь до файла от [user_files_path](../../operations/server_settings/settings.md#user_files_path).
-- `format` — [формат](../../interfaces/formats.md#formats) файла. Поддерживаются те же форматы, что и для запроса `INSERT`.
-- `structure` — структура таблицы. Формат `'colunm-1-name column-1-data-type, colunm-2-name column-2-data-type, ...'`.
+- `format` — [формат](../../interfaces/formats.md#formats) файла.
+- `structure` — структура таблицы. Формат `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
 
 **Возвращаемое значение**
 
