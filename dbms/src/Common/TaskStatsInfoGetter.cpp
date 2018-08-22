@@ -135,9 +135,6 @@ UInt16 getFamilyId(int nl_sock_fd)
 }
 
 
-TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
-
-
 void TaskStatsInfoGetter::init()
 {
     if (netlink_socket_fd >= 0)
@@ -164,7 +161,7 @@ void TaskStatsInfoGetter::init()
 }
 
 
-void TaskStatsInfoGetter::getStat(::taskstats & out_stats, int tid)
+void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 {
     init();
 
@@ -212,10 +209,10 @@ void TaskStatsInfoGetter::getStat(::taskstats & out_stats, int tid)
 }
 
 
-int TaskStatsInfoGetter::getCurrentTID()
+pid_t TaskStatsInfoGetter::getCurrentTID()
 {
     /// This call is always successful. - man gettid
-    return static_cast<int>(syscall(SYS_gettid));
+    return static_cast<pid_t>(syscall(SYS_gettid));
 }
 
 
