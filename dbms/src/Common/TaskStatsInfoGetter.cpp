@@ -7,6 +7,7 @@
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 #include <linux/taskstats.h>
+#include <linux/capability.h>
 #endif
 
 #include <stdio.h>
@@ -182,7 +183,7 @@ void TaskStatsInfoGetter::init()
 
 
 #if defined(__linux__)
-bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error)
+void TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats)
 {
     init();
 
@@ -194,10 +195,7 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
     if (msg.n.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&msg.n), rv))
     {
         const ::nlmsgerr * err = static_cast<const ::nlmsgerr *>(NLMSG_DATA(&msg));
-        if (throw_on_error)
-            throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
-        else
-            return false;
+        throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
     }
 
     rv = GENLMSG_PAYLOAD(&msg.n);
@@ -230,22 +228,15 @@ bool TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats, bool thr
 
         attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(GENLMSG_DATA(&msg)) + len);
     }
-
-    return true;
 }
 
 
 void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
 {
     tid = tid < 0 ? getDefaultTID() : tid;
-    getStatImpl(tid, stat, true);
+    getStatImpl(tid, stat);
 }
 
-bool TaskStatsInfoGetter::tryGetStat(::taskstats & stat, int tid)
-{
-    tid = tid < 0 ? getDefaultTID() : tid;
-    return getStatImpl(tid, stat, false);
-}
 #endif
 
 int TaskStatsInfoGetter::getCurrentTID()
@@ -266,12 +257,22 @@ int TaskStatsInfoGetter::getDefaultTID()
     return default_tid;
 }
 
-static bool tryGetTaskStats()
+
+static bool checkPermissionsImpl()
 {
 #if defined(__linux__)
-    TaskStatsInfoGetter getter;
-    ::taskstats stat;
-    return getter.tryGetStat(stat);
+    /// See man getcap.
+    __user_cap_header_struct request{};
+    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
+    request.pid = getpid();
+
+    __user_cap_data_struct response{};
+
+    /// Avoid dependency on 'libcap'.
+    if (0 != syscall(SYS_capget, &request, &response))
+        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
+
+    return (1 << CAP_NET_ADMIN) & response.effective;
 #else
     return false;
 #endif
@@ -280,7 +281,7 @@ static bool tryGetTaskStats()
 bool TaskStatsInfoGetter::checkPermissions()
 {
     /// It is thread- and exception- safe since C++11
-    static bool res = tryGetTaskStats();
+    static bool res = checkPermissionsImpl();
     return res;
 }
 
