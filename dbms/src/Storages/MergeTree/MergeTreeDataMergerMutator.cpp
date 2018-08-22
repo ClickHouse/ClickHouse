@@ -20,7 +20,7 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/ApplyingMutationsBlockInputStream.h>
-#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
@@ -885,7 +885,8 @@ static BlockInputStreamPtr createInputStreamWithMutatedData(
 
     select->select_expression_list = std::make_shared<ASTExpressionList>();
     select->children.push_back(select->select_expression_list);
-    select->select_expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+    for (const auto & column : storage->getColumns().getAllPhysical())
+        select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     /// For all commands that are in front of the list and are DELETE commands, we can push them down
     /// to the SELECT statement and remove them from commands.
