@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Core/Types.h>
 
 struct taskstats;
@@ -19,7 +20,6 @@ public:
 
 #if defined(__linux__)
     void getStat(::taskstats & stat, int tid = -1);
-    bool tryGetStat(::taskstats & stat, int tid = -1);
 #endif
 
     ~TaskStatsInfoGetter();
@@ -36,9 +36,8 @@ private:
     int default_tid = -1;
 
 #if defined(__linux__)
-    bool getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error = false);
+    void getStatImpl(int tid, ::taskstats & out_stats);
 #endif
-
     void init();
 
     int netlink_socket_fd = -1;
