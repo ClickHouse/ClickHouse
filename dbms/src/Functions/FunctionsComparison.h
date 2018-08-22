@@ -221,7 +221,8 @@ struct DecCompareInt
 };
 
 ///
-template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
+template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
+    bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
 class DecimalComparison
 {
 public:
@@ -404,24 +405,35 @@ private:
     {
         CompareInt x = a;
         CompareInt y = b;
-        bool overflow = false;
 
-        if constexpr (sizeof(A) > sizeof(CompareInt))
-            overflow |= (A(x) != a);
-        if constexpr (sizeof(B) > sizeof(CompareInt))
-            overflow |= (B(y) != b);
-        if constexpr (std::is_unsigned_v<A>)
-            overflow |= (x < 0);
-        if constexpr (std::is_unsigned_v<B>)
-            overflow |= (y < 0);
+        if constexpr (_check_overflow)
+        {
+            bool overflow = false;
 
-        if constexpr (scale_left)
-            overflow |= common::mulOverflow(x, scale, x);
-        if constexpr (scale_right)
-            overflow |= common::mulOverflow(y, scale, y);
+            if constexpr (sizeof(A) > sizeof(CompareInt))
+                overflow |= (A(x) != a);
+            if constexpr (sizeof(B) > sizeof(CompareInt))
+                overflow |= (B(y) != b);
+            if constexpr (std::is_unsigned_v<A>)
+                overflow |= (x < 0);
+            if constexpr (std::is_unsigned_v<B>)
+                overflow |= (y < 0);
 
-        if (overflow)
-            throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+            if constexpr (scale_left)
+                overflow |= common::mulOverflow(x, scale, x);
+            if constexpr (scale_right)
+                overflow |= common::mulOverflow(y, scale, y);
+
+            if (overflow)
+                throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+        }
+        else
+        {
+            if constexpr (scale_left)
+                x *= scale;
+            if constexpr (scale_right)
+                y *= scale;
+        }
 
         return Op::apply(x, y);
     }
@@ -1030,7 +1042,10 @@ private:
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            DecimalComparison<LeftDataType, RightDataType, Op>(block, result, col_left, col_right);
+            if (decimalCheckComparisonOverflow(context))
+                DecimalComparison<LeftDataType, RightDataType, Op, true>(block, result, col_left, col_right);
+            else
+                DecimalComparison<LeftDataType, RightDataType, Op, false>(block, result, col_left, col_right);
             return true;
         };
 

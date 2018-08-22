@@ -8,6 +8,7 @@
 #include <IO/readFloatText.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -18,6 +19,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+
+bool decimalCheckComparisonOverflow(const Context & context) { return context.getSettingsRef().decimal_check_comparison_overflow; }
+bool decimalCheckArithmeticOverflow(const Context & context) { return context.getSettingsRef().decimal_check_arithmetic_overflow; }
 
 
 //

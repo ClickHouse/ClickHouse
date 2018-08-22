@@ -63,6 +63,11 @@ class DataTypeSimpleSerialization : public IDataType
 };
 
 
+class Context;
+bool decimalCheckComparisonOverflow(const Context & context);
+bool decimalCheckArithmeticOverflow(const Context & context);
+
+
 static constexpr size_t minDecimalPrecision() { return 1; }
 template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
 template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
