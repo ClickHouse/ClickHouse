@@ -19,7 +19,7 @@
 
 - Поддерживает репликацию данных.
 
-    Для этого требуется [преобразование](replication.md#convert-mergetree-to-replicated) `MergeTree` к `ReplicatedMergeTree`. Подробнее читайте в разделе [Репликация данных](replication.md#table_engines-replication).
+    Для этого используется семейство таблиц `ReplicatedMergeTree`. Подробнее читайте в разделе [Репликация данных](replication.md#table_engines-replication).
 
 - Поддерживает сэмплирование данных.
 
