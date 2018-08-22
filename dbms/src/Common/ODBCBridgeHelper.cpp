@@ -3,6 +3,7 @@
 #include <sstream>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Poco/File.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -32,13 +33,13 @@ ODBCBridgeHelper::ODBCBridgeHelper(
 void ODBCBridgeHelper::startODBCBridge() const
 {
     Poco::Path path{config.getString("application.dir", "")};
-    path.setFileName("clickhouse-odbc-bridge");
+    path.setFileName("clickhouse");
 
-    if (!path.isFile())
-        throw Exception("clickhouse-odbc-bridge is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
+    if (!Poco::File(path).exists())
+        throw Exception("clickhouse binary is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
 
     std::stringstream command;
-    command << path.toString() << ' ';
+    command << path.toString() << " odbc-bridge ";
     command << "--http-port " << config.getUInt("odbc_bridge.port", DEFAULT_PORT) << ' ';
     command << "--listen-host " << config.getString("odbc_bridge.listen_host", DEFAULT_HOST) << ' ';
     command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
