@@ -206,9 +206,30 @@ static DataTypePtr create(const ASTPtr & arguments)
     return createDecimal(precision_value, scale_value);
 }
 
+template <typename T>
+static DataTypePtr createExect(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.size() != 1)
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    const ASTLiteral * scale_arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+
+    if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
+        throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    UInt64 precision = maxDecimalPrecision<T>();
+    UInt64 scale = scale_arg->value.get<UInt64>();
+
+    return createDecimal(precision, scale);
+}
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
+    factory.registerDataType("Decimal32", createExect<Decimal32>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal64", createExect<Decimal64>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal128", createExect<Decimal128>, DataTypeFactory::CaseInsensitive);
+
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
 }

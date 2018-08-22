@@ -698,9 +698,9 @@ struct ConvertImpl<DataTypeFixedString, DataTypeString, Name>
 struct NameToDate { static constexpr auto name = "toDate"; };
 struct NameToDateTime { static constexpr auto name = "toDateTime"; };
 struct NameToString { static constexpr auto name = "toString"; };
-struct NameToDecimal9 { static constexpr auto name = "toDecimal9"; };
-struct NameToDecimal18 { static constexpr auto name = "toDecimal18"; };
-struct NameToDecimal38 { static constexpr auto name = "toDecimal38"; };
+struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
+struct NameToDecimal64 { static constexpr auto name = "toDecimal64"; };
+struct NameToDecimal128 { static constexpr auto name = "toDecimal128"; };
 
 
 #define DEFINE_NAME_TO_INTERVAL(INTERVAL_KIND) \
@@ -729,7 +729,7 @@ public:
 
     static constexpr auto name = Name::name;
     static constexpr bool to_decimal =
-        std::is_same_v<Name, NameToDecimal9> || std::is_same_v<Name, NameToDecimal18> || std::is_same_v<Name, NameToDecimal38>;
+        std::is_same_v<Name, NameToDecimal32> || std::is_same_v<Name, NameToDecimal64> || std::is_same_v<Name, NameToDecimal128>;
 
     static FunctionPtr create(const Context &) { return std::make_shared<FunctionConvert>(); }
 
@@ -763,11 +763,11 @@ public:
         {
             UInt64 scale = extractToDecimalScale(arguments[1]);
 
-            if constexpr (std::is_same_v<Name, NameToDecimal9>)
+            if constexpr (std::is_same_v<Name, NameToDecimal32>)
                 return createDecimal(9, scale);
-            else if constexpr (std::is_same_v<Name, NameToDecimal18>)
+            else if constexpr (std::is_same_v<Name, NameToDecimal64>)
                 return createDecimal(18, scale);
-            else if constexpr ( std::is_same_v<Name, NameToDecimal38>)
+            else if constexpr ( std::is_same_v<Name, NameToDecimal128>)
                 return createDecimal(38, scale);
 
             throw Exception("Someting wrong with toDecimalNN()", ErrorCodes::LOGICAL_ERROR);
@@ -1205,9 +1205,9 @@ using FunctionToDateTime = FunctionConvert<DataTypeDateTime, NameToDateTime, ToI
 using FunctionToUUID = FunctionConvert<DataTypeUUID, NameToUUID, ToIntMonotonicity<UInt128>>;
 using FunctionToString = FunctionConvert<DataTypeString, NameToString, ToStringMonotonicity>;
 using FunctionToUnixTimestamp = FunctionConvert<DataTypeUInt32, NameToUnixTimestamp, ToIntMonotonicity<UInt32>>;
-using FunctionToDecimal9 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal9, ToIntMonotonicity<Int32>>;
-using FunctionToDecimal18 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal18, ToIntMonotonicity<Int64>>;
-using FunctionToDecimal38 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal38, ToIntMonotonicity<Int128>>;
+using FunctionToDecimal32 = FunctionConvert<DataTypeDecimal<Decimal32>, NameToDecimal32, ToIntMonotonicity<Int32>>;
+using FunctionToDecimal64 = FunctionConvert<DataTypeDecimal<Decimal64>, NameToDecimal64, ToIntMonotonicity<Int64>>;
+using FunctionToDecimal128 = FunctionConvert<DataTypeDecimal<Decimal128>, NameToDecimal128, ToIntMonotonicity<Int128>>;
 
 
 template <typename DataType> struct FunctionTo;
@@ -1227,9 +1227,9 @@ template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTim
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeString> { using Type = FunctionToString; };
 template <> struct FunctionTo<DataTypeFixedString> { using Type = FunctionToFixedString; };
-template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal9; };
-template <> struct FunctionTo<DataTypeDecimal<Decimal64>> { using Type = FunctionToDecimal18; };
-template <> struct FunctionTo<DataTypeDecimal<Decimal128>> { using Type = FunctionToDecimal38; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal32>> { using Type = FunctionToDecimal32; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal64>> { using Type = FunctionToDecimal64; };
+template <> struct FunctionTo<DataTypeDecimal<Decimal128>> { using Type = FunctionToDecimal128; };
 
 template <typename FieldType> struct FunctionTo<DataTypeEnum<FieldType>>
     : FunctionTo<DataTypeNumber<FieldType>>
