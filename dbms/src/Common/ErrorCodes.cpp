@@ -391,6 +391,8 @@ namespace ErrorCodes
     extern const int CANNOT_READLINE = 414;
     extern const int ALL_REPLICAS_LOST = 415;
     extern const int CAN_NOT_CLONE_REPLICA = 416;
+    extern const int REPLICA_IS_ACTIVE = 417;
+    extern const int SOURCE_REPLICA_IS_LOST = 418;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
