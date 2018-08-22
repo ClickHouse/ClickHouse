@@ -91,7 +91,7 @@ struct RUsageCounters
     {
         ::rusage rusage;
 #if defined(__APPLE__)
-        ::getrusage(RUSAGE_SELF, &rusage); //TODO?
+        //::getrusage(RUSAGE_SELF, &rusage); //TODO?
 #else
         ::getrusage(RUSAGE_THREAD, &rusage);
 #endif
