@@ -215,7 +215,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         [this] (const std::string & name) { enqueuePartForCheck(name); }),
     reader(data), writer(data), merger_mutator(data, context.getBackgroundPool()), queue(*this),
     fetcher(data),
-    cleanup_thread(*this), alter_thread(*this), part_check_thread(*this),
+    cleanup_thread(*this), alter_thread(*this), part_check_thread(*this), restarting_thread(*this),
     log(&Logger::get(database_name + "." + table_name + " (StorageReplicatedMergeTree)"))
 {
     if (path_.empty())
@@ -2063,9 +2063,7 @@ void StorageReplicatedMergeTree::queueUpdatingTask()
 
         if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
         {
-            /// Can be called before starting restarting_thread
-            if (restarting_thread)
-                restarting_thread->wakeup();
+            restarting_thread.wakeup();
             return;
         }
 
@@ -2787,8 +2785,10 @@ void StorageReplicatedMergeTree::startup()
     data_parts_exchange_endpoint_holder = std::make_shared<InterserverIOEndpointHolder>(
         data_parts_exchange_endpoint->getId(replica_path), data_parts_exchange_endpoint, context.getInterserverIOHandler());
 
+    queue_task_handle = context.getBackgroundPool().addTask([this] { return queueTask(); });
+
     /// In this thread replica will be activated.
-    restarting_thread = std::make_unique<ReplicatedMergeTreeRestartingThread>(*this);
+    restarting_thread.start();
 
     /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attmept to do it
     startup_event.wait();
@@ -2797,15 +2797,21 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    restarting_thread.reset();
+    /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
+    fetcher.blocker.cancelForever();
+    merger_mutator.actions_blocker.cancelForever();
+
+    restarting_thread.shutdown();
+
+    if (queue_task_handle)
+        context.getBackgroundPool().removeTask(queue_task_handle);
+    queue_task_handle.reset();
 
     if (data_parts_exchange_endpoint_holder)
     {
         data_parts_exchange_endpoint_holder->getBlocker().cancelForever();
         data_parts_exchange_endpoint_holder = nullptr;
     }
-
-    fetcher.blocker.cancelForever();
 }
 
 

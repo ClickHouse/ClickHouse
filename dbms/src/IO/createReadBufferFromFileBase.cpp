@@ -1,6 +1,6 @@
 #include <IO/createReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromFile.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(_MSC_VER)
+#if defined(__linux__)
 #include <IO/ReadBufferAIO.h>
 #endif
 #include <Common/ProfileEvents.h>
@@ -14,10 +14,10 @@ namespace ProfileEvents
 
 namespace DB
 {
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(_MSC_VER)
+#if !defined(__linux__)
 namespace ErrorCodes
 {
-        extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 #endif
 
@@ -31,7 +31,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(const std::
     }
     else
     {
-#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(_MSC_VER)
+#if defined(__linux__)
         ProfileEvents::increment(ProfileEvents::CreatedReadBufferAIO);
         return std::make_unique<ReadBufferAIO>(filename_, buffer_size_, flags_, existing_memory_);
 #else
