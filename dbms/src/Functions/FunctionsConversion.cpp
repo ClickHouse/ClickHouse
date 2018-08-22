@@ -40,9 +40,9 @@ void registerFunctionsConversion(FunctionFactory & factory)
     factory.registerFunction<FunctionToFloat32>();
     factory.registerFunction<FunctionToFloat64>();
 
-    factory.registerFunction<FunctionToDecimal9>();
-    factory.registerFunction<FunctionToDecimal18>();
-    //factory.registerFunction<FunctionToDecimal38>(); /// TODO
+    factory.registerFunction<FunctionToDecimal32>();
+    factory.registerFunction<FunctionToDecimal64>();
+    //factory.registerFunction<FunctionToDecimal128>(); /// TODO
 
     factory.registerFunction<FunctionToDate>();
     factory.registerFunction<FunctionToDateTime>();
