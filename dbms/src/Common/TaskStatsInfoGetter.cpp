@@ -164,7 +164,7 @@ void TaskStatsInfoGetter::init()
 }
 
 
-void TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats)
+void TaskStatsInfoGetter::getStat(::taskstats & out_stats, int tid)
 {
     init();
 
@@ -212,25 +212,10 @@ void TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats)
 }
 
 
-void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
-{
-    tid = tid < 0 ? getDefaultTID() : tid;
-    getStatImpl(tid, stat);
-}
-
-
 int TaskStatsInfoGetter::getCurrentTID()
 {
     /// This call is always successful. - man gettid
     return static_cast<int>(syscall(SYS_gettid));
-}
-
-int TaskStatsInfoGetter::getDefaultTID()
-{
-    if (default_tid < 0)
-        default_tid = getCurrentTID();
-
-    return default_tid;
 }
 
 
