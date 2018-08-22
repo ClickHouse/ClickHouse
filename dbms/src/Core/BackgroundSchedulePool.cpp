@@ -1,4 +1,4 @@
-#include <Common/BackgroundSchedulePool.h>
+#include "BackgroundSchedulePool.h"
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -143,12 +143,6 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 
-    /// Put all threads of both thread pools to one thread group
-    /// The master thread exits immediately
-    CurrentThread::initializeQuery();
-    thread_group = CurrentThread::getGroup();
-    CurrentThread::detachQuery();
-
     threads.resize(size);
     for (auto & thread : threads)
         thread = std::thread([this] { threadFunction(); });
@@ -217,14 +211,29 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
+void BackgroundSchedulePool::attachToThreadGroup()
+{
+    std::lock_guard lock(delayed_tasks_mutex);
+
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachTo(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
+
 void BackgroundSchedulePool::threadFunction()
 {
     setThreadName("BackgrSchedPool");
 
-    /// Put all threads to one thread pool
-    CurrentThread::attachTo(thread_group);
+    attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
     while (!shutdown)
@@ -242,8 +251,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName("BckSchPoolDelay");
 
-    /// Put all threads to one thread pool
-    CurrentThread::attachTo(thread_group);
+    attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
