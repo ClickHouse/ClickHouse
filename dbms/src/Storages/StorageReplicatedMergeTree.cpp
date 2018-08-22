@@ -109,6 +109,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_LOST;
     extern const int CAN_NOT_CLONE_REPLICA;
     extern const int SOURCE_REPLICA_IS_LOST;
+    extern const int UPDATE_CH;
 }
 
 namespace ActionLocks
