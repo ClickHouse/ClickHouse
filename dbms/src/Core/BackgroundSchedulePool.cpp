@@ -211,26 +211,28 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
+void BackgroundSchedulePool::attachToThreadGroup()
+{
+    std::lock_guard lock(delayed_tasks_mutex);
+
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachTo(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
+
 void BackgroundSchedulePool::threadFunction()
 {
     setThreadName("BackgrSchedPool");
 
-    {
-        std::lock_guard lock(delayed_tasks_mutex);
-
-        if (thread_group)
-        {
-            /// Put all threads to one thread pool
-            CurrentThread::attachTo(thread_group);
-        }
-        else
-        {
-            CurrentThread::initializeQuery();
-            thread_group = CurrentThread::getGroup();
-        }
-    }
-
-    /// Put all threads to one thread pool
+    attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
@@ -249,8 +251,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName("BckSchPoolDelay");
 
-    /// Put all threads to one thread pool
-    CurrentThread::attachTo(thread_group);
+    attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)
