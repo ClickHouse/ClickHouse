@@ -1996,7 +1996,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     if (error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
         throw Exception("Can not clone replica, because a source replica is lost", ErrorCodes::SOURCE_REPLICA_IS_LOST);
     else if (error == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw Exception("Replica changed version");
+        throw Exception("ClickHouse server updated to new version", ErrorCodes::UPDATE_CH);
     else if (error != ZooKeeperImpl::ZooKeeper::ZOK)
         throw ("cloneReplica() failed");
     
