@@ -179,10 +179,8 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_called = false;
         storage.partial_shutdown_event.reset();
 
-        storage.queue_updating_task->activate();
-        storage.queue_updating_task->schedule();
-        storage.mutations_updating_task->activate();
-        storage.mutations_updating_task->schedule();
+        storage.queue_updating_task->activateAndSchedule();
+        storage.mutations_updating_task->activateAndSchedule();
         storage.cleanup_thread.start();
         storage.alter_thread.start();
         storage.part_check_thread.start();
