@@ -198,7 +198,6 @@ private:
     void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
-    friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -303,7 +302,7 @@ private:
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
-    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
+    ReplicatedMergeTreeRestartingThread restarting_thread;
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
