@@ -36,7 +36,7 @@ ENGINE [=] MergeTree() [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SET
 
 - `ORDER BY` — первичный ключ.
 
-    Кортеж столбцов или произвольных выражений. Пример: `ORDER BY (CounerID, EventDate)`.
+    Кортеж столбцов или произвольных выражений. Пример: `ORDER BY (CounerID, EventDate)`.  
     Если используется ключ сэмплирования, то первичный ключ должен содержать его. Пример: `ORDER BY (CounerID, EventDate, intHash32(UserID))`.
 
 - `PARTITION BY` — [ключ партиционирования](custom_partitioning_key.md#table_engines-custom_partitioning_key).
