@@ -1,5 +1,4 @@
 #pragma once
-#include <Common/TaskStatsInfoGetter.h>
 #include <Common/ProfileEvents.h>
 
 #include <sys/time.h>

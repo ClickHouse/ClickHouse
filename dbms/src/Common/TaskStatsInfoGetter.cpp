@@ -98,7 +98,7 @@ void sendCommand(
 }
 
 
-UInt16 getFamilyId(int nl_sock_fd)
+UInt16 getFamilyIdImpl(int netlink_socket_fd)
 {
     struct
     {
@@ -110,12 +110,12 @@ UInt16 getFamilyId(int nl_sock_fd)
     static char name[] = TASKSTATS_GENL_NAME;
 
     sendCommand(
-        nl_sock_fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY,
+        netlink_socket_fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY,
         CTRL_ATTR_FAMILY_NAME, (void *) name,
         strlen(TASKSTATS_GENL_NAME) + 1);
 
     UInt16 id = 0;
-    ssize_t rep_len = ::recv(nl_sock_fd, &answer, sizeof(answer), 0);
+    ssize_t rep_len = ::recv(netlink_socket_fd, &answer, sizeof(answer), 0);
     if (rep_len < 0)
         throwFromErrno("Cannot get the family id for " + std::string(TASKSTATS_GENL_NAME) + " from the Netlink socket", ErrorCodes::NETLINK_ERROR);
 
@@ -132,12 +132,44 @@ UInt16 getFamilyId(int nl_sock_fd)
     return id;
 }
 
+
+bool checkPermissionsImpl()
+{
+    /// See man getcap.
+    __user_cap_header_struct request{};
+    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
+    request.pid = getpid();
+
+    __user_cap_data_struct response{};
+
+    /// Avoid dependency on 'libcap'.
+    if (0 != syscall(SYS_capget, &request, &response))
+        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
+
+    return (1 << CAP_NET_ADMIN) & response.effective;
 }
 
 
-void TaskStatsInfoGetter::init()
+UInt16 getFamilyId(int netlink_socket_fd)
 {
-    if (netlink_socket_fd >= 0)
+    /// It is thread and exception safe since C++11 and even before.
+    static UInt16 res = getFamilyIdImpl(netlink_socket_fd);
+    return res;
+}
+
+}
+
+
+bool TaskStatsInfoGetter::checkPermissions()
+{
+    static bool res = checkPermissionsImpl();
+    return res;
+}
+
+
+TaskStatsInfoGetter::TaskStatsInfoGetter()
+{
+    if (!checkPermissions())
         return;
 
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
@@ -157,15 +189,16 @@ void TaskStatsInfoGetter::init()
     if (::bind(netlink_socket_fd, reinterpret_cast<const ::sockaddr *>(&addr), sizeof(addr)) < 0)
         throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-    netlink_family_id = getFamilyId(netlink_socket_fd);
+    taskstats_family_id = getFamilyId(netlink_socket_fd);
 }
 
 
 void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 {
-    init();
+    if (!checkPermissions())
+        return;
 
-    sendCommand(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t));
+    sendCommand(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t));
 
     NetlinkMessage msg;
     ssize_t rv = ::recv(netlink_socket_fd, &msg, sizeof(msg), 0);
@@ -213,30 +246,6 @@ pid_t TaskStatsInfoGetter::getCurrentTID()
 {
     /// This call is always successful. - man gettid
     return static_cast<pid_t>(syscall(SYS_gettid));
-}
-
-
-static bool checkPermissionsImpl()
-{
-    /// See man getcap.
-    __user_cap_header_struct request{};
-    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
-    request.pid = getpid();
-
-    __user_cap_data_struct response{};
-
-    /// Avoid dependency on 'libcap'.
-    if (0 != syscall(SYS_capget, &request, &response))
-        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
-
-    return (1 << CAP_NET_ADMIN) & response.effective;
-}
-
-bool TaskStatsInfoGetter::checkPermissions()
-{
-    /// It is thread- and exception- safe since C++11
-    static bool res = checkPermissionsImpl();
-    return res;
 }
 
 

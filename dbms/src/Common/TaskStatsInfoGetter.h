@@ -14,9 +14,10 @@ namespace DB
 class TaskStatsInfoGetter : private boost::noncopyable
 {
 public:
-    void getStat(::taskstats & stat, pid_t tid);
-
+    TaskStatsInfoGetter();
     ~TaskStatsInfoGetter();
+
+    void getStat(::taskstats & stat, pid_t tid);
 
     /// Make a syscall and returns Linux thread id
     static pid_t getCurrentTID();
@@ -28,7 +29,7 @@ private:
     void init();
 
     int netlink_socket_fd = -1;
-    UInt16 netlink_family_id = 0;
+    UInt16 taskstats_family_id = 0;
 };
 
 }
