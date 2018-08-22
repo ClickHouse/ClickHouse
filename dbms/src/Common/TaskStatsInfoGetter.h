@@ -18,7 +18,7 @@ public:
     TaskStatsInfoGetter();
     TaskStatsInfoGetter(const TaskStatsInfoGetter &) = delete;
 
-    void getStat(::taskstats & stat, int tid = -1);
+    void getStat(::taskstats & stat, int tid);
 
     ~TaskStatsInfoGetter();
 
@@ -29,11 +29,6 @@ public:
     static bool checkPermissions();
 
 private:
-    /// Caches current thread tid to avoid extra sys calls
-    int getDefaultTID();
-    int default_tid = -1;
-
-    void getStatImpl(int tid, ::taskstats & out_stats);
     void init();
 
     int netlink_socket_fd = -1;
