@@ -602,7 +602,6 @@ void StorageReplicatedMergeTree::createReplica()
         
         String is_lost_value = last_added_replica == "" ? "0" : "1";
         
-        /// Create an empty replica. We'll create `columns` node at the end - we'll use it as a sign that replica creation is complete.
         zkutil::Requests ops;
         zkutil::Responses resps;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
