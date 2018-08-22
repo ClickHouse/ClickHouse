@@ -120,6 +120,7 @@ struct PlusImpl
         return static_cast<Result>(a) + b;
     }
 
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
@@ -149,6 +150,7 @@ struct MultiplyImpl
         return static_cast<Result>(a) * b;
     }
 
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
@@ -177,6 +179,7 @@ struct MinusImpl
         return static_cast<Result>(a) - b;
     }
 
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
