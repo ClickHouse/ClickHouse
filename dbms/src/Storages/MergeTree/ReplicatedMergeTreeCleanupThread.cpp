@@ -116,7 +116,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
             min_pointer_active_replica = std::min(min_pointer_active_replica, log_pointer);
         else
         {
-            /// We can not mark lost replicas.
+            /// We can not mark lost replicas twice.
             if (zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/is_lost") == "0")
             {
                 hosts_version[replica] = host_stat.version;
