@@ -4,17 +4,23 @@
 
 ## distributed_product_mode
 
-Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
+Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests).
 
-ClickHouse applies the configuration if the subqueries on any level have a distributed table that exists on the local server and has more than one shard.
+ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
 Restrictions:
 
 - Only applied for IN and JOIN subqueries.
-- Used only if a distributed table is used in the FROM clause.
-- Not used for a table-valued [ remote](../../query_language/table_functions/remote.md#table_functions-remote) function.
+- Only if the FROM section uses a distributed table containing more than one shard.
+- If the subquery concerns a distributed table containing more than one shard,
+- Not used for a table-valued [ remote](../../query_language/table_functions/remote.md#table_functions-remote).
 
 The possible values ​​are:
+
+- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
+- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
+- `allow`  — Allows the use of these types of subqueries.
 
 <a name="settings-settings-fallback_to_stale_replicas_for_distributed_queries"></a>
 
@@ -24,7 +30,7 @@ Forces a query to an out-of-date replica if updated data is not available. See "
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
-Used when performing ` SELECT`  from a distributed table that points to replicated tables.
+Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
 By default, 1 (enabled).
 
@@ -131,7 +137,7 @@ Sets the time in seconds. If a replica lags more than the set value, this replic
 
 Default value: 0 (off).
 
-Used when performing ` SELECT`  from a distributed table that points to replicated tables.
+Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
 ## max_threads
 
@@ -158,7 +164,7 @@ Don't confuse blocks for compression (a chunk of memory consisting of bytes) and
 
 ## min_compress_block_size
 
-For [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
+For [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree)". In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least 'min_compress_block_size'. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than 'max_compress_block_size', is no less than this value and no less than the volume of data for one mark.
 
@@ -343,4 +349,12 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 ## format_csv_delimiter
 
-The character to be considered as a delimiter in CSV data. By default, `,`.
+The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
+
+<!--a name="settings-join_use_nulls"></a-->
+
+## join_use_nulls {: #settings-join_use_nulls}
+
+Affects the behavior of [JOIN](../../query_language/select.md#query_language-join).
+
+With `join_use_nulls=1`, `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md#null-literal).

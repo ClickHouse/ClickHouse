@@ -1,3 +1,5 @@
+<a name="data_types-string"></a>
+
 # String
 
 Strings of an arbitrary length. The length is not limited. The value can contain an arbitrary set of bytes, including null bytes.

@@ -83,6 +83,7 @@ CREATE TABLE products
 )
 ENGINE = Dictionary(products)
 ```
+
 ```
 Ok.
 
@@ -106,3 +107,4 @@ LIMIT 1
 
 1 rows in set. Elapsed: 0.006 sec.
 ```
+

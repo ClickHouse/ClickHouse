@@ -5,16 +5,16 @@ The search substring or regular expression must be a constant in all these funct
 
 ## position(haystack, needle)
 
-Search for the `needle` substring in the `haystack` string.
+Search for the substring `needle` in the string `haystack`.
 Returns the position (in bytes) of the found substring, starting from 1, or returns 0 if the substring was not found.
 
-For case-insensitive search use `positionCaseInsensitive` function.
+For a case-insensitive search, use the function `positionCaseInsensitive`.
 
 ## positionUTF8(haystack, needle)
 
 The same as `position`, but the position is returned in Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
 
-For case-insensitive search use `positionCaseInsensitiveUTF8` function.
+For a case-insensitive search, use the function `positionCaseInsensitiveUTF8`.
 
 ## match(haystack, pattern)
 
@@ -51,3 +51,4 @@ For other regular expressions, the code is the same as for the 'match' function.
 ## notLike(haystack, pattern), haystack NOT LIKE pattern operator
 
 The same thing as 'like', but negative.
+

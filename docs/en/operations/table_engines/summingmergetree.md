@@ -16,7 +16,7 @@ The columns to total are set explicitly (the last parameter – Shows, Clicks, C
 
 If the values were null in all of these columns, the row is deleted. (The exception is cases when the data part would not have any rows left in it.)
 
-For the other columns that are not part of the primary key, the first value that occurs is selected when merging. But if a column is of AggregateFunction type, then it is merged according to that function, which effectively makes this engine behave like `AggregatingMergeTree`.
+For the other columns that are not part of the primary key, the first value that occurs is selected when merging. But for the AggregateFunction type of columns, aggregation is performed according to the set function, so this engine actually behaves like `AggregatingMergeTree`.
 
 Summation is not performed for a read operation. If it is necessary, write the appropriate GROUP BY.
 

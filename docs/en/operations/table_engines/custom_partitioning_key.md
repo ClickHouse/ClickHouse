@@ -37,7 +37,7 @@ Note: For old-style tables, the partition can be specified either as a number `2
 
 In the `system.parts` table, the `partition` column specifies the value of the partition expression to use in ALTER queries (if quotas are removed). The `name` column should specify the name of the data part that has a new format.
 
-Was: `20140317_20140323_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
+Old: `20140317_20140323_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).
 
 Now: `201403_2_2_0`  (partition ID -  minimum block number - maximum block number - level).
 

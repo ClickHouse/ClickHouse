@@ -8,11 +8,11 @@ Graphite stores full data in ClickHouse, and data can be retrieved in the follow
 
 - Without thinning.
 
-   Uses the [MergeTree](mergetree.md#table_engines-mergetree) engine.
+    Uses the [MergeTree](mergetree.md#table_engines-mergetree) engine.
 
 - With thinning.
 
-   Using the `GraphiteMergeTree` engine.
+    Using the `GraphiteMergeTree` engine.
 
 The engine inherits properties from MergeTree. The settings for thinning data are defined by the [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) parameter in the server configuration.
 

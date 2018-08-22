@@ -9,12 +9,12 @@ You can run multiple `clickhouse-copier` instances on different servers to perfo
 After starting, `clickhouse-copier`:
 
 - Connects to ZooKeeper and receives:
-   - Copying jobs.
-   - The state of the copying jobs.
+    - Copying jobs.
+    - The state of the copying jobs.
 
 - It performs the jobs.
 
-   Each running process chooses the "closest" shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
+    Each running process chooses the "closest" shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
 
 `clickhouse-copier` tracks the changes in ZooKeeper and applies them on the fly.
 
@@ -83,7 +83,7 @@ Parameters:
         <readonly>0</readonly>
     </settings_push>
 
-    <!-- Common setting for fetch (pull) and insert (push) operations. The copier process context also uses it.
+    <!-- Common setting for fetch (pull) and insert (push) operations. Also, copier process context uses it.
          They are overlaid by <settings_pull/> and <settings_push/> respectively. -->
     <settings>
         <connect_timeout>3</connect_timeout>
@@ -91,13 +91,14 @@ Parameters:
         <insert_distributed_sync>1</insert_distributed_sync>
     </settings>
 
-    <!-- Copying description of tasks.
-         You can specify several table tasks in the same task description (in the same ZooKeeper node), and they will be performed         sequentially.
+    <!-- Copying tasks description.
+         You could specify several table task in the same task description (in the same ZooKeeper node), they will be performed
+         sequentially.
     -->
     <tables>
-        <!-- A table task that copies one table. -->
+        <!-- A table task, copies one table. -->
         <table_hits>
-            <!-- Source cluster name (from the <remote_servers/> section) and tables in it that should be copied -->
+            <!-- Source cluster name (from <remote_servers/> section) and tables in it that should be copied -->
             <cluster_pull>source_cluster</cluster_pull>
             <database_pull>test</database_pull>
             <table_pull>hits</table_pull>
@@ -108,11 +109,12 @@ Parameters:
             <table_push>hits2</table_push>
 
             <!-- Engine of destination tables.
-                 If the destination tables have not been created yet, workers create them using column definitions from source tables and the engine                 definition from here.
+                 If destination tables have not be created, workers create them using columns definition from source tables and engine
+                 definition from here.
 
-                 NOTE: If the first worker starts to insert data and detects that the destination partition is not empty, then the partition will
-                 be dropped and refilled. Take this into account if you already have some data in destination tables. You can directly 
-                 specify partitions that should be copied in <enabled_partitions/>. They should be in quoted format like the partition column in the                 
+                 NOTE: If the first worker starts insert data and detects that destination partition is not empty then the partition will
+                 be dropped and refilled, take it into account if you already have some data in destination tables. You could directly
+                 specify partitions that should be copied in <enabled_partitions/>, they should be in quoted format like partition column of
                  system.parts table.
             -->
             <engine>
@@ -133,11 +135,11 @@ Parameters:
                  Since partition key of source and destination cluster could be different,
                  these partition names specify destination partitions.
 
-                 Note: Although this section is optional (if it omitted, all partitions will be copied), 
-                 it is strongly recommended to specify the partitions explicitly.
-                 If you already have some partitions ready on the destination cluster, they                 
-                 will be removed at the start of the copying, because they will be interpreted                 
-                 as unfinished data from the previous copying.
+                 NOTE: In spite of this section is optional (if it is not specified, all partitions will be copied),
+                 it is strictly recommended to specify them explicitly.
+                 If you already have some ready paritions on destination cluster they
+                 will be removed at the start of the copying since they will be interpeted
+                 as unfinished data from the previous copying!!!
             -->
             <enabled_partitions>
                 <partition>'2018-02-26'</partition>
@@ -146,7 +148,7 @@ Parameters:
             </enabled_partitions>
         </table_hits>
 
-        <!-- Next table to copy. It is not copied until the previous table is copying. -->
+        <!-- Next table to copy. It is not copied until previous table is copying. -->
         </table_visits>
         ...
         </table_visits>

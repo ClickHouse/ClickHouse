@@ -10,7 +10,7 @@ make
 
 There will be some warnings during the process, but this is normal.
 
-Place ` dbgen`  and ` dists.dss`  in any location with 800 GB of free disk space.
+Place `dbgen`  and `dists.dss`  in any location with 800 GB of free disk space.
 
 Generating data:
 
@@ -73,7 +73,7 @@ CREATE TABLE partd AS part ENGINE = Distributed(perftest_3shards_1replicas, defa
 ```
 
 For testing on a single server, just use MergeTree tables.
-For distributed testing, you need to configure the ` perftest_3shards_1replicas`  cluster in the config file.
+For distributed testing, you need to configure the `perftest_3shards_1replicas`  cluster in the config file.
 Next, create MergeTree tables on each server and a Distributed above them.
 
 Downloading data (change 'customer' to 'customerd' in the distributed version):
@@ -82,3 +82,4 @@ Downloading data (change 'customer' to 'customerd' in the distributed version):
 cat customer.tbl | sed 's/$/2000-01-01/' | clickhouse-client --query "INSERT INTO customer FORMAT CSV"
 cat lineorder.tbl | clickhouse-client --query "INSERT INTO lineorder FORMAT CSV"
 ```
+

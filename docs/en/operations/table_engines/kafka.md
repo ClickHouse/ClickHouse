@@ -17,7 +17,7 @@ Parameters:
 - `broker_list` – A comma-separated list of brokers (`localhost:9092`).
 - `topic_list` – A list of Kafka topics (`my_topic`).
 - `group_name` – A group of Kafka consumers (`group1`). Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
-- `--format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section.
+- `format` – Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the "Formats" section.
 - `schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
 
@@ -76,11 +76,11 @@ To stop receiving topic data or to change the conversion logic, detach the mater
   ATTACH MATERIALIZED VIEW consumer;
 ```
 
-If you want to change the target table by using ` ALTER`materialized view, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
 ## Configuration
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_topic_*`). The global configuration is applied first, and the topic-level configuration is second (if it exists).
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_topic_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ```xml
   <!--  Global configuration options for all tables of Kafka engine type -->

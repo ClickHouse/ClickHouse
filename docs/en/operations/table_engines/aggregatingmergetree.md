@@ -21,15 +21,14 @@ This type of column stores the state of an aggregate function.
 
 To get this type of value, use aggregate functions with the `State` suffix.
 
-Example:
-`uniqState(UserID), quantilesState(0.5, 0.9)(SendTiming)`
+Example:`uniqState(UserID), quantilesState(0.5, 0.9)(SendTiming)`
 
 In contrast to the corresponding `uniq` and `quantiles` functions, these functions return the state, rather than the prepared value. In other words, they return an `AggregateFunction` type value.
 
 An `AggregateFunction` type value can't be output in Pretty formats. In other formats, these types of values are output as implementation-specific binary data. The `AggregateFunction` type values are not intended for output or saving in a dump.
 
-The only useful thing you can do with `AggregateFunction` type values is combine the states and get a result, which essentially means to finish aggregation. Aggregate functions with the 'Merge' suffix are used for this purpose.
-Example: `uniqMerge(UserIDState), where UserIDState has the AggregateFunction` type.
+The only useful thing you can do with `AggregateFunction` type values is to combine the states and get a result, which essentially means to finish aggregation. Aggregate functions with the 'Merge' suffix are used for this purpose.
+Example: `uniqMerge(UserIDState)`, where `UserIDState` has the `AggregateFunction` type.
 
 In other words, an aggregate function with the 'Merge' suffix takes a set of states, combines them, and returns the result.
 As an example, these two queries return the same result:

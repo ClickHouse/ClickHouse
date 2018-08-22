@@ -1,3 +1,5 @@
+<a name="ym_dict_functions"></a>
+
 # Functions for working with Yandex.Metrica dictionaries
 
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the Yandex.Metrica dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can't be loaded, an exception is thrown.
@@ -21,9 +23,9 @@ All functions for working with regions have an optional argument at the end – 
 Example:
 
 ```text
-regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+regionToCountry (RegionID) — Uses the default dictionary: /opt/geo/regions_hierarchy.txt.
+regionToCountry (RegionID, '') — Uses the default dictionary: /opt/geo/regions_hierarchy.txt.
+regionToCountry (RegionID, 'ua') — Uses the dictionary for the ua key: /opt/geo/regions_hierarchy_ua.txt.
 ```
 
 ### regionToCity(id[, geobase])
@@ -43,20 +45,20 @@ LIMIT 15
 ```text
 ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
 │                                                      │
-│ Moscow and Moscow region                             │
-│ St. Petersburg and Leningrad region                  │
-│ Belgorod region                                      │
-│ Ivanovsk region                                      │
-│ Kaluga region                                        │
-│ Kostroma region                                      │
-│ Kursk region                                         │
-│ Lipetsk region                                       │
-│ Orlov region                                         │
-│ Ryazan region                                        │
-│ Smolensk region                                      │
-│ Tambov region                                        │
-│ Tver region                                          │
-│ Tula region                                          │
+│ Moscow and Moscow region                          │
+│ St. Petersburg and Leningrad region              │
+│ Belogorod region                                 │
+│ Ivanovo region                                   │
+│ Kaluga region                                    │
+│ Kostroma region                                  │
+│ Kursk region                                      │
+│ Lipetsk region                                     │
+│ Oryol region                                    │
+│ Ryazan region                                    │
+│ Smolensk region                                   │
+│ Tambov region                                   │
+│ Tver region                                     │
+│ Tula region                                     │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -73,20 +75,20 @@ LIMIT 15
 ```text
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
 │                                                          │
-│ Central federal district                                 │
-│ Northwest federal district                               │
-│ South federal district                                   │
-│ North Caucases federal district                          │
-│ Privolga federal district                                │
-│ Ural federal district                                    │
-│ Siberian federal district                                │
-│ Far East federal district                                │
-│ Scotland                                                 │
-│ Faroe Islands                                            │
-│ Flemish region                                           │
-│ Brussels capital region                                  │
-│ Wallonia                                                 │
-│ Federation of Bosnia and Herzegovina                     │
+│ Central Federal District                            │
+│ Northwest Federal District                        │
+│ Southern Federal District                                  │
+│ North Caucasian Federal District                      │
+│ Privolzhsky Federal District                            │
+│ Ural Federal District                              │
+│ Siberian Federal District                             │
+│ Far East Federal District                        │
+│ Scotland                                                │
+│ Faroe Islands                                        │
+│ Flemish region                                       │
+│ Brussels capital region                            │
+│ Walloon                                                 │
+│ Federation of Bosnia and Herzegovina                          │
 └──────────────────────────────────────────────────────────┘
 ```
 

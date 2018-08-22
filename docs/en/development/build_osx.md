@@ -34,7 +34,7 @@ For the latest release candidate, switch to the `testing` branch.
 ```bash
 mkdir build
 cd build
-cmake .. -DCMAKE_CXX_COMPILER=`which g++-8` -DCMAKE_C_COMPILER=`which gcc-8`
+cmake .. -DCMAKE_CXX_COMPILER=`which g++-8`-DCMAKE_C_COMPILER=`which gcc-8`
 ninja
 cd ..
 ```

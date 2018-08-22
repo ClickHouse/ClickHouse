@@ -30,9 +30,9 @@ Types of sources (`source_type`):
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 - DBMS
-   - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-   - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-   - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
@@ -52,7 +52,7 @@ Example of settings:
 Setting fields:
 
 - `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats]("/../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
@@ -74,7 +74,7 @@ Example of settings:
 Setting fields:
 
 - `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats]("/../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-http"></a>
 
@@ -98,7 +98,7 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats]("/../interfaces/formats.md#formats)" are supported.
 
 <a name="dicts-external_dicts_dict_sources-odbc"></a>
 
@@ -160,9 +160,9 @@ The dictionary configuration in ClickHouse:
     <dictionary>
         <name>table_name</name>
         <source>
-        <odbc>
-            <!-- You can specifiy the following parameters in connection_string: -->
-            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+            <odbc>
+                <!-- You can specify the following parameters in connection_string: -->
+                <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
                 <connection_string>DSN=myconnection</connection_string>
                 <table>postgresql_table</table>
             </odbc>
@@ -310,9 +310,9 @@ Setting fields:
 - `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
 - `replica` – Section of replica configurations. There can be multiple sections.
-   - `replica/host` – The MySQL host.
+    - `replica/host` – The MySQL host.
 
-   \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
 
