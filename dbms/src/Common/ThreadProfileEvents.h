@@ -90,7 +90,11 @@ struct RUsageCounters
     static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
         ::rusage rusage;
+#if defined(__APPLE__)
+        ::getrusage(RUSAGE_SELF, &rusage); //TODO?
+#else
         ::getrusage(RUSAGE_THREAD, &rusage);
+#endif
         return RUsageCounters(rusage, real_time_);
     }
 
