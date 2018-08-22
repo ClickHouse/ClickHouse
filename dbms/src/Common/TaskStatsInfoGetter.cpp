@@ -2,20 +2,22 @@
 #include <Common/Exception.h>
 #include <Core/Types.h>
 
+#include <unistd.h>
+
+#if defined(__linux__)
+
 #include <common/unaligned.h>
 
 #include <errno.h>
-#include <linux/genetlink.h>
-#include <linux/netlink.h>
-#include <linux/taskstats.h>
-#include <linux/capability.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
 #include <syscall.h>
+#include <linux/genetlink.h>
+#include <linux/netlink.h>
+#include <linux/taskstats.h>
+#include <linux/capability.h>
 
 
 /// Basic idea is motivated by "iotop" tool.
@@ -283,3 +285,42 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 }
 
 }
+
+
+#else
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+bool TaskStatsInfoGetter::checkPermissions()
+{
+    return false;
+}
+
+
+TaskStatsInfoGetter::TaskStatsInfoGetter()
+{
+    throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
+{
+}
+
+pid_t TaskStatsInfoGetter::getCurrentTID()
+{
+    return 0;
+}
+
+TaskStatsInfoGetter::~TaskStatsInfoGetter()
+{
+}
+
+}
+
+#endif
