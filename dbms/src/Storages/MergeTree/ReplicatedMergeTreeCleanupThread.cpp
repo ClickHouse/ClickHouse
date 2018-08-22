@@ -180,7 +180,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
         if (pair.second <= remove_border)
         { 
             zkutil::Requests ops;
-            /// If host changed version we can not mark replicas, because replica startes to be active.
+            /// If host changed version we can not mark replicas, because replica started to be active.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/host", hosts_version.at(replica)));
             ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", -1));
             requests.push_back(ops);
