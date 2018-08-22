@@ -334,13 +334,9 @@ The query can only specify a single ARRAY JOIN clause.
 
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
-<<<<<<< HEAD
 <a name="query_language-join"></a>
 
 ### JOIN clause
-=======
-### JOIN Clause
->>>>>>> upstream/master
 
 The normal JOIN, which is not related to ARRAY JOIN described above.
 
@@ -434,7 +430,6 @@ Among the various types of JOINs, the most efficient is ANY LEFT JOIN, then ANY 
 
 If you need a JOIN for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a JOIN might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of JOIN. For more information, see the section "External dictionaries".
 
-<<<<<<< HEAD
 #### NULL processing
 
 The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1,`  `JOIN` works like in standard SQL.
@@ -444,9 +439,6 @@ If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) f
 <a name="query_language-queries-where"></a>
 
 ### WHERE clause
-=======
-### WHERE Clause
->>>>>>> upstream/master
 
 Allows you to set an expression that ClickHouse uses to filter data before all other actions in the query, other than the expressions contained in the [PREWHERE](#query_language-queries-prewhere) clause. This is usually an expression with logical operators.
 
@@ -531,7 +523,6 @@ GROUP BY is not supported for array columns.
 
 A constant can't be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: `count()`.
 
-<<<<<<< HEAD
 #### NULL processing
 
 For grouping, ClickHouse interprets [NULL](syntax.md#null-literal) as a value, and `NULL=NULL`.
@@ -565,9 +556,6 @@ You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this 
 If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
 
 #### WITH TOTALS modifier
-=======
-#### WITH TOTALS Modifier
->>>>>>> upstream/master
 
 If the WITH TOTALS modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the "total" values).
 
@@ -631,13 +619,9 @@ LIMIT 100
 
 The query will select the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
 
-<<<<<<< HEAD
 `LIMIT n BY` works with [NULL](syntax.md#null-literal) as if it were a specific value. This means that as the result of the query, the user will get all the combinations of fields specified in `BY`.
 
 ### HAVING clause
-=======
-### HAVING Clause
->>>>>>> upstream/master
 
 Allows filtering the result received after GROUP BY, similar to the WHERE clause.
 WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY), while HAVING is performed after it.
@@ -735,13 +719,9 @@ LIMIT n, m allows you to select the first 'm' rows from the result after skippin
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
-<<<<<<< HEAD
 `DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ### UNION ALL clause
-=======
-### UNION ALL Clause
->>>>>>> upstream/master
 
 You can use `UNION ALL` to combine any number of queries. Example:
 
@@ -783,13 +763,9 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
-<<<<<<< HEAD
 <a name="query_language-in_operators"></a>
 
 ### IN operators
-=======
-### IN Operators
->>>>>>> upstream/master
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 

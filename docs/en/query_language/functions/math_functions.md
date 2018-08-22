@@ -4,11 +4,11 @@ All the functions return a Float64 number. The accuracy of the result is close t
 
 ## e()
 
-Returns a Float64 integer that is close to the number e.
+Returns a Float64 number that is close to the number e.
 
 ## pi()
 
-Returns a Float64 integer that is close to the number π.
+Returns a Float64 number that is close to the number π.
 
 ## exp(x)
 
@@ -97,4 +97,3 @@ The arc tangent.
 ## pow(x, y)
 
 Takes two numeric arguments x and y. Returns a Float64 number close to x to the power of y.
-
