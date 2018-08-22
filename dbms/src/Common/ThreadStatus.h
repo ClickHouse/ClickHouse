@@ -33,7 +33,6 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 class ThreadGroupStatus
 {
 public:
-
     mutable std::shared_mutex mutex;
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
