@@ -124,39 +124,25 @@ template <> inline UInt64 unionCastToUInt64(Float32 x)
 
 
 /// PaddedPODArray extended by Decimal scale
-template <typename T, size_t INITIAL_SIZE = 4096>
-class DecPaddedPODArray : public PODArray<T, INITIAL_SIZE, Allocator<false>, sizeof(T)-1>
+template <typename T>
+class DecimalPaddedPODArray : public PaddedPODArray<T>
 {
 public:
-    using Base = PODArray<T, INITIAL_SIZE, Allocator<false>, sizeof(T)-1>;
+    using Base = PaddedPODArray<T>;
     using Base::operator[];
+    using Base::Base;
 
-    DecPaddedPODArray()
+    DecimalPaddedPODArray(std::initializer_list<T> il)
+        : DecimalPaddedPODArray(std::begin(il), std::end(il))
     {}
 
-    DecPaddedPODArray(size_t n)
-    :   Base(n)
-    {}
-
-    DecPaddedPODArray(size_t n, const T & x)
-    :   Base(n, x)
-    {}
-
-    DecPaddedPODArray(typename Base::const_iterator from_begin, typename Base::const_iterator from_end)
-    :   Base(from_begin, from_end)
-    {}
-
-    DecPaddedPODArray(std::initializer_list<T> il)
-    :   DecPaddedPODArray(std::begin(il), std::end(il))
-    {}
-
-    DecPaddedPODArray(DecPaddedPODArray && other)
+    DecimalPaddedPODArray(DecimalPaddedPODArray && other)
     {
         this->swap(other);
         std::swap(scale, other.scale);
     }
 
-    DecPaddedPODArray & operator= (DecPaddedPODArray && other)
+    DecimalPaddedPODArray & operator=(DecimalPaddedPODArray && other)
     {
         this->swap(other);
         std::swap(scale, other.scale);
@@ -167,7 +153,7 @@ public:
     UInt32 getScale() const { return scale; }
 
 private:
-    UInt32 scale = std::numeric_limits<UInt32>::max();
+    UInt32 scale = DecimalField::wrongScale();
 };
 
 
@@ -185,7 +171,7 @@ private:
 
 public:
     using value_type = T;
-    using Container = std::conditional_t<decTrait<T>(), DecPaddedPODArray<value_type>, PaddedPODArray<value_type>>;
+    using Container = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<value_type>, PaddedPODArray<value_type>>;
 
 private:
     ColumnVector() {}
@@ -269,12 +255,12 @@ public:
 
     Field operator[](size_t n) const override
     {
-        if constexpr (decTrait<T>())
+        if constexpr (IsDecimalNumber<T>)
         {
             UInt32 scale = data.getScale();
-            if (scale == std::numeric_limits<UInt32>::max())
+            if (scale == DecimalField::wrongScale())
                 throw Exception("Extracting Decimal field with unknown scale. Scale is lost.", ErrorCodes::LOGICAL_ERROR);
-            return DecField(data[n], scale);
+            return DecimalField(data[n], scale);
         }
         else
             return typename NearestFieldType<T>::Type(data[n]);
