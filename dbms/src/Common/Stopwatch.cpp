@@ -7,7 +7,7 @@ StopwatchRUsage::Timestamp StopwatchRUsage::Timestamp::current()
 
     ::rusage rusage;
 #if defined(__APPLE__)
-    ::getrusage(RUSAGE_SELF, &rusage); // TODO FIXME! need rusage_thread
+    //::getrusage(RUSAGE_SELF, &rusage); // TODO FIXME! need rusage_thread
 #else
     ::getrusage(RUSAGE_THREAD, &rusage);
 #endif
