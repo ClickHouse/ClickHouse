@@ -45,6 +45,8 @@ namespace
   */
 struct NetlinkMessage
 {
+    static size_t constexpr MAX_MSG_SIZE = 1024;
+
     alignas(NLMSG_ALIGNTO) ::nlmsghdr header;
 
     struct Attribute
@@ -67,8 +69,6 @@ struct NetlinkMessage
 
             alignas(NLMSG_ALIGNTO) union
             {
-                static size_t constexpr MAX_MSG_SIZE = 1024;
-
                 char buf[MAX_MSG_SIZE];
                 Attribute attribute;    /// First attribute. There may be more.
             } payload;
