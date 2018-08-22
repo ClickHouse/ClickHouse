@@ -142,6 +142,8 @@ private:
 
     /// Thread group used for profiling purposes
     ThreadGroupStatusPtr thread_group;
+
+    void attachToThreadGroup();
 };
 
 using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;

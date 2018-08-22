@@ -2,35 +2,26 @@
 #include <Common/Exception.h>
 #include <Core/Types.h>
 
-#include <errno.h>
-#if defined(__linux__)
-#include <linux/genetlink.h>
-#include <linux/netlink.h>
-#include <linux/taskstats.h>
-#include <linux/capability.h>
-#endif
+#include <unistd.h>
 
+#if defined(__linux__)
+
+#include <common/unaligned.h>
+
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-#if __has_include(<sys/syscall.h>)
-#include <sys/syscall.h>
-#else
 #include <syscall.h>
-#endif
+#include <linux/genetlink.h>
+#include <linux/netlink.h>
+#include <linux/taskstats.h>
+#include <linux/capability.h>
 
 
 /// Basic idea is motivated by "iotop" tool.
 /// More info: https://www.kernel.org/doc/Documentation/accounting/taskstats.txt
-
-#define GENLMSG_DATA(glh)       ((void *)((char*)NLMSG_DATA(glh) + GENL_HDRLEN))
-#define GENLMSG_PAYLOAD(glh)    (NLMSG_PAYLOAD(glh, 0) - GENL_HDRLEN)
-#define NLA_DATA(na)            ((void *)((char*)(na) + NLA_HDRLEN))
-#define NLA_PAYLOAD(len)        (len - NLA_HDRLEN)
 
 
 namespace DB
@@ -39,130 +30,202 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NETLINK_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 
 namespace
 {
 
-static size_t constexpr MAX_MSG_SIZE = 1024;
 
-
+/** The message contains:
+  * - Netlink protocol header;
+  * - Generic Netlink (is a sub-protocol of Netlink that we use) protocol header;
+  * - Payload
+  * -- that itself is a list of "Attributes" (sub-messages), each of them contains length (including header), type, and its own payload.
+  * -- and attribute payload may be represented by the list of embedded attributes.
+  */
 struct NetlinkMessage
 {
-#if defined(__linux__)
-    ::nlmsghdr n;
-    ::genlmsghdr g;
-    char buf[MAX_MSG_SIZE];
-#endif
+    static size_t constexpr MAX_MSG_SIZE = 1024;
+
+    alignas(NLMSG_ALIGNTO) ::nlmsghdr header;
+
+    struct Attribute
+    {
+        ::nlattr header;
+
+        alignas(NLMSG_ALIGNTO) char payload[0];
+
+        const Attribute * next() const
+        {
+            return reinterpret_cast<const Attribute *>(reinterpret_cast<const char *>(this) + NLA_ALIGN(header.nla_len));
+        }
+    };
+
+    union alignas(NLMSG_ALIGNTO)
+    {
+        struct
+        {
+            ::genlmsghdr generic_header;
+
+            union alignas(NLMSG_ALIGNTO)
+            {
+                char buf[MAX_MSG_SIZE];
+                Attribute attribute;    /// First attribute. There may be more.
+            } payload;
+        };
+
+        ::nlmsgerr error;
+    };
+
+    size_t payload_size() const
+    {
+        return header.nlmsg_len - sizeof(header) - sizeof(generic_header);
+    }
+
+    const Attribute * end() const
+    {
+        return reinterpret_cast<const Attribute *>(reinterpret_cast<const char *>(this) + header.nlmsg_len);
+    }
+
+    void send(int fd) const
+    {
+        const char * request_buf = reinterpret_cast<const char *>(this);
+        ssize_t request_size = header.nlmsg_len;
+
+        ::sockaddr_nl nladdr{};
+        nladdr.nl_family = AF_NETLINK;
+
+        while (true)
+        {
+            ssize_t bytes_sent = ::sendto(fd, request_buf, request_size, 0, reinterpret_cast<const ::sockaddr *>(&nladdr), sizeof(nladdr));
+
+            if (bytes_sent <= 0)
+            {
+                if (errno == EAGAIN)
+                    continue;
+                else
+                    throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
+            }
+
+            if (bytes_sent > request_size)
+                throw Exception("Wrong result of sendto system call: bytes_sent is greater than request size", ErrorCodes::NETLINK_ERROR);
+
+            if (bytes_sent == request_size)
+                break;
+
+            request_buf += bytes_sent;
+            request_size -= bytes_sent;
+        }
+    }
+
+    void receive(int fd)
+    {
+        ssize_t bytes_received = ::recv(fd, this, sizeof(*this), 0);
+
+        if (header.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&header), bytes_received))
+            throw Exception("Can't receive Netlink response, error: " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
+    }
 };
 
 
-void sendCommand(
-    int sock_fd,
-    UInt16 nlmsg_type,
-    UInt32 nlmsg_pid,
-    UInt8 genl_cmd,
-    UInt16 nla_type,
-    void * nla_data,
-    int nla_len)
+NetlinkMessage query(
+    int fd,
+    UInt16 type,
+    UInt32 pid,
+    UInt8 command,
+    UInt16 attribute_type,
+    const void * attribute_data,
+    int attribute_size)
 {
-#if defined(__linux__)
-    NetlinkMessage msg{};
+    NetlinkMessage request;
 
-    msg.n.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);
-    msg.n.nlmsg_type = nlmsg_type;
-    msg.n.nlmsg_flags = NLM_F_REQUEST;
-    msg.n.nlmsg_seq = 0;
-    msg.n.nlmsg_pid = nlmsg_pid;
-    msg.g.cmd = genl_cmd;
-    msg.g.version = 1;
+    request.header.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);   /// Length of both headers.
+    request.header.nlmsg_type = type;
+    request.header.nlmsg_flags = NLM_F_REQUEST;             /// A request.
+    request.header.nlmsg_seq = 0;
+    request.header.nlmsg_pid = pid;
 
-    ::nlattr * attr = static_cast<::nlattr *>(GENLMSG_DATA(&msg));
-    attr->nla_type = nla_type;
-    attr->nla_len = nla_len + 1 + NLA_HDRLEN;
+    request.generic_header.cmd = command;
+    request.generic_header.version = 1;
 
-    memcpy(NLA_DATA(attr), nla_data, nla_len);
-    msg.n.nlmsg_len += NLMSG_ALIGN(attr->nla_len);
+    request.payload.attribute.header.nla_type = attribute_type;
+    request.payload.attribute.header.nla_len = attribute_size + 1 + NLA_HDRLEN;
 
-    char * buf = reinterpret_cast<char *>(&msg);
-    ssize_t buflen = msg.n.nlmsg_len;
+    memcpy(&request.payload.attribute.payload, attribute_data, attribute_size);
 
-    ::sockaddr_nl nladdr{};
-    nladdr.nl_family = AF_NETLINK;
+    request.header.nlmsg_len += NLMSG_ALIGN(request.payload.attribute.header.nla_len);
 
-    while (true)
-    {
-        ssize_t r = ::sendto(sock_fd, buf, buflen, 0, reinterpret_cast<const ::sockaddr *>(&nladdr), sizeof(nladdr));
+    request.send(fd);
 
-        if (r >= buflen)
-            break;
+    NetlinkMessage response;
+    response.receive(fd);
 
-        if (r > 0)
-        {
-            buf += r;
-            buflen -= r;
-        }
-        else if (errno != EAGAIN)
-            throwFromErrno("Can't send a Netlink command", ErrorCodes::NETLINK_ERROR);
-    }
-#endif
+    return response;
 }
 
 
-UInt16 getFamilyId(int nl_sock_fd)
+UInt16 getFamilyIdImpl(int fd)
 {
-#if defined(__linux__)
-    struct
-    {
-        ::nlmsghdr header;
-        ::genlmsghdr ge_header;
-        char buf[256];
-    } answer;
+    NetlinkMessage answer = query(fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY, CTRL_ATTR_FAMILY_NAME, TASKSTATS_GENL_NAME, strlen(TASKSTATS_GENL_NAME) + 1);
 
-    static char name[] = TASKSTATS_GENL_NAME;
+    /// NOTE Why the relevant info is located in the second attribute?
+    const NetlinkMessage::Attribute * attr = answer.payload.attribute.next();
 
-    sendCommand(
-        nl_sock_fd, GENL_ID_CTRL, getpid(), CTRL_CMD_GETFAMILY,
-        CTRL_ATTR_FAMILY_NAME, (void *) name,
-        strlen(TASKSTATS_GENL_NAME) + 1);
+    if (attr->header.nla_type != CTRL_ATTR_FAMILY_ID)
+        throw Exception("Received wrong attribute as an answer to GET_FAMILY Netlink command", ErrorCodes::NETLINK_ERROR);
 
-    UInt16 id = 0;
-    ssize_t rep_len = ::recv(nl_sock_fd, &answer, sizeof(answer), 0);
-    if (rep_len < 0)
-        throwFromErrno("Cannot get the family id for " + std::string(TASKSTATS_GENL_NAME) + " from the Netlink socket", ErrorCodes::NETLINK_ERROR);
+    return unalignedLoad<UInt16>(attr->payload);
+}
 
-    if (answer.header.nlmsg_type == NLMSG_ERROR ||!NLMSG_OK((&answer.header), rep_len))
-        throw Exception("Received an error instead of the family id for " + std::string(TASKSTATS_GENL_NAME)
-            + " from the Netlink socket", ErrorCodes::NETLINK_ERROR);
 
-    const ::nlattr * attr;
-    attr = static_cast<const ::nlattr *>(GENLMSG_DATA(&answer));
-    attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(attr) + NLA_ALIGN(attr->nla_len));
-    if (attr->nla_type == CTRL_ATTR_FAMILY_ID)
-        id = *static_cast<const UInt16 *>(NLA_DATA(attr));
+bool checkPermissionsImpl()
+{
+    /// See man getcap.
+    __user_cap_header_struct request{};
+    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
+    request.pid = getpid();
 
-    return id;
-#else
-    return 0;
-#endif
+    __user_cap_data_struct response{};
+
+    /// Avoid dependency on 'libcap'.
+    if (0 != syscall(SYS_capget, &request, &response))
+        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
+
+    return (1 << CAP_NET_ADMIN) & response.effective;
+}
+
+
+UInt16 getFamilyId(int fd)
+{
+    /// It is thread and exception safe since C++11 and even before.
+    static UInt16 res = getFamilyIdImpl(fd);
+    return res;
 }
 
 }
 
 
-TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
-
-
-void TaskStatsInfoGetter::init()
+bool TaskStatsInfoGetter::checkPermissions()
 {
-#if defined(__linux__)
-    if (netlink_socket_fd >= 0)
-        return;
+    static bool res = checkPermissionsImpl();
+    return res;
+}
+
+
+TaskStatsInfoGetter::TaskStatsInfoGetter()
+{
+    if (!checkPermissions())
+        throw Exception("Logical error: TaskStatsInfoGetter is not usable without CAP_NET_ADMIN. Check permissions before creating the object.",
+            ErrorCodes::LOGICAL_ERROR);
 
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
+
+    /// On some containerized environments, operation on Netlink socket could hang forever.
+    /// We set reasonably small timeout to overcome this issue.
 
     struct timeval tv;
     tv.tv_sec = 0;
@@ -177,112 +240,41 @@ void TaskStatsInfoGetter::init()
     if (::bind(netlink_socket_fd, reinterpret_cast<const ::sockaddr *>(&addr), sizeof(addr)) < 0)
         throwFromErrno("Can't bind PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
 
-    netlink_family_id = getFamilyId(netlink_socket_fd);
-#endif
+    taskstats_family_id = getFamilyId(netlink_socket_fd);
 }
 
 
-#if defined(__linux__)
-void TaskStatsInfoGetter::getStatImpl(int tid, ::taskstats & out_stats)
+void TaskStatsInfoGetter::getStat(::taskstats & out_stats, pid_t tid)
 {
-    init();
+    NetlinkMessage answer = query(netlink_socket_fd, taskstats_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(tid));
 
-    sendCommand(netlink_socket_fd, netlink_family_id, tid, TASKSTATS_CMD_GET, TASKSTATS_CMD_ATTR_PID, &tid, sizeof(pid_t));
-
-    NetlinkMessage msg;
-    ssize_t rv = ::recv(netlink_socket_fd, &msg, sizeof(msg), 0);
-
-    if (msg.n.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&msg.n), rv))
+    for (const NetlinkMessage::Attribute * attr = &answer.payload.attribute;
+        attr < answer.end();
+        attr = attr->next())
     {
-        const ::nlmsgerr * err = static_cast<const ::nlmsgerr *>(NLMSG_DATA(&msg));
-        throw Exception("Can't get Netlink response, error: " + std::to_string(err->error), ErrorCodes::NETLINK_ERROR);
-    }
-
-    rv = GENLMSG_PAYLOAD(&msg.n);
-
-    const ::nlattr * attr = static_cast<const ::nlattr *>(GENLMSG_DATA(&msg));
-    ssize_t len = 0;
-
-    while (len < rv)
-    {
-        len += NLA_ALIGN(attr->nla_len);
-
-        if (attr->nla_type == TASKSTATS_TYPE_AGGR_TGID || attr->nla_type == TASKSTATS_TYPE_AGGR_PID)
+        if (attr->header.nla_type == TASKSTATS_TYPE_AGGR_TGID || attr->header.nla_type == TASKSTATS_TYPE_AGGR_PID)
         {
-            int aggr_len = NLA_PAYLOAD(attr->nla_len);
-            int len2 = 0;
-
-            attr = static_cast<const ::nlattr *>(NLA_DATA(attr));
-            while (len2 < aggr_len)
+            for (const NetlinkMessage::Attribute * nested_attr = reinterpret_cast<const NetlinkMessage::Attribute *>(attr->payload);
+                nested_attr < attr->next();
+                nested_attr = nested_attr->next())
             {
-                if (attr->nla_type == TASKSTATS_TYPE_STATS)
+                if (nested_attr->header.nla_type == TASKSTATS_TYPE_STATS)
                 {
-                    const ::taskstats * ts = static_cast<const ::taskstats *>(NLA_DATA(attr));
-                    out_stats = *ts;
+                    out_stats = unalignedLoad<::taskstats>(nested_attr->payload);
+                    return;
                 }
-
-                len2 += NLA_ALIGN(attr->nla_len);
-                attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(attr) + len2);
             }
         }
-
-        attr = reinterpret_cast<const ::nlattr *>(reinterpret_cast<const char *>(GENLMSG_DATA(&msg)) + len);
     }
+
+    throw Exception("There is no TASKSTATS_TYPE_STATS attribute in the Netlink response", ErrorCodes::NETLINK_ERROR);
 }
 
 
-void TaskStatsInfoGetter::getStat(::taskstats & stat, int tid)
+pid_t TaskStatsInfoGetter::getCurrentTID()
 {
-    tid = tid < 0 ? getDefaultTID() : tid;
-    getStatImpl(tid, stat);
-}
-
-#endif
-
-int TaskStatsInfoGetter::getCurrentTID()
-{
-#if defined(__linux__)
     /// This call is always successful. - man gettid
-    return static_cast<int>(syscall(SYS_gettid));
-#else
-    return 0;
-#endif
-}
-
-int TaskStatsInfoGetter::getDefaultTID()
-{
-    if (default_tid < 0)
-        default_tid = getCurrentTID();
-
-    return default_tid;
-}
-
-
-static bool checkPermissionsImpl()
-{
-#if defined(__linux__)
-    /// See man getcap.
-    __user_cap_header_struct request{};
-    request.version = _LINUX_CAPABILITY_VERSION_1;  /// It's enough to check just single CAP_NET_ADMIN capability we are interested.
-    request.pid = getpid();
-
-    __user_cap_data_struct response{};
-
-    /// Avoid dependency on 'libcap'.
-    if (0 != syscall(SYS_capget, &request, &response))
-        throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
-
-    return (1 << CAP_NET_ADMIN) & response.effective;
-#else
-    return false;
-#endif
-}
-
-bool TaskStatsInfoGetter::checkPermissions()
-{
-    /// It is thread- and exception- safe since C++11
-    static bool res = checkPermissionsImpl();
-    return res;
+    return static_cast<pid_t>(syscall(SYS_gettid));
 }
 
 
@@ -293,3 +285,42 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 }
 
 }
+
+
+#else
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
+bool TaskStatsInfoGetter::checkPermissions()
+{
+    return false;
+}
+
+
+TaskStatsInfoGetter::TaskStatsInfoGetter()
+{
+    throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
+{
+}
+
+pid_t TaskStatsInfoGetter::getCurrentTID()
+{
+    return 0;
+}
+
+TaskStatsInfoGetter::~TaskStatsInfoGetter()
+{
+}
+
+}
+
+#endif
