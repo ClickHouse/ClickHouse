@@ -1,6 +1,8 @@
 #pragma once
 
+#include <sys/types.h>
 #include <Core/Types.h>
+#include <boost/noncopyable.hpp>
 
 struct taskstats;
 
@@ -8,22 +10,16 @@ struct taskstats;
 namespace DB
 {
 
-class Exception;
-
-
 /// Get taskstat info from OS kernel via Netlink protocol.
-class TaskStatsInfoGetter
+class TaskStatsInfoGetter : private boost::noncopyable
 {
 public:
-    TaskStatsInfoGetter();
-    TaskStatsInfoGetter(const TaskStatsInfoGetter &) = delete;
-
-    void getStat(::taskstats & stat, int tid);
+    void getStat(::taskstats & stat, pid_t tid);
 
     ~TaskStatsInfoGetter();
 
     /// Make a syscall and returns Linux thread id
-    static int getCurrentTID();
+    static pid_t getCurrentTID();
 
     /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
     static bool checkPermissions();
