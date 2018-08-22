@@ -4,7 +4,11 @@
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
 
+#if defined(__linux__)
 struct taskstats;
+#else
+struct taskstats {};
+#endif
 
 
 namespace DB
@@ -25,11 +29,11 @@ public:
     /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
     static bool checkPermissions();
 
+#if defined(__linux__)
 private:
-    void init();
-
     int netlink_socket_fd = -1;
     UInt16 taskstats_family_id = 0;
+#endif
 };
 
 }
