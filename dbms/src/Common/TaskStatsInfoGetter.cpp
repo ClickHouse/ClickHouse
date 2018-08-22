@@ -61,13 +61,13 @@ struct NetlinkMessage
         }
     };
 
-    alignas(NLMSG_ALIGNTO) union
+    union alignas(NLMSG_ALIGNTO)
     {
         struct
         {
             ::genlmsghdr generic_header;
 
-            alignas(NLMSG_ALIGNTO) union
+            union alignas(NLMSG_ALIGNTO)
             {
                 char buf[MAX_MSG_SIZE];
                 Attribute attribute;    /// First attribute. There may be more.
