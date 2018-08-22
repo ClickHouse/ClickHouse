@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
 
 #include <Common/Exception.h>
 #include <common/logger_useful.h>

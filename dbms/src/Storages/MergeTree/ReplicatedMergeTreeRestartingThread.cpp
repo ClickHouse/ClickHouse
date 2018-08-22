@@ -52,34 +52,6 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
     task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
-    task->schedule();
-}
-
-ReplicatedMergeTreeRestartingThread::~ReplicatedMergeTreeRestartingThread()
-{
-    try
-    {
-        /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-        need_stop = true;
-        task->deactivate();
-        LOG_TRACE(log, "Restarting thread finished");
-
-        /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
-        storage.fetcher.blocker.cancelForever();
-        storage.merger_mutator.actions_blocker.cancelForever();
-
-        /// Stop other tasks.
-
-        partialShutdown();
-
-        if (storage.queue_task_handle)
-            storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
-        storage.queue_task_handle.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-    }
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -214,10 +186,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.cleanup_thread.start();
         storage.alter_thread.start();
         storage.part_check_thread.start();
-
-        if (!storage.queue_task_handle)
-            storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
-                std::bind(&StorageReplicatedMergeTree::queueTask, &storage));
 
         return true;
     }
@@ -366,6 +334,18 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");
+}
+
+
+void ReplicatedMergeTreeRestartingThread::shutdown()
+{
+    /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
+    need_stop = true;
+    task->deactivate();
+    LOG_TRACE(log, "Restarting thread finished");
+
+    /// Stop other tasks.
+    partialShutdown();
 }
 
 }

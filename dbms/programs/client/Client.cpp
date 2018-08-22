@@ -482,6 +482,37 @@ private:
                     Poco::File(history_file).createFile();
             }
 
+#if USE_READLINE
+            /// Install Ctrl+C signal handler that will be used in interactive mode.
+
+            if (rl_initialize())
+                throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
+
+            auto clear_prompt_or_exit = [](int)
+            {
+                /// This is signal safe.
+                ssize_t res = write(STDOUT_FILENO, "\n", 1);
+
+                /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
+                /// (First press to Ctrl+C will try to cancel query by InterruptListener).
+                if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
+                {
+                    rl_replace_line("", 0);
+                    if (rl_forced_update_display())
+                        _exit(0);
+                }
+                else
+                {
+                    /// A little dirty, but we struggle to find better way to correctly
+                    /// force readline to exit after returning from the signal handler.
+                    _exit(0);
+                }
+            };
+
+            if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
+                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+#endif
+
             loop();
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
@@ -1517,35 +1548,6 @@ public:
                 common_arguments.emplace_back(arg);
             }
         }
-
-#if USE_READLINE
-        if (rl_initialize())
-            throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
-
-        auto clear_prompt_or_exit = [](int)
-        {
-            /// This is signal safe.
-            ssize_t res = write(STDOUT_FILENO, "\n", 1);
-
-            /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
-            /// (First press to Ctrl+C will try to cancel query by InterruptListener).
-            if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
-            {
-                rl_replace_line("", 0);
-                if (rl_forced_update_display())
-                    _exit(0);
-            }
-            else
-            {
-                /// A little dirty, but we struggle to find better way to correctly
-                /// force readline to exit after returning from the signal handler.
-                _exit(0);
-            }
-        };
-
-        if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
-            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-#endif
 
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
