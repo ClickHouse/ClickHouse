@@ -1,6 +1,6 @@
 # Distinctive Features of ClickHouse
 
-## True Column-oriented DBMS
+## True Column-Oriented DBMS
 
 In a true column-oriented DBMS, there is no excessive data stored with the values. For example, this means that constant-length values must be supported, to avoid storing their length as additional integer next to the values. In this case, a billion UInt8 values should actually consume around 1 GB uncompressed, or this will strongly affect the CPU use. It is very important to store data compactly even when uncompressed, since the speed of decompression (CPU usage) depends mainly on the volume of uncompressed data.
 
