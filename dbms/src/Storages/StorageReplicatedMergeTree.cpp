@@ -107,9 +107,7 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_OPTIMIZE;
     extern const int KEEPER_EXCEPTION;
     extern const int ALL_REPLICAS_LOST;
-    extern const int CAN_NOT_CLONE_REPLICA;
-    extern const int SOURCE_REPLICA_IS_LOST;
-    extern const int UPDATE_CH;
+    extern const int REPLICA_STATUS_CHANGED;
 }
 
 namespace ActionLocks
@@ -614,13 +612,14 @@ void StorageReplicatedMergeTree::createReplica()
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent));
         /// Check version of /replicas to see if there are any replicas.
-        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/replicas", replicas_stat.version));
-        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name, -1));
+        ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name, replicas_stat.version));
 
         code = zookeeper->tryMulti(ops, resps);
         if (code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
-    } while (code != ZooKeeperImpl::ZooKeeper::ZOK);
+	else if (code != ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+	    zkutil::KeeperMultiException::check(code, ops, resps);
+    } while (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION);
 }
 
 
@@ -1949,13 +1948,13 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 }
 
 
-void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zkutil::Stat is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
+void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zkutil::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
 {   
     LOG_INFO(log, "Will mimic " << source_replica);
 
     String source_path = zookeeper_path + "/replicas/" + source_replica;
     
-    /** That check will be delete (It is only for old version of CH server).
+    /** TODO: it will be deleted! (It is only for old version of CH server).
     * If the reference/master replica is not yet fully created, let's wait.
     * NOTE: If something went wrong while creating it, we can hang around forever.
     *    You can create an ephemeral node at the time of creation to make sure that the replica is created, and not abandoned.
@@ -1983,23 +1982,23 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     zkutil::Requests ops;
     ops.push_back(zkutil::makeSetRequest(replica_path + "/log_pointer", raw_log_pointer, -1));
     
-    if (is_lost_stat.version == -1)
+    if (source_is_lost_stat.version == -1)
     {
         ops.push_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0", zkutil::CreateMode::PersistentSequential));
         ops.push_back(zkutil::makeRemoveRequest(replica_path + "/is_lost", -1));
     }
     else
-        ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", is_lost_stat.version));
+        ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", source_is_lost_stat.version));
     
     zkutil::Responses resp;
     
     auto error = zookeeper->tryMulti(ops, resp);
     if (error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
-        throw Exception("Can not clone replica, because a source replica is lost", ErrorCodes::SOURCE_REPLICA_IS_LOST);
+        throw Exception("Can not clone replica, because a source replica is lost", ErrorCodes::REPLICA_STATUS_CHANGED);
     else if (error == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw Exception("ClickHouse server updated to new version", ErrorCodes::UPDATE_CH);
-    else if (error != ZooKeeperImpl::ZooKeeper::ZOK)
-        throw ("cloneReplica() failed");
+        throw Exception("ClickHouse server updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
+    else
+        zkutil::KeeperMultiException::check(error, ops, resp);
     
 
     /// Let's remember the queue of the reference/master replica.
@@ -2052,14 +2051,14 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     }
     else
     {
-        /// If old replica is_active, and we must create is_lost node (for old version of CH).
+        /// We must update old version(Replica doesn't have /is_lost) of replica.
         zookeeper->create(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent);
         return;
     }
 
     String source_replica;
-    zkutil::Stat is_lost_stat;
-    is_lost_stat.version = -1;
+    zkutil::Stat source_is_lost_stat;
+    source_is_lost_stat.version = -1;
 
     for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
     {
@@ -2068,7 +2067,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         if (source_replica_path != replica_path)
         {
             String resp;
-            if (!zookeeper->tryGet(source_replica_path + "/is_lost", resp, &is_lost_stat) || resp == "0")
+            if (!zookeeper->tryGet(source_replica_path + "/is_lost", resp, &source_is_lost_stat) || resp == "0")
                 source_replica = replica_name;
         }
     }
@@ -2076,7 +2075,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     if (source_replica == "")
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
     
-    cloneReplica(source_replica, is_lost_stat, zookeeper);
+    cloneReplica(source_replica, source_is_lost_stat, zookeeper);
 
     zookeeper->set(replica_path + "/is_lost", "0");
 }
