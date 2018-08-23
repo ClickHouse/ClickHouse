@@ -777,7 +777,7 @@ template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateL
 template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
-void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_filed)
 {
     if (buf.eof())
         throw Exception("Unexpected EOF for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
@@ -820,7 +820,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
 
         while (true)
         {
-            skipJSONFieldPlain(buf, name_of_filed);
+            skipJSONField(buf, name_of_filed);
             skipWhitespaceIfAny(buf);
 
             if (!buf.eof() && *buf.position() == ',')
@@ -837,9 +837,41 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
                 throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
         }
     }
-    else if (*buf.position() == '{') /// fail on objects
+    else if (*buf.position() == '{') /// skip whole object
     {
-        throw Exception("Unexpected nested field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+
+        while (!buf.eof() && *buf.position() != '}')
+        {
+            // field name
+            if (*buf.position() == '"') {
+                NullSink sink;
+                readJSONStringInto(sink, buf);
+            } else {
+                throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            }
+
+            // ':'
+            skipWhitespaceIfAny(buf);
+            if (buf.eof() || !(*buf.position() == ':'))
+                throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            ++buf.position();
+            skipWhitespaceIfAny(buf);
+
+            skipJSONField(buf, name_of_filed);
+            skipWhitespaceIfAny(buf);
+
+            // optional ','
+            if (!buf.eof() && *buf.position() == ',') {
+                ++buf.position();
+                skipWhitespaceIfAny(buf);
+            }
+        }
+
+        if (buf.eof())
+            throw Exception("Unexpected EOF for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        ++buf.position();
     }
     else
     {
