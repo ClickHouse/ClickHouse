@@ -104,14 +104,14 @@ endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
-    target_include_directories(mysqlclient PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
-    target_include_directories(mysqlclient PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(mysqlclient BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(mysqlclient BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     add_subdirectory (librdkafka-cmake)
-    target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
-    target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
