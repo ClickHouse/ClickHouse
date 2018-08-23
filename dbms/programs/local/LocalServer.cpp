@@ -273,7 +273,7 @@ void LocalServer::processQueries()
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(*context);
 
-    bool echo_query = config().hasOption("echo") || config().hasOption("verbose");
+    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
 
     for (const auto & query : queries)
@@ -281,8 +281,8 @@ void LocalServer::processQueries()
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
-        if (echo_query)
-            std::cerr << query << '\n';
+        if (echo_queries)
+            std::cout << query << '\n';
 
         try
         {
