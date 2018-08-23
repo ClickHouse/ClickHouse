@@ -28,6 +28,8 @@ ifndef MAKE_TARGET
     MAKE_TARGET = clickhouse-bundle
 endif
 
+CMAKE_FLAGS += -DENABLE_UTILS=0
+
 #DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
 
 #DEB_CC ?= gcc-7
