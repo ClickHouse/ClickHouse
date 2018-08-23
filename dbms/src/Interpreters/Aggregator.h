@@ -148,7 +148,9 @@ struct AggregationMethodOneNumber
 
     /** Do not use optimization for consecutive keys.
       */
-    static const bool no_consecutive_keys_optimization = false;
+    static const bool no_consecutive_keys_optimization = true;
+    /// Use optimization for low cardinality.
+    static constexpr bool low_cardinality_optimization = false;
 
     /** Insert the key from the hash table into columns.
       */
@@ -219,6 +221,7 @@ struct AggregationMethodString
     static void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
 
     static const bool no_consecutive_keys_optimization = false;
+    static constexpr bool low_cardinality_optimization = false;
 
     static StringRef getRef(const typename Data::value_type & value)
     {
@@ -285,6 +288,7 @@ struct AggregationMethodFixedString
     static void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
+    static constexpr bool low_cardinality_optimization = false;
 
     static StringRef getRef(const typename Data::value_type & value)
     {
@@ -311,7 +315,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     using iterator = typename Base::iterator;
     using const_iterator = typename Base::const_iterator;
 
-    Data data;
+    using Base::data;
 
     AggregationMethodSingleLowCardinalityColumn() = default;
 
@@ -321,33 +325,117 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     struct State : public BaseState
     {
         ColumnRawPtrs key;
-        const ColumnWithDictionary * column;
+        const IColumn * positions = nullptr;
+        const UInt64 * saved_hash;
+        PaddedPODArray<AggregateDataPtr> aggregate_data_cache;
+        size_t size_of_index_type = 0;
 
-        /** Called at the start of each block processing.
-          * Sets the variables needed for the other methods called in inner loops.
-          */
         void init(ColumnRawPtrs & key_columns)
         {
-            column = typeid_cast<const ColumnWithDictionary *>(key_columns[0]);
+            auto column = typeid_cast<const ColumnWithDictionary *>(key_columns[0]);
             if (!column)
                 throw Exception("Invalid aggregation key type for AggregationMethodSingleLowCardinalityColumn method. "
                                 "Excepted LowCardinality, got " + key_columns[0]->getName(), ErrorCodes::LOGICAL_ERROR);
             key = {column->getDictionary().getNestedColumn().get()};
+            positions = column->getIndexesPtr().get();
+            saved_hash = column->getDictionary().tryGetSavedHash();
+            size_of_index_type = column->getSizeOfIndexType();
 
             BaseState::init(key);
+
+            AggregateDataPtr default_data = nullptr;
+            aggregate_data_cache.assign(key[0]->size(), default_data);
+        }
+
+        size_t getIndexAt(size_t row) const
+        {
+            switch (size_of_index_type)
+            {
+                case sizeof(UInt8): return static_cast<const ColumnUInt8 *>(positions)->getElement(row);
+                case sizeof(UInt16): return static_cast<const ColumnUInt16 *>(positions)->getElement(row);
+                case sizeof(UInt32): return static_cast<const ColumnUInt32 *>(positions)->getElement(row);
+                case sizeof(UInt64): return static_cast<const ColumnUInt64 *>(positions)->getElement(row);
+                default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+            }
         }
 
         /// Get the key from the key columns for insertion into the hash table.
         Key getKey(
-                const ColumnRawPtrs & /*key_columns*/,
-                size_t /*keys_size*/,
-                size_t i,
-                const Sizes & key_sizes,
-                StringRefs & keys,
-                Arena & pool) const
+            const ColumnRawPtrs & /*key_columns*/,
+            size_t /*keys_size*/,
+            size_t i,
+            const Sizes & key_sizes,
+            StringRefs & keys,
+            Arena & pool) const
         {
-            size_t row = column->getIndexes().getUInt(i);
+            size_t row = getIndexAt(i);
             return BaseState::getKey(key, 1, row, key_sizes, keys, pool);
+        }
+
+        template <typename D>
+        AggregateDataPtr * emplaceKeyFromRow(
+            D & data,
+            size_t i,
+            bool & inserted,
+            size_t keys_size,
+            StringRefs & keys,
+            Arena & pool)
+        {
+            size_t row = getIndexAt(i);
+            if (aggregate_data_cache[row])
+            {
+                inserted = false;
+                return &aggregate_data_cache[row];
+            }
+            else
+            {
+                ColumnRawPtrs key_columns;
+                Sizes key_sizes;
+                auto key = getKey(key_columns, 0, i, key_sizes, keys, pool);
+
+                typename D::iterator it;
+                if (saved_hash)
+                    data.emplace(key, it, inserted, saved_hash[row]);
+                else
+                    data.emplace(key, it, inserted);
+
+                if (inserted)
+                    Base::onNewKey(*it, keys_size, keys, pool);
+                else
+                    aggregate_data_cache[row] = Base::getAggregateData(it->second);
+
+                return &Base::getAggregateData(it->second);
+            }
+        }
+
+        void cacheAggregateData(size_t i, AggregateDataPtr data)
+        {
+            size_t row = getIndexAt(i);
+            aggregate_data_cache[row] = data;
+        }
+
+        template <typename D>
+        AggregateDataPtr * findFromRow(D & data, size_t i)
+        {
+            size_t row = getIndexAt(i);
+            if (!aggregate_data_cache[row])
+            {
+                ColumnRawPtrs key_columns;
+                Sizes key_sizes;
+                StringRefs keys;
+                Arena pool;
+                auto key = getKey(key_columns, 0, i, key_sizes, keys, pool);
+
+                typename D::iterator it;
+                if (saved_hash)
+                    it = data.find(key, saved_hash[row]);
+                else
+                    it = data.find(key);
+
+                if (it != data.end())
+                    aggregate_data_cache[row] = Base::getAggregateData(it->second);
+            }
+            return &aggregate_data_cache[row];
         }
     };
 
@@ -364,7 +452,8 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
         return Base::onExistingKey(key, keys, pool);
     }
 
-    using Base::no_consecutive_keys_optimization;
+    static const bool no_consecutive_keys_optimization = true;
+    static const bool low_cardinality_optimization = true;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
     {
@@ -528,6 +617,7 @@ struct AggregationMethodKeysFixed
     static void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
+    static constexpr bool low_cardinality_optimization = false;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
@@ -629,6 +719,7 @@ struct AggregationMethodConcat
 
     /// If the key already was, then it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
+    static constexpr bool low_cardinality_optimization = false;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
@@ -714,6 +805,7 @@ struct AggregationMethodSerialized
 
     /// If the key already was, it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
+    static constexpr bool low_cardinality_optimization = false;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes &)
     {
@@ -770,6 +862,7 @@ struct AggregationMethodHashed
     static void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
+    static constexpr bool low_cardinality_optimization = false;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes &)
     {
