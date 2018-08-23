@@ -2071,8 +2071,10 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         {
             String resp;
             if (!zookeeper->tryGet(source_replica_path + "/is_lost", resp, &source_is_lost_stat) || resp == "0")
+            {
                 source_replica = replica_name;
-		break;
+		        break;
+            }
         }
     }
     
