@@ -24,11 +24,7 @@ class ReplicatedMergeTreeRestartingThread
 public:
     ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_);
 
-    void start()
-    {
-        task->activate();
-        task->schedule();
-    }
+    void start() { task->activateAndSchedule(); }
 
     void wakeup() { task->schedule(); }
 

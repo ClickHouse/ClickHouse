@@ -2411,8 +2411,7 @@ void StorageReplicatedMergeTree::enterLeaderElection()
         LOG_INFO(log, "Became leader");
 
         is_leader = true;
-        merge_selecting_task->activate();
-        merge_selecting_task->schedule();
+        merge_selecting_task->activateAndSchedule();
     };
 
     try
