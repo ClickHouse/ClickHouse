@@ -147,7 +147,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     for (size_t i = 0; i < entries.size(); ++i)
     {
         ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/log/" + entries[i], -1));
-        
+
+        /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
         for (auto host_version: host_versions_inactive_replicas)
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
 
