@@ -567,6 +567,10 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         std::replace( new_path.begin(), new_path.end(), '/', '_');
         preprocessed_path = preprocessed_dir + new_path;
         auto path = Poco::Path(preprocessed_path).makeParent();
+
+LOG_WARNING(log, "makepath " << path.toString());
+
+
         if (!path.toString().empty())
             Poco::File(path).createDirectories();
     }
