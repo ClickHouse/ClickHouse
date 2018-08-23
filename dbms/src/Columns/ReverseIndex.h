@@ -261,6 +261,17 @@ public:
     ColumnType * getColumn() const { return column; }
     size_t size() const;
 
+    const UInt64 * tryGetSavedHash() const
+    {
+        if (!use_saved_hash)
+            return nullptr;
+
+        if (!saved_hash)
+            calcHashes();
+
+        return &saved_hash->getData()[0];
+    }
+
     size_t allocatedBytes() const { return index ? index->getBufferSizeInBytes() : 0; }
 
 private:
@@ -272,7 +283,7 @@ private:
 
     /// Lazy initialized.
     std::unique_ptr<IndexMapType> index;
-    ColumnUInt64::MutablePtr saved_hash;
+    mutable ColumnUInt64::MutablePtr saved_hash;
 
     void buildIndex();
 
@@ -287,6 +298,8 @@ private:
         else
             return StringRefHash()(ref);
     }
+
+    void calcHashes() const;
 };
 
 
@@ -295,7 +308,10 @@ template <typename IndexType, typename ColumnType>
 void ReverseIndex<IndexType, ColumnType>:: setColumn(ColumnType * column_)
 {
     if (column != column_)
+    {
         index = nullptr;
+        saved_hash = nullptr;
+    }
 
     column = column_;
 }
@@ -322,7 +338,13 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
     index = std::make_unique<IndexMapType>(size);
 
     if constexpr (use_saved_hash)
-        saved_hash = ColumnUInt64::create(size);
+    {
+        if (!saved_hash)
+        {
+            saved_hash = ColumnUInt64::create(size);
+            calcHashes();
+        }
+    }
 
     auto & state = index->getState();
     state.index_column = column;
@@ -336,10 +358,11 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
 
     for (auto row : ext::range(num_prefix_rows_to_skip, size))
     {
-        auto hash = getHash(column->getDataAt(row));
-
+        UInt64 hash;
         if constexpr (use_saved_hash)
-            saved_hash->getElement(row) = hash;
+            hash = saved_hash->getElement(row);
+        else
+            hash = getHash(column->getDataAt(row));
 
         index->emplace(row + base_index, iterator, inserted, hash);
 
@@ -347,6 +370,19 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
             throw Exception("Duplicating keys found in ReverseIndex.", ErrorCodes::LOGICAL_ERROR);
     }
 }
+
+template <typename IndexType, typename ColumnType>
+void ReverseIndex<IndexType, ColumnType>::calcHashes() const
+{
+    if (!column)
+        throw Exception("ReverseIndex can't build index because index column wasn't set.", ErrorCodes::LOGICAL_ERROR);
+
+    auto size = column->size();
+    saved_hash = ColumnUInt64::create(size);
+
+    for (auto row : ext::range(0, size))
+        saved_hash->getElement(row) = getHash(column->getDataAt(row));
+};
 
 template <typename IndexType, typename ColumnType>
 UInt64 ReverseIndex<IndexType, ColumnType>::insert(UInt64 from_position)
