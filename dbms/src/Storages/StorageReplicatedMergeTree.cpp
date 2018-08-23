@@ -617,8 +617,8 @@ void StorageReplicatedMergeTree::createReplica()
         code = zookeeper->tryMulti(ops, resps);
         if (code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
-	else if (code != ZooKeeperImpl::ZooKeeper::ZBADVERSION)
-	    zkutil::KeeperMultiException::check(code, ops, resps);
+        else if (code != ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+            zkutil::KeeperMultiException::check(code, ops, resps);
     } while (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION);
 }
 
@@ -1954,7 +1954,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
 
     String source_path = zookeeper_path + "/replicas/" + source_replica;
     
-    /** TODO: it will be deleted! (It is only for old version of CH server).
+    /** TODO: it will be deleted! (It is only to support old version of CH server).
     * If the reference/master replica is not yet fully created, let's wait.
     * NOTE: If something went wrong while creating it, we can hang around forever.
     *    You can create an ephemeral node at the time of creation to make sure that the replica is created, and not abandoned.
