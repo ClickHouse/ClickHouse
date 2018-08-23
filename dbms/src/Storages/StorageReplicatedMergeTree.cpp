@@ -617,7 +617,9 @@ void StorageReplicatedMergeTree::createReplica()
         code = zookeeper->tryMulti(ops, resps);
         if (code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
             throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
-        else if (code != ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+        else if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+            LOG_ERROR(log, "Retry createReplica(), because some replicas were created");
+        else
             zkutil::KeeperMultiException::check(code, ops, resps);
     } while (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION);
 }
@@ -1982,6 +1984,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     zkutil::Requests ops;
     ops.push_back(zkutil::makeSetRequest(replica_path + "/log_pointer", raw_log_pointer, -1));
     
+    /// For support old versions CH.
     if (source_is_lost_stat.version == -1)
     {
         ops.push_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0", zkutil::CreateMode::PersistentSequential));
@@ -1994,9 +1997,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     
     auto error = zookeeper->tryMulti(ops, resp);
     if (error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
-        throw Exception("Can not clone replica, because a source replica is lost", ErrorCodes::REPLICA_STATUS_CHANGED);
+        throw Exception("Can not clone replica, because a " + source_path + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
     else if (error == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw Exception("ClickHouse server updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
+        throw Exception("Can not clone replica, because the clickHouse server updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
     else
         zkutil::KeeperMultiException::check(error, ops, resp);
     
@@ -2069,6 +2072,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
             String resp;
             if (!zookeeper->tryGet(source_replica_path + "/is_lost", resp, &source_is_lost_stat) || resp == "0")
                 source_replica = replica_name;
+		break;
         }
     }
     

@@ -26,8 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int REPLICA_IS_ALREADY_ACTIVE;
-    extern const int ALL_REPLICAS_LOST;
-    extern const int CAN_NOT_CLONE_REPLICA;
 }
 
 namespace
