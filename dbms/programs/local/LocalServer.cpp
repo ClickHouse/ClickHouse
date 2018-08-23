@@ -282,7 +282,11 @@ void LocalServer::processQueries()
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
         if (echo_queries)
-            std::cout << query << '\n';
+        {
+            writeString(query, write_buf);
+            writeChar('\n', write_buf);
+            write_buf.next();
+        }
 
         try
         {
