@@ -2,13 +2,19 @@ import errno
 import subprocess as sp
 from threading import Timer
 import tempfile
+import os
 
 
 class Client:
     def __init__(self, host, port=9000, command='/usr/bin/clickhouse-client'):
         self.host = host
         self.port = port
-        self.command = [command, '--host', self.host, '--port', str(self.port), '--stacktrace']
+        self.command = [command]
+
+        if os.path.basename(command) == 'clickhouse':
+            self.command.append('client')
+
+        self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
 
     def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):

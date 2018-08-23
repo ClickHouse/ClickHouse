@@ -40,7 +40,7 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None,
-                 zookeeper_config_path=None):
+                 zookeeper_config_path=None, custom_dockerd_host=None):
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
@@ -54,7 +54,13 @@ class ClickHouseCluster:
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
 
-        self.base_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name', self.project_name]
+        custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST', '')
+
+        self.base_cmd = ['docker-compose']
+        if custom_dockerd_host:
+            self.base_cmd += ['--host', custom_dockerd_host]
+
+        self.base_cmd += ['--project-directory', self.base_dir, '--project-name', self.project_name]
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
