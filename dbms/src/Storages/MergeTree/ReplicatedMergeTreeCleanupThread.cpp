@@ -195,7 +195,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
         auto multi_responses = futures[i].get();
         if (multi_responses.responses[0]->error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
             throw Exception("One of the replicas became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
-        else if (multi_responses.responses[0]->error == ZooKeeperImpl::ZooKeeper::ZOK)
+        else if (multi_responses.error != ZooKeeperImpl::ZooKeeper::ZOK)
             zkutil::KeeperMultiException::check(multi_responses.error, requests[i], multi_responses.responses);
     }
 }
