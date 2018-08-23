@@ -132,8 +132,10 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                 }
 		        /// Only to support old versions CH.
                 else
+                {
                     ++replicas_were_marked_is_lost;
                     host_versions_inactive_replicas[replica] = host_stat.version;
+                }
         }
     }
 
