@@ -104,8 +104,8 @@ target_link_libraries (
     pocoext
     ${CITYHASH_LIBRARIES}
     ${CCTZ_LIBRARY}
-    ${Boost_SYSTEM_LIBRARY}
     ${Boost_FILESYSTEM_LIBRARY}
+    ${Boost_SYSTEM_LIBRARY}
     ${MALLOC_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT}
     ${GLIBC_COMPATIBILITY_LIBRARIES}
