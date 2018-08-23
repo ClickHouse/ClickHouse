@@ -5,7 +5,7 @@ StopwatchRUsage::Timestamp StopwatchRUsage::Timestamp::current()
 {
     StopwatchRUsage::Timestamp res;
 
-    ::rusage rusage;
+    ::rusage rusage {};
 #if !defined(__APPLE__)
     ::getrusage(RUSAGE_THREAD, &rusage);
 #endif
