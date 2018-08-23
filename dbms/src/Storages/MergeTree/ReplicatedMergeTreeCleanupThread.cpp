@@ -95,11 +95,13 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                                               : 0];
 
     std::unordered_map<String, UInt32> host_versions_inactive_replicas;
-    std::unordered_map<String, String> log_pointers_inactive_replicas;
+    std::unordered_map<String, String> log_pointers_lost_replicas;
+
+    size_t replicas_were_marked_is_lost = 0;
 
     for (const String & replica : replicas)
     {
-        zkutil::Stat host_stat
+        zkutil::Stat host_stat;
         zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/host", &host_stat);
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
         if (pointer.empty())
@@ -125,10 +127,12 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                     else
                     {
                         host_versions_inactive_replicas[replica] = host_stat.version;
-                        log_pointers_inactive_replicas[replica] = log_pointer_str;
+                        log_pointers_lost_replicas[replica] = log_pointer_str;
                     }
                 }
+		/// Only to support old versions CH.
                 else
+                    ++replicas_were_marked_is_lost;
                     host_versions_inactive_replicas[replica] = host_stat.version;
         }
     }
@@ -141,19 +145,19 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     if (entries.empty())
         return;
 
-    markLostReplicas(host_versions_inactive_replicas, log_pointers_inactive_replicas, replicas.size(), entries.back(), zookeeper);
+    markLostReplicas(host_versions_inactive_replicas, log_pointers_lost_replicas, replicas.size() - replicas_were_marked_is_lost, zookeeper);
 
     zkutil::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
     {
         ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/log/" + entries[i], -1));
 
-        /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
-        for (auto host_version: host_versions_inactive_replicas)
-            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
-
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
+	    /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
+	    for (auto host_version: host_versions_inactive_replicas)
+	        ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
+
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
             zookeeper->multi(ops);
@@ -166,38 +170,41 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
 
 void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map<String, UInt32> & host_versions_inactive_replicas,
-                                                        const std::unordered_map<String, String> & log_pointers_inactive_replicas,
-                                                        size_t replicas_count, const String & remove_border, const zkutil::ZooKeeperPtr & zookeeper)
+                                                        const std::unordered_map<String, String> & log_pointers_lost_replicas,
+                                                        size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper)
 {
-    std::vector<zkutil::Requests> requests;
-    std::vector<zkutil::ZooKeeper::FutureMulti> futures;
+    struct LostReplicaInfo {
+	String name;
+	zkutil::Requests requests;
+    };
 
-    for (auto pair : log_pointers_inactive_replicas)
+    std::vector<zkutil::Requests> requests;
+    std::vector<LostReplicaInfo> lost_replicas_info;
+    std::vector<std::pair<LostReplicaInfo, zkutil::ZooKeeper::FutureMulti>> info_and_future;
+
+    for (auto pair : log_pointers_lost_replicas)
     {
         String replica = pair.first;
-        if (pair.second <= remove_border)
-        { 
-            zkutil::Requests ops;
-            /// If host changed version we can not mark replicas, because replica started to be active.
-            ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/host", host_versions_inactive_replicas.at(replica)));
-            ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", -1));
-            requests.push_back(ops);
-        }
+        zkutil::Requests ops;
+        /// If host changed version we can not mark replicas, because replica started to be active.
+        ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/host", host_versions_inactive_replicas.at(replica)));
+        ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", -1));
+        lost_replicas_info.push_back(LostReplicaInfo{replica, ops});
     }
     
-    if (requests.size() == replicas_count)
+    if (lost_replicas_info.size() == replicas_count)
         throw Exception("All replicas wiil be lost", ErrorCodes::ALL_REPLICAS_LOST);
     
-    for (auto & req : requests)
-        futures.push_back(zookeeper->tryAsyncMulti(req));
+    for (auto & replica_info : lost_replicas_info)
+        info_and_future.emplace_back(replica_info, zookeeper->tryAsyncMulti(replica_info.requests));
 
-    for (size_t i = 0; i < futures.size(); ++i)
+    for (auto & pair : info_and_future)
     {
-        auto multi_responses = futures[i].get();
+        auto multi_responses = pair.second.get();
         if (multi_responses.responses[0]->error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
-            throw Exception("One of the replicas became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
+            throw Exception(pair.first.name + " became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
         else if (multi_responses.error != ZooKeeperImpl::ZooKeeper::ZOK)
-            zkutil::KeeperMultiException::check(multi_responses.error, requests[i], multi_responses.responses);
+            zkutil::KeeperMultiException::check(multi_responses.error, pair.first.requests, multi_responses.responses);
     }
 }
 
