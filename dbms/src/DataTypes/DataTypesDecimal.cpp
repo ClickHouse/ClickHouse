@@ -102,7 +102,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    FieldType x = get<DecimalField>(field);
+    FieldType x = get<DecimalField<T>>(field);
     writeBinary(x, ostr);
 }
 

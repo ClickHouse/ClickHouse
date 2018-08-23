@@ -153,7 +153,7 @@ public:
     UInt32 getScale() const { return scale; }
 
 private:
-    UInt32 scale = DecimalField::wrongScale();
+    UInt32 scale = DecimalField<Decimal32>::wrongScale();
 };
 
 
@@ -258,7 +258,7 @@ public:
         if constexpr (IsDecimalNumber<T>)
         {
             UInt32 scale = data.getScale();
-            if (scale == DecimalField::wrongScale())
+            if (scale == DecimalField<Decimal32>::wrongScale())
                 throw Exception("Extracting Decimal field with unknown scale. Scale is lost.", ErrorCodes::LOGICAL_ERROR);
             return DecimalField(data[n], scale);
         }
