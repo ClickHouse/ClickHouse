@@ -203,8 +203,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
         auto multi_responses = pair.second.get();
         if (multi_responses.responses[0]->error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
             throw Exception(pair.first.name + " became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
-        else if (multi_responses.error != ZooKeeperImpl::ZooKeeper::ZOK)
-            zkutil::KeeperMultiException::check(multi_responses.error, pair.first.requests, multi_responses.responses);
+        zkutil::KeeperMultiException::check(multi_responses.error, pair.first.requests, multi_responses.responses);
     }
 }
 
