@@ -99,9 +99,9 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     for (const String & replica : replicas)
     {
-        zkutil::Stat host_stat, log_pointer_stat;
+        zkutil::Stat host_stat
         zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/host", &host_stat);
-        String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer", &log_pointer_stat);
+        String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
         if (pointer.empty())
             return;
 
