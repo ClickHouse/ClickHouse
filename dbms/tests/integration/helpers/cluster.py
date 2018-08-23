@@ -54,7 +54,7 @@ class ClickHouseCluster:
         self.project_name = re.sub(r'[^a-z0-9]', '', self.project_name.lower())
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
 
-        custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST', '')
+        custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
 
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
