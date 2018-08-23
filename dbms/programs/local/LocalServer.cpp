@@ -104,8 +104,8 @@ try
 
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
     {
-        if (!config().hasOption("silent"))
-            std::cerr << "There are no queries to process." << std::endl;
+        if (config().hasOption("verbose"))
+            std::cerr << "There are no queries to process." << '\n';
 
         return Application::EXIT_OK;
     }
@@ -200,8 +200,7 @@ try
 }
 catch (const Exception & e)
 {
-    if (!config().hasOption("silent"))
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
@@ -283,7 +282,7 @@ void LocalServer::processQueries()
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
         if (echo_query)
-            std::cerr << query << "\n";
+            std::cerr << query << '\n';
 
         try
         {
@@ -297,8 +296,7 @@ void LocalServer::processQueries()
             if (!exception)
                 exception = std::current_exception();
 
-            if (!config().has("silent"))
-                std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
         }
     }
 
@@ -360,7 +358,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << '\n';
 }
 
 std::string LocalServer::getHelpHeader() const
@@ -421,7 +419,6 @@ void LocalServer::init(int argc, char ** argv)
         ("format,f", po::value<std::string>(), "default output format (clickhouse-client compatibility)")
         ("output-format", po::value<std::string>(), "default output format")
 
-        ("silent,s", "quiet mode, do not print errors")
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
@@ -477,8 +474,6 @@ void LocalServer::init(int argc, char ** argv)
     if (options.count("output-format"))
         config().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.count("silent"))
-        config().setBool("silent", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
     if (options.count("echo"))
@@ -507,7 +502,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
         auto code = DB::getCurrentExceptionCode();
         return code ? code : 1;
     }
