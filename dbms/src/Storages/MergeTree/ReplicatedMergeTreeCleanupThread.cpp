@@ -173,7 +173,8 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
                                                         const std::unordered_map<String, String> & log_pointers_lost_replicas,
                                                         size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper)
 {
-    struct LostReplicaInfo {
+    struct LostReplicaInfo
+    {
         String name;
         zkutil::Requests requests;
     };
