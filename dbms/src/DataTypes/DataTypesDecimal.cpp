@@ -1,5 +1,4 @@
 #include <type_traits>
-#include <common/intExp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -44,30 +43,10 @@ bool DataTypeDecimal<T>::equals(const IDataType & rhs) const
 }
 
 template <typename T>
-void DataTypeDecimal<T>::writeText(T value, WriteBuffer & ostr) const
-{
-    if (value < T(0))
-    {
-        value *= T(-1);
-        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
-    }
-
-    writeIntText(static_cast<typename T::NativeType>(wholePart(value)), ostr);
-    if (scale)
-    {
-        writeChar('.', ostr);
-        String str_fractional(scale, '0');
-        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= T(10))
-            str_fractional[pos] += value % T(10);
-        ostr.write(str_fractional.data(), scale);
-    }
-}
-
-template <typename T>
 void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     T value = static_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, ostr);
+    writeText(value, scale, ostr);
 }
 
 template <typename T>
@@ -238,19 +217,19 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 template <>
 Decimal32 DataTypeDecimal<Decimal32>::getScaleMultiplier(UInt32 scale_)
 {
-    return common::exp10_i32(scale_);
+    return decimalScaleMultiplier<Int32>(scale_);
 }
 
 template <>
 Decimal64 DataTypeDecimal<Decimal64>::getScaleMultiplier(UInt32 scale_)
 {
-    return common::exp10_i64(scale_);
+    return decimalScaleMultiplier<Int64>(scale_);
 }
 
 template <>
 Decimal128 DataTypeDecimal<Decimal128>::getScaleMultiplier(UInt32 scale_)
 {
-    return common::exp10_i128(scale_);
+    return decimalScaleMultiplier<Int128>(scale_);
 }
 
 

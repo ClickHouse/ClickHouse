@@ -203,8 +203,6 @@ public:
     T parseFromString(const String & str) const;
 
     void readText(T & x, ReadBuffer & istr) const { readText(x, istr, precision, scale); }
-    void writeText(T value, WriteBuffer & ostr) const;
-
     static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 

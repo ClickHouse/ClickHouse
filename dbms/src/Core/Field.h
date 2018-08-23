@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_GET;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class Field;
@@ -43,33 +44,50 @@ public:
     {}
 
     operator T() const { return dec; }
-
+    T getValue() const { return dec; }
+    T getScaleMultiplier() const;
     UInt32 getScale() const { return scale; }
 
     template <typename U>
     bool operator < (const DecimalField<U> & r) const
     {
         using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
-        return decimalLess<MaxType>(dec, r, scale, r.getScale());
+        return decimalLess<MaxType>(dec, r.getValue(), scale, r.getScale());
     }
 
     template <typename U>
     bool operator <= (const DecimalField<U> & r) const
     {
         using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
-        return decimalLessOrEqual<MaxType>(dec, r, scale, r.getScale());
+        return decimalLessOrEqual<MaxType>(dec, r.getValue(), scale, r.getScale());
     }
 
     template <typename U>
     bool operator == (const DecimalField<U> & r) const
     {
         using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
-        return decimalEqual<MaxType>(dec, r, scale, r.getScale());
+        return decimalEqual<MaxType>(dec, r.getValue(), scale, r.getScale());
     }
 
     template <typename U> bool operator > (const DecimalField<U> & r) const { return r < *this; }
     template <typename U> bool operator >= (const DecimalField<U> & r) const { return r <= * this; }
     template <typename U> bool operator != (const DecimalField<U> & r) const { return !(*this == r); }
+
+    const DecimalField<T> & operator += (const DecimalField<T> & r)
+    {
+        if (scale != r.getScale())
+            throw Exception("Add different decimal fields", ErrorCodes::LOGICAL_ERROR);
+        dec += r.getValue();
+        return *this;
+    }
+
+    const DecimalField<T> & operator -= (const DecimalField<T> & r)
+    {
+        if (scale != r.getScale())
+            throw Exception("Sub different decimal fields", ErrorCodes::LOGICAL_ERROR);
+        dec -= r.getValue();
+        return *this;
+    }
 
 private:
     T dec;

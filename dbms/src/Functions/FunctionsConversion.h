@@ -236,7 +236,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
 {
     static void execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
     {
-        type->writeText(x, wb);
+        writeText(x, type->getScale(), wb);
     }
 };
 
