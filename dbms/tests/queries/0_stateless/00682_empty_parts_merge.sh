@@ -21,6 +21,26 @@ ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.ordinary"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.ordinary"
 
 
+${CLICKHOUSE_CLIENT} --query="SELECT '*** Vertical merge ***'"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.vertical"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.vertical(k UInt32, v UInt32) ENGINE MergeTree ORDER BY k \
+    SETTINGS enable_vertical_merge_algorithm=1, \
+             vertical_merge_algorithm_min_rows_to_activate=0, \
+             vertical_merge_algorithm_min_columns_to_activate=0"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.vertical(k, v) VALUES (1, 1)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.vertical(k, v) VALUES (2, 2)"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.vertical DELETE WHERE k = 1"
+wait_for_mutation "vertical" "mutation_3.txt"
+
+${CLICKHOUSE_CLIENT} --query="OPTIMIZE TABLE test.vertical PARTITION tuple() FINAL"
+${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.vertical"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.vertical"
+
+
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.summing"
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.summing(k UInt32, v UInt32) ENGINE SummingMergeTree ORDER BY k"
 
