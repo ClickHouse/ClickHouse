@@ -130,7 +130,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                         log_pointers_lost_replicas[replica] = log_pointer_str;
                     }
                 }
-		/// Only to support old versions CH.
+		        /// Only to support old versions CH.
                 else
                     ++replicas_were_marked_is_lost;
                     host_versions_inactive_replicas[replica] = host_stat.version;
@@ -154,9 +154,9 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
-	    /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
-	    for (auto host_version: host_versions_inactive_replicas)
-	        ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
+            /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
+            for (auto host_version: host_versions_inactive_replicas)
+                ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
 
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
@@ -174,8 +174,8 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
                                                         size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper)
 {
     struct LostReplicaInfo {
-	String name;
-	zkutil::Requests requests;
+        String name;
+        zkutil::Requests requests;
     };
 
     std::vector<zkutil::Requests> requests;
