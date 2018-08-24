@@ -870,8 +870,10 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     if (name != "DB::Exception")
         out << name << ". ";
 
-    out << message
-        << ". Stack trace:\n\n" << stack_trace;
+    out << message << ".";
+
+    if (!stack_trace.empty())
+        out << " Stack trace:\n\n" << stack_trace;
 
     if (has_nested)
     {
