@@ -18,7 +18,7 @@ env TEST_RUN=1 \
     TEST_OPT="--skip long compile 00416 $TEST_OPT" \
     TEST_TRUE=false \
     DH_VERBOSE=1 \
-    CMAKE_FLAGS="-DUNBUNDLED=1 $CMAKE_FLAGS" \
+    CMAKE_FLAGS="-DUNBUNDLED=1 -DUSE_STATIC_LIBRARIES=0 $CMAKE_FLAGS" \
     `# Use all possible contrib libs from system` \
     `# psmisc - killall` \
     `# gdb - symbol test in pbuilder` \
