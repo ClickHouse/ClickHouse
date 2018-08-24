@@ -88,7 +88,7 @@ void TCPHandler::runImpl()
         try
         {
             /// We try to send error information to the client.
-            sendException(e);
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -103,7 +103,7 @@ void TCPHandler::runImpl()
             Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
-            sendException(e);
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
 
@@ -133,6 +133,8 @@ void TCPHandler::runImpl()
         std::unique_ptr<Exception> exception;
         bool network_error = false;
 
+        bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
+
         try
         {
             /// Restore context of request.
@@ -148,6 +150,8 @@ void TCPHandler::runImpl()
                 continue;
 
             CurrentThread::initializeQuery();
+
+            send_exception_with_stack_trace = query_context.getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -246,7 +250,7 @@ void TCPHandler::runImpl()
                     tryLogCurrentException(log, "Can't send logs to client");
                 }
 
-                sendException(*exception);
+                sendException(*exception, send_exception_with_stack_trace);
             }
         }
         catch (...)
@@ -830,10 +834,10 @@ void TCPHandler::sendLogData(const Block & block)
 }
 
 
-void TCPHandler::sendException(const Exception & e)
+void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     writeVarUInt(Protocol::Server::Exception, *out);
-    writeException(e, *out);
+    writeException(e, *out, with_stack_trace);
     out->next();
 }
 
