@@ -376,7 +376,7 @@ void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids,
 }
 
 template <typename T>
-void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPODArray<Key> & ids,
+void RangeHashedDictionary::getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
                                            PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const
 {
     const HashMap<UInt64, Values<T>> & attr = *std::get<Ptr<T>>(attribute.maps);

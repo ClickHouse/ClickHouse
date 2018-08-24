@@ -44,9 +44,9 @@ private:
     template <typename AttributeType>
     ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
                                      const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
-                                     const DictionaryAttribute& attribute, const DictionaryType& dictionary) const;
+                                     const DictionaryAttribute & attribute, const DictionaryType& dictionary) const;
     ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
-                                           const DictionaryAttribute& attribute, const DictionaryType& dictionary) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType& dictionary) const;
     template <typename T>
     ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
@@ -104,7 +104,7 @@ template <typename DictionaryType, typename Key>
 template <typename AttributeType>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribute(
     DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
+    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType& dictionary) const
 {
     auto column_vector = ColumnVector<AttributeType>::create(ids.size());
     (dictionary.*getter)(attribute.name, ids, dates, column_vector->getData());
@@ -114,7 +114,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
 template <typename DictionaryType, typename Key>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttributeString(
     const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
-    const DictionaryAttribute& attribute, const DictionaryType& dictionary) const
+    const DictionaryAttribute & attribute, const DictionaryType& dictionary) const
 {
     auto column_string = ColumnString::create();
     dictionary.getString(attribute.name, ids, dates, column_string.get());
@@ -183,7 +183,7 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
-        const DictionaryAttribute& attribute = structure.attributes[idx];
+        const DictionaryAttribute & attribute = structure.attributes[idx];
         if (names.find(attribute.name) != names.end())
         {
             ColumnPtr column;
