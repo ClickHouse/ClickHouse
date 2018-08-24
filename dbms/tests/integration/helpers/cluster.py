@@ -40,7 +40,7 @@ class ClickHouseCluster:
     """
 
     def __init__(self, base_path, name=None, base_configs_dir=None, server_bin_path=None, client_bin_path=None,
-                 zookeeper_config_path=None, custom_dockerd_host=None):
+                 zookeeper_config_path=None, custom_dockerd_host=None, docker_api_version=None):
         self.base_dir = p.dirname(base_path)
         self.name = name if name is not None else ''
 
@@ -55,6 +55,7 @@ class ClickHouseCluster:
         self.instances_dir = p.join(self.base_dir, '_instances' + ('' if not self.name else '_' + self.name))
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
+        self.docker_api_version = docker_api_version or os.environ.get("DOCKER_API_VERSION")
 
         self.base_cmd = ['docker-compose']
         if custom_dockerd_host:
@@ -169,7 +170,7 @@ class ClickHouseCluster:
         for instance in self.instances.values():
             instance.create_dir(destroy_dir=destroy_dirs)
 
-        self.docker_client = docker.from_env()
+        self.docker_client = docker.from_env(version=self.docker_api_version)
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
             subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
