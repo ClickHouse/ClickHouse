@@ -874,8 +874,10 @@ struct ArrayCumSumLimitedImpl
                     for (; pos < offsets[i]; ++pos)
                     {
                         res_values[pos] = res_values[pos - 1] + x;
-                        res_values[pos] = 0 if res_values[pos]<0;
-                    }
+                        if(res_values[pos]<0){
+                         res_values[pos] = 0 ;
+                        }
+                   }
                 }
             }
 
@@ -900,7 +902,9 @@ struct ArrayCumSumLimitedImpl
                 for (++pos; pos < offsets[i]; ++pos)
                 {
                     res_values[pos] = res_values[pos - 1] + data[pos];
-                    res_values[pos] = 0 if res_values[pos]<0;
+                    if(res_values[pos]<0){
+                        res_values[pos] = 0 ;
+                    }
                 }
             }
         }
