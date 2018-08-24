@@ -74,40 +74,40 @@ private:
     // call getXXX
     // for single key dictionaries
     template <typename Type, typename Container>
-    void callGetter(DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids,
+    void callGetter(DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
     template <typename Container>
-    void callGetter(DictionaryStringGetter getter, const PaddedPODArray<Key> & ids,
+    void callGetter(DictionaryStringGetter getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
     // for complex complex key dictionaries
     template <typename Type, typename Container>
-    void callGetter(GetterByKey<Type> getter, const PaddedPODArray<Key> & ids,
+    void callGetter(GetterByKey<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
     template <typename Container>
-    void callGetter(StringGetterByKey getter, const PaddedPODArray<Key> & ids,
+    void callGetter(StringGetterByKey getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
     template <template <typename> class Getter, typename StringGetter>
-    Block fillBlock(const PaddedPODArray<Key> & ids, const Columns & keys,
+    Block fillBlock(const PaddedPODArray<Key> & ids_to_fill, const Columns & keys,
                     const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
 
     template <typename AttributeType, typename Getter>
-    ColumnPtr getColumnFromAttribute(Getter getter, const PaddedPODArray<Key> & ids,
+    ColumnPtr getColumnFromAttribute(Getter getter, const PaddedPODArray<Key> & ids_to_fill,
                                      const Columns & keys, const DataTypes & data_types,
                                      const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
     template <typename Getter>
-    ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids,
+    ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids_to_fill,
                                            const Columns & keys, const DataTypes & data_types,
                                            const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
-    ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids) const;
+    ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids_to_fill) const;
 
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
                         const DictionaryStructure & dictionary_structure, ColumnsWithTypeAndName & columns) const;
@@ -119,7 +119,7 @@ private:
     Poco::Logger * logger;
 
     using FillBlockFunction = Block (DictionaryBlockInputStream<DictionaryType, Key>::*)(
-        const PaddedPODArray<Key> & ids, const Columns & keys,
+        const PaddedPODArray<Key> & ids_to_fill, const Columns & keys,
         const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
     FillBlockFunction fill_block_function;
@@ -204,8 +204,8 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
 
         case DictionaryKeyType::Id:
         {
-            PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
-            return (this->*fill_block_function)(block_ids, {}, {}, {});
+            PaddedPODArray<Key> ids_to_fill(ids.begin() + start, ids.begin() + start + length);
+            return (this->*fill_block_function)(ids_to_fill, {}, {}, {});
         }
 
         case DictionaryKeyType::Callback:
@@ -346,7 +346,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::String:
             {
                 column = getColumnFromStringAttribute<StringGetter>(
-                    &DictionaryType::getString, ids, keys, data_types, attribute, *dictionary);
+                    &DictionaryType::getString, ids_to_fill, keys, data_types, attribute, *dictionary);
                 break;
             }
             }
