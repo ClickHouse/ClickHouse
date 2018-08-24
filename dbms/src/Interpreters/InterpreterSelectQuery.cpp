@@ -540,7 +540,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                         executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, !query.group_by_with_rollup);
                     
                      if (query.group_by_with_rollup)
-                        executeRollup(pipeline, expressions.before_aggregation);
+                        executeRollup(pipeline);
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -560,7 +560,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row, !query.group_by_with_rollup);
 
                 if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollup(pipeline, expressions.before_aggregation);
+                    executeRollup(pipeline);
             }
 
             if (expressions.has_order_by)
@@ -979,14 +979,8 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
         has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold, final);
 }
 
-void InterpreterSelectQuery::executeRollup(Pipeline & pipeline, const ExpressionActionsPtr & expression)
+void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
 {
-    pipeline.transform([&](auto & stream)
-    {
-        stream = std::make_shared<ConvertColumnWithDictionaryToFullBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(stream, expression));
-    });
-    
     executeUnion(pipeline);
 
     Names key_names;
@@ -999,23 +993,13 @@ void InterpreterSelectQuery::executeRollup(Pipeline & pipeline, const Expression
 
     for (const auto & name : key_names)
         keys.push_back(header.getPositionByName(name));
-    // for (auto & descr : aggregates)
-    //     if (descr.arguments.empty())
-    //         descr.arguments.push_back(header.getPositionByName(descr.column_name));
                 
     const Settings & settings = context.getSettingsRef();
  
-    /** Two-level aggregation is useful in two cases:
-      * 1. Parallel aggregation is done, and the results should be merged in parallel.
-      * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
-      */
-    bool allow_to_use_two_level_group_by = pipeline.streams.size() > 1 || settings.max_bytes_before_external_group_by != 0;
-
     Aggregator::Params params(header, keys, aggregates,
         false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
-        allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
-        allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
+        SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
         context.getTemporaryPath());
 
