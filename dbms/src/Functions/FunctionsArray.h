@@ -1252,8 +1252,8 @@ private:
         const ColumnNullable * nullable_col);
 
     void executeHashed(
-        const ColumnArray::Offsets & offsets,
-        const ColumnRawPtrs & columns,
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
