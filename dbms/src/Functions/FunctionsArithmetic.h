@@ -19,6 +19,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <common/intExp.h>
+#include <common/arithmeticOverflow.h>
 #include <boost/integer/common_factor.hpp>
 
 #if USE_EMBEDDED_COMPILER
