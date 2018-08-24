@@ -22,10 +22,10 @@ template <typename DictionaryType, typename Key>
 class RangeDictionaryBlockInputStream : public DictionaryBlockInputStreamBase
 {
 public:
-    using DictionatyPtr = std::shared_ptr<DictionaryType const>;
+    using DictionaryPtr = std::shared_ptr<DictionaryType const>;
 
     RangeDictionaryBlockInputStream(
-        DictionatyPtr dictionary, size_t max_block_size, const Names & column_names, PaddedPODArray<Key> && ids,
+        DictionaryPtr dictionary, size_t max_block_size, const Names & column_names, PaddedPODArray<Key> && ids,
         PaddedPODArray<UInt16> && start_dates, PaddedPODArray<UInt16> && end_dates);
 
     String getName() const override
@@ -62,7 +62,7 @@ private:
     PaddedPODArray<UInt16> makeDateKey(
         const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const;
 
-    DictionatyPtr dictionary;
+    DictionaryPtr dictionary;
     Names column_names;
     PaddedPODArray<Key> ids;
     PaddedPODArray<UInt16> start_dates;
@@ -72,7 +72,7 @@ private:
 
 template <typename DictionaryType, typename Key>
 RangeDictionaryBlockInputStream<DictionaryType, Key>::RangeDictionaryBlockInputStream(
-    DictionatyPtr dictionary, size_t max_column_size, const Names & column_names, PaddedPODArray<Key> && ids,
+    DictionaryPtr dictionary, size_t max_column_size, const Names & column_names, PaddedPODArray<Key> && ids,
     PaddedPODArray<UInt16> && start_dates, PaddedPODArray<UInt16> && end_dates)
     : DictionaryBlockInputStreamBase(ids.size(), max_column_size),
       dictionary(dictionary), column_names(column_names),

@@ -30,7 +30,7 @@ template <typename DictionaryType, typename Key>
 class DictionaryBlockInputStream : public DictionaryBlockInputStreamBase
 {
 public:
-    using DictionatyPtr = std::shared_ptr<DictionaryType const>;
+    using DictionaryPtr = std::shared_ptr<DictionaryType const>;
 
     DictionaryBlockInputStream(std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
                                PaddedPODArray<Key> && ids, const Names & column_names);
@@ -109,7 +109,7 @@ private:
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
                         const DictionaryStructure & dictionary_structure, ColumnsWithTypeAndName & columns) const;
 
-    DictionatyPtr dictionary;
+    DictionaryPtr dictionary;
     Names column_names;
     PaddedPODArray<Key> ids;
     ColumnsWithTypeAndName key_columns;
