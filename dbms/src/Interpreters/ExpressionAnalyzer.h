@@ -4,6 +4,7 @@
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/evaluateQualified.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Parsers/StringRange.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -89,19 +90,6 @@ struct ScopeStack
     ExpressionActionsPtr popLevel();
 
     const Block & getSampleBlock() const;
-};
-
-struct DatabaseAndTableWithAlias
-{
-    String database;
-    String table;
-    String alias;
-
-    /// "alias." or "database.table." if alias is empty
-    String getQualifiedNamePrefix() const;
-
-    /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
-    void makeQualifiedName(const ASTPtr & ast) const;
 };
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.

@@ -945,14 +945,13 @@ void FunctionArrayEnumerate::executeImpl(Block & block, const ColumnNumbers & ar
 
         ColumnUInt32::Container & res_values = res_nested->getData();
         res_values.resize(array->getData().size());
-        size_t prev_off = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        ColumnArray::Offset prev_off = 0;
+        for (ColumnArray::Offset i = 0; i < offsets.size(); ++i)
         {
-            size_t off = offsets[i];
-            for (size_t j = prev_off; j < off; ++j)
-            {
+            ColumnArray::Offset off = offsets[i];
+            for (ColumnArray::Offset j = prev_off; j < off; ++j)
                 res_values[j] = j - prev_off + 1;
-            }
+
             prev_off = off;
         }
 
@@ -1101,13 +1100,13 @@ bool FunctionArrayUniq::executeNumber(const ColumnArray * array, const IColumn *
         null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
 
     Set set;
-    size_t prev_off = 0;
+    ColumnArray::Offset prev_off = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
         set.clear();
         bool found_null = false;
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        ColumnArray::Offset off = offsets[i];
+        for (ColumnArray::Offset j = prev_off; j < off; ++j)
         {
             if (null_map_data && ((*null_map_data)[j] == 1))
                 found_null = true;
@@ -1147,13 +1146,13 @@ bool FunctionArrayUniq::executeString(const ColumnArray * array, const IColumn *
         null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
 
     Set set;
-    size_t prev_off = 0;
+    ColumnArray::Offset prev_off = 0;
     for (size_t i = 0; i < offsets.size(); ++i)
     {
         set.clear();
         bool found_null = false;
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        ColumnArray::Offset off = offsets[i];
+        for (ColumnArray::Offset j = prev_off; j < off; ++j)
         {
             if (null_map_data && ((*null_map_data)[j] == 1))
                 found_null = true;
@@ -1209,26 +1208,26 @@ bool FunctionArrayUniq::execute128bit(
     /// Each binary blob is inserted into a hash table.
     ///
     Set set;
-    size_t prev_off = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
+    ColumnArray::Offset prev_off = 0;
+    for (ColumnArray::Offset i = 0; i < offsets.size(); ++i)
     {
         set.clear();
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        ColumnArray::Offset off = offsets[i];
+        for (ColumnArray::Offset j = prev_off; j < off; ++j)
         {
             if (has_nullable_columns)
             {
                 KeysNullMap<UInt128> bitmap{};
 
-                for (size_t i = 0; i < columns.size(); ++i)
+                for (ColumnArray::Offset i = 0; i < columns.size(); ++i)
                 {
                     if (null_maps[i])
                     {
                         const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
                         if (null_map[j] == 1)
                         {
-                            size_t bucket = i / 8;
-                            size_t offset = i % 8;
+                            ColumnArray::Offset bucket = i / 8;
+                            ColumnArray::Offset offset = i % 8;
                             bitmap[bucket] |= UInt8(1) << offset;
                         }
                     }
@@ -1257,12 +1256,12 @@ void FunctionArrayUniq::executeHashed(
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     Set set;
-    size_t prev_off = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
+    ColumnArray::Offset prev_off = 0;
+    for (ColumnArray::Offset i = 0; i < offsets.size(); ++i)
     {
         set.clear();
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        ColumnArray::Offset off = offsets[i];
+        for (ColumnArray::Offset j = prev_off; j < off; ++j)
             set.insert(hash128(j, count, columns));
 
         res_values[i] = set.size();
@@ -1308,9 +1307,6 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
     const IColumn & src_data = array->getData();
     const ColumnArray::Offsets & offsets = array->getOffsets();
 
-    ColumnRawPtrs original_data_columns;
-    original_data_columns.push_back(&src_data);
-
     IColumn & res_data = res.getData();
     ColumnArray::Offsets & res_offsets = res.getOffsets();
 
@@ -1339,13 +1335,14 @@ void FunctionArrayDistinct::executeImpl(Block & block, const ColumnNumbers & arg
         || executeNumber<Float32>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeNumber<Float64>(*inner_col, offsets, res_data, res_offsets, nullable_col)
         || executeString(*inner_col, offsets, res_data, res_offsets, nullable_col)))
-        executeHashed(offsets, original_data_columns, res_data, res_offsets, nullable_col);
+        executeHashed(*inner_col, offsets, res_data, res_offsets, nullable_col);
 
     block.getByPosition(result).column = std::move(res_ptr);
 }
 
 template <typename T>
-bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
+bool FunctionArrayDistinct::executeNumber(
+    const IColumn & src_data,
     const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     ColumnArray::Offsets & res_offsets,
@@ -1364,9 +1361,7 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-    {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
-    }
 
     using Set = ClearableHashSet<T,
         DefaultHash<T>,
@@ -1374,22 +1369,31 @@ bool FunctionArrayDistinct::executeNumber(const IColumn & src_data,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(T)>>;
 
     Set set;
-    size_t prev_off = 0;
-    for (size_t i = 0; i < src_offsets.size(); ++i)
+
+    ColumnArray::Offset prev_src_offset = 0;
+    ColumnArray::Offset res_offset = 0;
+
+    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
     {
         set.clear();
-        size_t off = src_offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+
+        ColumnArray::Offset curr_src_offset = src_offsets[i];
+        for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
-            if ((set.find(values[j]) == set.end()) && (!nullable_col || (*src_null_map)[j] == 0))
+            if (nullable_col && (*src_null_map)[j])
+                continue;
+
+            if (set.find(values[j]) == set.end())
             {
                 res_data.emplace_back(values[j]);
                 set.insert(values[j]);
             }
         }
 
-        res_offsets.emplace_back(set.size() + prev_off);
-        prev_off = off;
+        res_offset += set.size();
+        res_offsets.emplace_back(res_offset);
+
+        prev_src_offset = curr_src_offset;
     }
     return true;
 }
@@ -1404,9 +1408,7 @@ bool FunctionArrayDistinct::executeString(
     const ColumnString * src_data_concrete = checkAndGetColumn<ColumnString>(&src_data);
 
     if (!src_data_concrete)
-    {
         return false;
-    }
 
     ColumnString & res_data_column_string = typeid_cast<ColumnString &>(res_data_col);
 
@@ -1418,70 +1420,86 @@ bool FunctionArrayDistinct::executeString(
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-    {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
-    }
 
     Set set;
-    size_t prev_off = 0;
-    for (size_t i = 0; i < src_offsets.size(); ++i)
+
+    ColumnArray::Offset prev_src_offset = 0;
+    ColumnArray::Offset res_offset = 0;
+
+    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
     {
         set.clear();
-        size_t off = src_offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+
+        ColumnArray::Offset curr_src_offset = src_offsets[i];
+        for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
+            if (nullable_col && (*src_null_map)[j])
+                continue;
+
             StringRef str_ref = src_data_concrete->getDataAt(j);
 
-            if (set.find(str_ref) == set.end() && (!nullable_col || (*src_null_map)[j] == 0))
+            if (set.find(str_ref) == set.end())
             {
                 set.insert(str_ref);
                 res_data_column_string.insertData(str_ref.data, str_ref.size);
             }
         }
 
-        res_offsets.emplace_back(set.size() + prev_off);
-        prev_off = off;
+        res_offset += set.size();
+        res_offsets.emplace_back(res_offset);
+
+        prev_src_offset = curr_src_offset;
     }
     return true;
 }
 
 void FunctionArrayDistinct::executeHashed(
-    const ColumnArray::Offsets & offsets,
-    const ColumnRawPtrs & columns,
+    const IColumn & src_data,
+    const ColumnArray::Offsets & src_offsets,
     IColumn & res_data_col,
     ColumnArray::Offsets & res_offsets,
     const ColumnNullable * nullable_col)
 {
-    size_t count = columns.size();
-
     using Set = ClearableHashSet<UInt128, UInt128TrivialHash, HashTableGrower<INITIAL_SIZE_DEGREE>,
         HashTableAllocatorWithStackMemory<(1ULL << INITIAL_SIZE_DEGREE) * sizeof(UInt128)>>;
 
     const PaddedPODArray<UInt8> * src_null_map = nullptr;
 
     if (nullable_col)
-    {
         src_null_map = &static_cast<const ColumnUInt8 *>(&nullable_col->getNullMapColumn())->getData();
-    }
 
     Set set;
-    size_t prev_off = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
+
+    ColumnArray::Offset prev_src_offset = 0;
+    ColumnArray::Offset res_offset = 0;
+
+    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
     {
         set.clear();
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+
+        ColumnArray::Offset curr_src_offset = src_offsets[i];
+        for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
-            auto hash = hash128(j, count, columns);
-            if (set.find(hash) == set.end() && (!nullable_col || (*src_null_map)[j] == 0))
+            if (nullable_col && (*src_null_map)[j])
+                continue;
+
+            UInt128 hash;
+            SipHash hash_function;
+            src_data.updateHashWithValue(j, hash_function);
+            hash_function.get128(reinterpret_cast<char *>(&hash));
+
+            if (set.find(hash) == set.end())
             {
                 set.insert(hash);
-                res_data_col.insertFrom(*columns[0], j);
+                res_data_col.insertFrom(src_data, j);
             }
         }
 
-        res_offsets.emplace_back(set.size() + prev_off);
-        prev_off = off;
+        res_offset += set.size();
+        res_offsets.emplace_back(res_offset);
+
+        prev_src_offset = curr_src_offset;
     }
 }
 

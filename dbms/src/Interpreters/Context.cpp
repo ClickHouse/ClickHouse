@@ -632,7 +632,7 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         return;
     }
     if (!shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name))
-        throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
