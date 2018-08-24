@@ -11,6 +11,10 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 
 
+#include <Poco/Logger.h>
+#include <common/logger_useful.h>
+
+
 namespace DB
 {
 
@@ -49,6 +53,9 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserExpressionWithOptionalAlias exp_elem(false);
     ParserOrderByExpressionList order_list;
 
+    ParserToken open_bracket(TokenType::OpeningRoundBracket);
+    ParserToken close_bracket(TokenType::ClosingRoundBracket);
+
     /// WITH expr list
     {
         if (s_with.ignore(pos, expected))
@@ -68,8 +75,6 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (s_top.ignore(pos, expected))
         {
-            ParserToken open_bracket(TokenType::OpeningRoundBracket);
-            ParserToken close_bracket(TokenType::ClosingRoundBracket);
             ParserNumber num;
 
             if (open_bracket.ignore(pos, expected))
@@ -114,21 +119,26 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// GROUP BY expr list
     if (s_group_by.ignore(pos, expected))
     {
+        if (s_rollup.ignore(pos, expected))
+        {
+            select_query->group_by_with_rollup = true;
+            if (!open_bracket.ignore(pos, expected))
+                return false;
+        }
+
         if (!exp_list.parse(pos, select_query->group_expression_list, expected))
+            return false;
+
+        if (select_query->group_by_with_rollup && !close_bracket.ignore(pos, expected))
             return false;
     }
 
     /// WITH TOTALS
     if (s_with.ignore(pos, expected))
     {
-        if (!s_totals.ignore(pos, expected) && !s_rollup.ignore(pos, expected))
+        if (!s_totals.ignore(pos, expected))
             return false;
-
-        // if (s_totals.ignore(pos, expected))
-            select_query->group_by_with_totals = true;
-
-        // if (s_rollup.ignore(pos, expected))
-            select_query->group_by_with_rollup = true;
+        select_query->group_by_with_totals = true;
     }
 
     /// HAVING expr

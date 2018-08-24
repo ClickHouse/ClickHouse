@@ -97,12 +97,6 @@ Block Aggregator::getHeader(bool final) const
 
     if (params.src_header)
     {
-
-        for (const auto & key : params.keys)
-            LOG_DEBUG(log, "key: " << key);
-        
-        LOG_DEBUG(log, "key_size: " << params.keys_size);
-        
         for (size_t i = 0; i < params.keys_size; ++i)
             res.insert(params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty());
 
@@ -667,6 +661,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
     bool & no_more_keys)
 {
+    LOG_DEBUG(log, "on block structure: " + block.dumpStructure());
     if (isCancelled())
         return true;
 
