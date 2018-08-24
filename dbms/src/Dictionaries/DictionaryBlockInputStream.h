@@ -103,7 +103,7 @@ private:
     template <typename Getter>
     ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids,
                                            const Columns & keys, const DataTypes & data_types,
-                                           const DictionaryAttribute & attribute, const DictionaryType& dictionary) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
     ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids) const;
 
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
@@ -115,7 +115,7 @@ private:
     ColumnsWithTypeAndName key_columns;
     Poco::Logger * logger;
     Block (DictionaryBlockInputStream<DictionaryType, Key>::*fillBlockFunction)(
-        const PaddedPODArray<Key> & ids, const Columns& keys,
+        const PaddedPODArray<Key> & ids, const Columns & keys,
         const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
     Columns data_columns;
@@ -135,7 +135,7 @@ private:
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
-    PaddedPODArray<Key> && ids, const Names& column_names)
+    PaddedPODArray<Key> && ids, const Names & column_names)
     : DictionaryBlockInputStreamBase(ids.size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)),
       column_names(column_names), ids(std::move(ids)),
@@ -148,7 +148,7 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
-    const std::vector<StringRef> & keys, const Names& column_names)
+    const std::vector<StringRef> & keys, const Names & column_names)
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)), column_names(column_names),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
