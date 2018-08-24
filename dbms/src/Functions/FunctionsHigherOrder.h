@@ -745,7 +745,6 @@ struct ArrayDifferenceImpl
             if (!column_const)
                 return false;
 
-            const Element x = column_const->template getValue<Element>();
             const IColumn::Offsets & offsets = array.getOffsets();
 
             auto res_nested = ColumnVector<Result>::create();
