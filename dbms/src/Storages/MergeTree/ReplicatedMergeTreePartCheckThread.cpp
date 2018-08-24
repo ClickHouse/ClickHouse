@@ -35,8 +35,7 @@ void ReplicatedMergeTreePartCheckThread::start()
 {
     std::lock_guard<std::mutex> lock(start_stop_mutex);
     need_stop = false;
-    task->activate();
-    task->schedule();
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreePartCheckThread::stop()
