@@ -1,4 +1,5 @@
 #pragma once
+
 #include <DataStreams/IProfilingBlockInputStream.h>
 
 namespace DB
@@ -7,8 +8,6 @@ namespace DB
 class DictionaryBlockInputStreamBase : public IProfilingBlockInputStream
 {
 protected:
-    //Block block;
-
     DictionaryBlockInputStreamBase(size_t rows_count, size_t max_block_size);
 
     virtual Block getBlock(size_t start, size_t length) const = 0;
