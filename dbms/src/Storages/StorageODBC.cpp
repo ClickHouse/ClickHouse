@@ -89,7 +89,8 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
 
 void registerStorageODBC(StorageFactory & factory)
 {
-    factory.registerStorage("ODBC", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("ODBC", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 3)

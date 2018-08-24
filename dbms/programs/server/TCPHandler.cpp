@@ -158,7 +158,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
             }
 
-            query_context.setExternalTablesInitializer([&global_settings, this] (Context & context) {
+            query_context.setExternalTablesInitializer([&global_settings, this] (Context & context)
+            {
                 if (&context != &query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
