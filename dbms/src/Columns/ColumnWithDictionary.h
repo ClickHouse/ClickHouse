@@ -151,6 +151,7 @@ public:
 
     /// Set shared ColumnUnique for empty column with dictionary.
     void setSharedDictionary(const ColumnPtr & column_unique);
+    bool isSharedDictionary() const { return dictionary.isShared(); }
 
     /// Create column new dictionary with only keys that are mentioned in index.
     MutablePtr compact();

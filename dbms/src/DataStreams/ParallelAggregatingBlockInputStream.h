@@ -84,6 +84,8 @@ private:
         ColumnRawPtrs key_columns;
         Aggregator::AggregateColumns aggregate_columns;
 
+        AggregationStateCachePtr cache;
+
         ThreadData(size_t keys_size, size_t aggregates_size)
         {
             key.resize(keys_size);
