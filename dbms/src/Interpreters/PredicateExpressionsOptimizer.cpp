@@ -297,6 +297,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
 
 ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk)
 {
+    /// SELECT *, SELECT dummy, SELECT 1 AS id
     if (!select_query->tables || select_query->tables->children.empty())
         return {};
 
