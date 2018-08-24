@@ -65,11 +65,15 @@ Block RollupBlockInputStream::readImpl()
         {
             auto & current = rollup_block.getByPosition(params.keys[i]);
             current.column = current.column->cloneEmpty()->cloneResized(rollup_block.rows());
+            
             BlocksList rollup_blocks = { rollup_block };
-            blocks.push_back(aggregator.mergeBlocks(rollup_blocks, true));
+            rollup_block = aggregator.mergeBlocks(rollup_blocks, false);
+            blocks.push_back(rollup_block);
         }
 
         finalize(block);
+        for (auto & current_block : blocks)
+            finalize(current_block);
 
         for (size_t i = 0; i < block.columns(); ++i)
         {

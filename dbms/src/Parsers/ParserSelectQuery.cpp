@@ -11,10 +11,6 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 
 
-#include <Poco/Logger.h>
-#include <common/logger_useful.h>
-
-
 namespace DB
 {
 
@@ -138,6 +134,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         if (!s_totals.ignore(pos, expected))
             return false;
+            
         select_query->group_by_with_totals = true;
     }
 

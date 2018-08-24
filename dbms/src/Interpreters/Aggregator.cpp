@@ -661,7 +661,6 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
     bool & no_more_keys)
 {
-    LOG_DEBUG(log, "on block structure: " + block.dumpStructure());
     if (isCancelled())
         return true;
 
