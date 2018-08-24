@@ -112,8 +112,10 @@ public:
 
     std::vector<MutableColumnPtr> scatter(ColumnIndex num_columns, const Selector & selector) const override;
 
-    void gather(ColumnGathererStream & gatherer_stream) override ;
-    void getExtremes(Field & min, Field & max) const override {
+    void gather(ColumnGathererStream & gatherer_stream) override;
+
+    void getExtremes(Field & min, Field & max) const override
+    {
         return getDictionary().index(getIndexes(), 0)->getExtremes(min, max); /// TODO: optimize
     }
 
