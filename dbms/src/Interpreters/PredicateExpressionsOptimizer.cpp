@@ -155,7 +155,7 @@ bool PredicateExpressionsOptimizer::cannotPushDownOuterPredicate(
     const ProjectionsWithAliases & subquery_projection_columns, ASTSelectQuery * subquery,
     IdentifiersWithQualifiedNameSet & outer_predicate_dependencies, bool & is_prewhere, OptimizeKind & optimize_kind)
 {
-    if (subquery->final() || subquery->limit_by_expression_list || subquery->limit_offset || subquery->with_expression_list)
+    if (subquery->final() || subquery->limit_by_expression_list || subquery->limit_length || subquery->with_expression_list)
         return true;
 
     for (auto & predicate_dependency : outer_predicate_dependencies)
@@ -259,14 +259,17 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(SubqueriesProje
         ProjectionsWithAliases subquery_projections;
         auto select_projection_columns = getSelectQueryProjectionColumns(select_without_union_query);
 
-        if (select_with_union_projections.empty())
-            select_with_union_projections = select_projection_columns;
+        if (!select_projection_columns.empty())
+        {
+            if (select_with_union_projections.empty())
+                select_with_union_projections = select_projection_columns;
 
-        for (size_t i = 0; i < select_projection_columns.size(); i++)
-            subquery_projections.emplace_back(std::pair(select_projection_columns[i],
-                                                        qualified_name_prefix + select_with_union_projections[i]->getAliasOrColumnName()));
+            for (size_t i = 0; i < select_projection_columns.size(); i++)
+                subquery_projections.emplace_back(std::pair(select_projection_columns[i],
+                                                            qualified_name_prefix + select_with_union_projections[i]->getAliasOrColumnName()));
 
-        all_subquery_projection_columns.insert(std::pair(select_without_union_query.get(), subquery_projections));
+            all_subquery_projection_columns.insert(std::pair(select_without_union_query.get(), subquery_projections));
+        }
     }
 }
 
@@ -292,10 +295,10 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     return projection_columns;
 }
 
-ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery *select_query, const ASTPtr &asterisk)
+ASTs PredicateExpressionsOptimizer::evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk)
 {
     if (!select_query->tables || select_query->tables->children.empty())
-        throw Exception("Logical error: The asterisk cannot be replaced, because there is no table.", ErrorCodes::LOGICAL_ERROR);
+        return {};
 
     std::vector<ASTTableExpression *> tables_expression = getSelectTablesExpression(select_query);
 

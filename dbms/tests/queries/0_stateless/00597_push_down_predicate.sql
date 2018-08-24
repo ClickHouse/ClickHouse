@@ -53,4 +53,7 @@ SELECT * FROM (SELECT 1 AS id, toDate('2000-01-01') AS date FROM system.numbers 
 SELECT '-------Push to having expression, need check.-------';
 SELECT id FROM (SELECT min(id) AS id FROM test.test) WHERE id = 1; -- { serverError 277 }
 
+SELECT '-------Compatibility test-------';
+SELECT * FROM (SELECT 1 AS id, toDate('2000-01-01') AS date FROM system.numbers LIMIT 1) ANY LEFT JOIN (SELECT * FROM test.test) AS b USING date WHERE b.date = toDate('2000-01-01'); -- {serverError 47}
+
 DROP TABLE IF EXISTS test.test;
