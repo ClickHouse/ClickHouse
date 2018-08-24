@@ -1227,14 +1227,16 @@ public:
                                 auto res = OpImpl::constant_constant(
                                     col_left->template getValue<T0>(), col_right->template getValue<T1>(), scale_a, scale_b);
                                 block.getByPosition(result).column =
-                                    ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(col_left->size(), toField(res));
+                                    ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                                        col_left->size(), toField(res, type.getScale()));
                             }
                             else
                             {
                                 auto res = OpImpl::XOverflow::constant_constant(
                                     col_left->template getValue<T0>(), col_right->template getValue<T1>(), scale_a, scale_b);
                                 block.getByPosition(result).column =
-                                    ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(col_left->size(), toField(res));
+                                    ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                                        col_left->size(), toField(res, type.getScale()));
                             }
                         }
                         else

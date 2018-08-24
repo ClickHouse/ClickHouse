@@ -278,8 +278,17 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 
     if (size == 0)
     {
-        min = typename NearestFieldType<T>::Type(0);
-        max = typename NearestFieldType<T>::Type(0);
+        if constexpr (IsDecimalNumber<T>)
+        {
+            min = typename NearestFieldType<T>::Type(0, data.getScale());
+            max = typename NearestFieldType<T>::Type(0, data.getScale());
+        }
+        else
+        {
+            min = typename NearestFieldType<T>::Type(0);
+            max = typename NearestFieldType<T>::Type(0);
+        }
+
         return;
     }
 
@@ -313,8 +322,16 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
             cur_max = x;
     }
 
-    min = typename NearestFieldType<T>::Type(cur_min);
-    max = typename NearestFieldType<T>::Type(cur_max);
+    if constexpr (IsDecimalNumber<T>)
+    {
+        min = typename NearestFieldType<T>::Type(cur_min, data.getScale());
+        max = typename NearestFieldType<T>::Type(cur_max, data.getScale());
+    }
+    else
+    {
+        min = typename NearestFieldType<T>::Type(cur_min);
+        max = typename NearestFieldType<T>::Type(cur_max);
+    }
 }
 
 /// Explicit template instantiations - to avoid code bloat in headers.
