@@ -423,10 +423,13 @@ void ExpressionAnalyzer::optimizeIfWithConstantConditionImpl(ASTPtr & current_as
         optimizeIfWithConstantConditionImpl(function_node->arguments, aliases);
         ASTExpressionList * args = typeid_cast<ASTExpressionList *>(function_node->arguments.get());
 
-        ASTPtr condition_expr = args->children.at(0);
-        ASTPtr then_expr = args->children.at(1);
-        ASTPtr else_expr = args->children.at(2);
+        if (args->children.size() != 3)
+            throw Exception("Wrong number of arguments for function 'if' (" + toString(args->children.size()) + " instead of 3)",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+        ASTPtr condition_expr = args->children[0];
+        ASTPtr then_expr = args->children[1];
+        ASTPtr else_expr = args->children[2];
 
         bool condition;
         if (tryExtractConstValueFromCondition(condition_expr, condition))
