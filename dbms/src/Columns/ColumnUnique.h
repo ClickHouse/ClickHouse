@@ -68,7 +68,7 @@ public:
 
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override
     {
-        auto & column_unique = static_cast<const IColumnUnique&>(rhs);
+        auto & column_unique = static_cast<const IColumnUnique &>(rhs);
         return getNestedColumn()->compareAt(n, m, *column_unique.getNestedColumn(), nan_direction_hint);
     }
 

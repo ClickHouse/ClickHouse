@@ -44,9 +44,9 @@ private:
     template <typename AttributeType>
     ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
                                      const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
-                                     const DictionaryAttribute & attribute, const DictionaryType& dictionary) const;
+                                     const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
     ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
-                                           const DictionaryAttribute & attribute, const DictionaryType& dictionary) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
     template <typename T>
     ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
@@ -54,7 +54,7 @@ private:
     void addSpecialColumn(
         const std::optional<DictionarySpecialAttribute> & attribute, DataTypePtr type,
         const std::string & default_name, const std::unordered_set<std::string> & column_names,
-        const PaddedPODArray<T> & values, ColumnsWithTypeAndName& columns) const;
+        const PaddedPODArray<T> & values, ColumnsWithTypeAndName & columns) const;
 
     Block fillBlock(const PaddedPODArray<Key> & ids,
                     const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const;
@@ -104,7 +104,7 @@ template <typename DictionaryType, typename Key>
 template <typename AttributeType>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribute(
     DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType& dictionary) const
+    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
     auto column_vector = ColumnVector<AttributeType>::create(ids.size());
     (dictionary.*getter)(attribute.name, ids, dates, column_vector->getData());
@@ -114,7 +114,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
 template <typename DictionaryType, typename Key>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttributeString(
     const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
-    const DictionaryAttribute & attribute, const DictionaryType& dictionary) const
+    const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
 {
     auto column_string = ColumnString::create();
     dictionary.getString(attribute.name, ids, dates, column_string.get());
@@ -137,7 +137,7 @@ template <typename DictionaryType, typename Key>
 template <typename T>
 void RangeDictionaryBlockInputStream<DictionaryType, Key>::addSpecialColumn(
     const std::optional<DictionarySpecialAttribute> & attribute, DataTypePtr type,
-    const std::string& default_name, const std::unordered_set<std::string> & column_names,
+    const std::string & default_name, const std::unordered_set<std::string> & column_names,
     const PaddedPODArray<T> & values, ColumnsWithTypeAndName & columns) const
 {
     std::string name = default_name;
@@ -171,7 +171,7 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const
 {
     ColumnsWithTypeAndName columns;
-    const DictionaryStructure& structure = dictionary->getStructure();
+    const DictionaryStructure & structure = dictionary->getStructure();
 
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
