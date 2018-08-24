@@ -309,6 +309,22 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         /// Lock nodes have been already deleted, do not delete them in destructor
         block_number_lock->assumeUnlocked();
     }
+    else if (multi_code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS
+        || multi_code == ZooKeeperImpl::ZooKeeper::ZOPERATIONTIMEOUT
+        || multi_code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+    {
+        /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
+          *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
+          *
+          * NOTE that in contrast to original libzookeeper, in our library we may also get ZSESSIONEXPIRED in this case.
+          */
+        transaction.commit();
+        storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
+
+        /// We do not know whether or not data has been inserted.
+        throw Exception("Unknown status, client must retry. Reason: " + String(ZooKeeperImpl::ZooKeeper::errorMessage(multi_code)),
+            ErrorCodes::UNKNOWN_STATUS_OF_INSERT);
+    }
     else if (ZooKeeperImpl::ZooKeeper::isUserError(multi_code))
     {
         String failed_op_path = zkutil::KeeperMultiException(multi_code, ops, responses).getPathForFirstFailedOp();
