@@ -98,6 +98,8 @@ public:
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
 
+    static std::string main_config_path; /// For cutting prerpocessed path to this base
+
 private:
     const std::string path;
     std::string preprocessed_path;

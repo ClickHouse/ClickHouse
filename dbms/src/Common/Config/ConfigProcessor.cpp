@@ -45,6 +45,7 @@ bool ConfigProcessor::isPreprocessedFile(const std::string & path)
     return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
 }
 
+std::string ConfigProcessor::main_config_path;
 
 ConfigProcessor::ConfigProcessor(
     const std::string & path_,
@@ -551,6 +552,9 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
+
+//LOG_WARNING(log, "saveprep from: " << StackTrace().toString());
+
     if (preprocessed_path.empty()) {
         if (preprocessed_dir.empty())
         {
@@ -563,6 +567,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         }
         preprocessed_dir += "/preprocessed_config/";
         // TODO: strip path!
+LOG_WARNING(log, "maybe strip: " << loaded_config.config_path << " with " << main_config_path);
         auto new_path = loaded_config.config_path;
         std::replace( new_path.begin(), new_path.end(), '/', '_');
         preprocessed_path = preprocessed_dir + new_path;
