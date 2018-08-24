@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -102,7 +103,7 @@ private:
     template <typename Getter>
     ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids,
                                            const Columns & keys, const DataTypes & data_types,
-                                           const DictionaryAttribute& attribute, const DictionaryType& dictionary) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType& dictionary) const;
     ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids) const;
 
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
@@ -287,7 +288,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
-        const DictionaryAttribute& attribute = structure.attributes[idx];
+        const DictionaryAttribute & attribute = structure.attributes[idx];
         if (names.find(attribute.name) != names.end())
         {
             ColumnPtr column;
@@ -363,7 +364,7 @@ template <typename Getter>
 ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAttribute(
     Getter getter, const PaddedPODArray<Key> & ids_to_fill,
     const Columns & keys, const DataTypes & data_types,
-    const DictionaryAttribute& attribute, const DictionaryType & dict) const
+    const DictionaryAttribute & attribute, const DictionaryType & dict) const
 {
     auto column_string = ColumnString::create();
     auto ptr = column_string.get();
