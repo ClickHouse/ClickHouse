@@ -669,7 +669,8 @@ static std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         /// get columns list for target table
         if (function)
         {
-            const auto & storage = const_cast<Context *>(&context)->executeTableFunction(table_expression);
+            auto query_context = const_cast<Context *>(&context.getQueryContext());
+            const auto & storage = query_context->executeTableFunction(table_expression);
             columns = storage->getColumns().ordinary;
             select_query->addTableFunction(*const_cast<ASTPtr *>(&table_expression));
         }
@@ -2467,7 +2468,8 @@ NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(co
             else if (table_expression.table_function)
             {
                 const auto table_function = table_expression.table_function;
-                const auto join_storage = const_cast<Context *>(&context.getQueryContext())->executeTableFunction(table_function);
+                auto query_context = const_cast<Context *>(&context.getQueryContext());
+                const auto & join_storage = query_context->executeTableFunction(table_function);
                 nested_result_sample = join_storage->getSampleBlockNonMaterialized();
             }
             else if (table_expression.database_and_table_name)
