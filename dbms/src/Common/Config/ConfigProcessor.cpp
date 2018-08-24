@@ -563,17 +563,11 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             preprocessed_dir = loaded_config.configuration->getString("path");
         }
         preprocessed_dir += "/preprocessed_config/";
-        // TODO: strip path!
         auto new_path = loaded_config.config_path;
-    LOG_WARNING(log, "new_path1" <<     new_path.substr(0, main_config_path.size()) );
         if (new_path.substr(0, main_config_path.size()) == main_config_path) {
-
-    LOG_WARNING(log, "new_path1" << new_path);
             new_path.replace(0, main_config_path.size(), "");
-    LOG_WARNING(log, "new_path1" << new_path);
         }
         std::replace( new_path.begin(), new_path.end(), '/', '_');
-    LOG_WARNING(log, "new_path3" << new_path);
         preprocessed_path = preprocessed_dir + new_path;
         auto path = Poco::Path(preprocessed_path).makeParent();
  
@@ -581,12 +575,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             Poco::File(path).createDirectories();
     }
 
-    LOG_WARNING(log, "write preprocessed to " << preprocessed_path);
     try
     {
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
-    LOG_WARNING(log, "write ok " << preprocessed_path);
-
     }
     catch (Poco::Exception & e)
     {
