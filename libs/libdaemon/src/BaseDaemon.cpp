@@ -656,8 +656,6 @@ void BaseDaemon::reloadConfiguration()
     loaded_config = ConfigProcessor(config_path, false, true).loadConfig(/* allow_zk_includes = */ true);
 
     ConfigProcessor::main_config_path = Poco::Path(config_path).makeParent().toString();
-//LOG_WARNING(logger(), "set basepath=" << "loaded_config.main_config_path");
-std::cerr <<  "set basepath=" << ConfigProcessor::main_config_path << "\n";
 
     if (last_configuration != nullptr)
         config().removeConfiguration(last_configuration);
