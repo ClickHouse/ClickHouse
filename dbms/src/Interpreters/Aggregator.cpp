@@ -70,8 +70,10 @@ AggregatedDataVariants::~AggregatedDataVariants()
 }
 
 
-void AggregatedDataVariants::convertToTwoLevel()
+void AggregatedDataVariants::convertToTwoLevel(AggregationStateCachePtr & cache)
 {
+    cache = nullptr;
+
     if (aggregator)
         LOG_TRACE(aggregator->log, "Converting aggregation data to two-level.");
 
@@ -559,6 +561,7 @@ void Aggregator::createAggregateStates(AggregateDataPtr & aggregate_data) const
 template <typename Method>
 void NO_INLINE Aggregator::executeImpl(
     Method & method,
+    AggregationStateCachePtr & cache,
     Arena * aggregates_pool,
     size_t rows,
     ColumnRawPtrs & key_columns,
@@ -569,7 +572,10 @@ void NO_INLINE Aggregator::executeImpl(
     AggregateDataPtr overflow_row) const
 {
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, cache, aggregates_pool);
+    else
+        state.init(key_columns);
 
     if (!no_more_keys)
         executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, key_sizes, keys, overflow_row);
@@ -716,7 +722,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
 }
 
 
-bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result,
+bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & result, AggregationStateCachePtr & cache,
     ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns, StringRefs & key,
     bool & no_more_keys)
 {
@@ -871,7 +877,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         {
             #define M(NAME, IS_TWO_LEVEL) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
+                    executeImpl(*result.NAME, cache, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
                         result.key_sizes, key, no_more_keys, overflow_row_ptr);
 
                 if (false) {}
@@ -895,7 +901,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
       */
     if (result.isConvertibleToTwoLevel() && worth_convert_to_two_level)
-        result.convertToTwoLevel();
+        result.convertToTwoLevel(cache);
 
     /// Checking the constraints.
     if (!checkLimits(result_size, no_more_keys))
@@ -1096,6 +1102,8 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
     size_t src_rows = 0;
     size_t src_bytes = 0;
 
+    AggregationStateCachePtr cache;
+
     /// Read all the data
     while (Block block = stream->read())
     {
@@ -1105,14 +1113,14 @@ void Aggregator::execute(const BlockInputStreamPtr & stream, AggregatedDataVaria
         src_rows += block.rows();
         src_bytes += block.bytes();
 
-        if (!executeOnBlock(block, result, key_columns, aggregate_columns, key, no_more_keys))
+        if (!executeOnBlock(block, result, cache, key_columns, aggregate_columns, key, no_more_keys))
             break;
     }
 
     /// If there was no data, and we aggregate without keys, and we must return single row with the result of empty aggregation.
     /// To do this, we pass a block with zero rows to aggregate.
     if (result.empty() && params.keys_size == 0 && !params.empty_result_for_aggregation_by_empty_set)
-        executeOnBlock(stream->getHeader(), result, key_columns, aggregate_columns, key, no_more_keys);
+        executeOnBlock(stream->getHeader(), result, cache, key_columns, aggregate_columns, key, no_more_keys);
 
     double elapsed_seconds = watch.elapsedSeconds();
     size_t rows = result.sizeWithoutOverflowRow();
@@ -1890,10 +1898,12 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
         }
     }
 
+    AggregationStateCachePtr cache;
     if (has_at_least_one_two_level)
         for (auto & variant : non_empty_data)
             if (!variant->isTwoLevel())
-                variant->convertToTwoLevel();
+                variant->convertToTwoLevel(cache);
+
 
     AggregatedDataVariantsPtr & first = non_empty_data[0];
 
@@ -1919,6 +1929,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     const Sizes & key_sizes,
     Arena * aggregates_pool,
     Method & method,
+    AggregationStateCachePtr & cache,
     Table & data,
     AggregateDataPtr overflow_row) const
 {
@@ -1933,7 +1944,10 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         aggregate_columns[i] = &typeid_cast<const ColumnAggregateFunction &>(*block.safeGetByPosition(params.keys_size + i).column).getData();
 
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, cache, aggregates_pool);
+    else
+        state.init(key_columns);
 
     /// For all rows.
     StringRefs keys(params.keys_size);
@@ -2019,14 +2033,15 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const Sizes & key_sizes,
     Arena * aggregates_pool,
     Method & method,
+    AggregationStateCachePtr & cache,
     Table & data,
     AggregateDataPtr overflow_row,
     bool no_more_keys) const
 {
     if (!no_more_keys)
-        mergeStreamsImplCase<false>(block, key_sizes, aggregates_pool, method, data, overflow_row);
+        mergeStreamsImplCase<false>(block, key_sizes, aggregates_pool, method, cache, data, overflow_row);
     else
-        mergeStreamsImplCase<true>(block, key_sizes, aggregates_pool, method, data, overflow_row);
+        mergeStreamsImplCase<true>(block, key_sizes, aggregates_pool, method, cache, data, overflow_row);
 }
 
 
@@ -2134,6 +2149,8 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
         {
             CurrentThread::attachToIfDetached(thread_group);
 
+            AggregationStateCachePtr cache;
+
             for (Block & block : bucket_to_blocks[bucket])
             {
                 if (isCancelled())
@@ -2141,7 +2158,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(block, result.key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
+                    mergeStreamsImpl(block, result.key_sizes, aggregates_pool, *result.NAME, cache, result.NAME->data.impls[bucket], nullptr, false);
 
                 if (false) {}
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2191,6 +2208,8 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         bool no_more_keys = false;
 
+        AggregationStateCachePtr cache;
+
         BlocksList & blocks = bucket_to_blocks[-1];
         for (Block & block : blocks)
         {
@@ -2208,7 +2227,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(block, result.key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+                mergeStreamsImpl(block, result.key_sizes, result.aggregates_pool, *result.NAME, cache, result.NAME->data, result.without_key, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -2266,6 +2285,8 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
+    AggregationStateCachePtr cache;
+
     for (Block & block : blocks)
     {
         if (isCancelled())
@@ -2279,7 +2300,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
+            mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, cache, result.NAME->data, nullptr, false);
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
@@ -2323,6 +2344,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 template <typename Method>
 void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     Method & method,
+    AggregationStateCachePtr & cache,
     Arena * pool,
     ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
@@ -2331,7 +2353,10 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     std::vector<Block> & destinations) const
 {
     typename Method::State state;
-    state.init(key_columns);
+    if constexpr (Method::low_cardinality_optimization)
+        state.init(key_columns, cache, pool);
+    else
+        state.init(key_columns);
 
     size_t rows = source.rows();
     size_t columns = source.columns();
@@ -2378,7 +2403,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
 }
 
 
-std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
+std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block, AggregationStateCachePtr & cache)
 {
     if (!block)
         return {};
@@ -2424,7 +2449,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 
 #define M(NAME) \
     else if (data.type == AggregatedDataVariants::Type::NAME) \
-        convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
+        convertBlockToTwoLevelImpl(*data.NAME, cache, data.aggregates_pool, \
             key_columns, data.key_sizes, key, block, splitted_blocks);
 
     if (false) {}

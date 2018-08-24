@@ -530,6 +530,8 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
 
             int min_bucket_num = NUM_BUCKETS;
 
+            AggregationStateCachePtr cache;
+
             for (auto & input : inputs)
             {
                 /// Blocks for already partitioned (two-level) data.
@@ -541,7 +543,7 @@ MergingAggregatedMemoryEfficientBlockInputStream::BlocksToMerge MergingAggregate
                 {
                     LOG_TRACE(&Logger::get("MergingAggregatedMemoryEfficient"), "Having block without bucket: will split.");
 
-                    input.splitted_blocks = aggregator.convertBlockToTwoLevel(input.block);
+                    input.splitted_blocks = aggregator.convertBlockToTwoLevel(input.block, cache);
                     input.block = Block();
                 }
 
