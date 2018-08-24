@@ -76,9 +76,15 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 /// Transform anything to Field.
 template <typename T>
-inline Field toField(const T & x)
+inline std::enable_if_t<!IsDecimalNumber<T>, Field> toField(const T & x)
 {
     return Field(typename NearestFieldType<T>::Type(x));
+}
+
+template <typename T>
+inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 scale)
+{
+    return Field(typename NearestFieldType<T>::Type(x, scale));
 }
 
 
