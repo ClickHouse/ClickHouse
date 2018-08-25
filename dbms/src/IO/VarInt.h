@@ -118,7 +118,7 @@ inline void throwReadAfterEOF()
     throw Exception("Attempt to read after eof", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-template<bool fast>
+template <bool fast>
 inline void readVarUIntImpl(UInt64 & x, ReadBuffer & istr)
 {
     x = 0;
