@@ -144,3 +144,9 @@ inline const char * find_first_symbols(const char * begin, const char * end)
 #endif
         return detail::find_first_symbols_sse2<symbols...>(begin, end);
 }
+
+template <char... symbols>
+inline char * find_first_symbols(char * begin, char * end)
+{
+    return const_cast<char *>(find_first_symbols<symbols...>(const_cast<const char*>(begin), const_cast<const char*>(end)));
+}
