@@ -453,7 +453,6 @@ struct ZooKeeperWatchResponse final : WatchResponse, ZooKeeperResponse
         Coordination::read(state, in);
         Coordination::read(path, in);
     }
-    void removeRootPath(const String & root_path) override;
 };
 
 struct ZooKeeperAuthRequest final : ZooKeeperRequest
@@ -463,7 +462,6 @@ struct ZooKeeperAuthRequest final : ZooKeeperRequest
     String data;
 
     String getPath() const override { return {}; }
-    RequestPtr clone() const override { return std::make_shared<ZooKeeperAuthRequest>(*this); }
     ZooKeeper::OpNum getOpNum() const override { return 100; }
     void writeImpl(WriteBuffer & out) const override
     {
@@ -489,7 +487,7 @@ struct ZooKeeperCloseRequest final : ZooKeeperRequest
 
 struct ZooKeeperCloseResponse final : ZooKeeperResponse
 {
-    void readImpl(ReadBuffer & in) override
+    void readImpl(ReadBuffer &) override
     {
         throw Exception("Received response for close request", ZRUNTIMEINCONSISTENCY);
     }
@@ -497,6 +495,9 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 
 struct ZooKeeperCreateRequest final : CreateRequest, ZooKeeperRequest
 {
+    ZooKeeperCreateRequest() {}
+    ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+
     ZooKeeper::OpNum getOpNum() const override { return 1; }
     void writeImpl(WriteBuffer & out) const override
     {
@@ -526,6 +527,9 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
 {
+    ZooKeeperRemoveRequest() {}
+    ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+
     ZooKeeper::OpNum getOpNum() const override { return 2; }
     void writeImpl(WriteBuffer & out) const override
     {
@@ -581,6 +585,9 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
 
 struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
 {
+    ZooKeeperSetRequest() {}
+    ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+
     ZooKeeper::OpNum getOpNum() const override { return 5; }
     void writeImpl(WriteBuffer & out) const override
     {
@@ -621,6 +628,9 @@ struct ZooKeeperListResponse final : ListResponse, ZooKeeperResponse
 
 struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
 {
+    ZooKeeperCheckRequest() {}
+    ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+
     ZooKeeper::OpNum getOpNum() const override { return 13; }
     void writeImpl(WriteBuffer & out) const override
     {
@@ -873,7 +883,7 @@ void ZooKeeper::connect(
     Poco::Timespan connection_timeout)
 {
     if (addresses.empty())
-        throw Exception("No addresses passed to ZooKeeperImpl constructor", ZBADARGUMENTS);
+        throw Exception("No addresses passed to ZooKeeper constructor", ZBADARGUMENTS);
 
     static constexpr size_t num_tries = 3;
     bool connected = false;

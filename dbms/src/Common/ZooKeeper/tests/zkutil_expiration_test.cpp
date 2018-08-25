@@ -34,11 +34,11 @@ int main(int argc, char ** argv)
         while (true)
         {
             {
-                zkutil::Requests ops;
+                Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeCreateRequest("/test/zk_expiration_test", "hello", zkutil::CreateMode::Persistent));
                 ops.emplace_back(zkutil::makeRemoveRequest("/test/zk_expiration_test", -1));
 
-                zkutil::Responses responses;
+                Coordination::Responses responses;
                 int32_t code = zk.tryMultiNoThrow(ops, responses);
 
                 std::cout << time(nullptr) - time0 << "s: " << zkutil::ZooKeeper::error2string(code) << std::endl;
@@ -57,7 +57,7 @@ int main(int argc, char ** argv)
             sleep(1);
         }
     }
-    catch (zkutil::KeeperException & e)
+    catch (Coordination::Exception & e)
     {
         std::cerr << "KeeperException: " << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;

@@ -84,7 +84,7 @@ namespace Coordination
 
 using namespace DB;
 
-class ZooKeeperRequest;
+struct ZooKeeperRequest;
 
 
 
