@@ -293,9 +293,7 @@ void ReadBufferAIO::finalize()
         is_eof = true;
 
     /// Swap the main and duplicate buffers.
-    internalBuffer().swap(fill_buffer.internalBuffer());
-    buffer().swap(fill_buffer.buffer());
-    std::swap(position(), fill_buffer.position());
+    swap(fill_buffer);
 }
 
 }
