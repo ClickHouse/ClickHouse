@@ -5,14 +5,11 @@
 #include <string>
 #include <sstream>
 #include <string.h>
-#include <strings.h>
 #include <vector>
 #include <algorithm>
 
 #include <ext/singleton.h>
 #include <common/readline_use.h>
-
-#include <Poco/String.h>
 
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnString.h>
@@ -59,7 +56,7 @@ private:
     {
         std::string prefix_str(prefix);
         std::tie(pos, end) = std::equal_range(words.begin(), words.end(), prefix_str,
-            [prefix_length](const std::string & s, const std::string & prefix) { return strncasecmp(s.c_str(), prefix.c_str(), prefix_length) < 0; });
+            [prefix_length](const std::string & s, const std::string & prefix) { return strncmp(s.c_str(), prefix.c_str(), prefix_length) < 0; });
     }
 
     /// Iterates through matched range.
@@ -77,7 +74,7 @@ private:
     void loadImpl(Connection & connection, size_t suggestion_limit)
     {
         std::stringstream query;
-        query << "SELECT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
+        query << "SELECT DISTINCT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
             "SELECT name FROM system.functions"
             " UNION ALL "
             "SELECT name FROM system.table_engines"
@@ -103,7 +100,7 @@ private:
                 "SELECT DISTINCT name FROM system.columns LIMIT " << limit_str;
         }
 
-        query << ") WHERE notEmpty(res) LIMIT 1 BY lower(res)";
+        query << ") WHERE notEmpty(res)";
 
         fetch(connection, query.str());
     }
@@ -190,7 +187,7 @@ public:
 
             /// Note that keyword suggestions are available even if we cannot load data from server.
 
-            std::sort(words.begin(), words.end(), [](const auto & a, const auto & b) { return Poco::icompare(a, b) < 0; } );
+            std::sort(words.begin(), words.end());
             ready = true;
         });
     }
