@@ -206,8 +206,7 @@ bool WriteBufferAIO::waitForAIOCompletion()
 void WriteBufferAIO::prepare()
 {
     /// Swap the main and duplicate buffers.
-    buffer().swap(flush_buffer.buffer());
-    std::swap(position(), flush_buffer.position());
+    swap(flush_buffer);
 
     truncation_count = 0;
 
