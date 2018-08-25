@@ -1,5 +1,6 @@
-#include <Common/ProfileEvents.h>
+#include <string.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 
