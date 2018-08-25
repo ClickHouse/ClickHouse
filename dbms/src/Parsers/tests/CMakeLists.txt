@@ -3,6 +3,9 @@ set(SRCS )
 add_executable (lexer lexer.cpp ${SRCS})
 target_link_libraries (lexer clickhouse_parsers)
 
+add_executable (grammar grammar.cpp ${SRCS})
+target_link_libraries (grammar clickhouse_parsers)
+
 add_executable (select_parser select_parser.cpp ${SRCS})
 target_link_libraries (select_parser clickhouse_parsers)
 
