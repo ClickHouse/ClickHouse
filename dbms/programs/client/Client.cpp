@@ -206,10 +206,7 @@ private:
 
     void loadImpl(Connection & connection, size_t suggestion_limit)
     {
-        String limit_str = toString(suggestion_limit);
-
-        fetch(connection,
-            "SELECT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
+        String query = "SELECT arrayJoin(extractAll(name, '[\\\\w_]{2,}')) AS res FROM ("
             "SELECT name FROM system.functions"
             " UNION ALL "
             "SELECT name FROM system.table_engines"
@@ -220,14 +217,24 @@ private:
             " UNION ALL "
             "SELECT name FROM system.data_type_families"
             " UNION ALL "
-            "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate"
-            " UNION ALL "
-            "SELECT name FROM system.databases LIMIT " + limit_str +
-            " UNION ALL "
-            "SELECT DISTINCT name FROM system.tables LIMIT " + limit_str +
-            " UNION ALL "
-            "SELECT DISTINCT name FROM system.columns LIMIT " + limit_str +
-            ") WHERE notEmpty(res) LIMIT 1 BY lower(res)");
+            "SELECT concat(func.name, comb.name) FROM system.functions AS func CROSS JOIN system.aggregate_function_combinators AS comb WHERE is_aggregate";
+
+        /// The user may disable loading of databases, tables, columns by setting suggestion_limit to zero.
+        if (suggestion_limit > 0)
+        {
+            String limit_str = toString(suggestion_limit);
+            query +=
+                " UNION ALL "
+                "SELECT name FROM system.databases LIMIT " + limit_str +
+                " UNION ALL "
+                "SELECT DISTINCT name FROM system.tables LIMIT " + limit_str +
+                " UNION ALL "
+                "SELECT DISTINCT name FROM system.columns LIMIT " + limit_str;
+        }
+
+        query += ") WHERE notEmpty(res) LIMIT 1 BY lower(res)";
+
+        fetch(connection, query);
     }
 
     void fetch(Connection & connection, const std::string & query)
@@ -283,6 +290,9 @@ private:
     }
 
 public:
+    /// More old server versions cannot execute the query above.
+    static constexpr int MIN_SERVER_REVISION = 54406;
+
     void load(const ConnectionParameters & connection_parameters, size_t suggestion_limit)
     {
         loading_thread = std::thread([connection_parameters, suggestion_limit, this]
@@ -321,6 +331,10 @@ public:
             return nullptr;
         if (state == 0)
             suggest.findRange(text, strlen(text));
+
+        /// Do not append whitespace after word. For unknown reason, rl_completion_append_character = '\0' does not work.
+        rl_completion_suppress_append = 1;
+
         return suggest.nextMatch();
     }
 
@@ -410,6 +424,8 @@ private:
     int expected_client_error = 0;
     int actual_server_error = 0;
     int actual_client_error = 0;
+
+    UInt64 server_revision = 0;
     String server_version;
     String server_display_name;
 
@@ -424,9 +440,6 @@ private:
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
-
-    /// Suggestion limit for how many databases, tables and columns to fetch.
-    size_t suggestion_limit = 10000;
 
     ConnectionParameters connection_parameters;
 
@@ -640,16 +653,21 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
 #if USE_READLINE
-            /// Load suggestion data from the server.
-            Suggest::instance().load(connection_parameters, suggestion_limit);
+            if (server_revision >= Suggest::MIN_SERVER_REVISION
+                && !config().getBool("disable_suggestion", false))
+            {
+                /// Load suggestion data from the server.
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 
-            /// Added '.' to the default list. Because it is used to separate database and table.
-            rl_basic_word_break_characters = " \t\n\r\"\\'`@$><=;|&{(.";
+                /// Added '.' to the default list. Because it is used to separate database and table.
+                rl_basic_word_break_characters = " \t\n\r\"\\'`@$><=;|&{(.";
 
-            /// Not append whitespace after single suggestion. Because whitespace after function name is meaningless.
-            rl_completion_append_character = 0;
+                /// Not append whitespace after single suggestion. Because whitespace after function name is meaningless.
+                rl_completion_append_character = '\0';
 
-            rl_completion_entry_function = Suggest::generator;
+                rl_completion_entry_function = Suggest::generator;
+            }
+            else
 #else
             /// Turn tab completion off.
             rl_bind_key('\t', rl_insert);
@@ -750,7 +768,6 @@ private:
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_version_patch = 0;
-        UInt64 server_revision = 0;
 
         if (max_client_network_bandwidth)
         {
@@ -1761,7 +1778,7 @@ public:
             ("config-file,c", po::value<std::string>(), "config-file path")
             ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
             ("port", po::value<int>()->default_value(9000), "server port")
-            ("secure,s", "secure")
+            ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
             ("password", po::value<std::string>(), "password")
             ("ask-password", "ask-password")
@@ -1769,7 +1786,9 @@ public:
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
-            ("suggestion_limit", po::value<int>()->default_value(suggestion_limit), "Suggestion limit for how many databases, tables and columns to fetch.")
+            ("disable_suggestion,A", "Disable loading suggestion data. Shorthand option -A is for those who get used to mysql client.")
+            ("suggestion_limit", po::value<int>()->default_value(10000),
+                "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")
@@ -1913,6 +1932,8 @@ public:
             config().setBool("compression", options["compression"].as<bool>());
         if (options.count("server_logs_file"))
             server_logs_file = options["server_logs_file"].as<std::string>();
+        if (options.count("disable_suggestion"))
+            config().setBool("disable_suggestion", true);
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     }
