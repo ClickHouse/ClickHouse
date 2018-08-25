@@ -341,11 +341,11 @@ void ReplicatedMergeTreePartCheckThread::run()
 
         task->schedule();
     }
-    catch (const zkutil::KeeperException & e)
+    catch (const Coordination::Exception & e)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        if (e.code == Coordination::ZSESSIONEXPIRED)
             return;
 
         task->scheduleAfter(PART_CHECK_ERROR_SLEEP_MS);

@@ -25,9 +25,9 @@ namespace Coordination
 Exception::Exception(const std::string & msg, const int32_t code, int)
     : DB::Exception(msg, DB::ErrorCodes::KEEPER_EXCEPTION), code(code)
 {
-    if (ZooKeeper::isUserError(code))
+    if (Coordination::isUserError(code))
         ProfileEvents::increment(ProfileEvents::ZooKeeperUserExceptions);
-    else if (ZooKeeper::isHardwareError(code))
+    else if (Coordination::isHardwareError(code))
         ProfileEvents::increment(ProfileEvents::ZooKeeperHardwareExceptions);
     else
         ProfileEvents::increment(ProfileEvents::ZooKeeperOtherExceptions);
