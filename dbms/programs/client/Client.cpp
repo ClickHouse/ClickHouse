@@ -1538,7 +1538,7 @@ public:
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
-            ("disable_suggestion,A", "Disable loading suggestion data. Shorthand option -A is for those who get used to mysql client.")
+            ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Shorthand option -A is for those who get used to mysql client.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")

@@ -182,15 +182,16 @@ public:
                     connection_parameters.security);
 
                 loadImpl(connection, suggestion_limit);
-
-                std::sort(words.begin(), words.end(), [](const auto & a, const auto & b) { return Poco::icompare(a, b) < 0; } );
-
-                ready = true;
             }
             catch (...)
             {
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, false) << "\n";
+                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false) << "\n";
             }
+
+            /// Note that keyword suggestions are available even if we cannot load data from server.
+
+            std::sort(words.begin(), words.end(), [](const auto & a, const auto & b) { return Poco::icompare(a, b) < 0; } );
+            ready = true;
         });
     }
 
