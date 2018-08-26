@@ -28,7 +28,7 @@ if (NOT NO_WERROR)
 endif ()
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi -Wredundant-parens -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wzero-as-null-pointer-constant -Wshadow")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi -Wredundant-parens -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wzero-as-null-pointer-constant -Wshadow-uncaptured-local")
 endif ()
 
 find_package (Threads)
