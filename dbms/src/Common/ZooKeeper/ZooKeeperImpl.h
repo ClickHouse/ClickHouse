@@ -111,7 +111,7 @@ public:
         Poco::Timespan connection_timeout,
         Poco::Timespan operation_timeout);
 
-    ~ZooKeeper();
+    ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
