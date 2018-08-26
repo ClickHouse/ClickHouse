@@ -58,7 +58,7 @@ namespace ZeroTraits \
  \
     template <> \
     inline void set<STRUCT>(STRUCT & x) { x.size = 0; } \
-}; \
+} \
  \
 template <> \
 struct DefaultHash<STRUCT> \
