@@ -141,12 +141,10 @@ struct ConfigReloader::FileWithTimestamp
 };
 
 
-void ConfigReloader::FilesChangesTracker::addIfExists(const std::string & path)
+void ConfigReloader::FilesChangesTracker::addIfExists(const std::string & path_to_add)
 {
-    if (!path.empty() && Poco::File(path).exists())
-    {
-        files.emplace(path, Poco::File(path).getLastModified().epochTime());
-    }
+    if (!path_to_add.empty() && Poco::File(path_to_add).exists())
+        files.emplace(path_to_add, Poco::File(path_to_add).getLastModified().epochTime());
 }
 
 bool ConfigReloader::FilesChangesTracker::isDifferOrNewerThan(const FilesChangesTracker & rhs)
