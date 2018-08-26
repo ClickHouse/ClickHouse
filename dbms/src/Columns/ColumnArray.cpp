@@ -662,7 +662,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     return std::move(res);
 }
 
-INSTANTIATE_INDEX_IMPL(ColumnArray);
+INSTANTIATE_INDEX_IMPL(ColumnArray)
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
