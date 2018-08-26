@@ -20,10 +20,7 @@ public:
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
-    ~OwnSplitChannel() override {}
-
 private:
-
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
