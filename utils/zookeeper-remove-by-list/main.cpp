@@ -29,7 +29,7 @@ try
     zkutil::ZooKeeper zookeeper(options.at("address").as<std::string>());
 
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);
-    std::list<std::future<zkutil::RemoveResponse>> futures;
+    std::list<std::future<Coordination::RemoveResponse>> futures;
 
     std::cerr << "Requested: ";
     while (!in.eof())
