@@ -32,10 +32,10 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
     if (!zookeeper)
         throw DB::Exception("Could not get znode: `" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
 
-    for (const auto & path : invalidated_paths)
+    for (const auto & invalidated_path : invalidated_paths)
     {
-        nonexistent_nodes.erase(path);
-        node_cache.erase(path);
+        nonexistent_nodes.erase(invalidated_path);
+        node_cache.erase(invalidated_path);
     }
 
     if (nonexistent_nodes.count(path))
