@@ -260,7 +260,7 @@ if (ENABLE_TESTS)
         target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
     endif ()
 
-    macro(grep_gtest_sources BASE_DIR DST_VAR)
+    macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
         file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
     endmacro()
@@ -269,5 +269,10 @@ if (ENABLE_TESTS)
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
     target_link_libraries(unit_tests_dbms gtest_main dbms)
+
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_definitions(unit_tests_dbms "-Wzero-as-null-pointer-constant")
+    endif ()
+
     add_check(unit_tests_dbms)
 endif ()
