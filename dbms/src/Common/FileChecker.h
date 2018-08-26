@@ -30,7 +30,7 @@ private:
     void initialize();
     void updateImpl(const Poco::File & file);
     void save() const;
-    void load(Map & map) const;
+    static void load(Map & local_map, const std::string & path);
 
     std::string files_info_path;
     std::string tmp_files_info_path;
