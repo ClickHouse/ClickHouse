@@ -1452,7 +1452,7 @@ class FunctionArrayConcat : public IFunction
 public:
     static constexpr auto name = "arrayConcat";
     static FunctionPtr create(const Context & context);
-    FunctionArrayConcat(const Context & context) : context(context) {};
+    FunctionArrayConcat(const Context & context) : context(context) {}
 
     String getName() const override;
 
@@ -1579,7 +1579,7 @@ class FunctionArrayIntersect : public IFunction
 public:
     static constexpr auto name = "arrayIntersect";
     static FunctionPtr create(const Context & context);
-    FunctionArrayIntersect(const Context & context) : context(context) {};
+    FunctionArrayIntersect(const Context & context) : context(context) {}
 
     String getName() const override;
 
@@ -1681,7 +1681,7 @@ class FunctionArrayResize : public IFunction
 public:
     static constexpr auto name = "arrayResize";
     static FunctionPtr create(const Context & context);
-    FunctionArrayResize(const Context & context) : context(context) {};
+    FunctionArrayResize(const Context & context) : context(context) {}
 
     String getName() const override;
 
