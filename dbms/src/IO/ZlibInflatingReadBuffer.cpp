@@ -14,9 +14,9 @@ ZlibInflatingReadBuffer::ZlibInflatingReadBuffer(
     , in(in_)
     , eof(false)
 {
-    zstr.zalloc    = Z_NULL;
-    zstr.zfree     = Z_NULL;
-    zstr.opaque    = Z_NULL;
+    zstr.zalloc    = nullptr;
+    zstr.zfree     = nullptr;
+    zstr.opaque    = nullptr;
     zstr.next_in   = nullptr;
     zstr.avail_in  = 0;
     zstr.next_out  = nullptr;
