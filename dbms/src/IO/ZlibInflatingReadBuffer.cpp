@@ -70,7 +70,7 @@ bool ZlibInflatingReadBuffer::nextImpl()
         }
         else
         {
-            int rc = inflateReset(&zstr);
+            rc = inflateReset(&zstr);
             if (rc != Z_OK)
                 throw Exception(std::string("inflateReset failed: ") + zError(rc), ErrorCodes::ZLIB_INFLATE_FAILED);
             return true;
