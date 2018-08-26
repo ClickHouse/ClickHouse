@@ -57,7 +57,7 @@ public:
     static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
-    ~BaseDaemon();
+    ~BaseDaemon() override;
 
     /// Загружает конфигурацию и "строит" логгеры на запись в файлы
     void initialize(Poco::Util::Application &) override;
