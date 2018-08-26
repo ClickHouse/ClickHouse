@@ -133,13 +133,14 @@ int main(int argc, char ** argv)
         }
     }
 
-    size_t n = 5;
-    size_t map_size = 1000000;
-    using T = DB::Field;
-    T field = std::string("Hello, world");
-
     if (argc == 2 && !strcmp(argv[1], "1"))
     {
+        size_t n = 5;
+        size_t map_size = 1000000;
+
+        using T = DB::Field;
+        T field = std::string("Hello, world");
+
         using Arr = std::vector<T>;
         using Map = HashMap<UInt64, Arr>;
 
