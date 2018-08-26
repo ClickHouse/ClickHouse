@@ -914,11 +914,11 @@ void ZooKeeper::connect(
                 connected = true;
                 break;
             }
-            catch (const Poco::Net::NetException & e)
+            catch (const Poco::Net::NetException &)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
             }
-            catch (const Poco::TimeoutException & e)
+            catch (const Poco::TimeoutException &)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false);
             }
