@@ -47,7 +47,8 @@ template <bool>
 UInt8 xor_or_identity(const UInt8 c, const int mask)
 {
     return c ^ mask;
-};
+}
+
 template <>
 inline UInt8 xor_or_identity<false>(const UInt8 c, const int)
 {
