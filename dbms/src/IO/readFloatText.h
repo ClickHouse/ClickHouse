@@ -372,7 +372,7 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         auto after_point_num_leading_zeros = after_leading_zeros_count - after_point_count;
 
         readUIntTextUpToNSignificantDigits<significant_digits>(after_point, in);
-        int read_digits = in.count() - after_leading_zeros_count;
+        read_digits = in.count() - after_leading_zeros_count;
         after_point_exponent = (read_digits > significant_digits ? -significant_digits : -read_digits) - after_point_num_leading_zeros;
     }
 
