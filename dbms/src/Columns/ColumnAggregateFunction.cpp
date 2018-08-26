@@ -179,7 +179,7 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
     return std::move(res);
 }
 
-INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction);
+INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
