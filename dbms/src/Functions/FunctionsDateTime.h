@@ -623,7 +623,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
     String getName() const override
     {
@@ -928,7 +928,7 @@ class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
 
     String getName() const override
     {
@@ -1015,7 +1015,7 @@ class FunctionDateDiff : public IFunction
 {
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateDiff>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {
@@ -1192,7 +1192,7 @@ class FunctionNow : public IFunction
 {
 public:
     static constexpr auto name = "now";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow>(); }
 
     String getName() const override
     {
@@ -1221,7 +1221,7 @@ class FunctionToday : public IFunction
 {
 public:
     static constexpr auto name = "today";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToday>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToday>(); }
 
     String getName() const override
     {
@@ -1250,7 +1250,7 @@ class FunctionYesterday : public IFunction
 {
 public:
     static constexpr auto name = "yesterday";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionYesterday>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionYesterday>(); }
 
     String getName() const override
     {
@@ -1280,7 +1280,7 @@ class FunctionToTimeZone : public IFunction
 {
 public:
     static constexpr auto name = "toTimeZone";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); }
 
     String getName() const override
     {
@@ -1315,7 +1315,7 @@ class FunctionTimeSlot : public IFunction
 {
 public:
     static constexpr auto name = "timeSlot";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlot>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlot>(); }
 
     String getName() const override
     {
@@ -1442,7 +1442,7 @@ class FunctionTimeSlots : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); }
 
     String getName() const override
     {
