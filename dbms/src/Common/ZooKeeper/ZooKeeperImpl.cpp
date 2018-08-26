@@ -802,6 +802,8 @@ void ZooKeeper::sendThread()
                         break;
 
                     info.request->addRootPath(root_path);
+
+                    info.request->probably_sent = true;
                     info.request->write(*out);
 
                     if (info.request->xid == close_xid)
@@ -1116,7 +1118,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             {
                 RequestInfo & request_info = op.second;
                 ResponsePtr response = request_info.request->makeResponse();
-                response->error = ZSESSIONEXPIRED;
+
+                response->error = request_info.request->probably_sent
+                    ? ZCONNECTIONLOSS
+                    : ZSESSIONEXPIRED;
+
                 if (request_info.callback)
                 {
                     try

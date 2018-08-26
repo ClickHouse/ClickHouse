@@ -310,13 +310,10 @@ void ReplicatedMergeTreeBlockOutputStream::commitPart(zkutil::ZooKeeperPtr & zoo
         block_number_lock->assumeUnlocked();
     }
     else if (multi_code == ZooKeeperImpl::ZooKeeper::ZCONNECTIONLOSS
-        || multi_code == ZooKeeperImpl::ZooKeeper::ZOPERATIONTIMEOUT
-        || multi_code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        || multi_code == ZooKeeperImpl::ZooKeeper::ZOPERATIONTIMEOUT)
     {
         /** If the connection is lost, and we do not know if the changes were applied, we can not delete the local part
           *  if the changes were applied, the inserted block appeared in `/blocks/`, and it can not be inserted again.
-          *
-          * NOTE that in contrast to original libzookeeper, in our library we may also get ZSESSIONEXPIRED in this case.
           */
         transaction.commit();
         storage.enqueuePartForCheck(part->name, MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER);
