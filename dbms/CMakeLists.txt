@@ -269,10 +269,5 @@ if (ENABLE_TESTS)
     grep_gtest_sources(${ClickHouse_SOURCE_DIR}/dbms dbms_gtest_sources)
     add_executable(unit_tests_dbms ${dbms_gtest_sources})
     target_link_libraries(unit_tests_dbms gtest_main dbms)
-
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_definitions(unit_tests_dbms INTERFACE "-Wno-zero-as-null-pointer-constant")
-    endif ()
-
     add_check(unit_tests_dbms)
 endif ()
