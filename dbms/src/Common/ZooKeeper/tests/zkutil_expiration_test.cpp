@@ -57,7 +57,7 @@ int main(int argc, char ** argv)
             sleep(1);
         }
     }
-    catch (Coordination::Exception & e)
+    catch (Coordination::Exception &)
     {
         std::cerr << "KeeperException: " << DB::getCurrentExceptionMessage(true) << std::endl;
         return 1;
