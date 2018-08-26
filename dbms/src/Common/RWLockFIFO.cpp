@@ -172,11 +172,11 @@ RWLockFIFO::LockHandlerImpl::~LockHandlerImpl()
     /// Remove the group if we were the last client and notify the next group
     if (it_group->clients.empty())
     {
-        auto & queue = parent->queue;
-        queue.erase(it_group);
+        auto & parent_queue = parent->queue;
+        parent_queue.erase(it_group);
 
-        if (!queue.empty())
-            queue.front().cv.notify_all();
+        if (!parent_queue.empty())
+            parent_queue.front().cv.notify_all();
     }
 
     parent.reset();
