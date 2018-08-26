@@ -271,7 +271,7 @@ if (ENABLE_TESTS)
     target_link_libraries(unit_tests_dbms gtest_main dbms)
 
     if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-        target_compile_definitions(unit_tests_dbms "-Wzero-as-null-pointer-constant")
+        target_compile_definitions(unit_tests_dbms INTERFACE "-Wno-zero-as-null-pointer-constant")
     endif ()
 
     add_check(unit_tests_dbms)
