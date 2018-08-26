@@ -403,6 +403,9 @@ struct ZooKeeperRequest : virtual Request
 {
     ZooKeeper::XID xid = 0;
     bool has_watch = false;
+    /// If the request was not send and the error happens, we definitely sure, that is has not been processed by the server.
+    /// If the request was sent and we didn't get the response and the error happens, then we cannot be sure was it processed or not.
+    bool probably_sent = false;
 
     virtual ~ZooKeeperRequest() {}
 
@@ -1072,6 +1075,8 @@ void ZooKeeper::sendThread()
                         break;
 
                     info.request->addRootPath(root_path);
+
+                    info.request->probably_sent = true;
                     info.request->write(*out);
 
                     if (info.request->xid == close_xid)
@@ -1325,7 +1330,11 @@ void ZooKeeper::finalize(bool error_send, bool error_receive)
             {
                 RequestInfo & request_info = op.second;
                 ResponsePtr response = request_info.request->makeResponse();
-                response->error = ZSESSIONEXPIRED;
+
+                response->error = request_info.request->probably_sent
+                    ? ZCONNECTIONLOSS
+                    : ZSESSIONEXPIRED;
+
                 if (request_info.callback)
                 {
                     try
