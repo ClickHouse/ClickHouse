@@ -1990,7 +1990,7 @@ protected:
                         if (increment_and_check_exit())
                             return;
                     }
-                    catch (const Exception & e)
+                    catch (const Exception &)
                     {
                         LOG_INFO(log, getCurrentExceptionMessage(false, true));
                     }
