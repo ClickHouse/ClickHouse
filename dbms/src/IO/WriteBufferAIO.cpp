@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
 
 #include <IO/WriteBufferAIO.h>
 #include <Common/ProfileEvents.h>
@@ -206,8 +206,7 @@ bool WriteBufferAIO::waitForAIOCompletion()
 void WriteBufferAIO::prepare()
 {
     /// Swap the main and duplicate buffers.
-    buffer().swap(flush_buffer.buffer());
-    std::swap(position(), flush_buffer.position());
+    swap(flush_buffer);
 
     truncation_count = 0;
 

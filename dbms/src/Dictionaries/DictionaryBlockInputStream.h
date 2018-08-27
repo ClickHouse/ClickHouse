@@ -1,4 +1,5 @@
 #pragma once
+
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
@@ -21,23 +22,24 @@ namespace ErrorCodes
 }
 
 
-/*
- * BlockInputStream implementation for external dictionaries
- * read() returns single block consisting of the in-memory contents of the dictionaries
+/* BlockInputStream implementation for external dictionaries
+ * read() returns blocks consisting of the in-memory contents of the dictionaries
  */
 template <typename DictionaryType, typename Key>
 class DictionaryBlockInputStream : public DictionaryBlockInputStreamBase
 {
 public:
-    using DictionatyPtr = std::shared_ptr<DictionaryType const>;
+    using DictionaryPtr = std::shared_ptr<DictionaryType const>;
 
     DictionaryBlockInputStream(std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
                                PaddedPODArray<Key> && ids, const Names & column_names);
+
     DictionaryBlockInputStream(std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
                                const std::vector<StringRef> & keys, const Names & column_names);
 
     using GetColumnsFunction =
         std::function<ColumnsWithTypeAndName(const Columns &, const std::vector<DictionaryAttribute> & attributes)>;
+
     // Used to separate key columns format for storage and view.
     // Calls get_key_columns_function to get key column for dictionary get fuction call
     // and get_view_columns_function to get key representation.
@@ -59,63 +61,68 @@ private:
     // pointer types to getXXX functions
     // for single key dictionaries
     template <typename Type>
-    using DictionaryGetter = void (DictionaryType::*)(
-                                 const std::string &, const PaddedPODArray<Key> &, PaddedPODArray<Type> &) const;
-    using DictionaryStringGetter = void (DictionaryType::*)(
-                                       const std::string &, const PaddedPODArray<Key> &, ColumnString *) const;
+    using DictionaryGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &, PaddedPODArray<Type> &) const;
+
+    using DictionaryStringGetter = void (DictionaryType::*)(const std::string &, const PaddedPODArray<Key> &, ColumnString *) const;
+
     // for complex complex key dictionaries
     template <typename Type>
-    using GetterByKey = void (DictionaryType::*)(
-                            const std::string &, const Columns &, const DataTypes &, PaddedPODArray<Type> & out) const;
-    using StringGetterByKey = void (DictionaryType::*)(
-                                  const std::string &, const Columns &, const DataTypes &, ColumnString * out) const;
+    using GetterByKey = void (DictionaryType::*)(const std::string &, const Columns &, const DataTypes &, PaddedPODArray<Type> & out) const;
+
+    using StringGetterByKey = void (DictionaryType::*)(const std::string &, const Columns &, const DataTypes &, ColumnString * out) const;
 
     // call getXXX
     // for single key dictionaries
     template <typename Type, typename Container>
-    void callGetter(DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids,
+    void callGetter(DictionaryGetter<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+
     template <typename Container>
-    void callGetter(DictionaryStringGetter getter, const PaddedPODArray<Key> & ids,
+    void callGetter(DictionaryStringGetter getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+
     // for complex complex key dictionaries
     template <typename Type, typename Container>
-    void callGetter(GetterByKey<Type> getter, const PaddedPODArray<Key> & ids,
+    void callGetter(GetterByKey<Type> getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+
     template <typename Container>
-    void callGetter(StringGetterByKey getter, const PaddedPODArray<Key> & ids,
+    void callGetter(StringGetterByKey getter, const PaddedPODArray<Key> & ids_to_fill,
                     const Columns & keys, const DataTypes & data_types,
                     Container & container, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
 
     template <template <typename> class Getter, typename StringGetter>
-    Block fillBlock(const PaddedPODArray<Key> & ids, const Columns & keys,
+    Block fillBlock(const PaddedPODArray<Key> & ids_to_fill, const Columns & keys,
                     const DataTypes & types, ColumnsWithTypeAndName && view) const;
 
 
     template <typename AttributeType, typename Getter>
-    ColumnPtr getColumnFromAttribute(Getter getter, const PaddedPODArray<Key> & ids,
+    ColumnPtr getColumnFromAttribute(Getter getter, const PaddedPODArray<Key> & ids_to_fill,
                                      const Columns & keys, const DataTypes & data_types,
                                      const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
     template <typename Getter>
-    ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids,
+    ColumnPtr getColumnFromStringAttribute(Getter getter, const PaddedPODArray<Key> & ids_to_fill,
                                            const Columns & keys, const DataTypes & data_types,
-                                           const DictionaryAttribute& attribute, const DictionaryType& dictionary) const;
-    ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+    ColumnPtr getColumnFromIds(const PaddedPODArray<Key> & ids_to_fill) const;
 
     void fillKeyColumns(const std::vector<StringRef> & keys, size_t start, size_t size,
                         const DictionaryStructure & dictionary_structure, ColumnsWithTypeAndName & columns) const;
 
-    DictionatyPtr dictionary;
+    DictionaryPtr dictionary;
     Names column_names;
     PaddedPODArray<Key> ids;
     ColumnsWithTypeAndName key_columns;
     Poco::Logger * logger;
-    Block (DictionaryBlockInputStream<DictionaryType, Key>::*fillBlockFunction)(
-        const PaddedPODArray<Key> & ids, const Columns& keys,
+
+    using FillBlockFunction = Block (DictionaryBlockInputStream<DictionaryType, Key>::*)(
+        const PaddedPODArray<Key> & ids_to_fill, const Columns & keys,
         const DataTypes & types, ColumnsWithTypeAndName && view) const;
+
+    FillBlockFunction fill_block_function;
 
     Columns data_columns;
     GetColumnsFunction get_key_columns_function;
@@ -131,15 +138,16 @@ private:
     DictionaryKeyType key_type;
 };
 
+
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
-    PaddedPODArray<Key> && ids, const Names& column_names)
+    PaddedPODArray<Key> && ids, const Names & column_names)
     : DictionaryBlockInputStreamBase(ids.size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)),
       column_names(column_names), ids(std::move(ids)),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
-      fillBlockFunction(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<DictionaryGetter, DictionaryStringGetter>),
+      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<DictionaryGetter, DictionaryStringGetter>),
       key_type(DictionaryKeyType::Id)
 {
 }
@@ -147,11 +155,11 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
 template <typename DictionaryType, typename Key>
 DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     std::shared_ptr<const IDictionaryBase> dictionary, size_t max_block_size,
-    const std::vector<StringRef> & keys, const Names& column_names)
+    const std::vector<StringRef> & keys, const Names & column_names)
     : DictionaryBlockInputStreamBase(keys.size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)), column_names(column_names),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
-      fillBlockFunction(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
+      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
       key_type(DictionaryKeyType::ComplexKey)
 {
     const DictionaryStructure & dictionaty_structure = dictionary->getStructure();
@@ -167,12 +175,13 @@ DictionaryBlockInputStream<DictionaryType, Key>::DictionaryBlockInputStream(
     : DictionaryBlockInputStreamBase(data_columns.front()->size(), max_block_size),
       dictionary(std::static_pointer_cast<const DictionaryType>(dictionary)), column_names(column_names),
       logger(&Poco::Logger::get("DictionaryBlockInputStream")),
-      fillBlockFunction(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
+      fill_block_function(&DictionaryBlockInputStream<DictionaryType, Key>::fillBlock<GetterByKey, StringGetterByKey>),
       data_columns(data_columns),
       get_key_columns_function(get_key_columns_function), get_view_columns_function(get_view_columns_function),
       key_type(DictionaryKeyType::Callback)
 {
 }
+
 
 template <typename DictionaryType, typename Key>
 Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, size_t length) const
@@ -190,13 +199,15 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
                 columns.emplace_back(column);
                 view_columns.emplace_back(column, key_column.type, key_column.name);
             }
-            return (this->*fillBlockFunction)({}, columns, {}, std::move(view_columns));
+            return (this->*fill_block_function)({}, columns, {}, std::move(view_columns));
         }
+
         case DictionaryKeyType::Id:
         {
-            PaddedPODArray<Key> block_ids(ids.begin() + start, ids.begin() + start + length);
-            return (this->*fillBlockFunction)(block_ids, {}, {}, {});
+            PaddedPODArray<Key> ids_to_fill(ids.begin() + start, ids.begin() + start + length);
+            return (this->*fill_block_function)(ids_to_fill, {}, {}, {});
         }
+
         case DictionaryKeyType::Callback:
         {
             Columns columns;
@@ -214,11 +225,13 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::getBlock(size_t start, si
                 columns.push_back(key_column.column);
                 types.push_back(key_column.type);
             }
-            return (this->*fillBlockFunction)({}, columns, types, std::move(view_with_type_and_name));
+            return (this->*fill_block_function)({}, columns, types, std::move(view_with_type_and_name));
         }
     }
+
     throw Exception("Unexpected DictionaryKeyType.", ErrorCodes::LOGICAL_ERROR);
 }
+
 
 template <typename DictionaryType, typename Key>
 template <typename Type, typename Container>
@@ -260,6 +273,7 @@ void DictionaryBlockInputStream<DictionaryType, Key>::callGetter(
     (dict.*getter)(attribute.name, keys, data_types, container);
 }
 
+
 template <typename DictionaryType, typename Key>
 template <template <typename> class Getter, typename StringGetter>
 Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
@@ -287,7 +301,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
-        const DictionaryAttribute& attribute = structure.attributes[idx];
+        const DictionaryAttribute & attribute = structure.attributes[idx];
         if (names.find(attribute.name) != names.end())
         {
             ColumnPtr column;
@@ -332,7 +346,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
             case AttributeUnderlyingType::String:
             {
                 column = getColumnFromStringAttribute<StringGetter>(
-                    &DictionaryType::getString, ids, keys, data_types, attribute, *dictionary);
+                    &DictionaryType::getString, ids_to_fill, keys, data_types, attribute, *dictionary);
                 break;
             }
             }
@@ -342,6 +356,7 @@ Block DictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     }
     return Block(block_columns);
 }
+
 
 template <typename DictionaryType, typename Key>
 template <typename AttributeType, typename Getter>
@@ -358,18 +373,20 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribut
     return std::move(column_vector);
 }
 
+
 template <typename DictionaryType, typename Key>
 template <typename Getter>
 ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromStringAttribute(
     Getter getter, const PaddedPODArray<Key> & ids_to_fill,
     const Columns & keys, const DataTypes & data_types,
-    const DictionaryAttribute& attribute, const DictionaryType & dict) const
+    const DictionaryAttribute & attribute, const DictionaryType & dict) const
 {
     auto column_string = ColumnString::create();
     auto ptr = column_string.get();
     callGetter(getter, ids_to_fill, keys, data_types, ptr, attribute, dict);
     return std::move(column_string);
 }
+
 
 template <typename DictionaryType, typename Key>
 ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(const PaddedPODArray<Key> & ids_to_fill) const
@@ -380,6 +397,7 @@ ColumnPtr DictionaryBlockInputStream<DictionaryType, Key>::getColumnFromIds(cons
         column_vector->insert(id);
     return std::move(column_vector);
 }
+
 
 template <typename DictionaryType, typename Key>
 void DictionaryBlockInputStream<DictionaryType, Key>::fillKeyColumns(
