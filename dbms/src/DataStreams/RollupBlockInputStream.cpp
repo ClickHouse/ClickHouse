@@ -55,10 +55,6 @@ Block RollupBlockInputStream::readImpl()
         Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
         aggregator.setCancellationHook(hook);
 
-        StringRefs key(params.keys_size);
-        ColumnRawPtrs key_columns(params.keys_size);
-        AggregateColumns aggregate_columns(params.aggregates_size);
-
         Block rollup_block = block;
 
         for (int i = static_cast<int>(params.keys_size) - 1; i >= 0; --i) 
