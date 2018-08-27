@@ -112,7 +112,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
         if (!pointer.empty())
             log_pointer = parse<UInt64>(pointer);
-        
+
         /// Check status of replica (active or not).
         /// If replica was not active, we could check when it's log_pointer locates.
 
@@ -185,7 +185,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         return;
 
     markLostReplicas(host_versions_lost_replicas, log_pointers_candidate_lost_replicas, replicas.size() - num_replicas_were_marked_is_lost, zookeeper);
-  
+
     Coordination::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
     {
@@ -226,10 +226,10 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
         candidate_lost_replicas.push_back(replica);
         requests.push_back(ops);
     }
-    
+
     if (candidate_lost_replicas.size() == replicas_count)
         throw Exception("All replicas wiil be lost", ErrorCodes::ALL_REPLICAS_LOST);
-    
+
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
         futures.emplace_back(zookeeper->tryAsyncMulti(requests[i]));
 

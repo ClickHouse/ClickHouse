@@ -51,7 +51,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
         log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
-        
+
         std::unordered_set<String> already_loaded_paths;
         {
             std::lock_guard lock(state_mutex);

@@ -591,16 +591,16 @@ void StorageReplicatedMergeTree::createReplica()
     auto zookeeper = getZooKeeper();
 
     LOG_DEBUG(log, "Creating replica " << replica_path);
-    
+
     int32_t code;
-    
+
     do
     {
         Coordination::Stat replicas_stat;
         String last_added_replica = zookeeper->get(zookeeper_path + "/replicas", &replicas_stat);
-        
+
         String is_lost_value = last_added_replica == "" ? "0" : "1";
-        
+
         Coordination::Requests ops;
         Coordination::Responses resps;
         ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
@@ -1951,11 +1951,11 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
 
 
 void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper)
-{   
+{
     LOG_INFO(log, "Will mimic " << source_replica);
 
     String source_path = zookeeper_path + "/replicas/" + source_replica;
-    
+
     /** TODO: it will be deleted! (It is only to support old version of CH server).
     * If the reference/master replica is not yet fully created, let's wait.
     * NOTE: If something went wrong while creating it, we can hang around forever.
@@ -1978,12 +1978,12 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
 
     /// The order of the following three actions is important. Entries in the log can be duplicated, but they can not be lost.
-    
+
     String raw_log_pointer = zookeeper->get(source_path + "/log_pointer");
 
     Coordination::Requests ops;
     ops.push_back(zkutil::makeSetRequest(replica_path + "/log_pointer", raw_log_pointer, -1));
-    
+
     /// For support old versions CH.
     if (source_is_lost_stat.version == -1)
     {
@@ -1992,9 +1992,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     }
     else
         ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", source_is_lost_stat.version));
-    
+
     Coordination::Responses resp;
-    
+
     auto error = zookeeper->tryMulti(ops, resp);
     if (error == Coordination::Error::ZBADVERSION)
         throw Exception("Can not clone replica, because the " + source_replica + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
@@ -2002,7 +2002,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
         throw Exception("Can not clone replica, because the " + source_replica + " updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
     else
         zkutil::KeeperMultiException::check(error, ops, resp);
-    
+
 
     /// Let's remember the queue of the reference/master replica.
     Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
@@ -2031,7 +2031,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
         zookeeper->create(replica_path + "/queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential);
     }
-    
+
     LOG_DEBUG(log, "Queued " << active_parts.size() << " parts to be fetched");
 
     /// Add content of the reference/master replica queue to the queue.
@@ -2066,7 +2066,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     for (const String & replica_name : zookeeper->getChildren(zookeeper_path + "/replicas"))
     {
         String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
-        
+
         if (source_replica_path != replica_path)
         {
             String resp;
@@ -2077,10 +2077,10 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
             }
         }
     }
-    
+
     if (source_replica == "")
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
-    
+
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
 
     zookeeper->set(replica_path + "/is_lost", "0");
