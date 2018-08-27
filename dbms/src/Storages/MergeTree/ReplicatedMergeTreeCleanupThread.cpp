@@ -212,9 +212,9 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
                                                         const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
                                                         size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper)
 {
-    std::vector<LostReplicaInfo> candidate_lost_replicas;
+    Strings candidate_lost_replicas;
     std::vector<Coordination::Requests> requests;
-    std::vector<std::pair<zkutil::ZooKeeper::FutureMulti> futures;
+    std::vector<zkutil::ZooKeeper::FutureMulti> futures;
 
     for (auto pair : log_pointers_candidate_lost_replicas)
     {
@@ -230,14 +230,14 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     if (candidate_lost_replicas.size() == replicas_count)
         throw Exception("All replicas wiil be lost", ErrorCodes::ALL_REPLICAS_LOST);
     
-    for (size_t i = 0; i < replicas.size(); ++i)
+    for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
         futures.emplace_back(zookeeper->tryAsyncMulti(requests[i]));
 
-    for (size_i i = 0; i < replicas.size())
+    for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
     {
         auto multi_responses =  futures[i].get();
         if (multi_responses.responses[0]->error == Coordination::Error::ZBADVERSION)
-            throw Exception(replicas[i] + " became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
+            throw Exception(candidate_lost_replicas[i] + " became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
         zkutil::KeeperMultiException::check(multi_responses.error, requests[i], multi_responses.responses);
     }
 }
