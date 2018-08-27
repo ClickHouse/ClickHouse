@@ -178,14 +178,14 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 #if !defined(INTERNAL_COMPILER_HEADERS)
     throw Exception("Cannot compile code: Compiler disabled", ErrorCodes::CANNOT_COMPILE_CODE);
 #else
-    std::string method_typename;
+    std::string method_typename_single_level;
     std::string method_typename_two_level;
 
     if (false) {}
 #define M(NAME) \
     else if (type == AggregatedDataVariants::Type::NAME) \
     { \
-        method_typename = "decltype(AggregatedDataVariants::" #NAME ")::element_type"; \
+        method_typename_single_level = "decltype(AggregatedDataVariants::" #NAME ")::element_type"; \
         method_typename_two_level = "decltype(AggregatedDataVariants::" #NAME "_two_level)::element_type"; \
     }
 
@@ -194,7 +194,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
 #define M(NAME) \
     else if (type == AggregatedDataVariants::Type::NAME) \
-        method_typename = "decltype(AggregatedDataVariants::" #NAME ")::element_type";
+        method_typename_single_level = "decltype(AggregatedDataVariants::" #NAME ")::element_type";
 
     APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M)
 #undef M
@@ -238,12 +238,12 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
 
     std::stringstream key_str;
     key_str << "Aggregate: ";
-    if (!method_typename.empty())
-        key_str << method_typename + ", ";
+    if (!method_typename_single_level.empty())
+        key_str << method_typename_single_level + ", ";
     key_str << aggregate_functions_typenames;
     std::string key = key_str.str();
 
-    auto get_code = [method_typename, method_typename_two_level, aggregate_functions_typenames]
+    auto get_code = [method_typename_single_level, method_typename_two_level, aggregate_functions_typenames]
     {
         /// A short piece of code, which is an explicit instantiation of the template.
         std::stringstream code;
@@ -286,8 +286,8 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 "}\n";
         };
 
-        if (!method_typename.empty())
-            append_code_for_specialization(method_typename, "");
+        if (!method_typename_single_level.empty())
+            append_code_for_specialization(method_typename_single_level, "");
         else
         {
             /// For `without_key` method.

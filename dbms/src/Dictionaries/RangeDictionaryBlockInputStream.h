@@ -44,9 +44,9 @@ private:
     template <typename AttributeType>
     ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
                                      const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<UInt16> & dates,
-                                     const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+                                     const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const;
     ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<UInt16> & dates,
-                                           const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const;
     template <typename T>
     ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
@@ -104,20 +104,20 @@ template <typename DictionaryType, typename Key>
 template <typename AttributeType>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribute(
     DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key> & ids_to_fill,
-    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
+    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const
 {
     auto column_vector = ColumnVector<AttributeType>::create(ids_to_fill.size());
-    (dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
+    (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
     return column_vector;
 }
 
 template <typename DictionaryType, typename Key>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttributeString(
     const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<UInt16> & dates,
-    const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
+    const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const
 {
     auto column_string = ColumnString::create();
-    dictionary.getString(attribute.name, ids_to_fill, dates, column_string.get());
+    concrete_dictionary.getString(attribute.name, ids_to_fill, dates, column_string.get());
     return column_string;
 }
 

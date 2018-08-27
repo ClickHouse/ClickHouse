@@ -186,8 +186,6 @@ void ExpressionAction::prepare(Block & sample_block)
                     all_const = false;
             }
 
-            ColumnPtr new_column;
-
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
             if (all_const && function->isSuitableForConstantFolding())
             {
