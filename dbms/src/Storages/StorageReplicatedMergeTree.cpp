@@ -1997,9 +1997,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     
     auto error = zookeeper->tryMulti(ops, resp);
     if (error == Coordination::Error::ZBADVERSION)
-        throw Exception("Can not clone replica, because a " + source_path + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
+        throw Exception("Can not clone replica, because the " + source_replica + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
     else if (error == Coordination::Error::ZNODEEXISTS)
-        throw Exception("Can not clone replica, because the ClickHouse server updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
+        throw Exception("Can not clone replica, because the " + source_replica + " updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
     else
         zkutil::KeeperMultiException::check(error, ops, resp);
     
@@ -2054,7 +2054,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     }
     else
     {
-        /// We must update old version(Replica doesn't have /is_lost) of replica.
+        /// Replica was created by old version of CH, so me must create "/is_lost".
         zookeeper->create(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent);
         return;
     }
@@ -2073,7 +2073,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
             if (!zookeeper->tryGet(source_replica_path + "/is_lost", resp, &source_is_lost_stat) || resp == "0")
             {
                 source_replica = replica_name;
-		        break;
+                break;
             }
         }
     }
