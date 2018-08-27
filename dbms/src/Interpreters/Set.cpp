@@ -326,7 +326,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
             memset(&vec_res[0], 1, vec_res.size());
         else
             memset(&vec_res[0], 0, vec_res.size());
-        return std::move(res);
+        return res;
     }
 
     if (data_types.size() != num_key_columns)
@@ -367,7 +367,7 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 
-    return std::move(res);
+    return res;
 }
 
 

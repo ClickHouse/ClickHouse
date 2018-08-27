@@ -8,7 +8,7 @@ ASTPtr ASTExpressionList::clone() const
 {
     auto clone = std::make_shared<ASTExpressionList>(*this);
     clone->cloneChildren();
-    return std::move(clone);
+    return clone;
 }
 
 void ASTExpressionList::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
