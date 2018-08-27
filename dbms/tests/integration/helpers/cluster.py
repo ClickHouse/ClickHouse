@@ -147,6 +147,7 @@ class ClickHouseCluster:
                 print "Mysql Started"
                 return
             except Exception:
+                print "Can't connecto to MySQL"
                 time.sleep(0.5)
 
         raise Exception("Cannot wait MySQL container")
@@ -158,8 +159,10 @@ class ClickHouseCluster:
                 for instance in ['zoo1', 'zoo2', 'zoo3']:
                     conn = self.get_kazoo_client(instance)
                     conn.get_children('/')
+                print "All instances of ZooKeeper started"
                 return
             except Exception:
+                print "Can't connec to to ZooKeeper"
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper container")
@@ -192,7 +195,7 @@ class ClickHouseCluster:
 
         if self.with_mysql and self.base_mysql_cmd:
             subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
-            self.wait_mysql_to_start()
+            self.wait_mysql_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
             subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
