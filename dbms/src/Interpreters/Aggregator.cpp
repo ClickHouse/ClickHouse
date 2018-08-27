@@ -269,14 +269,13 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                     "    size_t rows,\n"
                     "    ColumnRawPtrs & key_columns,\n"
                     "    Aggregator::AggregateColumns & aggregate_columns,\n"
-                    "    const Sizes & key_sizes,\n"
                     "    StringRefs & keys,\n"
                     "    bool no_more_keys,\n"
                     "    AggregateDataPtr overflow_row)\n"
                 "{\n"
                     "    aggregator.executeSpecialized<\n"
                         "        " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
-                        "        method, arena, rows, key_columns, aggregate_columns, key_sizes, keys, no_more_keys, overflow_row);\n"
+                        "        method, arena, rows, key_columns, aggregate_columns, keys, no_more_keys, overflow_row);\n"
                 "}\n"
                 "\n"
                 "void * getPtr" << suffix << "() __attribute__((__visibility__(\"default\")));\n"
@@ -522,7 +521,6 @@ void NO_INLINE Aggregator::executeImpl(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
-    const Sizes & key_sizes,
     StringRefs & keys,
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
@@ -531,9 +529,9 @@ void NO_INLINE Aggregator::executeImpl(
     state.init(key_columns);
 
     if (!no_more_keys)
-        executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, key_sizes, keys, overflow_row);
+        executeImplCase<false>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
     else
-        executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, key_sizes, keys, overflow_row);
+        executeImplCase<true>(method, state, aggregates_pool, rows, key_columns, aggregate_instructions, keys, overflow_row);
 }
 
 #ifndef __clang__
@@ -549,7 +547,6 @@ void NO_INLINE Aggregator::executeImplCase(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateFunctionInstruction * aggregate_instructions,
-    const Sizes & key_sizes,
     StringRefs & keys,
     AggregateDataPtr overflow_row) const
 {
@@ -564,7 +561,7 @@ void NO_INLINE Aggregator::executeImplCase(
         bool overflow = false;  /// The new key did not fit in the hash table because of no_more_keys.
 
         /// Get the key to insert into the hash table.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, keys, *aggregates_pool);
 
         if (!no_more_keys)  /// Insert.
         {
@@ -768,7 +765,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                     Arena *, size_t, ColumnRawPtrs &, AggregateColumns &, \
                     const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
                 (*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-                    result.key_sizes, key, no_more_keys, overflow_row_ptr);
+                    key, no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -784,7 +781,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                     Arena *, size_t, ColumnRawPtrs &, AggregateColumns &, \
                     const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
                 (*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
-                    result.key_sizes, key, no_more_keys, overflow_row_ptr);
+                    key, no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -796,7 +793,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
                 executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
-                    result.key_sizes, key, no_more_keys, overflow_row_ptr);
+                    key, no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -917,11 +914,10 @@ Block Aggregator::convertOneBucketToBlock(
             MutableColumns & key_columns,
             AggregateColumnsData & aggregate_columns,
             MutableColumns & final_aggregate_columns,
-            const Sizes & key_sizes,
             bool final)
         {
             convertToBlockImpl(method, method.data.impls[bucket],
-                key_columns, aggregate_columns, final_aggregate_columns, key_sizes, final);
+                key_columns, aggregate_columns, final_aggregate_columns, final);
         });
 
     block.info.bucket_num = bucket;
@@ -1054,16 +1050,15 @@ void Aggregator::convertToBlockImpl(
     MutableColumns & key_columns,
     AggregateColumnsData & aggregate_columns,
     MutableColumns & final_aggregate_columns,
-    const Sizes & key_sizes,
     bool final) const
 {
     if (data.empty())
         return;
 
     if (final)
-        convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns, key_sizes);
+        convertToBlockImplFinal(method, data, key_columns, final_aggregate_columns);
     else
-        convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns, key_sizes);
+        convertToBlockImplNotFinal(method, data, key_columns, aggregate_columns);
 
     /// In order to release memory early.
     data.clearAndShrink();
@@ -1075,12 +1070,11 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     Method & method,
     Table & data,
     MutableColumns & key_columns,
-    MutableColumns & final_aggregate_columns,
-    const Sizes & key_sizes) const
+    MutableColumns & final_aggregate_columns) const
 {
     for (const auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
+        method.insertKeyIntoColumns(value, key_columns, params.keys_size);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->insertResultInto(
@@ -1096,13 +1090,12 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
     Method & method,
     Table & data,
     MutableColumns & key_columns,
-    AggregateColumnsData & aggregate_columns,
-    const Sizes & key_sizes) const
+    AggregateColumnsData & aggregate_columns) const
 {
 
     for (auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
+        method.insertKeyIntoColumns(value, key_columns, params.keys_size);
 
         /// reserved, so push_back does not throw exceptions
         for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1164,7 +1157,7 @@ Block Aggregator::prepareBlockAndFill(
         }
     }
 
-    filler(key_columns, aggregate_columns_data, final_aggregate_columns, data_variants.key_sizes, final);
+    filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
     Block res = header.cloneEmpty();
 
@@ -1197,7 +1190,6 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
-        const Sizes & /*key_sizes*/,
         bool final)
     {
         if (data_variants.type == AggregatedDataVariants::Type::without_key || params.overflow_row)
@@ -1240,13 +1232,12 @@ Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_v
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
-        const Sizes & /*key_sizes*/,
         bool final)
     {
     #define M(NAME) \
         else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
             convertToBlockImpl(*data_variants.NAME, data_variants.NAME->data, \
-                key_columns, aggregate_columns, final_aggregate_columns, data_variants.key_sizes, final);
+                key_columns, aggregate_columns, final_aggregate_columns, final);
 
         if (false) {}
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
@@ -1840,7 +1831,6 @@ std::unique_ptr<IBlockInputStream> Aggregator::mergeAndConvertToBlocks(
 template <bool no_more_keys, typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Block & block,
-    const Sizes & key_sizes,
     Arena * aggregates_pool,
     Method & method,
     Table & data,
@@ -1870,7 +1860,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         bool overflow = false;  /// The new key did not fit in the hash table because of no_more_keys.
 
         /// Get the key to insert into the hash table.
-        auto key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        auto key = state.getKey(key_columns, params.keys_size, i, keys, *aggregates_pool);
 
         if (!no_more_keys)
         {
@@ -1923,7 +1913,6 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeStreamsImpl(
     Block & block,
-    const Sizes & key_sizes,
     Arena * aggregates_pool,
     Method & method,
     Table & data,
@@ -1931,9 +1920,9 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     bool no_more_keys) const
 {
     if (!no_more_keys)
-        mergeStreamsImplCase<false>(block, key_sizes, aggregates_pool, method, data, overflow_row);
+        mergeStreamsImplCase<false>(block, aggregates_pool, method, data, overflow_row);
     else
-        mergeStreamsImplCase<true>(block, key_sizes, aggregates_pool, method, data, overflow_row);
+        mergeStreamsImplCase<true>(block, aggregates_pool, method, data, overflow_row);
 }
 
 
@@ -2048,7 +2037,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
             #define M(NAME) \
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(block, result.key_sizes, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
+                    mergeStreamsImpl(block, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
                 if (false) {}
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2115,7 +2104,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                mergeStreamsImpl(block, result.key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
+                mergeStreamsImpl(block, result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, no_more_keys);
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
@@ -2186,7 +2175,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
 
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
-            mergeStreamsImpl(block, key_sizes, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
+            mergeStreamsImpl(block, result.aggregates_pool, *result.NAME, result.NAME->data, nullptr, false);
 
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
@@ -2232,7 +2221,6 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     Method & method,
     Arena * pool,
     ColumnRawPtrs & key_columns,
-    const Sizes & key_sizes,
     StringRefs & keys,
     const Block & source,
     std::vector<Block> & destinations) const
@@ -2250,7 +2238,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     for (size_t i = 0; i < rows; ++i)
     {
         /// Obtain a key. Calculate bucket number from it.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *pool);
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, keys, *pool);
 
         auto hash = method.data.hash(key);
         auto bucket = method.data.getBucketFromHash(hash);
@@ -2332,7 +2320,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
 #define M(NAME) \
     else if (data.type == AggregatedDataVariants::Type::NAME) \
         convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
-            key_columns, data.key_sizes, key, block, splitted_blocks);
+            key_columns, key, block, splitted_blocks);
 
     if (false) {}
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)

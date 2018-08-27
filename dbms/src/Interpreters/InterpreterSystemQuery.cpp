@@ -264,16 +264,16 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
     }
 }
 
-void InterpreterSystemQuery::restartReplicas(Context & context)
+void InterpreterSystemQuery::restartReplicas(Context & system_context)
 {
     std::vector<std::pair<String, String>> replica_names;
 
-    for (auto & elem : context.getDatabases())
+    for (auto & elem : system_context.getDatabases())
     {
         DatabasePtr & database = elem.second;
         const String & database_name = elem.first;
 
-        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getIterator(system_context); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(database_name, iterator->name());
@@ -285,7 +285,7 @@ void InterpreterSystemQuery::restartReplicas(Context & context)
 
     ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
     for (auto & table : replica_names)
-        pool.schedule([&] () { tryRestartReplica(table.first, table.second, context); });
+        pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();
 }
 

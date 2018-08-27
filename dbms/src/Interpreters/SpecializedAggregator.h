@@ -103,7 +103,6 @@ void NO_INLINE Aggregator::executeSpecialized(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
-    const Sizes & key_sizes,
     StringRefs & keys,
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
@@ -113,10 +112,10 @@ void NO_INLINE Aggregator::executeSpecialized(
 
     if (!no_more_keys)
         executeSpecializedCase<false, Method, AggregateFunctionsList>(
-            method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+            method, state, aggregates_pool, rows, key_columns, aggregate_columns, keys, overflow_row);
     else
         executeSpecializedCase<true, Method, AggregateFunctionsList>(
-            method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+            method, state, aggregates_pool, rows, key_columns, aggregate_columns, keys, overflow_row);
 }
 
 #pragma GCC diagnostic push
@@ -130,7 +129,6 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
-    const Sizes & key_sizes,
     StringRefs & keys,
     AggregateDataPtr overflow_row) const
 {
@@ -143,7 +141,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
         bool overflow = false;    /// New key did not fit in the hash table because of no_more_keys.
 
         /// Get the key to insert into the hash table.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, keys, *aggregates_pool);
 
         if (!no_more_keys)    /// Insert.
         {
