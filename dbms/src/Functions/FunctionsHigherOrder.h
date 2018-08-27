@@ -143,7 +143,7 @@ struct ArrayCountImpl
                     pos = offsets[i];
                 }
 
-                return std::move(out_column);
+                return out_column;
             }
             else
                 return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
@@ -166,7 +166,7 @@ struct ArrayCountImpl
             out_counts[i] = count;
         }
 
-        return std::move(out_column);
+        return out_column;
     }
 };
 
@@ -205,7 +205,7 @@ struct ArrayExistsImpl
                     pos = offsets[i];
                 }
 
-                return std::move(out_column);
+                return out_column;
             }
             else
                 return DataTypeUInt8().createColumnConst(array.size(), UInt64(0));
@@ -232,7 +232,7 @@ struct ArrayExistsImpl
             out_exists[i] = exists;
         }
 
-        return std::move(out_column);
+        return out_column;
     }
 };
 
@@ -273,7 +273,7 @@ struct ArrayAllImpl
                     pos = offsets[i];
                 }
 
-                return std::move(out_column);
+                return out_column;
             }
         }
 
@@ -298,7 +298,7 @@ struct ArrayAllImpl
             out_all[i] = all;
         }
 
-        return std::move(out_column);
+        return out_column;
     }
 };
 
@@ -436,7 +436,7 @@ struct ArrayFirstImpl
                     pos = offsets[i];
                 }
 
-                return std::move(out);
+                return out;
             }
             else
             {
@@ -470,7 +470,7 @@ struct ArrayFirstImpl
                 out->insertDefault();
         }
 
-        return std::move(out);
+        return out;
     }
 };
 
@@ -509,7 +509,7 @@ struct ArrayFirstIndexImpl
                     pos = offsets[i];
                 }
 
-                return std::move(out_column);
+                return out_column;
             }
             else
                 return DataTypeUInt32().createColumnConst(array.size(), UInt64(0));
@@ -537,7 +537,7 @@ struct ArrayFirstIndexImpl
             out_index[i] = index;
         }
 
-        return std::move(out_column);
+        return out_column;
     }
 };
 
