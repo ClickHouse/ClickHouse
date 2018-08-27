@@ -909,7 +909,7 @@ private:
                 const auto & value = (*item_arg)[row];
 
                 data[row] = 0;
-                for (size_t i = 0, size = arr.size(); i < size; ++i)
+                for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
                 {
                     bool hit = false;
 
