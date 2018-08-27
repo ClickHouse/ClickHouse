@@ -49,18 +49,22 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
 
 
 
-void writeException(const Exception & e, WriteBuffer & buf)
+void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {
     writeBinary(e.code(), buf);
     writeBinary(String(e.name()), buf);
     writeBinary(e.displayText(), buf);
-    writeBinary(e.getStackTrace().toString(), buf);
+
+    if (with_stack_trace)
+        writeBinary(e.getStackTrace().toString(), buf);
+    else
+        writeBinary(String(), buf);
 
     bool has_nested = e.nested() != nullptr;
     writeBinary(has_nested, buf);
 
     if (has_nested)
-        writeException(Exception(*e.nested()), buf);
+        writeException(Exception(*e.nested()), buf, with_stack_trace);
 }
 
 }

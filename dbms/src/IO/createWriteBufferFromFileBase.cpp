@@ -1,6 +1,6 @@
 #include <IO/createWriteBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
-#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(_MSC_VER)
+#if defined(__linux__)
 #include <IO/WriteBufferAIO.h>
 #endif
 #include <Common/ProfileEvents.h>
@@ -15,10 +15,10 @@ namespace ProfileEvents
 namespace DB
 {
 
-#if defined(__APPLE__) || defined(__FreeBSD__) || defined(_MSC_VER)
+#if !defined(__linux__)
 namespace ErrorCodes
 {
-        extern const int NOT_IMPLEMENTED;
+    extern const int NOT_IMPLEMENTED;
 }
 #endif
 
@@ -33,7 +33,7 @@ WriteBufferFromFileBase * createWriteBufferFromFileBase(const std::string & file
     }
     else
     {
-#if !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(_MSC_VER)
+#if defined(__linux__)
         ProfileEvents::increment(ProfileEvents::CreatedWriteBufferAIO);
         return new WriteBufferAIO(filename_, buffer_size_, flags_, mode, existing_memory_);
 #else

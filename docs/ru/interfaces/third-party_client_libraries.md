@@ -29,6 +29,8 @@
 - R
     - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+- Scala
+    - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 - .NET
     - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)

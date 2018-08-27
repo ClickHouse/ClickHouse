@@ -823,7 +823,7 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 
 
 /// Serialize exception (so that it can be transferred over the network)
-void writeException(const Exception & e, WriteBuffer & buf);
+void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace);
 
 
 /// An easy-to-use method for converting something to a string in text form.

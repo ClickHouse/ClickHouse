@@ -34,11 +34,11 @@ void ReplicatedMergeTreeCleanupThread::run()
     {
         iterate();
     }
-    catch (const zkutil::KeeperException & e)
+    catch (const Coordination::Exception & e)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        if (e.code == Coordination::ZSESSIONEXPIRED)
             return;
     }
     catch (...)
@@ -70,7 +70,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 {
     auto zookeeper = storage.getZooKeeper();
 
-    zkutil::Stat stat;
+    Coordination::Stat stat;
     if (!zookeeper->exists(storage.zookeeper_path + "/log", &stat))
         throw Exception(storage.zookeeper_path + "/log doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
@@ -175,8 +175,8 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         return;
 
     markLostReplicas(host_versions_inactive_replicas, log_pointers_lost_replicas, replicas.size() - replicas_were_marked_is_lost, zookeeper);
-
-    zkutil::Requests ops;
+  
+    Coordination::Requests ops;
     for (size_t i = 0; i < entries.size(); ++i)
     {
         ops.emplace_back(zkutil::makeRemoveRequest(storage.zookeeper_path + "/log/" + entries[i], -1));
@@ -273,7 +273,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     auto first_outdated_block_time_threshold = std::upper_bound(timed_blocks.begin(), timed_blocks.end(), block_threshold, NodeWithStat::greaterByTime);
     auto first_outdated_block = std::min(first_outdated_block_fixed_threshold, first_outdated_block_time_threshold);
 
-    zkutil::AsyncResponses<zkutil::RemoveResponse> try_remove_futures;
+    zkutil::AsyncResponses<Coordination::RemoveResponse> try_remove_futures;
     for (auto it = first_outdated_block; it != timed_blocks.end(); ++it)
     {
         String path = storage.zookeeper_path + "/blocks/" + it->node;
@@ -284,7 +284,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldBlocks()
     {
         const String & path = pair.first;
         int32_t rc = pair.second.get().error;
-        if (rc == ZooKeeperImpl::ZooKeeper::ZNOTEMPTY)
+        if (rc == Coordination::ZNOTEMPTY)
         {
             /// Can happen if there are leftover block nodes with children created by previous server versions.
             zookeeper->removeRecursive(path);
@@ -305,7 +305,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     timed_blocks.clear();
 
     Strings blocks;
-    zkutil::Stat stat;
+    Coordination::Stat stat;
     if (zookeeper.tryGetChildren(storage.zookeeper_path + "/blocks", blocks, &stat))
         throw Exception(storage.zookeeper_path + "/blocks doesn't exist", ErrorCodes::NOT_FOUND_NODE);
 
@@ -328,7 +328,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
                                    << " to clear old ones from ZooKeeper.");
     }
 
-    zkutil::AsyncResponses<zkutil::ExistsResponse> exists_futures;
+    zkutil::AsyncResponses<Coordination::ExistsResponse> exists_futures;
     for (const String & block : blocks)
     {
         auto it = cached_block_stats.find(block);
@@ -348,7 +348,7 @@ void ReplicatedMergeTreeCleanupThread::getBlocksSortedByTime(zkutil::ZooKeeper &
     for (auto & elem : exists_futures)
     {
         auto status = elem.second.get();
-        if (status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
+        if (status.error != Coordination::ZNONODE)
         {
             cached_block_stats.emplace(elem.first, status.stat.ctime);
             timed_blocks.emplace_back(elem.first, status.stat.ctime);
@@ -373,7 +373,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
 
     auto zookeeper = storage.getZooKeeper();
 
-    zkutil::Stat replicas_stat;
+    Coordination::Stat replicas_stat;
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &replicas_stat);
 
     UInt64 min_pointer = std::numeric_limits<UInt64>::max();
@@ -399,7 +399,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldMutations()
     if (entries.empty())
         return;
 
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     size_t batch_start_i = 0;
     for (size_t i = 0; i < entries.size(); ++i)
     {

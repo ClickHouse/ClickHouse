@@ -104,8 +104,8 @@ try
 
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
     {
-        if (!config().hasOption("silent"))
-            std::cerr << "There are no queries to process." << std::endl;
+        if (config().hasOption("verbose"))
+            std::cerr << "There are no queries to process." << '\n';
 
         return Application::EXIT_OK;
     }
@@ -200,8 +200,7 @@ try
 }
 catch (const Exception & e)
 {
-    if (!config().hasOption("silent"))
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+    std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
 
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
@@ -274,7 +273,7 @@ void LocalServer::processQueries()
     /// Use the same query_id (and thread group) for all queries
     CurrentThread::QueryScope query_scope_holder(*context);
 
-    bool echo_query = config().hasOption("echo") || config().hasOption("verbose");
+    bool echo_queries = config().hasOption("echo") || config().hasOption("verbose");
     std::exception_ptr exception;
 
     for (const auto & query : queries)
@@ -282,8 +281,12 @@ void LocalServer::processQueries()
         ReadBufferFromString read_buf(query);
         WriteBufferFromFileDescriptor write_buf(STDOUT_FILENO);
 
-        if (echo_query)
-            std::cerr << query << "\n";
+        if (echo_queries)
+        {
+            writeString(query, write_buf);
+            writeChar('\n', write_buf);
+            write_buf.next();
+        }
 
         try
         {
@@ -297,8 +300,7 @@ void LocalServer::processQueries()
             if (!exception)
                 exception = std::current_exception();
 
-            if (!config().has("silent"))
-                std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace"));
+            std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
         }
     }
 
@@ -360,7 +362,7 @@ void LocalServer::setupUsers()
 
 static void showClientVersion()
 {
-    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << std::endl;
+    std::cout << DBMS_NAME << " client version " << VERSION_STRING << "." << '\n';
 }
 
 std::string LocalServer::getHelpHeader() const
@@ -421,7 +423,6 @@ void LocalServer::init(int argc, char ** argv)
         ("format,f", po::value<std::string>(), "default output format (clickhouse-client compatibility)")
         ("output-format", po::value<std::string>(), "default output format")
 
-        ("silent,s", "quiet mode, do not print errors")
         ("stacktrace", "print stack traces of exceptions")
         ("echo", "print query before execution")
         ("verbose", "print query and other debugging info")
@@ -477,8 +478,6 @@ void LocalServer::init(int argc, char ** argv)
     if (options.count("output-format"))
         config().setString("output-format", options["output-format"].as<std::string>());
 
-    if (options.count("silent"))
-        config().setBool("silent", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
     if (options.count("echo"))
@@ -507,7 +506,7 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     }
     catch (...)
     {
-        std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        std::cerr << DB::getCurrentExceptionMessage(true) << '\n';
         auto code = DB::getCurrentExceptionCode();
         return code ? code : 1;
     }

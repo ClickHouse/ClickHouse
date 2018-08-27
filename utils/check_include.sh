@@ -14,6 +14,7 @@ inc="-I. \
 -I./contrib/libmetrohash/src \
 -I./contrib/double-conversion \
 -I./contrib/cityhash102/include \
+-I./contrib/murmurhash/include \
 -I./contrib/zookeeper/src/c/include \
 -I./contrib/zookeeper/src/c/generated \
 -I./contrib/libtcmalloc/include \
@@ -49,5 +50,5 @@ if [ -z $1 ]; then
 else
     echo -n "$1    "
     echo -n `grep "#include" $1| wc -l` "    "
-    echo -e "#include <$1> \n int main() {return 0;}" | time --format "%e %M" ${CXX:=g++-7} -c -std=c++1z $inc -x c++ -
+    echo "#include <$1> \n int main() {return 0;}" | time --format "%e %M" ${CXX:=g++-7} -c -std=c++1z $inc -x c++ -
 fi

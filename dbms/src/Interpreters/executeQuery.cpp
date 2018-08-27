@@ -45,6 +45,7 @@ static void checkASTSizeLimits(const IAST & ast, const Settings & settings)
 }
 
 
+/// NOTE This is wrong in case of single-line comments and in case of multiline string literals.
 static String joinLines(const String & query)
 {
     String res = query;
@@ -99,7 +100,7 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     /// Exception before the query execution.
     context.getQuota().addError();
 
-    bool log_queries = context.getSettingsRef().log_queries;
+    const Settings & settings = context.getSettingsRef();
 
     /// Log the start of query execution into the table if necessary.
     QueryLogElement elem;
@@ -109,18 +110,19 @@ static void onExceptionBeforeStart(const String & query, Context & context, time
     elem.event_time = current_time;
     elem.query_start_time = current_time;
 
-    elem.query = query.substr(0, context.getSettingsRef().log_queries_cut_to_length);
+    elem.query = query.substr(0, settings.log_queries_cut_to_length);
     elem.exception = getCurrentExceptionMessage(false);
 
     elem.client_info = context.getClientInfo();
 
-    setExceptionStackTrace(elem);
+    if (settings.calculate_text_stack_trace)
+        setExceptionStackTrace(elem);
     logException(context, elem);
 
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (log_queries)
+    if (settings.log_queries)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
 }
@@ -363,7 +365,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.profile_counters = std::move(info.profile_counters);
                 }
 
-                setExceptionStackTrace(elem);
+                if (settings.calculate_text_stack_trace)
+                    setExceptionStackTrace(elem);
                 logException(context, elem);
 
                 /// In case of exception we log internal queries also

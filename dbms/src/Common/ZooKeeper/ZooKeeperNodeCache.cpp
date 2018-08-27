@@ -41,18 +41,18 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
     if (nonexistent_nodes.count(path))
         return std::nullopt;
 
-    auto watch_callback = [context=context](const ZooKeeperImpl::ZooKeeper::WatchResponse & response)
+    auto watch_callback = [context=context](const Coordination::WatchResponse & response)
     {
-        if (!(response.type != ZooKeeperImpl::ZooKeeper::SESSION || response.state == ZooKeeperImpl::ZooKeeper::EXPIRED_SESSION))
+        if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
             return;
 
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock(context->mutex);
 
-            if (response.type != ZooKeeperImpl::ZooKeeper::SESSION)
+            if (response.type != Coordination::SESSION)
                 changed = context->invalidated_paths.emplace(response.path).second;
-            else if (response.state == ZooKeeperImpl::ZooKeeper::EXPIRED_SESSION)
+            else if (response.state == Coordination::EXPIRED_SESSION)
             {
                 context->zookeeper = nullptr;
                 context->invalidated_paths.clear();
