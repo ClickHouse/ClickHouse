@@ -1029,7 +1029,7 @@ class FunctionBinaryArithmetic : public IFunction
     template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
-        return castType(left, [&](const auto & left) { return castType(right, [&](const auto & right) { return f(left, right); }); });
+        return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
     }
 
     FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
@@ -1163,9 +1163,9 @@ public:
             return;
         }
 
-        auto * left = block.getByPosition(arguments[0]).type.get();
-        auto * right = block.getByPosition(arguments[1]).type.get();
-        bool valid = castBothTypes(left, right, [&](const auto & left, const auto & right)
+        auto * left_generic = block.getByPosition(arguments[0]).type.get();
+        auto * right_generic = block.getByPosition(arguments[1]).type.get();
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
@@ -1219,7 +1219,7 @@ public:
                 auto col_res = ColVecResult::create();
                 auto & vec_res = col_res->getData();
                 vec_res.resize(block.rows());
-                if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
+                if (auto col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw))
                 {
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                     {
@@ -1232,10 +1232,10 @@ public:
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
-                            OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
+                            OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
                         }
                         else
-                            OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
+                            OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
                     }
                     else
                         return false;
@@ -1253,8 +1253,8 @@ public:
                             scale_a = right.getScaleMultiplier();
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                             OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
-                        else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                            OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res, scale_a, scale_b);
+                        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                            OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res, scale_a, scale_b);
                         else
                             return false;
                     }
@@ -1262,16 +1262,15 @@ public:
                     {
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                             OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
-                        else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                            OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
+                        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                            OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
                         else
                             return false;
                     }
                 }
                 else
-                {
                     return false;
-                }
+
                 block.getByPosition(result).column = std::move(col_res);
                 return true;
             }
@@ -1799,7 +1798,7 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(block, arguments, is_const);
+            const auto const_mask = createConstMaskIfConst<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
             auto out_col = ColumnVector<UInt8>::create(size);
@@ -1808,7 +1807,7 @@ private:
             if (is_const)
             {
                 for (const auto i : ext::range(0, size))
-                    out[i] = Impl::apply(val[i], mask);
+                    out[i] = Impl::apply(val[i], const_mask);
             }
             else
             {
@@ -1825,12 +1824,12 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(block, arguments, is_const);
+            const auto const_mask = createConstMaskIfConst<T>(block, arguments, is_const);
             const auto val = value_col->template getValue<T>();
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, const_mask)));
             }
             else
             {
@@ -1852,9 +1851,9 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMaskIfConst(const Block & block, const ColumnNumbers & arguments, bool & out_is_const)
     {
-        is_const = true;
+        out_is_const = true;
         ValueType mask = 0;
 
         for (const auto i : ext::range(1, arguments.size()))
@@ -1866,7 +1865,7 @@ private:
             }
             else
             {
-                is_const = false;
+                out_is_const = false;
                 return {};
             }
         }
@@ -1905,9 +1904,9 @@ private:
 
             return true;
         }
-        else if (const auto pos_col = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
+        else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
-            const auto & pos = pos_col->template getValue<PosType>();
+            const auto & pos = pos_col_const->template getValue<PosType>();
             const auto new_mask = 1 << pos;
 
             for (const auto i : ext::range(0, mask.size()))
