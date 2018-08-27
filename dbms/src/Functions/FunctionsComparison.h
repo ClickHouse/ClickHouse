@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
@@ -221,14 +222,15 @@ struct DecCompareInt
 };
 
 ///
-template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
+template <typename A, typename B, template <typename, typename> typename Operation, bool _check_overflow = true,
+    bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
 class DecimalComparison
 {
 public:
     using CompareInt = typename DecCompareInt<A, B>::Type;
     using Op = Operation<CompareInt, CompareInt>;
-    using ColVecA = ColumnVector<A>;
-    using ColVecB = ColumnVector<B>;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 
@@ -365,8 +367,8 @@ private:
                 A a = c0_const->template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
-                else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+                else
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
             else if (c1_const)
             {
@@ -374,8 +376,8 @@ private:
                 B b = c1_const->template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                     vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
-                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                else
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
             else
             {
@@ -383,16 +385,11 @@ private:
                 {
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                         vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                    else
+                        throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
-                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                {
-                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                }
+                else
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
         }
 
@@ -404,24 +401,35 @@ private:
     {
         CompareInt x = a;
         CompareInt y = b;
-        bool overflow = false;
 
-        if constexpr (sizeof(A) > sizeof(CompareInt))
-            overflow |= (A(x) != a);
-        if constexpr (sizeof(B) > sizeof(CompareInt))
-            overflow |= (B(y) != b);
-        if constexpr (std::is_unsigned_v<A>)
-            overflow |= (x < 0);
-        if constexpr (std::is_unsigned_v<B>)
-            overflow |= (y < 0);
+        if constexpr (_check_overflow)
+        {
+            bool overflow = false;
 
-        if constexpr (scale_left)
-            overflow |= common::mulOverflow(x, scale, x);
-        if constexpr (scale_right)
-            overflow |= common::mulOverflow(y, scale, y);
+            if constexpr (sizeof(A) > sizeof(CompareInt))
+                overflow |= (A(x) != a);
+            if constexpr (sizeof(B) > sizeof(CompareInt))
+                overflow |= (B(y) != b);
+            if constexpr (std::is_unsigned_v<A>)
+                overflow |= (x < 0);
+            if constexpr (std::is_unsigned_v<B>)
+                overflow |= (y < 0);
 
-        if (overflow)
-            throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+            if constexpr (scale_left)
+                overflow |= common::mulOverflow(x, scale, x);
+            if constexpr (scale_right)
+                overflow |= common::mulOverflow(y, scale, y);
+
+            if (overflow)
+                throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
+        }
+        else
+        {
+            if constexpr (scale_left)
+                x *= scale;
+            if constexpr (scale_right)
+                y *= scale;
+        }
 
         return Op::apply(x, y);
     }
@@ -1021,18 +1029,23 @@ private:
 
     void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        size_t left_number = col_left.type->getTypeId();
-        size_t right_number = col_right.type->getTypeId();
+        TypeIndex left_number = col_left.type->getTypeId();
+        TypeIndex right_number = col_right.type->getTypeId();
 
-        auto call = [&](const auto & left, const auto & right)
+        auto call = [&](const auto & types) -> bool
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
+            using Types = std::decay_t<decltype(types)>;
+            using LeftDataType = typename Types::LeftType;
+            using RightDataType = typename Types::RightType;
 
-            DecimalComparison<LeftDataType, RightDataType, Op>(block, result, col_left, col_right);
+            if (decimalCheckComparisonOverflow(context))
+                DecimalComparison<LeftDataType, RightDataType, Op, true>(block, result, col_left, col_right);
+            else
+                DecimalComparison<LeftDataType, RightDataType, Op, false>(block, result, col_left, col_right);
+            return true;
         };
 
-        if (!callByNumbers(left_number, right_number, call))
+        if (!callOnBasicTypes(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }

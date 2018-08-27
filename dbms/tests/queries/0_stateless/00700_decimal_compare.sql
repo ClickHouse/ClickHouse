@@ -10,11 +10,11 @@ CREATE TABLE IF NOT EXISTS test.decimal
     b DECIMAL(18,0),
     c DECIMAL(38,0),
     d DECIMAL(9, 9),
-    e DEC(18, 18),
-    f dec(38, 38),
-    g Decimal(9, 5),
-    h decimal(18, 9),
-    i deciMAL(38, 18),
+    e Decimal64(18),
+    f Decimal128(38),
+    g Decimal32(5),
+    h Decimal64(9),
+    i Decimal128(18),
     j dec(4,2)
 ) ENGINE = Memory;
 

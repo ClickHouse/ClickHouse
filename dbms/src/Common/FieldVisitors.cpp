@@ -30,11 +30,22 @@ static inline String formatQuotedWithPrefix(T x, const char * prefix)
     return wb.str();
 }
 
+template <typename T>
+static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x.getValue(), x.getScale(), buf);
+    writeChar('\'', buf);
+}
+
 
 String FieldVisitorDump::operator() (const Null &) const { return "NULL"; }
 String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
 String FieldVisitorDump::operator() (const Int64 & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
 String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuotedWithPrefix(x, "Float64_"); }
+String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { return formatQuotedWithPrefix(x, "Decimal32_"); }
+String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
+String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
 
 String FieldVisitorDump::operator() (const UInt128 & x) const
 {
@@ -112,6 +123,9 @@ String FieldVisitorToString::operator() (const UInt64 & x) const { return format
 String FieldVisitorToString::operator() (const Int64 & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const Float64 & x) const { return formatFloat(x); }
 String FieldVisitorToString::operator() (const String & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 
 String FieldVisitorToString::operator() (const UInt128 & x) const
 {
@@ -206,5 +220,27 @@ void FieldVisitorHash::operator() (const Array & x) const
     for (const auto & elem : x)
         applyVisitor(*this, elem);
 }
+
+void FieldVisitorHash::operator() (const DecimalField<Decimal32> & x) const
+{
+    UInt8 type = Field::Types::Decimal32;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const DecimalField<Decimal64> & x) const
+{
+    UInt8 type = Field::Types::Decimal64;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
+{
+    UInt8 type = Field::Types::Decimal128;
+    hash.update(type);
+    hash.update(x);
+}
+
 
 }
