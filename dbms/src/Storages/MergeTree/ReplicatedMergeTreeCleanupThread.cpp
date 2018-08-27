@@ -194,7 +194,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
             /// We need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
-            for (const auto & host_version: host_versions_lost_replicas)
+            for (const auto & host_version : host_versions_lost_replicas)
                 ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + host_version.first + "/host", host_version.second));
 
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
