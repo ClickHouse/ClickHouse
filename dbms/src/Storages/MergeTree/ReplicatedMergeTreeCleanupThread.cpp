@@ -82,7 +82,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
     UInt64 min_saved_log_pointer = std::numeric_limits<UInt64>::max();
-    UInt64 min_inactive_log_pointer = std::numeric_limits<UInt64>::max();
+    UInt64 min_log_pointer_lost_candidate = std::numeric_limits<UInt64>::max();
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
 
@@ -150,7 +150,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                     {
                         host_versions_lost_replicas[replica] = host_stat.version;
                         log_pointers_candidate_lost_replicas[replica] = log_pointer_str;
-                        min_inactive_log_pointer = std::min(min_inactive_log_pointer, log_pointer);
+                        min_log_pointer_lost_candidate = std::min(min_log_pointer_lost_candidate, log_pointer);
                     }
                 }
                 else
@@ -174,7 +174,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     }
 
     if (!recovering_replicas.empty())
-        min_saved_log_pointer = std::min(min_saved_log_pointer, min_inactive_log_pointer);
+        min_saved_log_pointer = std::min(min_saved_log_pointer, min_log_pointer_lost_candidate);
 
     /// We will not touch the last `min_replicated_logs_to_keep` records.
     entries.erase(entries.end() - std::min(entries.size(), storage.data.settings.min_replicated_logs_to_keep.value), entries.end());
@@ -194,7 +194,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
             /// We need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
-            for (auto host_version: host_versions_lost_replicas)
+            for (const auto & host_version: host_versions_lost_replicas)
                 ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + host_version.first + "/host", host_version.second));
 
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
@@ -216,7 +216,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     std::vector<Coordination::Requests> requests;
     std::vector<zkutil::ZooKeeper::FutureMulti> futures;
 
-    for (auto pair : log_pointers_candidate_lost_replicas)
+    for (const auto & pair : log_pointers_candidate_lost_replicas)
     {
         String replica = pair.first;
         Coordination::Requests ops;
