@@ -180,9 +180,9 @@ struct ExtractFirstSignificantSubdomain
         auto begin = tmp;
         auto end = begin + domain_length;
         const char * last_3_periods[3]{};
-        auto pos = find_first_symbols<'.'>(begin, begin + domain_length);
 
-        while (pos)
+        auto pos = find_first_symbols<'.'>(begin, end);
+        while (pos < end)
         {
             last_3_periods[2] = last_3_periods[1];
             last_3_periods[1] = last_3_periods[0];
