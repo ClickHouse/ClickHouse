@@ -1,4 +1,4 @@
-add_library (clickhouse-performance-test-lib ${SPLIT_SHARED} PerformanceTest.cpp)
+add_library (clickhouse-performance-test-lib ${LINK_MODE} PerformanceTest.cpp)
 target_link_libraries (clickhouse-performance-test-lib clickhouse_common_io dbms ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-performance-test-lib SYSTEM PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 

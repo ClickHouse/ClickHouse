@@ -340,7 +340,7 @@ private:
       * Call under TableStructureLock.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
-                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
@@ -349,12 +349,12 @@ private:
                                                                const MergeTreeData::DataPartPtr & part);
 
     void getCommitPartOps(
-        zkutil::Requests & ops,
+        Coordination::Requests & ops,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,

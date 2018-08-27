@@ -44,7 +44,7 @@ public:
     RegionsNamesDataProvider(const std::string & directory_);
 
     ILanguageRegionsNamesDataSourcePtr getLanguageRegionsNamesSource(
-        const std::string& language) const override;
+        const std::string & language) const override;
 
 private:
     std::string getDataFilePath(const std::string & language) const;

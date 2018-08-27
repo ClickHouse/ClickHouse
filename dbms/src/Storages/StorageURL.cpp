@@ -188,7 +188,8 @@ BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Sett
 
 void registerStorageURL(StorageFactory & factory)
 {
-    factory.registerStorage("URL", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("URL", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (!(engine_args.size() == 1 || engine_args.size() == 2))

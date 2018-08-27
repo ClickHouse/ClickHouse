@@ -56,8 +56,8 @@ namespace
             case Poco::MongoDB::ElementTraits<Int32>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
                 break;
-            case Poco::MongoDB::ElementTraits<Int64>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int64> &>(value).value());
+            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());

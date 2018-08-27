@@ -163,7 +163,7 @@ def main(args):
                     report_testcase = et.Element("testcase", attrib = {"name": name})
 
                     try:
-                        print "{0:70}".format(name + ": "),
+                        print "{0:72}".format(name + ": "),
                         sys.stdout.flush()
 
                         if args.skip and any(s in name for s in args.skip):
