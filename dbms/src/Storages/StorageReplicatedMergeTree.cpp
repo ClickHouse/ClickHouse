@@ -599,7 +599,8 @@ void StorageReplicatedMergeTree::createReplica()
         Coordination::Stat replicas_stat;
         String last_added_replica = zookeeper->get(zookeeper_path + "/replicas", &replicas_stat);
 
-        String is_lost_value = last_added_replica == "" ? "0" : "1";
+        /// If it is not the first replica, we will mark it as "lost", to immediately repair (clone) from existing replica.
+        String is_lost_value = last_added_replica.empty() ? "0" : "1";
 
         Coordination::Requests ops;
         Coordination::Responses resps;
@@ -611,14 +612,14 @@ void StorageReplicatedMergeTree::createReplica()
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/flags", "", zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/is_lost", is_lost_value, zkutil::CreateMode::Persistent));
         ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/columns", getColumns().toString(), zkutil::CreateMode::Persistent));
-        /// Check version of /replicas to see if there are any replicas.
+        /// Check version of /replicas to see if there are any replicas created at the same moment of time.
         ops.emplace_back(zkutil::makeSetRequest(zookeeper_path + "/replicas", "last added replica: " + replica_name, replicas_stat.version));
 
         code = zookeeper->tryMulti(ops, resps);
         if (code == Coordination::Error::ZNODEEXISTS)
             throw Exception("Replica " + replica_path + " already exists.", ErrorCodes::REPLICA_IS_ALREADY_EXIST);
         else if (code == Coordination::Error::ZBADVERSION)
-            LOG_ERROR(log, "Retry createReplica(), because some replicas were created");
+            LOG_ERROR(log, "Retrying createReplica(), because some other replicas were created at the same time");
         else
             zkutil::KeeperMultiException::check(code, ops, resps);
     } while (code == Coordination::Error::ZBADVERSION);
@@ -2055,6 +2056,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     else
     {
         /// Replica was created by old version of CH, so me must create "/is_lost".
+        /// Note that in old version of CH there was no "lost" replicas possible.
         zookeeper->create(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent);
         return;
     }
@@ -2067,10 +2069,13 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     {
         String source_replica_path = zookeeper_path + "/replicas/" + replica_name;
 
+        /// Do not clone from myself.
         if (source_replica_path != replica_path)
         {
-            String resp;
-            if (!zookeeper->tryGet(source_replica_path + "/is_lost", resp, &source_is_lost_stat) || resp == "0")
+            /// Do not clone from lost replicas.
+            String source_replica_is_lost_value;
+            if (!zookeeper->tryGet(source_replica_path + "/is_lost", source_replica_is_lost_value, &source_is_lost_stat)
+                || source_replica_is_lost_value == "0")
             {
                 source_replica = replica_name;
                 break;
@@ -2078,7 +2083,7 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         }
     }
 
-    if (source_replica == "")
+    if (source_replica.empty())
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
 
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
