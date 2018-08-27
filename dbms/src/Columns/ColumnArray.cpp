@@ -237,11 +237,11 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::popBack(size_t n)
 {
-    auto & offsets = getOffsets();
-    size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
+    auto & offsets_data = getOffsets();
+    size_t nested_n = offsets_data.back() - offsetAt(offsets_data.size() - n);
     if (nested_n)
         getData().popBack(nested_n);
-    offsets.resize_assume_reserved(offsets.size() - n);
+    offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
 
