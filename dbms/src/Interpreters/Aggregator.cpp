@@ -561,7 +561,7 @@ void NO_INLINE Aggregator::executeImplCase(
         bool overflow = false;  /// The new key did not fit in the hash table because of no_more_keys.
 
         /// Get the key to insert into the hash table.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, keys, *aggregates_pool);
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
         if (!no_more_keys)  /// Insert.
         {
@@ -1074,7 +1074,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
 {
     for (const auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size);
+        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
 
         for (size_t i = 0; i < params.aggregates_size; ++i)
             aggregate_functions[i]->insertResultInto(
@@ -1095,7 +1095,7 @@ void NO_INLINE Aggregator::convertToBlockImplNotFinal(
 
     for (auto & value : data)
     {
-        method.insertKeyIntoColumns(value, key_columns, params.keys_size);
+        method.insertKeyIntoColumns(value, key_columns, params.keys_size, key_sizes);
 
         /// reserved, so push_back does not throw exceptions
         for (size_t i = 0; i < params.aggregates_size; ++i)
