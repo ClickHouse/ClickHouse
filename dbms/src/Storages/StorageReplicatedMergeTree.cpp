@@ -1999,7 +1999,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, zku
     if (error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
         throw Exception("Can not clone replica, because a " + source_path + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
     else if (error == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw Exception("Can not clone replica, because the clickHouse server updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
+        throw Exception("Can not clone replica, because the ClickHouse server updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
     else
         zkutil::KeeperMultiException::check(error, ops, resp);
     
