@@ -146,9 +146,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
                         min_inactive_log_pointer = std::min(min_saved_log_pointer, log_pointer);
                     }
                 }
+<<<<<<< HEAD
+=======
+		        /// Only to support old versions CH.
+>>>>>>> 1c596db7c060ce7aceb927e58198b6aab5a0d2b9
                 else
+                {
                     ++replicas_were_marked_is_lost;
                     host_versions_inactive_replicas[replica] = host_stat.version;
+                }
         }
     }
 
@@ -181,9 +187,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
         if (ops.size() > 4 * zkutil::MULTI_BATCH_SIZE || i + 1 == entries.size())
         {
+<<<<<<< HEAD
     	    /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
     	    for (auto host_version: host_versions_inactive_replicas)
     	        ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
+=======
+            /// we need to check this because the replica that was restored from one of the marked replicas does not copy a non-valid log_pointer.
+            for (auto host_version: host_versions_inactive_replicas)
+                ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas" + host_version.first + "/host", host_version.second));
+>>>>>>> 1c596db7c060ce7aceb927e58198b6aab5a0d2b9
 
             /// Simultaneously with clearing the log, we check to see if replica was added since we received replicas list.
             ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas", stat.version));
@@ -200,9 +212,10 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
                                                         const std::unordered_map<String, String> & log_pointers_lost_replicas,
                                                         size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper)
 {
-    struct LostReplicaInfo {
-	String name;
-	zkutil::Requests requests;
+    struct LostReplicaInfo
+    {
+        String name;
+        zkutil::Requests requests;
     };
 
     std::vector<zkutil::Requests> requests;
