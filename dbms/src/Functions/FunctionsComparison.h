@@ -367,8 +367,8 @@ private:
                 A a = c0_const->template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
-                else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+                else
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
             else if (c1_const)
             {
@@ -376,8 +376,8 @@ private:
                 B b = c1_const->template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                     vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
-                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                else
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
             else
             {
@@ -385,15 +385,15 @@ private:
                 {
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                         vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                    else
+                        throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
                 else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                 {
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                         vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                    else
+                        throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
             }
         }
