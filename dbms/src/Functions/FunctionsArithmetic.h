@@ -1820,12 +1820,12 @@ private:
             block.getByPosition(result).column = std::move(out_col);
             return true;
         }
-        else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
+        else if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            const auto size = value_col->size();
+            const auto size = value_col_const->size();
             bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(block, arguments, is_const);
-            const auto val = value_col->template getValue<T>();
+            const auto val = value_col_const->template getValue<T>();
 
             if (is_const)
             {

@@ -931,13 +931,13 @@ private:
             block.getByPosition(result).column = std::move(col_res);
             return true;
         }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             auto col_res = ColumnUInt8::create();
 
             ColumnUInt8::Container & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
 
             block.getByPosition(result).column = std::move(col_res);
             return true;
@@ -960,10 +960,10 @@ private:
             block.getByPosition(result).column = std::move(col_res);
             return true;
         }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             UInt8 res = 0;
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), res);
 
             block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             return true;
@@ -995,20 +995,20 @@ private:
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (auto col_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
+        else if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
-            if (   executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int8>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int128>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
+            if (   executeNumConstRightType<T0, UInt8>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt16>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt32>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt64>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt128>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int8>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int16>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int32>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int64>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int128>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Float32>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Float64>(block, result, col_left_const, col_right_untyped))
                 return true;
             else
                 throw Exception("Illegal column " + col_right_untyped->getName()
