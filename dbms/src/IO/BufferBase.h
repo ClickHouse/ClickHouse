@@ -80,6 +80,13 @@ public:
     /// How many bytes are available for read/write
     inline size_t available() const { return size_t(working_buffer.end() - pos); }
 
+    inline void swap(BufferBase & other)
+    {
+        internal_buffer.swap(other.internal_buffer);
+        working_buffer.swap(other.working_buffer);
+        std::swap(pos, other.pos);
+    }
+
     /** How many bytes have been read/written, counting those that are still in the buffer. */
     size_t count() const
     {
