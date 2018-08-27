@@ -1,11 +1,16 @@
 #pragma once
-#include <Common/TaskStatsInfoGetter.h>
+
 #include <Common/ProfileEvents.h>
 
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
+
+#if defined(__linux__)
 #include <linux/taskstats.h>
+#else
+struct taskstats {};
+#endif
 
 
 namespace ProfileEvents
@@ -18,6 +23,7 @@ namespace ProfileEvents
     extern const Event VoluntaryContextSwitches;
     extern const Event InvoluntaryContextSwitches;
 
+#if defined(__linux__)
     extern const Event OSIOWaitMicroseconds;
     extern const Event OSCPUWaitMicroseconds;
     extern const Event OSCPUVirtualTimeMicroseconds;
@@ -25,6 +31,7 @@ namespace ProfileEvents
     extern const Event OSWriteChars;
     extern const Event OSReadBytes;
     extern const Event OSWriteBytes;
+#endif
 }
 
 
@@ -82,8 +89,10 @@ struct RUsageCounters
 
     static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
-        ::rusage rusage;
+        ::rusage rusage {};
+#if !defined(__APPLE__)
         ::getrusage(RUSAGE_THREAD, &rusage);
+#endif
         return RUsageCounters(rusage, real_time_);
     }
 
@@ -105,6 +114,8 @@ struct RUsageCounters
     }
 };
 
+
+#if defined(__linux__)
 
 struct TasksStatsCounters
 {
@@ -140,5 +151,18 @@ struct TasksStatsCounters
         last_counters = current_counters;
     }
 };
+
+#else
+
+struct TasksStatsCounters
+{
+    ::taskstats stat;
+
+    static TasksStatsCounters current();
+    static void incrementProfileEvents(const TasksStatsCounters &, const TasksStatsCounters &, ProfileEvents::Counters &) {}
+    static void updateProfileEvents(TasksStatsCounters &, ProfileEvents::Counters &) {}
+};
+
+#endif
 
 }

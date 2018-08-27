@@ -51,7 +51,7 @@ namespace DB
     */
 
 
-#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1024
+#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
 class Context;
 class QueryLog;

@@ -540,7 +540,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
         if (!fallback_to_preprocessed)
             throw;
 
-        const auto * zk_exception = dynamic_cast<const zkutil::KeeperException *>(ex.nested());
+        const auto * zk_exception = dynamic_cast<const Coordination::Exception *>(ex.nested());
         if (!zk_exception)
             throw;
 

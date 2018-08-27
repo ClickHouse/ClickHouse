@@ -135,6 +135,9 @@ public:
         InputStreamGetter getter;
         SubstreamPath path;
 
+        /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
+        bool continuous_reading = true;
+
         bool position_independent_encoding = true;
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;

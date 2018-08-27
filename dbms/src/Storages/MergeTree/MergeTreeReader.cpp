@@ -427,6 +427,7 @@ void MergeTreeReader::readData(
     }
 
     settings.getter = get_stream_getter(false);
+    settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
     type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);

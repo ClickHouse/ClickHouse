@@ -669,6 +669,10 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         }
     };
 
+    if (!settings.continuous_reading)
+        state_with_dictionary->num_pending_rows = 0;
+
+    bool first_dictionary = true;
     while (limit)
     {
         if (state_with_dictionary->num_pending_rows == 0)
@@ -681,8 +685,11 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
             index_type.deserialize(*indexes_stream);
 
-            if (index_type.need_global_dictionary && (!global_dictionary || index_type.need_update_dictionary))
+            if (index_type.need_global_dictionary && (!global_dictionary || index_type.need_update_dictionary || (first_dictionary && !settings.continuous_reading)))
+            {
                 readDictionary();
+                first_dictionary = false;
+            }
 
             if (state_with_dictionary->index_type.has_additional_keys)
                 readAdditionalKeys();

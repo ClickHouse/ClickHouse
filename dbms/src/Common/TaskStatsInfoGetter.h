@@ -1,43 +1,34 @@
 #pragma once
+
+#include <sys/types.h>
 #include <Core/Types.h>
+#include <boost/noncopyable.hpp>
 
 struct taskstats;
-
 
 namespace DB
 {
 
-class Exception;
-
-
 /// Get taskstat info from OS kernel via Netlink protocol.
-class TaskStatsInfoGetter
+class TaskStatsInfoGetter : private boost::noncopyable
 {
 public:
     TaskStatsInfoGetter();
-    TaskStatsInfoGetter(const TaskStatsInfoGetter &) = delete;
-
-    void getStat(::taskstats & stat, int tid = -1);
-    bool tryGetStat(::taskstats & stat, int tid = -1);
-
     ~TaskStatsInfoGetter();
 
+    void getStat(::taskstats & stat, pid_t tid);
+
     /// Make a syscall and returns Linux thread id
-    static int getCurrentTID();
+    static pid_t getCurrentTID();
 
     /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
-    static bool checkProcessHasRequiredPermissions();
+    static bool checkPermissions();
 
+#if defined(__linux__)
 private:
-    /// Caches current thread tid to avoid extra sys calls
-    int getDefaultTID();
-    int default_tid = -1;
-
-    bool getStatImpl(int tid, ::taskstats & out_stats, bool throw_on_error = false);
-    void init();
-
     int netlink_socket_fd = -1;
-    UInt16 netlink_family_id = 0;
+    UInt16 taskstats_family_id = 0;
+#endif
 };
 
 }

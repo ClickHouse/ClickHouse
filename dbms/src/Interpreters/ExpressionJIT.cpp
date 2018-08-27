@@ -114,7 +114,7 @@ static llvm::TargetMachine * getNativeMachine()
     llvm::SubtargetFeatures features;
     llvm::StringMap<bool> feature_map;
     if (llvm::sys::getHostCPUFeatures(feature_map))
-        for (auto& f : feature_map)
+        for (auto & f : feature_map)
             features.AddFeature(f.first(), f.second);
     llvm::TargetOptions options;
     return target->createTargetMachine(
@@ -545,7 +545,7 @@ public:
     }
 };
 
-static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase& function)
+static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & function)
 {
     if (!toNativeType(builder, function.getReturnType()))
         return false;
