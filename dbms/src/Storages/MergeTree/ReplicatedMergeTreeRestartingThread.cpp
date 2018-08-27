@@ -168,6 +168,18 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     {
         removeFailedQuorumParts();
         activateReplica();
+        
+        const auto & zookeeper = storage.getZooKeeper();
+
+        storage.cloneReplicaIfNeeded(zookeeper);
+
+        storage.queue.load(zookeeper);
+
+        /// pullLogsToQueue() after we mark replica 'is_active' and clone();
+        /// because cleanup_thread don't del our log_pointer.
+        storage.queue.pullLogsToQueue(zookeeper);
+        storage.last_queue_update_finish_time.store(time(nullptr));
+
         updateQuorumIfWeHavePart();
 
         if (storage.data.settings.replicated_can_become_leader)
