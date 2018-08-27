@@ -819,7 +819,7 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
 }
 
 /// Skips json value.
-void skipJSONField(ReadBuffer & buf, const StringRef & name_of_filed);
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
 
 
 /** Read serialized exception.
