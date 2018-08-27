@@ -388,6 +388,8 @@ private:
                     else
                         throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
+                else
+                    throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
         }
 
