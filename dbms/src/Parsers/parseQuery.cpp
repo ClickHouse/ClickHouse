@@ -31,7 +31,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
     size_t line = 0;
 
     const char * nl;
-    while (nullptr != (nl = find_first_symbols<'\n'>(begin, pos)))
+    while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
         begin = nl + 1;
@@ -139,7 +139,7 @@ void writeCommonErrorMessage(
 
     /// If query is multiline.
     const char * nl = find_first_symbols<'\n'>(begin, end);
-    if (nullptr != nl && nl + 1 != end)
+    if (nl + 1 < end)
     {
         size_t line = 0;
         size_t col = 0;
