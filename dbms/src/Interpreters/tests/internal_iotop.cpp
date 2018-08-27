@@ -6,7 +6,6 @@
 #include <Poco/File.h>
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromString.h>
-
 #include <linux/taskstats.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -52,16 +51,9 @@ void do_io(size_t id)
     int tid = TaskStatsInfoGetter::getCurrentTID();
     TaskStatsInfoGetter get_info;
 
-    if (!get_info.tryGetStat(stat, tid))
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        std::cerr << "#" << id << ", tid " << tid << ". Can't get stat\n";
-    }
-    else
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
-    }
+    get_info.getStat(stat, tid);
+    std::lock_guard<std::mutex> lock(mutex);
+    std::cerr << "#" << id << ", tid " << tid << ", intitial\n" << stat << "\n";
 
     size_t copy_size = 1048576 * (1 + id);
     std::string path_dst = "test_out_" + std::to_string(id);

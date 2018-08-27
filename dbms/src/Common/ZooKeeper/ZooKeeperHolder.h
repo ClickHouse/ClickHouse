@@ -20,7 +20,7 @@ public:
 
     /// вызывать из одного потока - не thread safe
     template <typename... Args>
-    void init(Args&&... args);
+    void init(Args &&... args);
     /// был ли класс инициализирован
     bool isInitialized() const { return ptr != nullptr; }
 
@@ -76,7 +76,7 @@ private:
 };
 
 template <typename... Args>
-void ZooKeeperHolder::init(Args&&... args)
+void ZooKeeperHolder::init(Args &&... args)
 {
     ptr = std::make_shared<ZooKeeper>(std::forward<Args>(args)...);
 }

@@ -6,6 +6,7 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <common/find_first_symbols.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -30,7 +31,7 @@ std::pair<size_t, size_t> getLineAndCol(const char * begin, const char * pos)
     size_t line = 0;
 
     const char * nl;
-    while (nullptr != (nl = reinterpret_cast<const char *>(memchr(begin, '\n', pos - begin))))
+    while ((nl = find_first_symbols<'\n'>(begin, pos)) < pos)
     {
         ++line;
         begin = nl + 1;
@@ -137,8 +138,8 @@ void writeCommonErrorMessage(
         out << " (end of query)";
 
     /// If query is multiline.
-    const char * nl = reinterpret_cast<const char *>(memchr(begin, '\n', end - begin));
-    if (nullptr != nl && nl + 1 != end)
+    const char * nl = find_first_symbols<'\n'>(begin, end);
+    if (nl + 1 < end)
     {
         size_t line = 0;
         size_t col = 0;

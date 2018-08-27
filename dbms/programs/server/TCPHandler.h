@@ -146,7 +146,7 @@ private:
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
     void sendLogData(const Block & block);
-    void sendException(const Exception & e);
+    void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
     void sendLogs();
     void sendEndOfStream();
