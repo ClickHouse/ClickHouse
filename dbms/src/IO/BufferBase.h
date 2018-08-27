@@ -99,6 +99,11 @@ public:
         return pos != working_buffer.end();
     }
 
+    bool isPadded() const
+    {
+        return padded;
+    }
+
 protected:
     /// Read/write position.
     Position pos;
@@ -117,6 +122,9 @@ protected:
 
     /// A reference to a piece of memory for the buffer.
     Buffer internal_buffer;
+
+    /// Indicator of 15 bytes pad_right
+    bool padded{false};
 };
 
 
