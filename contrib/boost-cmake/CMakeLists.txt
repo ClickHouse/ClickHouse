@@ -16,7 +16,7 @@ if (NOT MSVC)
     add_definitions(-Wno-unused-variable -Wno-deprecated-declarations)
 endif ()
 
-add_library(boost_program_options_internal ${SPLIT_SHARED}
+add_library(boost_program_options_internal ${LINK_MODE}
 ${LIBRARY_DIR}/libs/program_options/src/cmdline.cpp
 ${LIBRARY_DIR}/libs/program_options/src/config_file.cpp
 ${LIBRARY_DIR}/libs/program_options/src/convert.cpp
@@ -29,7 +29,7 @@ ${LIBRARY_DIR}/libs/program_options/src/value_semantic.cpp
 ${LIBRARY_DIR}/libs/program_options/src/variables_map.cpp
 ${LIBRARY_DIR}/libs/program_options/src/winmain.cpp)
 
-add_library(boost_filesystem_internal ${SPLIT_SHARED}
+add_library(boost_filesystem_internal ${LINK_MODE}
 ${LIBRARY_DIR}/libs/filesystem/src/codecvt_error_category.cpp
 ${LIBRARY_DIR}/libs/filesystem/src/operations.cpp
 ${LIBRARY_DIR}/libs/filesystem/src/path.cpp
@@ -39,7 +39,7 @@ ${LIBRARY_DIR}/libs/filesystem/src/unique_path.cpp
 ${LIBRARY_DIR}/libs/filesystem/src/utf8_codecvt_facet.cpp
 ${LIBRARY_DIR}/libs/filesystem/src/windows_file_codecvt.cpp)
 
-add_library(boost_system_internal ${SPLIT_SHARED}
+add_library(boost_system_internal ${LINK_MODE}
 ${LIBRARY_DIR}/libs/system/src/error_code.cpp)
 
 target_link_libraries (boost_filesystem_internal PUBLIC boost_system_internal)
