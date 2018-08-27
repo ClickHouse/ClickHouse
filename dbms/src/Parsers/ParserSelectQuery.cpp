@@ -1,4 +1,5 @@
 #include <memory>
+#include <Poco/String.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IParserBase.h>
@@ -129,13 +130,26 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// WITH TOTALS
+    ASTPtr totals_and_rollup_list;
+    const String identifier_totals = "identifier_totals";
+    const String identifier_rollup = "identifier_rollup";
+
+    /// WITH TOTALS and/or ROLLUP
     if (s_with.ignore(pos, expected))
     {
-        if (!s_totals.ignore(pos, expected))
+        if (!exp_list.parse(pos, totals_and_rollup_list, expected))
             return false;
-            
-        select_query->group_by_with_totals = true;
+
+        for (const auto & child : totals_and_rollup_list->children)
+        {
+            String id = Poco::toLower(child->getID());
+            if (id == identifier_totals)
+                select_query->group_by_with_totals = true;
+            else if (id == identifier_rollup)
+                select_query->group_by_with_rollup = true;
+            else 
+                return false;
+        }
     }
 
     /// HAVING expr
