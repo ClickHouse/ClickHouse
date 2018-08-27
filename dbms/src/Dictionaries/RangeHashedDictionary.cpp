@@ -14,9 +14,9 @@ namespace ErrorCodes
 
 
 RangeHashedDictionary::RangeHashedDictionary(
-    const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
+    const std::string & dictionary_name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
     const DictionaryLifetime dict_lifetime, bool require_nonempty)
-    : name{name}, dict_struct(dict_struct),
+    : dictionary_name{dictionary_name}, dict_struct(dict_struct),
         source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
         require_nonempty(require_nonempty)
 {
@@ -36,7 +36,7 @@ RangeHashedDictionary::RangeHashedDictionary(
 }
 
 RangeHashedDictionary::RangeHashedDictionary(const RangeHashedDictionary & other)
-    : RangeHashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
+    : RangeHashedDictionary{other.dictionary_name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 {
 }
 
@@ -102,7 +102,7 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{name + ": hierarchical attributes not supported by " + getName() + " dictionary.", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{dictionary_name + ": hierarchical attributes not supported by " + getName() + " dictionary.", ErrorCodes::BAD_ARGUMENTS};
     }
 }
 
@@ -134,7 +134,7 @@ void RangeHashedDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{dictionary_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -280,9 +280,9 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         auto & values = it->second;
 
         const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-            [] (const Value<T> & lhs, const Range & range)
+            [] (const Value<T> & lhs, const Range & rhs_range)
             {
-                return lhs.range < range;
+                return lhs.range < rhs_range;
             });
 
         values.insert(insert_it, Value<T>{ range, value });
@@ -320,9 +320,9 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
                 auto & values = it->second;
 
                 const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-                    [] (const Value<StringRef> & lhs, const Range & range)
+                    [] (const Value<StringRef> & lhs, const Range & rhs_range)
                     {
-                        return lhs.range < range;
+                        return lhs.range < rhs_range;
                     });
 
                 values.insert(insert_it, Value<StringRef>{ range, string_ref });
@@ -339,16 +339,16 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{dictionary_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
 
-const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const
+const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, const AttributeUnderlyingType type) const
 {
-    const auto & attribute = getAttribute(name);
+    const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception{name + ": type mismatch: attribute " + name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
+        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     return attribute;
 }
