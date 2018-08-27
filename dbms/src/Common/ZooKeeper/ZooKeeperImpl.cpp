@@ -1265,7 +1265,9 @@ void ZooKeeper::receiveEvent()
         if (!response)
             std::terminate();
 
-        response->error = ZMARSHALLINGERROR;
+        /// In case we cannot read the response, we should indicate it as the error of that type
+        ///  when the user cannot assume whether the request was processed or not.
+        response->error = ZCONNECTIONLOSS;
         if (request_info.callback)
             request_info.callback(*response);
 

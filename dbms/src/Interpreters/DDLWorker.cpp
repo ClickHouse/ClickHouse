@@ -517,9 +517,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        Context local_context(context);
-        local_context.setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, local_context, nullptr);
+        current_context = std::make_unique<Context>(context);
+        current_context->setCurrentQueryId(""); // generate random query_id
+        executeQuery(istr, ostr, false, *current_context, nullptr);
     }
     catch (...)
     {

@@ -10,7 +10,7 @@ if (DEFINED APPLE_HAVE_CLOCK_GETTIME)
     target_compile_definitions(apple_rt PUBLIC -DAPPLE_HAVE_CLOCK_GETTIME=${APPLE_HAVE_CLOCK_GETTIME})
 endif ()
 
-add_library (common ${SPLIT_SHARED}
+add_library (common ${LINK_MODE}
     src/DateLUT.cpp
     src/DateLUTImpl.cpp
     src/preciseExp10.c
