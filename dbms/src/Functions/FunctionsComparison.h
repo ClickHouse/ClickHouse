@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
@@ -228,8 +229,8 @@ class DecimalComparison
 public:
     using CompareInt = typename DecCompareInt<A, B>::Type;
     using Op = Operation<CompareInt, CompareInt>;
-    using ColVecA = ColumnVector<A>;
-    using ColVecB = ColumnVector<B>;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
     using ArrayA = typename ColVecA::Container;
     using ArrayB = typename ColVecB::Container;
 

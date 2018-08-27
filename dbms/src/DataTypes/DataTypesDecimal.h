@@ -1,7 +1,7 @@
 #pragma once
 #include <common/likely.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -93,7 +93,7 @@ class DataTypeDecimal final : public DataTypeSimpleSerialization
 {
 public:
     using FieldType = T;
-    using ColumnType = ColumnVector<T>;
+    using ColumnType = ColumnDecimal<T>;
 
     static constexpr bool is_parametric = true;
 

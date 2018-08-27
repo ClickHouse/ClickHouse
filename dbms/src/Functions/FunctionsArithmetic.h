@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -735,9 +736,9 @@ struct DecimalBinaryOperation
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = Operation<NativeResultType, NativeResultType>;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayB = typename ColumnVector<B>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
+    using ArrayA = std::conditional_t<IsDecimalNumber<A>, typename ColumnDecimal<A>::Container, typename ColumnVector<A>::Container>;
+    using ArrayB = std::conditional_t<IsDecimalNumber<B>, typename ColumnDecimal<B>::Container, typename ColumnVector<B>::Container>;
+    using ArrayC = typename ColumnDecimal<ResultType>::Container;
     using XOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, !_check_overflow>;
 
     static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
@@ -1199,9 +1200,9 @@ public:
                 using T0 = typename LeftDataType::FieldType;
                 using T1 = typename RightDataType::FieldType;
                 using ResultType = typename ResultDataType::FieldType;
-                using ColVecT0 = ColumnVector<T0>;
-                using ColVecT1 = ColumnVector<T1>;
-                using ColVecResult = ColumnVector<ResultType>;
+                using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
+                using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
+                using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
                 /// Decimal operations need scale. Operations are on result type.
                 using OpImpl = std::conditional_t<IsDecimal<ResultDataType>,
@@ -1248,9 +1249,18 @@ public:
                     }
                 }
 
-                auto col_res = ColVecResult::create();
+                typename ColVecResult::MutablePtr col_res = nullptr;
+                if constexpr (result_is_decimal)
+                {
+                    ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                    col_res = ColVecResult::create(0, type.getScale());
+                }
+                else
+                    col_res = ColVecResult::create();
+
                 auto & vec_res = col_res->getData();
                 vec_res.resize(block.rows());
+
                 if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
                 {
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
@@ -1258,7 +1268,6 @@ public:
                         if constexpr (result_is_decimal)
                         {
                             ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
-                            vec_res.setScale(type.getScale());
 
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
@@ -1281,7 +1290,6 @@ public:
                     if constexpr (result_is_decimal)
                     {
                         ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
-                        vec_res.setScale(type.getScale());
 
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
@@ -1447,9 +1455,9 @@ public:
             {
                 if constexpr (allow_decimal)
                 {
-                    if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+                    if (auto col = checkAndGetColumn<ColumnDecimal<T0>>(block.getByPosition(arguments[0]).column.get()))
                     {
-                        auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                        auto col_res = ColumnDecimal<typename Op<T0>::ResultType>::create(0, type.getScale());
                         auto & vec_res = col_res->getData();
                         vec_res.resize(col->getData().size());
                         UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);

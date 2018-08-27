@@ -36,8 +36,6 @@ template <typename T>
 class DecimalField
 {
 public:
-    static constexpr UInt32 wrongScale() { return std::numeric_limits<UInt32>::max(); }
-
     DecimalField(T value, UInt32 scale_)
     :   dec(value),
         scale(scale_)

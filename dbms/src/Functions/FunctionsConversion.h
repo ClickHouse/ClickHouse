@@ -102,18 +102,23 @@ struct ConvertImpl
     {
         const ColumnWithTypeAndName & named_from = block.getByPosition(arguments[0]);
 
-        if (const ColumnVector<FromFieldType> * col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(named_from.column.get()))
+        using ColVecFrom = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
+        using ColVecTo = std::conditional_t<IsDecimalNumber<ToFieldType>, ColumnDecimal<ToFieldType>, ColumnVector<ToFieldType>>;
+
+        if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
-            auto col_to = ColumnVector<ToFieldType>::create();
+            typename ColVecTo::MutablePtr col_to = nullptr;
             if constexpr (IsDecimal<ToDataType>)
             {
                 const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
                 UInt32 scale = extractToDecimalScale(scale_column);
-                col_to->getData().setScale(scale);
+                col_to = ColVecTo::create(0, scale);
             }
+            else
+                col_to = ColVecTo::create();
 
-            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
-            typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
+            const auto & vec_from = col_from->getData();
+            auto & vec_to = col_to->getData();
             size_t size = vec_from.size();
             vec_to.resize(size);
 
@@ -451,6 +456,8 @@ struct ConvertThroughParsing
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
+        using ColVecTo = std::conditional_t<IsDecimalNumber<ToFieldType>, ColumnDecimal<ToFieldType>, ColumnVector<ToFieldType>>;
+
         const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
         const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
 
@@ -478,16 +485,19 @@ struct ConvertThroughParsing
                 ErrorCodes::ILLEGAL_COLUMN);
 
         size_t size = input_rows_count;
-        auto col_to = ColumnVector<ToFieldType>::create(size);
-        typename ColumnVector<ToFieldType>::Container & vec_to = col_to->getData();
+        typename ColVecTo::MutablePtr col_to = nullptr;
 
         if constexpr (IsDecimal<ToDataType>)
         {
             const ColumnWithTypeAndName & scale_column = block.getByPosition(arguments[1]);
             UInt32 scale = extractToDecimalScale(scale_column);
-            vec_to.setScale(scale);
+            col_to = ColVecTo::create(size, scale);
             ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
         }
+        else
+            col_to = ColVecTo::create(size);
+
+        typename ColVecTo::Container & vec_to = col_to->getData();
 
         ColumnUInt8::MutablePtr col_null_map_to;
         ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
