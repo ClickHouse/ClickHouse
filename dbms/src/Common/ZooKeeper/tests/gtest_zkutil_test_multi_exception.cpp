@@ -33,7 +33,7 @@ TEST(zkutil, multi_nice_exception_msg)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
 
-    zkutil::Requests ops;
+    Coordination::Requests ops;
 
     ASSERT_NO_THROW(
         zookeeper->tryRemoveRecursive("/clickhouse_test/zkutil_multi");
@@ -70,7 +70,7 @@ TEST(zkutil, multi_nice_exception_msg)
 TEST(zkutil, multi_async)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
-    zkutil::Requests ops;
+    Coordination::Requests ops;
 
     zookeeper->tryRemoveRecursive("/clickhouse_test/zkutil_multi");
 
@@ -88,13 +88,13 @@ TEST(zkutil, multi_async)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_TRUE(res.error == ZooKeeperImpl::ZooKeeper::ZOK);
+        ASSERT_TRUE(res.error == Coordination::ZOK);
         ASSERT_EQ(res.responses.size(), 2);
     }
 
     EXPECT_ANY_THROW
     (
-        std::vector<std::future<ZooKeeperImpl::ZooKeeper::MultiResponse>> futures;
+        std::vector<std::future<Coordination::MultiResponse>> futures;
 
         for (size_t i = 0; i < 10000; ++i)
         {
@@ -124,7 +124,7 @@ TEST(zkutil, multi_async)
         ops.clear();
 
         auto res = fut.get();
-        ASSERT_TRUE(res.error == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS);
+        ASSERT_TRUE(res.error == Coordination::ZNODEEXISTS);
         ASSERT_EQ(res.responses.size(), 2);
     }
 }
@@ -176,11 +176,11 @@ TEST(zkutil, multi_create_sequential)
         zookeeper->tryRemoveRecursive(base_path);
         zookeeper->createAncestors(base_path + "/");
 
-        zkutil::Requests ops;
+        Coordination::Requests ops;
         String sequential_node_prefix = base_path + "/queue-";
         ops.emplace_back(zkutil::makeCreateRequest(sequential_node_prefix, "", zkutil::CreateMode::EphemeralSequential));
         auto results = zookeeper->multi(ops);
-        const auto & sequential_node_result_op = typeid_cast<const zkutil::CreateResponse &>(*results.at(0));
+        const auto & sequential_node_result_op = dynamic_cast<const Coordination::CreateResponse &>(*results.at(0));
 
         EXPECT_FALSE(sequential_node_result_op.path_created.empty());
         EXPECT_GT(sequential_node_result_op.path_created.length(), sequential_node_prefix.length());
