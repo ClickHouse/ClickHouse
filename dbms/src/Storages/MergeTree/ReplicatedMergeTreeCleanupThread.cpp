@@ -104,7 +104,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     for (const String & replica : replicas)
     {
-        zkutil::Stat host_stat;
+        Coordination::Stat host_stat;
         zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/host", &host_stat);
         String pointer = zookeeper->get(storage.zookeeper_path + "/replicas/" + replica + "/log_pointer");
         if (pointer.empty())
@@ -163,7 +163,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         min_saved_log_pointer = std::min(min_saved_log_pointer, log_pointer);
     }
 
-    if (recovering_replicas.size() != 0)
+    if (!recovering_replicas.empty())
         min_saved_log_pointer = std::min(min_saved_log_pointer, min_inactive_log_pointer);
 
     /// We will not touch the last `min_replicated_logs_to_keep` records.
@@ -205,17 +205,17 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     struct LostReplicaInfo
     {
         String name;
-        zkutil::Requests requests;
+        Coordination::Requests requests;
     };
 
-    std::vector<zkutil::Requests> requests;
+    std::vector<Coordination::Requests> requests;
     std::vector<LostReplicaInfo> lost_replicas_info;
     std::vector<std::pair<LostReplicaInfo, zkutil::ZooKeeper::FutureMulti>> info_and_future;
 
     for (auto pair : log_pointers_lost_replicas)
     {
         String replica = pair.first;
-        zkutil::Requests ops;
+        Coordination::Requests ops;
         /// If host changed version we can not mark replicas, because replica started to be active.
         ops.emplace_back(zkutil::makeCheckRequest(storage.zookeeper_path + "/replicas/" + replica + "/host", host_versions_inactive_replicas.at(replica)));
         ops.emplace_back(zkutil::makeSetRequest(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", "1", -1));
@@ -231,7 +231,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     for (auto & pair : info_and_future)
     {
         auto multi_responses = pair.second.get();
-        if (multi_responses.responses[0]->error == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+        if (multi_responses.responses[0]->error == Coordination::Error::ZBADVERSION)
             throw Exception(pair.first.name + " became active, when we clear log", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
         zkutil::KeeperMultiException::check(multi_responses.error, pair.first.requests, multi_responses.responses);
     }
