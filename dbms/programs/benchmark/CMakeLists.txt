@@ -1,4 +1,4 @@
-add_library (clickhouse-benchmark-lib ${SPLIT_SHARED} Benchmark.cpp)
+add_library (clickhouse-benchmark-lib ${LINK_MODE} Benchmark.cpp)
 target_link_libraries (clickhouse-benchmark-lib clickhouse-client-lib clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 target_include_directories (clickhouse-benchmark-lib SYSTEM PRIVATE ${PCG_RANDOM_INCLUDE_DIR})
 

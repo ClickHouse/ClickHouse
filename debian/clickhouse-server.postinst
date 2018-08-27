@@ -6,6 +6,9 @@ CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP=${CLICKHOUSE_USER}}
 CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR=/var/log/clickhouse-server}
+CLICKHOUSE_BINDIR=${CLICKHOUSE_BINDIR=/usr/bin}
+CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM=clickhouse}
+
 OS=${OS=`lsb_release -is 2>/dev/null || uname -s || true`}
 
 test -f /etc/default/clickhouse && . /etc/default/clickhouse
@@ -82,15 +85,13 @@ Please fix this and reinstall this package." >&2
         chmod 775 ${CLICKHOUSE_LOGDIR}
     fi
 
-
-    if [ -d ${CLICKHOUSE_LOGDIR} ]; then
-        # only for compatibility for old metrika user, remove string after 2017-06-01
-        su -s /bin/sh ${CLICKHOUSE_USER} -c "test -w ${CLICKHOUSE_LOGDIR}" || chown -R root:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}; chmod -R ug+rw ${CLICKHOUSE_LOGDIR}
-    fi
+    # Set net_admin capabilities to support introspection of "taskstats" performance metrics from the kernel.
+    command -v setcap >/dev/null \
+        && setcap cap_net_admin=+ep "${CLICKHOUSE_BINDIR}/${CLICKHOUSE_GENERIC_PROGRAM}" \
+        || echo "Cannot set 'net_admin' capability for clickhouse binary. This is optional. Taskstats accounting will be disabled. To enable taskstats accounting you may add the required capability later manually."
 
     # Clean old dynamic compilation results
     if [ -d "${CLICKHOUSE_DATADIR}/build" ]; then
         rm -f ${CLICKHOUSE_DATADIR}/build/*.cpp ${CLICKHOUSE_DATADIR}/build/*.so ||:
     fi
-
 fi
