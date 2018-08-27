@@ -330,8 +330,4 @@ template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-
-template class ColumnVector<Decimal32>;
-template class ColumnVector<Decimal64>;
-template class ColumnVector<Decimal128>;
 }
