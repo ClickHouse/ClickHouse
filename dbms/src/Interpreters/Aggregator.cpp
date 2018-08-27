@@ -162,7 +162,7 @@ Aggregator::Aggregator(const Params & params_)
             all_aggregates_has_trivial_destructor = false;
     }
 
-    method = chooseAggregationMethod();
+    method_chosen = chooseAggregationMethod();
 }
 
 
@@ -717,7 +717,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
     /// How to perform the aggregation?
     if (result.empty())
     {
-        result.init(method);
+        result.init(method_chosen);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
@@ -2007,8 +2007,8 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     if (has_two_level)
     {
     #define M(NAME) \
-        if (method == AggregatedDataVariants::Type::NAME) \
-            method = AggregatedDataVariants::Type::NAME ## _two_level;
+        if (method_chosen == AggregatedDataVariants::Type::NAME) \
+            method_chosen = AggregatedDataVariants::Type::NAME ## _two_level;
 
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
 
@@ -2021,7 +2021,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
     /// result will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
-    result.init(method);
+    result.init(method_chosen);
     result.keys_size = params.keys_size;
     result.key_sizes = key_sizes;
 
@@ -2143,7 +2143,7 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
       * Better hash function is needed because during external aggregation,
       *  we may merge partitions of data with total number of keys far greater than 4 billion.
       */
-    auto merge_method = method;
+    auto merge_method = method_chosen;
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
         M(key64)            \
@@ -2299,7 +2299,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
     for (size_t i = 0; i < params.keys_size; ++i)
         key_columns[i] = block.safeGetByPosition(i).column.get();
 
-    AggregatedDataVariants::Type type = method;
+    AggregatedDataVariants::Type type = method_chosen;
     data.keys_size = params.keys_size;
     data.key_sizes = key_sizes;
 

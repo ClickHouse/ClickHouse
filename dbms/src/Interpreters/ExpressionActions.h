@@ -166,7 +166,7 @@ public:
 
     /// Add the specified ARRAY JOIN action to the beginning. Change the appropriate input types to arrays.
     /// If there are unknown columns in the ARRAY JOIN list, take their types from sample_block, and immediately after ARRAY JOIN remove them.
-    void prependArrayJoin(const ExpressionAction & action, const Block & sample_block);
+    void prependArrayJoin(const ExpressionAction & action, const Block & sample_block_before);
 
     /// If the last action is ARRAY JOIN, and it does not affect the columns from required_columns, discard and return it.
     /// Change the corresponding output types to arrays.

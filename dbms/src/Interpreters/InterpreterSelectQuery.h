@@ -126,7 +126,7 @@ private:
         }
     };
 
-    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
+    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
 
     struct AnalysisResult
