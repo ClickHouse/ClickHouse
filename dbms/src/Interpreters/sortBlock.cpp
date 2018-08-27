@@ -136,7 +136,7 @@ void sortBlock(Block & block, const SortDescription & description, size_t limit)
         bool need_collation = false;
         ColumnsWithSortDescriptions columns_with_sort_desc = getColumnsWithSortDescription(block, description);
 
-        for (size_t i = 0, size = description.size(); i < size; ++i)
+        for (size_t i = 0, num_sort_columns = description.size(); i < num_sort_columns; ++i)
         {
             if (needCollation(columns_with_sort_desc[i].first, description[i]))
             {
