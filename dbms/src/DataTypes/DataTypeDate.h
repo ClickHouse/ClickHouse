@@ -9,6 +9,7 @@ namespace DB
 class DataTypeDate final : public DataTypeNumberBase<UInt16>
 {
 public:
+    TypeIndex getTypeId() const override { return TypeIndex::Date; }
     const char * getFamilyName() const override { return "Date"; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

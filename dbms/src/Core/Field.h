@@ -20,6 +20,7 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_GET;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 class Field;
@@ -27,33 +28,67 @@ using Array = std::vector<Field>;
 using TupleBackend = std::vector<Field>;
 STRONG_TYPEDEF(TupleBackend, Tuple) /// Array and Tuple are different types with equal representation inside Field.
 
+template <typename T> bool decimalEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
+template <typename T> bool decimalLess(T x, T y, UInt32 x_scale, UInt32 y_scale);
+template <typename T> bool decimalLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale);
 
+template <typename T>
 class DecimalField
 {
 public:
-    static constexpr UInt32 wrongScale() { return std::numeric_limits<UInt32>::max(); }
-
-    DecimalField(Int128 value, UInt32 scale_ = wrongScale())
+    DecimalField(T value, UInt32 scale_)
     :   dec(value),
         scale(scale_)
     {}
 
-    operator Decimal32() const { return dec; }
-    operator Decimal64() const { return dec; }
-    operator Decimal128() const { return dec; }
-
+    operator T() const { return dec; }
+    T getValue() const { return dec; }
+    T getScaleMultiplier() const;
     UInt32 getScale() const { return scale; }
 
-    bool operator < (const DecimalField & r) const;
-    bool operator <= (const DecimalField & r) const;
-    bool operator == (const DecimalField & r) const;
+    template <typename U>
+    bool operator < (const DecimalField<U> & r) const
+    {
+        using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
+        return decimalLess<MaxType>(dec, r.getValue(), scale, r.getScale());
+    }
 
-    bool operator > (const DecimalField & r) const { return r < *this; }
-    bool operator >= (const DecimalField & r) const { return r <= * this; }
-    bool operator != (const DecimalField & r) const { return !(*this == r); }
+    template <typename U>
+    bool operator <= (const DecimalField<U> & r) const
+    {
+        using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
+        return decimalLessOrEqual<MaxType>(dec, r.getValue(), scale, r.getScale());
+    }
+
+    template <typename U>
+    bool operator == (const DecimalField<U> & r) const
+    {
+        using MaxType = std::conditional_t<(sizeof(T) > sizeof(U)), T, U>;
+        return decimalEqual<MaxType>(dec, r.getValue(), scale, r.getScale());
+    }
+
+    template <typename U> bool operator > (const DecimalField<U> & r) const { return r < *this; }
+    template <typename U> bool operator >= (const DecimalField<U> & r) const { return r <= * this; }
+    template <typename U> bool operator != (const DecimalField<U> & r) const { return !(*this == r); }
+
+    const DecimalField<T> & operator += (const DecimalField<T> & r)
+    {
+        if (scale != r.getScale())
+            throw Exception("Add different decimal fields", ErrorCodes::LOGICAL_ERROR);
+        dec += r.getValue();
+        return *this;
+    }
+
+    const DecimalField<T> & operator -= (const DecimalField<T> & r)
+    {
+        if (scale != r.getScale())
+            throw Exception("Sub different decimal fields", ErrorCodes::LOGICAL_ERROR);
+        dec -= r.getValue();
+        return *this;
+    }
 
 private:
-    Int128 dec;
+    T dec;
     UInt32 scale;
 };
 
@@ -91,7 +126,9 @@ public:
             String  = 16,
             Array   = 17,
             Tuple   = 18,
-            Decimal = 19,
+            Decimal32  = 19,
+            Decimal64  = 20,
+            Decimal128 = 21,
         };
 
         static const int MIN_NON_POD = 16;
@@ -109,7 +146,9 @@ public:
                 case String:  return "String";
                 case Array:   return "Array";
                 case Tuple:   return "Tuple";
-                case Decimal: return "Decimal";
+                case Decimal32:  return "Decimal32";
+                case Decimal64:  return "Decimal64";
+                case Decimal128: return "Decimal128";
             }
 
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -121,6 +160,7 @@ public:
     template <typename T> struct TypeToEnum;
     template <Types::Which which> struct EnumToType;
 
+    static bool IsDecimal(Types::Which which) { return which >= Types::Decimal32 && which <= Types::Decimal128; }
 
     Field()
         : which(Types::Null)
@@ -294,7 +334,9 @@ public:
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
-            case Types::Decimal: return get<DecimalField>()  < rhs.get<DecimalField>();
+            case Types::Decimal32:  return get<DecimalField<Decimal32>>()  < rhs.get<DecimalField<Decimal32>>();
+            case Types::Decimal64:  return get<DecimalField<Decimal64>>()  < rhs.get<DecimalField<Decimal64>>();
+            case Types::Decimal128: return get<DecimalField<Decimal128>>() < rhs.get<DecimalField<Decimal128>>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -323,7 +365,9 @@ public:
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
-            case Types::Decimal: return get<DecimalField>()  <= rhs.get<DecimalField>();
+            case Types::Decimal32:  return get<DecimalField<Decimal32>>()  <= rhs.get<DecimalField<Decimal32>>();
+            case Types::Decimal64:  return get<DecimalField<Decimal64>>()  <= rhs.get<DecimalField<Decimal64>>();
+            case Types::Decimal128: return get<DecimalField<Decimal128>>() <= rhs.get<DecimalField<Decimal128>>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -350,7 +394,9 @@ public:
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
             case Types::UInt128: return get<UInt128>() == rhs.get<UInt128>();
             case Types::Int128:  return get<Int128>()  == rhs.get<Int128>();
-            case Types::Decimal: return get<DecimalField>()  == rhs.get<DecimalField>();
+            case Types::Decimal32:  return get<DecimalField<Decimal32>>()  == rhs.get<DecimalField<Decimal32>>();
+            case Types::Decimal64:  return get<DecimalField<Decimal64>>()  == rhs.get<DecimalField<Decimal64>>();
+            case Types::Decimal128: return get<DecimalField<Decimal128>>() == rhs.get<DecimalField<Decimal128>>();
         }
 
         throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -363,7 +409,8 @@ public:
 
 private:
     std::aligned_union_t<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
-        Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple, DecimalField
+        Null, UInt64, UInt128, Int64, Int128, Float64, String, Array, Tuple,
+        DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>
         > storage;
 
     Types::Which which;
@@ -412,7 +459,9 @@ private:
             case Types::String:  f(field.template get<String>());  return;
             case Types::Array:   f(field.template get<Array>());   return;
             case Types::Tuple:   f(field.template get<Tuple>());   return;
-            case Types::Decimal: f(field.template get<DecimalField>()); return;
+            case Types::Decimal32:  f(field.template get<DecimalField<Decimal32>>()); return;
+            case Types::Decimal64:  f(field.template get<DecimalField<Decimal64>>()); return;
+            case Types::Decimal128: f(field.template get<DecimalField<Decimal128>>()); return;
 
             default:
                 throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -496,7 +545,9 @@ template <> struct Field::TypeToEnum<Float64> { static const Types::Which value 
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static const Types::Which value = Types::Array; };
 template <> struct Field::TypeToEnum<Tuple>   { static const Types::Which value = Types::Tuple; };
-template <> struct Field::TypeToEnum<DecimalField>{ static const Types::Which value = Types::Decimal; };
+template <> struct Field::TypeToEnum<DecimalField<Decimal32>>{ static const Types::Which value = Types::Decimal32; };
+template <> struct Field::TypeToEnum<DecimalField<Decimal64>>{ static const Types::Which value = Types::Decimal64; };
+template <> struct Field::TypeToEnum<DecimalField<Decimal128>>{ static const Types::Which value = Types::Decimal128; };
 
 template <> struct Field::EnumToType<Field::Types::Null>    { using Type = Null; };
 template <> struct Field::EnumToType<Field::Types::UInt64>  { using Type = UInt64; };
@@ -507,7 +558,9 @@ template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
 template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple; };
-template <> struct Field::EnumToType<Field::Types::Decimal> { using Type = DecimalField; };
+template <> struct Field::EnumToType<Field::Types::Decimal32> { using Type = DecimalField<Decimal32>; };
+template <> struct Field::EnumToType<Field::Types::Decimal64> { using Type = DecimalField<Decimal64>; };
+template <> struct Field::EnumToType<Field::Types::Decimal128> { using Type = DecimalField<Decimal128>; };
 
 
 template <typename T>
@@ -551,9 +604,9 @@ template <> struct NearestFieldType<Int16>   { using Type = Int64; };
 template <> struct NearestFieldType<Int32>   { using Type = Int64; };
 template <> struct NearestFieldType<Int64>   { using Type = Int64; };
 template <> struct NearestFieldType<Int128>  { using Type = Int128; };
-template <> struct NearestFieldType<Decimal32>   { using Type = DecimalField; };
-template <> struct NearestFieldType<Decimal64>   { using Type = DecimalField; };
-template <> struct NearestFieldType<Decimal128>  { using Type = DecimalField; };
+template <> struct NearestFieldType<Decimal32>   { using Type = DecimalField<Decimal32>; };
+template <> struct NearestFieldType<Decimal64>   { using Type = DecimalField<Decimal64>; };
+template <> struct NearestFieldType<Decimal128>  { using Type = DecimalField<Decimal128>; };
 template <> struct NearestFieldType<Float32> { using Type = Float64; };
 template <> struct NearestFieldType<Float64> { using Type = Float64; };
 template <> struct NearestFieldType<String>  { using Type = String; };
