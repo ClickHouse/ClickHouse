@@ -107,11 +107,11 @@ public:
         {
             DataTypes types;
             types.reserve(names.size());
-            for (const auto & name : names)
+            for (const auto & captured_name : names)
             {
-                auto it = arguments_map.find(name);
+                auto it = arguments_map.find(captured_name);
                 if (it == arguments_map.end())
-                    throw Exception("Lambda captured argument " + name + " not found in required columns.",
+                    throw Exception("Lambda captured argument " + captured_name + " not found in required columns.",
                                     ErrorCodes::LOGICAL_ERROR);
 
                 types.push_back(it->second);
