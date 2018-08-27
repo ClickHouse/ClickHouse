@@ -260,7 +260,7 @@ void Aggregator::compileIfPossible(AggregatedDataVariants::Type type)
                 "template void Aggregator::executeSpecialized<\n"
                     "    " << method_typename << ", TypeList<" << aggregate_functions_typenames << ">>(\n"
                     "    " << method_typename << " &, Arena *, size_t, ColumnRawPtrs &,\n"
-                    "    AggregateColumns &, const Sizes &, StringRefs &, bool, AggregateDataPtr) const;\n"
+                    "    AggregateColumns &, StringRefs &, bool, AggregateDataPtr) const;\n"
                 "\n"
                 "static void wrapper" << suffix << "(\n"
                     "    const Aggregator & aggregator,\n"
@@ -763,7 +763,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                 reinterpret_cast<void (*)( \
                     const Aggregator &, decltype(result.NAME)::element_type &, \
                     Arena *, size_t, ColumnRawPtrs &, AggregateColumns &, \
-                    const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
+                    StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_method_ptr) \
                 (*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
                     key, no_more_keys, overflow_row_ptr);
 
@@ -779,7 +779,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                 reinterpret_cast<void (*)( \
                     const Aggregator &, decltype(result.NAME)::element_type &, \
                     Arena *, size_t, ColumnRawPtrs &, AggregateColumns &, \
-                    const Sizes &, StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
+                    StringRefs &, bool, AggregateDataPtr)>(compiled_data->compiled_two_level_method_ptr) \
                 (*this, *result.NAME, result.aggregates_pool, rows, key_columns, aggregate_columns, \
                     key, no_more_keys, overflow_row_ptr);
 
