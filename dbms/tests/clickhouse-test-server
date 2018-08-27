@@ -6,8 +6,8 @@ set -o pipefail
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
-#TODO: DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
-DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
+DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
+DATA_DIR_PATTERN=${DATA_DIR_PATTERN:=/tmp/clickhouse} # path from config file, will be replaced to temporary
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 [ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
@@ -25,7 +25,6 @@ export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xm
 [ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/local/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
-CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 
 TEST_PORT_RANDOM=${TEST_PORT_RANDOM=1}
 if [ "${TEST_PORT_RANDOM}" ]; then
@@ -43,8 +42,16 @@ export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=`$CLICKHOUSE_E
 export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port_secure`}
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=`$CLICKHOUSE_EXTRACT_CONFIG --key=https_port`}
 
+
 rm -rf $DATA_DIR || true
-mkdir -p $LOG_DIR || true
+mkdir -p $LOG_DIR $DATA_DIR || true
+
+if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
+    cat $CLICKHOUSE_CONFIG | sed -e s!$DATA_DIR_PATTERN!$DATA_DIR! > $DATA_DIR/server-config.xml
+    export CLICKHOUSE_CONFIG=$DATA_DIR/server-config.xml
+fi
+
+CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 
 DHPARAM=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile`
 PRIVATEKEY=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile`
