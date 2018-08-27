@@ -342,10 +342,10 @@ private:
 
         if constexpr (_actual)
         {
-            bool c0_const = c0->isColumnConst();
-            bool c1_const = c1->isColumnConst();
+            bool c0_is_const = c0->isColumnConst();
+            bool c1_is_const = c1->isColumnConst();
 
-            if (c0_const && c1_const)
+            if (c0_is_const && c1_is_const)
             {
                 const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
                 const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
@@ -359,7 +359,7 @@ private:
             ColumnUInt8::Container & vec_res = c_res->getData();
             vec_res.resize(c0->size());
 
-            if (c0_const)
+            if (c0_is_const)
             {
                 const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
                 A a = c0_const->template getValue<A>();
@@ -368,7 +368,7 @@ private:
                 else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
                     constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
             }
-            else if (c1_const)
+            else if (c1_is_const)
             {
                 const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
                 B b = c1_const->template getValue<B>();
