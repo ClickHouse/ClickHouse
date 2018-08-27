@@ -363,7 +363,7 @@ ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[indexes[i]];
 
-    return std::move(res);
+    return res;
 }
 
 }

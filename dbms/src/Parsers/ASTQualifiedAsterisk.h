@@ -17,7 +17,7 @@ public:
     {
         auto clone = std::make_shared<ASTQualifiedAsterisk>(*this);
         clone->cloneChildren();
-        return std::move(clone);
+        return clone;
     }
     void appendColumnName(WriteBuffer & ostr) const override;
 
