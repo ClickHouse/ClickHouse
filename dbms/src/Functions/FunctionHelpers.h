@@ -7,102 +7,6 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 
-namespace common
-{
-    template <typename T>
-    inline bool addOverflow(T x, T y, T & res)
-    {
-        return __builtin_add_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool addOverflow(Int32 x, Int32 y, Int32 & res)
-    {
-        return __builtin_sadd_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool addOverflow(long x, long y, long & res)
-    {
-        return __builtin_saddl_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool addOverflow(long long x, long long y, long long & res)
-    {
-        return __builtin_saddll_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool addOverflow(__int128 x, __int128 y, __int128 & res)
-    {
-        res = x + y;
-        return (res - y) != x;
-    }
-
-    template <typename T>
-    inline bool subOverflow(T x, T y, T & res)
-    {
-        return __builtin_sub_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool subOverflow(Int32 x, Int32 y, Int32 & res)
-    {
-        return __builtin_ssub_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool subOverflow(long x, long y, long & res)
-    {
-        return __builtin_ssubl_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool subOverflow(long long x, long long y, long long & res)
-    {
-        return __builtin_ssubll_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool subOverflow(__int128 x, __int128 y, __int128 & res)
-    {
-        res = x - y;
-        return (res + y) != x;
-    }
-
-    template <typename T>
-    inline bool mulOverflow(T x, T y, T & res)
-    {
-        return __builtin_mul_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool mulOverflow(Int32 x, Int32 y, Int32 & res)
-    {
-        return __builtin_smul_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool mulOverflow(long x, long y, long & res)
-    {
-        return __builtin_smull_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool mulOverflow(long long x, long long y, long long & res)
-    {
-        return __builtin_smulll_overflow(x, y, &res);
-    }
-
-    template <>
-    inline bool mulOverflow(__int128 x, __int128 y, __int128 & res)
-    {
-        res = x * y;
-        return (res / y) != x;
-    }
-}
-
 namespace DB
 {
 
@@ -172,9 +76,15 @@ const ColumnConst * checkAndGetColumnConstStringOrFixedString(const IColumn * co
 
 /// Transform anything to Field.
 template <typename T>
-inline Field toField(const T & x)
+inline std::enable_if_t<!IsDecimalNumber<T>, Field> toField(const T & x)
 {
     return Field(typename NearestFieldType<T>::Type(x));
+}
+
+template <typename T>
+inline std::enable_if_t<IsDecimalNumber<T>, Field> toField(const T & x, UInt32 scale)
+{
+    return Field(typename NearestFieldType<T>::Type(x, scale));
 }
 
 
@@ -189,58 +99,200 @@ Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & ar
 /// Similar function as above. Additionally transform the result type if needed.
 Block createBlockWithNestedColumns(const Block & block, const ColumnNumbers & args, size_t result);
 
+
+template <typename T, typename U>
+struct TypePair
+{
+    using LeftType = T;
+    using RightType = U;
+};
+
+template <typename T, bool _int, bool _dec, bool _float, typename F>
+bool callOnBasicType(TypeIndex number, F && f)
+{
+    if constexpr (_int)
+    {
+        switch (number)
+        {
+            case TypeIndex::UInt8:        return f(TypePair<T, UInt8>());
+            case TypeIndex::UInt16:       return f(TypePair<T, UInt16>());
+            case TypeIndex::UInt32:       return f(TypePair<T, UInt32>());
+            case TypeIndex::UInt64:       return f(TypePair<T, UInt64>());
+            //case TypeIndex::UInt128>:     return f(TypePair<T, UInt128>());
+
+            case TypeIndex::Int8:         return f(TypePair<T, Int8>());
+            case TypeIndex::Int16:        return f(TypePair<T, Int16>());
+            case TypeIndex::Int32:        return f(TypePair<T, Int32>());
+            case TypeIndex::Int64:        return f(TypePair<T, Int64>());
+            case TypeIndex::Int128:       return f(TypePair<T, Int128>());
+
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_dec)
+    {
+        switch (number)
+        {
+            case TypeIndex::Decimal32:    return f(TypePair<T, Decimal32>());
+            case TypeIndex::Decimal64:    return f(TypePair<T, Decimal64>());
+            case TypeIndex::Decimal128:   return f(TypePair<T, Decimal128>());
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_float)
+    {
+        switch (number)
+        {
+            case TypeIndex::Float32:      return f(TypePair<T, Float32>());
+            case TypeIndex::Float64:      return f(TypePair<T, Float64>());
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+/// Unroll template using TypeIndex
+template <typename F, bool _int = true, bool _dec = true, bool _float = false>
+inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F && f)
+{
+    if constexpr (_int)
+    {
+        switch (type_num1)
+        {
+            case TypeIndex::UInt8: return callOnBasicType<UInt8, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::UInt16: return callOnBasicType<UInt16, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::UInt32: return callOnBasicType<UInt32, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::UInt64: return callOnBasicType<UInt64, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            //case TypeIndex::UInt128: return callOnBasicType<UInt128, _int, _dec, _float>(type_num2, std::forward<F>(f));
+
+            case TypeIndex::Int8: return callOnBasicType<Int8, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Int16: return callOnBasicType<Int16, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Int32: return callOnBasicType<Int32, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Int64: return callOnBasicType<Int64, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Int128: return callOnBasicType<Int128, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_dec)
+    {
+        switch (type_num1)
+        {
+            case TypeIndex::Decimal32: return callOnBasicType<Decimal32, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Decimal64: return callOnBasicType<Decimal64, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Decimal128: return callOnBasicType<Decimal128, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_float)
+    {
+        switch (type_num1)
+        {
+            case TypeIndex::Float32: return callOnBasicType<Float32, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            case TypeIndex::Float64: return callOnBasicType<Float64, _int, _dec, _float>(type_num2, std::forward<F>(f));
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+
+class DataTypeDate;
+class DataTypeDateTime;
+class DataTypeString;
+class DataTypeFixedString;
+class DataTypeUUID;
+template <typename T> class DataTypeEnum;
+template <typename T> class DataTypeNumber;
+template <typename T> class DataTypeDecimal;
+
 template <typename T, typename F>
-bool callByTypeAndNumber(UInt8 number, F && f)
+bool callOnDataTypeAndIndex(TypeIndex number, F && f)
 {
     switch (number)
     {
-        case TypeId<UInt8>::value:        f(T(), UInt8()); break;
-        case TypeId<UInt16>::value:       f(T(), UInt16()); break;
-        case TypeId<UInt32>::value:       f(T(), UInt32()); break;
-        case TypeId<UInt64>::value:       f(T(), UInt64()); break;
-        //case TypeId<UInt128>::value:      f(T(), UInt128()); break;
+        case TypeIndex::UInt8:          return f(TypePair<T, DataTypeNumber<UInt8>>());
+        case TypeIndex::UInt16:         return f(TypePair<T, DataTypeNumber<UInt16>>());
+        case TypeIndex::UInt32:         return f(TypePair<T, DataTypeNumber<UInt32>>());
+        case TypeIndex::UInt64:         return f(TypePair<T, DataTypeNumber<UInt64>>());
 
-        case TypeId<Int8>::value:         f(T(), Int8()); break;
-        case TypeId<Int16>::value:        f(T(), Int16()); break;
-        case TypeId<Int32>::value:        f(T(), Int32()); break;
-        case TypeId<Int64>::value:        f(T(), Int64()); break;
-        case TypeId<Int128>::value:       f(T(), Int128()); break;
+        case TypeIndex::Int8:           return f(TypePair<T, DataTypeNumber<Int8>>());
+        case TypeIndex::Int16:          return f(TypePair<T, DataTypeNumber<Int16>>());
+        case TypeIndex::Int32:          return f(TypePair<T, DataTypeNumber<Int32>>());
+        case TypeIndex::Int64:          return f(TypePair<T, DataTypeNumber<Int64>>());
 
-        case TypeId<Decimal32>::value:        f(T(), Decimal32()); break;
-        case TypeId<Decimal64>::value:        f(T(), Decimal64()); break;
-        case TypeId<Decimal128>::value:       f(T(), Decimal128()); break;
-        default:
-            return false;
-    }
+        case TypeIndex::Float32:        return f(TypePair<T, DataTypeNumber<Float32>>());
+        case TypeIndex::Float64:        return f(TypePair<T, DataTypeNumber<Float64>>());
 
-    return true;
-}
+        case TypeIndex::Decimal32:      return f(TypePair<T, DataTypeDecimal<Decimal32>>());
+        case TypeIndex::Decimal64:      return f(TypePair<T, DataTypeDecimal<Decimal64>>());
+        case TypeIndex::Decimal128:     return f(TypePair<T, DataTypeDecimal<Decimal128>>());
 
-/// Unroll template using TypeNumber<T>
-template <typename F>
-inline bool callByNumbers(UInt8 type_num1, UInt8 type_num2, F && f)
-{
-    switch (type_num1)
-    {
-        case TypeId<UInt8>::value: return callByTypeAndNumber<UInt8>(type_num2, std::forward<F>(f));
-        case TypeId<UInt16>::value: return callByTypeAndNumber<UInt16>(type_num2, std::forward<F>(f));
-        case TypeId<UInt32>::value: return callByTypeAndNumber<UInt32>(type_num2, std::forward<F>(f));
-        case TypeId<UInt64>::value: return callByTypeAndNumber<UInt64>(type_num2, std::forward<F>(f));
-        //case TypeId<UInt128>::value: return callByTypeAndNumber<UInt128>(type_num2, std::forward<F>(f));
+        case TypeIndex::Date:           return f(TypePair<T, DataTypeDate>());
+        case TypeIndex::DateTime:       return f(TypePair<T, DataTypeDateTime>());
 
-        case TypeId<Int8>::value: return callByTypeAndNumber<Int8>(type_num2, std::forward<F>(f));
-        case TypeId<Int16>::value: return callByTypeAndNumber<Int16>(type_num2, std::forward<F>(f));
-        case TypeId<Int32>::value: return callByTypeAndNumber<Int32>(type_num2, std::forward<F>(f));
-        case TypeId<Int64>::value: return callByTypeAndNumber<Int64>(type_num2, std::forward<F>(f));
-        case TypeId<Int128>::value: return callByTypeAndNumber<Int128>(type_num2, std::forward<F>(f));
+        case TypeIndex::String:         return f(TypePair<T, DataTypeString>());
+        case TypeIndex::FixedString:    return f(TypePair<T, DataTypeFixedString>());
 
-        case TypeId<Decimal32>::value: return callByTypeAndNumber<Decimal32>(type_num2, std::forward<F>(f));
-        case TypeId<Decimal64>::value: return callByTypeAndNumber<Decimal64>(type_num2, std::forward<F>(f));
-        case TypeId<Decimal128>::value: return callByTypeAndNumber<Decimal128>(type_num2, std::forward<F>(f));
+        case TypeIndex::Enum8:          return f(TypePair<T, DataTypeEnum<Int8>>());
+        case TypeIndex::Enum16:         return f(TypePair<T, DataTypeEnum<Int16>>());
+
+        case TypeIndex::UUID:           return f(TypePair<T, DataTypeUUID>());
 
         default:
             break;
-    };
+    }
+
+    return false;
+}
+
+template <typename T, typename F>
+bool callOnIndexAndDataType(TypeIndex number, F && f)
+{
+    switch (number)
+    {
+        case TypeIndex::UInt8:          return f(TypePair<DataTypeNumber<UInt8>, T>());
+        case TypeIndex::UInt16:         return f(TypePair<DataTypeNumber<UInt16>, T>());
+        case TypeIndex::UInt32:         return f(TypePair<DataTypeNumber<UInt32>, T>());
+        case TypeIndex::UInt64:         return f(TypePair<DataTypeNumber<UInt64>, T>());
+
+        case TypeIndex::Int8:           return f(TypePair<DataTypeNumber<Int8>, T>());
+        case TypeIndex::Int16:          return f(TypePair<DataTypeNumber<Int16>, T>());
+        case TypeIndex::Int32:          return f(TypePair<DataTypeNumber<Int32>, T>());
+        case TypeIndex::Int64:          return f(TypePair<DataTypeNumber<Int64>, T>());
+
+        case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>());
+        case TypeIndex::Float64:        return f(TypePair<DataTypeNumber<Float64>, T>());
+
+        case TypeIndex::Decimal32:      return f(TypePair<DataTypeDecimal<Decimal32>, T>());
+        case TypeIndex::Decimal64:      return f(TypePair<DataTypeDecimal<Decimal64>, T>());
+        case TypeIndex::Decimal128:     return f(TypePair<DataTypeDecimal<Decimal128>, T>());
+
+        case TypeIndex::Date:           return f(TypePair<DataTypeDate, T>());
+        case TypeIndex::DateTime:       return f(TypePair<DataTypeDateTime, T>());
+
+        case TypeIndex::String:         return f(TypePair<DataTypeString, T>());
+        case TypeIndex::FixedString:    return f(TypePair<DataTypeFixedString, T>());
+
+        case TypeIndex::Enum8:          return f(TypePair<DataTypeEnum<Int8>, T>());
+        case TypeIndex::Enum16:         return f(TypePair<DataTypeEnum<Int16>, T>());
+
+        case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>());
+
+        default:
+            break;
+    }
 
     return false;
 }
