@@ -146,8 +146,8 @@ class ClickHouseCluster:
                 conn.close()
                 print "Mysql Started"
                 return
-            except Exception:
-                print "Can't connecto to MySQL"
+            except Exception as ex:
+                print "Can't connecto to MySQL " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait MySQL container")
@@ -161,8 +161,8 @@ class ClickHouseCluster:
                     conn.get_children('/')
                 print "All instances of ZooKeeper started"
                 return
-            except Exception:
-                print "Can't connec to to ZooKeeper"
+            except Exception as ex:
+                print "Can't connec to to ZooKeeper " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper container")
