@@ -258,7 +258,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
 
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
     {
-        auto multi_responses =  futures[i].get();
+        auto multi_responses = futures[i].get();
         if (multi_responses.responses[0]->error == Coordination::Error::ZBADVERSION)
             throw Exception(candidate_lost_replicas[i] + " became active, when we marked lost replicas.", DB::ErrorCodes::REPLICA_STATUS_CHANGED);
         zkutil::KeeperMultiException::check(multi_responses.error, requests[i], multi_responses.responses);
