@@ -107,6 +107,8 @@ You are probably already using ZooKeeper for other purposes. You can use the sam
 
 It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
+Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
+
 With the default settings, ZooKeeper is a time bomb:
 
 > The ZooKeeper server won't delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
