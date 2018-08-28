@@ -54,6 +54,16 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
+    set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
+    set (WITH_NATIVE_INSTRUCTIONS ${ARCHNATIVE} CACHE INTERNAL "")
+    if (OS_FREEBSD OR ARCH_I386)
+        set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
+    endif ()
+    if (ARCH_AARCH64)
+        set(WITH_NEON 1 CACHE INTERNAL "")
+        set(WITH_ACLE 1 CACHE INTERNAL "")
+    endif ()
+
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # todo: make pull to Dead2/zlib-ng and remove:
     # We should use same defines when including zlib.h as used when zlib compiled
