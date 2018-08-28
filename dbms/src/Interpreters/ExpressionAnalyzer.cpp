@@ -19,7 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
-F
+
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 
