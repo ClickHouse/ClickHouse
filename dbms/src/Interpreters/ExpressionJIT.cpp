@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Common/LRUCache.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -555,7 +556,7 @@ static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & fu
     return function.isCompilable();
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block)
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, const Settings & settings)
 {
     struct LLVMTargetInitializer
     {
@@ -621,6 +622,8 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
         }
     }
 
+    static LRUCache<ExpressionActions::Actions, LLVMFunction, ExpressionActions::ActionsHash> compilation_cache(settings.compiled_expressions_cache_size);
+
     std::vector<ExpressionActions::Actions> fused(actions.size());
     for (size_t i = 0; i < actions.size(); ++i)
     {
@@ -633,9 +636,9 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
             if (fused[i].size() == 1)
                 continue;
-            auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context, sample_block);
-            actions[i].function = fn;
-            actions[i].argument_names = fn->getArgumentNames();
+            auto fn = compilation_cache.getOrSet(fused[i], [&]() { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); });
+            actions[i].function = fn.first;
+            actions[i].argument_names = fn.first->getArgumentNames();
             continue;
         }
 
