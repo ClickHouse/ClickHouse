@@ -87,61 +87,37 @@ struct ExtractBool
 
 struct ExtractRaw
 {
+    inline static void skipAfterQuotationIfNeed(const UInt8 ** pos, const UInt8 * end, ColumnString::Chars_t & res_data)
+    {
+        if (*pos + 1 < end && *(*pos + 1) == '"')
+        {
+            res_data.push_back(**pos);
+            ++(*pos);
+        }
+    }
+
     static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
     {
-        if (pos == end)
-            return;
+        std::vector<char> expect_end;
 
-        UInt8 open_char = *pos;
-        UInt8 close_char = 0;
-        switch (open_char)
+        for (; pos != end; ++pos)
         {
-            case '[':
-                close_char = ']';
-                break;
-            case '{':
-                close_char = '}';
-                break;
-            case '"':
-                close_char = '"';
-                break;
-        }
-
-        if (close_char != 0)
-        {
-            size_t balance = 1;
-            char last_char = 0;
-
-            res_data.push_back(*pos);
-
-            ++pos;
-            for (; pos != end && balance > 0; ++pos)
+            if (!expect_end.empty() && *pos == expect_end.back())
+                expect_end.pop_back();
+            else
             {
-                res_data.push_back(*pos);
-
-                if (open_char == '"' && *pos == '"')
+                switch(*pos)
                 {
-                    if (last_char != '\\')
-                        break;
+                    case '[' :  expect_end.push_back(']'); break;
+                    case '{' :  expect_end.push_back('}'); break;
+                    case '"' :  expect_end.push_back('"'); break;
+                    case '\\' : skipAfterQuotationIfNeed(&pos, end, res_data); break;
+                    default :
+                        if (expect_end.empty() && (*pos == ',' || *pos == '}'))
+                            return;
                 }
-                else
-                {
-                    if (*pos == open_char)
-                        ++balance;
-                    if (*pos == close_char)
-                        --balance;
-                }
-
-                if (last_char == '\\')
-                    last_char = 0;
-                else
-                    last_char = *pos;
             }
-        }
-        else
-        {
-            for (; pos != end && *pos != ',' && *pos != '}'; ++pos)
-                res_data.push_back(*pos);
+            res_data.push_back(*pos);
         }
     }
 };
