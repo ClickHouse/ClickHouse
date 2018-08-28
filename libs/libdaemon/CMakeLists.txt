@@ -1,4 +1,4 @@
-add_library (daemon ${SPLIT_SHARED}
+add_library (daemon ${LINK_MODE}
     src/BaseDaemon.cpp
     src/GraphiteWriter.cpp
     src/ExtendedLogChannel.cpp

@@ -389,7 +389,9 @@ namespace ErrorCodes
     extern const int NETLINK_ERROR = 412;
     extern const int CANNOT_SET_SIGNAL_HANDLER = 413;
     extern const int CANNOT_READLINE = 414;
-    extern const int EXPECT_ALL_OR_ANY = 415;
+    extern const int ALL_REPLICAS_LOST = 415;
+    extern const int REPLICA_STATUS_CHANGED = 416;
+    extern const int EXPECT_ALL_OR_ANY = 417;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

@@ -1,4 +1,4 @@
-add_library (mysqlxx ${SPLIT_SHARED}
+add_library (mysqlxx ${LINK_MODE}
     src/Connection.cpp
     src/Exception.cpp
     src/Query.cpp

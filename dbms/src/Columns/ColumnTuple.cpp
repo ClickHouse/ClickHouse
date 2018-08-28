@@ -54,7 +54,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
     auto column_tuple = ColumnTuple::create(MutableColumns());
     column_tuple->columns = columns;
 
-    return std::move(column_tuple);
+    return column_tuple;
 }
 
 MutableColumnPtr ColumnTuple::cloneEmpty() const

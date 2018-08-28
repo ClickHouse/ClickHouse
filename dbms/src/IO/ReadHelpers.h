@@ -818,8 +818,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
         ++buf.position();
 }
 
-/// Skips json value. If the value contains objects (i.e. {...} sequence), an exception will be thrown.
-void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed);
+/// Skips json value.
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
 
 
 /** Read serialized exception.

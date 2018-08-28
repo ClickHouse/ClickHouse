@@ -23,7 +23,7 @@ ${ODBC_SOURCE_DIR}/libltdl/loaders/preopen.c
 ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/libltdl/libltdlcS.c
 )
 
-add_library(ltdl ${SPLIT_SHARED} ${SRCS})
+add_library(ltdl ${LINK_MODE} ${SRCS})
 
 target_include_directories(ltdl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/linux_x86_64/libltdl)
 target_include_directories(ltdl PUBLIC ${ODBC_SOURCE_DIR}/libltdl)
@@ -273,7 +273,7 @@ ${ODBC_SOURCE_DIR}/lst/lstSetFreeFunc.c
 ${ODBC_SOURCE_DIR}/lst/_lstVisible.c
 )
 
-add_library(unixodbc ${SPLIT_SHARED} ${SRCS})
+add_library(unixodbc ${LINK_MODE} ${SRCS})
 
 target_link_libraries(unixodbc ltdl)
 

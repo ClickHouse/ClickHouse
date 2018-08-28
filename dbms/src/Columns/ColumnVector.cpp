@@ -121,7 +121,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
             memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -208,7 +208,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         ++data_pos;
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -229,7 +229,7 @@ ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t lim
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[perm[i]];
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -262,7 +262,7 @@ ColumnPtr ColumnVector<T>::replicate(const IColumn::Offsets & offsets) const
             res_data.push_back(data[i]);
     }
 
-    return std::move(res);
+    return res;
 }
 
 template <typename T>
@@ -330,8 +330,4 @@ template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
-
-template class ColumnVector<Decimal32>;
-template class ColumnVector<Decimal64>;
-template class ColumnVector<Decimal128>;
 }
