@@ -96,9 +96,10 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
     std::sort(entries.begin(), entries.end());
 
-    String min_saved_record_log_str = entries[entries.size() > storage.data.settings.max_replicated_logs_to_keep.value
-        ? entries.size() - storage.data.settings.max_replicated_logs_to_keep.value
-        : 0];
+    String min_saved_record_log_str = entries[
+        entries.size() > storage.data.settings.max_replicated_logs_to_keep.value
+            ? entries.size() - storage.data.settings.max_replicated_logs_to_keep.value
+            : 0];
 
     /// Replicas that were marked is_lost but are active.
     std::unordered_set<String> recovering_replicas;
@@ -106,7 +107,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     /// Lost replica -> a version of 'host' node.
     std::unordered_map<String, UInt32> host_versions_lost_replicas;
 
-
+    /// Replica -> log pointer.
     std::unordered_map<String, String> log_pointers_candidate_lost_replicas;
 
     size_t num_replicas_were_marked_is_lost = 0;
@@ -133,11 +134,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         {
             if (has_is_lost_node && is_lost_str == "1")
             {
+                /// Lost and active: recovering.
                 recovering_replicas.insert(replica);
                 ++num_replicas_were_marked_is_lost;
             }
             else
+            {
+                /// Not lost and active: usual case.
                 min_saved_log_pointer = std::min(min_saved_log_pointer, log_pointer);
+            }
         }
         else
         {
@@ -152,11 +157,16 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
             {
                 if (is_lost_str == "0")
                 {
+                    /// Not active and not lost: a candidate to be marked as lost.
                     String log_pointer_str = "log-" + padIndex(log_pointer);
                     if (log_pointer_str >= min_saved_record_log_str)
+                    {
+                        /// Its log pointer is fresh enough.
                         min_saved_log_pointer = std::min(min_saved_log_pointer, log_pointer);
+                    }
                     else
                     {
+                        /// Its log pointer is stale: will mark replica as lost.
                         host_versions_lost_replicas[replica] = host_stat.version;
                         log_pointers_candidate_lost_replicas[replica] = log_pointer_str;
                         min_log_pointer_lost_candidate = std::min(min_log_pointer_lost_candidate, log_pointer);
@@ -223,7 +233,6 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
 {
     Strings candidate_lost_replicas;
     std::vector<Coordination::Requests> requests;
-    std::vector<zkutil::ZooKeeper::FutureMulti> futures;
 
     for (const auto & pair : log_pointers_candidate_lost_replicas)
     {
@@ -239,6 +248,7 @@ void ReplicatedMergeTreeCleanupThread::markLostReplicas(const std::unordered_map
     if (candidate_lost_replicas.size() == replicas_count)
         throw Exception("All replicas wiil be lost", ErrorCodes::ALL_REPLICAS_LOST);
 
+    std::vector<zkutil::ZooKeeper::FutureMulti> futures;
     for (size_t i = 0; i < candidate_lost_replicas.size(); ++i)
         futures.emplace_back(zookeeper->tryAsyncMulti(requests[i]));
 
