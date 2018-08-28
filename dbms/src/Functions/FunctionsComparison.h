@@ -920,10 +920,15 @@ class FunctionComparison : public IFunction
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
-    FunctionComparison(const Context & context) : context(context) {}
+
+    FunctionComparison(const Context & context)
+    :   context(context),
+        check_decimal_overflow(decimalCheckComparisonOverflow(context))
+    {}
 
 private:
     const Context & context;
+    bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
     bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
@@ -1038,7 +1043,7 @@ private:
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if (decimalCheckComparisonOverflow(context))
+            if (check_decimal_overflow)
                 DecimalComparison<LeftDataType, RightDataType, Op, true>(block, result, col_left, col_right);
             else
                 DecimalComparison<LeftDataType, RightDataType, Op, false>(block, result, col_left, col_right);
