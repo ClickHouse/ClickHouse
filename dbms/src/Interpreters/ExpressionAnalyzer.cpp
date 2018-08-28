@@ -19,7 +19,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
-
+F
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnConst.h>
 
@@ -2493,7 +2493,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         else if (settings.join_default_strictness.toString() == "ALL")
             join_params.strictness = ASTTableJoin::Strictness::All;
         else
-            throw Exception("Expected ANY or ALL, because setting (join_default_strictness) is empty.", DB::ErrorCodes::EXPECT_ALL_OR_ANY);
+            throw Exception("Expected ANY or ALL, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECT_ALL_OR_ANY);
     }
 
     const auto & table_to_join = static_cast<const ASTTableExpression &>(*join_element.table_expression);
