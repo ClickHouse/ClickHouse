@@ -1958,12 +1958,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     String source_path = zookeeper_path + "/replicas/" + source_replica;
 
     /** TODO: it will be deleted! (It is only to support old version of CH server).
-    * If the reference/master replica is not yet fully created, let's wait.
-    * NOTE: If something went wrong while creating it, we can hang around forever.
-    *    You can create an ephemeral node at the time of creation to make sure that the replica is created, and not abandoned.
-    *    The same can be done for the table. You can automatically delete a replica/table node,
-    *     if you see that it was not created up to the end, and the one who created it died.
-    */
+      * In current code, the replica is created in single transaction.
+      * If the reference/master replica is not yet fully created, let's wait.
+      */
     while (!zookeeper->exists(source_path + "/columns"))
     {
         LOG_INFO(log, "Waiting for replica " << source_path << " to be fully created");
@@ -1988,10 +1985,12 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     /// For support old versions CH.
     if (source_is_lost_stat.version == -1)
     {
-        ops.push_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0", zkutil::CreateMode::PersistentSequential));
+        /// We check that it was not suddenly upgraded to new version.
+        /// Otherwise it can be upgraded and instantly become lost, but we cannot notice that.
+        ops.push_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent));
         ops.push_back(zkutil::makeRemoveRequest(replica_path + "/is_lost", -1));
     }
-    else
+    else    /// The replica we clone should not suddenly become lost.
         ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", source_is_lost_stat.version));
 
     Coordination::Responses resp;
@@ -2000,10 +1999,9 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     if (error == Coordination::Error::ZBADVERSION)
         throw Exception("Can not clone replica, because the " + source_replica + " became lost", ErrorCodes::REPLICA_STATUS_CHANGED);
     else if (error == Coordination::Error::ZNODEEXISTS)
-        throw Exception("Can not clone replica, because the " + source_replica + " updated to new version", ErrorCodes::REPLICA_STATUS_CHANGED);
+        throw Exception("Can not clone replica, because the " + source_replica + " updated to new ClickHouse version", ErrorCodes::REPLICA_STATUS_CHANGED);
     else
         zkutil::KeeperMultiException::check(error, ops, resp);
-
 
     /// Let's remember the queue of the reference/master replica.
     Strings source_queue_names = zookeeper->getChildren(source_path + "/queue");
@@ -2061,6 +2059,8 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
         return;
     }
 
+    /// is_lost is "1": it means that we are in repair mode.
+
     String source_replica;
     Coordination::Stat source_is_lost_stat;
     source_is_lost_stat.version = -1;
@@ -2086,8 +2086,11 @@ void StorageReplicatedMergeTree::cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zooke
     if (source_replica.empty())
         throw Exception("All replicas are lost", ErrorCodes::ALL_REPLICAS_LOST);
 
+    /// Will do repair from the selected replica.
     cloneReplica(source_replica, source_is_lost_stat, zookeeper);
+    /// If repair fails to whatever reason, the exception is thrown, is_lost will remain "1" and the replica will be repaired later.
 
+    /// If replica is repaired successfully, we remove is_lost flag.
     zookeeper->set(replica_path + "/is_lost", "0");
 }
 
