@@ -108,7 +108,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
 {
     auto column_vector = ColumnVector<AttributeType>::create(ids_to_fill.size());
     (dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
-    return std::move(column_vector);
+    return column_vector;
 }
 
 template <typename DictionaryType, typename Key>
@@ -118,7 +118,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAtt
 {
     auto column_string = ColumnString::create();
     dictionary.getString(attribute.name, ids_to_fill, dates, column_string.get());
-    return std::move(column_string);
+    return column_string;
 }
 
 template <typename DictionaryType, typename Key>
@@ -129,7 +129,7 @@ ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromPOD
     column_vector->getData().reserve(array.size());
     for (T value : array)
         column_vector->insert(value);
-    return std::move(column_vector);
+    return column_vector;
 }
 
 

@@ -44,6 +44,9 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F &&
         case Field::Types::String:  return visitor(field.template get<String>());
         case Field::Types::Array:   return visitor(field.template get<Array>());
         case Field::Types::Tuple:   return visitor(field.template get<Tuple>());
+        case Field::Types::Decimal32:  return visitor(field.template get<DecimalField<Decimal32>>());
+        case Field::Types::Decimal64:  return visitor(field.template get<DecimalField<Decimal64>>());
+        case Field::Types::Decimal128: return visitor(field.template get<DecimalField<Decimal128>>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -64,6 +67,9 @@ static typename std::decay_t<Visitor>::ResultType applyBinaryVisitorImpl(Visitor
         case Field::Types::String:  return visitor(field1, field2.template get<String>());
         case Field::Types::Array:   return visitor(field1, field2.template get<Array>());
         case Field::Types::Tuple:   return visitor(field1, field2.template get<Tuple>());
+        case Field::Types::Decimal32:  return visitor(field1, field2.template get<DecimalField<Decimal32>>());
+        case Field::Types::Decimal64:  return visitor(field1, field2.template get<DecimalField<Decimal64>>());
+        case Field::Types::Decimal128: return visitor(field1, field2.template get<DecimalField<Decimal128>>());
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -99,6 +105,15 @@ typename std::decay_t<Visitor>::ResultType applyVisitor(Visitor && visitor, F1 &
         case Field::Types::Tuple:
             return applyBinaryVisitorImpl(
                 std::forward<Visitor>(visitor), field1.template get<Tuple>(), std::forward<F2>(field2));
+        case Field::Types::Decimal32:
+            return applyBinaryVisitorImpl(
+                std::forward<Visitor>(visitor), field1.template get<DecimalField<Decimal32>>(), std::forward<F2>(field2));
+        case Field::Types::Decimal64:
+            return applyBinaryVisitorImpl(
+                std::forward<Visitor>(visitor), field1.template get<DecimalField<Decimal64>>(), std::forward<F2>(field2));
+        case Field::Types::Decimal128:
+            return applyBinaryVisitorImpl(
+                std::forward<Visitor>(visitor), field1.template get<DecimalField<Decimal128>>(), std::forward<F2>(field2));
 
         default:
             throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -118,6 +133,9 @@ public:
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
+    String operator() (const DecimalField<Decimal32> & x) const;
+    String operator() (const DecimalField<Decimal64> & x) const;
+    String operator() (const DecimalField<Decimal128> & x) const;
 };
 
 
@@ -133,6 +151,9 @@ public:
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
     String operator() (const Tuple & x) const;
+    String operator() (const DecimalField<Decimal32> & x) const;
+    String operator() (const DecimalField<Decimal64> & x) const;
+    String operator() (const DecimalField<Decimal128> & x) const;
 };
 
 
@@ -169,6 +190,15 @@ public:
     {
         throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
+
+    template <typename U>
+    T operator() (const DecimalField<U> & x) const
+    {
+        if constexpr (std::is_floating_point_v<T>)
+            return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
+        else
+            return x.getValue() / x.getScaleMultiplier();
+    }
 };
 
 
@@ -187,7 +217,16 @@ public:
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
+    void operator() (const DecimalField<Decimal32> & x) const;
+    void operator() (const DecimalField<Decimal64> & x) const;
+    void operator() (const DecimalField<Decimal128> & x) const;
 };
+
+
+template <typename T> constexpr bool isDecimalField() { return false; }
+template <> constexpr bool isDecimalField<DecimalField<Decimal32>>() { return true; }
+template <> constexpr bool isDecimalField<DecimalField<Decimal64>>() { return true; }
+template <> constexpr bool isDecimalField<DecimalField<Decimal128>>() { return true; }
 
 
 /** More precise comparison, used for index.
@@ -199,15 +238,6 @@ public:
 class FieldVisitorAccurateEquals : public StaticVisitor<bool>
 {
 public:
-    bool operator() (const Null &, const Null &)        const { return true; }
-    bool operator() (const Null &, const UInt64 &)      const { return false; }
-    bool operator() (const Null &, const UInt128 &)     const { return false; }
-    bool operator() (const Null &, const Int64 &)       const { return false; }
-    bool operator() (const Null &, const Float64 &)     const { return false; }
-    bool operator() (const Null &, const String &)      const { return false; }
-    bool operator() (const Null &, const Array &)       const { return false; }
-    bool operator() (const Null &, const Tuple &)       const { return false; }
-
     bool operator() (const UInt64 &, const Null &)          const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
     bool operator() (const UInt64 &, const UInt128)         const { return true; }
@@ -253,37 +283,49 @@ public:
     bool operator() (const String &, const Array &)     const { return false; }
     bool operator() (const String &, const Tuple &)     const { return false; }
 
-    bool operator() (const Array &, const Null &)       const { return false; }
-    bool operator() (const Array &, const UInt64 &)     const { return false; }
-    bool operator() (const Array &, const UInt128 &)    const { return false; }
-    bool operator() (const Array &, const Int64 &)      const { return false; }
-    bool operator() (const Array &, const Float64 &)    const { return false; }
-    bool operator() (const Array &, const String &)     const { return false; }
-    bool operator() (const Array & l, const Array & r)      const { return l == r; }
-    bool operator() (const Array &, const Tuple &)      const { return false; }
+    template <typename T>
+    bool operator() (const Null &, const T &) const
+    {
+        return std::is_same_v<T, Null>;
+    }
 
-    bool operator() (const Tuple &, const Null &)       const { return false; }
-    bool operator() (const Tuple &, const UInt64 &)     const { return false; }
-    bool operator() (const Tuple &, const UInt128 &)    const { return false; }
-    bool operator() (const Tuple &, const Int64 &)      const { return false; }
-    bool operator() (const Tuple &, const Float64 &)    const { return false; }
-    bool operator() (const Tuple &, const String &)     const { return false; }
-    bool operator() (const Tuple &, const Array &)      const { return false; }
-    bool operator() (const Tuple & l, const Tuple & r)      const { return l == r; }
+    template <typename T>
+    bool operator() (const Array & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, Array>)
+            return l == r;
+        return false;
+    }
+
+    template <typename T>
+    bool operator() (const Tuple & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, Tuple>)
+            return l == r;
+        return false;
+    }
+
+    template <typename T, typename U>
+    bool operator() (const DecimalField<T> & l, const U & r) const
+    {
+        if constexpr (isDecimalField<U>())
+            return l == r;
+        else if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
+            return l == DecimalField<Decimal128>(r, 0);
+        return false;
+    }
+
+    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
+    template <typename T> bool operator() (const UInt128 &, const DecimalField<T> &) const { return false; }
+    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
+    template <typename T> bool operator() (const Float64 &, const DecimalField<T> &) const { return false; }
+    template <typename T> bool operator() (const String &, const DecimalField<T> &) const { return false; }
 };
+
 
 class FieldVisitorAccurateLess : public StaticVisitor<bool>
 {
 public:
-    bool operator() (const Null &, const Null &)        const { return false; }
-    bool operator() (const Null &, const UInt64 &)      const { return true; }
-    bool operator() (const Null &, const Int64 &)       const { return true; }
-    bool operator() (const Null &, const UInt128 &)     const { return true; }
-    bool operator() (const Null &, const Float64 &)     const { return true; }
-    bool operator() (const Null &, const String &)      const { return true; }
-    bool operator() (const Null &, const Array &)       const { return true; }
-    bool operator() (const Null &, const Tuple &)       const { return true; }
-
     bool operator() (const UInt64 &, const Null &)        const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)  const { return l < r; }
     bool operator() (const UInt64 &, const UInt128 &)     const { return true; }
@@ -329,24 +371,45 @@ public:
     bool operator() (const String &, const Array &)      const { return true; }
     bool operator() (const String &, const Tuple &)      const { return true; }
 
-    bool operator() (const Array &, const Null &)       const { return false; }
-    bool operator() (const Array &, const UInt64 &)     const { return false; }
-    bool operator() (const Array &, const UInt128 &)    const { return false; }
-    bool operator() (const Array &, const Int64 &)      const { return false; }
-    bool operator() (const Array &, const Float64 &)    const { return false; }
-    bool operator() (const Array &, const String &)     const { return false; }
-    bool operator() (const Array & l, const Array & r)  const { return l < r; }
-    bool operator() (const Array &, const Tuple &)      const { return false; }
+    template <typename T>
+    bool operator() (const Null &, const T &) const
+    {
+        return !std::is_same_v<T, Null>;
+    }
 
-    bool operator() (const Tuple &, const Null &)       const { return false; }
-    bool operator() (const Tuple &, const UInt64 &)     const { return false; }
-    bool operator() (const Tuple &, const UInt128 &)    const { return false; }
-    bool operator() (const Tuple &, const Int64 &)      const { return false; }
-    bool operator() (const Tuple &, const Float64 &)    const { return false; }
-    bool operator() (const Tuple &, const String &)     const { return false; }
-    bool operator() (const Tuple &, const Array &)      const { return false; }
-    bool operator() (const Tuple & l, const Tuple & r)  const { return l < r; }
+    template <typename T>
+    bool operator() (const Array & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, Array>)
+            return l < r;
+        return false;
+    }
+
+    template <typename T>
+    bool operator() (const Tuple & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, Tuple>)
+            return l < r;
+        return false;
+    }
+
+    template <typename T, typename U>
+    bool operator() (const DecimalField<T> & l, const U & r) const
+    {
+        if constexpr (isDecimalField<U>())
+            return l < r;
+        else if constexpr (std::is_same_v<U, Int64> || std::is_same_v<U, UInt64>)
+            return l < DecimalField<Decimal128>(r, 0);
+        return false;
+    }
+
+    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
+    template <typename T> bool operator() (const UInt128 &, const DecimalField<T> &) const { return false; }
+    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
+    template <typename T> bool operator() (const Float64 &, const DecimalField<T> &) const { return false; }
+    template <typename T> bool operator() (const String &, const DecimalField<T> &) const { return false; }
 };
+
 
 /** Implements `+=` operation.
  *  Returns false if the result is zero.
@@ -366,6 +429,13 @@ public:
     bool operator() (String &) const { throw Exception("Cannot sum Strings", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (Array &) const { throw Exception("Cannot sum Arrays", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
+
+    template <typename T>
+    bool operator() (DecimalField<T> & x) const
+    {
+        x += get<DecimalField<T>>(rhs);
+        return x.getValue() != 0;
+    }
 };
 
 }

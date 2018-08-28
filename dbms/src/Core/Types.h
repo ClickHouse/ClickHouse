@@ -57,21 +57,44 @@ template <> struct TypeName<Float32> { static const char * get() { return "Float
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
 
-template <typename T> struct TypeId;
+enum class TypeIndex
+{
+    None = 0,
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+    UInt128,
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+    Int128,
+    Float32,
+    Float64,
+    Date,
+    DateTime,
+    String,
+    FixedString,
+    Enum8,
+    Enum16,
+    Decimal32,
+    Decimal64,
+    Decimal128,
+    UUID,
+};
 
-/// 0 reserved for types without number
-template <> struct TypeId<UInt8>    { static constexpr const size_t value = 1;  };
-template <> struct TypeId<UInt16>   { static constexpr const size_t value = 2;  };
-template <> struct TypeId<UInt32>   { static constexpr const size_t value = 3;  };
-template <> struct TypeId<UInt64>   { static constexpr const size_t value = 4;  };
-/// 5 reserved for TypeId<UInt128>
-template <> struct TypeId<Float32>  { static constexpr const size_t value = 7;  };
-template <> struct TypeId<Float64>  { static constexpr const size_t value = 8;  };
-template <> struct TypeId<Int8>     { static constexpr const size_t value = 9;  };
-template <> struct TypeId<Int16>    { static constexpr const size_t value = 10; };
-template <> struct TypeId<Int32>    { static constexpr const size_t value = 11; };
-template <> struct TypeId<Int64>    { static constexpr const size_t value = 12; };
-/// 13 reserved for TypeId<Int128>
+template <typename T> struct TypeId;
+template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = TypeIndex::UInt8;  };
+template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16;  };
+template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32;  };
+template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };
+template <> struct TypeId<Int8>     { static constexpr const TypeIndex value = TypeIndex::Int8;  };
+template <> struct TypeId<Int16>    { static constexpr const TypeIndex value = TypeIndex::Int16; };
+template <> struct TypeId<Int32>    { static constexpr const TypeIndex value = TypeIndex::Int32; };
+template <> struct TypeId<Int64>    { static constexpr const TypeIndex value = TypeIndex::Int64; };
+template <> struct TypeId<Float32>  { static constexpr const TypeIndex value = TypeIndex::Float32;  };
+template <> struct TypeId<Float64>  { static constexpr const TypeIndex value = TypeIndex::Float64;  };
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;
@@ -85,7 +108,7 @@ namespace DB
 using Int128 = __int128;
 template <> constexpr bool IsNumber<Int128> = true;
 template <> struct TypeName<Int128>  { static const char * get() { return "Int128";  } };
-template <> struct TypeId<Int128>   { static constexpr const size_t value = 13; };
+template <> struct TypeId<Int128>   { static constexpr const TypeIndex value = TypeIndex::Int128; };
 
 }
 
@@ -160,9 +183,9 @@ namespace DB
     template <> struct TypeName<Decimal64>   { static const char * get() { return "Decimal64";   } };
     template <> struct TypeName<Decimal128>  { static const char * get() { return "Decimal128";  } };
 
-    template <> struct TypeId<Decimal32>    { static constexpr const size_t value = 16; };
-    template <> struct TypeId<Decimal64>    { static constexpr const size_t value = 17; };
-    template <> struct TypeId<Decimal128>   { static constexpr const size_t value = 18; };
+    template <> struct TypeId<Decimal32>    { static constexpr const TypeIndex value = TypeIndex::Decimal32; };
+    template <> struct TypeId<Decimal64>    { static constexpr const TypeIndex value = TypeIndex::Decimal64; };
+    template <> struct TypeId<Decimal128>   { static constexpr const TypeIndex value = TypeIndex::Decimal128; };
 
     template <typename T>
     constexpr bool IsDecimalNumber = false;
