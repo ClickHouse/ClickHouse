@@ -420,9 +420,8 @@ private:
                 rl_completion_entry_function = Suggest::generator;
             }
             else
-#else
-            /// Turn tab completion off.
-            rl_bind_key('\t', rl_insert);
+                /// Turn tab completion off.
+                rl_bind_key('\t', rl_insert);
 #endif
             /// Load command history if present.
             if (config().has("history_file"))
