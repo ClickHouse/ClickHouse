@@ -6,7 +6,9 @@
 #include <common/logger_useful.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <thread>
+
 #include <map>
+#include <unordered_map>
 #include <pcg_random.hpp>
 
 
@@ -41,6 +43,13 @@ private:
 
     /// Remove old records from ZooKeeper.
     void clearOldLogs();
+
+    /// The replica is marked as "lost" if it is inactive and its log pointer
+    ///  is far behind and we are not going to keep logs for it.
+    /// Lost replicas will use different strategy for repair.
+    void markLostReplicas(const std::unordered_map<String, UInt32> & host_versions_lost_replicas,
+                          const std::unordered_map<String, String> & log_pointers_candidate_lost_replicas,
+                          size_t replicas_count, const zkutil::ZooKeeperPtr & zookeeper);
 
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
