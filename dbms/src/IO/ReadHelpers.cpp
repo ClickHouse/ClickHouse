@@ -847,7 +847,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
             {
                 NullSink sink;
                 readJSONStringInto(sink, buf);
-            } 
+            }
             else
                 throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
 
