@@ -8,6 +8,8 @@
 #include <unordered_set>
 #include <unordered_map>
 
+#include <boost/functional/hash/hash.hpp>
+
 
 namespace DB
 {
@@ -115,6 +117,13 @@ public:
 
     std::string toString() const;
 
+    bool operator==(const ExpressionAction & other) const;
+
+    struct ActionHash
+    {
+        size_t operator()(const ExpressionAction & action) const;
+    };
+
 private:
     friend class ExpressionActions;
 
@@ -131,6 +140,17 @@ class ExpressionActions
 {
 public:
     using Actions = std::vector<ExpressionAction>;
+
+    struct ActionsHash
+    {
+        size_t operator()(const Actions & actions) const
+        {
+            size_t seed = 0;
+            for (const ExpressionAction & act : actions)
+                boost::hash_combine(seed, ExpressionAction::ActionHash{}(act));
+            return seed;
+        }
+    };
 
     ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
         : input_columns(input_columns_), settings(settings_)
@@ -210,6 +230,8 @@ public:
 
     BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
 
+    const Settings & getSettings() const { return settings; }
+
 private:
     NamesAndTypesList input_columns;
     Actions actions;
@@ -225,6 +247,8 @@ private:
 };
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
+
+bool operator==(const ExpressionActions::Actions & f, const ExpressionActions::Actions & s);
 
 
 /** The sequence of transformations over the block.

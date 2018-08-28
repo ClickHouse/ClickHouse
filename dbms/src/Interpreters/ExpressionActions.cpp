@@ -762,7 +762,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
     if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block);
+        compileFunctions(actions, output_columns, sample_block, settings);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
@@ -1063,6 +1063,81 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
     return {};
 }
 
+bool operator==(const ExpressionActions::Actions & f, const ExpressionActions::Actions & s)
+{
+    if (f.size() != s.size()) return false;
+    for (size_t i = 0; i < f.size(); ++i)
+        {
+            if (!(f[i] == s[i])) return false;
+        }
+    return true;
+}
+
+size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
+{
+    size_t seed = 0;
+    boost::hash_combine(seed, std::hash<size_t>{}(action.type));
+    auto str_hash_fn = std::hash<std::string>{};
+    switch(action.type)
+    {
+        case ADD_COLUMN:
+            boost::hash_combine(seed, str_hash_fn(action.source_name));
+            boost::hash_combine(seed, str_hash_fn(action.result_name));
+            boost::hash_combine(seed, std::hash<DataTypePtr>{}(action.result_type));
+            break;
+        case REMOVE_COLUMN:
+            boost::hash_combine(seed, str_hash_fn(action.source_name));
+            break;
+        case COPY_COLUMN:
+            boost::hash_combine(seed, str_hash_fn(action.result_name));
+            boost::hash_combine(seed, str_hash_fn(action.source_name));
+            break;
+        case APPLY_FUNCTION:
+            boost::hash_combine(seed, str_hash_fn(action.result_name));
+            boost::hash_combine(seed, std::hash<DataTypePtr>{}(action.result_type));
+            boost::hash_combine(seed, std::hash<FunctionBasePtr>{}(action.function));
+            for (const auto & arg_name : action.argument_names)
+                boost::hash_combine(seed, str_hash_fn(arg_name));
+            break;
+        case ARRAY_JOIN:
+            boost::hash_combine(seed, std::hash<bool>{}(action.array_join_is_left));
+            for (const auto & col : action.array_joined_columns)
+                boost::hash_combine(seed, str_hash_fn(col));
+            break;
+        case JOIN:
+            for (const auto & col : action.columns_added_by_join)
+                boost::hash_combine(seed, str_hash_fn(col.name));
+            break;
+        case PROJECT:
+            for (const auto & pair_of_strs : action.projection)
+            {
+                boost::hash_combine(seed, str_hash_fn(pair_of_strs.first));
+                boost::hash_combine(seed, str_hash_fn(pair_of_strs.second));
+            }
+            break;
+    }
+    return seed;
+}
+
+bool ExpressionAction::operator==(const ExpressionAction & other) const
+{
+    return type == other.type
+        && source_name == other.source_name
+        && result_name == other.result_name
+        && result_type == other.result_type
+        && row_projection_column == other.row_projection_column
+        && is_row_projection_complementary == other.is_row_projection_complementary
+        && added_column == other.added_column
+        && function_builder == other.function_builder
+        && function == other.function
+        && argument_names == other.argument_names
+        && array_joined_columns == other.array_joined_columns
+        && array_join_is_left == other.array_join_is_left
+        && join == other.join
+        && join_key_names_left == other.join_key_names_left
+        && columns_added_by_join == other.columns_added_by_join
+        && projection == other.projection;
+}
 
 void ExpressionActionsChain::addStep()
 {
