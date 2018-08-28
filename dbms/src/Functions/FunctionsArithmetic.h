@@ -1024,6 +1024,7 @@ template <template <typename, typename> class Op, typename Name, bool CanBeExecu
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
+    bool check_decimal_overflow = true;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -1098,7 +1099,10 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
-    FunctionBinaryArithmetic(const Context & context_) : context(context_) {}
+    FunctionBinaryArithmetic(const Context & context_)
+    :   context(context_),
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context))
+    {}
 
     String getName() const override
     {
@@ -1223,7 +1227,7 @@ public:
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
-                            if (decimalCheckArithmeticOverflow(context))
+                            if (check_decimal_overflow)
                             {
                                 auto res = OpImpl::constant_constant(
                                     col_left->template getValue<T0>(), col_right->template getValue<T1>(), scale_a, scale_b);
@@ -1273,7 +1277,7 @@ public:
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
-                            if (decimalCheckArithmeticOverflow(context))
+                            if (check_decimal_overflow)
                                 OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
                             else
                                 OpImpl::XOverflow::constant_vector(
@@ -1297,14 +1301,14 @@ public:
                             scale_a = right.getScaleMultiplier();
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                         {
-                            if (decimalCheckArithmeticOverflow(context))
+                            if (check_decimal_overflow)
                                 OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
                             else
                                 OpImpl::XOverflow::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
                         }
                         else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
                         {
-                            if (decimalCheckArithmeticOverflow(context))
+                            if (check_decimal_overflow)
                                 OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res, scale_a, scale_b);
                             else
                                 OpImpl::XOverflow::vector_constant(
