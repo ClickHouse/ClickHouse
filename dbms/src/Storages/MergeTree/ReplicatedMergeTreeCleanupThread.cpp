@@ -126,6 +126,10 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         /// Check status of replica (active or not).
         /// If replica was not active, we could check when its log_pointer locates.
 
+        /// There can be three possibilities for "is_lost" node:
+        /// It doesn't exist: in old version of ClickHouse.
+        /// It exists and value is 0.
+        /// It exists and value is 1.
         String is_lost_str;
 
         bool has_is_lost_node = zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", is_lost_str);
