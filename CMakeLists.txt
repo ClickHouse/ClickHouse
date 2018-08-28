@@ -274,12 +274,6 @@ include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
 
-# Directory for Yandex specific files
-set (CLICKHOUSE_PRIVATE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/private/)
-if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-    add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
-endif ()
-
 add_subdirectory (contrib)
 add_subdirectory (libs)
 add_subdirectory (utils)
