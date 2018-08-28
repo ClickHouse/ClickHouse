@@ -10,6 +10,10 @@
 #include <common/find_first_symbols.h>
 #include <stdlib.h>
 
+#if __SSE2__
+    #include <emmintrin.h>
+#endif
+
 namespace DB
 {
 
@@ -552,9 +556,29 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         while (!buf.eof())
         {
             char * next_pos = buf.position();
-            while (next_pos < buf.buffer().end()
-                && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')    /// NOTE You can make a SIMD version.
-                ++next_pos;
+
+            [&]() {
+#if __SSE2__
+                auto rc = _mm_set1_epi8('\r');
+                auto nc = _mm_set1_epi8('\n');
+                auto dc = _mm_set1_epi8(delimiter);
+                for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
+                {
+                    __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
+                    auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
+                    uint16_t bit_mask = _mm_movemask_epi8(eq);
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctz(bit_mask);
+                        return;
+                    }
+                }
+#endif
+                while (next_pos < buf.buffer().end()
+                    && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
+                    ++next_pos;
+            }();
+
 
             appendToStringOrVector(s, buf.position(), next_pos);
             buf.position() = next_pos;
