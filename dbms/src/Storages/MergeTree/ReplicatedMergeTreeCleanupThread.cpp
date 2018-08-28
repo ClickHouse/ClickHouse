@@ -4,6 +4,7 @@
 #include <Poco/Timestamp.h>
 
 #include <random>
+#include <unordered_set>
 
 
 namespace DB
@@ -81,7 +82,11 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         return;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas", &stat);
+
+    /// We will keep logs after and including this threshold.
     UInt64 min_saved_log_pointer = std::numeric_limits<UInt64>::max();
+
+
     UInt64 min_log_pointer_lost_candidate = std::numeric_limits<UInt64>::max();
 
     Strings entries = zookeeper->getChildren(storage.zookeeper_path + "/log");
@@ -92,12 +97,16 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
     std::sort(entries.begin(), entries.end());
 
     String min_saved_record_log_str = entries[entries.size() > storage.data.settings.max_replicated_logs_to_keep.value
-                                              ? entries.size() - storage.data.settings.max_replicated_logs_to_keep.value
-                                              : 0];
+        ? entries.size() - storage.data.settings.max_replicated_logs_to_keep.value
+        : 0];
 
+    /// Replicas that were marked is_lost but are active.
     std::unordered_set<String> recovering_replicas;
 
+    /// Lost replica -> a version of 'host' node.
     std::unordered_map<String, UInt32> host_versions_lost_replicas;
+
+
     std::unordered_map<String, String> log_pointers_candidate_lost_replicas;
 
     size_t num_replicas_were_marked_is_lost = 0;
@@ -114,15 +123,15 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
             log_pointer = parse<UInt64>(pointer);
 
         /// Check status of replica (active or not).
-        /// If replica was not active, we could check when it's log_pointer locates.
+        /// If replica was not active, we could check when its log_pointer locates.
 
         String is_lost_str;
 
-        bool has_is_lost_flag = zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", is_lost_str);
+        bool has_is_lost_node = zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", is_lost_str);
 
         if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
         {
-            if (has_is_lost_flag && is_lost_str == "1")
+            if (has_is_lost_node && is_lost_str == "1")
             {
                 recovering_replicas.insert(replica);
                 ++num_replicas_were_marked_is_lost;
@@ -132,7 +141,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         }
         else
         {
-            if (!has_is_lost_flag)
+            if (!has_is_lost_node)
             {
                 /// Only to support old versions CH.
                 /// If replica did not have "/is_lost" we must save it's log_pointer.
