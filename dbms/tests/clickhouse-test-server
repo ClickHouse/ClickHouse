@@ -85,7 +85,7 @@ $GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG --log=$CLICKHO
     --interserver_http_port=$CLICKHOUSE_PORT_INTERSERVER \
     $INTERNAL_COMPILER_PARAMS \
     $TEST_SERVER_CONFIG_PARAMS \
-    > $LOG_DIR/stdout 2>&1 &
+    2>&1 > $LOG_DIR/server.stdout.log &
 CH_PID=$!
 sleep ${TEST_SERVER_STARTUP_WAIT:=5}
 
