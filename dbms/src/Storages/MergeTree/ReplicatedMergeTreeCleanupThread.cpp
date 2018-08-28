@@ -118,11 +118,11 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
 
         String is_lost_str;
 
-        bool support_is_lost = zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", is_lost_str);
+        bool has_is_lost_flag = zookeeper->tryGet(storage.zookeeper_path + "/replicas/" + replica + "/is_lost", is_lost_str);
 
         if (zookeeper->exists(storage.zookeeper_path + "/replicas/" + replica + "/is_active"))
         {
-            if (support_is_lost && is_lost_str == "1")
+            if (has_is_lost_flag && is_lost_str == "1")
             {
                 recovering_replicas.insert(replica);
                 ++num_replicas_were_marked_is_lost;
@@ -132,7 +132,7 @@ void ReplicatedMergeTreeCleanupThread::clearOldLogs()
         }
         else
         {
-            if (!support_is_lost)
+            if (!has_is_lost_flag)
             {
                 /// Only to support old versions CH.
                 /// If replica did not have "/is_lost" we must save it's log_pointer.
