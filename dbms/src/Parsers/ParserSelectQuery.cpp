@@ -129,11 +129,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    ASTPtr totals_and_rollup_list;
-    const String identifier_totals = "identifier_totals";
-    const String identifier_rollup = "identifier_rollup";
-
-     /// WITH ROLLUP
+    /// WITH ROLLUP
     if (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
