@@ -2054,7 +2054,7 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
             return;
 
-        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, context);
+        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, context.getQueryContext());
         auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), context);
 
         Names argument_names;
