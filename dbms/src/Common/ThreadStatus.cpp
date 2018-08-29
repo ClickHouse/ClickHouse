@@ -73,10 +73,19 @@ void ThreadStatus::initPerformanceCounters()
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
 
-    if (TaskStatsInfoGetter::checkPermissions())
+    try
     {
-        taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
-        *last_taskstats = TasksStatsCounters::current();
+        if (TaskStatsInfoGetter::checkPermissions())
+        {
+            if (!taskstats_getter)
+                taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
+            *last_taskstats = TasksStatsCounters::current();
+        }
+    }
+    catch (...)
+    {
+        taskstats_getter.reset();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
