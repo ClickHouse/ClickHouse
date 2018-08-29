@@ -96,7 +96,7 @@ namespace ErrorCodes
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
     extern const int TYPE_MISMATCH;
     extern const int INVALID_JOIN_ON_EXPRESSION;
-    extern const int EXPECT_ALL_OR_ANY;
+    extern const int EXPECTED_ALL_OR_ANY;
 }
 
 
@@ -2492,10 +2492,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
             join_params.strictness = ASTTableJoin::Strictness::Any;
         else if (settings.join_default_strictness.toString() == "ALL")
             join_params.strictness = ASTTableJoin::Strictness::All;
-        else if (settings.join_default_strictness.toString() != "")
-            throw Exception("Unexcepted join_default_strictness = " + settings.join_default_strictness.toString() + ". It can be an empty string, ANY or ALL");
         else
-            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECT_ALL_OR_ANY);
+            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
     }
 
     const auto & table_to_join = static_cast<const ASTTableExpression &>(*join_element.table_expression);
