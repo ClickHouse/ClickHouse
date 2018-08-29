@@ -2486,12 +2486,14 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     const auto & join_element = static_cast<const ASTTablesInSelectQueryElement &>(*select_query->join());
     auto & join_params = static_cast<ASTTableJoin &>(*join_element.table_join);
 
-    if (join_params.strictness == ASTTableJoin::Strictness::Unspecified)
+    if (join_params.strictness == ASTTableJoin::Strictness::Unspecified && join_params.kind != ASTTableJoin::Kind::Cross)
     {
         if (settings.join_default_strictness.toString() == "ANY")
             join_params.strictness = ASTTableJoin::Strictness::Any;
         else if (settings.join_default_strictness.toString() == "ALL")
             join_params.strictness = ASTTableJoin::Strictness::All;
+        else if (settings.join_default_strictness.toString() != "")
+            throw Exception("Unexcepted join_default_strictness value = " + settings.join_default_strictness.toString() + ". It can be an empty string, ANY or ALL");
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECT_ALL_OR_ANY);
     }
