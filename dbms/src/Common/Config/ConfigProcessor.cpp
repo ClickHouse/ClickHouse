@@ -552,10 +552,12 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
 
 void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir)
 {
-    if (preprocessed_path.empty()) {
+    if (preprocessed_path.empty())
+    {
         if (preprocessed_dir.empty())
         {
-            if (!loaded_config.configuration->has("path")) {
+            if (!loaded_config.configuration->has("path"))
+            {
                 LOG_WARNING(log, "no dir for preprocessed_dir ");
                 std::cerr << StackTrace().toString() <<"\n";
                 return;
@@ -564,13 +566,12 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         }
         preprocessed_dir += "/preprocessed_config/";
         auto new_path = loaded_config.config_path;
-        if (new_path.substr(0, main_config_path.size()) == main_config_path) {
+        if (new_path.substr(0, main_config_path.size()) == main_config_path)
             new_path.replace(0, main_config_path.size(), "");
-        }
         std::replace( new_path.begin(), new_path.end(), '/', '_');
         preprocessed_path = preprocessed_dir + new_path;
         auto path = Poco::Path(preprocessed_path).makeParent();
- 
+
         if (!path.toString().empty())
             Poco::File(path).createDirectories();
     }
