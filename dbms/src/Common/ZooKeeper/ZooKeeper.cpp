@@ -42,12 +42,13 @@ static void check(int32_t code, const std::string & path)
 
 
 void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
-                     int32_t session_timeout_ms_, const std::string & chroot_)
+                     int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
     log = &Logger::get("ZooKeeper");
     hosts = hosts_;
     identity = identity_;
     session_timeout_ms = session_timeout_ms_;
+    operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
 
     if (hosts.empty())
@@ -67,7 +68,7 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
         identity_,
         Poco::Timespan(0, session_timeout_ms_ * 1000),
         Poco::Timespan(0, ZOOKEEPER_CONNECTION_TIMEOUT_MS * 1000),
-        Poco::Timespan(0, ZOOKEEPER_OPERATION_TIMEOUT_MS * 1000));
+        Poco::Timespan(0, operation_timeout_ms_ * 1000));
 
     LOG_TRACE(log, "initialized, hosts: " << hosts << (chroot.empty() ? "" : ", chroot: " + chroot));
 
@@ -76,9 +77,9 @@ void ZooKeeper::init(const std::string & hosts_, const std::string & identity_,
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts, const std::string & identity,
-                     int32_t session_timeout_ms, const std::string & chroot)
+                     int32_t session_timeout_ms, int32_t operation_timeout_ms, const std::string & chroot)
 {
-    init(hosts, identity, session_timeout_ms, chroot);
+    init(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 struct ZooKeeperArgs
@@ -91,6 +92,7 @@ struct ZooKeeperArgs
         std::vector<std::string> hosts_strings;
 
         session_timeout_ms = DEFAULT_SESSION_TIMEOUT;
+        operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT;
         for (const auto & key : keys)
         {
             if (startsWith(key, "node"))
@@ -103,6 +105,10 @@ struct ZooKeeperArgs
             else if (key == "session_timeout_ms")
             {
                 session_timeout_ms = config.getInt(config_name + "." + key);
+            }
+            else if (key == "operation_timeout_ms")
+            {
+                operation_timeout_ms = config.getInt(config_name + "." + key);
             }
             else if (key == "identity")
             {
@@ -139,13 +145,14 @@ struct ZooKeeperArgs
     std::string hosts;
     std::string identity;
     int session_timeout_ms;
+    int operation_timeout_ms;
     std::string chroot;
 };
 
 ZooKeeper::ZooKeeper(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
 {
     ZooKeeperArgs args(config, config_name);
-    init(args.hosts, args.identity, args.session_timeout_ms, args.chroot);
+    init(args.hosts, args.identity, args.session_timeout_ms, args.operation_timeout_ms, args.chroot);
 }
 
 
@@ -613,7 +620,7 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, chroot);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
 }
 
 

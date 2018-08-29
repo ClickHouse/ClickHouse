@@ -29,8 +29,9 @@ SELECT e + e, e - e, e * e, e / e FROM test.decimal WHERE e > 0; -- { serverErro
 SELECT f + f, f - f, f * f, f / f FROM test.decimal WHERE f > 0; -- { serverError 69 }
 SELECT g + g, g - g, g * g, g / g FROM test.decimal WHERE g > 0;
 SELECT h + h, h - h, h * h, h / h FROM test.decimal WHERE h > 0; -- { serverError 407 }
-SELECT 1 LIMIT 0;
+SELECT h + h, h - h FROM test.decimal WHERE h > 0;
 --SELECT i + i, i - i, i * i, i / i FROM test.decimal WHERE i > 0; -- { serverError 407 }
+SELECT i + i, i - i FROM test.decimal WHERE i > 0;
 SELECT j + j, j - j, j * j, j / j FROM test.decimal WHERE j > 0;
 
 SELECT a + 21, a - 21, a - 84, a * 21, a * -21, a / 21, a / 84 FROM test.decimal WHERE a = 42;
@@ -51,11 +52,20 @@ SELECT 21 + e, 21 - e, 84 - e, 21 * e, -21 * e, 21 / e, 84 / e FROM test.decimal
 SELECT 1 LIMIT 0;
 --SELECT 21 + f, 21 - f, 84 - f, 21 * f, -21 * f, 21 / f, 84 / f FROM test.decimal WHERE f > 0; -- { serverError 407 }
 SELECT 21 + g, 21 - g, 84 - g, 21 * g, -21 * g, 21 / g, 84 / g FROM test.decimal WHERE g > 0;
-SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h FROM test.decimal WHERE h > 0; --overflow 21 / h, 84 / h
+SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h, 21 / h, 84 / h FROM test.decimal WHERE h > 0; -- { serverError 407 }
+SELECT 21 + h, 21 - h, 84 - h, 21 * h, -21 * h FROM test.decimal WHERE h > 0;
 SELECT 21 + i, 21 - i, 84 - i, 21 * i, -21 * i, 21 / i, 84 / i FROM test.decimal WHERE i > 0;
 SELECT 21 + j, 21 - j, 84 - j, 21 * j, -21 * j, 21 / j, 84 / j FROM test.decimal WHERE j > 0;
 
 SELECT a, -a, -b, -c, -d, -e, -f, -g, -h, -j from test.decimal ORDER BY a;
 SELECT abs(a), abs(b), abs(c), abs(d), abs(e), abs(f), abs(g), abs(h), abs(j) from test.decimal ORDER BY a;
+
+SET decimal_check_arithmetic_overflow = 0;
+
+SELECT (h * h) != 0, (h / h) != 1 FROM test.decimal WHERE h > 0;
+SELECT (i * i) != 0, (i / i) = 1 FROM test.decimal WHERE i > 0;
+
+SELECT e + 1 > e, e + 10 > e, 1 + e > e, 10 + e > e FROM test.decimal WHERE e > 0;
+SELECT f + 1 > f, f + 10 > f, 1 + f > f, 10 + f > f FROM test.decimal WHERE f > 0;
 
 DROP TABLE IF EXISTS test.decimal;

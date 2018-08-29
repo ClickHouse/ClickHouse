@@ -1,7 +1,7 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 3.3)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
@@ -18,7 +18,7 @@ else ()
 endif ()
 
 # Check that submodules are present only if source was downloaded with git
-if (EXISTS "${ClickHouse_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
@@ -71,7 +71,7 @@ if (NOT MAKE_STATIC_LIBRARIES)
 endif ()
 
 if (SPLIT_SHARED_LIBRARIES)
-    set (SPLIT_SHARED SHARED)
+    set (LINK_MODE SHARED)
 endif ()
 
 if (USE_STATIC_LIBRARIES)
@@ -273,12 +273,6 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
-
-# Directory for Yandex specific files
-set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
-if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-    add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
-endif ()
 
 add_subdirectory (contrib)
 add_subdirectory (libs)

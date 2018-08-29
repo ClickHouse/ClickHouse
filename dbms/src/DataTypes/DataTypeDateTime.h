@@ -35,6 +35,7 @@ public:
 
     const char * getFamilyName() const override { return "DateTime"; }
     std::string getName() const override;
+    TypeIndex getTypeId() const override { return TypeIndex::DateTime; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
