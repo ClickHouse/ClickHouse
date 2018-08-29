@@ -17,6 +17,7 @@
 namespace ProfileEvents
 {
     extern const Event FunctionExecute;
+    extern const Event CompiledFunctionExecute;
 }
 
 namespace DB
@@ -353,6 +354,8 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
             block.insert({ nullptr, result_type, result_name});
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
+            if (is_function_compiled)
+                ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
             function->execute(block, arguments, num_columns_without_result, input_rows_count);
 
             break;
@@ -499,7 +502,7 @@ std::string ExpressionAction::toString() const
             break;
 
         case APPLY_FUNCTION:
-            ss << "FUNCTION " << result_name << " "
+            ss << "FUNCTION " << result_name << " " << (is_function_compiled ? "[compiled] " : "")
                 << (result_type ? result_type->getName() : "(no type)") << " = "
                 << (function ? function->getName() : "(no function)") << "(";
             for (size_t i = 0; i < argument_names.size(); ++i)
@@ -1076,6 +1079,7 @@ size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action)
 {
     size_t seed = 0;
     boost::hash_combine(seed, std::hash<size_t>{}(action.type));
+    boost::hash_combine(seed, std::hash<bool>{}(action.is_function_compiled));
     auto str_hash_fn = std::hash<std::string>{};
     switch(action.type)
     {
@@ -1171,7 +1175,8 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && join == other.join
         && join_key_names_left == other.join_key_names_left
         && columns_added_by_join == other.columns_added_by_join
-        && projection == other.projection;
+        && projection == other.projection
+        && is_function_compiled == other.is_function_compiled;
 }
 
 void ExpressionActionsChain::addStep()

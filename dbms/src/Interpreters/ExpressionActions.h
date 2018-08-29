@@ -83,6 +83,7 @@ public:
     FunctionBuilderPtr function_builder;
     FunctionBasePtr function;
     Names argument_names;
+    bool is_function_compiled = false;
 
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
