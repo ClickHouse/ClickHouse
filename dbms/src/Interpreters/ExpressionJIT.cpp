@@ -50,7 +50,6 @@
 namespace ProfileEvents
 {
     extern const Event CompileFunction;
-    extern const Event CompiledFunctionExecute;
 }
 
 namespace DB
@@ -650,8 +649,8 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             }
             actions[i].function = fn;
             actions[i].argument_names = fn->getArgumentNames();
+            actions[i].is_function_compiled = true;
 
-            ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute); // because we always completely inline function
             continue;
         }
 
