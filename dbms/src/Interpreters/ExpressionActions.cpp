@@ -1067,9 +1067,8 @@ bool operator==(const ExpressionActions::Actions & f, const ExpressionActions::A
 {
     if (f.size() != s.size()) return false;
     for (size_t i = 0; i < f.size(); ++i)
-        {
-            if (!(f[i] == s[i])) return false;
-        }
+        if (!(f[i] == s[i]))
+            return false;
     return true;
 }
 
@@ -1081,9 +1080,11 @@ size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action)
     switch(action.type)
     {
         case ADD_COLUMN:
-            boost::hash_combine(seed, str_hash_fn(action.source_name));
             boost::hash_combine(seed, str_hash_fn(action.result_name));
-            boost::hash_combine(seed, std::hash<DataTypePtr>{}(action.result_type));
+            if (action.result_type)
+                boost::hash_combine(seed, str_hash_fn(action.result_type->getName()));
+            if (action.added_column)
+                boost::hash_combine(seed, str_hash_fn(action.added_column->getName()));
             break;
         case REMOVE_COLUMN:
             boost::hash_combine(seed, str_hash_fn(action.source_name));
@@ -1094,8 +1095,14 @@ size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action)
             break;
         case APPLY_FUNCTION:
             boost::hash_combine(seed, str_hash_fn(action.result_name));
-            boost::hash_combine(seed, std::hash<DataTypePtr>{}(action.result_type));
-            boost::hash_combine(seed, std::hash<FunctionBasePtr>{}(action.function));
+            if (action.result_type)
+                boost::hash_combine(seed, str_hash_fn(action.result_type->getName()));
+            if (action.function)
+            {
+                boost::hash_combine(seed, str_hash_fn(action.function->getName()));
+                for (const auto & arg_type : action.function->getArgumentTypes())
+                    boost::hash_combine(seed, arg_type->getName());
+            }
             for (const auto & arg_name : action.argument_names)
                 boost::hash_combine(seed, str_hash_fn(arg_name));
             break;
@@ -1121,15 +1128,43 @@ size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action)
 
 bool ExpressionAction::operator==(const ExpressionAction & other) const
 {
-    return type == other.type
-        && source_name == other.source_name
+    if (result_type != other.result_type)
+    {
+        if (result_type == nullptr || other.result_type == nullptr)
+            return false;
+        else if (!result_type->equals(*other.result_type))
+            return false;
+    }
+
+    if (function != other.function)
+    {
+        if (function == nullptr || other.function == nullptr)
+            return false;
+        else if (function->getName() != other.function->getName())
+            return false;
+
+        const auto & my_arg_types = function->getArgumentTypes();
+        const auto & other_arg_types = other.function->getArgumentTypes();
+        if (my_arg_types.size() != other_arg_types.size())
+            return false;
+
+        for (size_t i = 0; i < my_arg_types.size(); ++i)
+            if (!my_arg_types[i]->equals(*other_arg_types[i]))
+                return false;
+    }
+
+    if (added_column != other.added_column)
+    {
+        if (added_column == nullptr || other.added_column == nullptr)
+            return false;
+        else if (added_column->getName() != other.added_column->getName())
+            return false;
+    }
+
+    return source_name == other.source_name
         && result_name == other.result_name
-        && result_type == other.result_type
         && row_projection_column == other.row_projection_column
         && is_row_projection_complementary == other.is_row_projection_complementary
-        && added_column == other.added_column
-        && function_builder == other.function_builder
-        && function == other.function
         && argument_names == other.argument_names
         && array_joined_columns == other.array_joined_columns
         && array_join_is_left == other.array_join_is_left
