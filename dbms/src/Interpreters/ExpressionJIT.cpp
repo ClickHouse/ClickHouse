@@ -50,6 +50,7 @@
 namespace ProfileEvents
 {
     extern const Event CompileFunction;
+    extern const Event CompiledFunctionExecute;
 }
 
 namespace DB
@@ -636,9 +637,21 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
             if (fused[i].size() == 1)
                 continue;
-            auto fn = compilation_cache.getOrSet(fused[i], [&]() { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); });
-            actions[i].function = fn.first;
-            actions[i].argument_names = fn.first->getArgumentNames();
+
+            std::shared_ptr<LLVMFunction> fn;
+            if (settings.compiled_expressions_cache_size > 0)
+            {
+                auto set_func = [&, context] () { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); };
+                std::tie(fn, std::ignore) = compilation_cache.getOrSet(fused[i], set_func);
+            }
+            else
+            {
+                fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
+            }
+            actions[i].function = fn;
+            actions[i].argument_names = fn->getArgumentNames();
+
+            ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute); // because we always completely inline function
             continue;
         }
 
