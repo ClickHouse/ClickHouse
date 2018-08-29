@@ -21,3 +21,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (check-marks)
     add_subdirectory (test-data-generator)
 endif ()
+
+if (ENABLE_CODE_QUALITY)
+    add_subdirectory (check-style)
+endif ()
