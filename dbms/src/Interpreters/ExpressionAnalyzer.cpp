@@ -355,6 +355,16 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
     }
     else
     {
+        /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children, but also in where_expression and having_expression.
+        if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
+        {
+            if (select->prewhere_expression)
+                translateQualifiedNamesImpl(select->prewhere_expression, tables);
+            if (select->where_expression)
+                translateQualifiedNamesImpl(select->where_expression, tables);
+            if (select->having_expression)
+                translateQualifiedNamesImpl(select->having_expression, tables);
+        }        
         for (auto & child : ast->children)
         {
             /// Do not go to FROM, JOIN, subqueries.
