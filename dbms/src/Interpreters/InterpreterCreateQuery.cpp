@@ -365,15 +365,15 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
         {
             if (!allow_low_cardinality && column.type && column.type->withDictionary())
             {
-                String message = "Cannot create table with column " + column.name + " which type is "
-                                 + column.type->getName() + " because LowCardinality type is not allowed. "
+                String message = "Cannot create table with column '" + column.name + "' which type is '"
+                                 + column.type->getName() + "' because LowCardinality type is not allowed. "
                                  + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
             if (!allow_decimal && column.type && isDecimal(*column.type))
             {
-                String message = "Cannot create table with column " + column.name + " which type is " + column.type->getName()
-                                 + ". Set setting allow_experimental_decimal_type = 1 in order to allow it.";
+                String message = "Cannot create table with column '" + column.name + "' which type is '" + column.type->getName()
+                                 + "'. Set setting allow_experimental_decimal_type = 1 in order to allow it.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }

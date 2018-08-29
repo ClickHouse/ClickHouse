@@ -133,7 +133,7 @@ public:
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
     virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
 
-    /// Appends range of elements from other column.
+    /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
@@ -196,7 +196,7 @@ public:
     /// Indexes must be one of the ColumnUInt. For default implementation, see selectIndexImpl from ColumnsCommon.h
     virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
 
-    /** Compares (*this)[n] and rhs[m].
+    /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
       * Is used in sortings.
       *

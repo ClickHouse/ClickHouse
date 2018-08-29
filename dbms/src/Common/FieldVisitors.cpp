@@ -1,3 +1,4 @@
+#include <Core/UUID.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -11,7 +12,6 @@
 
 namespace DB
 {
-
 
 template <typename T>
 static inline String formatQuoted(T x)
@@ -46,14 +46,8 @@ String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuo
 String FieldVisitorDump::operator() (const DecimalField<Decimal32> & x) const { return formatQuotedWithPrefix(x, "Decimal32_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { return formatQuotedWithPrefix(x, "Decimal64_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
+String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
 
-String FieldVisitorDump::operator() (const UInt128 & x) const
-{
-    WriteBufferFromOwnString wb;
-    wb << "UInt128_" << x.low << "_" << x.high;
-    return wb.str();
-
-}
 
 String FieldVisitorDump::operator() (const String & x) const
 {
@@ -126,12 +120,7 @@ String FieldVisitorToString::operator() (const String & x) const { return format
 String FieldVisitorToString::operator() (const DecimalField<Decimal32> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
-
-String FieldVisitorToString::operator() (const UInt128 & x) const
-{
-    /// Dummy implementation. There is no UInt128 literals in SQL.
-    return FieldVisitorDump()(x);
-}
+String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
