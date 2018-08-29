@@ -12,6 +12,10 @@
 namespace DB
 {
 
+UInt128 stringToUUID(const String & str)
+{
+    return parseFromString<UUID>(str);
+}
 
 template <typename T>
 static inline String formatQuoted(T x)
