@@ -954,14 +954,14 @@ void BaseDaemon::initialize(Application & self)
       */
     if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
-        std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr");
+        std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
     }
 
     if ((!log_path.empty() && is_daemon) || config().has("logger.stdout"))
     {
-        std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout");
+        std::string stdout_path = config().getString("logger.stdout", log_path + "/stdout.log");
         if (!freopen(stdout_path.c_str(), "a+", stdout))
             throw Poco::OpenFileException("Cannot attach stdout to " + stdout_path);
     }
