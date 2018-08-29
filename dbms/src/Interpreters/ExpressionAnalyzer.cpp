@@ -2054,8 +2054,13 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
             return;
 
-        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, context.getQueryContext());
-        auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), context);
+        /// Context object that we pass to function should live during query.
+        const Context & function_context = context.hasQueryContext()
+            ? context.getQueryContext()
+            : context;
+
+        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, function_context);
+        auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), function_context);
 
         Names argument_names;
         DataTypes argument_types;
