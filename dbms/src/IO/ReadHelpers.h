@@ -561,10 +561,7 @@ inline T parseFromString(const String & str)
     return parse<T>(str.data(), str.size());
 }
 
-inline UInt128 stringToUUID(const String & str)
-{
-    return parseFromString<UUID>(str);
-}
+UInt128 stringToUUID(const String & str);
 
 
 template <typename ReturnType = void>
