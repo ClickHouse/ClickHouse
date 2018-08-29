@@ -36,7 +36,7 @@ public:
     {
         auto clone = std::make_shared<ASTOrderByElement>(*this);
         clone->cloneChildren();
-        return std::move(clone);
+        return clone;
     }
 
 protected:

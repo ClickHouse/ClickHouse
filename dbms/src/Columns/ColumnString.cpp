@@ -21,7 +21,7 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     auto res = ColumnString::create();
 
     if (to_size == 0)
-        return std::move(res);
+        return res;
 
     size_t from_size = size();
 
@@ -56,7 +56,7 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
         }
     }
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -105,7 +105,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
-    return std::move(res);
+    return res;
 }
 
 
@@ -155,7 +155,7 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
         res_offsets[i] = current_new_offset;
     }
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -196,7 +196,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         res_offsets[i] = current_new_offset;
     }
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -255,7 +255,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     auto res = ColumnString::create();
 
     if (0 == col_size)
-        return std::move(res);
+        return res;
 
     Chars_t & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
@@ -285,7 +285,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
         prev_string_offset = offsets[i];
     }
 
-    return std::move(res);
+    return res;
 }
 
 

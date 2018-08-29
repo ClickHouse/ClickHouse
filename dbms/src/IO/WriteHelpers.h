@@ -10,6 +10,7 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/find_first_symbols.h>
+#include <common/intExp.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -709,6 +710,36 @@ inline void writeText(const UInt128 &, WriteBuffer &)
      *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
      */
     throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+}
+
+template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
+template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
+template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
+template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+
+
+template <typename T>
+void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
+{
+    if (value < Decimal<T>(0))
+    {
+        value *= Decimal<T>(-1);
+        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
+    }
+
+    T whole_part = value;
+    if (scale)
+        whole_part = value / decimalScaleMultiplier<T>(scale);
+
+    writeIntText(whole_part, ostr);
+    if (scale)
+    {
+        writeChar('.', ostr);
+        String str_fractional(scale, '0');
+        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
+            str_fractional[pos] += value % Decimal<T>(10);
+        ostr.write(str_fractional.data(), scale);
+    }
 }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.

@@ -34,6 +34,7 @@ inc="-I. \
 -I${BUILD_DIR}/contrib/llvm/llvm/include \
 -I./contrib/libbtrie/include \
 -I./contrib/libpcg-random/include \
+-I./contrib/capnproto/c++/src \
 -I./libs/libmysqlxx/include \
 -I./libs/libcommon/include \
 -I${BUILD_DIR}/libs/libcommon/include \

@@ -111,7 +111,7 @@ public:
 #pragma GCC diagnostic pop
 #endif
 
-        void insertFrom(const IColumn & src_, size_t n) override
+    void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = static_cast<const ColumnString &>(src_);
 

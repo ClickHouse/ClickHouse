@@ -20,10 +20,10 @@
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
-            <certificateFile>/tmp/clickhouse/server.crt</certificateFile>
-            <privateKeyFile>/tmp/clickhouse/server.key</privateKeyFile>
+            <certificateFile>/tmp/clickhouse/etc/server.crt</certificateFile>
+            <privateKeyFile>/tmp/clickhouse/etc/server.key</privateKeyFile>
             <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
-            <dhParamsFile>/tmp/clickhouse/dhparam.pem</dhParamsFile>
+            <dhParamsFile>/tmp/clickhouse/etc/dhparam.pem</dhParamsFile>
             <verificationMode>none</verificationMode>
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>

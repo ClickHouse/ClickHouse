@@ -139,7 +139,10 @@ TEST(zkutil, watch_get_children_with_chroot)
         /// Create chroot node firstly
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server);
         zookeeper->createAncestors(prefix + "/");
-        zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server, "", zkutil::DEFAULT_SESSION_TIMEOUT, prefix);
+        zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server, "",
+                                                        zkutil::DEFAULT_SESSION_TIMEOUT,
+                                                        zkutil::DEFAULT_OPERATION_TIMEOUT,
+                                                        prefix);
 
         String queue_path = "/queue";
         zookeeper->tryRemoveRecursive(queue_path);
@@ -148,7 +151,10 @@ TEST(zkutil, watch_get_children_with_chroot)
         zkutil::EventPtr event = std::make_shared<Poco::Event>();
         zookeeper->getChildren(queue_path, nullptr, event);
         {
-            auto zookeeper2 = std::make_unique<zkutil::ZooKeeper>(zk_server, "", zkutil::DEFAULT_SESSION_TIMEOUT, prefix);
+            auto zookeeper2 = std::make_unique<zkutil::ZooKeeper>(zk_server, "",
+                                                                  zkutil::DEFAULT_SESSION_TIMEOUT,
+                                                                  zkutil::DEFAULT_OPERATION_TIMEOUT,
+                                                                  prefix);
             zookeeper2->create(queue_path + "/children-", "", zkutil::CreateMode::PersistentSequential);
         }
         event->wait();
@@ -170,7 +176,10 @@ TEST(zkutil, multi_create_sequential)
         /// Create chroot node firstly
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server);
         zookeeper->createAncestors(prefix + "/");
-        zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server, "", zkutil::DEFAULT_SESSION_TIMEOUT, "/clickhouse_test");
+        zookeeper = std::make_unique<zkutil::ZooKeeper>(zk_server, "",
+                                                        zkutil::DEFAULT_SESSION_TIMEOUT,
+                                                        zkutil::DEFAULT_OPERATION_TIMEOUT,
+                                                        "/clickhouse_test");
 
         String base_path = "/multi_create_sequential";
         zookeeper->tryRemoveRecursive(base_path);
