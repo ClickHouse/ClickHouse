@@ -199,14 +199,9 @@ static void faultSignalHandler(int sig, siginfo_t * info, void * context)
 }
 
 
-static bool already_printed_stack_trace = false;
-
 #if USE_UNWIND
 size_t backtraceLibUnwind(void ** out_frames, size_t max_frames, ucontext_t & context)
 {
-    if (already_printed_stack_trace)
-        return 0;
-
     unw_cursor_t cursor;
 
     if (unw_init_local2(&cursor, &context, UNW_INIT_SIGNAL_FRAME) < 0)
@@ -470,9 +465,6 @@ private:
             }
         }
 
-        if (already_printed_stack_trace)
-            return;
-
         static const int max_frames = 50;
         void * frames[max_frames];
 
@@ -553,58 +545,15 @@ static void terminate_handler()
 
     terminating = true;
 
-    std::stringstream log;
+    std::string log_message;
 
-    std::type_info * t = abi::__cxa_current_exception_type();
-    if (t)
-    {
-        /// Note that "name" is the mangled name.
-        char const * name = t->name();
-        {
-            int status = -1;
-            char * dem = 0;
-
-            dem = abi::__cxa_demangle(name, 0, 0, &status);
-
-            log << "Terminate called after throwing an instance of " << (status == 0 ? dem : name) << std::endl;
-
-            if (status == 0)
-                free(dem);
-        }
-
-        already_printed_stack_trace = true;
-
-        /// If the exception is derived from std::exception, we can give more information.
-        try
-        {
-            throw;
-        }
-        catch (DB::Exception & e)
-        {
-            log << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what() << std::endl;
-        }
-        catch (Poco::Exception & e)
-        {
-            log << "Code: " << e.code() << ", e.displayText() = " << e.displayText() << ", e.what() = " << e.what() << std::endl;
-        }
-        catch (const std::exception & e)
-        {
-            log << "what(): " << e.what() << std::endl;
-        }
-        catch (...)
-        {
-        }
-
-        log << "Stack trace:\n\n" << StackTrace().toString() << std::endl;
-    }
+    if (std::current_exception())
+        log_message = "Terminate called for uncaught exception:\n" + DB::getCurrentExceptionMessage(true);
     else
-    {
-        log << "Terminate called without an active exception" << std::endl;
-    }
+        log_message = "Terminate called without an active exception";
 
     static const size_t buf_size = 1024;
 
-    std::string log_message = log.str();
     if (log_message.size() > buf_size - 16)
         log_message.resize(buf_size - 16);
 
