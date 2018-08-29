@@ -2493,7 +2493,7 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
         else if (settings.join_default_strictness.toString() == "ALL")
             join_params.strictness = ASTTableJoin::Strictness::All;
         else if (settings.join_default_strictness.toString() != "")
-            throw Exception("Unexcepted join_default_strictness value = " + settings.join_default_strictness.toString() + ". It can be an empty string, ANY or ALL");
+            throw Exception("Unexcepted join_default_strictness = " + settings.join_default_strictness.toString() + ". It can be an empty string, ANY or ALL");
         else
             throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECT_ALL_OR_ANY);
     }
