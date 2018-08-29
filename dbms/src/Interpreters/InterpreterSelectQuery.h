@@ -47,7 +47,7 @@ public:
 
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        Context & context_,
         const Names & required_result_column_names = Names{},
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
@@ -56,7 +56,7 @@ public:
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        Context & context_,
         const BlockInputStreamPtr & input_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         bool only_analyze_ = false);
@@ -64,7 +64,7 @@ public:
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        Context & context_,
         const StoragePtr & storage_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         bool only_analyze_ = false);
@@ -84,7 +84,7 @@ public:
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
-        const Context & context_,
+        Context & context_,
         const BlockInputStreamPtr & input_,
         const StoragePtr & storage_,
         const Names & required_result_column_names,
@@ -201,7 +201,7 @@ private:
 
     ASTPtr query_ptr;
     ASTSelectQuery & query;
-    Context context;
+    Context & context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth = 0;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;

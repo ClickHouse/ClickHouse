@@ -103,7 +103,7 @@ private:
     std::unique_ptr<MultiplexedConnections> multiplexed_connections;
 
     const String query;
-    Context context;
+    const Context & context;
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;

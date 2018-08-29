@@ -65,7 +65,7 @@ namespace ErrorCodes
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    const Context & context_,
+    Context & context_,
     const Names & required_result_column_names,
     QueryProcessingStage::Enum to_stage_,
     size_t subquery_depth_,
@@ -76,7 +76,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    const Context & context_,
+    Context & context_,
     const BlockInputStreamPtr & input_,
     QueryProcessingStage::Enum to_stage_,
     bool only_analyze_)
@@ -86,7 +86,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    const Context & context_,
+    Context & context_,
     const StoragePtr & storage_,
     QueryProcessingStage::Enum to_stage_,
     bool only_analyze_)
@@ -114,7 +114,7 @@ static Context getSubqueryContext(const Context & context)
 
 InterpreterSelectQuery::InterpreterSelectQuery(
     const ASTPtr & query_ptr_,
-    const Context & context_,
+    Context & context_,
     const BlockInputStreamPtr & input_,
     const StoragePtr & storage_,
     const Names & required_result_column_names,
