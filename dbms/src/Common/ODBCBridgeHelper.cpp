@@ -42,6 +42,7 @@ void ODBCBridgeHelper::startODBCBridge() const
         throw Exception("clickhouse binary is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
 
     std::stringstream command;
+    command << path.toString() << " ";
     command << "--http-port " << config.getUInt("odbc_bridge.port", DEFAULT_PORT) << ' ';
     command << "--listen-host " << config.getString("odbc_bridge.listen_host", DEFAULT_HOST) << ' ';
     command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
