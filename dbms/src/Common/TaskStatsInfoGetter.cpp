@@ -124,8 +124,11 @@ struct NetlinkMessage
     {
         ssize_t bytes_received = ::recv(fd, this, sizeof(*this), 0);
 
-        if (header.nlmsg_type == NLMSG_ERROR || !NLMSG_OK((&header), bytes_received))
-            throw Exception("Can't receive Netlink response, error: " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
+        if (header.nlmsg_type == NLMSG_ERROR)
+            throw Exception("Can't receive Netlink response: error " + std::to_string(error.error), ErrorCodes::NETLINK_ERROR);
+
+        if (!NLMSG_OK((&header), bytes_received))
+            throw Exception("Can't receive Netlink response: wrong number of bytes received", ErrorCodes::NETLINK_ERROR);
     }
 };
 
@@ -193,7 +196,24 @@ bool checkPermissionsImpl()
     if (0 != syscall(SYS_capget, &request, &response))
         throwFromErrno("Cannot do 'capget' syscall", ErrorCodes::NETLINK_ERROR);
 
-    return (1 << CAP_NET_ADMIN) & response.effective;
+    if (!((1 << CAP_NET_ADMIN) & response.effective))
+        return false;
+
+    /// Check that we can successfully initialize TaskStatsInfoGetter.
+    /// It will ask about family id through Netlink.
+    /// On some LXC containers we have capability but we still cannot use Netlink.
+
+    try
+    {
+        TaskStatsInfoGetter();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+        return false;
+    }
+
+    return true;
 }
 
 
@@ -216,10 +236,6 @@ bool TaskStatsInfoGetter::checkPermissions()
 
 TaskStatsInfoGetter::TaskStatsInfoGetter()
 {
-    if (!checkPermissions())
-        throw Exception("Logical error: TaskStatsInfoGetter is not usable without CAP_NET_ADMIN. Check permissions before creating the object.",
-            ErrorCodes::LOGICAL_ERROR);
-
     netlink_socket_fd = ::socket(PF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
     if (netlink_socket_fd < 0)
         throwFromErrno("Can't create PF_NETLINK socket", ErrorCodes::NETLINK_ERROR);
