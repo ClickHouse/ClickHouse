@@ -90,6 +90,7 @@
     M(CompileSuccess) \
     \
     M(CompileFunction) \
+    M(CompiledFunctionExecute) \
     \
     M(ExternalSortWritePart) \
     M(ExternalSortMerge) \
