@@ -2,6 +2,8 @@ CREATE DATABASE IF NOT EXISTS test;
 DROP TABLE IF EXISTS test.a1;
 DROP TABLE IF EXISTS test.a2;
 
+SET send_logs_level = 'none';
+
 CREATE TABLE test.a1(a UInt8, b UInt8) ENGINE=Memory;
 CREATE TABLE test.a2(a UInt8, b UInt8) ENGINE=Memory;
 
