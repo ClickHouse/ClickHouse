@@ -561,6 +561,8 @@ inline T parseFromString(const String & str)
     return parse<T>(str.data(), str.size());
 }
 
+UInt128 stringToUUID(const String & str);
+
 
 template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);

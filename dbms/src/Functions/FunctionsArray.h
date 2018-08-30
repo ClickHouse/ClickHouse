@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 

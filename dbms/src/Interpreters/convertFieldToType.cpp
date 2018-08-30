@@ -138,19 +138,6 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
-UInt128 stringToUUID(const String & s)
-{
-    ReadBufferFromString in(s);
-    UUID uuid;
-
-    readText(uuid, in);
-    if (!in.eof())
-        throw Exception("String is too long for UUID: " + s);
-
-    return UInt128(uuid);
-}
-
-
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
 {
     if (type.isValueRepresentedByNumber())
