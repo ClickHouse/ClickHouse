@@ -564,7 +564,7 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
             }
             preprocessed_dir = loaded_config.configuration->getString("path");
         }
-        preprocessed_dir += "/preprocessed_config/";
+        preprocessed_dir += "/preprocessed_configs/";
         auto new_path = loaded_config.config_path;
         if (new_path.substr(0, main_config_path.size()) == main_config_path)
             new_path.replace(0, main_config_path.size(), "");

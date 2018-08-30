@@ -143,7 +143,7 @@ initdb()
         chown ${CLICKHOUSE_LOGDIR_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_LOGDIR}
     fi
 
-    [ -e $SYSCONFDIR/preprocessed ] || ln -s ${CLICKHOUSE_DATADIR_FROM_CONFIG}/preprocessed_config $SYSCONFDIR/preprocessed || true
+    [ -e $SYSCONFDIR/preprocessed ] || ln -s ${CLICKHOUSE_DATADIR_FROM_CONFIG}/preprocessed_configs $SYSCONFDIR/preprocessed || true
 }
 
 

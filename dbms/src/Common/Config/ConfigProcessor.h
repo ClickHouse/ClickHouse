@@ -86,7 +86,7 @@ public:
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         bool fallback_to_preprocessed = false);
 
-    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir = "");
+    void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
 public:
     using Files = std::vector<std::string>;

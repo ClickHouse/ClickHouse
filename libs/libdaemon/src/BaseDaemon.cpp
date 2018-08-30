@@ -914,7 +914,7 @@ void BaseDaemon::initialize(Application & self)
         umask(umask_num);
     }
 
-    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config);
+    ConfigProcessor(config_path).savePreprocessedConfig(loaded_config, "");
 
     /// Write core dump on crash.
     {
