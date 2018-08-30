@@ -172,15 +172,9 @@ public:
         CurrentThreadScope() = default;
         ~CurrentThreadScope()
         {
-            try
-            {
-                if (deleter)
-                    deleter();
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
+            if (deleter)
+                deleter();
+            /// std::terminate on exception: this is Ok.
         }
     };
 
