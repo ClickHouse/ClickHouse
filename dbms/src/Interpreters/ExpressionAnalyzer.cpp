@@ -3156,8 +3156,6 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns)
             join_keys.push_back(name);
             join_asts.push_back(ast);
         }
-        else
-            throw Exception("Duplicate column " + name + " in USING list", ErrorCodes::DUPLICATE_COLUMN);
     };
 
     if (table_join.using_expression_list)
