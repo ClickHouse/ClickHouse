@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
-#include <Functions/IFunction.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -425,126 +424,104 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
     };
 }
 
-class LLVMFunction : public IFunctionBase
-{
-    std::string name;
-    Names arg_names;
-    DataTypes arg_types;
-    std::shared_ptr<LLVMContext> context;
-    std::vector<FunctionBasePtr> originals;
-    std::unordered_map<StringRef, CompilableExpression> subexpressions;
-
-public:
-    LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block)
+LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block)
         : name(actions.back().result_name), context(context)
+{
+    for (const auto & c : sample_block)
+        /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
+        if (c.column && getNativeValue(toNativeType(context->builder, c.type), *c.column, 0))
+            subexpressions[c.name] = subexpression(c.column, c.type);
+    for (const auto & action : actions)
     {
-        for (const auto & c : sample_block)
-            /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
-            if (c.column && getNativeValue(toNativeType(context->builder, c.type), *c.column, 0))
-                subexpressions[c.name] = subexpression(c.column, c.type);
-        for (const auto & action : actions)
+        const auto & names = action.argument_names;
+        const auto & types = action.function->getArgumentTypes();
+        std::vector<CompilableExpression> args;
+        for (size_t i = 0; i < names.size(); ++i)
         {
-            const auto & names = action.argument_names;
-            const auto & types = action.function->getArgumentTypes();
-            std::vector<CompilableExpression> args;
-            for (size_t i = 0; i < names.size(); ++i)
+            auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
+            if (inserted.second)
             {
-                auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
-                if (inserted.second)
-                {
-                    arg_names.push_back(names[i]);
-                    arg_types.push_back(types[i]);
-                }
-                args.push_back(inserted.first->second);
+                arg_names.push_back(names[i]);
+                arg_types.push_back(types[i]);
             }
-            subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
-            originals.push_back(action.function);
+            args.push_back(inserted.first->second);
         }
-        compileFunction(context, *this);
+        subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
+        originals.push_back(action.function);
     }
+    compileFunction(context, *this);
+}
 
-    bool isCompilable() const override { return true; }
+PreparedFunctionPtr LLVMFunction::prepare(const Block &) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
 
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return subexpressions.at(name)(builder, values); }
+bool LLVMFunction::isDeterministic() const
+{
+    for (const auto & f : originals)
+        if (!f->isDeterministic())
+            return false;
+    return true;
+}
 
-    String getName() const override { return name; }
+bool LLVMFunction::isDeterministicInScopeOfQuery() const
+{
+    for (const auto & f : originals)
+        if (!f->isDeterministicInScopeOfQuery())
+            return false;
+    return true;
+}
 
-    const Names & getArgumentNames() const { return arg_names; }
+bool LLVMFunction::isSuitableForConstantFolding() const
+{
+    for (const auto & f : originals)
+        if (!f->isSuitableForConstantFolding())
+            return false;
+    return true;
+}
 
-    const DataTypes & getArgumentTypes() const override { return arg_types; }
+bool LLVMFunction::isInjective(const Block & sample_block)
+{
+    for (const auto & f : originals)
+        if (!f->isInjective(sample_block))
+            return false;
+    return true;
+}
 
-    const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
+bool LLVMFunction::hasInformationAboutMonotonicity() const
+{
+    for (const auto & f : originals)
+        if (!f->hasInformationAboutMonotonicity())
+            return false;
+    return true;
+}
 
-    PreparedFunctionPtr prepare(const Block &) const override { return std::make_shared<LLVMPreparedFunction>(name, context); }
-
-    bool isDeterministic() const override
+LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
+{
+    const IDataType * type_ = &type;
+    Field left_ = left;
+    Field right_ = right;
+    Monotonicity result(true, true, true);
+    /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
+    for (size_t i = 0; i < originals.size(); ++i)
     {
-        for (const auto & f : originals)
-            if (!f->isDeterministic())
-                return false;
-        return true;
-    }
-
-    bool isDeterministicInScopeOfQuery() const override
-    {
-        for (const auto & f : originals)
-            if (!f->isDeterministicInScopeOfQuery())
-                return false;
-        return true;
-    }
-
-    bool isSuitableForConstantFolding() const override
-    {
-        for (const auto & f : originals)
-            if (!f->isSuitableForConstantFolding())
-                return false;
-        return true;
-    }
-
-    bool isInjective(const Block & sample_block) override
-    {
-        for (const auto & f : originals)
-            if (!f->isInjective(sample_block))
-                return false;
-        return true;
-    }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        for (const auto & f : originals)
-            if (!f->hasInformationAboutMonotonicity())
-                return false;
-        return true;
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        const IDataType * type_ = &type;
-        Field left_ = left;
-        Field right_ = right;
-        Monotonicity result(true, true, true);
-        /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
-        for (size_t i = 0; i < originals.size(); ++i)
+        Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
+        if (!m.is_monotonic)
+            return m;
+        result.is_positive ^= !m.is_positive;
+        result.is_always_monotonic &= m.is_always_monotonic;
+        if (i + 1 < originals.size())
         {
-            Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
-            if (!m.is_monotonic)
-                return m;
-            result.is_positive ^= !m.is_positive;
-            result.is_always_monotonic &= m.is_always_monotonic;
-            if (i + 1 < originals.size())
-            {
-                if (left_ != Field())
-                    applyFunction(*originals[i], left_);
-                if (right_ != Field())
-                    applyFunction(*originals[i], right_);
-                if (!m.is_positive)
-                    std::swap(left_, right_);
-                type_ = originals[i]->getReturnType().get();
-            }
+            if (left_ != Field())
+                applyFunction(*originals[i], left_);
+            if (right_ != Field())
+                applyFunction(*originals[i], right_);
+            if (!m.is_positive)
+                std::swap(left_, right_);
+            type_ = originals[i]->getReturnType().get();
         }
-        return result;
     }
-};
+    return result;
+}
+
 
 static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & function)
 {
@@ -556,7 +533,7 @@ static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & fu
     return function.isCompilable();
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, const Settings & settings)
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, const Context & global_context)
 {
     struct LLVMTargetInitializer
     {
@@ -622,8 +599,6 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
         }
     }
 
-    static LRUCache<ExpressionActions::Actions, LLVMFunction, ExpressionActions::ActionsHash> compilation_cache(settings.compiled_expressions_cache_size);
-
     std::vector<ExpressionActions::Actions> fused(actions.size());
     for (size_t i = 0; i < actions.size(); ++i)
     {
@@ -638,10 +613,11 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                 continue;
 
             std::shared_ptr<LLVMFunction> fn;
-            if (settings.compiled_expressions_cache_size > 0)
+            if (global_context.getSettingsRef().compiled_expressions_cache_size > 0)
             {
-                auto set_func = [&, context] () { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); };
-                std::tie(fn, std::ignore) = compilation_cache.getOrSet(fused[i], set_func);
+                auto compilation_cache = global_context.getCompiledExpressionsCache();
+                auto set_func = [&fused, i, context, &sample_block] () { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); };
+                std::tie(fn, std::ignore) = compilation_cache->getOrSet(fused[i], set_func);
             }
             else
             {

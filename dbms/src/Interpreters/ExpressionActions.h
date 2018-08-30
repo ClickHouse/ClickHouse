@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/Context.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Settings.h>
 #include <Core/Names.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -7,8 +9,6 @@
 
 #include <unordered_set>
 #include <unordered_map>
-
-#include <boost/functional/hash/hash.hpp>
 
 
 namespace DB
@@ -142,27 +142,16 @@ class ExpressionActions
 public:
     using Actions = std::vector<ExpressionAction>;
 
-    struct ActionsHash
-    {
-        size_t operator()(const Actions & actions) const
-        {
-            size_t seed = 0;
-            for (const ExpressionAction & act : actions)
-                boost::hash_combine(seed, ExpressionAction::ActionHash{}(act));
-            return seed;
-        }
-    };
-
-    ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
-        : input_columns(input_columns_), settings(settings_)
+    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
+        : input_columns(input_columns_), context(context_)
     {
         for (const auto & input_elem : input_columns)
             sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
     }
 
     /// For constant columns the columns themselves can be contained in `input_columns_`.
-    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Settings & settings_)
-        : settings(settings_)
+    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
+        : context(context_)
     {
         for (const auto & input_elem : input_columns_)
         {
@@ -231,13 +220,13 @@ public:
 
     BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
 
-    const Settings & getSettings() const { return settings; }
+    const Settings & getSettings() const { return context.getSettingsRef(); }
 
 private:
     NamesAndTypesList input_columns;
     Actions actions;
     Block sample_block;
-    Settings settings;
+    const Context & context;
 
     void checkLimits(Block & block) const;
 
@@ -249,7 +238,17 @@ private:
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-bool operator==(const ExpressionActions::Actions & f, const ExpressionActions::Actions & s);
+struct ActionsHash
+{
+    size_t operator()(const ExpressionActions::Actions & actions) const
+    {
+        SipHash hash;
+        for (const ExpressionAction & act : actions)
+            hash.update(ExpressionAction::ActionHash{}(act));
+        return hash.get64();
+    }
+};
+
 
 
 /** The sequence of transformations over the block.
@@ -263,6 +262,8 @@ bool operator==(const ExpressionActions::Actions & f, const ExpressionActions::A
   */
 struct ExpressionActionsChain
 {
+    ExpressionActionsChain(const Context & context_)
+        : context(context_) {}
     struct Step
     {
         ExpressionActionsPtr actions;
@@ -281,7 +282,7 @@ struct ExpressionActionsChain
 
     using Steps = std::vector<Step>;
 
-    Settings settings;
+    const Context & context;
     Steps steps;
 
     void addStep();

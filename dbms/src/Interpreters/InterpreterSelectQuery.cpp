@@ -313,7 +313,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     };
 
     {
-        ExpressionActionsChain chain;
+        ExpressionActionsChain chain(context);
 
         if (query_analyzer->appendPrewhere(chain, !res.first_stage))
         {

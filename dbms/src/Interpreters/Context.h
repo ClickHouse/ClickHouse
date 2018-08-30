@@ -8,7 +8,9 @@
 #include <thread>
 #include <atomic>
 
+#include <Common/config.h>
 #include <common/MultiVersion.h>
+#include <Common/LRUCache.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Block.h>
@@ -77,6 +79,14 @@ using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
+#if USE_EMBEDDED_COMPILER
+
+struct ExpressionAction;
+struct ActionsHash;
+class LLVMFunction;
+using CompiledExpressionCache = LRUCache<std::vector<ExpressionAction>, LLVMFunction, ActionsHash>;
+
+#endif
 
 /// (database name, table name)
 using DatabaseAndTableName = std::pair<String, String>;
@@ -431,6 +441,11 @@ public:
     using SessionKey = std::pair<String, String>;
 
     SampleBlockCache & getSampleBlockCache() const;
+
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> getCompiledExpressionsCache() const;
+    void dropCompiledExpressionsCache() const;
+#endif
 
 private:
     /** Check if the current client has access to the specified database.
