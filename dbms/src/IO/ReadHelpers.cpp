@@ -65,6 +65,11 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
     parseHex(&src36[24], dst16 + 2, 6);
 }
 
+UInt128 stringToUUID(const String & str)
+{
+    return parseFromString<UUID>(str);
+}
+
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;

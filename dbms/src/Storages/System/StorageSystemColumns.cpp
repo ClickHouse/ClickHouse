@@ -56,10 +56,9 @@ public:
         size_t max_block_size,
         ColumnPtr databases,
         ColumnPtr tables,
-        Storages storages,
-        const Context & context)
+        Storages storages)
         : columns_mask(columns_mask), header(header), max_block_size(max_block_size),
-        databases(databases), tables(tables), storages(std::move(storages)), total_tables(tables->size()), context(context) {}
+        databases(databases), tables(tables), storages(std::move(storages)), total_tables(tables->size()) {}
 
     String getName() const override { return "Columns"; }
     Block getHeader() const override { return header; }
@@ -192,7 +191,6 @@ private:
     Storages storages;
     size_t db_table_num = 0;
     size_t total_tables;
-    const Context context;
 };
 
 
@@ -306,7 +304,7 @@ BlockInputStreams StorageSystemColumns::read(
 
     return {std::make_shared<ColumnsBlockInputStream>(
         std::move(columns_mask), std::move(res_block), max_block_size,
-        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages), context)};
+        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages))};
 }
 
 }
