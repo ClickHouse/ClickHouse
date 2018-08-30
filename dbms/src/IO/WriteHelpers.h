@@ -704,13 +704,7 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
-inline void writeText(const UInt128 &, WriteBuffer &)
-{
-    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
-     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
-     */
-    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-}
+inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
 
 template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
 template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
@@ -763,6 +757,12 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+inline void writeQuoted(const UUID & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
