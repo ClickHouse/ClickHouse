@@ -565,7 +565,8 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         {
             char * next_pos = buf.position();
 
-            [&]() {
+            [&]()
+            {
 #if __SSE2__
                 auto rc = _mm_set1_epi8('\r');
                 auto nc = _mm_set1_epi8('\n');
