@@ -36,6 +36,21 @@ message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
 
+option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
+option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+if (NOT MAKE_STATIC_LIBRARIES)
+    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
+endif ()
+
+if (SPLIT_SHARED_LIBRARIES)
+    set (LINK_MODE SHARED)
+endif ()
+
+if (USE_STATIC_LIBRARIES)
+    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
+endif ()
+
 include (cmake/sanitize.cmake)
 
 include (cmake/arch.cmake)
@@ -62,21 +77,6 @@ endif ()
 
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
-
-option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
-option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
-if (NOT MAKE_STATIC_LIBRARIES)
-    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
-    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
-endif ()
-
-if (SPLIT_SHARED_LIBRARIES)
-    set (LINK_MODE SHARED)
-endif ()
-
-if (USE_STATIC_LIBRARIES)
-    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
-endif ()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
