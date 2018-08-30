@@ -87,12 +87,12 @@ struct ExtractBool
 
 struct ExtractRaw
 {
-    inline static void skipAfterQuotationIfNeed(const UInt8 ** pos, const UInt8 * end, ColumnString::Chars_t & res_data)
+    inline static void skipAfterQuotationIfNeed(const UInt8 *& pos, const UInt8 * end, ColumnString::Chars_t & res_data)
     {
-        if (*pos + 1 < end && *(*pos + 1) == '"')
+        if (pos + 1 < end && pos[1] == '"')
         {
-            res_data.push_back(**pos);
-            ++(*pos);
+            res_data.push_back(*pos);
+            ++pos;
         }
     }
 
@@ -106,13 +106,21 @@ struct ExtractRaw
                 expect_end.pop_back();
             else
             {
-                switch(*pos)
+                switch (*pos)
                 {
-                    case '[' :  expect_end.push_back(']'); break;
-                    case '{' :  expect_end.push_back('}'); break;
-                    case '"' :  expect_end.push_back('"'); break;
-                    case '\\' : skipAfterQuotationIfNeed(&pos, end, res_data); break;
-                    default :
+                    case '[': 
+                        expect_end.push_back(']'); 
+                        break;
+                    case '{': 
+                        expect_end.push_back('}'); 
+                        break;
+                    case '"': 
+                        expect_end.push_back('"'); 
+                        break;
+                    case '\\': 
+                        skipAfterQuotationIfNeed(pos, end, res_data);
+                        break;
+                    default:
                         if (expect_end.empty() && (*pos == ',' || *pos == '}'))
                             return;
                 }
