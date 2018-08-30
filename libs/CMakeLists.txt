@@ -23,4 +23,5 @@ if (USE_MYSQL)
     add_subdirectory (libmysqlxx)
 endif ()
 
-add_subdirectory (libconsistent-hashing)
+add_subdirectory (consistent-hashing)
+add_subdirectory (consistent-hashing-sumbur)
