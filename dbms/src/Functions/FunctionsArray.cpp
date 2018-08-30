@@ -1671,7 +1671,9 @@ bool FunctionArrayEnumerateExtended<Derived>::executeNumber(const ColumnArray * 
             }
             prev_off = off;
         }
-    } else {
+    }
+    else
+    {
         // Dense
         for (size_t i = 0; i < offsets.size(); ++i)
         {
@@ -1746,7 +1748,9 @@ bool FunctionArrayEnumerateExtended<Derived>::executeString(const ColumnArray * 
             }
             prev_off = off;
         }
-    } else {
+    }
+    else
+    {
         // Dense
         for (size_t i = 0; i < offsets.size(); ++i)
         {
@@ -1839,7 +1843,9 @@ bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
             }
             prev_off = off;
         }
-    } else {
+    }
+    else
+    {
         // Dense
         for (size_t i = 0; i < offsets.size(); ++i)
         {
