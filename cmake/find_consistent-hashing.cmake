@@ -1,4 +1,4 @@
-option (USE_INTERNAL_CONSISTENT_HASHING_LIBRARY "Set to FALSE to use system consistent-hashing library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CONSISTENT_HASHING_LIBRARY "Set to FALSE to use consistent-hashing library from Arcadia (Yandex internal repository) instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_CONSISTENT_HASHING_LIBRARY)
     find_library (CONSISTENT_HASHING_LIBRARY consistent-hashing)
