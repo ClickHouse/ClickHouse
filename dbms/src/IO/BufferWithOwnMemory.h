@@ -26,8 +26,10 @@ namespace DB
   */
 struct Memory : boost::noncopyable, Allocator<false>
 {
+    /// Padding is needed to allow usage of 'memcpySmallAllowReadWriteOverflow15' function with this buffer.
     static constexpr size_t pad_right = 15;
-    size_t m_capacity = 0;
+
+    size_t m_capacity = 0;  /// With padding.
     size_t m_size = 0;
     char * m_data = nullptr;
     size_t alignment = 0;
@@ -70,7 +72,8 @@ struct Memory : boost::noncopyable, Allocator<false>
     {
         if (0 == m_capacity)
         {
-            m_size = m_capacity = new_size;
+            m_size = new_size;
+            m_capacity = new_size;
             alloc();
         }
         else if (new_size <= m_size)
