@@ -115,14 +115,18 @@ public:
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent reset() call).
+        bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
+        {
             setImpl(key, token->value, cache_lock);
+            result = true;
+        }
 
         if (!token->cleaned_up)
             token_holder.cleanup(token_lock, cache_lock);
 
-        return std::make_pair(token->value, true);
+        return std::make_pair(token->value, result);
     }
 
     void getStats(size_t & out_hits, size_t & out_misses) const

@@ -77,9 +77,9 @@ struct ScopeStack
     using Levels = std::vector<Level>;
 
     Levels stack;
-    Settings settings;
+    const Context & context;
 
-    ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
+    ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -185,7 +185,7 @@ private:
     ASTPtr ast;
     ASTSelectQuery * select_query;
     const Context & context;
-    Settings settings;
+    const Settings settings;
     size_t subquery_depth;
 
     /** Original columns.

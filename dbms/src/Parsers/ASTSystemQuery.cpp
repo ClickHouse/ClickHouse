@@ -27,6 +27,10 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "DROP MARK CACHE";
         case Type::DROP_UNCOMPRESSED_CACHE:
             return "DROP UNCOMPRESSED CACHE";
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSIONS_CACHE:
+            return "DROP COMPILED EXPRESSIONS CACHE";
+#endif
         case Type::STOP_LISTEN_QUERIES:
             return "STOP LISTEN QUERIES";
         case Type::START_LISTEN_QUERIES:

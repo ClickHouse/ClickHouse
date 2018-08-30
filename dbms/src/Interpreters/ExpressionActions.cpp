@@ -1,5 +1,6 @@
 #include <Common/config.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/Join.h>
@@ -555,19 +556,19 @@ std::string ExpressionAction::toString() const
 
 void ExpressionActions::checkLimits(Block & block) const
 {
-    if (settings.max_temporary_columns && block.columns() > settings.max_temporary_columns)
+    if (context.getSettingsRef().max_temporary_columns && block.columns() > context.getSettingsRef().max_temporary_columns)
         throw Exception("Too many temporary columns: " + block.dumpNames()
-            + ". Maximum: " + settings.max_temporary_columns.toString(),
+            + ". Maximum: " + context.getSettingsRef().max_temporary_columns.toString(),
             ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS);
 
-    if (settings.max_temporary_non_const_columns)
+    if (context.getSettingsRef().max_temporary_non_const_columns)
     {
         size_t non_const_columns = 0;
         for (size_t i = 0, size = block.columns(); i < size; ++i)
             if (block.safeGetByPosition(i).column && !block.safeGetByPosition(i).column->isColumnConst())
                 ++non_const_columns;
 
-        if (non_const_columns > settings.max_temporary_non_const_columns)
+        if (non_const_columns > context.getSettingsRef().max_temporary_non_const_columns)
         {
             std::stringstream list_of_non_const_columns;
             for (size_t i = 0, size = block.columns(); i < size; ++i)
@@ -575,7 +576,7 @@ void ExpressionActions::checkLimits(Block & block) const
                     list_of_non_const_columns << "\n" << block.safeGetByPosition(i).name;
 
             throw Exception("Too many temporary non-const columns:" + list_of_non_const_columns.str()
-                + ". Maximum: " + settings.max_temporary_non_const_columns.toString(),
+                + ". Maximum: " + context.getSettingsRef().max_temporary_non_const_columns.toString(),
                 ErrorCodes::TOO_MANY_TEMPORARY_NON_CONST_COLUMNS);
         }
     }
@@ -764,8 +765,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 #if USE_EMBEDDED_COMPILER
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
-    if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block, settings);
+    if (context.getSettingsRef().compile_expressions)
+        compileFunctions(actions, output_columns, sample_block, context);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
@@ -1066,68 +1067,60 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
     return {};
 }
 
-bool operator==(const ExpressionActions::Actions & f, const ExpressionActions::Actions & s)
-{
-    if (f.size() != s.size()) return false;
-    for (size_t i = 0; i < f.size(); ++i)
-        if (!(f[i] == s[i]))
-            return false;
-    return true;
-}
 
 size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
 {
-    size_t seed = 0;
-    boost::hash_combine(seed, std::hash<size_t>{}(action.type));
-    boost::hash_combine(seed, std::hash<bool>{}(action.is_function_compiled));
-    auto str_hash_fn = std::hash<std::string>{};
+
+    SipHash hash;
+    hash.update(action.type);
+    hash.update(action.is_function_compiled);
     switch(action.type)
     {
         case ADD_COLUMN:
-            boost::hash_combine(seed, str_hash_fn(action.result_name));
+            hash.update(action.result_name);
             if (action.result_type)
-                boost::hash_combine(seed, str_hash_fn(action.result_type->getName()));
+                hash.update(action.result_type->getName());
             if (action.added_column)
-                boost::hash_combine(seed, str_hash_fn(action.added_column->getName()));
+                hash.update(action.added_column->getName());
             break;
         case REMOVE_COLUMN:
-            boost::hash_combine(seed, str_hash_fn(action.source_name));
+            hash.update(action.source_name);
             break;
         case COPY_COLUMN:
-            boost::hash_combine(seed, str_hash_fn(action.result_name));
-            boost::hash_combine(seed, str_hash_fn(action.source_name));
+            hash.update(action.result_name);
+            hash.update(action.source_name);
             break;
         case APPLY_FUNCTION:
-            boost::hash_combine(seed, str_hash_fn(action.result_name));
+            hash.update(action.result_name);
             if (action.result_type)
-                boost::hash_combine(seed, str_hash_fn(action.result_type->getName()));
+                hash.update(action.result_type->getName());
             if (action.function)
             {
-                boost::hash_combine(seed, str_hash_fn(action.function->getName()));
+                hash.update(action.function->getName());
                 for (const auto & arg_type : action.function->getArgumentTypes())
-                    boost::hash_combine(seed, arg_type->getName());
+                    hash.update(arg_type->getName());
             }
             for (const auto & arg_name : action.argument_names)
-                boost::hash_combine(seed, str_hash_fn(arg_name));
+                hash.update(arg_name);
             break;
         case ARRAY_JOIN:
-            boost::hash_combine(seed, std::hash<bool>{}(action.array_join_is_left));
+            hash.update(action.array_join_is_left);
             for (const auto & col : action.array_joined_columns)
-                boost::hash_combine(seed, str_hash_fn(col));
+                hash.update(col);
             break;
         case JOIN:
             for (const auto & col : action.columns_added_by_join)
-                boost::hash_combine(seed, str_hash_fn(col.name));
+                hash.update(col.name);
             break;
         case PROJECT:
             for (const auto & pair_of_strs : action.projection)
             {
-                boost::hash_combine(seed, str_hash_fn(pair_of_strs.first));
-                boost::hash_combine(seed, str_hash_fn(pair_of_strs.second));
+                hash.update(pair_of_strs.first);
+                hash.update(pair_of_strs.second);
             }
             break;
     }
-    return seed;
+    return hash.get64();
 }
 
 bool ExpressionAction::operator==(const ExpressionAction & other) const
@@ -1185,7 +1178,7 @@ void ExpressionActionsChain::addStep()
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumnsWithTypeAndName();
-    steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
+    steps.push_back(Step(std::make_shared<ExpressionActions>(columns, context)));
 }
 
 void ExpressionActionsChain::finalize()
