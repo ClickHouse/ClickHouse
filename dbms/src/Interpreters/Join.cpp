@@ -766,7 +766,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
             throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 
-    const auto  added_columns_size = added_columns.size();
+    const auto added_columns_size = added_columns.size();
     for (size_t i = 0; i < added_columns_size; ++i)
         block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
 
