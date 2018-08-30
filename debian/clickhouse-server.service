@@ -10,6 +10,7 @@ Restart=always
 RestartSec=30
 ExecStartPre=-/usr/bin/chown clickhouse:clickhouse -R /etc/clickhouse-server
 ExecStartPre=-/bin/chown clickhouse:clickhouse -R /etc/clickhouse-server
+ExecStartPre=-/bin/ln -s `/usr/bin/clickhouse-extract-from-config --config=/etc/clickhouse-server/config.xml --key=path`/preprocessed_config /etc/clickhouse-server/preprocessed
 ExecStart=/usr/bin/clickhouse-server --config=/etc/clickhouse-server/config.xml
 LimitCORE=infinity
 LimitNOFILE=500000
