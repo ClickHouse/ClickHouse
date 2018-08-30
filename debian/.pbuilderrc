@@ -53,7 +53,7 @@ DEBIAN_SUITES=($UNSTABLE_CODENAME $TESTING_CODENAME $STABLE_CODENAME $STABLE_BAC
     "experimental" "unstable" "testing" "stable")
 
 # List of Ubuntu suites. Update these when needed.
-UBUNTU_SUITES=("bionic" "artful" "zesty" "xenial" "trusty" "devel")
+UBUNTU_SUITES=("cosmic" "bionic" "artful" "zesty" "xenial" "trusty" "devel")
 
 # Set a default distribution if none is used. Note that you can set your own default (i.e. ${DIST:="unstable"}).
 HOST_DIST=`lsb_release --short --codename`
@@ -161,7 +161,7 @@ esac
 
 if [ "$ARCH" != arm64 ]; then
    case "$DIST" in
-    "bionic" | "experimental" | "unstable" | "testing")
+    "cosmic" | "bionic" | "experimental" | "unstable" | "testing")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
         ;;
