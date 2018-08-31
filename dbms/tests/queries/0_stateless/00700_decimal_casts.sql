@@ -83,7 +83,7 @@ SELECT toUInt16(9999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 SELECT toUInt32(999999999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 SELECT toUInt64(999999999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 
---SELECT CAST('1.1', 'Decimal(9,0)'), CAST('1.1', 'Decimal(9,1)'), CAST('1.1', 'Decimal(9,2)');
+SELECT CAST('42.4200', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,2)'), CAST(a, 'Decimal(18, 2)'), CAST(a, 'Decimal(38, 2)');
+SELECT CAST('42.42', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,7)'), CAST(a, 'Decimal(18, 16)'), CAST(a, 'Decimal(38, 36)');
 
---SELECT * FROM test.decimal;
---DROP TABLE IF EXISTS test.decimal;
+DROP TABLE IF EXISTS test.decimal;
