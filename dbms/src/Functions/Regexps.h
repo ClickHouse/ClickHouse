@@ -1,8 +1,9 @@
 #pragma once
+
 #include <Common/OptimizedRegularExpression.h>
-#include <Functions/ObjectPool.h>
-#include <Functions/likePatternToRegexp.h>
+#include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
+#include <Functions/likePatternToRegexp.h>
 
 
 namespace ProfileEvents

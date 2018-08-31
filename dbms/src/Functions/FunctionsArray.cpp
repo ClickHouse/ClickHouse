@@ -1503,19 +1503,22 @@ void FunctionArrayDistinct::executeHashed(
     }
 }
 
-/// Implementation of FunctionArrayEnumerateUniq.
+/// Implementation of FunctionArrayEnumerateExtended.
 
-FunctionPtr FunctionArrayEnumerateUniq::create(const Context &)
+template <typename Derived>
+FunctionPtr FunctionArrayEnumerateExtended<Derived>::create(const Context &)
 {
-    return std::make_shared<FunctionArrayEnumerateUniq>();
+    return std::make_shared<Derived>();
 }
 
-String FunctionArrayEnumerateUniq::getName() const
+template <typename Derived>
+String FunctionArrayEnumerateExtended<Derived>::getName() const
 {
-    return name;
+    return Derived::name;
 }
 
-DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & arguments) const
+template <typename Derived>
+DataTypePtr FunctionArrayEnumerateExtended<Derived>::getReturnTypeImpl(const DataTypes & arguments) const
 {
     if (arguments.size() == 0)
         throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
@@ -1533,7 +1536,8 @@ DataTypePtr FunctionArrayEnumerateUniq::getReturnTypeImpl(const DataTypes & argu
     return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
 }
 
-void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
+template <typename Derived>
+void FunctionArrayEnumerateExtended<Derived>::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
 {
     const ColumnArray::Offsets * offsets = nullptr;
     ColumnRawPtrs data_columns;
@@ -1620,8 +1624,9 @@ void FunctionArrayEnumerateUniq::executeImpl(Block & block, const ColumnNumbers 
 }
 
 
+template <typename Derived>
 template <typename T>
-bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
+bool FunctionArrayEnumerateExtended<Derived>::executeNumber(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1649,24 +1654,57 @@ bool FunctionArrayEnumerateUniq::executeNumber(const ColumnArray * array, const 
 
     ValuesToIndices indices;
     size_t prev_off = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
+    if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniq>)
     {
-        indices.clear();
-        UInt32 null_count = 0;
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        // Unique
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
-            if (null_map_data && ((*null_map_data)[j] == 1))
-                res_values[j] = ++null_count;
-            else
-                res_values[j] = ++indices[values[j]];
+            indices.clear();
+            UInt32 null_count = 0;
+            size_t off = offsets[i];
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                if (null_map_data && ((*null_map_data)[j] == 1))
+                    res_values[j] = ++null_count;
+                else
+                    res_values[j] = ++indices[values[j]];
+            }
+            prev_off = off;
         }
-        prev_off = off;
+    }
+    else
+    {
+        // Dense
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            indices.clear();
+            size_t rank = 0;
+            UInt32 null_index = 0;
+            size_t off = offsets[i];
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                if (null_map_data && ((*null_map_data)[j] == 1))
+                {
+                    if (!null_index)
+                        null_index = ++rank;
+                    res_values[j] = null_index;
+                }
+                else
+                {
+                    auto & idx = indices[values[j]];
+                    if (!idx)
+                        idx = ++rank;
+                    res_values[j] = idx;
+                }
+            }
+            prev_off = off;
+        }
     }
     return true;
 }
 
-bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
+template <typename Derived>
+bool FunctionArrayEnumerateExtended<Derived>::executeString(const ColumnArray * array, const IColumn * null_map, ColumnUInt32::Container & res_values)
 {
     const IColumn * inner_col;
 
@@ -1693,24 +1731,57 @@ bool FunctionArrayEnumerateUniq::executeString(const ColumnArray * array, const 
         null_map_data = &static_cast<const ColumnUInt8 *>(null_map)->getData();
 
     ValuesToIndices indices;
-    for (size_t i = 0; i < offsets.size(); ++i)
+    if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniq>)
     {
-        indices.clear();
-        UInt32 null_count = 0;
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        // Unique
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
-            if (null_map_data && ((*null_map_data)[j] == 1))
-                res_values[j] = ++null_count;
-            else
-                res_values[j] = ++indices[nested->getDataAt(j)];
+            indices.clear();
+            UInt32 null_count = 0;
+            size_t off = offsets[i];
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                if (null_map_data && ((*null_map_data)[j] == 1))
+                    res_values[j] = ++null_count;
+                else
+                    res_values[j] = ++indices[nested->getDataAt(j)];
+            }
+            prev_off = off;
         }
-        prev_off = off;
+    }
+    else
+    {
+        // Dense
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            indices.clear();
+            size_t rank = 0;
+            UInt32 null_index = 0;
+            size_t off = offsets[i];
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                if (null_map_data && ((*null_map_data)[j] == 1))
+                {
+                    if (!null_index)
+                        null_index = ++rank;
+                    res_values[j] = null_index;
+                }
+                else
+                {
+                    auto & idx = indices[nested->getDataAt(j)];
+                    if (!idx)
+                        idx = ++rank;
+                    res_values[j] = idx;
+                }
+            }
+            prev_off = off;
+        }
     }
     return true;
 }
 
-bool FunctionArrayEnumerateUniq::execute128bit(
+template <typename Derived>
+bool FunctionArrayEnumerateExtended<Derived>::execute128bit(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
     const ColumnRawPtrs & null_maps,
@@ -1739,41 +1810,89 @@ bool FunctionArrayEnumerateUniq::execute128bit(
 
     ValuesToIndices indices;
     size_t prev_off = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
+    if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniq>)
     {
-        indices.clear();
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        // Unique
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
-            if (has_nullable_columns)
+            indices.clear();
+            size_t off = offsets[i];
+            for (size_t j = prev_off; j < off; ++j)
             {
-                KeysNullMap<UInt128> bitmap{};
-
-                for (size_t i = 0; i < columns.size(); ++i)
+                if (has_nullable_columns)
                 {
-                    if (null_maps[i])
+                    KeysNullMap<UInt128> bitmap{};
+
+                    for (size_t i = 0; i < columns.size(); ++i)
                     {
-                        const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
-                        if (null_map[j] == 1)
+                        if (null_maps[i])
                         {
-                            size_t bucket = i / 8;
-                            size_t offset = i % 8;
-                            bitmap[bucket] |= UInt8(1) << offset;
+                            const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
+                            if (null_map[j] == 1)
+                            {
+                                size_t bucket = i / 8;
+                                size_t offset = i % 8;
+                                bitmap[bucket] |= UInt8(1) << offset;
+                            }
                         }
                     }
+                    res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
                 }
-                res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
+                else
+                    res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
             }
-            else
-                res_values[j] = ++indices[packFixed<UInt128>(j, count, columns, key_sizes)];
+            prev_off = off;
         }
-        prev_off = off;
+    }
+    else
+    {
+        // Dense
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            indices.clear();
+            size_t off = offsets[i];
+            size_t rank = 0;
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                if (has_nullable_columns)
+                {
+                    KeysNullMap<UInt128> bitmap{};
+
+                    for (size_t i = 0; i < columns.size(); ++i)
+                    {
+                        if (null_maps[i])
+                        {
+                            const auto & null_map = static_cast<const ColumnUInt8 &>(*null_maps[i]).getData();
+                            if (null_map[j] == 1)
+                            {
+                                size_t bucket = i / 8;
+                                size_t offset = i % 8;
+                                bitmap[bucket] |= UInt8(1) << offset;
+                            }
+                        }
+                    }
+                    auto &idx = indices[packFixed<UInt128>(j, count, columns, key_sizes, bitmap)];
+                    if (!idx)
+                        idx = ++rank;
+                    res_values[j] = idx;
+                }
+                else
+                {
+                    auto &idx = indices[packFixed<UInt128>(j, count, columns, key_sizes)];;
+                    if (!idx)
+                        idx = ++rank;
+                    res_values[j] = idx;
+                }
+            }
+            prev_off = off;
+        }
     }
 
     return true;
 }
 
-void FunctionArrayEnumerateUniq::executeHashed(
+template <typename Derived>
+void FunctionArrayEnumerateExtended<Derived>::executeHashed(
     const ColumnArray::Offsets & offsets,
     const ColumnRawPtrs & columns,
     ColumnUInt32::Container & res_values)
@@ -1785,17 +1904,42 @@ void FunctionArrayEnumerateUniq::executeHashed(
 
     ValuesToIndices indices;
     size_t prev_off = 0;
-    for (size_t i = 0; i < offsets.size(); ++i)
+    if constexpr (std::is_same_v<Derived, FunctionArrayEnumerateUniq>)
     {
-        indices.clear();
-        size_t off = offsets[i];
-        for (size_t j = prev_off; j < off; ++j)
+        // Unique
+        for (size_t i = 0; i < offsets.size(); ++i)
         {
-            res_values[j] = ++indices[hash128(j, count, columns)];
+            indices.clear();
+            size_t off = offsets[i];
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                res_values[j] = ++indices[hash128(j, count, columns)];
+            }
+            prev_off = off;
         }
-        prev_off = off;
+    }
+    else
+    {
+        // Dense
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            indices.clear();
+            size_t off = offsets[i];
+            size_t rank = 0;
+            for (size_t j = prev_off; j < off; ++j)
+            {
+                auto & idx = indices[hash128(j, count, columns)];
+                if (!idx)
+                    idx = ++rank;
+                res_values[j] = idx;
+            }
+            prev_off = off;
+        }
     }
 }
+
+template class FunctionArrayEnumerateExtended<FunctionArrayEnumerateUniq>;
+template class FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>;
 
 /// Implementation of FunctionEmptyArrayToSingle.
 

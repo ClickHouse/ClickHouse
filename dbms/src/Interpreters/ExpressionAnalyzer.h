@@ -77,7 +77,7 @@ struct ScopeStack
     using Levels = std::vector<Level>;
 
     Levels stack;
-    Settings settings;
+    const Settings & settings;
 
     ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
 

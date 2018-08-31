@@ -96,6 +96,7 @@ namespace ErrorCodes
     extern const int CONDITIONAL_TREE_PARENT_NOT_FOUND;
     extern const int TYPE_MISMATCH;
     extern const int INVALID_JOIN_ON_EXPRESSION;
+    extern const int EXPECTED_ALL_OR_ANY;
 }
 
 
@@ -355,6 +356,17 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
     }
     else
     {
+        /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children, but also in where_expression and having_expression.
+        if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
+        {
+            if (select->prewhere_expression)
+                translateQualifiedNamesImpl(select->prewhere_expression, tables);
+            if (select->where_expression)
+                translateQualifiedNamesImpl(select->where_expression, tables);
+            if (select->having_expression)
+                translateQualifiedNamesImpl(select->having_expression, tables);
+        }
+
         for (auto & child : ast->children)
         {
             /// Do not go to FROM, JOIN, subqueries.
@@ -2054,8 +2066,13 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
         if (AggregateFunctionFactory::instance().isAggregateFunctionName(node->name))
             return;
 
-        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, context);
-        auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), context);
+        /// Context object that we pass to function should live during query.
+        const Context & function_context = context.hasQueryContext()
+            ? context.getQueryContext()
+            : context;
+
+        const FunctionBuilderPtr & function_builder = FunctionFactory::instance().get(node->name, function_context);
+        auto projection_action = getProjectionAction(node->name, actions_stack, projection_manipulator, getColumnName(), function_context);
 
         Names argument_names;
         DataTypes argument_types;
@@ -2483,7 +2500,18 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     ExpressionActionsChain::Step & step = chain.steps.back();
 
     const auto & join_element = static_cast<const ASTTablesInSelectQueryElement &>(*select_query->join());
-    const auto & join_params = static_cast<const ASTTableJoin &>(*join_element.table_join);
+    auto & join_params = static_cast<ASTTableJoin &>(*join_element.table_join);
+
+    if (join_params.strictness == ASTTableJoin::Strictness::Unspecified && join_params.kind != ASTTableJoin::Kind::Cross)
+    {
+        if (settings.join_default_strictness.toString() == "ANY")
+            join_params.strictness = ASTTableJoin::Strictness::Any;
+        else if (settings.join_default_strictness.toString() == "ALL")
+            join_params.strictness = ASTTableJoin::Strictness::All;
+        else
+            throw Exception("Expected ANY or ALL in JOIN section, because setting (join_default_strictness) is empty", DB::ErrorCodes::EXPECTED_ALL_OR_ANY);
+    }
+
     const auto & table_to_join = static_cast<const ASTTableExpression &>(*join_element.table_expression);
 
     getActionsFromJoinKeys(join_params, only_types, false, step.actions);
