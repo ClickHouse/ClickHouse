@@ -242,6 +242,9 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     // Remove duplicated elements from LIMIT BY clause.
     optimizeLimitBy();
 
+    /// Remove duplicated columns from USING(...).
+    optimizeUsing();
+
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns();
 
@@ -1408,6 +1411,38 @@ void ExpressionAnalyzer::optimizeLimitBy()
 
     if (unique_elems.size() < elems.size())
         elems = unique_elems;
+}
+
+void ExpressionAnalyzer::optimizeUsing()
+{
+    if (!select_query)
+        return;
+
+    auto node = const_cast<ASTTablesInSelectQueryElement *>(select_query->join());
+    if (!node)
+        return;
+
+    auto table_join = static_cast<ASTTableJoin *>(&*node->table_join);
+    if (!(table_join && table_join->using_expression_list))
+        return;
+
+    ASTs & expression_list = table_join->using_expression_list->children;
+    ASTs uniq_expressions_list;
+
+    std::set<String> expressions_names;
+
+    for (const auto & expression : expression_list)
+    {
+        auto expression_name = expression->getAliasOrColumnName();
+        if (expressions_names.find(expression_name) == expressions_names.end())
+        {
+            uniq_expressions_list.push_back(expression);
+            expressions_names.insert(expression_name);
+        }
+    }
+
+    if (uniq_expressions_list.size() < expression_list.size())
+        expression_list = uniq_expressions_list;
 }
 
 
@@ -3151,11 +3186,8 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns)
 
     auto add_name_to_join_keys = [](Names & join_keys, ASTs & join_asts, const String & name, const ASTPtr & ast)
     {
-        if (join_keys.end() == std::find(join_keys.begin(), join_keys.end(), name))
-        {
-            join_keys.push_back(name);
-            join_asts.push_back(ast);
-        }
+        join_keys.push_back(name);
+        join_asts.push_back(ast);
     };
 
     if (table_join.using_expression_list)
