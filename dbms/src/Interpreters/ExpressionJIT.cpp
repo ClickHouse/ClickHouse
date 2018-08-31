@@ -533,7 +533,7 @@ static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & fu
     return function.isCompilable();
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, const Context & global_context)
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache)
 {
     struct LLVMTargetInitializer
     {
@@ -613,9 +613,8 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                 continue;
 
             std::shared_ptr<LLVMFunction> fn;
-            if (global_context.getSettingsRef().compiled_expressions_cache_size > 0)
+            if (compilation_cache)
             {
-                auto compilation_cache = global_context.getCompiledExpressionsCache();
                 auto set_func = [&fused, i, context, &sample_block] () { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); };
                 std::tie(fn, std::ignore) = compilation_cache->getOrSet(fused[i], set_func);
             }
