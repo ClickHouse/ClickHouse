@@ -9,6 +9,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
+#include <Common/setThreadName.h>
 #include <Common/config_version.h>
 #include <IO/Progress.h>
 #include <IO/CompressedReadBuffer.h>
@@ -49,6 +50,8 @@ namespace ErrorCodes
 
 void TCPHandler::runImpl()
 {
+    setThreadName("TCPHandler");
+
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);
 
