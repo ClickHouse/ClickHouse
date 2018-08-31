@@ -28,6 +28,8 @@ namespace ErrorCodes
   * arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
   * arrayExists(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for at least one array element.
   * arrayAll(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for all elements of the array.
+  * arrayCumSumLimited() - returns an array with cumulative sums of the original. (If value < 0 -> 0).
+  * arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
   *
   * For functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available, which works in the same way as f(x -> x, array).
   */
@@ -716,10 +718,8 @@ struct ArrayDifferenceImpl
         if (checkDataType<DataTypeUInt8>(&*expression_return) ||
             checkDataType<DataTypeUInt16>(&*expression_return) ||
             checkDataType<DataTypeUInt32>(&*expression_return) ||
-            checkDataType<DataTypeUInt64>(&*expression_return))
-            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
-
-        if (checkDataType<DataTypeInt8>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return) ||
+            checkDataType<DataTypeInt8>(&*expression_return) ||
             checkDataType<DataTypeInt16>(&*expression_return) ||
             checkDataType<DataTypeInt32>(&*expression_return) ||
             checkDataType<DataTypeInt64>(&*expression_return))
@@ -785,7 +785,7 @@ struct ArrayDifferenceImpl
                 res_values[pos] = 0;
                 for (++pos; pos < offsets[i]; ++pos)
                 {
-                    res_values[pos] = data[pos] - data[pos - 1];
+                    res_values[pos] = static_cast<Int64>(data[pos]) - static_cast<Int64>(data[pos - 1]);
                 }
             }
         }
@@ -798,10 +798,10 @@ struct ArrayDifferenceImpl
     {
         ColumnPtr res;
 
-        if (executeType< UInt8 , UInt64>(mapped, array, res) ||
-            executeType< UInt16, UInt64>(mapped, array, res) ||
-            executeType< UInt32, UInt64>(mapped, array, res) ||
-            executeType< UInt64, UInt64>(mapped, array, res) ||
+        if (executeType< UInt8 ,  Int64>(mapped, array, res) ||
+            executeType< UInt16,  Int64>(mapped, array, res) ||
+            executeType< UInt32,  Int64>(mapped, array, res) ||
+            executeType< UInt64,  Int64>(mapped, array, res) ||
             executeType<  Int8 ,  Int64>(mapped, array, res) ||
             executeType<  Int16,  Int64>(mapped, array, res) ||
             executeType<  Int32,  Int64>(mapped, array, res) ||
