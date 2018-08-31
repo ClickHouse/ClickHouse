@@ -785,7 +785,7 @@ struct ArrayDifferenceImpl
                 res_values[pos] = 0;
                 for (++pos; pos < offsets[i]; ++pos)
                 {
-                    res_values[pos] = static_cast<Int64>(data[pos]) - static_cast<Int64>(data[pos - 1]);
+                    res_values[pos] = static_cast<Result>(data[pos]) - static_cast<Result>(data[pos - 1]);
                 }
             }
         }
