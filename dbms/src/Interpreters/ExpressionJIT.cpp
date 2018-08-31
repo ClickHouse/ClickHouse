@@ -168,20 +168,20 @@ struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
 
     llvm::sys::MemoryBlock allocateMappedMemory(llvm::SectionMemoryManager::AllocationPurpose /*purpose*/,
         size_t num_bytes,
-        const llvm::sys::MemoryBlock *const near_block,
+        const llvm::sys::MemoryBlock * const near_block,
         unsigned flags,
-        std::error_code &EC) override
+        std::error_code & EC) override
     {
         allocated_memory += num_bytes;
         return llvm::sys::Memory::allocateMappedMemory(num_bytes, near_block, flags, EC);
     }
 
-    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock &block, unsigned flags) override
+    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock & block, unsigned flags) override
     {
         return llvm::sys::Memory::protectMappedMemory(block, flags);
     }
 
-    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock &block) override
+    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock & block) override
     {
         allocated_memory -= block.size();
         return llvm::sys::Memory::releaseMappedMemory(block);
