@@ -56,6 +56,7 @@
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -1828,7 +1829,10 @@ void Context::dropCompiledExpressionsCache() const
 {
     auto lock = getLock();
     if (shared->compiled_expression_cache)
+    {
         shared->compiled_expression_cache->reset();
+        ProfileEvents::reset(ProfileEvents::CompiledCacheSizeBytes);
+    }
 }
 
 #endif
