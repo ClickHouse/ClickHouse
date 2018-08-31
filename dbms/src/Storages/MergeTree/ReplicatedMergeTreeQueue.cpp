@@ -47,13 +47,31 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
     std::optional<time_t> min_unprocessed_insert_time_changed;
 
     {
-        std::lock_guard lock(state_mutex);
+        std::lock_guard pull_logs_lock(pull_logs_to_queue_mutex);
 
         String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
         log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
 
+        std::unordered_set<String> already_loaded_paths;
+        {
+            std::lock_guard lock(state_mutex);
+            for (const LogEntryPtr & log_entry : queue)
+                already_loaded_paths.insert(log_entry->znode_name);
+        }
+
         Strings children = zookeeper->getChildren(queue_path);
-        LOG_DEBUG(log, "Having " << children.size() << " queue entries to load.");
+
+        auto to_remove_it = std::remove_if(
+                children.begin(), children.end(), [&](const String & path)
+                {
+                    return already_loaded_paths.count(path);
+                });
+
+        LOG_DEBUG(log,
+                  "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
+                            << (children.end() - to_remove_it) << " entries already loaded.");
+        children.erase(to_remove_it, children.end());
+
         std::sort(children.begin(), children.end());
 
         zkutil::AsyncResponses<Coordination::GetResponse> futures;
@@ -67,6 +85,8 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
             Coordination::GetResponse res = future.second.get();
             LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
             entry->znode_name = future.first;
+
+            std::lock_guard lock(state_mutex);
 
             insertUnlocked(entry, min_unprocessed_insert_time_changed, lock);
 
@@ -85,7 +105,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
 void ReplicatedMergeTreeQueue::initialize(
     const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-    const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper)
+    const MergeTreeData::DataParts & parts)
 {
     zookeeper_path = zookeeper_path_;
     replica_path = replica_path_;
@@ -93,7 +113,6 @@ void ReplicatedMergeTreeQueue::initialize(
     log = &Logger::get(logger_name);
 
     addVirtualParts(parts);
-    load(zookeeper);
 }
 
 

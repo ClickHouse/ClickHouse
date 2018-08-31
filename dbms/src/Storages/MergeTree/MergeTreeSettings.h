@@ -63,9 +63,12 @@ struct MergeTreeSettings
      *  duplicating INSERTs during that period of time. */                                                    \
     M(SettingUInt64, replicated_deduplication_window_seconds, 7 * 24 * 60 * 60) /** one week */               \
                                                                                                               \
+    /** How many records may be in log, if there is inactive replica  */                                      \
+    M(SettingUInt64, max_replicated_logs_to_keep, 10000)                                                      \
+                                                                                                              \
     /** Keep about this number of last records in ZooKeeper log, even if they are obsolete.                   \
      *  It doesn't affect work of tables: used only to diagnose ZooKeeper log before cleaning. */             \
-    M(SettingUInt64, replicated_logs_to_keep, 100)                                                            \
+    M(SettingUInt64, min_replicated_logs_to_keep, 100)                                                        \
                                                                                                               \
     /** After specified amount of time passed after replication log entry creation                            \
      *  and sum size of parts is greater than threshold,                                                      \

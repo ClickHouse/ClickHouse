@@ -6,8 +6,8 @@ set -o pipefail
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
-#TODO: DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
-DATA_DIR=${DATA_DIR:=/tmp/clickhouse}
+DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
+DATA_DIR_PATTERN=${DATA_DIR_PATTERN:=/tmp/clickhouse} # path from config file, will be replaced to temporary
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 export CLICKHOUSE_BINARY=${CLICKHOUSE_BINARY:="clickhouse"}
 [ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY}-server" ] && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
@@ -25,7 +25,6 @@ export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xm
 [ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/local/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
-CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
 
 TEST_PORT_RANDOM=${TEST_PORT_RANDOM=1}
 if [ "${TEST_PORT_RANDOM}" ]; then
@@ -35,16 +34,26 @@ if [ "${TEST_PORT_RANDOM}" ]; then
     CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=$(($CLICKHOUSE_PORT_BASE + 3))}
     CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=$(($CLICKHOUSE_PORT_BASE + 4))}
     CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=$(($CLICKHOUSE_PORT_BASE + 5))}
+    CLICKHOUSE_PORT_ODBC_BRIDGE=${CLICKHOUSE_ODBC_BRIDGE:=$(($CLICKHOUSE_PORT_BASE + 6))}
 fi
 
-export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port`}
-export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=http_port`}
-export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=`$CLICKHOUSE_EXTRACT_CONFIG --key=interserver_http_port`}
+rm -rf $DATA_DIR || true
+mkdir -p $LOG_DIR $DATA_DIR/etc || true
+
+if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
+    cat $CLICKHOUSE_CONFIG | sed -e s!$DATA_DIR_PATTERN!$DATA_DIR! > $DATA_DIR/etc/server-config.xml
+    export CLICKHOUSE_CONFIG=$DATA_DIR/etc/server-config.xml
+    cp ${CONFIG_SERVER_DIR}users.xml $DATA_DIR/etc
+fi
+
+CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
+CLICKHOUSE_LOG=${CLICKHOUSE_LOG:=$DATA_DIR/log/clickhouse-server.log}
+export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port || echo 9000`}
+export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=http_port || echo 8123`}
+export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=`$CLICKHOUSE_EXTRACT_CONFIG --key=interserver_http_port || echo 9009`}
 export CLICKHOUSE_PORT_TCP_SECURE=${CLICKHOUSE_PORT_TCP_SECURE:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port_secure`}
 export CLICKHOUSE_PORT_HTTPS=${CLICKHOUSE_PORT_HTTPS:=`$CLICKHOUSE_EXTRACT_CONFIG --key=https_port`}
-
-rm -rf $DATA_DIR || true
-mkdir -p $LOG_DIR || true
+export CLICKHOUSE_ODBC_BRIDGE=${CLICKHOUSE_ODBC_BRIDGE:=`$CLICKHOUSE_EXTRACT_CONFIG --key=odbc_bridge.port || echo 9018`}
 
 DHPARAM=`$CLICKHOUSE_EXTRACT_CONFIG --key=openSSL.server.dhParamsFile`
 PRIVATEKEY=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG  --key=openSSL.server.privateKeyFile`
@@ -68,14 +77,16 @@ VERSION=`${BIN_DIR}clickhouse-client --version-clean`
 # If run from compile dir - use in-place compile binary and headers
 [ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=$BUILD_DIR/dbms/programs/ --compiler_headers=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/ --compiler_headers_root=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/"
 
-$GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
+$GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG --log=$CLICKHOUSE_LOG $TEST_SERVER_PARAMS -- \
     --http_port=$CLICKHOUSE_PORT_HTTP \
     --tcp_port=$CLICKHOUSE_PORT_TCP \
     --https_port=$CLICKHOUSE_PORT_HTTPS \
     --tcp_port_secure=$CLICKHOUSE_PORT_TCP_SECURE \
     --interserver_http_port=$CLICKHOUSE_PORT_INTERSERVER \
+    --odbc_bridge.port=$CLICKHOUSE_ODBC_BRIDGE \
     $INTERNAL_COMPILER_PARAMS \
-    > $LOG_DIR/stdout 2>&1 &
+    $TEST_SERVER_CONFIG_PARAMS \
+    2>&1 > $LOG_DIR/server.stdout.log &
 CH_PID=$!
 sleep ${TEST_SERVER_STARTUP_WAIT:=5}
 

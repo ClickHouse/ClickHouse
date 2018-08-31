@@ -16,6 +16,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 template <typename ColumnType>
 class ColumnUnique final : public COWPtrHelper<IColumnUnique, ColumnUnique<ColumnType>>
