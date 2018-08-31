@@ -11,5 +11,5 @@ SELECT visitParamExtractRaw('{"myparam":"test_string"}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": "test_string"}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": "test\\"string"}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": "test\\"string", "other":123}', 'myparam');
-SELECT visitParamExtractRaw('{"myparam": [1,2,3], "other":123}', 'myparam');
+SELECT visitParamExtractRaw('{"myparam": ["]", "2", "3"], "other":123}', 'myparam');
 SELECT visitParamExtractRaw('{"myparam": {"nested" : [1,2,3]}, "other":123}', 'myparam');

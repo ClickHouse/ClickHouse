@@ -27,5 +27,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM system.numbers WHERE NOT ignore(visitParamExtractRaw({param}, 'myparam'))</query>
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
 </test>

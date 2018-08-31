@@ -87,45 +87,47 @@ struct ExtractBool
 
 struct ExtractRaw
 {
-    inline static void skipAfterQuotationIfNeed(const UInt8 *& pos, const UInt8 * end, ColumnString::Chars_t & res_data)
-    {
-        if (pos + 1 < end && pos[1] == '"')
-        {
-            res_data.push_back(*pos);
-            ++pos;
-        }
-    }
+    static constexpr size_t bytes_on_stack = 64;
+    using ExpectChars = PODArray<char, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
 
     static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
     {
-        std::vector<char> expect_end;
+        ExpectChars expects_end;
+        UInt8 current_expect_end = 0;
 
-        for (; pos != end; ++pos)
+        for (auto extract_begin = pos; pos != end; ++pos)
         {
-            if (!expect_end.empty() && *pos == expect_end.back())
-                expect_end.pop_back();
+            if (*pos == current_expect_end)
+            {
+                expects_end.pop_back();
+                current_expect_end = (UInt8) (expects_end.empty() ? 0 : expects_end.back());
+            }
             else
             {
-                switch (*pos)
+                switch(*pos)
                 {
-                    case '[': 
-                        expect_end.push_back(']'); 
+                    case '[':
+                        expects_end.push_back((current_expect_end = ']'));
                         break;
-                    case '{': 
-                        expect_end.push_back('}'); 
+                    case '{':
+                        expects_end.push_back((current_expect_end = '}'));
                         break;
-                    case '"': 
-                        expect_end.push_back('"'); 
+                    case '"' :
+                        expects_end.push_back((current_expect_end = '"'));
                         break;
-                    case '\\': 
-                        skipAfterQuotationIfNeed(pos, end, res_data);
+                    case '\\':
+                        /// skip backslash
+                        if (pos + 1 < end && pos[1] == '"')
+                            pos++;
                         break;
                     default:
-                        if (expect_end.empty() && (*pos == ',' || *pos == '}'))
+                        if (!current_expect_end && (*pos == ',' || *pos == '}'))
+                        {
+                            res_data.insert(extract_begin, pos);
                             return;
+                        }
                 }
             }
-            res_data.push_back(*pos);
         }
     }
 };
