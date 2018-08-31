@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context.h>
+#include <Common/config.h>
 #include <Common/SipHash.h>
 #include <Interpreters/Settings.h>
 #include <Core/Names.h>
@@ -143,15 +144,20 @@ public:
     using Actions = std::vector<ExpressionAction>;
 
     ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
-        : input_columns(input_columns_), context(context_)
+        : input_columns(input_columns_), settings(context_.getSettingsRef())
     {
         for (const auto & input_elem : input_columns)
             sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
+
+#if USE_EMBEDDED_COMPILER
+        if (settings.compiled_expressions_cache_size > 0)
+            compilation_cache = context_.getCompiledExpressionsCache();
+#endif
     }
 
     /// For constant columns the columns themselves can be contained in `input_columns_`.
     ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
-        : context(context_)
+        : settings(context_.getSettingsRef())
     {
         for (const auto & input_elem : input_columns_)
         {
@@ -220,13 +226,16 @@ public:
 
     BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
 
-    const Settings & getSettings() const { return context.getSettingsRef(); }
+    const Settings & getSettings() const { return settings; }
 
 private:
     NamesAndTypesList input_columns;
     Actions actions;
     Block sample_block;
-    const Context & context;
+    Settings settings;
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compilation_cache;
+#endif
 
     void checkLimits(Block & block) const;
 

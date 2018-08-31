@@ -56,7 +56,7 @@ public:
 
 /// For each APPLY_FUNCTION action, try to compile the function to native code; if the only uses of a compilable
 /// function's result are as arguments to other compilable functions, inline it and leave the now-redundant action as-is.
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, const Context & global_context);
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache);
 
 }
 

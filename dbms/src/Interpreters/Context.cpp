@@ -1819,10 +1819,7 @@ std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionsCache() 
     auto lock = getLock();
 
     if (!shared->compiled_expression_cache)
-    {
-        std::cerr << "Cache size:" << settings.compiled_expressions_cache_size << std::endl;
         shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(settings.compiled_expressions_cache_size);
-    }
 
     return shared->compiled_expression_cache;
 }
