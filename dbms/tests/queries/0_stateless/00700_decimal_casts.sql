@@ -86,4 +86,10 @@ SELECT toUInt64(999999999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 SELECT CAST('42.4200', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,2)'), CAST(a, 'Decimal(18, 2)'), CAST(a, 'Decimal(38, 2)');
 SELECT CAST('42.42', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,7)'), CAST(a, 'Decimal(18, 16)'), CAST(a, 'Decimal(38, 36)');
 
+SELECT CAST('123456789', 'Decimal(9,0)'), CAST('123456789123456789', 'Decimal(18,0)');
+SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,0)');
+SELECT CAST('123456789', 'Decimal(9,1)'); -- { serverError 69 }
+SELECT CAST('123456789123456789', 'Decimal(18,1)'); -- { serverError 69 }
+SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,1)'); -- { serverError 69 }
+
 DROP TABLE IF EXISTS test.decimal;
