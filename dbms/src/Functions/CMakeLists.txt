@@ -40,6 +40,7 @@ generate_function_register(Array
     FunctionCountEqual
     FunctionArrayEnumerate
     FunctionArrayEnumerateUniq
+    FunctionArrayEnumerateDense
     FunctionArrayUniq
     FunctionArrayDistinct
     FunctionEmptyArrayUInt8

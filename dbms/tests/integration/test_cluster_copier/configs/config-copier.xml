@@ -5,7 +5,7 @@
         <errorlog>/var/log/clickhouse-server/copier/log.err.log</errorlog>
         <size>1000M</size>
         <count>10</count>
-		<stderr>/var/log/clickhouse-server/copier/stderr.log</stderr>
+        <stderr>/var/log/clickhouse-server/copier/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/copier/stdout.log</stdout>
     </logger>
 </yandex>
