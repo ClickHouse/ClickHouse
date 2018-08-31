@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -644,6 +645,8 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
+    setThreadName("HTTPHandler");
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.
