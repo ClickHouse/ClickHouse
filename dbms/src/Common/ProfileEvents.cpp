@@ -91,6 +91,7 @@
     \
     M(CompileFunction) \
     M(CompiledFunctionExecute) \
+    M(CompiledCacheSizeBytes) \
     \
     M(ExternalSortWritePart) \
     M(ExternalSortMerge) \
@@ -238,6 +239,11 @@ Event end() { return END; }
 void increment(Event event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().increment(event, amount);
+}
+
+void reset(Event event)
+{
+    DB::CurrentThread::getProfileEvents().reset(event);
 }
 
 }

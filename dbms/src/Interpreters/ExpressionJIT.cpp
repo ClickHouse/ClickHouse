@@ -49,6 +49,7 @@
 namespace ProfileEvents
 {
     extern const Event CompileFunction;
+    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace DB
@@ -160,6 +161,29 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 }
 #endif
 
+struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
+{
+public:
+    size_t allocated_memory = 0;
+    llvm::sys::MemoryBlock
+    allocateMappedMemory(llvm::SectionMemoryManager::AllocationPurpose /*purpose*/,
+                         size_t num_bytes, const llvm::sys::MemoryBlock *const near_block,
+                         unsigned flags, std::error_code &EC) override {
+        allocated_memory += num_bytes;
+        return llvm::sys::Memory::allocateMappedMemory(num_bytes, near_block, flags, EC);
+    }
+
+    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock &block,
+                                        unsigned flags) override {
+        return llvm::sys::Memory::protectMappedMemory(block, flags);
+    }
+
+    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock &block) override {
+        allocated_memory -= block.size();
+        return llvm::sys::Memory::releaseMappedMemory(block);
+    }
+};
+
 struct LLVMContext
 {
     llvm::LLVMContext context;
@@ -170,6 +194,7 @@ struct LLVMContext
     std::shared_ptr<llvm::Module> module;
 #endif
     std::unique_ptr<llvm::TargetMachine> machine;
+    std::unique_ptr<CountingMMapper> memory_mapper;
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
     llvm::orc::RTDyldObjectLinkingLayer object_layer;
     llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
@@ -184,7 +209,8 @@ struct LLVMContext
         : module(std::make_shared<llvm::Module>("jit", context))
 #endif
         , machine(getNativeMachine())
-        , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
+        , memory_mapper(std::make_unique<CountingMMapper>())
+        , memory_manager(std::make_shared<llvm::SectionMemoryManager>(memory_mapper.get()))
 #if LLVM_VERSION_MAJOR >= 7
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
@@ -201,10 +227,10 @@ struct LLVMContext
         module->setTargetTriple(machine->getTargetTriple().getTriple());
     }
 
-    void finalize()
+    size_t finalize()
     {
         if (!module->size())
-            return;
+            return 0;
         llvm::PassManagerBuilder builder;
         llvm::legacy::PassManager mpm;
         llvm::legacy::FunctionPassManager fpm(module.get());
@@ -253,6 +279,8 @@ struct LLVMContext
                 throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
             symbols[name] = reinterpret_cast<void *>(*address);
         }
+
+        return memory_mapper->allocated_memory;
     }
 };
 
@@ -634,7 +662,9 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    context->finalize();
+    size_t used_memory = context->finalize();
+
+    ProfileEvents::increment(ProfileEvents::CompiledCacheSizeBytes, used_memory);
 }
 
 }
