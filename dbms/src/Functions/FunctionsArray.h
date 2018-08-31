@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -1260,10 +1259,10 @@ private:
 };
 
 
-class FunctionArrayEnumerateUniq : public IFunction
+template <typename Derived>
+class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static constexpr auto name = "arrayEnumerateUniq";
     static FunctionPtr create(const Context & context);
 
     String getName() const override;
@@ -1298,6 +1297,21 @@ private:
         ColumnUInt32::Container & res_values);
 };
 
+class FunctionArrayEnumerateUniq : public FunctionArrayEnumerateExtended<FunctionArrayEnumerateUniq>
+{
+    using Base = FunctionArrayEnumerateExtended<FunctionArrayEnumerateUniq>;
+public:
+    static constexpr auto name = "arrayEnumerateUniq";
+    using Base::create;
+};
+
+class FunctionArrayEnumerateDense : public FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>
+{
+    using Base = FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>;
+public:
+    static constexpr auto name = "arrayEnumerateDense";
+    using Base::create;
+};
 
 template <typename Type> struct TypeToColumnType { using ColumnType = ColumnVector<Type>; };
 template <> struct TypeToColumnType<String> { using ColumnType = ColumnString; };

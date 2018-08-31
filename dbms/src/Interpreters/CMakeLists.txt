@@ -10,7 +10,7 @@ set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
 set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
 
 # Disabling asan reporting for these tools
-if (CMAKE_BUILD_TYPE_UC STREQUAL "ASAN")
+if (SANITIZE STREQUAL "address")
     set(INTERNAL_COMPILER_ENV "env ASAN_OPTIONS=detect_leaks=0" CACHE STRING "")
 else ()
     set(INTERNAL_COMPILER_ENV "" CACHE STRING "")

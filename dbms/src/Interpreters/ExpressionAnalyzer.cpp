@@ -365,7 +365,8 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
                 translateQualifiedNamesImpl(select->where_expression, tables);
             if (select->having_expression)
                 translateQualifiedNamesImpl(select->having_expression, tables);
-        }        
+        }
+
         for (auto & child : ast->children)
         {
             /// Do not go to FROM, JOIN, subqueries.

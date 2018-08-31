@@ -1,7 +1,11 @@
 #pragma once
+
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ObjectPool.h>
+
 #include <IO/Progress.h>
+
 #include <memory>
 #include <map>
 #include <mutex>
@@ -159,8 +163,9 @@ protected:
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
 
-    /// Set only if we have enough capabilities.
-    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
+    /// Set to non-nullptr only if we have enough capabilities.
+    /// We use pool because creation and destruction of TaskStatsInfoGetter objects are expensive.
+    SimpleObjectPool<TaskStatsInfoGetter>::Pointer taskstats_getter;
 
 public:
     /// Implicitly finalizes current thread in the destructor
@@ -172,15 +177,9 @@ public:
         CurrentThreadScope() = default;
         ~CurrentThreadScope()
         {
-            try
-            {
-                if (deleter)
-                    deleter();
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
+            if (deleter)
+                deleter();
+            /// std::terminate on exception: this is Ok.
         }
     };
 
