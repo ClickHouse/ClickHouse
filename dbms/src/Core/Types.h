@@ -82,6 +82,8 @@ enum class TypeIndex
     Decimal64,
     Decimal128,
     UUID,
+    Array,
+    Tuple,
 };
 
 template <typename T> struct TypeId;
