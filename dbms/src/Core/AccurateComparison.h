@@ -32,7 +32,10 @@ using DB::UInt64;
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
 constexpr bool is_safe_conversion = (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
-    || (std::is_integral_v<A> && std::is_integral_v<B> && !(std::is_signed_v<A> ^ std::is_signed_v<B>));
+    || (std::is_integral_v<A> && std::is_integral_v<B> && !(std::is_signed_v<A> ^ std::is_signed_v<B>))
+    || (std::is_same_v<A, DB::Int128> && std::is_same_v<B, DB::Int128>)
+    || (std::is_integral_v<A> && std::is_same_v<B, DB::Int128>)
+    || (std::is_same_v<A, DB::Int128> && std::is_integral_v<B>);
 template <typename A, typename B>
 using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>, bool>;
 template <typename A, typename B>
