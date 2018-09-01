@@ -22,7 +22,7 @@ void StorageSystemEvents::fillData(MutableColumns & res_columns, const Context &
 
         if (0 != value)
         {
-            res_columns[0]->insert(String(ProfileEvents::getDescription(ProfileEvents::Event(i))));
+            res_columns[0]->insert(String(ProfileEvents::getName(ProfileEvents::Event(i))));
             res_columns[1]->insert(value);
         }
     }
