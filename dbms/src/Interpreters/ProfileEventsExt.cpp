@@ -30,7 +30,7 @@ void dumpToArrayColumns(const Counters & counters, DB::IColumn * column_names_, 
 
         if (column_names)
         {
-            const char * desc = ProfileEvents::getDescription(event);
+            const char * desc = ProfileEvents::getName(event);
             column_names->getData().insertData(desc, strlen(desc));
         }
 
