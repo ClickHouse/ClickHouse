@@ -217,16 +217,16 @@ Counters Counters::getPartiallyAtomicSnapshot() const
     return res;
 }
 
-const char * getDescription(Event event)
+const char * getName(Event event)
 {
-    static const char * descriptions[] =
+    static const char * strings[] =
     {
     #define M(NAME) #NAME,
         APPLY_FOR_EVENTS(M)
     #undef M
     };
 
-    return descriptions[event];
+    return strings[event];
 }
 
 
