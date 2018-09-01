@@ -1155,8 +1155,8 @@ protected:
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
 
-    // add info to track aligned requirement
-    // If there are states whose alignment info were v1, ..vn, align_aggregate_states will be max(v1, ... vn)
+    // add info to track alignment requirement
+    // If there are states whose alignmentment are v1, ..vn, align_aggregate_states will be max(v1, ... vn)
     size_t align_aggregate_states = 1;
 
     bool all_aggregates_has_trivial_destructor = false;
