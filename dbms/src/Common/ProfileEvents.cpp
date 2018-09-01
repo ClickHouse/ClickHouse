@@ -56,10 +56,10 @@
     \
     M(InsertedRows, "") \
     M(InsertedBytes, "") \
-    M(DelayedInserts, "") \
-    M(RejectedInserts, "") \
-    M(DelayedInsertsMilliseconds, "") \
-    M(DuplicatedInsertedBlocks, "") \
+    M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
+    M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.") \
+    M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
+    M(DuplicatedInsertedBlocks, "Number of times the INSERTed block to a ReplicatedMergeTree table was deduplicated.") \
     \
     M(ZooKeeperInit, "") \
     M(ZooKeeperTransactions, "") \
@@ -97,15 +97,15 @@
     M(ExternalAggregationCompressedBytes, "") \
     M(ExternalAggregationUncompressedBytes, "") \
     \
-    M(SlowRead, "") \
-    M(ReadBackoff, "") \
+    M(SlowRead, "Number of reads from a file that were slow. This indicate system overload. Thresholds are controlled by read_backoff_* settings.") \
+    M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
     \
-    M(ReplicaYieldLeadership, "") \
+    M(ReplicaYieldLeadership, "Number of times Replicated table was yielded its leadership due to large replication lag relative to other replicas.") \
     M(ReplicaPartialShutdown, "") \
     \
-    M(SelectedParts, "") \
-    M(SelectedRanges, "") \
-    M(SelectedMarks, "") \
+    M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
+    M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
+    M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
     \
     M(MergedRows, "") \
     M(MergedUncompressedBytes, "") \
@@ -121,8 +121,8 @@
     M(CannotRemoveEphemeralNode, "") \
     M(LeaderElectionAcquiredLeadership, "") \
     \
-    M(RegexpCreated, "") \
-    M(ContextLock, "") \
+    M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
+    M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
     \
     M(StorageBufferFlush, "") \
     M(StorageBufferErrorOnFlush, "") \
@@ -153,21 +153,21 @@
     M(RWLockWritersWaitMilliseconds, "") \
     M(NetworkErrors, "") \
     \
-    M(RealTimeMicroseconds, "") \
-    M(UserTimeMicroseconds, "") \
-    M(SystemTimeMicroseconds, "") \
+    M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
+    M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
+    M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SoftPageFaults, "") \
     M(HardPageFaults, "") \
     M(VoluntaryContextSwitches, "") \
     M(InvoluntaryContextSwitches, "") \
     \
-    M(OSIOWaitMicroseconds, "") \
-    M(OSCPUWaitMicroseconds, "") \
-    M(OSCPUVirtualTimeMicroseconds, "") \
-    M(OSReadBytes, "") \
-    M(OSWriteBytes, "") \
-    M(OSReadChars, "") \
-    M(OSWriteChars, "") \
+    M(OSIOWaitMicroseconds, "Total time a thread spent waiting for a result of IO operation, from the OS point of view.") \
+    M(OSCPUWaitMicroseconds, "Total time a thread was ready for execution but waiting to be scheduled by OS, from the OS point of view.") \
+    M(OSCPUVirtualTimeMicroseconds, "CPU time spent seen by OS. Does not include involuntary waits due to virtualization.") \
+    M(OSReadBytes, "Number of bytes read from disks or block devices. Doesn't include bytes read from page cache. May include excessive data due to block size, readahead, etc.") \
+    M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.") \
+    M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
+    M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
 
 
 namespace ProfileEvents
