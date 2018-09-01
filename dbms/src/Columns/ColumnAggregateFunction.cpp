@@ -3,11 +3,14 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <Common/SipHash.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -411,7 +414,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
     /// Place serialized default values into min/max.
 
-    PODArrayWithStackMemory<char, 16> place_buffer(func->sizeOfData());
+    AlignedBuffer place_buffer(func->sizeOfData(), func->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
     String serialized;

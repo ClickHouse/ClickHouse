@@ -6,6 +6,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/AlignedBuffer.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -258,7 +259,7 @@ Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = String();
 
-    PODArrayWithStackMemory<char, 16> place_buffer(function->sizeOfData());
+    AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
     function->create(place);

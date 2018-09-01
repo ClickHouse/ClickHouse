@@ -59,10 +59,11 @@ private:
         size_t old_size = state.dynamic_array_size;
         if (old_size < new_size)
         {
-            state.array_of_aggregate_datas = arena.realloc(
+            state.array_of_aggregate_datas = arena.alignedRealloc(
                 state.array_of_aggregate_datas,
                 old_size * nested_size_of_data,
-                new_size * nested_size_of_data);
+                new_size * nested_size_of_data,
+                nested_func->alignOfData());
 
             size_t i = old_size;
             char * nested_state = state.array_of_aggregate_datas + i * nested_size_of_data;

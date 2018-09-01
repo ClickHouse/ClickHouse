@@ -16,6 +16,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/FieldVisitors.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/config_version.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -1422,14 +1423,9 @@ public:
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
-        auto deleter = [&agg_func](char * ptr)
-        {
-            agg_func.destroy(ptr);
-            free(ptr);
-        };
-        std::unique_ptr<char, decltype(deleter)> place{reinterpret_cast<char *>(malloc(agg_func.sizeOfData())), deleter};
-
-        agg_func.create(place.get()); /// Not much exception-safe. If an exception is thrown out, destroy will be called in vain.
+        AlignedBuffer place(agg_func.sizeOfData(), agg_func.alignOfData());
+        agg_func.create(place.data());
+        SCOPE_EXIT(agg_func.destroy(place.data()));
 
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
@@ -1441,8 +1437,8 @@ public:
         for (const auto & state_to_add : states)
         {
             /// Will pass empty arena if agg_func does not allocate memory in arena
-            agg_func.merge(place.get(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.get(), result_column);
+            agg_func.merge(place.data(), state_to_add, arena.get());
+            agg_func.insertResultInto(place.data(), result_column);
         }
 
         block.getByPosition(result).column = std::move(result_column_ptr);

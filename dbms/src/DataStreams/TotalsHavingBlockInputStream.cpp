@@ -34,7 +34,7 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
 
             IAggregateFunction * function = column->getAggregateFunction().get();
             auto target = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-            AggregateDataPtr data = arena->alloc(function->sizeOfData());
+            AggregateDataPtr data = arena->alignedAlloc(function->sizeOfData(), function->alignOfData());
             function->create(data);
             target->getData().push_back(data);
             current_totals.emplace_back(std::move(target));
