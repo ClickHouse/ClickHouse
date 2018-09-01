@@ -191,7 +191,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
             method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
-            AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
             AggregateFunctionsList::forEach(AggregateFunctionsCreator(
                 aggregate_functions, offsets_of_aggregate_states, place));
