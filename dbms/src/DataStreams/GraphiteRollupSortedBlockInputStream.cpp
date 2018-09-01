@@ -23,8 +23,8 @@ GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
 
     for (const auto & pattern : params.patterns)
     {
-        max_size_of_aggregate_state = std::max({max_size_of_aggregate_state, pattern.function->sizeOfData()});
-        max_alignment_of_aggregate_state = std::max({max_alignment_of_aggregate_state, pattern.function->alignOfData()});
+        max_size_of_aggregate_state = std::max(max_size_of_aggregate_state, pattern.function->sizeOfData());
+        max_alignment_of_aggregate_state = std::max(max_alignment_of_aggregate_state, pattern.function->alignOfData());
     }
 
     place_for_aggregate_state.reset(max_size_of_aggregate_state, max_alignment_of_aggregate_state);

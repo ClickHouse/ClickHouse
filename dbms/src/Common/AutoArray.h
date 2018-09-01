@@ -218,7 +218,7 @@ private:
     static constexpr size_t alignment = alignof(T);
     /// Bytes allocated to store size of array before data. It is padded to have minimum size as alignment.
     /// Padding is at left and the size is stored at right (just before the first data element).
-    static constexpr size_t prefix_size = std::max({sizeof(size_t), alignment});
+    static constexpr size_t prefix_size = std::max(sizeof(size_t), alignment);
 
     char * data;
 
