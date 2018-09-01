@@ -1,5 +1,3 @@
-SET send_logs_level = 'none';
-
 DROP TABLE IF EXISTS test.using1;
 DROP TABLE IF EXISTS test.using2;
 
