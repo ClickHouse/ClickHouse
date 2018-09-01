@@ -63,6 +63,10 @@
 #include "Suggest.h"
 #endif
 
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
