@@ -1,12 +1,19 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdlib>
 
-#include <common/likely.h>
+#include <Common/Exception.h>
+#include <Common/formatReadable.h>
 
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 /** An array of (almost) unchangable size:
   *  the size is specified in the constructor;
@@ -20,6 +27,7 @@ namespace DB
   * `sizeof` is equal to the size of one pointer.
   *
   * Not exception-safe.
+  *
   * Copying is supported via assign() method. Moving empties the original object.
   * That is, it is inconvenient to use this array in many cases.
   *
@@ -207,6 +215,11 @@ public:
     }
 
 private:
+    static constexpr size_t alignment = alignof(T);
+    /// Bytes allocated to store size of array before data. It is padded to have minimum size as alignment.
+    /// Padding is at left and the size is stored at right (just before the first data element).
+    static constexpr size_t prefix_size = std::max({sizeof(size_t), alignment});
+
     char * data;
 
     size_t & m_size()
@@ -234,20 +247,27 @@ private:
         data = const_cast<char *>(reinterpret_cast<const char *>(&empty_auto_array_helper)) + sizeof(size_t);
     }
 
-    void init(size_t size_, bool dont_init_elems)
+    void init(size_t new_size, bool dont_init_elems)
     {
-        if (!size_)
+        if (!new_size)
         {
             setEmpty();
             return;
         }
 
-        data = new char[size_ * sizeof(T) + sizeof(size_t)];
-        data += sizeof(size_t);
-        m_size() = size_;
+        void * new_data = nullptr;
+        int res = posix_memalign(&new_data, alignment, prefix_size + new_size * sizeof(T));
+        if (0 != res)
+            throwFromErrno("Cannot allocate memory (posix_memalign) " + formatReadableSizeWithBinarySuffix(new_size) + ".",
+                ErrorCodes::CANNOT_ALLOCATE_MEMORY, res);
+
+        data = static_cast<char *>(new_data);
+        data += prefix_size;
+
+        m_size() = new_size;
 
         if (!dont_init_elems)
-            for (size_t i = 0; i < size_; ++i)
+            for (size_t i = 0; i < new_size; ++i)
                 new (place(i)) T();
     }
 
@@ -255,13 +275,13 @@ private:
     {
         size_t s = size();
 
-        if (likely(s))
+        if (s)
         {
             for (size_t i = 0; i < s; ++i)
                 elem(i).~T();
 
-            data -= sizeof(size_t);
-            delete[] data;
+            data -= prefix_size;
+            free(data);
         }
     }
 };

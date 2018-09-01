@@ -403,6 +403,10 @@ public:
 }
 
 
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
