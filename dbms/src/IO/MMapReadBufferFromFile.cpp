@@ -30,10 +30,7 @@ void MMapReadBufferFromFile::open(const std::string & file_name)
     fd = ::open(file_name.c_str(), O_RDONLY);
 
     if (-1 == fd)
-    {
-        ProfileEvents::increment(ProfileEvents::FileOpenFailed);
         throwFromErrno("Cannot open file " + file_name, errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
-    }
 }
 
 
