@@ -221,7 +221,19 @@ const char * getName(Event event)
 {
     static const char * strings[] =
     {
-    #define M(NAME) #NAME,
+    #define M(NAME, DOCUMENTATION) #NAME,
+        APPLY_FOR_EVENTS(M)
+    #undef M
+    };
+
+    return strings[event];
+}
+
+const char * getDocumentation(Event event)
+{
+    static const char * strings[] =
+    {
+    #define M(NAME, DOCUMENTATION) DOCUMENTATION,
         APPLY_FOR_EVENTS(M)
     #undef M
     };
