@@ -36,7 +36,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
         new_col.chars.resize(size * n);
 
         size_t count = std::min(this->size(), size);
-        memcpy(&(new_col.chars[0]), chars.data(), count * n * sizeof(chars[0]));
+        memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
 
         if (size > count)
             memset(&(new_col.chars[count * n]), '\0', (size - count) * n);

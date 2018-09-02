@@ -91,7 +91,7 @@ int main(int argc, char ** argv)
         }
 
         {
-            DB::ReadBuffer rb(&formatted[0], formatted.size(), 0);
+            DB::ReadBuffer rb(formatted.data(), formatted.size(), 0);
         //    DB::CompressedReadBuffer rb(rb_);
             Stopwatch watch;
 

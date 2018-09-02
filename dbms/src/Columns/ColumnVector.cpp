@@ -115,7 +115,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        memcpy(&new_col.data[0], data.data(), count * sizeof(data[0]));
+        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
             memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));

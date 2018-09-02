@@ -37,7 +37,7 @@ struct SetMethodOneNumber
           */
         void init(const ColumnRawPtrs & key_columns)
         {
-            vec = &static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData()[0];
+            vec = static_cast<const ColumnVector<FieldType> *>(key_columns[0])->getData().data();
         }
 
         /// Get key from key columns for insertion into hash table.

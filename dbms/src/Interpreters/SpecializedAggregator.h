@@ -49,7 +49,7 @@ void AggregateFunctionsUpdater::operator()()
 {
     static_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
         value + offsets_of_aggregate_states[column_num],
-        &aggregate_columns[column_num][0],
+        aggregate_columns[column_num].data(),
         row_num, arena);
 }
 
