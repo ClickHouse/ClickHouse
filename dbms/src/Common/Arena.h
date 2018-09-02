@@ -6,6 +6,7 @@
 #include <boost/noncopyable.hpp>
 #include <common/likely.h>
 #include <Core/Defines.h>
+#include <Common/memcpySmall.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Allocator.h>
 
@@ -31,12 +32,15 @@ namespace DB
 class Arena : private boost::noncopyable
 {
 private:
+    /// Padding allows to use 'memcpySmallAllowReadWriteOverflow15' instead of 'memcpy'.
+    static constexpr size_t pad_right = 15;
+
     /// Contiguous chunk of memory and pointer to free space inside it. Member of single-linked list.
     struct Chunk : private Allocator<false>    /// empty base optimization
     {
         char * begin;
         char * pos;
-        char * end;
+        char * end; /// does not include padding.
 
         Chunk * prev;
 
@@ -47,7 +51,7 @@ private:
 
             begin = reinterpret_cast<char *>(Allocator::alloc(size_));
             pos = begin;
-            end = begin + size_;
+            end = begin + size_ - pad_right;
             prev = prev_;
         }
 
@@ -59,7 +63,7 @@ private:
                 delete prev;
         }
 
-        size_t size() const { return end - begin; }
+        size_t size() const { return end + pad_right - begin; }
         size_t remaining() const { return end - pos; }
     };
 
@@ -95,7 +99,7 @@ private:
     /// Add next contiguous chunk of memory with size not less than specified.
     void NO_INLINE addChunk(size_t min_size)
     {
-        head = new Chunk(nextSize(min_size), head);
+        head = new Chunk(nextSize(min_size + pad_right), head);
         size_in_bytes += head->size();
     }
 
@@ -216,7 +220,7 @@ public:
     {
         char * res = alloc(new_size);
         if (old_data)
-            memcpy(res, old_data, old_size);
+            memcpySmallAllowReadWriteOverflow15(res, old_data, old_size);
         return res;
     }
 
@@ -224,7 +228,7 @@ public:
     {
         char * res = alignedAlloc(new_size, alignment);
         if (old_data)
-            memcpy(res, old_data, old_size);
+            memcpySmallAllowReadWriteOverflow15(res, old_data, old_size);
         return res;
     }
 
@@ -232,14 +236,14 @@ public:
     const char * insert(const char * data, size_t size)
     {
         char * res = alloc(size);
-        memcpy(res, data, size);
+        memcpySmallAllowReadWriteOverflow15(res, data, size);
         return res;
     }
 
     const char * alignedInsert(const char * data, size_t size, size_t alignment)
     {
         char * res = alignedAlloc(size, alignment);
-        memcpy(res, data, size);
+        memcpySmallAllowReadWriteOverflow15(res, data, size);
         return res;
     }
 
