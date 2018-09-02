@@ -141,7 +141,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
         bool overflow = false;    /// New key did not fit in the hash table because of no_more_keys.
 
         /// Get the key to insert into the hash table.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, keys, *aggregates_pool);
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
         if (!no_more_keys)    /// Insert.
         {
