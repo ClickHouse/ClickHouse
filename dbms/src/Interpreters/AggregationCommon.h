@@ -250,10 +250,10 @@ static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
 /// Copy the specified keys to a continuous memory chunk of a pool.
 /// Subsequently append StringRef objects referring to each key.
 ///
-/// [key1][key2]...[keyN][ref1][ref2]...[refN]
-///   ^     ^        :     |     |
-///   +-----|--------:-----+     |
-///   :     +--------:-----------+
+/// [key1][key2]...[keyN][pad][ref1][ref2]...[refN]
+///   ^     ^        :          |     |
+///   +-----|--------:----------+     |
+///   :     +--------:----------------+
 ///   :              :
 ///   <-------------->
 ///        (1)
@@ -270,7 +270,9 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
         sum_keys_size += keys[j].size;
     }
 
-    char * res = pool.alloc(sum_keys_size + keys_size * sizeof(StringRef));
+    size_t pad = alignof(StringRef) - (sum_keys_size % alignof(StringRef));
+
+    char * res = pool.alloc(sum_keys_size + pad + keys_size * sizeof(StringRef));
     char * place = res;
 
     for (size_t j = 0; j < keys_size; ++j)
@@ -281,7 +283,7 @@ inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
     }
 
     /// Place the StringRefs on the newly copied keys in the pool.
-    memcpy(place, keys.data(), keys_size * sizeof(StringRef));
+    memcpy(place + pad, keys.data(), keys_size * sizeof(StringRef));
 
     return {res, sum_keys_size};
 }
