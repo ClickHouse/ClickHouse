@@ -989,7 +989,7 @@ struct CutSubstringImpl
         {
             const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
             Extractor::execute(current, offsets[i] - prev_offset - 1, start, length);
-            size_t start_index = start - reinterpret_cast<const char *>(&data[0]);
+            size_t start_index = start - reinterpret_cast<const char *>(data.data());
 
             res_data.resize(res_data.size() + offsets[i] - prev_offset - length);
             memcpySmallAllowReadWriteOverflow15(

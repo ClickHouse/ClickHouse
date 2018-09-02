@@ -1690,9 +1690,9 @@ struct DivideIntegralByConstantImpl
         libdivide::divider<A> divider(b);
 
         size_t size = a.size();
-        const A * a_pos = &a[0];
+        const A * a_pos = a.data();
         const A * a_end = a_pos + size;
-        ResultType * c_pos = &c[0];
+        ResultType * c_pos = c.data();
 
 #if __SSE2__
         static constexpr size_t values_per_sse_register = 16 / sizeof(A);

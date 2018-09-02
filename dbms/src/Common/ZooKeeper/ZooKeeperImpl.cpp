@@ -340,7 +340,7 @@ void read(String & s, ReadBuffer & in)
         throw Exception("Too large string size while reading from ZooKeeper", ZMARSHALLINGERROR);
 
     s.resize(size);
-    in.read(&s[0], size);
+    in.read(s.data(), size);
 }
 
 template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
@@ -349,7 +349,7 @@ template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
     read(size, in);
     if (size != N)
         throw Exception("Unexpected array size while reading from ZooKeeper", ZMARSHALLINGERROR);
-    in.read(&s[0], N);
+    in.read(s.data(), N);
 }
 
 void read(Stat & stat, ReadBuffer & in)

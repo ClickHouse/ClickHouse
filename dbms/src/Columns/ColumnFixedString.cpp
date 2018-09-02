@@ -36,7 +36,7 @@ MutableColumnPtr ColumnFixedString::cloneResized(size_t size) const
         new_col.chars.resize(size * n);
 
         size_t count = std::min(this->size(), size);
-        memcpy(&(new_col.chars[0]), &chars[0], count * n * sizeof(chars[0]));
+        memcpy(new_col.chars.data(), chars.data(), count * n * sizeof(chars[0]));
 
         if (size > count)
             memset(&(new_col.chars[count * n]), '\0', (size - count) * n);
@@ -165,9 +165,9 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     if (result_size_hint)
         res->chars.reserve(result_size_hint > 0 ? result_size_hint * n : chars.size());
 
-    const UInt8 * filt_pos = &filt[0];
+    const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + col_size;
-    const UInt8 * data_pos = &chars[0];
+    const UInt8 * data_pos = chars.data();
 
 #if __SSE2__
     /** A slightly more optimized version.

@@ -332,7 +332,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
     res_data.resize(data.size());
     array(reinterpret_cast<const UInt8 *>(data.data()),
         reinterpret_cast<const UInt8 *>(data.data() + data.size()),
-        reinterpret_cast<UInt8 *>(&res_data[0]));
+        reinterpret_cast<UInt8 *>(res_data.data()));
 }
 
 template <char not_case_lower_bound,
@@ -551,7 +551,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isStringOrFixedString()
-            && !checkDataType<DataTypeArray>(&*arguments[0]))
+            && !checkDataType<DataTypeArray>(arguments[0].get()))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -639,7 +639,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isStringOrFixedString()
-            && !checkDataType<DataTypeArray>(&*arguments[0]))
+            && !checkDataType<DataTypeArray>(arguments[0].get()))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

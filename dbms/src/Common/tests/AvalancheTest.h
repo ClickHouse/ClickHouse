@@ -85,7 +85,7 @@ void calcBias(pfHash hash, std::vector<int> & counts, int reps, Rand & r)
 
         hash(&K, keybytes, 0, &A);
 
-        int * cursor = &counts[0];
+        int * cursor = counts.data();
 
         for (int iBit = 0; iBit < keybits; iBit++)
         {

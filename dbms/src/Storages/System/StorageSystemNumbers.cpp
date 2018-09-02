@@ -28,7 +28,7 @@ protected:
         ColumnUInt64::Container & vec = column->getData();
 
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
-        UInt64 * pos = &vec[0]; /// This also accelerates the code.
+        UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
         while (pos < end)
             *pos++ = curr++;
