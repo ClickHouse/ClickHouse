@@ -1105,7 +1105,7 @@ private:
     {
         Float64 width = UnicodeBar::getWidth(src, min, max, max_width);
         dst_chars.resize(UnicodeBar::getWidthInBytes(width));
-        UnicodeBar::render(width, &dst_chars[0]);
+        UnicodeBar::render(width, dst_chars.data());
     }
 
     template <typename T>

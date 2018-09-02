@@ -367,7 +367,7 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
-    const UInt8 * cond_pos = &condition[0];
+    const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
     while (cond_pos < cond_end)

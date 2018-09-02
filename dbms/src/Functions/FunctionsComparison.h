@@ -66,9 +66,9 @@ struct NumComparisonImpl
           */
 
         size_t size = a.size();
-        const A * a_pos = &a[0];
-        const B * b_pos = &b[0];
-        UInt8 * c_pos = &c[0];
+        const A * a_pos = a.data();
+        const B * b_pos = b.data();
+        UInt8 * c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -83,8 +83,8 @@ struct NumComparisonImpl
     static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
-        const A * a_pos = &a[0];
-        UInt8 * c_pos = &c[0];
+        const A * a_pos = a.data();
+        UInt8 * c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -151,7 +151,7 @@ struct StringComparisonImpl
             {
                 a_size = a_offsets[0];
                 b_size = b_offsets[0];
-                res = memcmp(&a_data[0], &b_data[0], std::min(a_size, b_size));
+                res = memcmp(a_data.data(), b_data.data(), std::min(a_size, b_size));
             }
             else
             {
@@ -174,7 +174,7 @@ struct StringComparisonImpl
         {
             if (i == 0)
             {
-                int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+                int res = memcmp(a_data.data(), b_data.data(), std::min(a_offsets[0] - 1, b_n));
                 c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_n + 1));
             }
             else
@@ -199,7 +199,7 @@ struct StringComparisonImpl
             /// Trailing zero byte of the smaller string is included in the comparison.
             if (i == 0)
             {
-                int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_size));
+                int res = memcmp(a_data.data(), b_data, std::min(a_offsets[0], b_size));
                 c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_size));
             }
             else
@@ -329,7 +329,7 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
-                ? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0] - 1))
+                ? (a_offsets[0] == b_offsets[0] && !memcmp(a_data.data(), b_data.data(), a_offsets[0] - 1))
                 : (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
                     && !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1)));
     }
@@ -342,7 +342,7 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
-                ? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], &b_data[0], b_n))
+                ? (a_offsets[0] == b_n + 1 && !memcmp(a_data.data(), b_data.data(), b_n))
                 : (a_offsets[i] - a_offsets[i - 1] == b_n + 1
                     && !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n)));
     }
@@ -357,7 +357,7 @@ struct StringEqualsImpl
         const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
-                ? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], b_data, b_n))
+                ? (a_offsets[0] == b_n + 1 && !memcmp(a_data.data(), b_data, b_n))
                 : (a_offsets[i] - a_offsets[i - 1] == b_n + 1
                     && !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
     }

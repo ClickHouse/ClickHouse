@@ -69,7 +69,7 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
     field = String();
     String & s = get<String &>(field);
     s.resize(size);
-    istr.readStrict(&s[0], size);
+    istr.readStrict(s.data(), size);
 }
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const

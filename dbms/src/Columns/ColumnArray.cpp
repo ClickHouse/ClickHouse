@@ -313,7 +313,7 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 
     const Offsets & offsets1 = getOffsets();
     const Offsets & offsets2 = other.getOffsets();
-    return offsets1.size() == offsets2.size() && 0 == memcmp(&offsets1[0], &offsets2[0], sizeof(offsets1[0]) * offsets1.size());
+    return offsets1.size() == offsets2.size() && 0 == memcmp(offsets1.data(), offsets2.data(), sizeof(offsets1[0]) * offsets1.size());
 }
 
 

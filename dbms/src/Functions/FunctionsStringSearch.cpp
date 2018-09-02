@@ -159,7 +159,7 @@ struct PositionImpl
         const std::string & needle,
         PaddedPODArray<UInt64> & res)
     {
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -355,7 +355,7 @@ struct MatchImpl
         /// A simple case where the LIKE expression reduces to finding a substring in a string
         if (like && likePatternIsStrstr(pattern, strstr_pattern))
         {
-            const UInt8 * begin = &data[0];
+            const UInt8 * begin = data.data();
             const UInt8 * pos = begin;
             const UInt8 * end = pos + data.size();
 
@@ -404,7 +404,7 @@ struct MatchImpl
             {
                 if (!regexp->getRE2()) /// An empty regexp. Always matches.
                 {
-                    memset(&res[0], 1, size * sizeof(res[0]));
+                    memset(res.data(), 1, size * sizeof(res[0]));
                 }
                 else
                 {
@@ -428,7 +428,7 @@ struct MatchImpl
             {
                 /// NOTE This almost matches with the case of LikePatternIsStrstr.
 
-                const UInt8 * begin = &data[0];
+                const UInt8 * begin = data.data();
                 const UInt8 * pos = begin;
                 const UInt8 * end = pos + data.size();
 
@@ -700,7 +700,7 @@ struct ReplaceRegexpImpl
         for (size_t i = 0; i < size; ++i)
         {
             int from = i > 0 ? offsets[i - 1] : 0;
-            re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
+            re2_st::StringPiece input(reinterpret_cast<const char *>(data.data() + from), offsets[i] - from - 1);
 
             processString(input, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -727,7 +727,7 @@ struct ReplaceRegexpImpl
         for (size_t i = 0; i < size; ++i)
         {
             int from = i * n;
-            re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), n);
+            re2_st::StringPiece input(reinterpret_cast<const char *>(data.data() + from), n);
 
             processString(input, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -748,7 +748,7 @@ struct ReplaceStringImpl
         ColumnString::Chars_t & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -823,7 +823,7 @@ struct ReplaceStringImpl
         ColumnString::Chars_t & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 

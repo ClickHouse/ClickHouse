@@ -52,7 +52,7 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
     field = String();
     String & s = get<String &>(field);
     s.resize(n);
-    istr.readStrict(&s[0], n);
+    istr.readStrict(s.data(), n);
 }
 
 

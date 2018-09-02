@@ -57,7 +57,7 @@ namespace UnicodeBar
     inline std::string render(double width)
     {
         std::string res(getWidthInBytes(width), '\0');
-        render(width, &res[0]);
+        render(width, res.data());
         return res;
     }
 }

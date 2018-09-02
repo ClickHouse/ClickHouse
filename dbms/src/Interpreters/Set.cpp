@@ -323,9 +323,9 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     if (data_types.empty())
     {
         if (negative)
-            memset(&vec_res[0], 1, vec_res.size());
+            memset(vec_res.data(), 1, vec_res.size());
         else
-            memset(&vec_res[0], 0, vec_res.size());
+            memset(vec_res.data(), 0, vec_res.size());
         return res;
     }
 

@@ -108,7 +108,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         select->format(settings);
         std::string query = ss.str();
 
-        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(&query[0]), query.size())))
+        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw Poco::Data::ODBC::DescriptorException(session.dbc());
 
         if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
