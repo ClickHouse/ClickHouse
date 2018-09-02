@@ -237,11 +237,11 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::popBack(size_t n)
 {
-    auto & offsets = getOffsets();
-    size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
+    auto & offsets_data = getOffsets();
+    size_t nested_n = offsets_data.back() - offsetAt(offsets_data.size() - n);
     if (nested_n)
         getData().popBack(nested_n);
-    offsets.resize_assume_reserved(offsets.size() - n);
+    offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
 
@@ -662,7 +662,7 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     return res;
 }
 
-INSTANTIATE_INDEX_IMPL(ColumnArray);
+INSTANTIATE_INDEX_IMPL(ColumnArray)
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {

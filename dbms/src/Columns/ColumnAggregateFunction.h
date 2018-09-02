@@ -123,14 +123,14 @@ public:
 
     void insertData(const char * pos, size_t length) override;
 
-    void insertFrom(const IColumn & src, size_t n) override;
+    void insertFrom(const IColumn & from, size_t n) override;
 
     void insertFrom(ConstAggregateDataPtr place);
 
     /// Merge state at last row with specified state in another column.
     void insertMergeFrom(ConstAggregateDataPtr place);
 
-    void insertMergeFrom(const IColumn & src, size_t n);
+    void insertMergeFrom(const IColumn & from, size_t n);
 
     Arena & createOrGetArena();
 

@@ -84,13 +84,13 @@ void AIOContextPool::fulfillPromises(const io_event events[], const int num_even
     for (const auto & event : boost::make_iterator_range(events, events + num_events))
     {
         /// get id from event
-        const auto id = event.data;
+        const auto completed_id = event.data;
 
         /// set value via promise and release it
-        const auto it = promises.find(id);
+        const auto it = promises.find(completed_id);
         if (it == std::end(promises))
         {
-            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << id);
+            LOG_ERROR(&Poco::Logger::get("AIOcontextPool"), "Found io_event with unknown id " << completed_id);
             continue;
         }
 
@@ -126,7 +126,8 @@ std::future<AIOContextPool::BytesRead> AIOContextPool::post(struct iocb & iocb)
     std::unique_lock<std::mutex> lock{mutex};
 
     /// get current id and increment it by one
-    const auto request_id = id++;
+    const auto request_id = next_id;
+    ++next_id;
 
     /// create a promise and put request in "queue"
     promises.emplace(request_id, std::promise<BytesRead>{});

@@ -410,5 +410,5 @@ void ASTSelectQuery::addTableFunction(ASTPtr & table_function_ptr)
     table_expression->database_and_table_name = nullptr;
 }
 
-};
+}
 

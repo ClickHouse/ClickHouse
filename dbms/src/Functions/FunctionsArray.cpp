@@ -3575,7 +3575,7 @@ void FunctionArrayIntersect::NumberExecutor::operator()()
 
     if (!result && typeid_cast<const DataTypeNumber<T> *>(data_type.get()))
         result = execute<Map, ColumnVector<T>, true>(arrays, ColumnVector<T>::create());
-};
+}
 
 template <typename Map, typename ColumnType, bool is_numeric_column>
 ColumnPtr FunctionArrayIntersect::execute(const UnpackedArrays & arrays, MutableColumnPtr result_data_ptr)
