@@ -526,7 +526,7 @@ struct GenericComparisonImpl
 
 #if USE_EMBEDDED_COMPILER
 
-template <template <typename, typename> Op> struct CompileOp;
+template <template <typename, typename> typename Op> struct CompileOp;
 
 template <> struct CompileOp<EqualsOp>
 {
