@@ -17,9 +17,7 @@ void FunctionComparison<GreaterOp, NameGreater>::executeTupleImpl(Block & block,
                                                                   const ColumnsWithTypeAndName & y, size_t tuple_size,
                                                                   size_t input_rows_count)
 {
-    return executeTupleLessGreaterImpl<
-            FunctionComparison<GreaterOp, NameGreater>,
-            FunctionComparison<GreaterOp, NameGreater>>(block, result, x, y, tuple_size, input_rows_count);
+    return executeTupleLessGreaterImpl<FunctionGreater, FunctionGreater>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 }

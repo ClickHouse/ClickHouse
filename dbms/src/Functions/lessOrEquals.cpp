@@ -18,8 +18,8 @@ void FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl(Bloc
                                                                             size_t input_rows_count)
 {
     return executeTupleLessGreaterImpl<
-            FunctionComparison<LessOp, NameLess>,
-            FunctionComparison<LessOrEqualsOp, NameLessOrEquals>>(block, result, x, y, tuple_size, input_rows_count);
+        FunctionComparison<LessOp, NameLess>,
+        FunctionLessOrEquals>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 }
