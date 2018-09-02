@@ -27,6 +27,8 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+# Add some warnings that are not available even with -Wall -Wextra.
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wshadow-uncaptured-local")
 
