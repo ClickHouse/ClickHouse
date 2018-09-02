@@ -752,8 +752,11 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
             current_new_offset += value_size;
             res_offsets.push_back(current_new_offset);
 
-            res_data.resize(res_data.size() + value_size);
-            memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
+            if (value_size)
+            {
+                res_data.resize(res_data.size() + value_size);
+                memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
+            }
         }
 
         prev_replicate_offset = replicate_offsets[i];
