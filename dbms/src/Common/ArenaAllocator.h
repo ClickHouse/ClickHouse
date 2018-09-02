@@ -38,7 +38,7 @@ public:
 };
 
 
-template <size alignment>
+template <size_t alignment>
 class AlignedArenaAllocator
 {
 public:
@@ -51,10 +51,8 @@ public:
     {
         char const * data = reinterpret_cast<char *>(buf);
 
-        // Invariant should be maintained: new_size > old_size
         if (data + old_size == arena->head->pos)
         {
-            // Consecutive optimization
             arena->alignedAllocContinue(new_size - old_size, data, alignment);
             return reinterpret_cast<void *>(const_cast<char *>(data));
         }
@@ -66,7 +64,6 @@ public:
 
     static void free(void * /*buf*/, size_t /*size*/)
     {
-        // Do nothing, trash in arena remains.
     }
 };
 
