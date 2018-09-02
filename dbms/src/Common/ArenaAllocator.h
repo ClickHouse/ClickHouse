@@ -102,7 +102,7 @@ public:
 };
 
 
-template <size_t REAL_ALLOCATION_TRESHOLD = 4096, size_t alignment>
+template <size_t alignment, size_t REAL_ALLOCATION_TRESHOLD = 4096>
 using MixedAlignedArenaAllocator = MixedArenaAllocator<REAL_ALLOCATION_TRESHOLD, Allocator<false>, AlignedArenaAllocator<alignment>>;
 
 
