@@ -1266,12 +1266,4 @@ public:
 #endif
 };
 
-
-using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
-using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
-using FunctionLess = FunctionComparison<LessOp, NameLess>;
-using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
-using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
-using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
-
 }
