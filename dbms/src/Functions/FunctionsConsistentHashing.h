@@ -92,7 +92,7 @@ public:
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
-    };
+    }
 
     String getName() const override
     {

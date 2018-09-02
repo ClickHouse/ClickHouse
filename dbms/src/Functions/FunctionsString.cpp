@@ -372,9 +372,15 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
         static const Poco::UTF8Encoding utf8;
 
         if (const auto chars = utf8.convert(to_case(utf8.convert(src)), dst, src_end - src))
-            src += chars, dst += chars;
+        {
+            src += chars;
+            dst += chars;
+        }
         else
-            ++src, ++dst;
+        {
+            ++src;
+            ++dst;
+        }
     }
 }
 
@@ -426,7 +432,8 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
                 _mm_storeu_si128(reinterpret_cast<__m128i *>(dst), cased_chars);
             }
 
-            src += bytes_sse, dst += bytes_sse;
+            src += bytes_sse;
+            dst += bytes_sse;
         }
         else
         {

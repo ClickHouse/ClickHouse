@@ -908,7 +908,7 @@ private:
                 const auto & value = (*item_arg)[row];
 
                 data[row] = 0;
-                for (size_t i = 0, size = arr.size(); i < size; ++i)
+                for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
                 {
                     bool hit = false;
 
@@ -1466,7 +1466,7 @@ class FunctionArrayConcat : public IFunction
 public:
     static constexpr auto name = "arrayConcat";
     static FunctionPtr create(const Context & context);
-    FunctionArrayConcat(const Context & context) : context(context) {};
+    FunctionArrayConcat(const Context & context) : context(context) {}
 
     String getName() const override;
 
@@ -1593,7 +1593,7 @@ class FunctionArrayIntersect : public IFunction
 public:
     static constexpr auto name = "arrayIntersect";
     static FunctionPtr create(const Context & context);
-    FunctionArrayIntersect(const Context & context) : context(context) {};
+    FunctionArrayIntersect(const Context & context) : context(context) {}
 
     String getName() const override;
 
@@ -1695,7 +1695,7 @@ class FunctionArrayResize : public IFunction
 public:
     static constexpr auto name = "arrayResize";
     static FunctionPtr create(const Context & context);
-    FunctionArrayResize(const Context & context) : context(context) {};
+    FunctionArrayResize(const Context & context) : context(context) {}
 
     String getName() const override;
 
