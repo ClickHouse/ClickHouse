@@ -36,7 +36,7 @@ template <typename T>
 struct GroupArrayNumericData
 {
     // Switch to ordinary Allocator after 4096 bytes to avoid fragmentation and trash in Arena
-    using Allocator = MixedAlignedArenaAllocator<4096, alignof(T)>;
+    using Allocator = MixedArenaAllocator<4096>;
     using Array = PODArray<T, 32, Allocator>;
 
     Array value;

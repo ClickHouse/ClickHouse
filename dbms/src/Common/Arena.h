@@ -100,6 +100,7 @@ private:
     }
 
     friend class ArenaAllocator;
+    friend class AlignedArenaAllocator;
 
 public:
     Arena(size_t initial_size_ = 4096, size_t growth_factor_ = 2, size_t linear_growth_threshold_ = 128 * 1024 * 1024)
