@@ -2458,7 +2458,7 @@ void ExpressionAnalyzer::addJoinAction(ExpressionActionsPtr & actions, bool only
 
 
 void ExpressionAnalyzer::AnalyzedJoin::createJoinedBlockActions(const ASTSelectQuery * select_query_with_join,
-                                                                const Context & query_context)
+                                                                const Context & context)
 {
     if (!select_query_with_join)
         return;
@@ -2487,8 +2487,8 @@ void ExpressionAnalyzer::AnalyzedJoin::createJoinedBlockActions(const ASTSelectQ
     required_columns_from_joined_table.insert(required_columns_from_joined_table.end(),
                                               required_columns_set.begin(), required_columns_set.end());
 
-    const auto & source_columns_name = getColumnsFromJoinedTable(query_context, select_query_with_join);
-    ExpressionAnalyzer analyzer(expression_list, query_context, nullptr, source_columns_name, required_columns_from_joined_table);
+    const auto & source_columns_name = getColumnsFromJoinedTable(context, select_query_with_join);
+    ExpressionAnalyzer analyzer(expression_list, context, nullptr, source_columns_name, required_columns_from_joined_table);
     joined_block_actions = analyzer.getActions(false);
 
     for (const auto & column_required_from_actions : joined_block_actions->getRequiredColumns())
@@ -2506,7 +2506,7 @@ NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsAddedByJoin() cons
     return result;
 }
 
-NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(const Context & query_context, const ASTSelectQuery * select_query_with_join)
+NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query_with_join)
 {
     if (select_query_with_join && !columns_from_joined_table.size())
     {
@@ -2518,7 +2518,7 @@ NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(co
             if (table_expression.subquery)
             {
                 const auto & subquery = table_expression.subquery->children.at(0);
-                nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, query_context);
+                nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
             }
             else if (table_expression.table_function)
             {
@@ -2531,7 +2531,7 @@ NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(co
             {
                 const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
                 auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
-                const auto & table = query_context.getTable(database_table.first, database_table.second);
+                const auto & table = context.getTable(database_table.first, database_table.second);
                 nested_result_sample = table->getSampleBlockNonMaterialized();
             }
 
