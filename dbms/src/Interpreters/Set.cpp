@@ -317,6 +317,9 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
     ColumnUInt8::Container & vec_res = res->getData();
     vec_res.resize(block.safeGetByPosition(0).column->size());
 
+    if (vec_res.empty())
+        return res;
+
     std::shared_lock lock(rwlock);
 
     /// If the set is empty.
