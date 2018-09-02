@@ -1,4 +1,4 @@
-add_definitions("-fno-sanitize=leak")
+add_definitions("-fno-sanitize=all")
 
 if (USE_EMBEDDED_COMPILER)
     add_subdirectory ("Compiler-${LLVM_VERSION}")
