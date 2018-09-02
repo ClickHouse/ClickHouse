@@ -14,6 +14,7 @@
   */
 
 #include <common/Types.h>
+#include <common/unaligned.h>
 #include <type_traits>
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -106,7 +107,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = *reinterpret_cast<const UInt64 *>(data);
+            current_word = unalignedLoad<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
