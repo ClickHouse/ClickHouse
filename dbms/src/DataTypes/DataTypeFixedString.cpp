@@ -88,7 +88,8 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
+    if (limit)
+        ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
 }
 
 
