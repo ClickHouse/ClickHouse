@@ -38,11 +38,11 @@
     M(CreatedReadBufferAIO, "") \
     M(CreatedWriteBufferOrdinary, "") \
     M(CreatedWriteBufferAIO, "") \
-    M(DiskReadElapsedMicroseconds, "") \
-    M(DiskWriteElapsedMicroseconds, "") \
+    M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
+    M(DiskWriteElapsedMicroseconds, "Total time spent waiting for write syscall. This include writes to page cache.") \
     M(NetworkReceiveElapsedMicroseconds, "") \
     M(NetworkSendElapsedMicroseconds, "") \
-    M(ThrottlerSleepMicroseconds, "") \
+    M(ThrottlerSleepMicroseconds, "Total time a query was sleeping to conform the 'max_network_bandwidth' setting.") \
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
     M(ReplicatedPartFailedFetches, "") \
