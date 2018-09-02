@@ -65,6 +65,7 @@ BlockOutputStreamPtr FormatFactory::getOutput(const String & name, WriteBuffer &
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.pretty.max_rows = settings.output_format_pretty_max_rows;
+    format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.write_statistics = settings.output_format_write_statistics;
 

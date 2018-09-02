@@ -9,6 +9,7 @@
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/ClearableHashMap.h>
+#include <Common/AlignedBuffer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -2779,8 +2780,8 @@ DataTypePtr FunctionArrayReduce::getReturnTypeImpl(const ColumnsWithTypeAndName 
 void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     IAggregateFunction & agg_func = *aggregate_function.get();
-    std::unique_ptr<char[]> place_holder { new char[agg_func.sizeOfData()] };
-    AggregateDataPtr place = place_holder.get();
+    AlignedBuffer place_holder(agg_func.sizeOfData(), agg_func.alignOfData());
+    AggregateDataPtr place = place_holder.data();
 
     std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 

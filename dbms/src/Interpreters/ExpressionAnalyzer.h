@@ -325,6 +325,9 @@ private:
 
     void optimizeLimitBy();
 
+    /// Remove duplicated columns from USING(...).
+    void optimizeUsing();
+
     /// remove Function_if AST if condition is constant
     void optimizeIfWithConstantCondition();
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
