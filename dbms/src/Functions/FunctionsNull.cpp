@@ -1,6 +1,5 @@
 #include <Functions/FunctionsNull.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/FunctionsComparison.h>
 #include <Functions/FunctionsConditional.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -313,7 +312,11 @@ void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments,
     size_t res_pos = temp_block.columns();
     temp_block.insert({nullptr, std::make_shared<DataTypeUInt8>(), ""});
 
-    FunctionEquals{context}.execute(temp_block, {arguments[0], arguments[1]}, res_pos, input_rows_count);
+    {
+        auto equals_func = FunctionFactory::instance().get("equals", context)->build(
+            {block.getByPosition(arguments[0]), block.getByPosition(arguments[1])});
+        equals_func->execute(temp_block, {arguments[0], arguments[1]}, res_pos, input_rows_count);
+    }
 
     /// Argument corresponding to the NULL value.
     size_t null_pos = temp_block.columns();
