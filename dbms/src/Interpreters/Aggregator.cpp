@@ -1882,7 +1882,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
         bool overflow = false;  /// The new key did not fit in the hash table because of no_more_keys.
 
         /// Get the key to insert into the hash table.
-        auto key = state.getKey(key_columns, params.keys_size, i, keys, *aggregates_pool);
+        auto key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *aggregates_pool);
 
         if (!no_more_keys)
         {
@@ -2260,7 +2260,7 @@ void NO_INLINE Aggregator::convertBlockToTwoLevelImpl(
     for (size_t i = 0; i < rows; ++i)
     {
         /// Obtain a key. Calculate bucket number from it.
-        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, keys, *pool);
+        typename Method::Key key = state.getKey(key_columns, params.keys_size, i, key_sizes, keys, *pool);
 
         auto hash = method.data.hash(key);
         auto bucket = method.data.getBucketFromHash(hash);

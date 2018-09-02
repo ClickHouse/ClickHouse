@@ -261,11 +261,11 @@ private:
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions;
 
-        void createJoinedBlockActions(const ASTSelectQuery * select_query_with_join, const Context & query_context);
+        void createJoinedBlockActions(const ASTSelectQuery * select_query_with_join, const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
 
-        NamesAndTypesList getColumnsFromJoinedTable(const Context & query_context, const ASTSelectQuery * select_query_with_join);
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query_with_join);
     };
 
     AnalyzedJoin analyzed_join;
