@@ -191,7 +191,8 @@ struct PositionImpl
             ++i;
         }
 
-        memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+        if (i < res.size())
+            memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
     }
 
     /// Search for substring in string.
@@ -389,7 +390,8 @@ struct MatchImpl
             }
 
             /// Tail, in which there can be no substring.
-            memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+            if (i < res.size())
+                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
         }
         else
         {
@@ -407,7 +409,8 @@ struct MatchImpl
             {
                 if (!regexp->getRE2()) /// An empty regexp. Always matches.
                 {
-                    memset(res.data(), 1, size * sizeof(res[0]));
+                    if (size)
+                        memset(res.data(), 1, size * sizeof(res[0]));
                 }
                 else
                 {
@@ -488,7 +491,8 @@ struct MatchImpl
                     ++i;
                 }
 
-                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+                if (i < res.size())
+                    memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
             }
         }
     }

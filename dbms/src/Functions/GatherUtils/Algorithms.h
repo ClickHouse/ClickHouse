@@ -105,7 +105,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 
     if (slice.size == 1) /// Always true for ValueSlice.
         sink.null_map[sink.current_offset] = 0;
-    else
+    else if (slice.size)
         memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
 
     writeSlice(slice, static_cast<ArraySink &>(sink));
