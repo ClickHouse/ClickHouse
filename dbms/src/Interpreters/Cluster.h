@@ -114,7 +114,7 @@ public:
         ConnectionPoolWithFailoverPtr pool;
         /// Connection pool for each replica, contains nullptr for local replicas
         ConnectionPoolPtrs per_replica_pools;
-        bool has_internal_replication;
+        bool has_internal_replication = false;
     };
 
     using ShardsInfo = std::vector<ShardInfo>;

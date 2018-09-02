@@ -19,11 +19,15 @@ GraphiteRollupSortedBlockInputStream::GraphiteRollupSortedBlockInputStream(
     params(params), time_of_merge(time_of_merge)
 {
     size_t max_size_of_aggregate_state = 0;
-    for (const auto & pattern : params.patterns)
-        if (pattern.function->sizeOfData() > max_size_of_aggregate_state)
-            max_size_of_aggregate_state = pattern.function->sizeOfData();
+    size_t max_alignment_of_aggregate_state = 1;
 
-    place_for_aggregate_state.resize(max_size_of_aggregate_state);
+    for (const auto & pattern : params.patterns)
+    {
+        max_size_of_aggregate_state = std::max(max_size_of_aggregate_state, pattern.function->sizeOfData());
+        max_alignment_of_aggregate_state = std::max(max_alignment_of_aggregate_state, pattern.function->alignOfData());
+    }
+
+    place_for_aggregate_state.reset(max_size_of_aggregate_state, max_alignment_of_aggregate_state);
 
     /// Memoize column numbers in block.
     path_column_num = header.getPositionByName(params.path_column_name);

@@ -3,11 +3,14 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <Common/SipHash.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnsCommon.h>
 
+
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -283,7 +286,7 @@ void ColumnAggregateFunction::insert(const Field & x)
 
     Arena & arena = createOrGetArena();
 
-    getData().push_back(arena.alloc(function->sizeOfData()));
+    getData().push_back(arena.alignedAlloc(function->sizeOfData(), function->alignOfData()));
     function->create(getData().back());
     ReadBufferFromString read_buffer(x.get<const String &>());
     function->deserialize(getData().back(), read_buffer, &arena);
@@ -295,7 +298,7 @@ void ColumnAggregateFunction::insertDefault()
 
     Arena & arena = createOrGetArena();
 
-    getData().push_back(arena.alloc(function->sizeOfData()));
+    getData().push_back(arena.alignedAlloc(function->sizeOfData(), function->alignOfData()));
     function->create(getData().back());
 }
 
@@ -316,7 +319,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       */
     Arena & dst_arena = createOrGetArena();
 
-    getData().push_back(dst_arena.alloc(function->sizeOfData()));
+    getData().push_back(dst_arena.alignedAlloc(function->sizeOfData(), function->alignOfData()));
     function->create(getData().back());
 
     /** We will read from src_arena.
@@ -410,7 +413,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
     /// Place serialized default values into min/max.
 
-    PODArrayWithStackMemory<char, 16> place_buffer(func->sizeOfData());
+    AlignedBuffer place_buffer(func->sizeOfData(), func->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
     String serialized;
