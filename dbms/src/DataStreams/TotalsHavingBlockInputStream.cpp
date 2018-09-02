@@ -4,6 +4,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/FilterDescription.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 
 
 namespace DB

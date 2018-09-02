@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Arena.h>
-
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/IColumn.h>
@@ -15,6 +13,10 @@
 
 namespace DB
 {
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
+using Arenas = std::vector<ArenaPtr>;
 
 
 /** Column of states of aggregate functions.

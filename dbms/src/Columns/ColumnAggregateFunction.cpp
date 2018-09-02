@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 #include <Columns/ColumnsCommon.h>
 
 
