@@ -744,7 +744,7 @@ public:
             nested_types[i] = array_type->getNestedType();
         }
 
-        const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(&*arguments[0]);
+        const DataTypeFunction * function_type = checkAndGetDataType<DataTypeFunction>(arguments[0].get());
         if (!function_type || function_type->getArgumentTypes().size() != nested_types.size())
             throw Exception("First argument for this overload of " + getName() + " must be a function with "
                             + toString(nested_types.size()) + " arguments. Found "
@@ -816,7 +816,7 @@ public:
 
         if (arguments.size() == 1)
         {
-            const auto array_type = checkAndGetDataType<DataTypeArray>(&*arguments[0].type);
+            const auto array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get());
 
             if (!array_type)
                 throw Exception("The only argument for function " + getName() + " must be array. Found "
@@ -849,7 +849,7 @@ public:
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-            const auto first_array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1].type);
+            const auto first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].type.get());
 
             return Impl::getReturnType(return_type, first_array_type->getNestedType());
         }

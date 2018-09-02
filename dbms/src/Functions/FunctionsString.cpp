@@ -551,7 +551,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isStringOrFixedString()
-            && !checkDataType<DataTypeArray>(&*arguments[0]))
+            && !checkDataType<DataTypeArray>(arguments[0].get()))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -639,7 +639,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (!arguments[0]->isStringOrFixedString()
-            && !checkDataType<DataTypeArray>(&*arguments[0]))
+            && !checkDataType<DataTypeArray>(arguments[0].get()))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
