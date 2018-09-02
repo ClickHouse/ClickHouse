@@ -194,7 +194,8 @@ struct ExtractParamImpl
             ++i;
         }
 
-        memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+        if (res.size() > i)
+            memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
     }
 
     static void constant_constant(const std::string & data, std::string needle, ResultType & res)
