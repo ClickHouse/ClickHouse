@@ -171,7 +171,7 @@ struct GroupArrayListNodeBase
         UInt64 size;
         readVarUInt(size, buf);
 
-        Node * node = reinterpret_cast<Node *>(arena->alloc(sizeof(Node) + size));
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + size, alignof(Node)));
         node->size = size;
         buf.read(node->data(), size);
         return node;
@@ -187,7 +187,7 @@ struct GroupArrayListNodeString : public GroupArrayListNodeBase<GroupArrayListNo
     {
         StringRef string = static_cast<const ColumnString &>(column).getDataAt(row_num);
 
-        Node * node = reinterpret_cast<Node *>(arena->alloc(sizeof(Node) + string.size));
+        Node * node = reinterpret_cast<Node *>(arena->alignedAlloc(sizeof(Node) + string.size, alignof(Node)));
         node->next = nullptr;
         node->size = string.size;
         memcpy(node->data(), string.data, string.size);
@@ -207,7 +207,7 @@ struct GroupArrayListNodeGeneral : public GroupArrayListNodeBase<GroupArrayListN
 
     static Node * allocate(const IColumn & column, size_t row_num, Arena * arena)
     {
-        const char * begin = arena->alloc(sizeof(Node));
+        const char * begin = arena->alignedAlloc(sizeof(Node), alignof(Node));
         StringRef value = column.serializeValueIntoArena(row_num, *arena, begin);
 
         Node * node = reinterpret_cast<Node *>(const_cast<char *>(begin));
