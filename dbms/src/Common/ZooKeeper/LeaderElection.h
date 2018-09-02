@@ -11,7 +11,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event ObsoleteEphemeralNode;
     extern const Event LeaderElectionAcquiredLeadership;
 }
 

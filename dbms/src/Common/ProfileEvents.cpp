@@ -44,18 +44,18 @@
     M(NetworkSendElapsedMicroseconds, "") \
     M(ThrottlerSleepMicroseconds, "") \
     \
-    M(ReplicatedPartFetches, "") \
+    M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
     M(ReplicatedPartFailedFetches, "") \
     M(ObsoleteReplicatedParts, "") \
     M(ReplicatedPartMerges, "") \
-    M(ReplicatedPartFetchesOfMerged, "") \
+    M(ReplicatedPartFetchesOfMerged, "Number of times we prefer to download already merged part from replica of ReplicatedMergeTree table instead of performing a merge ourself (usually we prefer doing a merge ourself to save network traffic). This happens when we have not all source parts to perform a merge or when the data part is old enough.") \
     M(ReplicatedPartMutations, "") \
     M(ReplicatedPartChecks, "") \
     M(ReplicatedPartChecksFailed, "") \
-    M(ReplicatedDataLoss, "") \
+    M(ReplicatedDataLoss, "Number of times a data part that we wanted doesn't exist on any replica (even on replicas that are offline right now). That data parts are definitely lost. This is normal due to asynchronous replication (if quorum inserts were not enabled), when the replica on which the data part was written was failed and when it became online after fail it doesn't contain that data part.") \
     \
-    M(InsertedRows, "") \
-    M(InsertedBytes, "") \
+    M(InsertedRows, "Number of rows INSERTed to all tables.") \
+    M(InsertedBytes, "Number of bytes (uncompressed; for columns as they stored in memory) INSERTed to all tables.") \
     M(DelayedInserts, "Number of times the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
     M(RejectedInserts, "Number of times the INSERT of a block to a MergeTree table was rejected with 'Too many parts' exception due to high number of active data parts for partition.") \
     M(DelayedInsertsMilliseconds, "Total number of milliseconds spent while the INSERT of a block to a MergeTree table was throttled due to high number of active data parts for partition.") \
@@ -85,10 +85,10 @@
     M(DistributedConnectionStaleReplica, "") \
     M(DistributedConnectionFailAtAll, "") \
     \
-    M(CompileAttempt, "") \
-    M(CompileSuccess, "") \
+    M(CompileAttempt, "Number of times a compilation of generated C++ code was initiated.") \
+    M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
     \
-    M(CompileFunction, "") \
+    M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
@@ -107,19 +107,18 @@
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
     M(SelectedMarks, "Number of marks (index granules) selected to read from a MergeTree table.") \
     \
-    M(MergedRows, "") \
-    M(MergedUncompressedBytes, "") \
-    M(MergesTimeMilliseconds, "")\
+    M(MergedRows, "Rows read for background merges. This is the number of rows before merge.") \
+    M(MergedUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) that was read for background merges. This is the number before merge.") \
+    M(MergesTimeMilliseconds, "Total time spent for background merges.")\
     \
-    M(MergeTreeDataWriterRows, "") \
-    M(MergeTreeDataWriterUncompressedBytes, "") \
-    M(MergeTreeDataWriterCompressedBytes, "") \
-    M(MergeTreeDataWriterBlocks, "") \
-    M(MergeTreeDataWriterBlocksAlreadySorted, "") \
+    M(MergeTreeDataWriterRows, "Number of rows INSERTed to MergeTree tables.") \
+    M(MergeTreeDataWriterUncompressedBytes, "Uncompressed bytes (for columns as they stored in memory) INSERTed to MergeTree tables.") \
+    M(MergeTreeDataWriterCompressedBytes, "Bytes written to filesystem for data INSERTed to MergeTree tables.") \
+    M(MergeTreeDataWriterBlocks, "Number of blocks INSERTed to MergeTree tables. Each block forms a data part of level zero.") \
+    M(MergeTreeDataWriterBlocksAlreadySorted, "Number of blocks INSERTed to MergeTree tables that appeared to be already sorted.") \
     \
-    M(ObsoleteEphemeralNode, "") \
-    M(CannotRemoveEphemeralNode, "") \
-    M(LeaderElectionAcquiredLeadership, "") \
+    M(CannotRemoveEphemeralNode, "Number of times an error happened while trying to remove ephemeral node. This is not an issue, because our implementation of ZooKeeper library guarantee that the session will expire and the node will be removed.") \
+    M(LeaderElectionAcquiredLeadership, "Number of times a ReplicatedMergeTree table became a leader. Leader replica is responsible for assigning merges, cleaning old blocks for deduplications and a few more bookkeeping tasks.") \
     \
     M(RegexpCreated, "Compiled regular expressions. Identical regular expressions compiled just once and cached forever.") \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.") \
