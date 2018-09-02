@@ -351,6 +351,9 @@ struct MatchImpl
         const std::string & pattern,
         PaddedPODArray<UInt8> & res)
     {
+        if (offsets.empty())
+            return;
+
         String strstr_pattern;
         /// A simple case where the LIKE expression reduces to finding a substring in a string
         if (like && likePatternIsStrstr(pattern, strstr_pattern))
