@@ -155,7 +155,7 @@ struct GroupArrayListNodeBase
     /// Clones existing node (does not modify next field)
     Node * clone(Arena * arena)
     {
-        return reinterpret_cast<Node *>(const_cast<char *>(arena->insert(reinterpret_cast<char *>(this), sizeof(Node) + size)));
+        return reinterpret_cast<Node *>(const_cast<char *>(arena->alignedInsert(reinterpret_cast<char *>(this), sizeof(Node) + size, alignof(Node))));
     }
 
     /// Write node to buffer
