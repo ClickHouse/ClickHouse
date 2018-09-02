@@ -236,7 +236,7 @@ void Compiler::compile(
             /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
             /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
             " -fuse-ld=" << compiler_executable_root << INTERNAL_LINKER_EXECUTABLE
-
+            " -fdiagnostics-color=never"
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
             /// To get correct order merge this results carefully:
