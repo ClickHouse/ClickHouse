@@ -889,7 +889,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
 
                 may_be_true = key_condition.mayBeTrueAfter(
-                    used_key_size, &index_left[0], data.primary_key_data_types);
+                    used_key_size, index_left.data(), data.primary_key_data_types);
             }
             else
             {
@@ -900,7 +900,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
 
                 may_be_true = key_condition.mayBeTrueInRange(
-                    used_key_size, &index_left[0], &index_right[0], data.primary_key_data_types);
+                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
             }
 
             if (!may_be_true)
