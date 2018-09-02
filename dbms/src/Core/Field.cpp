@@ -4,8 +4,8 @@
 #include <IO/WriteHelpers.h>
 
 #include <Core/Field.h>
+#include <Core/DecimalComparison.h>
 #include <Common/FieldVisitors.h>
-#include <Functions/FunctionsComparison.h>
 
 
 namespace DB
