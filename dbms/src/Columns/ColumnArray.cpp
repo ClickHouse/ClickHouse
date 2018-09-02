@@ -694,6 +694,9 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
+    if (replicate_offsets.empty())
+        return cloneEmpty();
+
     if (typeid_cast<const ColumnUInt8 *>(data.get()))     return replicateNumber<UInt8>(replicate_offsets);
     if (typeid_cast<const ColumnUInt16 *>(data.get()))    return replicateNumber<UInt16>(replicate_offsets);
     if (typeid_cast<const ColumnUInt32 *>(data.get()))    return replicateNumber<UInt32>(replicate_offsets);
