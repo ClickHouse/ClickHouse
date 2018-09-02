@@ -726,7 +726,7 @@ public:
         /// MAC address is represented in UInt64 in natural order (so, MAC addresses are compared in same order as UInt64).
         /// Higher two bytes in UInt64 are just ignored.
 
-        writeHexByteUppercase(mac >> 40, out.data());
+        writeHexByteUppercase(mac >> 40, &out[0]);
         out[2] = ':';
         writeHexByteUppercase(mac >> 32, &out[3]);
         out[5] = ':';
