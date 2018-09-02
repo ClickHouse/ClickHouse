@@ -48,6 +48,7 @@ protected:
 #endif
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
+  * TODO alignment
   */
 template <typename Base, size_t N = 64>
 class AllocatorWithStackMemory : private Base
