@@ -1,7 +1,8 @@
-#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <gtest/gtest.h>
-#pragma GCC diagnostic pop
 
 #include <Common/RWLockFIFO.h>
 #include <Common/Stopwatch.h>

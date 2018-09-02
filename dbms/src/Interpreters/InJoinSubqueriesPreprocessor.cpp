@@ -148,9 +148,11 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
         return;
 
     /// If not really distributed table, skip it.
-    StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
-    if (!storage || !hasAtLeastTwoShards(*storage))
-        return;
+    {
+        StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
+        if (!storage || !hasAtLeastTwoShards(*storage))
+            return;
+    }
 
     forEachNonGlobalSubquery(query, [&] (IAST * subquery, IAST * function, IAST * table_join)
     {

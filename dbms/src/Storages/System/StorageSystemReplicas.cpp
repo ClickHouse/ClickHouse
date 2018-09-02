@@ -75,14 +75,14 @@ BlockInputStreams StorageSystemReplicas::read(
     }
 
 
-    /// Do you need columns that require a walkthrough in ZooKeeper to compute.
+    /// Do you need columns that require a ZooKeeper request to compute.
     bool with_zk_fields = false;
-    for (const auto & name : column_names)
+    for (const auto & column_name : column_names)
     {
-        if (   name == "log_max_index"
-            || name == "log_pointer"
-            || name == "total_replicas"
-            || name == "active_replicas")
+        if (   column_name == "log_max_index"
+            || column_name == "log_pointer"
+            || column_name == "total_replicas"
+            || column_name == "active_replicas")
         {
             with_zk_fields = true;
             break;
