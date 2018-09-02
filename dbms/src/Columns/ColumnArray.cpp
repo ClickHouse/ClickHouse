@@ -827,10 +827,13 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
                 prev_src_string_offset_local += chars_size;
             }
 
-            /// Copies the characters of the array of rows.
-            res_chars.resize(res_chars.size() + sum_chars_size);
-            memcpySmallAllowReadWriteOverflow15(
-                &res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
+            if (sum_chars_size)
+            {
+                /// Copies the characters of the array of rows.
+                res_chars.resize(res_chars.size() + sum_chars_size);
+                memcpySmallAllowReadWriteOverflow15(
+                    &res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
+            }
         }
 
         prev_replicate_offset = replicate_offsets[i];
