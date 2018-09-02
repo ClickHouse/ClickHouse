@@ -179,6 +179,37 @@ public:
         return res;
     }
 
+    char * alignedAllocContinue(size_t size, char const *& begin, size_t alignment)
+    {
+        char * res;
+
+        do
+        {
+            void * head_pos = head->pos;
+            size_t space = head->end - head->pos;
+
+            res = static_cast<char *>(std::align(alignment, size, head_pos, space));
+            if (res)
+            {
+                head->pos = static_cast<char *>(head_pos);
+                head->pos += size;
+                break;
+            }
+
+            char * prev_end = head->pos;
+            addChunk(size + alignment);
+
+            if (begin)
+                begin = alignedInsert(begin, prev_end - begin, alignment);
+            else
+                break;
+        } while (true);
+
+        if (!begin)
+            begin = res;
+        return res;
+    }
+
     /// NOTE Old memory region is wasted.
     char * realloc(const char * old_data, size_t old_size, size_t new_size)
     {
@@ -200,6 +231,13 @@ public:
     const char * insert(const char * data, size_t size)
     {
         char * res = alloc(size);
+        memcpy(res, data, size);
+        return res;
+    }
+
+    const char * alignedInsert(const char * data, size_t size, size_t alignment)
+    {
+        char * res = alignedAlloc(size, alignment);
         memcpy(res, data, size);
         return res;
     }
