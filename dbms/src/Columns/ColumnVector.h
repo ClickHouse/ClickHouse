@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <common/unaligned.h>
 #include <Columns/IColumn.h>
 
 
@@ -162,7 +163,7 @@ public:
 
     void insertData(const char * pos, size_t /*length*/) override
     {
-        data.push_back(*reinterpret_cast<const T *>(pos));
+        data.push_back(unalignedLoad<T>(pos));
     }
 
     void insertDefault() override
