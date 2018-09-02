@@ -439,8 +439,8 @@ void executeQuery(
     {
         /// If not - copy enough data into 'parse_buf'.
         parse_buf.resize(max_query_size + 1);
-        parse_buf.resize(istr.read(&parse_buf[0], max_query_size + 1));
-        begin = &parse_buf[0];
+        parse_buf.resize(istr.read(parse_buf.data(), max_query_size + 1));
+        begin = parse_buf.data();
         end = begin + parse_buf.size();
     }
 

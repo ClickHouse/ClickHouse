@@ -768,7 +768,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
                     (compiled_data->compiled_method_ptr)(*this, result.without_key, rows, aggregate_columns, result.aggregates_pool);
         }
         else
-            executeWithoutKeyImpl(result.without_key, rows, &aggregate_functions_instructions[0], result.aggregates_pool);
+            executeWithoutKeyImpl(result.without_key, rows, aggregate_functions_instructions.data(), result.aggregates_pool);
     }
     else
     {
@@ -814,7 +814,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         {
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
-                executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, &aggregate_functions_instructions[0], \
+                executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_functions_instructions.data(), \
                     key, no_more_keys, overflow_row_ptr);
 
             if (false) {}

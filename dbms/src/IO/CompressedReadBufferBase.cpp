@@ -47,7 +47,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     compressed_in->readStrict(reinterpret_cast<char *>(&checksum), sizeof(checksum));
 
     own_compressed_buffer.resize(COMPRESSED_BLOCK_HEADER_SIZE);
-    compressed_in->readStrict(&own_compressed_buffer[0], COMPRESSED_BLOCK_HEADER_SIZE);
+    compressed_in->readStrict(own_compressed_buffer.data(), COMPRESSED_BLOCK_HEADER_SIZE);
 
     UInt8 method = own_compressed_buffer[0];    /// See CompressedWriteBuffer.h
 
@@ -79,7 +79,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     else
     {
         own_compressed_buffer.resize(size_compressed + LZ4::ADDITIONAL_BYTES_AT_END_OF_BUFFER);
-        compressed_buffer = &own_compressed_buffer[0];
+        compressed_buffer = own_compressed_buffer.data();
         compressed_in->readStrict(compressed_buffer + COMPRESSED_BLOCK_HEADER_SIZE, size_compressed - COMPRESSED_BLOCK_HEADER_SIZE);
     }
 

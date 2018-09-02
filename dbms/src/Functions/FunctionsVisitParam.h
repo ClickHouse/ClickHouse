@@ -165,7 +165,7 @@ struct ExtractParamImpl
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -238,7 +238,7 @@ struct ExtractParamToStringImpl
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 

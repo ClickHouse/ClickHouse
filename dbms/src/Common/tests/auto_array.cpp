@@ -186,7 +186,7 @@ int main(int argc, char ** argv)
 
         std::cerr
             << "arr1.size(): " << arr1.size() << ", arr2.size(): " << arr2.size() << std::endl
-            << "&arr1[0]: " << &arr1[0] << ", &arr2[0]: " << &arr2[0] << std::endl
+            << "arr1.data(): " << arr1.data() << ", arr2.data(): " << arr2.data() << std::endl
             << "arr1[0]: " << arr1[0] << ", arr2[0]: " << arr2[0] << std::endl;
     }
 

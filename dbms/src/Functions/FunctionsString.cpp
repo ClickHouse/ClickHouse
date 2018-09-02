@@ -332,7 +332,7 @@ void LowerUpperUTF8Impl<not_case_lower_bound, not_case_upper_bound, to_case, cyr
     res_data.resize(data.size());
     array(reinterpret_cast<const UInt8 *>(data.data()),
         reinterpret_cast<const UInt8 *>(data.data() + data.size()),
-        reinterpret_cast<UInt8 *>(&res_data[0]));
+        reinterpret_cast<UInt8 *>(res_data.data()));
 }
 
 template <char not_case_lower_bound,
