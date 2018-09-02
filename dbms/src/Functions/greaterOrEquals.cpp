@@ -18,8 +18,8 @@ void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImp
                                                                                   size_t input_rows_count)
 {
     return executeTupleLessGreaterImpl<
-            FunctionComparison<GreaterOp, NameGreater>,
-            FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>>(block, result, x, y, tuple_size, input_rows_count);
+        FunctionComparison<GreaterOp, NameGreater>,
+        FunctionGreaterOrEquals>(block, result, x, y, tuple_size, input_rows_count);
 }
 
 }
