@@ -548,7 +548,8 @@ private:
     static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes &)
     {
         /// See function extractKeysAndPlaceInPoolContiguous.
-        const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
+        const StringRef * key_refs = reinterpret_cast<const StringRef *>(
+            value.first.data + (value.first.size + alignof(StringRef) - 1) / alignof(StringRef) * alignof(StringRef));
 
         if (unlikely(0 == value.first.size))
         {
