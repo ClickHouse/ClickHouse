@@ -739,7 +739,7 @@ struct DecimalBinaryOperation
     using ArrayA = std::conditional_t<IsDecimalNumber<A>, typename ColumnDecimal<A>::Container, typename ColumnVector<A>::Container>;
     using ArrayB = std::conditional_t<IsDecimalNumber<B>, typename ColumnDecimal<B>::Container, typename ColumnVector<B>::Container>;
     using ArrayC = typename ColumnDecimal<ResultType>::Container;
-    using XOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, !_check_overflow>;
+    using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
     static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
                                             std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
@@ -749,6 +749,38 @@ struct DecimalBinaryOperation
                                             std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
+
+    static void vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            vector_vector(a, b, c, scale_a, scale_b);
+        else
+            SelfNoOverflow::vector_vector(a, b, c, scale_a, scale_b);
+    }
+
+    static void vector_constant(const ArrayA & a, B b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            vector_constant(a, b, c, scale_a, scale_b);
+        else
+            SelfNoOverflow::vector_constant(a, b, c, scale_a, scale_b);
+    }
+
+    static void constant_vector(A a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            constant_vector(a, b, c, scale_a, scale_b);
+        else
+            SelfNoOverflow::constant_vector(a, b, c, scale_a, scale_b);
+    }
+
+    static ResultType constant_constant(A a, B b, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            return constant_constant(a, b, scale_a, scale_b);
+        else
+            return SelfNoOverflow::constant_constant(a, b, scale_a, scale_b);
+    }
 
     static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
@@ -1227,22 +1259,13 @@ public:
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
-                            if (check_decimal_overflow)
-                            {
-                                auto res = OpImpl::constant_constant(
-                                    col_left->template getValue<T0>(), col_right->template getValue<T1>(), scale_a, scale_b);
-                                block.getByPosition(result).column =
-                                    ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
-                                        col_left->size(), toField(res, type.getScale()));
-                            }
-                            else
-                            {
-                                auto res = OpImpl::XOverflow::constant_constant(
-                                    col_left->template getValue<T0>(), col_right->template getValue<T1>(), scale_a, scale_b);
-                                block.getByPosition(result).column =
-                                    ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
-                                        col_left->size(), toField(res, type.getScale()));
-                            }
+
+                            auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
+                                                                    scale_a, scale_b, check_decimal_overflow);
+                            block.getByPosition(result).column =
+                                ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                                    col_left->size(), toField(res, type.getScale()));
+
                         }
                         else
                         {
@@ -1277,11 +1300,9 @@ public:
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
-                            if (check_decimal_overflow)
-                                OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
-                            else
-                                OpImpl::XOverflow::constant_vector(
-                                    col_left_const->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
+
+                            OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
+                                                    scale_a, scale_b, check_decimal_overflow);
                         }
                         else
                             OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
@@ -1301,18 +1322,13 @@ public:
                             scale_a = right.getScaleMultiplier();
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                         {
-                            if (check_decimal_overflow)
-                                OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
-                            else
-                                OpImpl::XOverflow::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
+                            OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
+                                                  check_decimal_overflow);
                         }
                         else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
                         {
-                            if (check_decimal_overflow)
-                                OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res, scale_a, scale_b);
-                            else
-                                OpImpl::XOverflow::vector_constant(
-                                    col_left->getData(), col_right_const->template getValue<T1>(), vec_res, scale_a, scale_b);
+                            OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res,
+                                                    scale_a, scale_b, check_decimal_overflow);
                         }
                         else
                             return false;

@@ -121,27 +121,27 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             if (reader->getColumns().empty())
             {
                 task->range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
-                        task->should_reorder, task->remove_prewhere_column, true);
+                    pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
+                    &prewhere_info->prewhere_column_name, &task->ordered_names,
+                    task->should_reorder, task->remove_prewhere_column, true);
             }
             else
             {
                 task->pre_range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
-                        task->should_reorder, task->remove_prewhere_column, false);
+                    pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
+                    &prewhere_info->prewhere_column_name, &task->ordered_names,
+                    task->should_reorder, task->remove_prewhere_column, false);
 
                 task->range_reader = MergeTreeRangeReader(
-                        reader.get(), index_granularity, &task->pre_range_reader, nullptr,
-                        nullptr, &task->ordered_names, true, false, true);
+                    reader.get(), index_granularity, &task->pre_range_reader, nullptr,
+                    nullptr, &task->ordered_names, true, false, true);
             }
         }
         else
         {
             task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, nullptr, nullptr,
-                    nullptr, &task->ordered_names, task->should_reorder, false, true);
+                reader.get(), index_granularity, nullptr, nullptr,
+                nullptr, &task->ordered_names, task->should_reorder, false, true);
         }
     }
 
