@@ -491,8 +491,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     /** If it is possible to use 'concat' method due to one-to-one correspondense. Otherwise the method will be 'serialized'.
       */
-    if (params.keys_size == num_contiguous_keys && num_fixed_contiguous_keys + 1 >= num_contiguous_keys)
-        return AggregatedDataVariants::Type::concat;
+//    if (params.keys_size == num_contiguous_keys && num_fixed_contiguous_keys + 1 >= num_contiguous_keys)
+//        return AggregatedDataVariants::Type::concat;
 
     /** For case with multiple strings, we use 'concat' method despite the fact, that correspondense is not one-to-one.
       * Concat will concatenate strings including its zero terminators.
@@ -500,8 +500,8 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
       * For example, keys ('a\0b', 'c') and ('a', 'b\0c') will be aggregated as one key.
       * This is documented behaviour. It may be avoided by just switching to 'serialized' method, which is less efficient.
       */
-    if (params.keys_size == num_fixed_contiguous_keys + num_string_keys)
-        return AggregatedDataVariants::Type::concat;
+//    if (params.keys_size == num_fixed_contiguous_keys + num_string_keys)
+//        return AggregatedDataVariants::Type::concat;
 
     return AggregatedDataVariants::Type::serialized;
 

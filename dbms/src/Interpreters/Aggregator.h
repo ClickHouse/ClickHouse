@@ -119,7 +119,7 @@ struct AggregationMethodOneNumber
         }
 
         /// Get the key from the key columns for insertion into the hash table.
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,         /// Number of key columns.
             size_t i,                     /// From which row of the block, get the key.
@@ -137,13 +137,13 @@ struct AggregationMethodOneNumber
 
     /** Place additional data, if necessary, in case a new key was inserted into the hash table.
       */
-    static void onNewKey(typename Data::value_type & /*value*/, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & /*pool*/)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type & /*value*/, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & /*pool*/)
     {
     }
 
     /** The action to be taken if the key is not new. For example, roll back the memory allocation in the pool.
       */
-    static void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
+    static ALWAYS_INLINE void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
 
     /** Do not use optimization for consecutive keys.
       */
@@ -188,7 +188,7 @@ struct AggregationMethodString
             chars = &column_string.getChars();
         }
 
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & /*key_columns*/,
             size_t /*keys_size*/,
             size_t i,
@@ -205,12 +205,12 @@ struct AggregationMethodString
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & pool)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type & value, size_t /*keys_size*/, StringRefs & /*keys*/, Arena & pool)
     {
         value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
-    static void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
+    static ALWAYS_INLINE void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
@@ -251,7 +251,7 @@ struct AggregationMethodFixedString
             chars = &column_string.getChars();
         }
 
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs &,
             size_t,
             size_t i,
@@ -266,12 +266,12 @@ struct AggregationMethodFixedString
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type & value, size_t, StringRefs &, Arena & pool)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type & value, size_t, StringRefs &, Arena & pool)
     {
         value.first.data = pool.insert(value.first.data, value.first.size);
     }
 
-    static void onExistingKey(const Key &, StringRefs &, Arena &) {}
+    static ALWAYS_INLINE void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
@@ -407,7 +407,7 @@ struct AggregationMethodKeysFixed
                 Base::init(key_columns);
         }
 
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
@@ -428,11 +428,11 @@ struct AggregationMethodKeysFixed
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
     {
     }
 
-    static void onExistingKey(const Key &, StringRefs &, Arena &) {}
+    static ALWAYS_INLINE void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
@@ -510,7 +510,7 @@ struct AggregationMethodConcat
         {
         }
 
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
@@ -525,11 +525,11 @@ struct AggregationMethodConcat
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
     {
     }
 
-    static void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
+    static ALWAYS_INLINE void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
     {
         pool.rollback(key.size + keys.size() * sizeof(keys[0]));
     }
@@ -595,7 +595,7 @@ struct AggregationMethodSerialized
         {
         }
 
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
@@ -610,11 +610,11 @@ struct AggregationMethodSerialized
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
 
-    static void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
     {
     }
 
-    static void onExistingKey(const Key & key, StringRefs &, Arena & pool)
+    static ALWAYS_INLINE void onExistingKey(const Key & key, StringRefs &, Arena & pool)
     {
         pool.rollback(key.size);
     }
@@ -654,7 +654,7 @@ struct AggregationMethodHashed
         {
         }
 
-        Key getKey(
+        ALWAYS_INLINE Key getKey(
             const ColumnRawPtrs & key_columns,
             size_t keys_size,
             size_t i,
@@ -669,12 +669,12 @@ struct AggregationMethodHashed
     static AggregateDataPtr & getAggregateData(Mapped & value)                { return value.second; }
     static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value.second; }
 
-    static void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
+    static ALWAYS_INLINE void onNewKey(typename Data::value_type & value, size_t keys_size, StringRefs & keys, Arena & pool)
     {
         value.second.first = placeKeysInPool(keys_size, keys, pool);
     }
 
-    static void onExistingKey(const Key &, StringRefs &, Arena &) {}
+    static ALWAYS_INLINE void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
 
