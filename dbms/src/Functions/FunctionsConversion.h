@@ -986,7 +986,7 @@ class FunctionToFixedString : public IFunction
 {
 public:
     static constexpr auto name = "toFixedString";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToFixedString>(); }
 
     String getName() const override
     {
@@ -1625,7 +1625,7 @@ private:
                 throw Exception{"Enum conversion changes value for element '" + name_value.first +
                     "' from " + toString(old_value) + " to " + toString(new_value), ErrorCodes::CANNOT_CONVERT_TYPE};
         }
-    };
+    }
 
     template <typename ColumnStringType, typename EnumType>
     WrapperType createStringToEnumWrapper() const

@@ -16,7 +16,6 @@ class Context;
 class LocalServer : public Poco::Util::Application
 {
 public:
-
     LocalServer();
 
     void initialize(Poco::Util::Application & self) override;
@@ -25,10 +24,9 @@ public:
 
     void init(int argc, char ** argv);
 
-    ~LocalServer();
+    ~LocalServer() override;
 
 private:
-
     /** Composes CREATE subquery based on passed arguments (--structure --file --table and --input-format)
       * This query will be executed first, before queries passed through --query argument
       * Returns empty string if it cannot compose that query.
@@ -46,7 +44,6 @@ private:
     std::string getHelpFooter() const;
 
 protected:
-
     std::unique_ptr<Context> context;
 
     /// Settings specified via command line args

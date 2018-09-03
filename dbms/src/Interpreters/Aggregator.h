@@ -1128,7 +1128,7 @@ protected:
 
     Params params;
 
-    AggregatedDataVariants::Type method;
+    AggregatedDataVariants::Type method_chosen;
     Sizes key_sizes;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
@@ -1154,6 +1154,11 @@ protected:
 
     Sizes offsets_of_aggregate_states;    /// The offset to the n-th aggregate function in a row of aggregate functions.
     size_t total_size_of_aggregate_states = 0;    /// The total size of the row from the aggregate functions.
+
+    // add info to track alignment requirement
+    // If there are states whose alignmentment are v1, ..vn, align_aggregate_states will be max(v1, ... vn)
+    size_t align_aggregate_states = 1;
+
     bool all_aggregates_has_trivial_destructor = false;
 
     /// How many RAM were used to process the query before processing the first block.
@@ -1210,7 +1215,6 @@ protected:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        const Sizes & key_sizes,
         StringRefs & keys,
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
@@ -1224,7 +1228,6 @@ protected:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateFunctionInstruction * aggregate_instructions,
-        const Sizes & key_sizes,
         StringRefs & keys,
         AggregateDataPtr overflow_row) const;
 
@@ -1251,7 +1254,6 @@ public:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
-        const Sizes & key_sizes,
         StringRefs & keys,
         bool no_more_keys,
         AggregateDataPtr overflow_row) const;
@@ -1264,7 +1266,6 @@ public:
         size_t rows,
         ColumnRawPtrs & key_columns,
         AggregateColumns & aggregate_columns,
-        const Sizes & key_sizes,
         StringRefs & keys,
         AggregateDataPtr overflow_row) const;
 
@@ -1312,7 +1313,6 @@ protected:
         MutableColumns & key_columns,
         AggregateColumnsData & aggregate_columns,
         MutableColumns & final_aggregate_columns,
-        const Sizes & key_sizes,
         bool final) const;
 
     template <typename Method, typename Table>
@@ -1320,16 +1320,14 @@ protected:
         Method & method,
         Table & data,
         MutableColumns & key_columns,
-        MutableColumns & final_aggregate_columns,
-        const Sizes & key_sizes) const;
+        MutableColumns & final_aggregate_columns) const;
 
     template <typename Method, typename Table>
     void convertToBlockImplNotFinal(
         Method & method,
         Table & data,
         MutableColumns & key_columns,
-        AggregateColumnsData & aggregate_columns,
-        const Sizes & key_sizes) const;
+        AggregateColumnsData & aggregate_columns) const;
 
     template <typename Filler>
     Block prepareBlockAndFill(
@@ -1359,7 +1357,6 @@ protected:
     template <bool no_more_keys, typename Method, typename Table>
     void mergeStreamsImplCase(
         Block & block,
-        const Sizes & key_sizes,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
@@ -1368,7 +1365,6 @@ protected:
     template <typename Method, typename Table>
     void mergeStreamsImpl(
         Block & block,
-        const Sizes & key_sizes,
         Arena * aggregates_pool,
         Method & method,
         Table & data,
@@ -1388,7 +1384,6 @@ protected:
         Method & method,
         Arena * pool,
         ColumnRawPtrs & key_columns,
-        const Sizes & key_sizes,
         StringRefs & keys,
         const Block & source,
         std::vector<Block> & destinations) const;
