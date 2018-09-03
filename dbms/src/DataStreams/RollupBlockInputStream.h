@@ -32,6 +32,7 @@ protected:
 
 private:
     Aggregator::Params params;
+    BlocksList blocks;
 };
 
 }

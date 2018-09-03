@@ -61,6 +61,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_COLUMNS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -555,7 +556,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
             else
             {
                 need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
-                    
+
                 if (query.group_by_with_totals && !aggregate_final)
                     executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row, !query.group_by_with_rollup);
 
@@ -861,10 +862,9 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         if (descr.arguments.empty())
             for (const auto & name : descr.argument_names)
                 descr.arguments.push_back(header.getPositionByName(name));
-        
                 
     const Settings & settings = context.getSettingsRef();
- 
+
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
@@ -1006,7 +1006,7 @@ void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
         context.getTemporaryPath());
 
-      pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
+    pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
 }
 
 
