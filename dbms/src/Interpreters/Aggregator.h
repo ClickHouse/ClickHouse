@@ -844,7 +844,7 @@ struct AggregatedDataVariants : private boost::noncopyable
                 throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
     }
- 
+
     /// The size without taking into account the row in which data is written for the calculation of TOTALS.
     size_t sizeWithoutOverflowRow() const
     {

@@ -140,7 +140,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-     /// WITH TOTALS
+    /// WITH TOTALS
     if (s_with.ignore(pos, expected))
     {
         if (select_query->group_by_with_totals || !s_totals.ignore(pos, expected))

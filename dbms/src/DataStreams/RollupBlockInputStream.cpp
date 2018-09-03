@@ -41,10 +41,17 @@ Block RollupBlockInputStream::getHeader() const
 Block RollupBlockInputStream::readImpl()
 {
     Block block;
-    BlocksList blocks;
 
     while(1)
     {
+        if (!blocks.empty())
+        {
+           auto finalized = std::move(blocks.front());
+           finalize(finalized);
+           blocks.pop_front();
+           return finalized; 
+        }
+
         block = children[0]->read();
 
         if (!block)
@@ -57,7 +64,7 @@ Block RollupBlockInputStream::readImpl()
 
         Block rollup_block = block;
 
-        for (int i = static_cast<int>(params.keys_size) - 1; i >= 0; --i) 
+        for (ssize_t i = params.keys_size - 1; i >= 0; --i) 
         {
             auto & current = rollup_block.getByPosition(params.keys[i]);
             current.column = current.column->cloneEmpty()->cloneResized(rollup_block.rows());
@@ -68,15 +75,6 @@ Block RollupBlockInputStream::readImpl()
         }
 
         finalize(block);
-        for (auto & current_block : blocks)
-            finalize(current_block);
-
-        for (size_t i = 0; i < block.columns(); ++i)
-        {
-            MutableColumnPtr column = block.getByPosition(i).column->assumeMutable();
-            for (const auto & current_block : blocks)
-                column->insertRangeFrom(*current_block.getByPosition(i).column.get(), 0, current_block.rows());
-        }
 
         if (!block)
             continue;
