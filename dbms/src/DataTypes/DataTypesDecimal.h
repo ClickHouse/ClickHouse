@@ -148,7 +148,7 @@ public:
     bool canBeUsedInBooleanContext() const override { return true; }
     bool isNumber() const override { return true; }
     bool isInteger() const override { return false; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullable() const override { return false; }
 
     /// Decimal specific
 

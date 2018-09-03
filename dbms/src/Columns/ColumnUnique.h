@@ -513,4 +513,4 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     return indexes_with_overflow;
 }
 
-};
+}

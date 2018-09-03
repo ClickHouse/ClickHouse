@@ -63,6 +63,10 @@
 #include "Suggest.h"
 #endif
 
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
 
@@ -553,7 +557,7 @@ private:
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(STDIN_FILENO, &fds);
-        return select(1, &fds, 0, 0, &timeout) == 1;
+        return select(1, &fds, nullptr, nullptr, &timeout) == 1;
     }
 
     inline const String prompt() const

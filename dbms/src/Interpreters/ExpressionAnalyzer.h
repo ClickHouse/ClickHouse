@@ -103,7 +103,7 @@ private:
 
 public:
     ExpressionAnalyzer(
-        const ASTPtr & ast_,
+        const ASTPtr & query_,
         const Context & context_,
         const StoragePtr & storage_,
         const NamesAndTypesList & source_columns_ = {},
@@ -182,7 +182,7 @@ public:
     bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
 private:
-    ASTPtr ast;
+    ASTPtr query;
     ASTSelectQuery * select_query;
     const Context & context;
     Settings settings;
@@ -261,11 +261,11 @@ private:
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions;
 
-        void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
+        void createJoinedBlockActions(const ASTSelectQuery * select_query_with_join, const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
 
-        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query);
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query_with_join);
     };
 
     AnalyzedJoin analyzed_join;
@@ -325,9 +325,12 @@ private:
 
     void optimizeLimitBy();
 
+    /// Remove duplicated columns from USING(...).
+    void optimizeUsing();
+
     /// remove Function_if AST if condition is constant
     void optimizeIfWithConstantCondition();
-    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
+    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
     void makeSet(const ASTFunction * node, const Block & sample_block);

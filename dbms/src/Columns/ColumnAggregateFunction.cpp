@@ -5,6 +5,7 @@
 #include <Common/SipHash.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 #include <Columns/ColumnsCommon.h>
 
 
@@ -109,7 +110,6 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
         /// Keep shared ownership of aggregation states.
         src = from_concrete.getPtr();
 
-        auto & data = getData();
         size_t old_size = data.size();
         data.resize(old_size + length);
         memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
@@ -182,7 +182,7 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
     return res;
 }
 
-INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction);
+INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
@@ -249,13 +249,13 @@ void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
     getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
 
-void ColumnAggregateFunction::insertFrom(const IColumn & src, size_t n)
+void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
 {
     /// Must create new state of aggregate function and take ownership of it,
     ///  because ownership of states of aggregate function cannot be shared for individual rows,
     ///  (only as a whole, see comment above).
     insertDefault();
-    insertMergeFrom(src, n);
+    insertMergeFrom(from, n);
 }
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
@@ -269,9 +269,9 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
     func->merge(getData().back(), place, &createOrGetArena());
 }
 
-void ColumnAggregateFunction::insertMergeFrom(const IColumn & src, size_t n)
+void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
 {
-    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(from).getData()[n]);
 }
 
 Arena & ColumnAggregateFunction::createOrGetArena()

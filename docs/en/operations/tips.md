@@ -21,7 +21,7 @@ You can use `turbostat` to view the CPU's actual clock rate under a load.
 Always use the `performance` scaling governor.  The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
+sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations

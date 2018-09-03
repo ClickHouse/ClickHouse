@@ -136,7 +136,7 @@ class QuantileTDigest
     {
         if (unmerged > 0)
         {
-            RadixSort<RadixSortTraits>::execute(&summary[0], summary.size());
+            RadixSort<RadixSortTraits>::execute(summary.data(), summary.size());
 
             if (summary.size() > 3)
             {
@@ -212,7 +212,7 @@ public:
     {
         compress();
         writeVarUInt(summary.size(), buf);
-        buf.write(reinterpret_cast<const char *>(&summary[0]), summary.size() * sizeof(summary[0]));
+        buf.write(reinterpret_cast<const char *>(summary.data()), summary.size() * sizeof(summary[0]));
     }
 
     void deserialize(ReadBuffer & buf)
@@ -224,7 +224,7 @@ public:
             throw Exception("Too large t-digest summary size", ErrorCodes::TOO_LARGE_ARRAY_SIZE);
 
         summary.resize(size);
-        buf.read(reinterpret_cast<char *>(&summary[0]), size * sizeof(summary[0]));
+        buf.read(reinterpret_cast<char *>(summary.data()), size * sizeof(summary[0]));
     }
 
     /** Calculates the quantile q [0, 1] based on the digest.

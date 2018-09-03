@@ -233,8 +233,8 @@ bool ParserFunction::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         && contents_begin[8] >= '0' && contents_begin[8] <= '9'
         && contents_begin[9] >= '0' && contents_begin[9] <= '9')
     {
-        std::string contents(contents_begin, contents_end - contents_begin);
-        throw Exception("Argument of function toDate is unquoted: toDate(" + contents + "), must be: toDate('" + contents + "')"
+        std::string contents_str(contents_begin, contents_end - contents_begin);
+        throw Exception("Argument of function toDate is unquoted: toDate(" + contents_str + "), must be: toDate('" + contents_str + "')"
             , ErrorCodes::SYNTAX_ERROR);
     }
 
@@ -508,7 +508,7 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     {
         readQuotedStringWithSQLStyle(s, in);
     }
-    catch (const Exception & e)
+    catch (const Exception &)
     {
         expected.add(pos, "string literal");
         return false;
