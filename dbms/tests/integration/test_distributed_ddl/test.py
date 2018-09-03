@@ -27,9 +27,6 @@ def check_all_hosts_sucesfully_executed(tsv_content, num_hosts=None):
 
 
 def ddl_check_query(instance, query, num_hosts=None):
-    if num_hosts is None:
-        num_hosts = len(cluster.instances)
-
     contents = instance.query(query)
     check_all_hosts_sucesfully_executed(contents, num_hosts)
     return contents
