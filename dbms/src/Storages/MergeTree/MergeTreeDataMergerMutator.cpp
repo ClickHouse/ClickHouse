@@ -19,10 +19,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/ApplyingMutationsBlockInputStream.h>
-#include <DataStreams/FilterColumnsBlockInputStream.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <DataTypes/NestedUtils.h>
@@ -60,7 +57,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int UNKNOWN_MUTATION_COMMAND;
 }
 
 
@@ -824,170 +820,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 }
 
 
-static bool isStorageTouchedByMutation(
-    const StoragePtr & storage, const std::vector<MutationCommand> & commands, const Context & context)
-{
-    if (commands.empty())
-        return false;
-
-    for (const MutationCommand & command : commands)
-    {
-        if (!command.predicate) /// The command touches all rows.
-            return true;
-    }
-
-    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result can differ from tne number of affected rows (e.g. if there is an UPDATE command that
-    /// changes how many rows satisfy the predicates of the subsequent commands).
-    /// But we can be sure that if count = 0, then no rows will be touched.
-
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
-    auto count_func = std::make_shared<ASTFunction>();
-    count_func->name = "count";
-    count_func->arguments = std::make_shared<ASTExpressionList>();
-    select->select_expression_list->children.push_back(count_func);
-
-    if (commands.size() == 1)
-        select->where_expression = commands[0].predicate;
-    else
-    {
-        auto coalesced_predicates = std::make_shared<ASTFunction>();
-        coalesced_predicates->name = "or";
-        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-
-        for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate);
-
-        select->where_expression = std::move(coalesced_predicates);
-    }
-    select->children.push_back(select->where_expression);
-
-    auto context_copy = context;
-    context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
-    context_copy.getSettingsRef().max_threads = 1;
-
-    InterpreterSelectQuery interpreter_select(select, context_copy, storage, QueryProcessingStage::Complete);
-    BlockInputStreamPtr in = interpreter_select.execute().in;
-
-    Block block = in->read();
-    if (!block.rows())
-        return false;
-    else if (block.rows() != 1)
-        throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
-            ErrorCodes::LOGICAL_ERROR);
-
-    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
-    return count != 0;
-}
-
-static BlockInputStreamPtr createInputStreamWithMutatedData(
-    const StoragePtr & storage, std::vector<MutationCommand> commands, const Context & context, NameSet * output_columns)
-{
-    NameSet input_columns;
-    {
-        ASTPtr expressions = std::make_shared<ASTExpressionList>();
-        for (const auto & command : commands)
-        {
-            if (command.type == MutationCommand::DELETE)
-            {
-                for (const auto & column : storage->getColumns().getAllPhysical())
-                {
-                    input_columns.insert(column.name);
-
-                    if (output_columns)
-                        output_columns->insert(column.name);
-                }
-
-                break;
-            }
-            else if (command.type == MutationCommand::UPDATE)
-            {
-                if (command.predicate)
-                    expressions->children.push_back(command.predicate);
-
-                for (const auto & pair : command.column_to_update_expression)
-                {
-                    const String & column_name = pair.first;
-                    const ASTPtr & update_expr_ast = pair.second;
-
-                    input_columns.insert(column_name);
-
-                    if (output_columns)
-                        output_columns->insert(column_name);
-
-                    expressions->children.push_back(update_expr_ast);
-                }
-            }
-            else
-                throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
-        }
-
-        for (const auto & column : ExpressionAnalyzer(expressions, context, storage).getRequiredSourceColumns())
-            input_columns.insert(column);
-    }
-
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
-    for (const auto & column_name : input_columns)
-        select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column_name));
-
-    /// For all commands that are in front of the list and are DELETE commands, we can push them down
-    /// to the SELECT statement and remove them from commands.
-
-    auto deletes_end = commands.begin();
-    for (; deletes_end != commands.end(); ++deletes_end)
-    {
-        if (deletes_end->type != MutationCommand::DELETE)
-            break;
-    }
-
-    std::vector<ASTPtr> predicates;
-    for (auto it = commands.begin(); it != deletes_end; ++it)
-    {
-        auto predicate = std::make_shared<ASTFunction>();
-        predicate->name = "not";
-        predicate->arguments = std::make_shared<ASTExpressionList>();
-        predicate->arguments->children.push_back(it->predicate);
-        predicate->children.push_back(predicate->arguments);
-        predicates.push_back(predicate);
-    }
-
-    commands.erase(commands.begin(), deletes_end);
-
-    if (!predicates.empty())
-    {
-        ASTPtr where_expression;
-        if (predicates.size() == 1)
-            where_expression = predicates[0];
-        else
-        {
-            auto coalesced_predicates = std::make_shared<ASTFunction>();
-            coalesced_predicates->name = "and";
-            coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-            coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-            coalesced_predicates->arguments->children = predicates;
-
-            where_expression = std::move(coalesced_predicates);
-        }
-        select->where_expression = where_expression;
-        select->children.push_back(where_expression);
-    }
-
-    InterpreterSelectQuery interpreter_select(select, context, storage);
-    BlockInputStreamPtr in = interpreter_select.execute().in;
-
-    for (const auto & command : commands)
-        in = std::make_shared<ApplyingMutationsBlockInputStream>(in, command, context);
-
-    return in;
-}
-
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FuturePart & future_part,
     const std::vector<MutationCommand> & commands,
@@ -1016,7 +848,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    if (!isStorageTouchedByMutation(storage_from_source_part, commands, context_for_reading))
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands, context_for_reading);
+
+    if (!mutations_interpreter.isStorageTouchedByMutations())
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
         return data.cloneAndLoadDataPart(source_part, "tmp_clone_", future_part.part_info);
@@ -1040,14 +874,12 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         source_part->bytes_on_disk,
         static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
 
-    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
-
-    NameSet output_columns;
-    auto in = createInputStreamWithMutatedData(storage_from_source_part, commands, context_for_reading, &output_columns);
-
     Poco::File(new_part_tmp_path).createDirectories();
 
-    if (output_columns.size() == all_columns.size())
+    auto in = mutations_interpreter.execute();
+    NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
+
+    if (in->getHeader().columns() == all_columns.size())
     {
         /// All columns are modified, proceed to write a new part from scratch.
 
@@ -1079,9 +911,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
         /// TODO: check that we modify only non-key columns in this case.
-
-        in = std::make_shared<FilterColumnsBlockInputStream>(
-            in, Names(output_columns.begin(), output_columns.end()), /* throw_if_column_not_found = */ true);
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
         for (const auto & entry : in->getHeader())
