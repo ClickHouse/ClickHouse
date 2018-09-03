@@ -161,6 +161,29 @@ public:
 
     virtual ~LRUCache() {}
 
+protected:
+    using LRUQueue = std::list<Key>;
+    using LRUQueueIterator = typename LRUQueue::iterator;
+
+    struct Cell
+    {
+        bool expired(const Timestamp & last_timestamp, const Delay & delay) const
+        {
+            return (delay == Delay::zero()) ||
+                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > delay));
+        }
+
+        MappedPtr value;
+        size_t size;
+        LRUQueueIterator queue_iterator;
+        Timestamp timestamp;
+    };
+
+    using Cells = std::unordered_map<Key, Cell, HashFunction>;
+
+    Cells cells;
+
+    mutable std::mutex mutex;
 private:
 
     /// Represents pending insertion attempt.
@@ -226,36 +249,16 @@ private:
 
     friend struct InsertTokenHolder;
 
-    using LRUQueue = std::list<Key>;
-    using LRUQueueIterator = typename LRUQueue::iterator;
-
-    struct Cell
-    {
-        bool expired(const Timestamp & last_timestamp, const Delay & expiration_delay) const
-        {
-            return (expiration_delay == Delay::zero()) ||
-                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > expiration_delay));
-        }
-
-        MappedPtr value;
-        size_t size;
-        LRUQueueIterator queue_iterator;
-        Timestamp timestamp;
-    };
-
-    using Cells = std::unordered_map<Key, Cell, HashFunction>;
 
     InsertTokenById insert_tokens;
 
     LRUQueue queue;
-    Cells cells;
 
     /// Total weight of values.
     size_t current_size = 0;
     const size_t max_size;
     const Delay expiration_delay;
 
-    mutable std::mutex mutex;
     std::atomic<size_t> hits {0};
     std::atomic<size_t> misses {0};
 

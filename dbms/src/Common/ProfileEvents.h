@@ -59,16 +59,6 @@ namespace ProfileEvents
             } while (current != nullptr);
         }
 
-        inline void reset(Event event)
-        {
-            Counters * current = this;
-            do
-            {
-                current->counters[event].store(0, std::memory_order_relaxed);
-                current = current->parent;
-            } while (current != nullptr);
-        }
-
         /// Every single value is fetched atomically, but not all values as a whole.
         Counters getPartiallyAtomicSnapshot() const;
 
@@ -96,11 +86,11 @@ namespace ProfileEvents
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
-    /// Set event value to zero. Thread-safe.
-    void reset(Event event);
+    /// Get name of event by identifier. Returns statically allocated string.
+    const char * getName(Event event);
 
-    /// Get text description of event by identifier. Returns statically allocated string.
-    const char * getDescription(Event event);
+    /// Get description of event by identifier. Returns statically allocated string.
+    const char * getDocumentation(Event event);
 
     /// Get index just after last event identifier.
     Event end();

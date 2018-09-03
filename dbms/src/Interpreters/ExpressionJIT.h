@@ -7,10 +7,13 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Common/LRUCache.h>
+#include <set>
 
 
 namespace DB
 {
+
 struct LLVMContext;
 using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &, const ValuePlaceholders &)>;
 
@@ -22,7 +25,6 @@ class LLVMFunction : public IFunctionBase
     std::shared_ptr<LLVMContext> context;
     std::vector<FunctionBasePtr> originals;
     std::unordered_map<StringRef, CompilableExpression> subexpressions;
-
 public:
     LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block);
 
@@ -51,8 +53,23 @@ public:
     bool hasInformationAboutMonotonicity() const override;
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override;
+
+    std::shared_ptr<LLVMContext> getContext() const { return context; }
+
 };
 
+/** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
+ * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
+ */
+class CompiledExpressionCache : public LRUCache<std::vector<ExpressionAction>, LLVMFunction, ActionsHash>
+{
+private:
+    using Base = LRUCache<std::vector<ExpressionAction>, LLVMFunction, ActionsHash>;
+public:
+    using Base::Base;
+
+    size_t weight() const;
+};
 
 /// For each APPLY_FUNCTION action, try to compile the function to native code; if the only uses of a compilable
 /// function's result are as arguments to other compilable functions, inline it and leave the now-redundant action as-is.

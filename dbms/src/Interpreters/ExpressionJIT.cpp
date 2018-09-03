@@ -8,8 +8,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Common/LRUCache.h>
+#include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
@@ -49,7 +51,7 @@
 namespace ProfileEvents
 {
     extern const Event CompileFunction;
-    extern const Event CompiledCacheSizeBytes;
+    extern const Event CompileExpressionsMicroseconds;
 }
 
 namespace DB
@@ -163,17 +165,16 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 
 struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
 {
-    size_t allocated_memory = 0;
-
+    MemoryTracker memory_tracker{VariableContext::Global};
 
     llvm::sys::MemoryBlock allocateMappedMemory(llvm::SectionMemoryManager::AllocationPurpose /*purpose*/,
         size_t num_bytes,
         const llvm::sys::MemoryBlock * const near_block,
         unsigned flags,
-        std::error_code & EC) override
+        std::error_code & error_code) override
     {
-        allocated_memory += num_bytes;
-        return llvm::sys::Memory::allocateMappedMemory(num_bytes, near_block, flags, EC);
+        memory_tracker.alloc(num_bytes);
+        return llvm::sys::Memory::allocateMappedMemory(num_bytes, near_block, flags, error_code);
     }
 
     std::error_code protectMappedMemory(const llvm::sys::MemoryBlock & block, unsigned flags) override
@@ -183,13 +184,14 @@ struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
 
     std::error_code releaseMappedMemory(llvm::sys::MemoryBlock & block) override
     {
-        allocated_memory -= block.size();
+        memory_tracker.free(block.size());
         return llvm::sys::Memory::releaseMappedMemory(block);
     }
 };
 
 struct LLVMContext
 {
+    static inline std::atomic<size_t> id_counter{0};
     llvm::LLVMContext context;
 #if LLVM_VERSION_MAJOR >= 7
     llvm::orc::ExecutionSession execution_session;
@@ -205,6 +207,7 @@ struct LLVMContext
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
     std::unordered_map<std::string, void *> symbols;
+    size_t id;
 
     LLVMContext()
 #if LLVM_VERSION_MAJOR >= 7
@@ -226,15 +229,16 @@ struct LLVMContext
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
         , builder(context)
+        , id(id_counter++)
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
     }
 
-    size_t finalize()
+    void finalize()
     {
         if (!module->size())
-            return 0;
+            return;
         llvm::PassManagerBuilder builder;
         llvm::legacy::PassManager mpm;
         llvm::legacy::FunctionPassManager fpm(module.get());
@@ -283,8 +287,6 @@ struct LLVMContext
                 throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
             symbols[name] = reinterpret_cast<void *>(*address);
         }
-
-        return memory_mapper->allocated_memory;
     }
 };
 
@@ -322,7 +324,7 @@ public:
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
         block.getByPosition(result).column = std::move(col_res);
-    };
+    }
 };
 
 static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
@@ -565,6 +567,23 @@ static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & fu
     return function.isCompilable();
 }
 
+size_t CompiledExpressionCache::weight() const
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    size_t result{0};
+    std::unordered_set<size_t> seen;
+    for (const auto & cell : cells)
+    {
+        auto function_context = cell.second.value->getContext();
+        if (!seen.count(function_context->id))
+        {
+            result += function_context->memory_mapper->memory_tracker.get();
+            seen.insert(function_context->id);
+        }
+    }
+    return result;
+}
+
 void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache)
 {
     struct LLVMTargetInitializer
@@ -647,13 +666,20 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
+                bool success;
                 auto set_func = [&fused, i, context, &sample_block] () { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); };
-                std::tie(fn, std::ignore) = compilation_cache->getOrSet(fused[i], set_func);
+                Stopwatch watch;
+                std::tie(fn, success) = compilation_cache->getOrSet(fused[i], set_func);
+                if (success)
+                    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
             }
             else
             {
+                Stopwatch watch;
                 fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
+                ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
             }
+
             actions[i].function = fn;
             actions[i].argument_names = fn->getArgumentNames();
             actions[i].is_function_compiled = true;
@@ -666,9 +692,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    size_t used_memory = context->finalize();
-
-    ProfileEvents::increment(ProfileEvents::CompiledCacheSizeBytes, used_memory);
+    context->finalize();
 }
 
 }

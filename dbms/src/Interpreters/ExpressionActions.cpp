@@ -188,8 +188,6 @@ void ExpressionAction::prepare(Block & sample_block)
                     all_const = false;
             }
 
-            ColumnPtr new_column;
-
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
             if (all_const && function->isSuitableForConstantFolding())
             {
@@ -639,7 +637,7 @@ void ExpressionActions::prependProjectInput()
     actions.insert(actions.begin(), ExpressionAction::project(getRequiredColumns()));
 }
 
-void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const Block & sample_block)
+void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const Block & sample_block_before)
 {
     if (action.type != ExpressionAction::ARRAY_JOIN)
         throw Exception("ARRAY_JOIN action expected", ErrorCodes::LOGICAL_ERROR);
@@ -655,7 +653,7 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
     }
     for (const std::string & name : array_join_set)
     {
-        input_columns.emplace_back(name, sample_block.getByName(name).type);
+        input_columns.emplace_back(name, sample_block_before.getByName(name).type);
         actions.insert(actions.begin(), ExpressionAction::removeColumn(name));
     }
 
@@ -1068,9 +1066,9 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 }
 
 
+/// It is not important to calculate the hash of individual strings or their concatenation
 size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
 {
-
     SipHash hash;
     hash.update(action.type);
     hash.update(action.is_function_compiled);
