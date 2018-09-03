@@ -1,0 +1,72 @@
+#pragma once
+
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Storages/IStorage.h>
+#include <Storages/MutationCommands.h>
+
+
+namespace DB
+{
+
+class Context;
+
+/// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs)
+/// to this data.
+class MutationsInterpreter
+{
+public:
+    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_)
+        : storage(std::move(storage_))
+        , commands(std::move(commands_))
+        , context(context_)
+    {
+    }
+
+    /// Return false if the data isn't going to be changed by mutations.
+    bool isStorageTouchedByMutations() const;
+
+    /// The resulting stream will return blocks containing changed columns only.
+    BlockInputStreamPtr execute();
+
+private:
+    void prepare();
+
+private:
+    StoragePtr storage;
+    std::vector<MutationCommand> commands;
+    const Context & context;
+
+    /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
+    /// DELETEs, possibly followed by an UPDATE. Commands can reuse expressions calculated by the previous
+    /// commands in the same stage, but at the end of each stage intermediate columns are thrown away
+    /// (they may contain wrong values because of an UPDATE).
+    ///
+    /// Each stage has output_columns that contain columns that are changed at the end of that stage
+    /// plus columns needed for the next mutations.
+    ///
+    /// First stage is special: it can contain only DELETEs and is executed using InterpreterSelectQuery
+    /// to take advantage of table indexes (if there are any).
+    struct Stage
+    {
+        std::vector<MutationCommand> deletes;
+        std::optional<MutationCommand> update;
+
+        /// Contains columns that are changed by this stage,
+        /// columns changed by the previous stages and also columns needed by the next stages.
+        NameSet output_columns;
+
+        /// A chain of actions needed to execute this stage.
+        /// First steps calculate filter columns for DELETEs (in the same order as in `delete_filter_column_names`),
+        /// then there is (possibly) an UPDATE stage, and finally a projection stage.
+        ExpressionActionsChain expressions_chain;
+        Names delete_filter_column_names;
+    };
+
+    std::unique_ptr<InterpreterSelectQuery> interpreter_select;
+    std::vector<Stage> stages;
+    bool is_prepared = false; /// Has the sequence of stages been prepared.
+};
+
+}
