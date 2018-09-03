@@ -157,7 +157,7 @@ public:
 
         size_t size = input_rows_count;
         vec_to.resize(size);
-        Impl::execute(&vec_to[0], vec_to.size());
+        Impl::execute(vec_to.data(), vec_to.size());
 
         block.getByPosition(result).column = std::move(col_to);
     }
@@ -202,7 +202,7 @@ public:
         {
             is_initialized = true;
             typename ColumnVector<ToType>::Container vec_to(1);
-            Impl::execute(&vec_to[0], vec_to.size());
+            Impl::execute(vec_to.data(), vec_to.size());
             value = vec_to[0];
         }
 

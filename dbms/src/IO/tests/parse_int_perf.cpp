@@ -91,7 +91,7 @@ int main(int argc, char ** argv)
         }
 
         {
-            DB::ReadBuffer rb(&formatted[0], formatted.size(), 0);
+            DB::ReadBuffer rb(formatted.data(), formatted.size(), 0);
         //    DB::CompressedReadBuffer rb(rb_);
             Stopwatch watch;
 
@@ -108,7 +108,7 @@ int main(int argc, char ** argv)
                 << std::endl;
         }
 
-        std::cerr << (0 == memcmp(&data[0], &data2[0], data.size()) ? "Ok." : "Fail.") << std::endl;
+        std::cerr << (0 == memcmp(data.data(), data2.data(), data.size()) ? "Ok." : "Fail.") << std::endl;
     }
     catch (const DB::Exception & e)
     {

@@ -44,23 +44,23 @@ private:
     template <typename AttributeType>
     ColumnPtr getColumnFromAttribute(DictionaryGetter<AttributeType> getter,
                                      const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<UInt16> & dates,
-                                     const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+                                     const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const;
     ColumnPtr getColumnFromAttributeString(const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<UInt16> & dates,
-                                           const DictionaryAttribute & attribute, const DictionaryType & dictionary) const;
+                                           const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const;
     template <typename T>
     ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array) const;
 
     template <typename T>
     void addSpecialColumn(
         const std::optional<DictionarySpecialAttribute> & attribute, DataTypePtr type,
-        const std::string & default_name, const std::unordered_set<std::string> & column_names,
+        const std::string & default_name, const std::unordered_set<std::string> & column_names_set,
         const PaddedPODArray<T> & values, ColumnsWithTypeAndName & columns) const;
 
     Block fillBlock(const PaddedPODArray<Key> & ids_to_fill,
-                    const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const;
+                    const PaddedPODArray<UInt16> & block_start_dates, const PaddedPODArray<UInt16> & block_end_dates) const;
 
     PaddedPODArray<UInt16> makeDateKey(
-        const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const;
+        const PaddedPODArray<UInt16> & block_start_dates, const PaddedPODArray<UInt16> & block_end_dates) const;
 
     DictionaryPtr dictionary;
     Names column_names;
@@ -104,20 +104,20 @@ template <typename DictionaryType, typename Key>
 template <typename AttributeType>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttribute(
     DictionaryGetter<AttributeType> getter, const PaddedPODArray<Key> & ids_to_fill,
-    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
+    const PaddedPODArray<UInt16> & dates, const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const
 {
     auto column_vector = ColumnVector<AttributeType>::create(ids_to_fill.size());
-    (dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
+    (concrete_dictionary.*getter)(attribute.name, ids_to_fill, dates, column_vector->getData());
     return column_vector;
 }
 
 template <typename DictionaryType, typename Key>
 ColumnPtr RangeDictionaryBlockInputStream<DictionaryType, Key>::getColumnFromAttributeString(
     const PaddedPODArray<Key> & ids_to_fill, const PaddedPODArray<UInt16> & dates,
-    const DictionaryAttribute & attribute, const DictionaryType & dictionary) const
+    const DictionaryAttribute & attribute, const DictionaryType & concrete_dictionary) const
 {
     auto column_string = ColumnString::create();
-    dictionary.getString(attribute.name, ids_to_fill, dates, column_string.get());
+    concrete_dictionary.getString(attribute.name, ids_to_fill, dates, column_string.get());
     return column_string;
 }
 
@@ -137,28 +137,28 @@ template <typename DictionaryType, typename Key>
 template <typename T>
 void RangeDictionaryBlockInputStream<DictionaryType, Key>::addSpecialColumn(
     const std::optional<DictionarySpecialAttribute> & attribute, DataTypePtr type,
-    const std::string & default_name, const std::unordered_set<std::string> & column_names,
+    const std::string & default_name, const std::unordered_set<std::string> & column_names_set,
     const PaddedPODArray<T> & values, ColumnsWithTypeAndName & columns) const
 {
     std::string name = default_name;
     if (attribute)
         name = attribute->name;
 
-    if (column_names.find(name) != column_names.end())
+    if (column_names_set.find(name) != column_names_set.end())
         columns.emplace_back(getColumnFromPODArray(values), type, name);
 }
 
 template <typename DictionaryType, typename Key>
 PaddedPODArray<UInt16> RangeDictionaryBlockInputStream<DictionaryType, Key>::makeDateKey(
-        const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const
+        const PaddedPODArray<UInt16> & block_start_dates, const PaddedPODArray<UInt16> & block_end_dates) const
 {
-    PaddedPODArray<UInt16> key(start_dates.size());
+    PaddedPODArray<UInt16> key(block_start_dates.size());
     for (size_t i = 0; i < key.size(); ++i)
     {
-        if (RangeHashedDictionary::Range::isCorrectDate(start_dates[i]))
-            key[i] = start_dates[i];
+        if (RangeHashedDictionary::Range::isCorrectDate(block_start_dates[i]))
+            key[i] = block_start_dates[i];
         else
-            key[i] = end_dates[i];
+            key[i] = block_end_dates[i];
     }
 
     return key;
@@ -168,7 +168,7 @@ PaddedPODArray<UInt16> RangeDictionaryBlockInputStream<DictionaryType, Key>::mak
 template <typename DictionaryType, typename Key>
 Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     const PaddedPODArray<Key> & ids_to_fill,
-    const PaddedPODArray<UInt16> & start_dates, const PaddedPODArray<UInt16> & end_dates) const
+    const PaddedPODArray<UInt16> & block_start_dates, const PaddedPODArray<UInt16> & block_end_dates) const
 {
     ColumnsWithTypeAndName columns;
     const DictionaryStructure & structure = dictionary->getStructure();
@@ -176,10 +176,10 @@ Block RangeDictionaryBlockInputStream<DictionaryType, Key>::fillBlock(
     std::unordered_set<std::string> names(column_names.begin(), column_names.end());
 
     addSpecialColumn(structure.id, std::make_shared<DataTypeUInt64>(), "ID", names, ids_to_fill, columns);
-    addSpecialColumn(structure.range_min, std::make_shared<DataTypeDate>(), "Range Start", names, start_dates, columns);
-    addSpecialColumn(structure.range_max, std::make_shared<DataTypeDate>(), "Range End", names, end_dates, columns);
+    addSpecialColumn(structure.range_min, std::make_shared<DataTypeDate>(), "Range Start", names, block_start_dates, columns);
+    addSpecialColumn(structure.range_max, std::make_shared<DataTypeDate>(), "Range End", names, block_end_dates, columns);
 
-    auto date_key = makeDateKey(start_dates, end_dates);
+    auto date_key = makeDateKey(block_start_dates, block_end_dates);
 
     for (const auto idx : ext::range(0, structure.attributes.size()))
     {
