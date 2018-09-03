@@ -218,45 +218,6 @@ template <typename T> class DataTypeEnum;
 template <typename T> class DataTypeNumber;
 template <typename T> class DataTypeDecimal;
 
-template <typename T, typename F>
-bool callOnDataTypeAndIndex(TypeIndex number, F && f)
-{
-    switch (number)
-    {
-        case TypeIndex::UInt8:          return f(TypePair<T, DataTypeNumber<UInt8>>());
-        case TypeIndex::UInt16:         return f(TypePair<T, DataTypeNumber<UInt16>>());
-        case TypeIndex::UInt32:         return f(TypePair<T, DataTypeNumber<UInt32>>());
-        case TypeIndex::UInt64:         return f(TypePair<T, DataTypeNumber<UInt64>>());
-
-        case TypeIndex::Int8:           return f(TypePair<T, DataTypeNumber<Int8>>());
-        case TypeIndex::Int16:          return f(TypePair<T, DataTypeNumber<Int16>>());
-        case TypeIndex::Int32:          return f(TypePair<T, DataTypeNumber<Int32>>());
-        case TypeIndex::Int64:          return f(TypePair<T, DataTypeNumber<Int64>>());
-
-        case TypeIndex::Float32:        return f(TypePair<T, DataTypeNumber<Float32>>());
-        case TypeIndex::Float64:        return f(TypePair<T, DataTypeNumber<Float64>>());
-
-        case TypeIndex::Decimal32:      return f(TypePair<T, DataTypeDecimal<Decimal32>>());
-        case TypeIndex::Decimal64:      return f(TypePair<T, DataTypeDecimal<Decimal64>>());
-        case TypeIndex::Decimal128:     return f(TypePair<T, DataTypeDecimal<Decimal128>>());
-
-        case TypeIndex::Date:           return f(TypePair<T, DataTypeDate>());
-        case TypeIndex::DateTime:       return f(TypePair<T, DataTypeDateTime>());
-
-        case TypeIndex::String:         return f(TypePair<T, DataTypeString>());
-        case TypeIndex::FixedString:    return f(TypePair<T, DataTypeFixedString>());
-
-        case TypeIndex::Enum8:          return f(TypePair<T, DataTypeEnum<Int8>>());
-        case TypeIndex::Enum16:         return f(TypePair<T, DataTypeEnum<Int16>>());
-
-        case TypeIndex::UUID:           return f(TypePair<T, DataTypeUUID>());
-
-        default:
-            break;
-    }
-
-    return false;
-}
 
 template <typename T, typename F>
 bool callOnIndexAndDataType(TypeIndex number, F && f)

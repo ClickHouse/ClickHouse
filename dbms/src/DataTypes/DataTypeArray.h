@@ -18,6 +18,8 @@ public:
 
     DataTypeArray(const DataTypePtr & nested_);
 
+    TypeIndex getTypeId() const override { return TypeIndex::Array; }
+
     std::string getName() const override
     {
         return "Array(" + nested->getName() + ")";
