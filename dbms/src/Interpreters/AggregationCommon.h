@@ -6,6 +6,7 @@
 #include <Common/Arena.h>
 #include <Common/UInt128.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/memcpySmall.h>
 #include <Core/Defines.h>
 #include <common/StringRef.h>
 #include <Columns/IColumn.h>
@@ -174,26 +175,6 @@ static inline T ALWAYS_INLINE packFixed(
 
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128(
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys)
-{
-    UInt128 key;
-    SipHash hash;
-
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        /// Hashes the key.
-        keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
-        hash.update(keys[j].data, keys[j].size);
-    }
-
-    hash.get128(key.low, key.high);
-
-    return key;
-}
-
-
-/// Almost the same as above but it doesn't return any reference to key data.
-static inline UInt128 ALWAYS_INLINE hash128(
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
 {
     UInt128 key;
@@ -215,75 +196,15 @@ static inline StringRef * ALWAYS_INLINE placeKeysInPool(
     for (size_t j = 0; j < keys_size; ++j)
     {
         char * place = pool.alloc(keys[j].size);
-        memcpy(place, keys[j].data, keys[j].size);        /// TODO padding in Arena and memcpySmall
+        memcpySmallAllowReadWriteOverflow15(place, keys[j].data, keys[j].size);
         keys[j].data = place;
     }
 
     /// Place the StringRefs on the newly copied keys in the pool.
-    char * res = pool.alloc(keys_size * sizeof(StringRef));
-    memcpy(res, keys.data(), keys_size * sizeof(StringRef));
+    char * res = pool.alignedAlloc(keys_size * sizeof(StringRef), alignof(StringRef));
+    memcpySmallAllowReadWriteOverflow15(res, keys.data(), keys_size * sizeof(StringRef));
 
     return reinterpret_cast<StringRef *>(res);
-}
-
-
-/// Copy keys to the pool. Then put into pool StringRefs to them and return the pointer to the first.
-static inline StringRef * ALWAYS_INLINE extractKeysAndPlaceInPool(
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys, Arena & pool)
-{
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
-        char * place = pool.alloc(keys[j].size);
-        memcpy(place, keys[j].data, keys[j].size);
-        keys[j].data = place;
-    }
-
-    /// Place the StringRefs on the newly copied keys in the pool.
-    char * res = pool.alloc(keys_size * sizeof(StringRef));
-    memcpy(res, keys.data(), keys_size * sizeof(StringRef));
-
-    return reinterpret_cast<StringRef *>(res);
-}
-
-
-/// Copy the specified keys to a continuous memory chunk of a pool.
-/// Subsequently append StringRef objects referring to each key.
-///
-/// [key1][key2]...[keyN][ref1][ref2]...[refN]
-///   ^     ^        :     |     |
-///   +-----|--------:-----+     |
-///   :     +--------:-----------+
-///   :              :
-///   <-------------->
-///        (1)
-///
-/// Return a StringRef object, referring to the area (1) of the memory
-/// chunk that contains the keys. In other words, we ignore their StringRefs.
-inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys, Arena & pool)
-{
-    size_t sum_keys_size = 0;
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
-        sum_keys_size += keys[j].size;
-    }
-
-    char * res = pool.alloc(sum_keys_size + keys_size * sizeof(StringRef));
-    char * place = res;
-
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        memcpy(place, keys[j].data, keys[j].size);
-        keys[j].data = place;
-        place += keys[j].size;
-    }
-
-    /// Place the StringRefs on the newly copied keys in the pool.
-    memcpy(place, keys.data(), keys_size * sizeof(StringRef));
-
-    return {res, sum_keys_size};
 }
 
 

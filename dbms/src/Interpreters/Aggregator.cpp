@@ -412,28 +412,18 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
       */
 
     size_t keys_bytes = 0;
-
-    size_t num_contiguous_keys = 0;
     size_t num_fixed_contiguous_keys = 0;
-    size_t num_string_keys = 0;
 
     key_sizes.resize(params.keys_size);
     for (size_t j = 0; j < params.keys_size; ++j)
     {
         if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())
         {
-            ++num_contiguous_keys;
-
             if (types_removed_nullable[j]->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
             {
                 ++num_fixed_contiguous_keys;
                 key_sizes[j] = types_removed_nullable[j]->getSizeOfValueInMemory();
                 keys_bytes += key_sizes[j];
-            }
-
-            if (types_removed_nullable[j]->isString())
-            {
-                ++num_string_keys;
             }
         }
     }
@@ -489,23 +479,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     if (params.keys_size == 1 && types_removed_nullable[0]->isFixedString())
         return AggregatedDataVariants::Type::key_fixed_string;
 
-    /** If it is possible to use 'concat' method due to one-to-one correspondense. Otherwise the method will be 'serialized'.
-      */
-    if (params.keys_size == num_contiguous_keys && num_fixed_contiguous_keys + 1 >= num_contiguous_keys)
-        return AggregatedDataVariants::Type::concat;
-
-    /** For case with multiple strings, we use 'concat' method despite the fact, that correspondense is not one-to-one.
-      * Concat will concatenate strings including its zero terminators.
-      * But if strings contains zero bytes in between, different keys may clash.
-      * For example, keys ('a\0b', 'c') and ('a', 'b\0c') will be aggregated as one key.
-      * This is documented behaviour. It may be avoided by just switching to 'serialized' method, which is less efficient.
-      */
-    if (params.keys_size == num_fixed_contiguous_keys + num_string_keys)
-        return AggregatedDataVariants::Type::concat;
-
     return AggregatedDataVariants::Type::serialized;
-
-    /// NOTE AggregatedDataVariants::Type::hashed is not used. It's proven to be less efficient than 'serialized' in most cases.
 }
 
 
@@ -2162,7 +2136,6 @@ Block Aggregator::mergeBlocks(BlocksList & blocks, bool final)
         M(key_fixed_string) \
         M(keys128)          \
         M(keys256)          \
-        M(concat)           \
         M(serialized)       \
 
 #define M(NAME) \

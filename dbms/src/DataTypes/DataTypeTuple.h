@@ -28,6 +28,7 @@ public:
     DataTypeTuple(const DataTypes & elems);
     DataTypeTuple(const DataTypes & elems, const Strings & names);
 
+    TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
 

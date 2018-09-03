@@ -1,6 +1,14 @@
 SET allow_experimental_decimal_type = 1;
 SET send_logs_level = 'none';
 
+CREATE TABLE IF NOT EXISTS test.x (a Nullable(Decimal(9, 2))) ENGINE = Memory; -- { serverError 43 }
+CREATE TABLE IF NOT EXISTS test.x (a Nullable(Decimal(18, 2))) ENGINE = Memory; -- { serverError 43 }
+CREATE TABLE IF NOT EXISTS test.x (a Nullable(Decimal(38, 2))) ENGINE = Memory; -- { serverError 43 }
+
+SELECT toNullable(toDecimal32(0, 0)); -- { serverError 43 }
+SELECT toNullable(toDecimal64(0, 0)); -- { serverError 43 }
+SELECT toNullable(toDecimal128(0, 0)); -- { serverError 43 }
+
 SELECT toDecimal32('1.1', 1), toDecimal32('1.1', 2), toDecimal32('1.1', 8);
 SELECT toDecimal32('1.1', 0); -- { serverError 69 }
 SELECT toDecimal32(1.1, 0), toDecimal32(1.1, 1), toDecimal32(1.1, 2), toDecimal32(1.1, 8);
@@ -83,7 +91,19 @@ SELECT toUInt16(9999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 SELECT toUInt32(999999999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 SELECT toUInt64(999999999) as x, toDecimal32(x, 0), toDecimal64(x, 0);
 
---SELECT CAST('1.1', 'Decimal(9,0)'), CAST('1.1', 'Decimal(9,1)'), CAST('1.1', 'Decimal(9,2)');
+SELECT CAST('42.4200', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,2)'), CAST(a, 'Decimal(18, 2)'), CAST(a, 'Decimal(38, 2)');
+SELECT CAST('42.42', 'Decimal(9,2)') AS a, CAST(a, 'Decimal(9,7)'), CAST(a, 'Decimal(18, 16)'), CAST(a, 'Decimal(38, 36)');
 
---SELECT * FROM test.decimal;
---DROP TABLE IF EXISTS test.decimal;
+SELECT CAST('123456789', 'Decimal(9,0)'), CAST('123456789123456789', 'Decimal(18,0)');
+SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,0)');
+SELECT CAST('123456789', 'Decimal(9,1)'); -- { serverError 69 }
+SELECT CAST('123456789123456789', 'Decimal(18,1)'); -- { serverError 69 }
+SELECT CAST('12345678901234567890123456789012345678', 'Decimal(38,1)'); -- { serverError 69 }
+
+SELECT CAST('0.123456789', 'Decimal(9,9)'), CAST('0.123456789123456789', 'Decimal(18,18)');
+SELECT CAST('0.12345678901234567890123456789012345678', 'Decimal(38,38)');
+SELECT CAST('0.123456789', 'Decimal(9,8)'); -- { serverError 69 }
+SELECT CAST('0.123456789123456789', 'Decimal(18,17)'); -- { serverError 69 }
+SELECT CAST('0.12345678901234567890123456789012345678', 'Decimal(38,37)'); -- { serverError 69 }
+
+DROP TABLE IF EXISTS test.decimal;

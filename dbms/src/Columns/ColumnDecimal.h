@@ -60,8 +60,7 @@ private:
     friend class COWPtrHelper<IColumn, Self>;
 
 public:
-    using value_type = T;
-    using Container = DecimalPaddedPODArray<value_type>;
+    using Container = DecimalPaddedPODArray<T>;
 
 private:
     ColumnDecimal(const size_t n, UInt32 scale_)
@@ -138,6 +137,24 @@ public:
 protected:
     Container data;
     UInt32 scale;
+
+    template <typename U>
+    void permutation(bool reverse, size_t limit, PaddedPODArray<U> & res) const
+    {
+        size_t s = data.size();
+        res.resize(s);
+        for (U i = 0; i < s; ++i)
+            res[i] = i;
+
+        auto sort_end = res.end();
+        if (limit && limit < s)
+            sort_end = res.begin() + limit;
+
+        if (reverse)
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
+    }
 };
 
 template <typename T>
