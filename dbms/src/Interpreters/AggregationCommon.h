@@ -228,49 +228,6 @@ static inline StringRef * ALWAYS_INLINE placeKeysInPool(
 }
 
 
-/// Copy the specified keys to a continuous memory chunk of a pool.
-/// Subsequently append StringRef objects referring to each key.
-///
-/// [key1][key2]...[keyN][ref1][ref2]...[refN]
-///   ^     ^        :     |      |
-///   +-----|--------:-----+      |
-///   :     +--------:------------+
-///   :              :
-///   <-------------->
-///        (1)
-///
-/// Return a StringRef object, referring to the area (1) of the memory
-/// chunk that contains the keys. In other words, we ignore their StringRefs.
-///
-/// NOTE Storing sizes instead of StringRefs may be beneficial.
-/// NOTE This method has great potential for specialization with runtime code generation.
-inline StringRef ALWAYS_INLINE extractKeysAndPlaceInPoolContiguous(
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys, Arena & pool)
-{
-    size_t sum_keys_size = 0;
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
-        sum_keys_size += keys[j].size;
-    }
-
-    char * res = pool.alloc(sum_keys_size + keys_size * sizeof(StringRef));
-    char * place = res;
-
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        memcpySmallAllowReadWriteOverflow15(place, keys[j].data, keys[j].size);
-        keys[j].data = place;
-        place += keys[j].size;
-    }
-
-    /// Place the StringRefs on the newly copied keys in the pool.
-    memcpySmallAllowReadWriteOverflow15(place, keys.data(), keys_size * sizeof(StringRef));
-
-    return {res, sum_keys_size};
-}
-
-
 /** Serialize keys into a continuous chunk of memory.
   */
 static inline StringRef ALWAYS_INLINE serializeKeysToPoolContiguous(
