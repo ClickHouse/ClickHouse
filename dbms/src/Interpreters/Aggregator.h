@@ -487,88 +487,7 @@ struct AggregationMethodKeysFixed
 };
 
 
-/// Aggregates by key concatenation. (In this case, strings containing zeros in the middle can stick together.)
-template <typename TData>
-struct AggregationMethodConcat
-{
-    using Data = TData;
-    using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
-    using iterator = typename Data::iterator;
-    using const_iterator = typename Data::const_iterator;
-
-    Data data;
-
-    AggregationMethodConcat() {}
-
-    template <typename Other>
-    AggregationMethodConcat(const Other & other) : data(other.data) {}
-
-    struct State
-    {
-        void init(ColumnRawPtrs &)
-        {
-        }
-
-        ALWAYS_INLINE Key getKey(
-            const ColumnRawPtrs & key_columns,
-            size_t keys_size,
-            size_t i,
-            const Sizes &,
-            StringRefs & keys,
-            Arena & pool) const
-        {
-            return extractKeysAndPlaceInPoolContiguous(i, keys_size, key_columns, keys, pool);
-        }
-    };
-
-    static AggregateDataPtr & getAggregateData(Mapped & value)                { return value; }
-    static const AggregateDataPtr & getAggregateData(const Mapped & value)    { return value; }
-
-    static ALWAYS_INLINE void onNewKey(typename Data::value_type &, size_t, StringRefs &, Arena &)
-    {
-    }
-
-    static ALWAYS_INLINE void onExistingKey(const Key & key, StringRefs & keys, Arena & pool)
-    {
-        pool.rollback(key.size + keys.size() * sizeof(keys[0]));
-    }
-
-    /// If the key already was, then it is removed from the pool (overwritten), and the next key can not be compared with it.
-    static const bool no_consecutive_keys_optimization = true;
-
-    static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes & key_sizes)
-    {
-        insertKeyIntoColumnsImpl(value, key_columns, keys_size, key_sizes);
-    }
-
-private:
-    /// Insert the values of the specified keys into the corresponding columns.
-    static void insertKeyIntoColumnsImpl(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes &)
-    {
-        /// See function extractKeysAndPlaceInPoolContiguous.
-        const StringRef * key_refs = reinterpret_cast<const StringRef *>(value.first.data + value.first.size);
-
-        if (unlikely(0 == value.first.size))
-        {
-            /** Fix if all keys are empty arrays. For them, a zero-length StringRef is written to the hash table, but with a non-zero pointer.
-                * But when inserted into a hash table, this StringRef occurs equal to another key of zero length,
-                *  whose data pointer can be any garbage and can not be used.
-                */
-            for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->insertDefault();
-        }
-        else
-        {
-            for (size_t i = 0; i < keys_size; ++i)
-                key_columns[i]->insertDataWithTerminatingZero(key_refs[i].data, key_refs[i].size);
-        }
-    }
-};
-
-
 /** Aggregates by concatenating serialized key values.
-  * Similar to AggregationMethodConcat, but it is suitable, for example, for arrays of strings or multiple arrays.
   * The serialized value differs in that it uniquely allows to deserialize it, having only the position with which it starts.
   * That is, for example, for strings, it contains first the serialized length of the string, and then the bytes.
   * Therefore, when aggregating by several strings, there is no ambiguity.
@@ -730,7 +649,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodHashed<AggregatedDataHashed>>                           hashed;
-    std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKey>>                    concat;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt32, AggregatedDataWithUInt64KeyTwoLevel>> key32_two_level;
@@ -740,7 +658,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodHashed<AggregatedDataHashedTwoLevel>>                   hashed_two_level;
-    std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyTwoLevel>>            concat_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
 
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyHash64>>   key64_hash64;
@@ -748,7 +665,6 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodFixedString<AggregatedDataWithStringKeyHash64>>         key_fixed_string_hash64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128Hash64>>             keys128_hash64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256Hash64>>             keys256_hash64;
-    std::unique_ptr<AggregationMethodConcat<AggregatedDataWithStringKeyHash64>>              concat_hash64;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyHash64>>          serialized_hash64;
 
     /// Support for nullable keys.
@@ -768,7 +684,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128,                    false) \
         M(keys256,                    false) \
         M(hashed,                     false) \
-        M(concat,                     false) \
         M(serialized,                 false) \
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
@@ -777,14 +692,12 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level,          true) \
         M(keys256_two_level,          true) \
         M(hashed_two_level,           true) \
-        M(concat_two_level,           true) \
         M(serialized_two_level,       true) \
         M(key64_hash64,               false) \
         M(key_string_hash64,          false) \
         M(key_fixed_string_hash64,    false) \
         M(keys128_hash64,             false) \
         M(keys256_hash64,             false) \
-        M(concat_hash64,              false) \
         M(serialized_hash64,          false) \
         M(nullable_keys128,           false) \
         M(nullable_keys256,           false) \
@@ -905,7 +818,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128)          \
         M(keys256)          \
         M(hashed)           \
-        M(concat)           \
         M(serialized)       \
         M(nullable_keys128) \
         M(nullable_keys256) \
@@ -918,7 +830,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key_fixed_string_hash64) \
         M(keys128_hash64)   \
         M(keys256_hash64)   \
-        M(concat_hash64)    \
         M(serialized_hash64) \
 
     #define APPLY_FOR_VARIANTS_SINGLE_LEVEL(M) \
@@ -950,7 +861,6 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(keys128_two_level)          \
         M(keys256_two_level)          \
         M(hashed_two_level)           \
-        M(concat_two_level)           \
         M(serialized_two_level)       \
         M(nullable_keys128_two_level) \
         M(nullable_keys256_two_level)
