@@ -2615,13 +2615,13 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             Coordination::Requests ops;
             Coordination::Responses responses;
             
-            Coordination::Stat last_part_stat;
-            String last_parts = zookeeper->get(quorum_last_part_path, &last_part_stat);
+            Coordination::Stat added_parts_stat;
+            String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
             
-            String new_last_parts = rewriteLastParts(last_parts, part_name);
+            String new_added_parts = rewriteAddedParts(old_added_parts, part_name);
 
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
-            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, part_name, last_part_stat.version));
+            ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, new_added_parts, added_parts_stat.version));
             auto code = zookeeper->tryMulti(ops, responses);
 
             if (code == Coordination::ZOK)
@@ -2667,25 +2667,29 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 }
 
 
-std::unordered_map<String, Int64> StorageReplicatedMergeTree::getMaxBlocksWithQuorum(const std::unordered_map<String, String> & last_parts)
+using MaxAddedBlocks = std::unordered_map<String, Int64>;
+using PartsNames = std::unordered_map<String, String>;
+
+
+MaxAddedBlocks StorageReplicatedMergeTree::getMaxAddedBlocksWithQuorum(const PartsNames & parts)
 {
-    std::unordered_map<String, Int64> max_blocks;
-    for (auto last_part : last_parts)
+    MaxAddedBlocks max_added_blocks;
+    for (auto & part : parts)
     {
-        max_blocks[last_part.first] = MergeTreePartInfo::fromPartName(last_part.second, data.format_version).max_block;
+        max_added_blocks[part.first] = MergeTreePartInfo::fromPartName(part.second, data.format_version).max_block;
     }
-    return max_blocks;
+    return max_added_blocks;
 }
 
 
-std::unordered_map<String, String> StorageReplicatedMergeTree::getLastPartsWithQuorum(const String & last_parts_str)
+PartsNames StorageReplicatedMergeTree::getAddedPartsWithQuorum(const String & parts_str)
 {
-    auto in = ReadBufferFromString(last_parts_str);
+    auto in = ReadBufferFromString(parts_str);
     
     size_t count;
-    std::unordered_map<String, String> last_blocks;
+    PartsNames added_parts;
     
-    if (!last_parts_str.empty())
+    if (!parts_str.empty())
     {
         try
         {
@@ -2695,41 +2699,41 @@ std::unordered_map<String, String> StorageReplicatedMergeTree::getLastPartsWithQ
                 String partition_id;
                 String part_name;
                 in  >> partition_id >> "\t" >> part_name >> "\n";
-                last_blocks[partition_id] = part_name;
+                added_parts[partition_id] = part_name;
             }
         }
         catch (Exception e)
         {
-            String last_part;
-            in >> last_part;
-            auto partition_info = MergeTreePartInfo::fromPartName(last_part, data.format_version);
-            last_blocks[partition_info.partition_id] = last_part;
+            String last_added_part;
+            in >> last_added_part;
+            auto partition_info = MergeTreePartInfo::fromPartName(last_added_part, data.format_version);
+            added_parts[partition_info.partition_id] = last_added_part;
         }
     }
     
-    return last_blocks;
+    return added_parts;
 }
 
 
-String StorageReplicatedMergeTree::rewriteLastParts(const String & old_last_parts, const String & new_part_name)
+String StorageReplicatedMergeTree::rewriteAddedParts(const String & old_added_parts_str, const String & new_part_name)
 {
-    auto last_blocks = getLastPartsWithQuorum(old_last_parts);
+    auto added_parts = getAddedPartsWithQuorum(old_added_parts_str);
     
     auto new_part_info = MergeTreePartInfo::fromPartName(new_part_name, data.format_version);
     
-    last_blocks[new_part_info.partition_id] = new_part_name;
+    added_parts[new_part_info.partition_id] = new_part_name;
     
-    String new_last_parts;
-    auto out = WriteBufferFromString(new_last_parts);
+    String new_parts;
+    auto out = WriteBufferFromString(new_parts);
     
-    out << "parts_count " << last_blocks.size() << "\n";
+    out << "parts_count " << added_parts.size() << "\n";
     
-    for (auto & last_block : last_blocks)
+    for (auto & added_part : added_parts)
     {
-        out << last_block.first << "\t" << last_block.second << "\n";
+        out << added_part.first << "\t" << added_part.second << "\n";
     }
     
-    return new_last_parts;
+    return new_parts;
 }
 
 
@@ -2915,35 +2919,27 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    std::unordered_map<String, Int64> max_blocks_number_to_read;
+    MaxAddedBlocks max_added_blocks_with_quorum;
     if (settings.select_sequential_consistency)
     {
         auto zookeeper = getZooKeeper();
 
-        String last_parts;
-        zookeeper->tryGet(zookeeper_path + "/quorum/last_part", last_parts);
+        String added_parts_str;
+        zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str);
 
-	if (last_parts.empty())  /// If no part has been written with quorum.
+        if (!added_parts_str.empty())
         {
-            String quorum_str;
-            if (zookeeper->tryGet(zookeeper_path + "/quorum/status", quorum_str))
-            {
-                ReplicatedMergeTreeQuorumEntry quorum_entry;
-                quorum_entry.fromString(quorum_str);
-                auto part_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
-            }
-        }
-        else
-        {
-            auto last_blocks_with_quorum = getLastPartsWithQuorum(last_parts);
-            for (auto & part_info : last_blocks_with_quorum)
-                if (!data.getActiveContainingPart(part_info.second))
-                    throw Exception("Replica doesn't have part " + part_info.second + " which was successfully written to quorum of other replicas."
+            auto added_parts = getAddedPartsWithQuorum(added_parts_str);
+            for (auto & added_part : added_parts)
+                if (!data.getActiveContainingPart(added_part.second))
+                    throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
                         " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
+
+            max_added_blocks_with_quorum = getMaxAddedBlocksWithQuorum(added_parts);
         }
     }
 
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_blocks_number_to_read);
+    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_added_blocks_with_quorum);
 }
 
 

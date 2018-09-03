@@ -403,13 +403,19 @@ private:
       */
     bool queueTask();
 
-    std::unordered_map<String, Int64> getMaxBlocksWithQuorum(const std::unordered_map<String, String> & last_parts);
+    using MaxAddedBlocks = std::unordered_map<String, Int64>;
+    using PartsNames = std::unordered_map<String, String>;
+
+    /// Return map with partition_id and max added block in this partition.
+    /// This is used to filter the added blocks in read().
+    MaxAddedBlocks getMaxAddedBlocksWithQuorum(const PartsNames & parts);
     
-    /// Get parts, wich were wrote with quorum.
-    std::unordered_map<String, String> getLastPartsWithQuorum(const String & last_parts_str);
+    /// Return map with partition_id and the last added part_name in this partition.
+    PartsNames getAddedPartsWithQuorum(const String & parts_str);
     
-    /// Rewrite last parts with quorum
-    String rewriteLastParts(const String & old_last_parts, const String & new_part_name);
+    /// Rewrite data with inserted partiton with quorum.
+    /// This is added new partition name in data for ZooKeeper.
+    String rewriteAddedParts(const String & old_added_parts_str, const String & new_added_part_name);
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)
