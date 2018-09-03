@@ -27,7 +27,10 @@ def check_all_hosts_sucesfully_executed(tsv_content, num_hosts=None):
 
 
 def ddl_check_query(instance, query, num_hosts=None):
-    contents = instance.query(query)
+    if num_hosts is None:
+        num_hosts = len(cluster.instances)
+
+    contents = instance.query_with_retry(query, check_callback=lambda x: len(x.strip().split('\n')) == num_hosts)
     check_all_hosts_sucesfully_executed(contents, num_hosts)
     return contents
 
