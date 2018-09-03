@@ -166,29 +166,6 @@ protected:
     /// Set to non-nullptr only if we have enough capabilities.
     /// We use pool because creation and destruction of TaskStatsInfoGetter objects are expensive.
     SimpleObjectPool<TaskStatsInfoGetter>::Pointer taskstats_getter;
-
-public:
-    /// Implicitly finalizes current thread in the destructor
-    class CurrentThreadScope
-    {
-    public:
-        void (*deleter)() = nullptr;
-
-        CurrentThreadScope() = default;
-        ~CurrentThreadScope()
-        {
-            if (deleter)
-                deleter();
-            /// std::terminate on exception: this is Ok.
-        }
-    };
-
-private:
-    static void defaultThreadDeleter();
 };
-
-
-extern thread_local ThreadStatusPtr current_thread;
-extern thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
 
 }
