@@ -8,6 +8,7 @@
 #include <Poco/Path.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
+#include <Common/config.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 
@@ -45,9 +46,8 @@ void ODBCBridgeHelper::startODBCBridge() const
 #endif
     );
 
-
     if (!Poco::File(path).exists())
-        throw Exception("clickhouse binary is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
+        throw Exception("clickhouse binary (" + path.toString() + ") is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
 
     std::stringstream command;
 
