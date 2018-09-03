@@ -146,14 +146,14 @@ protected:
         for (U i = 0; i < s; ++i)
             res[i] = i;
 
-        std::function greater = [this](size_t a, size_t b) { return data[a] > data[b]; };
-        std::function less = [this](size_t a, size_t b) { return data[a] < data[b]; };
-
         auto sort_end = res.end();
         if (limit && limit < s)
             sort_end = res.begin() + limit;
 
-        std::partial_sort(res.begin(), sort_end, res.end(), reverse ? greater : less);
+        if (reverse)
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] > data[b]; });
+        else
+            std::partial_sort(res.begin(), sort_end, res.end(), [this](size_t a, size_t b) { return data[a] < data[b]; });
     }
 };
 
