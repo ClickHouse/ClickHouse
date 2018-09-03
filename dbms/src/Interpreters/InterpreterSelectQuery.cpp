@@ -627,6 +627,9 @@ static void getLimitLengthAndOffset(ASTSelectQuery & query, size_t & length, siz
 void InterpreterSelectQuery::executeFetchColumns(
     QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info)
 {
+
+    const Settings & settings = context.getSettingsRef();
+
     /// Actions to calculate ALIAS if required.
     ExpressionActionsPtr alias_actions;
     /// Are ALIAS columns required for query execution?
@@ -647,26 +650,98 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (alias_columns_required)
         {
+
+            NameSet required_prewhere_columns;
+            NameSet required_prewhere_aliases;
+            Block prewhere_actions_result;
+            if (prewhere_info)
+            {
+                auto required_columns = prewhere_info->prewhere_actions->getRequiredColumns();
+                required_prewhere_columns.insert(required_columns.begin(), required_columns.end());
+                prewhere_actions_result = prewhere_info->prewhere_actions->getSampleBlock();
+            }
+
             /// We will create an expression to return all the requested columns, with the calculation of the required ALIAS columns.
             auto required_columns_expr_list = std::make_shared<ASTExpressionList>();
+            auto required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
+
+            auto source_columns = storage->getColumns().getAllPhysical();
 
             for (const auto & column : required_columns)
             {
+                ASTPtr column_expr;
                 const auto default_it = column_defaults.find(column);
-                if (default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias)
-                    required_columns_expr_list->children.emplace_back(setAlias(default_it->second.expression->clone(), column));
+                bool is_alias = default_it != std::end(column_defaults) && default_it->second.kind == ColumnDefaultKind::Alias;
+                if (is_alias)
+                    column_expr = setAlias(default_it->second.expression->clone(), column);
                 else
-                    required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column));
+                    column_expr = std::make_shared<ASTIdentifier>(column);
+
+                if (required_prewhere_columns.count(column))
+                {
+                    required_prewhere_columns_expr_list->children.emplace_back(std::move(column_expr));
+
+                    if (is_alias)
+                        required_prewhere_aliases.insert(column);
+                }
+                else
+                    required_columns_expr_list->children.emplace_back(std::move(column_expr));
             }
 
-            alias_actions = ExpressionAnalyzer(required_columns_expr_list, context, storage).getActions(true);
+            for (const auto & column : prewhere_actions_result)
+            {
+                if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
+                    continue;
+
+                required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
+                source_columns.emplace_back(column.name, column.type);
+            }
+
+            alias_actions = ExpressionAnalyzer(required_columns_expr_list, context, nullptr, source_columns).getActions(true);
 
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
+
+            if (prewhere_info && prewhere_info->remove_prewhere_column)
+                if (required_columns.end()
+                    != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_column_name))
+                    prewhere_info->remove_prewhere_column = false;
+
+            for (size_t i = 0; i < required_columns.size(); ++i)
+            {
+                if (!storage->getColumns().hasPhysical(required_columns[i]))
+                {
+                    std::swap(required_columns[i], required_columns.back());
+                    required_columns.pop_back();
+                }
+            }
+
+            if (prewhere_info)
+            {
+                auto new_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->getRequiredColumnsWithTypes(), settings);
+                for (const auto & action : prewhere_info->prewhere_actions->getActions())
+                {
+                    if (action.type != ExpressionAction::REMOVE_COLUMN
+                        || required_columns.end() == std::find(required_columns.begin(), required_columns.end(), action.source_name))
+                        new_actions->add(action);
+                }
+                prewhere_info->prewhere_actions = std::move(new_actions);
+
+                prewhere_info->alias_actions = ExpressionAnalyzer(required_prewhere_columns_expr_list, context, storage).getActions(true, false);
+                auto required_aliased_columns = prewhere_info->alias_actions->getRequiredColumns();
+                for (auto & column : required_aliased_columns)
+                    if (!prewhere_actions_result.has(column))
+                        if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
+                            required_columns.push_back(column);
+
+                for (const auto & column : required_prewhere_columns)
+                    if (required_prewhere_aliases.count(column) == 0)
+                        if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
+                            required_columns.push_back(column);
+            }
         }
     }
 
-    const Settings & settings = context.getSettingsRef();
 
     /// Limitation on the number of columns to read.
     /// It's not applied in 'only_analyze' mode, because the query could be analyzed without removal of unnecessary columns.
