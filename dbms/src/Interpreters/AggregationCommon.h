@@ -175,26 +175,6 @@ static inline T ALWAYS_INLINE packFixed(
 
 /// Hash a set of keys into a UInt128 value.
 static inline UInt128 ALWAYS_INLINE hash128(
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, StringRefs & keys)
-{
-    UInt128 key;
-    SipHash hash;
-
-    for (size_t j = 0; j < keys_size; ++j)
-    {
-        /// Hashes the key.
-        keys[j] = key_columns[j]->getDataAtWithTerminatingZero(i);
-        hash.update(keys[j].data, keys[j].size);
-    }
-
-    hash.get128(key.low, key.high);
-
-    return key;
-}
-
-
-/// Almost the same as above but it doesn't return any reference to key data.
-static inline UInt128 ALWAYS_INLINE hash128(
     size_t i, size_t keys_size, const ColumnRawPtrs & key_columns)
 {
     UInt128 key;

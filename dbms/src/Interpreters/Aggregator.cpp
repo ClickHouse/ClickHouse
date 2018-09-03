@@ -480,8 +480,6 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
         return AggregatedDataVariants::Type::key_fixed_string;
 
     return AggregatedDataVariants::Type::serialized;
-
-    /// NOTE AggregatedDataVariants::Type::hashed is not used. It's proven to be less efficient than 'serialized' in most cases.
 }
 
 
