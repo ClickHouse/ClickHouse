@@ -81,10 +81,7 @@ using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
 #if USE_EMBEDDED_COMPILER
 
-struct ExpressionAction;
-struct ActionsHash;
-class LLVMFunction;
-using CompiledExpressionCache = LRUCache<std::vector<ExpressionAction>, LLVMFunction, ActionsHash>;
+class CompiledExpressionCache;
 
 #endif
 

@@ -1829,10 +1829,7 @@ void Context::dropCompiledExpressionsCache() const
 {
     auto lock = getLock();
     if (shared->compiled_expression_cache)
-    {
         shared->compiled_expression_cache->reset();
-        ProfileEvents::reset(ProfileEvents::CompiledCacheSizeBytes);
-    }
 }
 
 #endif

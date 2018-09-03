@@ -14,6 +14,7 @@
   */
 
 #include <common/Types.h>
+#include <common/unaligned.h>
 #include <string>
 #include <type_traits>
 
@@ -107,7 +108,7 @@ public:
 
         while (data + 8 <= end)
         {
-            current_word = *reinterpret_cast<const UInt64 *>(data);
+            current_word = unalignedLoad<UInt64>(data);
 
             v3 ^= current_word;
             SIPROUND;
@@ -141,7 +142,7 @@ public:
 
     void update(const std::string & x)
     {
-        update(x.c_str(), x.length());
+        update(x.data(), x.length());
     }
 
     /// Get the result in some form. This can only be done once!
