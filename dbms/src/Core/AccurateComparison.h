@@ -3,6 +3,7 @@
 #include <cmath>
 #include <limits>
 
+#include <Common/NaNUtils.h>
 #include <Core/Types.h>
 #include <Common/UInt128.h>
 
@@ -398,12 +399,8 @@ inline bool_if_safe_conversion<A, B> lessOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 {
-    if constexpr (std::is_floating_point_v<A>)
-        if (std::isnan(a))
-            return false;
-    if constexpr (std::is_floating_point_v<B>)
-        if (std::isnan(b))
-            return false;
+    if (isNaN(a) || isNaN(b))
+        return false;
     return !greaterOp(a, b);
 }
 
@@ -417,12 +414,8 @@ inline bool_if_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
-    if constexpr (std::is_floating_point_v<A>)
-        if (std::isnan(a))
-            return false;
-    if constexpr (std::is_floating_point_v<B>)
-        if (std::isnan(b))
-            return false;
+    if (isNaN(a) || isNaN(b))
+        return false;
     return !greaterOp(b, a);
 }
 
