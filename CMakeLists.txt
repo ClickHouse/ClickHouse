@@ -180,21 +180,6 @@ if (OS_LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif ()
 endif ()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy. It leads to slow code. This is compiler bug.
-    # It looks like this:
-    #
-    # (gdb) bt
-    #0  memcpy (destination=0x7faa6e9f1638, source=0x7faa81d9e9a8, size=16) at ../libs/libmemcpy/memcpy.h:11
-    #1  0x0000000005341c5f in _mm_storeu_si128 (__B=..., __P=<optimized out>) at /usr/lib/gcc/x86_64-linux-gnu/7/include/emmintrin.h:720
-    #2  memcpySmallAllowReadWriteOverflow15Impl (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/src/Common/memcpySmall.h:37
-    #3  memcpySmallAllowReadWriteOverflow15 (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/src/Common/memcpySmall.h:52
-    #4  extractKeysAndPlaceInPoolContiguous (pool=..., keys=..., key_columns=..., keys_size=<optimized out>, i=<optimized out>) at ../dbms/src/Interpreters/AggregationCommon.h:262
-
-    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-tree-loop-distribute-patterns")
-    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-tree-loop-distribute-patterns")
-endif ()
-
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
