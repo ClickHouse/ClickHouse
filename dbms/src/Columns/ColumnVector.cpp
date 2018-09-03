@@ -1,6 +1,7 @@
 #include <cstring>
 #include <cmath>
 
+#include <common/unaligned.h>
 #include <Common/Exception.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
@@ -36,14 +37,14 @@ template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     auto pos = arena.allocContinue(sizeof(T), begin);
-    memcpy(pos, &data[n], sizeof(T));
+    unalignedStore(pos, data[n]);
     return StringRef(pos, sizeof(T));
 }
 
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
-    data.push_back(*reinterpret_cast<const T *>(pos));
+    data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
 }
 
