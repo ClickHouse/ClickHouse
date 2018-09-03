@@ -115,7 +115,7 @@ BlockInputStreams StorageMergeTree::read(
     const unsigned num_streams)
 {
     checkQueryProcessingStage(processed_stage, context);
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, std::unordered_map<String, Int64>());
+    return reader.read(column_names, query_info, context, max_block_size, num_streams, {});
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
