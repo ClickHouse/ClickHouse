@@ -36,13 +36,29 @@ ODBCBridgeHelper::ODBCBridgeHelper(
 void ODBCBridgeHelper::startODBCBridge() const
 {
     Poco::Path path{config.getString("application.dir", "")};
-    path.setFileName("clickhouse");
+
+    path.setFileName(
+#if CLICKHOUSE_SPLIT_BINARY
+    "clickhouse-odbc-bridge"
+#else
+    "clickhouse"
+#endif
+    );
+
 
     if (!Poco::File(path).exists())
         throw Exception("clickhouse binary is not found", ErrorCodes::EXTERNAL_EXECUTABLE_NOT_FOUND);
 
     std::stringstream command;
-    command << path.toString() << " odbc-bridge ";
+
+    command << path.toString() <<
+#if CLICKHOUSE_SPLIT_BINARY
+    " "
+#else
+    " odbc-bridge "
+#endif
+    ;
+
     command << "--http-port " << config.getUInt("odbc_bridge.port", DEFAULT_PORT) << ' ';
     command << "--listen-host " << config.getString("odbc_bridge.listen_host", DEFAULT_HOST) << ' ';
     command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
