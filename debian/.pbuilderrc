@@ -189,12 +189,13 @@ export DEB_BUILD_OPTIONS=parallel=`nproc`
 # chown -R $BUILDUSERID:$BUILDUSERID $CCACHEDIR
 
 
+# Do not create source package inside pbuilder (-b)
 # Use current dir to make package (by default should have src archive)
 # echo "3.0 (native)" > debian/source/format
 # OR
-# pdebuild --debbuildopts "--source-option=--format=\"3.0 (native)\""
+# pdebuild -b --debbuildopts "--source-option=--format=\"3.0 (native)\""
 # OR
-DEBBUILDOPTS="--source-option=--format=\"3.0 (native)\""
+DEBBUILDOPTS="-b --source-option=--format=\"3.0 (native)\""
 
 HOOKDIR="debian/pbuilder-hooks"
 
