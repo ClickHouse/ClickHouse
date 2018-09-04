@@ -47,6 +47,8 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
     filename(filename_)
 {
+    ProfileEvents::increment(ProfileEvents::FileOpen);
+
     /// Correct the buffer size information so that additional pages do not touch the base class `BufferBase`.
     this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     this->internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
