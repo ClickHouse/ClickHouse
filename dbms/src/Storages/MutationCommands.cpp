@@ -1,7 +1,4 @@
 #include <Storages/MutationCommands.h>
-#include <Storages/IStorage.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Columns/FilterDescription.h>
 #include <IO/Operators.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -19,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
@@ -59,65 +55,6 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
     for (const MutationCommand & command : *this)
         res->add(command.ast->clone());
     return res;
-}
-
-void MutationCommands::validate(const IStorage & table, const Context & context) const
-{
-    auto all_columns = table.getColumns().getAll();
-
-    auto validate_predicate = [&](const ASTPtr & predicate)
-    {
-        auto actions = ExpressionAnalyzer(predicate, context, {}, all_columns).getActions(true);
-
-        /// Try executing the resulting actions on the table sample block to detect malformed queries.
-        auto table_sample_block = table.getSampleBlock();
-        actions->execute(table_sample_block);
-
-        const ColumnWithTypeAndName & predicate_column = actions->getSampleBlock().getByName(
-            predicate->getColumnName());
-        checkColumnCanBeUsedAsFilter(predicate_column);
-    };
-
-    for (const MutationCommand & command : *this)
-    {
-        switch (command.type)
-        {
-            case MutationCommand::DELETE:
-            {
-                validate_predicate(command.predicate);
-                break;
-            }
-            case MutationCommand::UPDATE:
-            {
-                /// TODO: better and more thorough validation.
-                validate_predicate(command.predicate);
-
-                for (const auto & pair : command.column_to_update_expression)
-                {
-                    const String & column_name = pair.first;
-
-                    auto found = false;
-                    for (const auto & col : table.getColumns().ordinary)
-                    {
-                        if (col.name == column_name)
-                        {
-                            found = true;
-                            break;
-                        }
-                    }
-
-                    /// TODO: separate error message for the case when the query tries to update a
-                    /// MATERIALIZED column.
-                    if (!found)
-                        throw Exception("There is no updateable column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-                }
-
-                break;
-            }
-            default:
-                throw Exception("Bad mutation type: " + toString<int>(command.type), ErrorCodes::LOGICAL_ERROR);
-        }
-    }
 }
 
 void MutationCommands::writeText(WriteBuffer & out) const

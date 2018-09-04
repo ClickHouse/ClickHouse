@@ -154,7 +154,7 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
 
-    void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr);
+    void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.
