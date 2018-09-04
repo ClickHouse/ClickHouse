@@ -17,7 +17,6 @@ CREATE TABLE IF NOT EXISTS test.decimal
 SELECT toNullable(toDecimal32(32, 0)) AS x, assumeNotNull(x);
 SELECT toNullable(toDecimal64(64, 0)) AS x, assumeNotNull(x);
 SELECT toNullable(toDecimal128(128, 0)) AS x, assumeNotNull(x);
-SELECT NULL AS x, assumeNotNull(x); -- { serverError 48 }
 
 SELECT ifNull(toDecimal32(1, 0), NULL), ifNull(toDecimal64(1, 0), NULL), ifNull(toDecimal128(1, 0), NULL);
 SELECT ifNull(toNullable(toDecimal32(2, 0)), NULL), ifNull(toNullable(toDecimal64(2, 0)), NULL), ifNull(toNullable(toDecimal128(2, 0)), NULL);
