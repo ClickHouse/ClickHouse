@@ -48,7 +48,7 @@ bool FileChecker::check() const
         * `check` method is rarely called.
         */
     Map local_map;
-    load(local_map);
+    load(local_map, files_info_path);
 
     if (local_map.empty())
         return true;
@@ -78,7 +78,7 @@ void FileChecker::initialize()
     if (initialized)
         return;
 
-    load(map);
+    load(map, files_info_path);
     initialized = true;
 }
 
@@ -125,14 +125,14 @@ void FileChecker::save() const
         Poco::File(tmp_files_info_path).renameTo(files_info_path);
 }
 
-void FileChecker::load(Map & map) const
+void FileChecker::load(Map & local_map, const std::string & path)
 {
-    map.clear();
+    local_map.clear();
 
-    if (!Poco::File(files_info_path).exists())
+    if (!Poco::File(path).exists())
         return;
 
-    ReadBufferFromFile in(files_info_path);
+    ReadBufferFromFile in(path);
     WriteBufferFromOwnString out;
 
     /// The JSON library does not support whitespace. We delete them. Inefficient.
@@ -147,7 +147,7 @@ void FileChecker::load(Map & map) const
 
     JSON files = json["yandex"];
     for (const auto & name_value : files)
-        map[unescapeForFileName(name_value.getName())] = name_value.getValue()["size"].toUInt();
+        local_map[unescapeForFileName(name_value.getName())] = name_value.getValue()["size"].toUInt();
 }
 
 }

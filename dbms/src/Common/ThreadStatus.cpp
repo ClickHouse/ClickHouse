@@ -78,7 +78,10 @@ void ThreadStatus::initPerformanceCounters()
         if (TaskStatsInfoGetter::checkPermissions())
         {
             if (!taskstats_getter)
-                taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
+            {
+                static SimpleObjectPool<TaskStatsInfoGetter> pool;
+                taskstats_getter = pool.getDefault();
+            }
             *last_taskstats = TasksStatsCounters::current();
         }
     }

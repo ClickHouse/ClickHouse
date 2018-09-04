@@ -13,8 +13,8 @@ remote('addresses_expr', db.table[, 'user'[, 'password']])
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`. The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. The port is the TCP port on the remote server. If the port is omitted, it uses `tcp_port` from the server's config file (by default, 9000).
 
-!!! important
-    The port is required for an IPv6 address.
+!!! Important:
+With an IPv6 address, you must specify the port.
 
 Examples:
 
@@ -49,7 +49,7 @@ example01-{01..02}-1
 
 If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
 
-Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing) setting.
+Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. The replicas are evaluated in the order currently set in the [load_balancing](../../operations/settings/settings.md#settings-load_balancing).
 
 Example:
 
@@ -72,4 +72,3 @@ The `remote` table function can be useful in the following cases:
 
 If the user is not specified, `default` is used.
 If the password is not specified, an empty password is used.
-

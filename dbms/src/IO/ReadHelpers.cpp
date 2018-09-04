@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 #include <common/find_first_symbols.h>
 #include <stdlib.h>
+#include <Common/memcpySmall.h>
 
 #if __SSE2__
     #include <emmintrin.h>
@@ -167,17 +168,19 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 
 
 template <typename T>
-static void appendToStringOrVector(T & s, const char * begin, const char * end)
+static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
-    s.append(begin, end - begin);
+    s.append(rb.position(), end - rb.position());
 }
 
 template <>
-inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, const char * begin, const char * end)
+inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
-    s.insert(begin, end);    /// TODO memcpySmall
+    if (rb.isPadded())
+        s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
+    else
+        s.insert(rb.position(), end);
 }
-
 
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
@@ -186,7 +189,7 @@ void readStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (buf.hasPendingData())
@@ -208,7 +211,7 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        appendToStringOrVector(s, buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
 
         if (buf.hasPendingData())
@@ -379,7 +382,7 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
@@ -421,7 +424,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
@@ -534,7 +537,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (nullptr == next_pos)
                 next_pos = buf.buffer().end();
 
-            appendToStringOrVector(s, buf.position(), next_pos);
+            appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
 
             if (!buf.hasPendingData())
@@ -562,7 +565,8 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         {
             char * next_pos = buf.position();
 
-            [&]() {
+            [&]()
+            {
 #if __SSE2__
                 auto rc = _mm_set1_epi8('\r');
                 auto nc = _mm_set1_epi8('\n');
@@ -585,7 +589,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             }();
 
 
-            appendToStringOrVector(s, buf.position(), next_pos);
+            appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
 
             if (!buf.hasPendingData())
@@ -635,7 +639,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())

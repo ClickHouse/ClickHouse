@@ -108,7 +108,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         select->format(settings);
         std::string query = ss.str();
 
-        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(&query[0]), query.size())))
+        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw Poco::Data::ODBC::DescriptorException(session.dbc());
 
         if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
@@ -127,7 +127,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             /// TODO Why 301?
             SQLCHAR column_name[301];
             /// TODO Result is not checked.
-            Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
+            Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, nullptr);
             columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
         }
 

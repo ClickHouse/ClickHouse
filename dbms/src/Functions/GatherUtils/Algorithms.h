@@ -105,7 +105,7 @@ inline ALWAYS_INLINE void writeSlice(const Slice & slice, NullableArraySink<Arra
 
     if (slice.size == 1) /// Always true for ValueSlice.
         sink.null_map[sink.current_offset] = 0;
-    else
+    else if (slice.size)
         memset(&sink.null_map[sink.current_offset], 0, slice.size * sizeof(UInt8));
 
     writeSlice(slice, static_cast<ArraySink &>(sink));
@@ -367,7 +367,7 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
 {
     sink.reserve(std::max(src_a.getSizeForReserve(), src_b.getSizeForReserve()));
 
-    const UInt8 * cond_pos = &condition[0];
+    const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
     while (cond_pos < cond_end)

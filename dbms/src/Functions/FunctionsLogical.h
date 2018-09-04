@@ -8,11 +8,14 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionsArithmetic.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/FieldVisitors.h>
 #include <type_traits>
 
+
 #if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <llvm/IR/IRBuilder.h> // Y_IGNORE
@@ -25,7 +28,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /** Behaviour in presence of NULLs:
@@ -422,6 +428,27 @@ public:
         return phi;
     }
 #endif
+};
+
+
+template <typename A, typename Op>
+struct UnaryOperationImpl
+{
+    using ResultType = typename Op::ResultType;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayC = typename ColumnVector<ResultType>::Container;
+
+    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    {
+        size_t size = a.size();
+        for (size_t i = 0; i < size; ++i)
+            c[i] = Op::apply(a[i]);
+    }
+
+    static void constant(A a, ResultType & c)
+    {
+        c = Op::apply(a);
+    }
 };
 
 

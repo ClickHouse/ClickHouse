@@ -66,7 +66,7 @@ namespace
         socket.listen(/* backlog = */ 64);
 
         return address;
-    };
+    }
 }
 
 void ODBCBridge::handleHelp(const std::string &, const std::string &)
