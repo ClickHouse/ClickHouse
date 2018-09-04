@@ -262,7 +262,7 @@ int main(int argc, char ** argv)
         DB::ReadBufferFromFileDescriptor in1(STDIN_FILENO);
         DB::CompressedReadBuffer in2(in1);
 
-        in2.readStrict(reinterpret_cast<char*>(&data[0]), sizeof(data[0]) * n);
+        in2.readStrict(reinterpret_cast<char*>(data.data()), sizeof(data[0]) * n);
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
@@ -500,7 +500,7 @@ int main(int argc, char ** argv)
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
             pool.schedule(std::bind(merge2,
-                &maps[0], num_threads, i));
+                maps.data(), num_threads, i));
 
         pool.wait();
 
@@ -553,8 +553,7 @@ int main(int argc, char ** argv)
         watch.restart();
 
         for (size_t i = 0; i < MapTwoLevel::NUM_BUCKETS; ++i)
-            pool.schedule(std::bind(merge2,
-                                    &maps[0], num_threads, i));
+            pool.schedule(std::bind(merge2, maps.data(), num_threads, i));
 
         pool.wait();
 
@@ -731,7 +730,7 @@ int main(int argc, char ** argv)
             pool.schedule(std::bind(aggregate4,
                 std::ref(local_maps[i]),
                 std::ref(global_map),
-                &mutexes[0],
+                mutexes.data(),
                 data.begin() + (data.size() * i) / num_threads,
                 data.begin() + (data.size() * (i + 1)) / num_threads));
 

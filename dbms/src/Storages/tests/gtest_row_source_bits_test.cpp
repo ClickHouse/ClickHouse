@@ -1,9 +1,11 @@
-#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <gtest/gtest.h>
-#pragma GCC diagnostic pop
 
 #include <DataStreams/ColumnGathererStream.h>
+
 using DB::RowSourcePart;
 
 static void check(const RowSourcePart & s, size_t num, bool flag)

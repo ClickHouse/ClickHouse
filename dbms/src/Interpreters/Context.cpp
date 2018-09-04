@@ -632,7 +632,7 @@ void Context::checkDatabaseAccessRightsImpl(const std::string & database_name) c
         return;
     }
     if (!shared->security_manager->hasAccessToDatabase(client_info.current_user, database_name))
-        throw Exception("Access denied to database " + database_name, ErrorCodes::DATABASE_ACCESS_DENIED);
+        throw Exception("Access denied to database " + database_name + " for user " + client_info.current_user , ErrorCodes::DATABASE_ACCESS_DENIED);
 }
 
 void Context::addDependency(const DatabaseAndTableName & from, const DatabaseAndTableName & where)
@@ -1678,12 +1678,12 @@ void Context::checkCanBeDropped(const String & database, const String & table, c
 
     ostr << "Table or Partition in " << backQuoteIfNeed(database) << "." << backQuoteIfNeed(table) << " was not dropped.\n"
          << "Reason:\n"
-         << "1. Size (" << size_str << ") is greater than max_size_to_drop (" << max_size_to_drop_str << ")\n"
+         << "1. Size (" << size_str << ") is greater than max_[table/partition]_size_to_drop (" << max_size_to_drop_str << ")\n"
          << "2. File '" << force_file.path() << "' intended to force DROP "
          << (force_file_exists ? "exists but not writeable (could not be removed)" : "doesn't exist") << "\n";
 
     ostr << "How to fix this:\n"
-         << "1. Either increase (or set to zero) max_size_to_drop in server config and restart ClickHouse\n"
+         << "1. Either increase (or set to zero) max_[table/partition]_size_to_drop in server config and restart ClickHouse\n"
          << "2. Either create forcing file " << force_file.path() << " and make sure that ClickHouse has write permission for it.\n"
          << "Example:\nsudo touch '" << force_file.path() << "' && sudo chmod 666 '" << force_file.path() << "'";
 

@@ -31,6 +31,11 @@
 #include <Poco/XML/XMLStream.h>
 #include <Common/InterruptListener.h>
 
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
+
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with
   * tests' descriptions and launches it.
@@ -1386,6 +1391,7 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
             input_files.push_back(file.string());
     }
 }
+
 
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try

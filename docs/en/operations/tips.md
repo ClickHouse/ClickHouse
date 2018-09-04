@@ -21,7 +21,7 @@ You can use `turbostat` to view the CPU's actual clock rate under a load.
 Always use the `performance` scaling governor.  The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
+sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations
@@ -110,6 +110,8 @@ It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in
 You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
 
 If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
+
+Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
 With the default settings, ZooKeeper is a time bomb:
 

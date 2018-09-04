@@ -40,6 +40,7 @@ generate_function_register(Array
     FunctionCountEqual
     FunctionArrayEnumerate
     FunctionArrayEnumerateUniq
+    FunctionArrayEnumerateDense
     FunctionArrayUniq
     FunctionArrayDistinct
     FunctionEmptyArrayUInt8
@@ -91,9 +92,13 @@ list(REMOVE_ITEM clickhouse_functions_headers IFunction.h FunctionFactory.h Func
 
 add_library(clickhouse_functions ${clickhouse_functions_sources})
 
-target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE libconsistent-hashing ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} murmurhash)
+target_link_libraries(clickhouse_functions PUBLIC dbms PRIVATE ${CONSISTENT_HASHING_LIBRARY} consistent-hashing-sumbur ${FARMHASH_LIBRARIES} ${METROHASH_LIBRARIES} murmurhash)
 
 target_include_directories (clickhouse_functions SYSTEM BEFORE PUBLIC ${DIVIDE_INCLUDE_DIR})
+
+if (CONSISTENT_HASHING_INCLUDE_DIR)
+    target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
+endif ()
 
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.

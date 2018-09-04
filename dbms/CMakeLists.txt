@@ -27,6 +27,20 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+# Add some warnings that are not available even with -Wall -Wextra.
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wshadow-uncaptured-local")
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wredundant-parens -Wzero-as-null-pointer-constant")
+    endif ()
+endif ()
+
+if (USE_DEBUG_HELPERS)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/iostream_debug_helpers.h")
+endif ()
+
 find_package (Threads)
 
 add_subdirectory (src)
@@ -83,7 +97,7 @@ list (APPEND dbms_headers
 list (APPEND dbms_sources src/TableFunctions/ITableFunction.cpp src/TableFunctions/TableFunctionFactory.cpp)
 list (APPEND dbms_headers src/TableFunctions/ITableFunction.h src/TableFunctions/TableFunctionFactory.h)
 
-add_library(clickhouse_common_io ${SPLIT_SHARED} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
+add_library(clickhouse_common_io ${LINK_MODE} ${clickhouse_common_io_headers} ${clickhouse_common_io_sources})
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -96,7 +110,7 @@ if (MAKE_STATIC_LIBRARIES)
     add_library(dbms ${dbms_headers} ${dbms_sources})
 else ()
     add_library(dbms SHARED ${dbms_headers} ${dbms_sources})
-    set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
+    set_target_properties (dbms PROPERTIES SOVERSION ${VERSION_MAJOR}.${VERSION_MINOR} VERSION ${VERSION_SO} OUTPUT_NAME clickhouse)
     install (TARGETS dbms LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT clickhouse)
 endif ()
 
@@ -248,15 +262,7 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
-    if (USE_INTERNAL_GTEST_LIBRARY)
-        # Google Test from sources
-        add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-        # avoid problems with <regexp.h>
-        target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
-        target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
-    endif ()
-
-    macro(grep_gtest_sources BASE_DIR DST_VAR)
+    macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
         file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
     endmacro()

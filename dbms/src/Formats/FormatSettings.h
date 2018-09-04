@@ -34,6 +34,7 @@ struct FormatSettings
     struct Pretty
     {
         UInt64 max_rows = 10000;
+        UInt64 max_column_pad_width = 250;
         bool color = true;
     };
 

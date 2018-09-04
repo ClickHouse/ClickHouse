@@ -14,18 +14,13 @@ namespace DB
 class OwnSplitChannel : public Poco::Channel
 {
 public:
-    OwnSplitChannel() = default;
-
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
     void log(const Poco::Message & msg) override;
 
     /// Adds a child channel
     void addChannel(Poco::AutoPtr<Poco::Channel> channel);
 
-    ~OwnSplitChannel() = default;
-
 private:
-
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
     /// Handler and its pointer casted to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;

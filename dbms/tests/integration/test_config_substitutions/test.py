@@ -4,11 +4,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/config_no_substs.xml']) # hardcoded value 33333
-node2 = cluster.add_instance('node2', main_configs=['configs/config_env.xml'], env_variables={"MAX_QUERY_SIZE": "55555"})
-node3 = cluster.add_instance('node3', main_configs=['configs/config_zk.xml'], with_zookeeper=True)
-node4 = cluster.add_instance('node4', main_configs=['configs/config_incl.xml', 'configs/max_query_size.xml']) # include value 77777
-node5 = cluster.add_instance('node5', main_configs=['configs/config_allow_databases.xml'])
+node1 = cluster.add_instance('node1', user_configs=['configs/config_no_substs.xml']) # hardcoded value 33333
+node2 = cluster.add_instance('node2', user_configs=['configs/config_env.xml'], env_variables={"MAX_QUERY_SIZE": "55555"})
+node3 = cluster.add_instance('node3', user_configs=['configs/config_zk.xml'], with_zookeeper=True)
+node4 = cluster.add_instance('node4', user_configs=['configs/config_incl.xml'], main_configs=['configs/max_query_size.xml']) # include value 77777
+node5 = cluster.add_instance('node5', user_configs=['configs/config_allow_databases.xml'])
 
 @pytest.fixture(scope="module")
 def start_cluster():
@@ -38,8 +38,8 @@ def test_allow_databases(start_cluster):
     assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0\n"
     assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'") == "20000101_20000101_1_1_0\n20000101_20000101_1_1_0\n20000101_20000101_1_1_0\n"
 
-    assert node5.query("SELECT name FROM system.databases WHERE name = 'db1'", user="test_allow") == "\n"
-    assert node5.query("SELECT name FROM system.tables WHERE database = 'db1' AND name = 'test_table'", user="test_allow") == "\n"
-    assert node5.query("SELECT name FROM system.columns WHERE database = 'db1' AND table = 'test_table'", user="test_allow") == "\n"
-    assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'", user="test_allow") == "\n"
-    assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'", user="test_allow") == "\n"
+    assert node5.query("SELECT name FROM system.databases WHERE name = 'db1'", user="test_allow").strip() == ""
+    assert node5.query("SELECT name FROM system.tables WHERE database = 'db1' AND name = 'test_table'", user="test_allow").strip() == ""
+    assert node5.query("SELECT name FROM system.columns WHERE database = 'db1' AND table = 'test_table'", user="test_allow").strip() == ""
+    assert node5.query("SELECT name FROM system.parts WHERE database = 'db1' AND table = 'test_table'", user="test_allow").strip() == ""
+    assert node5.query("SELECT name FROM system.parts_columns WHERE database = 'db1' AND table = 'test_table'", user="test_allow").strip() == ""

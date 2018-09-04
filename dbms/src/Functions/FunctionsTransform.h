@@ -745,7 +745,7 @@ private:
         if (initialized)
             return;
 
-        if (from.size() != to.size())
+        if (size != to.size())
             throw Exception{"Second and third arguments of function " + getName() + " must be arrays of same size", ErrorCodes::BAD_ARGUMENTS};
 
         Array converted_to;
@@ -772,8 +772,8 @@ private:
 
             if (default_col_is_float && !to_is_float)
             {
-                converted_to.resize(to.size());
-                for (size_t i = 0, size = to.size(); i < size; ++i)
+                converted_to.resize(size);
+                for (size_t i = 0; i < size; ++i)
                     converted_to[i] = applyVisitor(FieldVisitorConvertToNumber<Float64>(), to[i]);
                 used_to = &converted_to;
             }

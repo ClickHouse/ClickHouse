@@ -24,6 +24,12 @@ ifndef ENABLE_TESTS
     CMAKE_FLAGS += -DENABLE_TESTS=0
 endif
 
+ifndef MAKE_TARGET
+    MAKE_TARGET = clickhouse-bundle
+endif
+
+CMAKE_FLAGS += -DENABLE_UTILS=0
+
 #DEB_CLANG ?= $(shell which clang-6.0 || which clang-5.0 || which clang-4.0 || which clang || which clang-3.9 || which clang-3.8)
 
 #DEB_CC ?= gcc-7
@@ -70,7 +76,7 @@ override_dh_auto_configure:
 
 override_dh_auto_build:
 	# Fix for ninja. Do not add -O.
-	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT)
+	cd $(BUILDDIR) && $(MAKE) -j$(THREADS_COUNT) $(MAKE_TARGET)
 	#cd $(BUILDDIR) && cmake --build . -- -j$(THREADS_COUNT) # cmake return true on error
 
 override_dh_auto_test:

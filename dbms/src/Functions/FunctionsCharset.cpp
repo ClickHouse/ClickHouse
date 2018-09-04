@@ -2,7 +2,6 @@
 #if USE_ICU
 
 #include <Functions/IFunction.h>
-#include <Functions/ObjectPool.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -10,6 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
 #include <Common/typeid_cast.h>
+#include <Common/ObjectPool.h>
 #include <ext/range.h>
 
 #include <unicode/ucnv.h>

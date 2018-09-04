@@ -1,0 +1,31 @@
+<test>
+    <name>visit_param_extract_raw</name>
+    <type>once</type>
+
+    <stop_conditions>
+        <any_of>
+            <average_speed_not_changing_for_ms>10000</average_speed_not_changing_for_ms>
+            <total_time_ms>1000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <main_metric>
+        <max_rows_per_second />
+        <max_bytes_per_second />
+        <avg_rows_per_second />
+        <avg_bytes_per_second />
+    </main_metric>
+
+    <substitutions>
+        <substitution>
+           <name>param</name>
+           <values>
+               <value>'{"myparam":"test_string"}'</value>
+               <value>'{"myparam":{"nested_1":"test_string","nested_2":"test_2"}}'</value>
+               <value>'{"myparam":{"nested_1":"test_string","nested_2":"test_2","nested_1":"test_string","nested_2":"test_2","nested_1":"test_string","nested_2":"test_2"}}'</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
+</test>

@@ -65,6 +65,8 @@ public:
     std::string getName() const override { return type_name; }
     const char * getFamilyName() const override;
 
+    TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }
+
     const StringRef & getNameForValue(const FieldType & value) const
     {
         const auto it = value_to_name_map.find(value);

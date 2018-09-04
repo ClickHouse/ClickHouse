@@ -21,43 +21,31 @@ namespace ErrorCodes
 ColumnGathererStream::ColumnGathererStream(
         const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_)
-    : column_name(column_name_), row_sources_buf(row_sources_buf_)
+    : column_name(column_name_), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
     , block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())
         throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
 
     children.assign(source_streams.begin(), source_streams.end());
-}
 
-
-void ColumnGathererStream::init()
-{
-    sources.reserve(children.size());
     for (size_t i = 0; i < children.size(); ++i)
     {
-        sources.emplace_back(children[i]->read(), column_name);
-
-        Block & block = sources.back().block;
+        const Block & header = children[i]->getHeader();
 
         /// Sometimes MergeTreeReader injects additional column with partitioning key
-        if (block.columns() > 2)
+        if (header.columns() > 2)
             throw Exception(
-                "Block should have 1 or 2 columns, but contains " + toString(block.columns()),
+                "Block should have 1 or 2 columns, but contains " + toString(header.columns()),
                 ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-        if (!block.has(column_name))
-            throw Exception(
-                "Not found column '" + column_name + "' in block.",
-                ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
         if (i == 0)
         {
             column.name = column_name;
-            column.type = block.getByName(column_name).type;
+            column.type = header.getByName(column_name).type;
             column.column = column.type->createColumn();
         }
-
-        if (block.getByName(column_name).column->getName() != column.column->getName())
+        else if (header.getByName(column_name).column->getName() != column.column->getName())
             throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);
     }
 }
@@ -68,10 +56,6 @@ Block ColumnGathererStream::readImpl()
     /// Special case: single source and there are no skipped rows
     if (children.size() == 1 && row_sources_buf.eof())
         return children[0]->read();
-
-    /// Initialize first source blocks
-    if (sources.empty())
-        init();
 
     if (!source_to_fully_copy && row_sources_buf.eof())
         return Block();

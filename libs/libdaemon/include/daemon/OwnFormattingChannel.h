@@ -3,9 +3,7 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include <Poco/FormattingChannel.h>
-
-
-class OwnPatternFormatter;
+#include "OwnPatternFormatter.h"
 
 
 namespace DB

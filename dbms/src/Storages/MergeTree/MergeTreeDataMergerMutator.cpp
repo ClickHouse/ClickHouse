@@ -20,7 +20,7 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataStreams/ApplyingMutationsBlockInputStream.h>
-#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
@@ -885,7 +885,8 @@ static BlockInputStreamPtr createInputStreamWithMutatedData(
 
     select->select_expression_list = std::make_shared<ASTExpressionList>();
     select->children.push_back(select->select_expression_list);
-    select->select_expression_list->children.push_back(std::make_shared<ASTAsterisk>());
+    for (const auto & column : storage->getColumns().getAllPhysical())
+        select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column.name));
 
     /// For all commands that are in front of the list and are DELETE commands, we can push them down
     /// to the SELECT statement and remove them from commands.
@@ -1026,7 +1027,7 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
 {
     if (deduplicate)
         return MergeAlgorithm::Horizontal;
-    if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
+    if (data.settings.enable_vertical_merge_algorithm == 0)
         return MergeAlgorithm::Horizontal;
 
     bool is_supported_storage =
@@ -1035,9 +1036,9 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
         data.merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
+    bool enough_ordinary_cols = gathering_columns.size() >= data.settings.vertical_merge_algorithm_min_columns_to_activate;
 
-    bool enough_total_rows = sum_rows_upper_bound >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_rows_to_activate;
+    bool enough_total_rows = sum_rows_upper_bound >= data.settings.vertical_merge_algorithm_min_rows_to_activate;
 
     bool no_parts_overflow = parts.size() <= RowSourcePart::MAX_PARTS;
 

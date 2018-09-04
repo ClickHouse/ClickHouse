@@ -13,6 +13,7 @@ echo '{"d1" : 1, "d2" : "ok"}
 {"t1" : 0, "t2":true,"t3":false, "t4":null,"t5":[],"t6":"trash" }
 {"d2":"ok","t1":[[[]],true, null, false, "1","2",9.03,101], "t2":[["1","2"]], "d1":"1"}
 {"d2":"ok","t1":[[[]],true, null, false, "1","2", 0.03, 1], "d1":"1", "t2":["1","2"]}
+{"d2":"ok","t1":{"a":{"b": {} ,"c":false},"b":[true,null, false]}, "t2":  { "a": [  ] } , "d1":1}
 {"t0" : -0.1, "t1" : +1, "t2" : 0, "t3" : [0.0, -0.1], "d2" : "ok", "d1" : 1}' \
 | $CLICKHOUSE_CLIENT --input_format_skip_unknown_fields=1 -q "INSERT INTO test.json_noisy FORMAT JSONEachRow"
 

@@ -1,7 +1,7 @@
 project (ClickHouse)
 cmake_minimum_required (VERSION 3.3)
 
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${ClickHouse_SOURCE_DIR}/cmake/Modules/")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Modules/")
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Require at least gcc 7
@@ -18,7 +18,7 @@ else ()
 endif ()
 
 # Check that submodules are present only if source was downloaded with git
-if (EXISTS "${ClickHouse_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif ()
 
@@ -32,9 +32,24 @@ if (NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL "None")
     set (CMAKE_BUILD_TYPE "RELWITHDEBINFO")
 endif ()
 string(TOUPPER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_UC)
-message (STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE} )
+message (STATUS "CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}")
 
 set (CMAKE_CONFIGURATION_TYPES "RelWithDebInfo;Debug;Release;MinSizeRel" CACHE STRING "" FORCE)
+
+option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
+option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
+if (NOT MAKE_STATIC_LIBRARIES)
+    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
+    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
+endif ()
+
+if (SPLIT_SHARED_LIBRARIES)
+    set (LINK_MODE SHARED)
+endif ()
+
+if (USE_STATIC_LIBRARIES)
+    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
+endif ()
 
 include (cmake/sanitize.cmake)
 
@@ -62,21 +77,6 @@ endif ()
 
 option (TEST_COVERAGE "Enables flags for test coverage" OFF)
 option (ENABLE_TESTS "Enables tests" ON)
-
-option (USE_STATIC_LIBRARIES "Set to FALSE to use shared libraries" ON)
-option (MAKE_STATIC_LIBRARIES "Set to FALSE to make shared libraries" ${USE_STATIC_LIBRARIES})
-if (NOT MAKE_STATIC_LIBRARIES)
-    option (SPLIT_SHARED_LIBRARIES "DEV ONLY. Keep all internal libs as separate .so for faster linking" OFF)
-    option (CLICKHOUSE_SPLIT_BINARY "Make several binaries instead one bundled (clickhouse-server, clickhouse-client, ... )" OFF)
-endif ()
-
-if (SPLIT_SHARED_LIBRARIES)
-    set (SPLIT_SHARED SHARED)
-endif ()
-
-if (USE_STATIC_LIBRARIES)
-    list(REVERSE CMAKE_FIND_LIBRARY_SUFFIXES)
-endif ()
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "amd64|x86_64")
     option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
@@ -180,6 +180,21 @@ if (OS_LINUX AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     endif ()
 endif ()
 
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy. It leads to slow code. This is compiler bug.
+    # It looks like this:
+    #
+    # (gdb) bt
+    #0  memcpy (destination=0x7faa6e9f1638, source=0x7faa81d9e9a8, size=16) at ../libs/libmemcpy/memcpy.h:11
+    #1  0x0000000005341c5f in _mm_storeu_si128 (__B=..., __P=<optimized out>) at /usr/lib/gcc/x86_64-linux-gnu/7/include/emmintrin.h:720
+    #2  memcpySmallAllowReadWriteOverflow15Impl (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/src/Common/memcpySmall.h:37
+    #3  memcpySmallAllowReadWriteOverflow15 (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/src/Common/memcpySmall.h:52
+    #4  extractKeysAndPlaceInPoolContiguous (pool=..., keys=..., key_columns=..., keys_size=<optimized out>, i=<optimized out>) at ../dbms/src/Interpreters/AggregationCommon.h:262
+
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -fno-tree-loop-distribute-patterns")
+    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -fno-tree-loop-distribute-patterns")
+endif ()
+
 if (USE_STATIC_LIBRARIES AND HAVE_NO_PIE)
     set (CMAKE_CXX_FLAGS                 "${CMAKE_CXX_FLAGS} ${FLAG_NO_PIE}")
     set (CMAKE_C_FLAGS                   "${CMAKE_C_FLAGS} ${FLAG_NO_PIE}")
@@ -254,6 +269,7 @@ include (cmake/find_rdkafka.cmake)
 include (cmake/find_capnp.cmake)
 include (cmake/find_llvm.cmake)
 include (cmake/find_cpuid.cmake)
+include (cmake/find_consistent-hashing.cmake)
 if (ENABLE_TESTS)
     include (cmake/find_gtest.cmake)
 endif ()
@@ -273,12 +289,6 @@ include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
 include (libs/libdaemon/cmake/find_unwind.cmake)
 
 include (cmake/print_flags.cmake)
-
-# Directory for Yandex specific files
-set (CLICKHOUSE_PRIVATE_DIR ${ClickHouse_SOURCE_DIR}/private/)
-if (EXISTS ${CLICKHOUSE_PRIVATE_DIR})
-    add_subdirectory (${CLICKHOUSE_PRIVATE_DIR})
-endif ()
 
 add_subdirectory (contrib)
 add_subdirectory (libs)
