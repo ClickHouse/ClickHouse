@@ -16,7 +16,7 @@
 
 **2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
 
-**3.** A left curly bracket must be separated on a new line. (And the right one, as well.)
+**3.** Opening and closing curly brackets must be on a separate line.
 
 ```cpp
 inline void readBoolText(bool & x, ReadBuffer & buf)
@@ -27,28 +27,30 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 }
 ```
 
-**4.**
-But if the entire function body is quite short (a single statement), you can place it entirely on one line if you wish. Place spaces around curly braces (besides the space at the end of the line).
+**4.** If the entire function body is a single `statement`, it can be placed on a single line. Place spaces around curly braces (besides the space at the end of the line).
 
 ```cpp
 inline size_t mask() const                { return buf_size() - 1; }
 inline size_t place(HashValue x) const    { return x & mask(); }
 ```
 
-**5.** For functions, don't put spaces around brackets.
+**5.** For functions. Don't put spaces around brackets.
 
 ```cpp
 void reinsert(const Value & x)
+```
+
+```cpp
 memcpy(&buf[place_value], &x, sizeof(x));
 ```
 
-**6.** When using statements such as `if`, `for`, and `while` (unlike function calls), put a space before the opening bracket.
+**6.**  In `if`, `for`, `while` and other expressions, a space is inserted in front of the opening bracket (as opposed to function calls).
 
- ```cpp
- for (size_t i = 0; i < rows; i += storage.index_granularity)
- ```
+```cpp
+for (size_t i = 0; i < rows; i += storage.index_granularity)
+```
 
-**7.** Put spaces around binary operators (`+`, `-`, `*`, `/`, `%`, ...), as well as the ternary operator `?:`.
+**7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, ...) and the ternary operator `?:`.
 
 ```cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -61,7 +63,7 @@ UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 ```cpp
 if (elapsed_ns)
     message << " ("
-         << rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
+        << rows_read_on_server * 1000000000 / elapsed_ns << " rows/s., "
         << bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 ```
 
@@ -73,17 +75,17 @@ dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
 ```
 
-**10.** Don't use spaces around the operators `.`, `->` .
+**10.** Don't use spaces around the operators `.`, `->`.
 
 If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
 
-**11.** Do not use a space to separate unary operators (`-`, `+`, `*`, `&`, ...) from the argument.
+**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, ...) from the argument.
 
-**12.** Put a space after a comma, but not before it. The same rule goes for a semicolon inside a for expression.
+**12.** Put a space after a comma, but not before it. The same rule goes for a semicolon inside a `for` expression.
 
 **13.** Do not use spaces to separate the `[]` operator.
 
-**14.** In a `template <...>` expression, use a space between `template` and `<`. No spaces after `<` or before `>`.
+**14.** In a `template <...>` expression, use a space between `template` and `<`; no spaces after `<` or before `>`.
 
 ```cpp
 template <typename TKey, typename TValue>
@@ -91,7 +93,7 @@ struct AggregatedStatElement
 {}
 ```
 
-**15.** In classes and structures, public, private, and protected are written on the same level as the `class/struct`, but all other internal elements should be deeper.
+**15.** In classes and structures, write `public`, `private`, and `protected` on the same level as `class/struct`, and indent  the rest of the code.
 
 ```cpp
 template <typename T>
@@ -104,9 +106,11 @@ public:
 }
 ```
 
-**16.** If the same namespace is used for the entire file, and there isn't anything else significant, an offset is not necessary  inside namespace.
+**16.** If the same `namespace` is used for the entire file, and there isn't anything else significant, an offset is not necessary inside `namespace`.
 
-**17.** If the block for `if`, `for`, `while`... expressions consists of a single statement, you don't need to use curly brackets. Place the statement on a separate line, instead. The same is true for a nested if, for, while... statement. But if the inner statement contains curly brackets or else, the external block should be written in curly brackets.
+**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, ...
+
+But if the inner `statement` contains curly brackets or `else`, the external block should be written in curly brackets.
 
 ```cpp
 /// Finish write.
@@ -114,9 +118,9 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** There should be any spaces at the ends of lines.
+**18.** There shouldn't be any spaces at the ends of lines.
 
-**19.** Sources are UTF-8 encoded.
+**19.** Source files are UTF-8 encoded.
 
 **20.** Non-ASCII characters can be used in string literals.
 
@@ -124,13 +128,13 @@ for (auto & stream : streams)
 << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 ```
 
-**21.** Do not write multiple expressions in a single line.
+**21** Do not write multiple expressions in a single line.
 
 **22.** Group sections of code inside functions and separate them with no more than one empty line.
 
 **23.** Separate functions, classes, and so on with one or two empty lines.
 
-**24.** A `const` (related to a value) must be written before the type name.
+**24.** `A const` (related to a value) must be written before the type name.
 
 ```cpp
 //correct
@@ -206,8 +210,8 @@ This is very important. Writing the comment might help you realize that the code
 /** Part of piece of memory, that can be used.
   * For example, if internal_buffer is 1MB, and there was only 10 bytes loaded to buffer from file for reading,
   * then working_buffer will have size of only 10 bytes
-  * (working_buffer.end() will point to the position right after those 10 bytes available for read).
-*/
+  * (working_buffer.end() will point to position right after those 10 bytes available for read).
+  */
 ```
 
 **2.** Comments can be as detailed as necessary.
@@ -221,8 +225,8 @@ void executeQuery(
     ReadBuffer & istr, /// Where to read the query from (and data for INSERT, if applicable)
     WriteBuffer & ostr, /// Where to write the result
     Context & context, /// DB, tables, data types, engines, functions, aggregate functions...
-    BlockInputStreamPtr & query_plan, /// A description of query processing can be included here
-    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// The last stage to process the SELECT query to
+    BlockInputStreamPtr & query_plan, /// Here could be written the description on how query was executed
+    QueryProcessingStage::Enum stage = QueryProcessingStage::Complete /// Up to which stage process the SELECT query
     )
 ```
 
@@ -253,7 +257,7 @@ void executeQuery(
 */
 ```
 
-The example is borrowed from  [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/).
+The example is borrowed from the resource [http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/](http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/).
 
 **7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
 
@@ -263,9 +267,9 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 
 **9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
 
-**10.** For commenting out code, use basic comments, not "documenting" comments.
+**10.** For commenting out code, use basic comments, not “documenting” comments.
 
-**11.** Delete the commented out parts of the code before commiting.
+**11.** Delete the commented out parts of the code before committing.
 
 **12.** Do not use profanity in comments or code.
 
@@ -275,63 +279,63 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// WHAT THE FAIL???
 ```
 
-**14.** Do not make delimeters from comments.
+**14.** Do not use comments to make delimeters.
 
-```
+```cpp
 ///******************************************************
 ```
 
 **15.** Do not start discussions in comments.
 
-```
+```cpp
 /// Why did you do this stuff?
 ```
 
 **16.** There's no need to write a comment at the end of a block describing what it was about.
 
-```
+```cpp
 /// for
 ```
 
 ## Names
 
-**1.** The names of variables and class members use lowercase letters with underscores.
+**1.** Use  lowercase letters with underscores in the names of variables and class members.
 
 ```cpp
 size_t max_block_size;
 ```
 
-**2.** The names of functions (methods) use camelCase beginning with a lowercase letter.
+**2.** For the names of functions (methods), use camelCase beginning with a lowercase letter.
 
-```cpp
-std::string getName() const override { return "Memory"; }
-```
+    ```cpp
+    std::string getName() const override { return "Memory"; }
+    ```
 
-**3.** The names of classes (structures) use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
+**3.** For the names of classes (structs), use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
 
-```cpp
-class StorageMemory : public IStorage
-```
+    ```cpp
+    class StorageMemory : public IStorage
+    ```
 
-**4.** The names of usings follow the same rules as classes, or you can add _t at the end.
+**4.** `using` are named the same way as classes, or with `_t` on the end.
 
-**5.** Names of template type arguments for simple cases: T; T, U; T1, T2.
+**5.** Names of template type arguments: in simple cases, use `T`; `T`, `U`; `T1`, `T2`.
 
-For more complex cases, either follow the rules for class names, or add the prefix T.
+For more complex cases, either follow the rules for class names, or add the prefix `T`.
 
 ```cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 ```
 
-**6.** Names of template constant arguments: either follow the rules for variable names, or use N in simple cases.
+**6.** Names of template constant arguments: either follow the rules for variable names, or use `N` in simple cases.
 
 ```cpp
 template <bool without_www>
 struct ExtractDomain
 ```
 
-**7.** For abstract classes (interfaces) you can add the I prefix.
+**7.** For abstract classes (interfaces) you can add the `I` prefix.
 
 ```cpp
 class IBlockInputStream
@@ -339,13 +343,13 @@ class IBlockInputStream
 
 **8.** If you use a variable locally, you can use the short name.
 
-In other cases, use a descriptive name that conveys the meaning.
+In all other cases, use a name that describes the meaning.
 
 ```cpp
 bool info_successfully_loaded = false;
 ```
 
-**9.** `define`‘s should be in ALL_CAPS with underscores. The same is true for global constants.
+**9.**  Names of `define`s and global constants use ALL_CAPS with underscores.
 
 ```cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
@@ -353,14 +357,14 @@ bool info_successfully_loaded = false;
 
 **10.** File names should use the same style as their contents.
 
-If a file contains a single class, name the file the same way as the class, in CamelCase.
+If a file contains a single class, name the file the same way as the class (CamelCase).
 
-If the file contains a single function, name the file the same way as the function, in camelCase.
+If the file contains a single function, name the file the same way as the function (camelCase).
 
 **11.** If the name contains an abbreviation, then:
 
 - For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
-- For names of classes and functions, keep the uppercase letters in the abbreviation `MySQLConnection` (not `MySqlConnection`).
+- For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
 
 **12.** Constructor arguments that are used just to initialize the class members should be named the same way as the class members, but with an underscore at the end.
 
@@ -385,7 +389,7 @@ The underscore suffix can be omitted if the argument is not used in the construc
 timer (not m_timer)
 ```
 
-**14.** Constants in enums use CamelCase beginning with an uppercase letter. ALL_CAPS is also allowed. If the enum is not local, use enum class.
+**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
 
 ```cpp
 enum class CompressionMethod
@@ -397,7 +401,7 @@ enum class CompressionMethod
 
 **15.** All names must be in English. Transliteration of Russian words is not allowed.
 
-```cpp
+```
 not Stroka
 ```
 
@@ -419,9 +423,9 @@ You can also use an abbreviation if the full name is included next to it in the 
 
 **1.** Memory management.
 
-Manual memory deallocation (delete) can only be used in library code.
+Manual memory deallocation (`delete`) can only be used in library code.
 
-In library code, the delete operator can only be used in destructors.
+In library code, the `delete` operator can only be used in destructors.
 
 In application code, memory must be freed by the object that owns it.
 
@@ -429,36 +433,42 @@ Examples:
 
 - The easiest way is to place an object on the stack, or make it a member of another class.
 - For a large number of small objects, use containers.
-- For automatic deallocation of a small number of objects that reside in the heap, use shared_ptr/unique_ptr.
+- For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
 
 **2.** Resource management.
 
-Use RAII and see the previous point.
+Use `RAII` and see above.
 
 **3.** Error handling.
 
-Use exceptions. In most cases, you only need to throw an exception, and don't need to catch it (because of RAII).
+Use exceptions. In most cases, you only need to throw an exception, and don't need to catch it (because of `RAII`).
 
 In offline data processing applications, it's often acceptable to not catch exceptions.
 
 In servers that handle user requests, it's usually enough to catch exceptions at the top level of the connection handler.
 
+In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after `join`.
+
 ```cpp
-/// If there were no other calculations yet, do it synchronously
+/// If there weren't any calculations yet, calculate the first block synchronously
 if (!started)
 {
     calculate();
     started = true;
 }
-else    /// If the calculations are already in progress, wait for results
+else /// If calculations are already in progress, wait for the result
     pool.wait();
 
 if (exception)
     exception->rethrow();
 ```
+
 Never hide exceptions without handling. Never just blindly put all exceptions to log.
 
-Not `catch (...) {}`.
+```cpp
+//Not correct
+catch (...) {}
+```
 
 If you need to ignore some exceptions, do so only for specific ones and rethrow the rest.
 
@@ -472,14 +482,14 @@ catch (const DB::Exception & e)
 }
 ```
 
-When using functions with response codes or errno, always check the result and throw an exception in case of error.
+When using functions with response codes or `errno`, always check the result and throw an exception in case of error.
 
 ```cpp
 if (0 != close(fd))
     throwFromErrno("Cannot close file " + file_name, ErrorCodes::CANNOT_CLOSE_FILE);
 ```
 
-Asserts are not used.
+`Do not use assert`.
 
 **4.** Exception types.
 
@@ -491,10 +501,10 @@ This is not recommended, but it is allowed.
 
 Use the following options:
 
-- Create a (done() or finalize()) function that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
+- Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
 - Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
 - If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
-- In simple applications, it is acceptable to rely on std::terminate (for cases of noexcept by default in C++11) to handle exceptions.
+- In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
 
 **6.** Anonymous code blocks.
 
@@ -514,7 +524,7 @@ ready_any.set();
 
 **7.** Multithreading.
 
-For offline data processing applications:
+In offline data processing programs:
 
 - Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
 
@@ -524,17 +534,17 @@ In server applications:
 
 Fork is not used for parallelization.
 
-**8.** Synchronizing threads.
+**8.** Syncing threads.
 
- Often it is possible to make different threads use different memory cells (even better: different cache lines,) and to not use any thread synchronization (except joinAll).
+Often it is possible to make different threads use different memory cells (even better: different cache lines,) and to not use any thread synchronization (except `joinAll`).
 
- If synchronization is required, in most cases, it is sufficient to use mutex under lock_guard.
+If synchronization is required, in most cases, it is sufficient to use mutex under `lock_guard`.
 
- In other cases use system synchronization primitives. Do not use busy wait.
+In other cases use system synchronization primitives. Do not use busy wait.
 
- Atomic operations should be used only in the simplest cases.
+Atomic operations should be used only in the simplest cases.
 
- Do not try to implement lock-free data structures unless it is your primary area of expertise.
+Do not try to implement lock-free data structures unless it is your primary area of expertise.
 
 **9.** Pointers vs references.
 
@@ -542,72 +552,72 @@ In most cases, prefer references.
 
 **10.** const.
 
- Use constant references, pointers to constants, `const_iterator`, `const` methods.
+Use constant references, pointers to constants, `const_iterator`, and const methods.
 
- Consider `const` to be default and use non-const only when necessary.
+Consider `const` to be default and use non-`const` only when necessary.
 
- When passing variable by value, using `const` usually does not make sense.
+When passing variables by value, using `const` usually does not make sense.
 
 **11.** unsigned.
 
-Use `unsigned`, if needed.
+Use `unsigned` if necessary.
 
-**12.** Numeric types
+**12.** Numeric types.
 
-Use `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, and `size_t`, `ssize_t`, `ptrdiff_t`.
+Use the types `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, and `Int64`, as well as `size_t`, `ssize_t`, and `ptrdiff_t`.
 
-Don't use `signed/unsigned long`, `long long`, `short`, `signed char`, `unsigned char`, or `char` types for numbers.
+Don't use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
 
 **13.** Passing arguments.
 
 Pass complex values by reference (including `std::string`).
 
-If a function captures ownership of an objected created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
+If a function captures ownership of an object created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
 
-**14.** Returning values.
+**14.** Return values.
 
-In most cases, just use return. Do not write `[return std::move(res)]{.strike}`.
+In most cases, just use `return`. Do not write `[return std::move(res)]{.strike}`.
 
 If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
 
 In rare cases you might need to return the value via an argument. In this case, the argument should be a reference.
 
-```
+```cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
-/** Creates an aggregate function by name.
- */
+/** Allows creating an aggregate function by its name.
+  */
 class AggregateFunctionFactory
 {
 public:
-   AggregateFunctionFactory();
-   AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
+    AggregateFunctionFactory();
+    AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 ```
 
 **15.** namespace.
 
-There is no need to use a separate namespace for application code or small libraries.
+There is no need to use a separate `namespace` for application code.
 
-or small libraries.
+Small libraries don't need this, either.
 
-For medium to large libraries, put everything in the namespace.
+For medium to large libraries, put everything in a `namespace`.
 
-You can use the additional detail namespace in a library's `.h` file to hide implementation details.
+In the library's `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
 
-In a `.cpp` file, you can use the static or anonymous namespace to hide symbols.
+In a `.cpp` file, you can use a `static` or anonymous namespace to hide symbols.
 
-You can also use namespace for enums to prevent its names from polluting the outer namespace, but it’s better to use the enum class.
+Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it's better to use an `enum class`).
 
-**16.** Delayed initialization.
+**16.** Deferred initialization.
 
-If arguments are required for initialization then do not write a default constructor.
+If arguments are required for initialization, then you normally shouldn't write a default constructor.
 
 If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
 
 ```cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
 
-/// For delayed initialization
+/// For deferred initialization
 Loader() {}
 ```
 
@@ -639,11 +649,11 @@ Do not use profanity in the log.
 
 Use UTF-8 encoding in the log. In rare cases you can use non-ASCII characters in the log.
 
-**20.** I/O.
+**20.** Input-output.
 
-Don't use iostreams in internal cycles that are critical for application performance (and never use stringstream).
+Don't use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
 
-Use the DB/IO library instead.
+Use the `DB/IO` library instead.
 
 **21.** Date and time.
 
@@ -655,30 +665,26 @@ Always use `#pragma once` instead of include guards.
 
 **23.** using.
 
-The `using namespace` is not used.
+`using namespace` is not used. You can use `using` with something specific. But make it local inside a class or function.
 
-It's fine if you are 'using' something specific, but make it local inside a class or function.
+**24.** Do not use `trailing return type` for functions unless necessary.
 
-**24.** Do not use trailing return type for functions unless necessary.
-
-```
+```cpp
 [auto f() -&gt; void;]{.strike}
 ```
 
-**25.** Do not declare and init variables like this:
+**25.** Declaration and initialization of variables.
 
 ```cpp
+//right way
+std::string s = "Hello";
+std::string s{"Hello"};
+
+//wrong way
 auto s = std::string{"Hello"};
 ```
 
-Do it like this:
-
-```cpp
-std::string s = "Hello";
-std::string s{"Hello"};
-```
-
-**26.** For virtual functions, write `virtual` in the base class, but write `override` in descendent classes.
+**26.** For virtual functions, write `virtual` in the base class, but write `override` instead of `virtual` in descendent classes.
 
 ## Unused Features of C++
 
@@ -692,15 +698,15 @@ std::string s{"Hello"};
 
 But other things being equal, cross-platform or portable code is preferred.
 
-**2.** The language is C++17.
+**2.** Language: C++17.
 
-**3.** The compiler is `gcc`. At this time (December 2017), the code is compiled using version 7.2. (It can also be compiled using clang 5.)
+**3.** Compiler: `gcc`. At this time (December 2017), the code is compiled using version 7.2. (It can also be compiled using `clang 4`.)
 
-The standard library is used (implementation of `libstdc++` or `libc++`).
+The standard library is used (`libstdc++` or `libc++`).
 
-**4.** OS: Linux Ubuntu, not older than Precise.
+**4.**OS: Linux Ubuntu, not older than Precise.
 
-**5.** Code is written for x86_64 CPU architecture.
+**5.**Code is written for x86_64 CPU architecture.
 
 The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
 
@@ -712,17 +718,17 @@ The CPU instruction set is the minimum supported set among our servers. Currentl
 
 ## Tools
 
-**1.** `KDevelop` is a good IDE.
+**1.** KDevelop is a good IDE.
 
-**2.** For debugging, use `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=`, ..., `tcmalloc_minimal_debug`.
+**2.** For debugging, use `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=...`, or `tcmalloc_minimal_debug`.
 
-**3.** For profiling, use Linux Perf `valgrind` (`callgrind`), `strace-cf`.
+**3.** For profiling, use `Linux Perf`, `valgrind` (`callgrind`), or `strace -cf`.
 
 **4.** Sources are in Git.
 
-**5.** Compilation is managed by `CMake`.
+**5.** Assembly uses `CMake`.
 
-**6.** Releases are in `deb` packages.
+**6.** Programs are released using `deb` packages.
 
 **7.** Commits to master must not break the build.
 
@@ -732,15 +738,15 @@ Though only selected revisions are considered workable.
 
 Use branches for this purpose.
 
-If your code is not buildable yet, exclude it from the build before pushing to master. You'll need to finish it or remove it from master within a few days.
+If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You'll need to finish it or remove it within a few days.
 
-**9.** For non-trivial changes, used branches and publish them on the server.
+**9.** For non-trivial changes, use branches and publish them on the server.
 
 **10.** Unused code is removed from the repository.
 
 ## Libraries
 
-**1.** The C++14 standard library is used (experimental extensions are fine), as well as boost and Poco frameworks.
+**1.** The C++14 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
 **2.** If necessary, you can use any well-known libraries available in the OS package.
 
@@ -750,9 +756,9 @@ If there is a good solution already available, then use it, even if it means you
 
 **3.** You can install a library that isn't in the packages, if the packages don't have what you need or have an outdated version or the wrong type of compilation.
 
-**4.** If the library is small and doesn't have its own complex build system, put the source files in the contrib folder.
+**4.** If the library is small and doesn't have its own complex build system, put the source files in the `contrib` folder.
 
-**5.** Preference is always given to libraries that are  already used.
+**5.** Preference is always given to libraries that are already in use.
 
 ## General Recommendations
 
@@ -762,35 +768,35 @@ If there is a good solution already available, then use it, even if it means you
 
 **3.** Don't write code until you know how it's going to work and how the inner loop will function.
 
-**4.** In the simplest cases, use 'using' instead of classes or structs.
+**4.** In the simplest cases, use `using` instead of classes or structs.
 
-**5.** If possible, do not write copy constructors, assignment operators, destructors (other than a virtual one, if the class contains at least one virtual function), mpve-constructors and move assignment operators. In other words, the compiler-generated functions must work correctly. You can use 'default'.
+**5.** If possible, do not write copy constructors, assignment operators, destructors (other than a virtual one, if the class contains at least one virtual function), move constructors or move assignment operators. In other words, the compiler-generated functions must work correctly. You can use `default`.
 
 **6.** Code simplification is encouraged. Reduce the size of your code where possible.
 
 ## Additional Recommendations
 
-**1.** Explicit `std::` for types from `stddef.h` is not recommended.
+**1.** Explicitly specifying `std::` for types from `stddef.h`
 
-We recommend writing `size_t` instead `std::size_t` because it's shorter.
+is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it's shorter.
 
-But if you prefer, `std::` is acceptable.
+It is acceptable to add `std::`.
 
-**2.** Explicit `std::` for functions from the standard C library is not recommended.
+**2.** Explicitly specifying `std::` for functions from the standard C library
 
-Write `memcpy` instead of `std::memcpy`.
+is not recommended. In other words, write `memcpy` instead of `std::memcpy`.
 
-The reason is that there are similar non-standard functions, such as `memmem`. We do use these functions on occasion. These functions do not exist in namespace `std`.
+The reason is that there are similar non-standard functions, such as `memmem`. We do use these functions on occasion. These functions do not exist in `namespace std`.
 
-If you write `std::memcpy` instead of `memcpy` everywhere, then `memmem` without `std::` will look awkward.
+If you write `std::memcpy` instead of `memcpy` everywhere, then `memmem` without `std::` will look strange.
 
-Nevertheless, `std::` is allowed if you prefer it.
+Nevertheless, you can still use `std::` if you prefer it.
 
-**3.** Using functions from C when the ones are available in the standard C++ library.
+**3.** Using functions from C when the same ones are available in the standard C++ library.
 
- This is acceptable if it is more efficient.
+This is acceptable if it is more efficient.
 
- For example, use `memcpy` instead of `std::copy` for copying large chunks of memory.
+For example, use `memcpy` instead of `std::copy` for copying large chunks of memory.
 
 **4.** Multiline function arguments.
 
@@ -798,33 +804,33 @@ Any of the following wrapping styles are allowed:
 
 ```cpp
 function(
-    T1 x1,
-    T2 x2)
+  T1 x1,
+  T2 x2)
 ```
 
 ```cpp
 function(
-    size_t left, size_t right,
-    const & RangesInDataParts ranges,
-    size_t limit)
+  size_t left, size_t right,
+  const & RangesInDataParts ranges,
+  size_t limit)
 ```
 
 ```cpp
 function(size_t left, size_t right,
-    const & RangesInDataParts ranges,
-    size_t limit)
+  const & RangesInDataParts ranges,
+  size_t limit)
 ```
 
 ```cpp
 function(size_t left, size_t right,
-        const & RangesInDataParts ranges,
-        size_t limit)
+      const & RangesInDataParts ranges,
+      size_t limit)
 ```
 
 ```cpp
 function(
-        size_t left,
-        size_t right,
-        const & RangesInDataParts ranges,
-        size_t limit)
+      size_t left,
+      size_t right,
+      const & RangesInDataParts ranges,
+      size_t limit)
 ```

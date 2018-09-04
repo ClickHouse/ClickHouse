@@ -30,9 +30,9 @@ Types of sources (`source_type`):
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 - DBMS
-   - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-   - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-   - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
@@ -160,9 +160,9 @@ The dictionary configuration in ClickHouse:
     <dictionary>
         <name>table_name</name>
         <source>
-        <odbc>
-            <!-- You can specifiy the following parameters in connection_string: -->
-            <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+            <odbc>
+                <!-- You can specify the following parameters in connection_string: -->
+                <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
                 <connection_string>DSN=myconnection</connection_string>
                 <table>postgresql_table</table>
             </odbc>
@@ -203,7 +203,7 @@ Installing the driver: :
 Configuring the driver: :
 
 ```
-    $ cat /etc/freetds/freetds.conf 
+    $ cat /etc/freetds/freetds.conf
     ...
 
     [MSSQL]
@@ -212,7 +212,7 @@ Configuring the driver: :
     tds version = 7.0
     client charset = UTF-8
 
-    $ cat /etc/odbcinst.ini 
+    $ cat /etc/odbcinst.ini
     ...
 
     [FreeTDS]
@@ -222,7 +222,7 @@ Configuring the driver: :
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini 
+    $ cat ~/.odbc.ini
     ...
 
     [MSSQL]
@@ -310,9 +310,9 @@ Setting fields:
 - `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
 - `replica` – Section of replica configurations. There can be multiple sections.
-   - `replica/host` – The MySQL host.
+    - `replica/host` – The MySQL host.
 
-   \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
 
@@ -398,4 +398,3 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
-
