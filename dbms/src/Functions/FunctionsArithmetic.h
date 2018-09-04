@@ -5,9 +5,11 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeInterval.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -780,35 +782,6 @@ class FunctionBinaryArithmetic : public IFunction
         return castType(left, [&](const auto & left) { return castType(right, [&](const auto & right) { return f(left, right); }); });
     }
 
-    bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1, bool & shift) const
-    {
-        return std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>
-            &&
-            (
-                (
-                    checkDataType<DataTypeAggregateFunction>(type0.get())
-                    && 
-                    (
-                        checkDataType<DataTypeUInt8>(type1.get())
-                        || checkDataType<DataTypeUInt16>(type1.get())
-                    )
-                    &&
-                    !(shift = false)
-                )
-                ||
-                (
-                    checkDataType<DataTypeAggregateFunction>(type1.get())
-                    &&
-                    (
-                        checkDataType<DataTypeUInt8>(type0.get())
-                        || checkDataType<DataTypeUInt16>(type0.get())
-                    )
-                    &&
-                    (shift = true)
-                )
-            );
-    }
-
     FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
@@ -866,9 +839,12 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// Special case when multiply aggregate function state
-        bool shift;
-        if (isAggregateMultiply(arguments[0], arguments[1], shift))
-            return arguments[shift?1:0];
+        if (isAggregateMultiply(arguments[0], arguments[1]))
+        {
+            if (checkDataType<DataTypeAggregateFunction>(arguments[0].get()))
+                return arguments[0];
+            return arguments[1];
+        }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Interval.
         if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1]))
@@ -908,16 +884,61 @@ public:
         return type_res;
     }
 
+    bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1) const
+    {
+        if constexpr (!std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>)
+            return false;
+        auto is_uint_type = [](const DataTypePtr & type) 
+        {
+            return checkDataType<DataTypeUInt8>(type.get()) || checkDataType<DataTypeUInt16>(type.get())
+                || checkDataType<DataTypeUInt32>(type.get()) || checkDataType<DataTypeUInt64>(type.get());
+        };
+        return ((checkDataType<DataTypeAggregateFunction>(type0.get()) && is_uint_type(type1))
+            || (is_uint_type(type0) && checkDataType<DataTypeAggregateFunction>(type1.get())));
+    }
+
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        bool shift;
-        if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type, shift))
+        /// Special case when multiply aggregate function state
+        if (isAggregateMultiply(block.getByPosition(arguments[0]).type, block.getByPosition(arguments[1]).type))
         {
-            auto c = block.getByPosition(arguments[shift?1:0]).column->cloneEmpty();
-            size_t m = block.getByPosition(arguments[shift?0:1]).column->getUInt(0);
-            for (size_t i = 0; i < m; ++i)
-                c->insertRangeFrom(*(block.getByPosition(arguments[shift?1:0]).column.get()), 0, input_rows_count);
-            block.getByPosition(result).column = std::move(c);
+            ColumnNumbers new_arguments = arguments;
+            if (checkDataType<DataTypeAggregateFunction>(block.getByPosition(new_arguments[1]).type.get()))
+                std::swap(new_arguments[0], new_arguments[1]);
+                
+            const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(new_arguments[0]).column.get());
+            IAggregateFunction * function = column->getAggregateFunction().get();
+
+            MutableColumnPtr current = column->cloneEmpty();
+            auto arena = std::make_shared<Arena>();
+            auto & res = typeid_cast<ColumnAggregateFunction &>(*current);
+            auto & vec_to = res.getData();
+            const auto & vec_from = column->getData();
+
+            for (size_t i = 0; i < input_rows_count; ++i)
+                res.insertDefault();
+
+            size_t m = block.getByPosition(new_arguments[1]).column->getUInt(0);
+
+            /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
+            /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+            while (m)
+            {
+                if (m % 2)
+                {
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        function->merge(vec_to[i], vec_from[i], arena.get());
+                    --m;
+                }
+                else
+                {
+                    for (size_t i = 0; i < input_rows_count; ++i)
+                        function->merge(vec_from[i], vec_from[i], arena.get());
+                    m /= 2;
+                }
+            }
+
+            block.getByPosition(result).column = std::move(current);
             return;
         }
 
