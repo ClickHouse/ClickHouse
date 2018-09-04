@@ -68,7 +68,7 @@ SELECT * FROM file_engine_table
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-## Особенности использования
+## Детали реализации
 
 - Поддерживается многопоточное чтение и однопоточная запись.
 - Не поддерживается:
