@@ -25,6 +25,8 @@ public:
     {
     }
 
+    void validate();
+
     /// Return false if the data isn't going to be changed by mutations.
     bool isStorageTouchedByMutations() const;
 
@@ -32,7 +34,9 @@ public:
     BlockInputStreamPtr execute();
 
 private:
-    void prepare();
+    void prepare(bool dry_run);
+
+    BlockInputStreamPtr addStreamsForLaterStages(BlockInputStreamPtr in) const;
 
 private:
     StoragePtr storage;

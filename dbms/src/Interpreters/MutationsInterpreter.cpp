@@ -4,6 +4,7 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
+#include <DataStreams/NullBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -19,6 +20,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
+    extern const int CANNOT_UPDATE_COLUMN;
 }
 
 bool MutationsInterpreter::isStorageTouchedByMutations() const
@@ -80,13 +83,52 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
     return count != 0;
 }
 
-void MutationsInterpreter::prepare()
+
+static void validateUpdateColumns(const StoragePtr & storage, const std::vector<MutationCommand> & commands)
+{
+    for (const MutationCommand & command : commands)
+    {
+        if (command.type != MutationCommand::UPDATE)
+            continue;
+
+        for (const auto & kv : command.column_to_update_expression)
+        {
+            const String & column_name = kv.first;
+
+            auto found = false;
+            for (const auto & col : storage->getColumns().ordinary)
+            {
+                if (col.name == column_name)
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found)
+            {
+                for (const auto & col : storage->getColumns().materialized)
+                {
+                    if (col.name == column_name)
+                        throw Exception("Cannot UPDATE materialized column " + column_name, ErrorCodes::CANNOT_UPDATE_COLUMN);
+                }
+
+                throw Exception("There is no column " + column_name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+            }
+        }
+    }
+}
+
+
+void MutationsInterpreter::prepare(bool dry_run)
 {
     if (is_prepared)
-        return;
+        throw Exception("MutationsInterpreter is already prepared. It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
+
+    validateUpdateColumns(storage, commands);
 
     NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
 
@@ -176,7 +218,7 @@ void MutationsInterpreter::prepare()
         {
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
-            stage.analyzer->appendExpression(actions_chain, ast);
+            stage.analyzer->appendExpression(actions_chain, ast, dry_run);
             stage.delete_filter_column_names.push_back(ast->getColumnName());
         }
 
@@ -186,7 +228,7 @@ void MutationsInterpreter::prepare()
                 actions_chain.addStep();
 
             for (const auto & kv : column_to_updated)
-                stage.analyzer->appendExpression(actions_chain, kv.second);
+                stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
 
             for (const auto & kv : column_to_updated)
             {
@@ -237,16 +279,13 @@ void MutationsInterpreter::prepare()
         select->children.push_back(where_expression);
     }
 
-    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage);
+    interpreter_select = std::make_unique<InterpreterSelectQuery>(select, context, storage, QueryProcessingStage::Complete, dry_run);
 
     is_prepared = true;
 }
 
-BlockInputStreamPtr MutationsInterpreter::execute()
+BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStreamPtr in) const
 {
-    prepare();
-
-    BlockInputStreamPtr in = interpreter_select->execute().in;
     for (size_t i_stage = 1; i_stage < stages.size(); ++i_stage)
     {
         const Stage & stage = stages[i_stage];
@@ -278,6 +317,21 @@ BlockInputStreamPtr MutationsInterpreter::execute()
     in = std::make_shared<MaterializingBlockInputStream>(in);
 
     return in;
+}
+
+void MutationsInterpreter::validate()
+{
+    prepare(/* dry_run = */ true);
+    Block first_stage_header = interpreter_select->getSampleBlock();
+    BlockInputStreamPtr in = std::make_shared<NullBlockInputStream>(first_stage_header);
+    addStreamsForLaterStages(in)->getHeader();
+}
+
+BlockInputStreamPtr MutationsInterpreter::execute()
+{
+    prepare(/* dry_run = */ false);
+    BlockInputStreamPtr in = interpreter_select->execute().in;
+    return addStreamsForLaterStages(in);
 }
 
 }
