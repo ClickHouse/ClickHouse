@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_UPDATE_COLUMN;
 }
 
 
@@ -1359,6 +1360,49 @@ MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+
+void MergeTreeData::checkMutations(const MutationCommands & commands)
+{
+    NameSet key_columns;
+
+    auto fill_key_columns = [&]()
+    {
+        if (!key_columns.empty())
+            return;
+
+        if (partition_expr)
+            for (const String & col : partition_expr->getRequiredColumns())
+                key_columns.insert(col);
+
+        if (primary_expr)
+            for (const String & col : primary_expr->getRequiredColumns())
+                key_columns.insert(col);
+        /// We don't process sampling_expression separately because it must be among the primary key columns.
+
+        if (secondary_sort_expr)
+            for (const String & col : secondary_sort_expr->getRequiredColumns())
+                key_columns.insert(col);
+
+        if (!merging_params.sign_column.empty())
+            key_columns.insert(merging_params.sign_column);
+    };
+
+    for (const MutationCommand & command : commands)
+    {
+        if (command.type != MutationCommand::UPDATE)
+            continue;
+
+        fill_key_columns();
+
+        for (const auto & kv : command.column_to_update_expression)
+        {
+            const String & column_name = kv.first;
+            if (key_columns.count(column_name))
+                throw Exception("Cannot UPDATE key column " + column_name, ErrorCodes::CANNOT_UPDATE_COLUMN);
+        }
     }
 }
 
