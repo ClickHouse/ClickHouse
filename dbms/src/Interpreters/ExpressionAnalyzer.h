@@ -170,9 +170,9 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
+    const SubqueriesForSets & getSubqueriesForSets() const { return subqueries_for_sets; }
 
-    PreparedSets getPreparedSets() { return prepared_sets; }
+    const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /** Tables that will need to be sent to remote servers for distributed query processing.
       */

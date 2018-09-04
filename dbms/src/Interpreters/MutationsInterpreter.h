@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/IBlockInputStream.h>
@@ -56,6 +57,8 @@ private:
         /// Contains columns that are changed by this stage,
         /// columns changed by the previous stages and also columns needed by the next stages.
         NameSet output_columns;
+
+        std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `delete_filter_column_names`),
