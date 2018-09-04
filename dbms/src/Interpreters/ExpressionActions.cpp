@@ -565,7 +565,7 @@ std::string ExpressionAction::toString() const
             }
             break;
 
-        case PROJECT:
+        case PROJECT: [[fallthrough]];
         case ADD_ALIASES:
             ss << (type == PROJECT ? "PROJECT " : "ADD_ALIASES ");
             for (size_t i = 0; i < projection.size(); ++i)
