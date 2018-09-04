@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
+#include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
@@ -167,7 +168,7 @@ void MutationsInterpreter::prepare()
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        ExpressionAnalyzer analyzer(all_asts, context, nullptr, all_columns);
+        stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, context, nullptr, all_columns);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 
@@ -175,7 +176,7 @@ void MutationsInterpreter::prepare()
         {
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
-            analyzer.appendExpression(actions_chain, ast);
+            stage.analyzer->appendExpression(actions_chain, ast);
             stage.delete_filter_column_names.push_back(ast->getColumnName());
         }
 
@@ -185,7 +186,7 @@ void MutationsInterpreter::prepare()
                 actions_chain.addStep();
 
             for (const auto & kv : column_to_updated)
-                analyzer.appendExpression(actions_chain, kv.second);
+                stage.analyzer->appendExpression(actions_chain, kv.second);
 
             for (const auto & kv : column_to_updated)
             {
@@ -263,6 +264,14 @@ BlockInputStreamPtr MutationsInterpreter::execute()
                 /// Execute UPDATE or final projection.
                 in = std::make_shared<ExpressionBlockInputStream>(in, step.actions);
             }
+        }
+
+        const SubqueriesForSets & subqueries_for_sets = stage.analyzer->getSubqueriesForSets();
+        if (!subqueries_for_sets.empty())
+        {
+            const auto & settings = context.getSettingsRef();
+            in = std::make_shared<CreatingSetsBlockInputStream>(in, subqueries_for_sets,
+                SizeLimits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode));
         }
     }
 
