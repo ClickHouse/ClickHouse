@@ -4116,7 +4116,8 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     ///
     /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
     /// the version of this mutation), the mutation is considered done and can be deleted.
-    /// TODO: add a way to track the progress of mutations and a process to clean old mutations.
+
+    data.checkMutations(commands);
 
     ReplicatedMergeTreeMutationEntry entry;
     entry.source_replica = replica_name;
