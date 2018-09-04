@@ -650,8 +650,9 @@ void InterpreterSelectQuery::executeFetchColumns(
 
         if (alias_columns_required)
         {
-
+            /// Columns required for prewhere actions.
             NameSet required_prewhere_columns;
+            /// Columns required for prewhere actions which are aliases in storage.
             NameSet required_prewhere_aliases;
             Block prewhere_actions_result;
             if (prewhere_info)
@@ -663,8 +664,10 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             /// We will create an expression to return all the requested columns, with the calculation of the required ALIAS columns.
             auto required_columns_expr_list = std::make_shared<ASTExpressionList>();
+            /// Separate expression for columns used in prewhere.
             auto required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
 
+            /// Columns which we will get after prewhere execution.
             auto source_columns = storage->getColumns().getAllPhysical();
 
             for (const auto & column : required_columns)
@@ -688,6 +691,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     required_columns_expr_list->children.emplace_back(std::move(column_expr));
             }
 
+            /// Add columns which will be added by prewhere (otherwise we will remove them in project action).
             for (const auto & column : prewhere_actions_result)
             {
                 if (prewhere_info->remove_prewhere_column && column.name == prewhere_info->prewhere_column_name)
@@ -702,11 +706,13 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// The set of required columns could be added as a result of adding an action to calculate ALIAS.
             required_columns = alias_actions->getRequiredColumns();
 
+            /// Do not remove prewhere filter if it is a column which is used as alias.
             if (prewhere_info && prewhere_info->remove_prewhere_column)
                 if (required_columns.end()
                     != std::find(required_columns.begin(), required_columns.end(), prewhere_info->prewhere_column_name))
                     prewhere_info->remove_prewhere_column = false;
 
+            /// Remove columns which will be added by prewhere.
             for (size_t i = 0; i < required_columns.size(); ++i)
             {
                 if (!storage->getColumns().hasPhysical(required_columns[i]))
@@ -718,6 +724,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             if (prewhere_info)
             {
+                /// Don't remove columns which are needed to be aliased.
                 auto new_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->getRequiredColumnsWithTypes(), settings);
                 for (const auto & action : prewhere_info->prewhere_actions->getActions())
                 {
@@ -728,12 +735,15 @@ void InterpreterSelectQuery::executeFetchColumns(
                 prewhere_info->prewhere_actions = std::move(new_actions);
 
                 prewhere_info->alias_actions = ExpressionAnalyzer(required_prewhere_columns_expr_list, context, storage).getActions(true, false);
+
+                /// Add columns required by alias actions.
                 auto required_aliased_columns = prewhere_info->alias_actions->getRequiredColumns();
                 for (auto & column : required_aliased_columns)
                     if (!prewhere_actions_result.has(column))
                         if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
                             required_columns.push_back(column);
 
+                /// Add columns required by prewhere actions.
                 for (const auto & column : required_prewhere_columns)
                     if (required_prewhere_aliases.count(column) == 0)
                         if (required_columns.end() == std::find(required_columns.begin(), required_columns.end(), column))
