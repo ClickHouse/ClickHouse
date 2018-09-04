@@ -216,15 +216,15 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & context)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
-    auto database = context.getDatabase(database_name);
-    auto table_ddl_guard = context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
+    auto database = system_context.getDatabase(database_name);
+    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
     ASTPtr create_ast;
 
     /// Detach actions
     {
-        auto table = context.tryGetTable(database_name, table_name);
+        auto table = system_context.tryGetTable(database_name, table_name);
 
         if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
             return nullptr;
@@ -233,7 +233,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
-        create_ast = context.getCreateTableQuery(database_name, table_name);
+        create_ast = system_context.getCreateTableQuery(database_name, table_name);
 
         database->detachTable(table_name);
     }
@@ -245,35 +245,35 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
         create.attach = true;
 
         std::string data_path = database->getDataPath();
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, context);
+        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns, system_context);
 
         StoragePtr table = StorageFactory::instance().get(create,
             data_path,
             table_name,
             database_name,
-            context,
-            context.getGlobalContext(),
+            system_context,
+            system_context.getGlobalContext(),
             columns,
             create.attach,
             false);
 
-        database->createTable(context, table_name, table, create_ast);
+        database->createTable(system_context, table_name, table, create_ast);
 
         table->startup();
         return table;
     }
 }
 
-void InterpreterSystemQuery::restartReplicas(Context & context)
+void InterpreterSystemQuery::restartReplicas(Context & system_context)
 {
     std::vector<std::pair<String, String>> replica_names;
 
-    for (auto & elem : context.getDatabases())
+    for (auto & elem : system_context.getDatabases())
     {
         DatabasePtr & database = elem.second;
         const String & database_name = elem.first;
 
-        for (auto iterator = database->getIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getIterator(system_context); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(database_name, iterator->name());
@@ -285,7 +285,7 @@ void InterpreterSystemQuery::restartReplicas(Context & context)
 
     ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), replica_names.size()));
     for (auto & table : replica_names)
-        pool.schedule([&] () { tryRestartReplica(table.first, table.second, context); });
+        pool.schedule([&] () { tryRestartReplica(table.first, table.second, system_context); });
     pool.wait();
 }
 

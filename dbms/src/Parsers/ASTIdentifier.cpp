@@ -8,10 +8,10 @@ namespace DB
 
 void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    auto format_element = [&](const String & name)
+    auto format_element = [&](const String & elem_name)
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "");
-        settings.writeIdentifier(name);
+        settings.writeIdentifier(elem_name);
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 

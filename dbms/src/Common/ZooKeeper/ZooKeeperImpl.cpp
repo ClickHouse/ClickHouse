@@ -340,7 +340,7 @@ void read(String & s, ReadBuffer & in)
         throw Exception("Too large string size while reading from ZooKeeper", ZMARSHALLINGERROR);
 
     s.resize(size);
-    in.read(&s[0], size);
+    in.read(s.data(), size);
 }
 
 template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
@@ -349,7 +349,7 @@ template <size_t N> void read(std::array<char, N> & s, ReadBuffer & in)
     read(size, in);
     if (size != N)
         throw Exception("Unexpected array size while reading from ZooKeeper", ZMARSHALLINGERROR);
-    in.read(&s[0], N);
+    in.read(s.data(), N);
 }
 
 void read(Stat & stat, ReadBuffer & in)
@@ -674,24 +674,24 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
         for (const auto & generic_request : generic_requests)
         {
-            if (auto * concrete_request = dynamic_cast<const CreateRequest *>(generic_request.get()))
+            if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
             {
-                auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request);
+                auto create = std::make_shared<ZooKeeperCreateRequest>(*concrete_request_create);
                 if (create->acls.empty())
                     create->acls = default_acls;
                 requests.push_back(create);
             }
-            else if (auto * concrete_request = dynamic_cast<const RemoveRequest *>(generic_request.get()))
+            else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
             {
-                requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request));
+                requests.push_back(std::make_shared<ZooKeeperRemoveRequest>(*concrete_request_remove));
             }
-            else if (auto * concrete_request = dynamic_cast<const SetRequest *>(generic_request.get()))
+            else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
             {
-                requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request));
+                requests.push_back(std::make_shared<ZooKeeperSetRequest>(*concrete_request_set));
             }
-            else if (auto * concrete_request = dynamic_cast<const CheckRequest *>(generic_request.get()))
+            else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
             {
-                requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request));
+                requests.push_back(std::make_shared<ZooKeeperCheckRequest>(*concrete_request_check));
             }
             else
                 throw Exception("Illegal command as part of multi ZooKeeper request", ZBADARGUMENTS);
@@ -914,11 +914,11 @@ void ZooKeeper::connect(
                 connected = true;
                 break;
             }
-            catch (const Poco::Net::NetException & e)
+            catch (const Poco::Net::NetException &)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
             }
-            catch (const Poco::TimeoutException & e)
+            catch (const Poco::TimeoutException &)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false);
             }
@@ -930,20 +930,20 @@ void ZooKeeper::connect(
 
     if (!connected)
     {
-        WriteBufferFromOwnString out;
-        out << "All connection tries failed while connecting to ZooKeeper. Addresses: ";
+        WriteBufferFromOwnString message;
+        message << "All connection tries failed while connecting to ZooKeeper. Addresses: ";
         bool first = true;
         for (const auto & address : addresses)
         {
             if (first)
                 first = false;
             else
-                out << ", ";
-            out << address.toString();
+                message << ", ";
+            message << address.toString();
         }
 
-        out << fail_reasons.str() << "\n";
-        throw Exception(out.str(), ZCONNECTIONLOSS);
+        message << fail_reasons.str() << "\n";
+        throw Exception(message.str(), ZCONNECTIONLOSS);
     }
 }
 
@@ -953,7 +953,7 @@ void ZooKeeper::sendHandshake()
     int32_t handshake_length = 44;
     int64_t last_zxid_seen = 0;
     int32_t timeout = session_timeout.totalMilliseconds();
-    int64_t session_id = 0;
+    int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     constexpr int32_t passwd_len = 16;
     std::array<char, passwd_len> passwd {};
 
@@ -961,7 +961,7 @@ void ZooKeeper::sendHandshake()
     write(protocol_version);
     write(last_zxid_seen);
     write(timeout);
-    write(session_id);
+    write(previous_session_id);
     write(passwd);
 
     out->next();
@@ -1003,18 +1003,18 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     request.write(*out);
 
     int32_t length;
-    XID xid;
+    XID read_xid;
     int64_t zxid;
     int32_t err;
 
     read(length);
     size_t count_before_event = in->count();
-    read(xid);
+    read(read_xid);
     read(zxid);
     read(err);
 
-    if (xid != auth_xid)
-        throw Exception("Unexpected event recieved in reply to auth request: " + toString(xid),
+    if (read_xid != auth_xid)
+        throw Exception("Unexpected event recieved in reply to auth request: " + toString(read_xid),
             ZMARSHALLINGERROR);
 
     int32_t actual_length = in->count() - count_before_event;
@@ -1434,7 +1434,7 @@ void ZooKeeper::pushRequest(RequestInfo && info)
 
         if (!info.request->xid)
         {
-            info.request->xid = xid.fetch_add(1);
+            info.request->xid = next_xid.fetch_add(1);
             if (info.request->xid < 0)
                 throw Exception("XID overflow", ZSESSIONEXPIRED);
         }

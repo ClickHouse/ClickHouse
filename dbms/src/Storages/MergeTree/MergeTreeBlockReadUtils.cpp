@@ -71,9 +71,9 @@ MergeTreeReadTask::MergeTreeReadTask(
     const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
     const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
     MergeTreeBlockSizePredictorPtr && size_predictor)
-: data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
-ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
+    : data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
+    ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
+    remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
 {}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;

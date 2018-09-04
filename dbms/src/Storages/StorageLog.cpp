@@ -241,7 +241,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 
     auto createStringGetter = [&](bool stream_for_prefix)
     {
-        return [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
             String stream_name = IDataType::getFileNameForStream(name, path);
 

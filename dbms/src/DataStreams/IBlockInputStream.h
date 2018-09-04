@@ -91,7 +91,7 @@ public:
 
     /** Must be called before read, readPrefix.
       */
-    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
+    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.

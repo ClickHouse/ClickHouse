@@ -1,3 +1,5 @@
+<a name="quotas"></a>
+
 # Quotas
 
 Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
@@ -13,7 +15,7 @@ In contrast to query complexity restrictions, quotas:
 Let's look at the section of the 'users.xml' file that defines quotas.
 
 ```xml
-<!-- Quotas. -->
+<!-- Quotas -->
 <quotas>
     <!-- Quota name. -->
     <default>
@@ -84,7 +86,7 @@ Quotas can use the "quota key" feature in order to report on resources for multi
 ```xml
 <!-- For the global reports designer. -->
 <web_global>
-    <!-- keyed - The quota_key "key" is passed in the query parameter,
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
             and the quota is tracked separately for each key value.
         For example, you can pass a Yandex.Metrica username as the key,
             so the quota will be counted separately for each username.

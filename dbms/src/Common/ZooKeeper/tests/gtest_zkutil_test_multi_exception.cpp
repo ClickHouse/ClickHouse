@@ -5,13 +5,14 @@
 #include <iostream>
 #include <chrono>
 
-#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <gtest/gtest.h>
+
 #include <Common/ShellCommand.h>
 
-
-#pragma GCC diagnostic pop
 
 using namespace DB;
 

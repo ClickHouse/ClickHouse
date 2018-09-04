@@ -24,7 +24,7 @@ Example 2: `uniqArray(arr)` – Count the number of unique elements in all 'arr'
 
 ## -State
 
-If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the 'uniq' function), but an intermediate state of the aggregation (for ` uniq`, this is the hash table for calculating the number of unique values). This is an AggregateFunction(...) that can be used for further processing or stored in a table to finish aggregating later. See the sections "AggregatingMergeTree" and "Functions for working with intermediate aggregation states".
+If you apply this combinator, the aggregate function doesn't return the resulting value (such as the number of unique values for the 'uniq' function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an AggregateFunction(...) that can be used for further processing or stored in a table to finish aggregating later. See the sections "AggregatingMergeTree" and "Functions for working with intermediate aggregation states".
 
 ## -Merge
 

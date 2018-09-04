@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-
+#include <Common/Arena.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -156,6 +156,36 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
     }
 
     return res;
+}
+
+
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
+    memcpy(pos, &string_size, sizeof(string_size));
+    memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+    res.data = pos;
+
+    return res;
+}
+
+const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
+{
+    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    pos += sizeof(string_size);
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + string_size;
+    chars.resize(new_size);
+    memcpy(&chars[old_size], pos, string_size);
+
+    offsets.push_back(new_size);
+    return pos + string_size;
 }
 
 

@@ -27,7 +27,7 @@ int ColumnDecimal<T>::compareAt(size_t n, size_t m, const IColumn & rhs_, int ) 
 {
     auto other = static_cast<const Self &>(rhs_);
     const T & a = data[n];
-    const T & b = static_cast<const Self &>(rhs_).data[m];
+    const T & b = other.data[m];
 
     return decimalLess<T>(b, a, other.scale, scale) ? 1 : (decimalLess<T>(a, b, scale, other.scale) ? -1 : 0);
 }
@@ -56,28 +56,36 @@ void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 template <typename T>
 void ColumnDecimal<T>::getPermutation(bool reverse, size_t limit, int , IColumn::Permutation & res) const
 {
-    size_t s = data.size();
-    res.resize(s);
-    for (size_t i = 0; i < s; ++i)
-        res[i] = i;
-
-    if (limit >= s)
-        limit = 0;
-
-    if (limit)
+#if 1 /// TODO: perf test
+    if (data.size() <= std::numeric_limits<UInt32>::max())
     {
-        if (reverse)
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), [](T a, T b) { return a > b; });
-        else
-            std::partial_sort(res.begin(), res.begin() + limit, res.end(), [](T a, T b) { return a < b; });
+        PaddedPODArray<UInt32> tmp_res;
+        permutation(reverse, limit, tmp_res);
+
+        res.resize(tmp_res.size());
+        for (size_t i = 0; i < tmp_res.size(); ++i)
+            res[i] = tmp_res[i];
+        return;
     }
-    else
-    {
-        if (reverse)
-            std::sort(res.begin(), res.end(), [](T a, T b) { return a > b; });
-        else
-            std::sort(res.begin(), res.end(), [](T a, T b) { return a < b; });
-    }
+#endif
+
+    permutation(reverse, limit, res);
+}
+
+template <typename T>
+ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
+{
+    size_t size = limit ? std::min(data.size(), limit) : data.size();
+    if (perm.size() < size)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    auto res = this->create(size, scale);
+    typename Self::Container & res_data = res->getData();
+
+    for (size_t i = 0; i < size; ++i)
+        res_data[i] = data[perm[i]];
+
+    return std::move(res);
 }
 
 template <typename T>
@@ -91,10 +99,13 @@ MutableColumnPtr ColumnDecimal<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        memcpy(&new_col.data[0], &data[0], count * sizeof(data[0]));
+        memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
         if (size > count)
-            memset(static_cast<void *>(&new_col.data[count]), static_cast<int>(value_type()), (size - count) * sizeof(value_type));
+        {
+            void * tail = &new_col.data[count];
+            memset(tail, 0, (size - count) * sizeof(T));
+        }
     }
 
     return std::move(res);
@@ -106,10 +117,8 @@ void ColumnDecimal<T>::insertRangeFrom(const IColumn & src, size_t start, size_t
     const ColumnDecimal & src_vec = static_cast<const ColumnDecimal &>(src);
 
     if (start + length > src_vec.data.size())
-        throw Exception("Parameters start = "
-            + toString(start) + ", length = "
-            + toString(length) + " are out of bound in ColumnVector<T>::insertRangeFrom method"
-            " (data.size() = " + toString(src_vec.data.size()) + ").",
+        throw Exception("Parameters start = " + toString(start) + ", length = " + toString(length) +
+            " are out of bound in ColumnDecimal<T>::insertRangeFrom method (data.size() = " + toString(src_vec.data.size()) + ").",
             ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     size_t old_size = data.size();
@@ -130,9 +139,9 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-    const UInt8 * filt_pos = &filt[0];
+    const UInt8 * filt_pos = filt.data();
     const UInt8 * filt_end = filt_pos + size;
-    const T * data_pos = &data[0];
+    const T * data_pos = data.data();
 
     while (filt_pos < filt_end)
     {
@@ -142,27 +151,6 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
         ++filt_pos;
         ++data_pos;
     }
-
-    return std::move(res);
-}
-
-template <typename T>
-ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
-{
-    size_t size = data.size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    auto res = this->create(limit, scale);
-    typename Self::Container & res_data = res->getData();
-    for (size_t i = 0; i < limit; ++i)
-        res_data[i] = data[perm[i]];
 
     return std::move(res);
 }
