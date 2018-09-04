@@ -107,6 +107,10 @@ You are probably already using ZooKeeper for other purposes. You can use the sam
 
 It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
+You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the "zkcopy" utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
+
+If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
+
 Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
 With the default settings, ZooKeeper is a time bomb:
@@ -114,10 +118,6 @@ With the default settings, ZooKeeper is a time bomb:
 > The ZooKeeper server won't delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
 
 This bomb must be defused.
-
-If you want to move data between different ZooKeeper clusters, never move it by hand-written script, because it will produce wrong data for sequential nodes. Never use "zkcopy" tool, by the same reason: https://github.com/ksprojects/zkcopy/issues/15
-
-If you want to split ZooKeeper cluster, proper way is to increase number of replicas and then reconfigure it as two independent clusters.
 
 The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
 
