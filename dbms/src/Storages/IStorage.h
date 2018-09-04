@@ -126,7 +126,7 @@ public:
         return res;
     }
 
-    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
+    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP, TRUNCATE.
       */
     TableFullWriteLock lockForAlter(const std::string & who = "Alter")
     {
