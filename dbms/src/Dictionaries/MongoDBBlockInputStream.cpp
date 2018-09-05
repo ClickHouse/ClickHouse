@@ -139,17 +139,13 @@ namespace
             }
             case ValueType::UUID:
             {
-                if (value.type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::Binary::Ptr>::TypeId)
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
                 {
-                    Poco::MongoDB::Binary::Ptr binary_ptr = dynamic_cast<Poco::MongoDB::ConcreteElement<Poco::MongoDB::Binary::Ptr> * >(value_ptr.get())->value();
-                    if (!binary_ptr)
-                        throw Exception{"Type mismatch, expected Binary::Ptr (UUID), got type id =" + toString(value.type()) +
-                                " for column " + name, ErrorCodes::TYPE_MISMATCH};
-
-                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(binary_ptr->uuid().toString()));
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
                 }
                 else
-                    throw Exception{"Type mismatch, expected Binary::Ptr (UUID), got type id =" + toString(value.type()) +
+                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) +
                               " for column " + name, ErrorCodes::TYPE_MISMATCH};
                 break;
             }
