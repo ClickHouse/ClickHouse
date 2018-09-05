@@ -150,8 +150,7 @@ public:
             sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
 
 #if USE_EMBEDDED_COMPILER
-        if (settings.compiled_expressions_cache_size > 0)
-            compilation_cache = context_.getCompiledExpressionsCache();
+    compilation_cache = context_.getCompiledExpressionCache();
 #endif
     }
 

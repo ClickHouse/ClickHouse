@@ -75,7 +75,6 @@ struct Settings
     \
     M(SettingBool, compile, false, "Whether query compilation is enabled.") \
     M(SettingBool, compile_expressions, false, "Compile some scalar functions and operators to native code.") \
-    M(SettingUInt64, compiled_expressions_cache_size, std::numeric_limits<UInt64>::max(), "Cache size for compiled expressions") \
     M(SettingUInt64, min_count_to_compile, 3, "The number of structurally identical queries before they are compiled.") \
     M(SettingUInt64, group_by_two_level_threshold, 100000, "From what number of keys, a two-level aggregation starts. 0 - the threshold is not set.") \
     M(SettingUInt64, group_by_two_level_threshold_bytes, 100000000, "From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.") \
