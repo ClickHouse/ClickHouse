@@ -57,9 +57,10 @@ public:
         reader->readSuffix();
     }
 
-    Block getHeader() const override { return reader->getHeader(); }
+    Block getHeader() const override { return sample_block; }
 
 private:
+    Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
     std::string file_name;
@@ -77,8 +78,8 @@ static std::string resolvePath(const boost::filesystem::path & base_path, std::s
 {
     boost::filesystem::path resolved_path(path);
     if (!resolved_path.is_absolute())
-        return boost::filesystem::canonical(resolved_path, base_path).string();
-    return boost::filesystem::canonical(resolved_path).string();
+        return (base_path / resolved_path).string();
+    return resolved_path.string();
 }
 
 static void checkCreationIsAllowed(const String & base_path, const String & path)
@@ -261,12 +262,10 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
 BlockInputStreams StorageCatBoostPool::read(const Names & column_names,
                        const SelectQueryInfo & /*query_info*/,
                        const Context & context,
-                       QueryProcessingStage::Enum processed_stage,
+                       QueryProcessingStage::Enum & /*processed_stage*/,
                        size_t max_block_size,
                        unsigned /*threads*/)
 {
-    checkQueryProcessingStage(processed_stage, context);
-
     auto stream = std::make_shared<CatBoostDatasetBlockInputStream>(
             data_description_file_name, "TSV", sample_block, context, max_block_size);
 

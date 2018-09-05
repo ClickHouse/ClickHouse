@@ -130,11 +130,11 @@ int getCurrentExceptionCode()
     {
         return e.code();
     }
-    catch (const Poco::Exception &)
+    catch (const Poco::Exception & e)
     {
         return ErrorCodes::POCO_EXCEPTION;
     }
-    catch (const std::exception &)
+    catch (const std::exception & e)
     {
         return ErrorCodes::STD_EXCEPTION;
     }

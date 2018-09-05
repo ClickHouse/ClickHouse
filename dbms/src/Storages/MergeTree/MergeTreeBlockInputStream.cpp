@@ -24,7 +24,8 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     Names column_names,
     const MarkRanges & mark_ranges_,
     bool use_uncompressed_cache_,
-    const PrewhereInfoPtr & prewhere_info,
+    ExpressionActionsPtr prewhere_actions_,
+    String prewhere_column_,
     bool check_columns,
     size_t min_bytes_to_use_direct_io_,
     size_t max_read_buffer_size_,
@@ -33,10 +34,10 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     size_t part_index_in_query_,
     bool quiet)
     :
-    MergeTreeBaseBlockInputStream{storage_, prewhere_info, max_block_size_rows_,
+    MergeTreeBaseBlockInputStream{storage_, prewhere_actions_, prewhere_column_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_, min_bytes_to_use_direct_io_,
         max_read_buffer_size_, use_uncompressed_cache_, save_marks_in_cache_, virt_column_names},
-    required_columns{column_names},
+    ordered_names{column_names},
     data_part{owned_data_part_},
     part_columns_lock(data_part->columns_lock),
     all_mark_ranges(mark_ranges_),
@@ -60,7 +61,7 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
 
     addTotalRowsApprox(total_rows);
 
-    header = storage.getSampleBlockForColumns(required_columns);
+    header = storage.getSampleBlockForColumns(ordered_names);
 
     /// Types may be different during ALTER (when this stream is used to perform an ALTER).
     /// NOTE: We may use similar code to implement non blocking ALTERs.
@@ -78,9 +79,6 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
     }
 
     injectVirtualColumns(header);
-    executePrewhereActions(header, prewhere_info);
-
-    ordered_names = getHeader().getNames();
 }
 
 
@@ -101,15 +99,15 @@ try
     }
     is_first_task = false;
 
-    Names pre_column_names;
-    Names column_names = required_columns;
+    Names pre_column_names, column_names = ordered_names;
+    bool remove_prewhere_column = false;
 
     /// inject columns required for defaults evaluation
     bool should_reorder = !injectRequiredColumns(storage, data_part, column_names).empty();
 
-    if (prewhere_info)
+    if (prewhere_actions)
     {
-        pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+        pre_column_names = prewhere_actions->getRequiredColumns();
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
@@ -119,6 +117,9 @@ try
             should_reorder = true;
 
         const NameSet pre_name_set(pre_column_names.begin(), pre_column_names.end());
+        /// If the expression in PREWHERE is not a column of the table, you do not need to output a column with it
+        ///  (from storage expect to receive only the columns of the table).
+        remove_prewhere_column = !pre_name_set.count(prewhere_column_name);
 
         Names post_column_names;
         for (const auto & name : column_names)
@@ -158,9 +159,9 @@ try
     auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
                           : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
 
-    task = std::make_unique<MergeTreeReadTask>(
-            data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, columns, pre_columns,
-            prewhere_info && prewhere_info->remove_prewhere_column, should_reorder, std::move(size_predictor));
+    task = std::make_unique<MergeTreeReadTask>(data_part, remaining_mark_ranges, part_index_in_query, ordered_names,
+                                               column_name_set, columns, pre_columns, remove_prewhere_column, should_reorder,
+                                               std::move(size_predictor));
 
     if (!reader)
     {
@@ -174,7 +175,7 @@ try
             owned_mark_cache.get(), save_marks_in_cache, storage,
             all_mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size);
 
-        if (prewhere_info)
+        if (prewhere_actions)
             pre_reader = std::make_unique<MergeTreeReader>(
                 path, data_part, pre_columns, owned_uncompressed_cache.get(),
                 owned_mark_cache.get(), save_marks_in_cache, storage,

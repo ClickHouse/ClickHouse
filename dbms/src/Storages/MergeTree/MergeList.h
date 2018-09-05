@@ -65,9 +65,8 @@ struct MergeListElement : boost::noncopyable
     /// Updated only for Vertical algorithm
     std::atomic<UInt64> columns_written{};
 
-    MemoryTracker memory_tracker{VariableContext::Process};
-    MemoryTracker * background_thread_memory_tracker;
-    MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
+    MemoryTracker memory_tracker;
+    MemoryTracker * background_pool_task_memory_tracker;
 
     /// Poco thread number used in logs
     UInt32 thread_number;

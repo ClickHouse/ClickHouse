@@ -10,9 +10,6 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/PartLog.h>
-#include <Interpreters/QueryThreadLog.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageFactory.h>
@@ -51,7 +48,7 @@ ExecutionStatus getOverallExecutionStatusOfCommands()
     return ExecutionStatus(0);
 }
 
-/// Consequently tries to execute all commands and genreates final exception message for failed commands
+/// Consequently execute all commands and genreates final exception message for failed commands
 template <typename Callable, typename ... Callables>
 ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callables && ... commands)
 {
@@ -72,16 +69,6 @@ ExecutionStatus getOverallExecutionStatusOfCommands(Callable && command, Callabl
 
     return ExecutionStatus(res_status, res_message);
 }
-
-/// Consequently tries to execute all commands and throws exception with info about failed commands
-template <typename ... Callables>
-void executeCommandsAndThrowIfError(Callables && ... commands)
-{
-    auto status = getOverallExecutionStatusOfCommands(std::forward<Callables>(commands)...);
-    if (status.code != 0)
-        throw Exception(status.message, status.code);
-}
-
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
 void startStopAction(Context & context, ASTSystemQuery & query, StorageActionBlockType action_type, bool start)
@@ -152,11 +139,15 @@ BlockIO InterpreterSystemQuery::execute()
             system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
             break;
         case Type::RELOAD_DICTIONARIES:
-            executeCommandsAndThrowIfError(
-                    [&] () { system_context.getExternalDictionaries().reload(); },
-                    [&] () { system_context.getEmbeddedDictionaries().reload(); }
+        {
+            auto status = getOverallExecutionStatusOfCommands(
+                    [&] { system_context.getExternalDictionaries().reload(); },
+                    [&] { system_context.getEmbeddedDictionaries().reload(); }
             );
+            if (status.code != 0)
+                throw Exception(status.message, status.code);
             break;
+        }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             system_context.getEmbeddedDictionaries().reload();
             break;
@@ -197,13 +188,6 @@ BlockIO InterpreterSystemQuery::execute()
             if (!tryRestartReplica(query.target_database, query.target_table, system_context))
                 throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
-            break;
-        case Type::FLUSH_SYSTEM_TABLES:
-            executeCommandsAndThrowIfError(
-                    [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
-                    [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
-                    [&] () { if (auto query_thread_log = context.getQueryThreadLog(false)) query_thread_log->flush(); }
-            );
             break;
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:

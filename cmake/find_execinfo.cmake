@@ -1,4 +1,4 @@
-if (OS_FREEBSD)
+if (ARCH_FREEBSD)
     find_library (EXECINFO_LIBRARY execinfo)
     find_library (ELF_LIBRARY elf)
     message (STATUS "Using execinfo: ${EXECINFO_LIBRARY}")

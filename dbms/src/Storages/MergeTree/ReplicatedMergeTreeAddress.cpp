@@ -14,9 +14,7 @@ void ReplicatedMergeTreeAddress::writeText(WriteBuffer & out) const
         << "port: " << replication_port << '\n'
         << "tcp_port: " << queries_port << '\n'
         << "database: " << escape << database << '\n'
-        << "table: " << escape << table << '\n'
-        << "scheme: " << escape << scheme << '\n';
-
+        << "table: " << escape << table << '\n';
 }
 
 void ReplicatedMergeTreeAddress::readText(ReadBuffer & in)
@@ -27,11 +25,6 @@ void ReplicatedMergeTreeAddress::readText(ReadBuffer & in)
         >> "tcp_port: " >> queries_port >> "\n"
         >> "database: " >> escape >> database >> "\n"
         >> "table: " >> escape >> table >> "\n";
-
-    if (!in.eof())
-        in >> "scheme: " >> escape >> scheme >> "\n";
-    else
-        scheme = "http";
 }
 
 String ReplicatedMergeTreeAddress::toString() const

@@ -10,7 +10,7 @@
 #include <Poco/Event.h>
 #include <Core/Types.h>
 #include <common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/BackgroundSchedulePool.h>
 
 namespace DB
 {

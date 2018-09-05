@@ -6,7 +6,6 @@
 #include <farmhash.h>
 #include <metrohash.h>
 #include <murmurhash2.h>
-#include <murmurhash3.h>
 
 #include <Poco/ByteOrder.h>
 
@@ -65,8 +64,6 @@ namespace ErrorCodes
 
 struct HalfMD5Impl
 {
-    using ReturnType = UInt64;
-
     static UInt64 apply(const char * begin, size_t size)
     {
         union
@@ -142,8 +139,6 @@ struct SHA256Impl
 
 struct SipHash64Impl
 {
-    using ReturnType = UInt64;
-
     static UInt64 apply(const char * begin, size_t size)
     {
         return sipHash64(begin, size);
@@ -180,6 +175,63 @@ struct IntHash64Impl
     static UInt64 apply(UInt64 x)
     {
         return intHash64(x ^ 0x4CF2D2BAAE6DA887ULL);
+    }
+};
+
+
+template <typename Impl, typename Name>
+class FunctionStringHash64 : public IFunction
+{
+public:
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash64>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!arguments[0]->isString())
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt64>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(block.getByPosition(arguments[0]).column.get()))
+        {
+            auto col_to = ColumnUInt64::create();
+
+            const typename ColumnString::Chars_t & data = col_from->getChars();
+            const typename ColumnString::Offsets & offsets = col_from->getOffsets();
+            typename ColumnUInt64::Container & vec_to = col_to->getData();
+            size_t size = offsets.size();
+            vec_to.resize(size);
+
+            ColumnString::Offset current_offset = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                vec_to[i] = Impl::apply(
+                    reinterpret_cast<const char *>(&data[current_offset]),
+                    offsets[i] - current_offset - 1);
+
+                current_offset = offsets[i];
+            }
+
+            block.getByPosition(result).column = std::move(col_to);
+        }
+        else
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                    + " of first argument of function " + Name::name,
+                ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
@@ -570,12 +622,12 @@ public:
 };
 
 
-template <typename Impl, typename Name>
-class FunctionStringHash : public IFunction
+template <typename Impl>
+class FunctionStringHash32 : public IFunction
 {
 public:
-    static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash>(); }
+    static constexpr auto name = Impl::name;
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionStringHash32>(); }
 
     String getName() const override { return name; }
 
@@ -583,15 +635,14 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments */) const override
-    { return std::make_shared<DataTypeNumber<ToType>>(); }
+    DataTypePtr getReturnTypeImpl(const DataTypes & /* arguments */) const override { return std::make_shared<DataTypeUInt32>(); }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        auto col_to = ColumnVector<ToType>::create(input_rows_count);
-        typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
+        auto col_to = ColumnUInt32::create(input_rows_count);
+        ColumnUInt32::Container & vec_to = col_to->getData();
 
         const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
         const IDataType * from_type = col.type.get();
@@ -620,10 +671,8 @@ public:
         block.getByPosition(result).column = std::move(col_to);
     }
 private:
-    using ToType = typename Impl::ReturnType;
-
     template <typename FromType>
-    void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeIntType(const IColumn * column, ColumnUInt32::Container & vec_to)
     {
         if (const ColumnVector<FromType> * col_from = checkAndGetColumn<ColumnVector<FromType>>(column))
         {
@@ -631,7 +680,7 @@ private:
             size_t size = vec_from.size();
             for (size_t i = 0; i < size; ++i)
             {
-                vec_to[i] = Impl::apply(reinterpret_cast<const char *>(&vec_from[i]), sizeof(FromType));
+                vec_to[i] = Impl::Hash32(reinterpret_cast<const char *>(&vec_from[i]), sizeof(FromType));
             }
         }
         else
@@ -640,7 +689,7 @@ private:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    void executeString(const IColumn * column, ColumnUInt32::Container & vec_to)
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
         {
@@ -651,7 +700,7 @@ private:
             ColumnString::Offset current_offset = 0;
             for (size_t i = 0; i < size; ++i)
             {
-                vec_to[i] = Impl::apply(
+                vec_to[i] = Impl::Hash32(
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1);
 
@@ -664,7 +713,7 @@ private:
             size_t n = col_from->getN();
             size_t size = data.size() / n;
             for (size_t i = 0; i < size; ++i)
-                vec_to[i] = Impl::apply(reinterpret_cast<const char *>(&data[i * n]), n);
+                vec_to[i] = Impl::Hash32(reinterpret_cast<const char *>(&data[i * n]), n);
         }
         else
             throw Exception("Illegal column " + column->getName()
@@ -681,66 +730,12 @@ private:
   * in ClickHouse as is. For example, it is needed to reproduce the behaviour
   * for NGINX a/b testing module: https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html
   */
-struct MurmurHash2Impl32
+struct MurmurHash2Impl
 {
-    using ReturnType = UInt32;
-
-    static UInt32 apply(const char * data, const size_t size)
+    static constexpr auto name = "murmurHash2_32";
+    static UInt32 Hash32(const char * data, const size_t size)
     {
         return MurmurHash2(data, size, 0);
-    }
-};
-
-struct MurmurHash2Impl64
-{
-    using ReturnType = UInt64;
-
-    static UInt64 apply(const char * data, const size_t size)
-    {
-        return MurmurHash64A(data, size, 0);
-    }
-};
-
-struct MurmurHash3Impl32
-{
-    using ReturnType = UInt32;
-
-    static UInt32 apply(const char * data, const size_t size)
-    {
-        union
-        {
-            UInt32 h;
-            char bytes[sizeof(h)];
-        };
-        MurmurHash3_x86_32(data, size, 0, bytes);
-        return h;
-    }
-};
-
-struct MurmurHash3Impl64
-{
-    using ReturnType = UInt64;
-
-    static UInt64 apply(const char * data, const size_t size)
-    {
-        union
-        {
-            UInt64 h[2];
-            char bytes[16];
-        };
-        MurmurHash3_x64_128(data, size, 0, bytes);
-        return h[0] ^ h[1];
-    }
-};
-
-struct MurmurHash3Impl128
-{
-    static constexpr auto name = "murmurHash3_128";
-    enum { length = 16 };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        MurmurHash3_x64_128(begin, size, 0, out_char_data);
     }
 };
 
@@ -938,12 +933,6 @@ struct NameHalfMD5   { static constexpr auto name = "halfMD5"; };
 struct NameSipHash64 { static constexpr auto name = "sipHash64"; };
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
-struct NameMurmurHash2_32 { static constexpr auto name = "murmurHash2_32"; };
-struct NameMurmurHash2_64 { static constexpr auto name = "murmurHash2_64"; };
-struct NameMurmurHash3_32 { static constexpr auto name = "murmurHash3_32"; };
-struct NameMurmurHash3_64 { static constexpr auto name = "murmurHash3_64"; };
-struct NameMurmurHash3_128 { static constexpr auto name = "murmurHash3_128"; };
-
 
 struct ImplCityHash64
 {
@@ -984,8 +973,8 @@ struct ImplMetroHash64
     }
 };
 
-using FunctionHalfMD5 = FunctionStringHash<HalfMD5Impl, NameHalfMD5>;
-using FunctionSipHash64 = FunctionStringHash<SipHash64Impl, NameSipHash64>;
+using FunctionHalfMD5 = FunctionStringHash64<HalfMD5Impl, NameHalfMD5>;
+using FunctionSipHash64 = FunctionStringHash64<SipHash64Impl, NameSipHash64>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
@@ -996,9 +985,5 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionNeighbourhoodHash64<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionNeighbourhoodHash64<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionNeighbourhoodHash64<ImplMetroHash64>;
-using FunctionMurmurHash2_32 = FunctionStringHash<MurmurHash2Impl32, NameMurmurHash2_32>;
-using FunctionMurmurHash2_64 = FunctionStringHash<MurmurHash2Impl64, NameMurmurHash2_64>;
-using FunctionMurmurHash3_32 = FunctionStringHash<MurmurHash3Impl32, NameMurmurHash3_32>;
-using FunctionMurmurHash3_64 = FunctionStringHash<MurmurHash3Impl64, NameMurmurHash3_64>;
-using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+using FunctionMurmurHash2 = FunctionStringHash32<MurmurHash2Impl>;
 }

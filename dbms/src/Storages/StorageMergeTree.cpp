@@ -110,12 +110,11 @@ BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum & processed_stage,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, 0);
+    return reader.read(column_names, query_info, context, processed_stage, max_block_size, num_streams, 0);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
@@ -123,26 +122,11 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Set
     return std::make_shared<MergeTreeBlockOutputStream>(*this);
 }
 
-void StorageMergeTree::checkTableCanBeDropped() const
+bool StorageMergeTree::checkTableCanBeDropped() const
 {
     const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
     context.checkTableCanBeDropped(database_name, table_name, getData().getTotalActiveSizeInBytes());
-}
-
-void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
-{
-    const_cast<MergeTreeData &>(getData()).recalculateColumnSizes();
-
-    const String partition_id = data.getPartitionIDFromQuery(partition, context);
-    auto parts_to_remove = data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
-
-    UInt64 partition_size = 0;
-
-    for (const auto & part : parts_to_remove)
-    {
-        partition_size += part->bytes_on_disk;
-    }
-    context.checkPartitionCanBeDropped(database_name, table_name, partition_size);
+    return true;
 }
 
 void StorageMergeTree::drop()
@@ -615,7 +599,6 @@ bool StorageMergeTree::backgroundTask()
         {
             data.clearOldPartsFromFilesystem();
             data.clearOldTemporaryDirectories();
-            clearOldMutations();
         }
 
         size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
@@ -646,47 +629,7 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
         return 0;
     --it;
     return it->first;
-}
-
-void StorageMergeTree::clearOldMutations()
-{
-    if (!data.settings.finished_mutations_to_keep)
-        return;
-
-    std::vector<MergeTreeMutationEntry> mutations_to_delete;
-    {
-        std::lock_guard lock(currently_merging_mutex);
-
-        if (current_mutations_by_version.size() <= data.settings.finished_mutations_to_keep)
-            return;
-
-        auto begin_it = current_mutations_by_version.begin();
-
-        std::optional<Int64> min_version = data.getMinPartDataVersion();
-        auto end_it = current_mutations_by_version.end();
-        if (min_version)
-            end_it = current_mutations_by_version.upper_bound(*min_version);
-
-        size_t done_count = std::distance(begin_it, end_it);
-        if (done_count <= data.settings.finished_mutations_to_keep)
-            return;
-
-        size_t to_delete_count = done_count - data.settings.finished_mutations_to_keep;
-
-        auto it = begin_it;
-        for (size_t i = 0; i < to_delete_count; ++i)
-        {
-            mutations_to_delete.push_back(std::move(it->second));
-            it = current_mutations_by_version.erase(it);
-        }
-    }
-
-    for (auto & mutation : mutations_to_delete)
-    {
-        LOG_TRACE(log, "Removing mutation: " << mutation.file_name);
-        mutation.removeFile();
-    }
-}
+};
 
 
 void StorageMergeTree::clearColumnInPartition(const ASTPtr & partition, const Field & column_name, const Context & context)

@@ -56,10 +56,6 @@ int mainEntryClickHouseClusterCopier(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
 #endif
-#if ENABLE_CLICKHOUSE_ODBC_BRIDGE || !defined(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-int mainEntryClickHouseODBCBridge(int argc, char ** argv);
-#endif
-
 
 #if USE_EMBEDDED_COMPILER
     int mainEntryClickHouseClang(int argc, char ** argv);
@@ -105,10 +101,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #if ENABLE_CLICKHOUSE_OBFUSCATOR
     {"obfuscator", mainEntryClickHouseObfuscator},
 #endif
-#if ENABLE_CLICKHOUSE_ODBC_BRIDGE || !defined(ENABLE_CLICKHOUSE_ODBC_BRIDGE)
-    {"odbc-bridge", mainEntryClickHouseODBCBridge},
-#endif
-
 #if USE_EMBEDDED_COMPILER
     {"clang", mainEntryClickHouseClang},
     {"clang++", mainEntryClickHouseClang},

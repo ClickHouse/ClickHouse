@@ -23,7 +23,6 @@
 #include <Interpreters/TablesStatus.h>
 
 #include <atomic>
-#include <optional>
 
 
 namespace DB
@@ -105,7 +104,7 @@ public:
     /// Change default database. Changes will take effect on next reconnect.
     void setDefaultDatabase(const String & database);
 
-    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision);
+    void getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision);
 
     const String & getServerTimezone();
     const String & getServerDisplayName();
@@ -139,10 +138,7 @@ public:
     bool poll(size_t timeout_microseconds = 0);
 
     /// Check, if has data in read buffer.
-    bool hasReadPendingData() const;
-
-    /// Checks if there is input data in connection and reads packet ID.
-    std::optional<UInt64> checkPacket(size_t timeout_microseconds = 0);
+    bool hasReadBufferPendingData() const;
 
     /// Receive packet from server.
     Packet receivePacket();
@@ -191,7 +187,6 @@ private:
     String server_name;
     UInt64 server_version_major = 0;
     UInt64 server_version_minor = 0;
-    UInt64 server_version_patch = 0;
     UInt64 server_revision = 0;
     String server_timezone;
     String server_display_name;
@@ -199,7 +194,6 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBuffer> in;
     std::shared_ptr<WriteBuffer> out;
-    std::optional<UInt64> last_input_packet_type;
 
     String query_id;
     Protocol::Compression compression;        /// Enable data compression for communication.
@@ -219,7 +213,6 @@ private:
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     BlockInputStreamPtr block_in;
-    BlockInputStreamPtr block_logs_in;
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
@@ -255,16 +248,11 @@ private:
     bool ping();
 
     Block receiveData();
-    Block receiveLogData();
-    Block receiveDataImpl(BlockInputStreamPtr & stream);
-
     std::unique_ptr<Exception> receiveException();
     Progress receiveProgress();
     BlockStreamProfileInfo receiveProfileInfo();
 
-    void initInputBuffers();
     void initBlockInput();
-    void initBlockLogsInput();
 
     void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };

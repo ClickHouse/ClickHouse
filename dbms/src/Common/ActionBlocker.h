@@ -1,15 +1,14 @@
 #pragma once
+
 #include <atomic>
 #include <memory>
 #include <Common/ActionLock.h>
 
-
 namespace DB
 {
 
-/// An atomic variable that is used to block and interrupt certain actions.
-/// If it is not zero then actions related with it should be considered as interrupted.
-/// Uses shared_ptr and the lock uses weak_ptr to be able to "hold" a lock when an object with blocker has already died.
+/// An atomic variable that is used to block and interrupt certain actions
+/// If it is not zero then actions related with it should be considered as interrupted
 class ActionBlocker
 {
 public:
@@ -33,6 +32,5 @@ private:
 
     CounterPtr counter;
 };
-
 
 }

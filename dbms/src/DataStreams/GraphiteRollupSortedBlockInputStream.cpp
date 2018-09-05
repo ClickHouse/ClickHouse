@@ -102,7 +102,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return Block();
 
-    merge(merged_columns, queue_without_collation);
+    merge(merged_columns, queue);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 

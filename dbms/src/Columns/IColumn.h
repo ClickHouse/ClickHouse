@@ -47,10 +47,6 @@ public:
       */
     virtual Ptr convertToFullColumnIfConst() const { return {}; }
 
-    /// If column isn't ColumnWithDictionary, return itself.
-    /// If column is ColumnWithDictionary, transforms is to full column.
-    virtual Ptr convertToFullColumnIfWithDictionary() const { return getPtr(); }
-
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
 
@@ -192,10 +188,6 @@ public:
     using Permutation = PaddedPODArray<size_t>;
     virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
-    /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
-    /// Indexes must be one of the ColumnUInt. For default implementation, see selectIndexImpl from ColumnsCommon.h
-    virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
-
     /** Compares (*this)[n] and rhs[m].
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
       * Is used in sortings.
@@ -332,8 +324,6 @@ public:
 
     /// Can be inside ColumnNullable.
     virtual bool canBeInsideNullable() const { return false; }
-
-    virtual bool withDictionary() const { return false; }
 
 
     virtual ~IColumn() {}

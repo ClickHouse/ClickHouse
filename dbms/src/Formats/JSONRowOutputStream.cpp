@@ -21,7 +21,7 @@ JSONRowOutputStream::JSONRowOutputStream(WriteBuffer & ostr_, const Block & samp
             need_validate_utf8 = true;
 
         WriteBufferFromOwnString out;
-        writeJSONString(fields[i].name, out, settings);
+        writeJSONString(fields[i].name, out);
 
         fields[i].name = out.str();
     }
@@ -50,7 +50,7 @@ void JSONRowOutputStream::writePrefix()
         writeString(fields[i].name, *ostr);
         writeCString(",\n", *ostr);
         writeCString("\t\t\t\"type\": ", *ostr);
-        writeJSONString(fields[i].type->getName(), *ostr, settings);
+        writeJSONString(fields[i].type->getName(), *ostr);
         writeChar('\n', *ostr);
 
         writeCString("\t\t}", *ostr);
@@ -149,7 +149,7 @@ void JSONRowOutputStream::writeTotals()
                 writeCString(",\n", *ostr);
 
             writeCString("\t\t", *ostr);
-            writeJSONString(column.name, *ostr, settings);
+            writeJSONString(column.name, *ostr);
             writeCString(": ", *ostr);
             column.type->serializeTextJSON(*column.column.get(), 0, *ostr, settings);
         }
@@ -176,7 +176,7 @@ static void writeExtremesElement(const char * title, const Block & extremes, siz
             writeCString(",\n", ostr);
 
         writeCString("\t\t\t", ostr);
-        writeJSONString(column.name, ostr, settings);
+        writeJSONString(column.name, ostr);
         writeCString(": ", ostr);
         column.type->serializeTextJSON(*column.column.get(), row_num, ostr, settings);
     }

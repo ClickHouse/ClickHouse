@@ -37,83 +37,53 @@ bool DataTypeNullable::onlyNull() const
 }
 
 
-void DataTypeNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeNullable::enumerateStreams(StreamCallback callback, SubstreamPath path) const
 {
     path.push_back(Substream::NullMap);
     callback(path);
     path.back() = Substream::NullableElements;
     nested_data_type->enumerateStreams(callback, path);
-    path.pop_back();
-}
-
-
-void DataTypeNullable::serializeBinaryBulkStatePrefix(
-        SerializeBinaryBulkSettings & settings,
-        SerializeBinaryBulkStatePtr & state) const
-{
-    settings.path.push_back(Substream::NullableElements);
-    nested_data_type->serializeBinaryBulkStatePrefix(settings, state);
-    settings.path.pop_back();
-}
-
-
-void DataTypeNullable::serializeBinaryBulkStateSuffix(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
-{
-    settings.path.push_back(Substream::NullableElements);
-    nested_data_type->serializeBinaryBulkStateSuffix(settings, state);
-    settings.path.pop_back();
-}
-
-
-void DataTypeNullable::deserializeBinaryBulkStatePrefix(
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
-{
-    settings.path.push_back(Substream::NullableElements);
-    nested_data_type->deserializeBinaryBulkStatePrefix(settings, state);
-    settings.path.pop_back();
 }
 
 
 void DataTypeNullable::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
+    OutputStreamGetter getter,
     size_t offset,
     size_t limit,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    bool position_independent_encoding,
+    SubstreamPath path) const
 {
     const ColumnNullable & col = static_cast<const ColumnNullable &>(column);
     col.checkConsistency();
 
     /// First serialize null map.
-    settings.path.push_back(Substream::NullMap);
-    if (auto stream = settings.getter(settings.path))
+    path.push_back(Substream::NullMap);
+    if (auto stream = getter(path))
         DataTypeUInt8().serializeBinaryBulk(col.getNullMapColumn(), *stream, offset, limit);
 
     /// Then serialize contents of arrays.
-    settings.path.back() = Substream::NullableElements;
-    nested_data_type->serializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), offset, limit, settings, state);
-    settings.path.pop_back();
+    path.back() = Substream::NullableElements;
+    nested_data_type->serializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), getter, offset, limit, position_independent_encoding, path);
 }
 
 
 void DataTypeNullable::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
+    InputStreamGetter getter,
     size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    double avg_value_size_hint,
+    bool position_independent_encoding,
+    SubstreamPath path) const
 {
     ColumnNullable & col = static_cast<ColumnNullable &>(column);
 
-    settings.path.push_back(Substream::NullMap);
-    if (auto stream = settings.getter(settings.path))
+    path.push_back(Substream::NullMap);
+    if (auto stream = getter(path))
         DataTypeUInt8().deserializeBinaryBulk(col.getNullMapColumn(), *stream, limit, 0);
 
-    settings.path.back() = Substream::NullableElements;
-    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), limit, settings, state);
-    settings.path.pop_back();
+    path.back() = Substream::NullableElements;
+    nested_data_type->deserializeBinaryBulkWithMultipleStreams(col.getNestedColumn(), getter, limit, avg_value_size_hint, position_independent_encoding, path);
 }
 
 

@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/MergeList.h>
 #include <Common/CurrentMetrics.h>
 #include <Poco/Ext/ThreadNumber.h>
-#include <Common/CurrentThread.h>
-
 
 namespace CurrentMetrics
 {
@@ -22,12 +20,11 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
         source_part_names.emplace_back(source_part->name);
 
     /// Each merge is executed into separate background processing pool thread
-    background_thread_memory_tracker = &CurrentThread::getMemoryTracker();
-    if (background_thread_memory_tracker)
+    background_pool_task_memory_tracker = current_memory_tracker;
+    if (background_pool_task_memory_tracker)
     {
         memory_tracker.setMetric(CurrentMetrics::MemoryTrackingForMerges);
-        background_thread_memory_tracker_prev_parent = background_thread_memory_tracker->getParent();
-        background_thread_memory_tracker->setParent(&memory_tracker);
+        background_pool_task_memory_tracker->setNext(&memory_tracker);
     }
 }
 
@@ -59,8 +56,8 @@ MergeInfo MergeListElement::getInfo() const
 MergeListElement::~MergeListElement()
 {
     /// Unplug memory_tracker from current background processing pool thread
-    if (background_thread_memory_tracker)
-        background_thread_memory_tracker->setParent(background_thread_memory_tracker_prev_parent);
+    if (background_pool_task_memory_tracker)
+        background_pool_task_memory_tracker->setNext(nullptr);
 }
 
 }

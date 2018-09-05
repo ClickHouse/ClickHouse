@@ -16,11 +16,12 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
     size_t preferred_max_column_in_block_size_bytes,
     MergeTreeData & storage,
     const bool use_uncompressed_cache,
-    const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsPtr & prewhere_actions,
+    const String & prewhere_column,
     const Settings & settings,
     const Names & virt_column_names)
     :
-    MergeTreeBaseBlockInputStream{storage, prewhere_info, max_block_size_rows,
+    MergeTreeBaseBlockInputStream{storage, prewhere_actions, prewhere_column, max_block_size_rows,
         preferred_block_size_bytes, preferred_max_column_in_block_size_bytes, settings.min_bytes_to_use_direct_io,
         settings.max_read_buffer_size, use_uncompressed_cache, true, virt_column_names},
     thread{thread},
@@ -34,8 +35,6 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
     }
     else
         min_marks_to_read = min_marks_to_read_;
-
-    ordered_names = getHeader().getNames();
 }
 
 
@@ -43,15 +42,14 @@ Block MergeTreeThreadBlockInputStream::getHeader() const
 {
     auto res = pool->getHeader();
     injectVirtualColumns(res);
-    executePrewhereActions(res, prewhere_info);
     return res;
-}
+};
 
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadBlockInputStream::getNewTask()
 {
-    task = pool->getTask(min_marks_to_read, thread, ordered_names);
+    task = pool->getTask(min_marks_to_read, thread);
 
     if (!task)
     {
@@ -80,7 +78,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
             path, task->data_part, task->columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
             storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size, MergeTreeReader::ValueSizeMap{}, profile_callback);
 
-        if (prewhere_info)
+        if (prewhere_actions)
             pre_reader = std::make_unique<MergeTreeReader>(
                 path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
                 storage, task->mark_ranges, min_bytes_to_use_direct_io,
@@ -94,7 +92,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
             storage, task->mark_ranges, min_bytes_to_use_direct_io, max_read_buffer_size,
             reader->getAvgValueSizeHints(), profile_callback);
 
-        if (prewhere_info)
+        if (prewhere_actions)
             pre_reader = std::make_unique<MergeTreeReader>(
                 path, task->data_part, task->pre_columns, owned_uncompressed_cache.get(), owned_mark_cache.get(), save_marks_in_cache,
                 storage, task->mark_ranges, min_bytes_to_use_direct_io,

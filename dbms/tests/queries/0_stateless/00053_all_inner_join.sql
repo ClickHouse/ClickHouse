@@ -1,4 +1,4 @@
-SELECT * FROM
+SELECT *, joined FROM
 (
     SELECT number AS k FROM system.numbers LIMIT 10
 )

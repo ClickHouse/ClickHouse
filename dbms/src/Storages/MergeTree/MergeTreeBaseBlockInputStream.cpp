@@ -6,7 +6,6 @@
 #include <Columns/ColumnArray.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
-#include <DataTypes/DataTypeNothing.h>
 
 
 namespace DB
@@ -21,7 +20,8 @@ namespace ErrorCodes
 
 MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
     MergeTreeData & storage,
-    const PrewhereInfoPtr & prewhere_info,
+    const ExpressionActionsPtr & prewhere_actions,
+    const String & prewhere_column_name,
     UInt64 max_block_size_rows,
     UInt64 preferred_block_size_bytes,
     UInt64 preferred_max_column_in_block_size_bytes,
@@ -32,7 +32,8 @@ MergeTreeBaseBlockInputStream::MergeTreeBaseBlockInputStream(
     const Names & virt_column_names)
 :
     storage(storage),
-    prewhere_info(prewhere_info),
+    prewhere_actions(prewhere_actions),
+    prewhere_column_name(prewhere_column_name),
     max_block_size_rows(max_block_size_rows),
     preferred_block_size_bytes(preferred_block_size_bytes),
     preferred_max_column_in_block_size_bytes(preferred_max_column_in_block_size_bytes),
@@ -116,20 +117,20 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
 
     if (!task->range_reader.isInitialized())
     {
-        if (prewhere_info)
+        if (prewhere_actions)
         {
             if (reader->getColumns().empty())
             {
                 task->range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
+                        pre_reader.get(), index_granularity, nullptr, prewhere_actions,
+                        &prewhere_column_name, &task->ordered_names,
                         task->should_reorder, task->remove_prewhere_column, true);
             }
             else
             {
                 task->pre_range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
+                        pre_reader.get(), index_granularity, nullptr, prewhere_actions,
+                        &prewhere_column_name, &task->ordered_names,
                         task->should_reorder, task->remove_prewhere_column, false);
 
                 task->range_reader = MergeTreeRangeReader(
@@ -140,7 +141,7 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
         else
         {
             task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, nullptr, nullptr,
+                    reader.get(), index_granularity, nullptr, prewhere_actions,
                     nullptr, &task->ordered_names, task->should_reorder, false, true);
         }
     }
@@ -166,10 +167,10 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             task->size_predictor->update(read_result.block);
     }
 
-    if (read_result.block && prewhere_info && !task->remove_prewhere_column)
+    if (read_result.block && prewhere_actions && !task->remove_prewhere_column)
     {
         /// Convert const column to full here because it's cheaper to filter const column than full.
-        auto & column = read_result.block.getByName(prewhere_info->prewhere_column_name);
+        auto & column = read_result.block.getByName(prewhere_column_name);
         column.column = column.column->convertToFullColumnIfConst();
     }
 
@@ -210,20 +211,6 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
                 block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
         }
-    }
-}
-
-
-void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info)
-{
-    if (prewhere_info)
-    {
-        prewhere_info->prewhere_actions->execute(block);
-        if (prewhere_info->remove_prewhere_column)
-            block.erase(prewhere_info->prewhere_column_name);
-
-        if (!block)
-            block.insert({nullptr, std::make_shared<DataTypeNothing>(), "_nothing"});
     }
 }
 

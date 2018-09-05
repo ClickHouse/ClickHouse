@@ -283,7 +283,7 @@ void DataTypeTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr, cons
     });
 }
 
-void DataTypeTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeTuple::enumerateStreams(StreamCallback callback, SubstreamPath path) const
 {
     path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
@@ -291,139 +291,40 @@ void DataTypeTuple::enumerateStreams(const StreamCallback & callback, SubstreamP
         path.back().tuple_element_name = names[i];
         elems[i]->enumerateStreams(callback, path);
     }
-    path.pop_back();
-}
-
-struct SerializeBinaryBulkStateTuple : public IDataType::SerializeBinaryBulkState
-{
-    std::vector<IDataType::SerializeBinaryBulkStatePtr> states;
-};
-
-struct DeserializeBinaryBulkStateTuple : public IDataType::DeserializeBinaryBulkState
-{
-    std::vector<IDataType::DeserializeBinaryBulkStatePtr> states;
-};
-
-static SerializeBinaryBulkStateTuple * checkAndGetTupleSerializeState(IDataType::SerializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeTuple.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * tuple_state = typeid_cast<SerializeBinaryBulkStateTuple *>(state.get());
-    if (!tuple_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for DataTypeTuple. Expected: "
-                        + demangle(typeid(SerializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return tuple_state;
-}
-
-static DeserializeBinaryBulkStateTuple * checkAndGetTupleDeserializeState(IDataType::DeserializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        throw Exception("Got empty state for DataTypeTuple.", ErrorCodes::LOGICAL_ERROR);
-
-    auto * tuple_state = typeid_cast<DeserializeBinaryBulkStateTuple *>(state.get());
-    if (!tuple_state)
-    {
-        auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for DataTypeTuple. Expected: "
-                        + demangle(typeid(DeserializeBinaryBulkStateTuple).name()) + ", got "
-                        + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
-    }
-
-    return tuple_state;
-}
-
-void DataTypeTuple::serializeBinaryBulkStatePrefix(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
-{
-    auto tuple_state = std::make_shared<SerializeBinaryBulkStateTuple>();
-    tuple_state->states.resize(elems.size());
-
-    settings.path.push_back(Substream::TupleElement);
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        settings.path.back().tuple_element_name = names[i];
-        elems[i]->serializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
-    }
-    settings.path.pop_back();
-
-    state = std::move(tuple_state);
-}
-
-void DataTypeTuple::serializeBinaryBulkStateSuffix(
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
-{
-    auto * tuple_state = checkAndGetTupleSerializeState(state);
-
-    settings.path.push_back(Substream::TupleElement);
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        settings.path.back().tuple_element_name = names[i];
-        elems[i]->serializeBinaryBulkStateSuffix(settings, tuple_state->states[i]);
-    }
-    settings.path.pop_back();
-}
-
-void DataTypeTuple::deserializeBinaryBulkStatePrefix(
-        DeserializeBinaryBulkSettings & settings,
-        DeserializeBinaryBulkStatePtr & state) const
-{
-    auto tuple_state = std::make_shared<DeserializeBinaryBulkStateTuple>();
-    tuple_state->states.resize(elems.size());
-
-    settings.path.push_back(Substream::TupleElement);
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        settings.path.back().tuple_element_name = names[i];
-        elems[i]->deserializeBinaryBulkStatePrefix(settings, tuple_state->states[i]);
-    }
-    settings.path.pop_back();
-
-    state = std::move(tuple_state);
 }
 
 void DataTypeTuple::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
+    OutputStreamGetter getter,
     size_t offset,
     size_t limit,
-    SerializeBinaryBulkSettings & settings,
-    SerializeBinaryBulkStatePtr & state) const
+    bool position_independent_encoding,
+    SubstreamPath path) const
 {
-    auto * tuple_state = checkAndGetTupleSerializeState(state);
-
-    settings.path.push_back(Substream::TupleElement);
+    path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
-        settings.path.back().tuple_element_name = names[i];
-        auto & element_col = extractElementColumn(column, i);
-        elems[i]->serializeBinaryBulkWithMultipleStreams(element_col, offset, limit, settings, tuple_state->states[i]);
+        path.back().tuple_element_name = names[i];
+        elems[i]->serializeBinaryBulkWithMultipleStreams(
+            extractElementColumn(column, i), getter, offset, limit, position_independent_encoding, path);
     }
-    settings.path.pop_back();
 }
 
 void DataTypeTuple::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
+    InputStreamGetter getter,
     size_t limit,
-    DeserializeBinaryBulkSettings & settings,
-    DeserializeBinaryBulkStatePtr & state) const
+    double avg_value_size_hint,
+    bool position_independent_encoding,
+    SubstreamPath path) const
 {
-    auto * tuple_state = checkAndGetTupleDeserializeState(state);
-
-    settings.path.push_back(Substream::TupleElement);
+    path.push_back(Substream::TupleElement);
     for (const auto i : ext::range(0, ext::size(elems)))
     {
-        settings.path.back().tuple_element_name = names[i];
-        auto & element_col = extractElementColumn(column, i);
-        elems[i]->deserializeBinaryBulkWithMultipleStreams(element_col, limit, settings, tuple_state->states[i]);
+        path.back().tuple_element_name = names[i];
+        elems[i]->deserializeBinaryBulkWithMultipleStreams(
+            extractElementColumn(column, i), getter, limit, avg_value_size_hint, position_independent_encoding, path);
     }
-    settings.path.pop_back();
 }
 
 MutableColumnPtr DataTypeTuple::createColumn() const

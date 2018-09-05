@@ -20,7 +20,7 @@ public:
         progress_callback = callback;
     }
 
-    void setProcessListElement(QueryStatus * elem)
+    void setProcessListElement(ProcessListElement * elem)
     {
         process_elem = elem;
     }
@@ -43,7 +43,7 @@ protected:
     BlockOutputStreamPtr stream;
     Progress progress;
     ProgressCallback progress_callback;
-    QueryStatus * process_elem = nullptr;
+    ProcessListElement * process_elem = nullptr;
 };
 
 }

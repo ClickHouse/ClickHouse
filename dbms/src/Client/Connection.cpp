@@ -89,7 +89,7 @@ void Connection::connect()
         LOG_TRACE(log_wrapper.get(), "Connected to " << server_name
             << " server version " << server_version_major
             << "." << server_version_minor
-            << "." << server_version_patch
+            << "." << server_revision
             << ".");
     }
     catch (Poco::Net::NetException & e)
@@ -114,7 +114,6 @@ void Connection::disconnect()
     //LOG_TRACE(log_wrapper.get(), "Disconnecting");
 
     in = nullptr;
-    last_input_packet_type.reset();
     out = nullptr; // can write to socket
     if (socket)
         socket->close();
@@ -151,7 +150,6 @@ void Connection::sendHello()
     writeStringBinary((DBMS_NAME " ") + client_name, *out);
     writeVarUInt(DBMS_VERSION_MAJOR, *out);
     writeVarUInt(DBMS_VERSION_MINOR, *out);
-    // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     writeVarUInt(ClickHouseRevision::get(), *out);
     writeStringBinary(default_database, *out);
     writeStringBinary(user, *out);
@@ -176,13 +174,13 @@ void Connection::receiveHello()
         readVarUInt(server_version_minor, *in);
         readVarUInt(server_revision, *in);
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_TIMEZONE)
+        {
             readStringBinary(server_timezone, *in);
+        }
         if (server_revision >= DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME)
+        {
             readStringBinary(server_display_name, *in);
-        if (server_revision >= DBMS_MIN_REVISION_WITH_VERSION_PATCH)
-            readVarUInt(server_version_patch, *in);
-        else
-            server_version_patch = server_revision;
+        }
     }
     else if (packet_type == Protocol::Server::Exception)
         receiveException()->rethrow();
@@ -219,7 +217,7 @@ UInt16 Connection::getPort() const
     return port;
 }
 
-void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & version_patch, UInt64 & revision)
+void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 & version_minor, UInt64 & revision)
 {
     if (!connected)
         connect();
@@ -227,7 +225,6 @@ void Connection::getServerVersion(String & name, UInt64 & version_major, UInt64 
     name = server_name;
     version_major = server_version_major;
     version_minor = server_version_minor;
-    version_patch = server_version_patch;
     revision = server_revision;
 }
 
@@ -380,7 +377,6 @@ void Connection::sendQuery(
     maybe_compressed_in.reset();
     maybe_compressed_out.reset();
     block_in.reset();
-    block_logs_in.reset();
     block_out.reset();
 
     /// Send empty block which means end of data.
@@ -508,50 +504,20 @@ bool Connection::poll(size_t timeout_microseconds)
 }
 
 
-bool Connection::hasReadPendingData() const
+bool Connection::hasReadBufferPendingData() const
 {
-    return last_input_packet_type.has_value() || static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
-}
-
-
-std::optional<UInt64> Connection::checkPacket(size_t timeout_microseconds)
-{
-    if (last_input_packet_type.has_value())
-        return last_input_packet_type;
-
-    if (hasReadPendingData() || poll(timeout_microseconds))
-    {
-        // LOG_TRACE(log_wrapper.get(), "Receiving packet type");
-        UInt64 packet_type;
-        readVarUInt(packet_type, *in);
-
-        last_input_packet_type.emplace(packet_type);
-        return last_input_packet_type;
-    }
-
-    return {};
+    return static_cast<const ReadBufferFromPocoSocket &>(*in).hasPendingData();
 }
 
 
 Connection::Packet Connection::receivePacket()
 {
+    //LOG_TRACE(log_wrapper.get(), "Receiving packet");
+
     try
     {
         Packet res;
-
-        /// Have we already read packet type?
-        if (last_input_packet_type)
-        {
-            res.type = *last_input_packet_type;
-            last_input_packet_type.reset();
-        }
-        else
-        {
-            //LOG_TRACE(log_wrapper.get(), "Receiving packet type");
-            readVarUInt(res.type, *in);
-        }
-
-        //LOG_TRACE(log_wrapper.get(), "Receiving packet " << res.type << " " << Protocol::Server::toString(res.type));
+        readVarUInt(res.type, *in);
 
         switch (res.type)
         {
@@ -581,10 +547,6 @@ Connection::Packet Connection::receivePacket()
                 res.block = receiveData();
                 return res;
 
-            case Protocol::Server::Log:
-                res.block = receiveLogData();
-                return res;
-
             case Protocol::Server::EndOfStream:
                 return res;
 
@@ -612,26 +574,14 @@ Block Connection::receiveData()
     //LOG_TRACE(log_wrapper.get(), "Receiving data");
 
     initBlockInput();
-    return receiveDataImpl(block_in);
-}
 
-
-Block Connection::receiveLogData()
-{
-    initBlockLogsInput();
-    return receiveDataImpl(block_logs_in);
-}
-
-
-Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
-{
     String external_table_name;
     readStringBinary(external_table_name, *in);
 
     size_t prev_bytes = in->count();
 
     /// Read one block from network.
-    Block res = stream->read();
+    Block res = block_in->read();
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
@@ -640,35 +590,16 @@ Block Connection::receiveDataImpl(BlockInputStreamPtr & stream)
 }
 
 
-void Connection::initInputBuffers()
-{
-
-}
-
-
 void Connection::initBlockInput()
 {
     if (!block_in)
     {
-        if (!maybe_compressed_in)
-        {
-            if (compression == Protocol::Compression::Enable)
-                maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
-            else
-                maybe_compressed_in = in;
-        }
+        if (compression == Protocol::Compression::Enable)
+            maybe_compressed_in = std::make_shared<CompressedReadBuffer>(*in);
+        else
+            maybe_compressed_in = in;
 
         block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, server_revision);
-    }
-}
-
-
-void Connection::initBlockLogsInput()
-{
-    if (!block_logs_in)
-    {
-        /// Have to return superset of SystemLogsQueue::getSampleBlock() columns
-        block_logs_in = std::make_shared<NativeBlockInputStream>(*in, server_revision);
     }
 }
 

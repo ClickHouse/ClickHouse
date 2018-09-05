@@ -3,7 +3,6 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -19,7 +18,8 @@ class MergeTreeBaseBlockInputStream : public IProfilingBlockInputStream
 public:
     MergeTreeBaseBlockInputStream(
         MergeTreeData & storage,
-        const PrewhereInfoPtr & prewhere_info,
+        const ExpressionActionsPtr & prewhere_actions,
+        const String & prewhere_column,
         UInt64 max_block_size_rows,
         UInt64 preferred_block_size_bytes,
         UInt64 preferred_max_column_in_block_size_bytes,
@@ -31,10 +31,8 @@ public:
 
     ~MergeTreeBaseBlockInputStream() override;
 
-    static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
-
 protected:
-    Block readImpl() final;
+    Block readImpl() override final;
 
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
@@ -49,7 +47,8 @@ protected:
 protected:
     MergeTreeData & storage;
 
-    PrewhereInfoPtr prewhere_info;
+    ExpressionActionsPtr prewhere_actions;
+    String prewhere_column_name;
 
     UInt64 max_block_size_rows;
     UInt64 preferred_block_size_bytes;

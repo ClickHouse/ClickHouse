@@ -1,5 +1,4 @@
-nav:
-
+pages:
 - 'Introduction':
   - 'Overview': 'index.md'
   - 'Distinctive features of ClickHouse': 'introduction/distinctive_features.md'
@@ -171,7 +170,5 @@ nav:
   - 'How to write  C++ code': 'development/style.md'
   - 'How to run ClickHouse tests': 'development/tests.md'
 
-- 'What''s new':
-  - 'Roadmap': 'roadmap.md'
-  - 'Changelog': 'changelog.md'
-  - 'Security changelog': 'security_changelog.md'
+- 'Roadmap': 'roadmap.md'
+- 'Changelog': 'changelog.md'

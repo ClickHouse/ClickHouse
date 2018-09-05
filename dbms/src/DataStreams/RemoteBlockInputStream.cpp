@@ -1,10 +1,8 @@
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Common/NetException.h>
-#include <Common/CurrentThread.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
-#include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/IStorage.h>
 
 
@@ -60,21 +58,21 @@ RemoteBlockInputStream::RemoteBlockInputStream(
 
     create_multiplexed_connections = [this, pool, throttler]()
     {
-        const Settings & current_settings = context.getSettingsRef();
+        const Settings & settings = context.getSettingsRef();
 
         std::vector<IConnectionPool::Entry> connections;
         if (main_table)
         {
-            auto try_results = pool->getManyChecked(&current_settings, pool_mode, *main_table);
+            auto try_results = pool->getManyChecked(&settings, pool_mode, *main_table);
             connections.reserve(try_results.size());
             for (auto & try_result : try_results)
                 connections.emplace_back(std::move(try_result.entry));
         }
         else
-            connections = pool->getMany(&current_settings, pool_mode);
+            connections = pool->getMany(&settings, pool_mode);
 
         return std::make_unique<MultiplexedConnections>(
-                std::move(connections), current_settings, throttler, append_extra_info);
+                std::move(connections), settings, throttler, append_extra_info);
     };
 }
 
@@ -139,7 +137,7 @@ void RemoteBlockInputStream::sendExternalTables()
             for (const auto & table : external_tables)
             {
                 StoragePtr cur = table.second;
-                QueryProcessingStage::Enum read_from_table_stage = cur->getQueryProcessingStage(context);
+                QueryProcessingStage::Enum read_from_table_stage = QueryProcessingStage::Complete;
                 BlockInputStreams input = cur->read(cur->getColumns().getNamesOfPhysical(), {}, context,
                     read_from_table_stage, DEFAULT_BLOCK_SIZE, 1);
                 if (input.size() == 0)
@@ -232,12 +230,6 @@ Block RemoteBlockInputStream::readImpl()
 
             case Protocol::Server::Extremes:
                 extremes = packet.block;
-                break;
-
-            case Protocol::Server::Log:
-                /// Pass logs from remote server to client
-                if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
-                    log_queue->pushBlock(std::move(packet.block));
                 break;
 
             default:

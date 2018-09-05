@@ -12,7 +12,6 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
-#include <Common/CurrentThread.h>
 
 
 /** Allows to process multiple block input streams (sources) in parallel, using specified number of threads.
@@ -106,9 +105,8 @@ public:
     {
         active_threads = max_threads;
         threads.reserve(max_threads);
-        auto thread_group = CurrentThread::getGroup();
         for (size_t i = 0; i < max_threads; ++i)
-            threads.emplace_back([=] () { thread(thread_group, i); } );
+            threads.emplace_back(std::bind(&ParallelInputsProcessor::thread, this, current_memory_tracker, i));
     }
 
     /// Ask all sources to stop earlier than they run out.
@@ -176,16 +174,16 @@ private:
         }
     }
 
-    void thread(ThreadGroupStatusPtr thread_group, size_t thread_num)
+    void thread(MemoryTracker * memory_tracker, size_t thread_num)
     {
+        current_memory_tracker = memory_tracker;
         std::exception_ptr exception;
+
+        setThreadName("ParalInputsProc");
         CurrentMetrics::Increment metric_increment{CurrentMetrics::QueryThread};
 
         try
         {
-            setThreadName("ParalInputsProc");
-            CurrentThread::attachTo(thread_group);
-
             while (!finish)
             {
                 InputData unprepared_input;

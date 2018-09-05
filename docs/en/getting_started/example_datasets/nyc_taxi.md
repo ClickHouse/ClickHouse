@@ -1,6 +1,6 @@
-# New York Taxi Data
+# New York Taxi data
 
-## How to Import The Raw Data
+## How to import the raw data
 
 See <https://github.com/toddwschneider/nyc-taxi-data> and <http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html> for the description of the dataset and instructions for downloading.
 
@@ -26,7 +26,7 @@ You can check the number of downloaded rows as follows:
 
 ```text
 time psql nyc-taxi-data -c "SELECT count(*) FROM trips;"
-## Count
+##    count
  1298979494
 (1 row)
 
@@ -272,7 +272,7 @@ WHERE (table = 'trips_mergetree') AND active
 
 Among other things, you can run the OPTIMIZE query on MergeTree. But it's not required, since everything will be fine without it.
 
-## Results on Single Server
+## Results on single server
 
 Q1:
 

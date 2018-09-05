@@ -6,10 +6,12 @@ Note: We use Address Sanitizer to run functional tests for every commit automati
 mkdir build && cd build
 ```
 
-Note: using clang instead of gcc is strongly recommended.
+Note:
+ENABLE_TCMALLOC=0 is optional.
+CC=clang CXX=clang++ is strongly recommended.
 
 ```
-CC=clang CXX=clang++ cmake -D SANITIZE=address ..
+CC=clang CXX=clang++ cmake -D CMAKE_BUILD_TYPE=ASan -D ENABLE_TCMALLOC=0 ..
 ninja
 ```
 
@@ -35,7 +37,7 @@ mkdir build && cd build
 ## Note: All parameters are mandatory.
 
 ```
-CC=clang CXX=clang++ cmake -D SANITIZE=thread ..
+CC=clang CXX=clang++ cmake -D CMAKE_BUILD_TYPE=TSan -D ENABLE_TCMALLOC=0 ..
 ninja
 ```
 
@@ -73,5 +75,5 @@ mkdir build && cd build
 ```
 
 ```
-CC=clang CXX=clang++ cmake -D SANITIZE=memory -D LIBCXX_PATH=/home/milovidov/libcxx_msan ..
+CC=clang CXX=clang++ cmake -D CMAKE_BUILD_TYPE=MSan -D LIBCXX_PATH=/home/milovidov/libcxx_msan ..
 ```
