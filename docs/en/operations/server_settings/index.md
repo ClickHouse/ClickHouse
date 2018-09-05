@@ -4,7 +4,7 @@
 
 This section contains descriptions of server settings that cannot be changed at the session or query level.
 
-These settings are stored in the ` config.xml` file on the ClickHouse server.
+These settings are stored in the `config.xml` file on the ClickHouse server.
 
 Other settings are described in the "[Settings](../settings/index.md#settings)" section.
 

@@ -48,7 +48,7 @@ private:
         Mean mean;
         Weight weight;
 
-        WeightedValue operator+ (const WeightedValue& other)
+        WeightedValue operator+ (const WeightedValue & other)
         {
             return {mean + other.weight * (other.mean - mean) / (other.weight + weight), other.weight + weight};
         }
@@ -263,7 +263,7 @@ public:
             compress(max_bins);
     }
 
-    void merge(const AggregateFunctionHistogramData& other, UInt32 max_bins)
+    void merge(const AggregateFunctionHistogramData & other, UInt32 max_bins)
     {
         lower_bound = std::min(lower_bound, other.lower_bound);
         upper_bound = std::max(lower_bound, other.upper_bound);
@@ -354,7 +354,7 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto& data = this->data(const_cast<AggregateDataPtr>(place));
+        auto & data = this->data(const_cast<AggregateDataPtr>(place));
 
         auto & to_array = static_cast<ColumnArray &>(to);
         ColumnArray::Offsets & offsets_to = to_array.getOffsets();

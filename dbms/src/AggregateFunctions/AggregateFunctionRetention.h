@@ -126,19 +126,23 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        auto & data_to = static_cast<ColumnArray &>(to).getData();
+        auto & data_to = static_cast<ColumnUInt8 &>(static_cast<ColumnArray &>(to).getData()).getData();
         auto & offsets_to = static_cast<ColumnArray &>(to).getOffsets();
 
+        ColumnArray::Offset current_offset = data_to.size();
+        data_to.resize(current_offset + events_size);
+
         const bool first_flag = this->data(place).events.test(0);
-        data_to.insert(first_flag ? Field(static_cast<UInt64>(1)) : Field(static_cast<UInt64>(0)));
-        for (const auto i : ext::range(1, events_size))
+        data_to[current_offset] = first_flag;
+        ++current_offset;
+
+        for (size_t i = 1; i < events_size; ++i)
         {
-            if (first_flag && this->data(place).events.test(i))
-                data_to.insert(Field(static_cast<UInt64>(1)));
-            else
-                data_to.insert(Field(static_cast<UInt64>(0)));
+            data_to[current_offset] = (first_flag && this->data(place).events.test(i));
+            ++current_offset;
         }
-        offsets_to.push_back(offsets_to.size() == 0 ? events_size : offsets_to.back() +  events_size);
+
+        offsets_to.push_back(current_offset);
     }
 
     const char * getHeaderFilePath() const override

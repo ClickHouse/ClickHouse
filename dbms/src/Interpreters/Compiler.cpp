@@ -236,7 +236,7 @@ void Compiler::compile(
             /// It is hard to correctly call a ld program manually, because it is easy to skip critical flags, which might lead to
             /// unhandled exceptions. Therefore pass path to llvm's lld directly to clang.
             " -fuse-ld=" << compiler_executable_root << INTERNAL_LINKER_EXECUTABLE
-
+            " -fdiagnostics-color=never"
 
     #if INTERNAL_COMPILER_CUSTOM_ROOT
             /// To get correct order merge this results carefully:
@@ -280,7 +280,18 @@ void Compiler::compile(
     }
 
     if (!compile_result.empty())
-        throw Exception("Cannot compile code:\n\n" + command.str() + "\n\n" + compile_result);
+    {
+        std::string error_message = "Cannot compile code:\n\n" + command.str() + "\n\n" + compile_result;
+
+        Poco::File so_tmp_file(so_tmp_file_path);
+        if (so_tmp_file.exists() && so_tmp_file.canExecute())
+        {
+            /// Compiler may emit information messages. This is suspicious, but we still can use compiled result.
+            LOG_WARNING(log, error_message);
+        }
+        else
+            throw Exception(error_message, ErrorCodes::CANNOT_COMPILE_CODE);
+    }
 
     /// If there was an error before, the file with the code remains for viewing.
     Poco::File(cpp_file_path).remove();

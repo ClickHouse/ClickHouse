@@ -111,7 +111,7 @@ public:
         const auto & value = this->data(place).value;
         size_t size = value.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&value[0]), size * sizeof(value[0]));
+        buf.write(reinterpret_cast<const char *>(value.data()), size * sizeof(value[0]));
     }
 
     void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const override
@@ -125,7 +125,7 @@ public:
         auto & value = this->data(place).value;
 
         value.resize(size, arena);
-        buf.read(reinterpret_cast<char *>(&value[0]), size * sizeof(value[0]));
+        buf.read(reinterpret_cast<char *>(value.data()), size * sizeof(value[0]));
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

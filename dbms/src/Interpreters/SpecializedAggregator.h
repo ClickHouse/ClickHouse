@@ -49,7 +49,7 @@ void AggregateFunctionsUpdater::operator()()
 {
     static_cast<AggregateFunction *>(aggregate_functions[column_num])->add(
         value + offsets_of_aggregate_states[column_num],
-        &aggregate_columns[column_num][0],
+        aggregate_columns[column_num].data(),
         row_num, arena);
 }
 
@@ -103,7 +103,6 @@ void NO_INLINE Aggregator::executeSpecialized(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
-    const Sizes & key_sizes,
     StringRefs & keys,
     bool no_more_keys,
     AggregateDataPtr overflow_row) const
@@ -113,10 +112,10 @@ void NO_INLINE Aggregator::executeSpecialized(
 
     if (!no_more_keys)
         executeSpecializedCase<false, Method, AggregateFunctionsList>(
-            method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+            method, state, aggregates_pool, rows, key_columns, aggregate_columns, keys, overflow_row);
     else
         executeSpecializedCase<true, Method, AggregateFunctionsList>(
-            method, state, aggregates_pool, rows, key_columns, aggregate_columns, key_sizes, keys, overflow_row);
+            method, state, aggregates_pool, rows, key_columns, aggregate_columns, keys, overflow_row);
 }
 
 #pragma GCC diagnostic push
@@ -130,7 +129,6 @@ void NO_INLINE Aggregator::executeSpecializedCase(
     size_t rows,
     ColumnRawPtrs & key_columns,
     AggregateColumns & aggregate_columns,
-    const Sizes & key_sizes,
     StringRefs & keys,
     AggregateDataPtr overflow_row) const
 {
@@ -191,7 +189,7 @@ void NO_INLINE Aggregator::executeSpecializedCase(
 
             method.onNewKey(*it, params.keys_size, keys, *aggregates_pool);
 
-            AggregateDataPtr place = aggregates_pool->alloc(total_size_of_aggregate_states);
+            AggregateDataPtr place = aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
 
             AggregateFunctionsList::forEach(AggregateFunctionsCreator(
                 aggregate_functions, offsets_of_aggregate_states, place));

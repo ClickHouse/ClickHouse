@@ -56,7 +56,7 @@ private:
     {
         std::set<FileWithTimestamp> files;
 
-        void addIfExists(const std::string & path);
+        void addIfExists(const std::string & path_to_add);
         bool isDifferOrNewerThan(const FilesChangesTracker & rhs);
     };
 

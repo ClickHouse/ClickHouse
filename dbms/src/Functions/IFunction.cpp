@@ -234,8 +234,8 @@ void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, co
     executeImpl(block, args, result, input_rows_count);
 }
 
-static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(Block & block, const ColumnNumbers & args, 
-                                                                             bool can_be_executed_on_default_arguments)
+static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
+    Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments)
 {
     size_t num_rows = 0;
     ColumnPtr indexes;

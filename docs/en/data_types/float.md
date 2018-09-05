@@ -16,6 +16,7 @@ We recommend that you store data in integer form whenever possible. For example,
 ```sql
 SELECT 1 - 0.9
 ```
+
 ```
 ┌───────minus(1, 0.9)─┐
 │ 0.09999999999999998 │
@@ -66,5 +67,5 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-See the rules for ` NaN` sorting in the section [ORDER BY clause](../query_language/select.md#query_language-queries-order_by).
+  See the rules for `NaN` sorting in the section [ORDER BY clause](../query_language/select.md#query_language-queries-order_by).
 

@@ -87,61 +87,47 @@ struct ExtractBool
 
 struct ExtractRaw
 {
+    static constexpr size_t bytes_on_stack = 64;
+    using ExpectChars = PODArray<char, bytes_on_stack, AllocatorWithStackMemory<Allocator<false>, bytes_on_stack>>;
+
     static void extract(const UInt8 * pos, const UInt8 * end, ColumnString::Chars_t & res_data)
     {
-        if (pos == end)
-            return;
+        ExpectChars expects_end;
+        UInt8 current_expect_end = 0;
 
-        UInt8 open_char = *pos;
-        UInt8 close_char = 0;
-        switch (open_char)
+        for (auto extract_begin = pos; pos != end; ++pos)
         {
-            case '[':
-                close_char = ']';
-                break;
-            case '{':
-                close_char = '}';
-                break;
-            case '"':
-                close_char = '"';
-                break;
-        }
-
-        if (close_char != 0)
-        {
-            size_t balance = 1;
-            char last_char = 0;
-
-            res_data.push_back(*pos);
-
-            ++pos;
-            for (; pos != end && balance > 0; ++pos)
+            if (*pos == current_expect_end)
             {
-                res_data.push_back(*pos);
-
-                if (open_char == '"' && *pos == '"')
-                {
-                    if (last_char != '\\')
-                        break;
-                }
-                else
-                {
-                    if (*pos == open_char)
-                        ++balance;
-                    if (*pos == close_char)
-                        --balance;
-                }
-
-                if (last_char == '\\')
-                    last_char = 0;
-                else
-                    last_char = *pos;
+                expects_end.pop_back();
+                current_expect_end = (UInt8) (expects_end.empty() ? 0 : expects_end.back());
             }
-        }
-        else
-        {
-            for (; pos != end && *pos != ',' && *pos != '}'; ++pos)
-                res_data.push_back(*pos);
+            else
+            {
+                switch(*pos)
+                {
+                    case '[':
+                        expects_end.push_back((current_expect_end = ']'));
+                        break;
+                    case '{':
+                        expects_end.push_back((current_expect_end = '}'));
+                        break;
+                    case '"' :
+                        expects_end.push_back((current_expect_end = '"'));
+                        break;
+                    case '\\':
+                        /// skip backslash
+                        if (pos + 1 < end && pos[1] == '"')
+                            pos++;
+                        break;
+                    default:
+                        if (!current_expect_end && (*pos == ',' || *pos == '}'))
+                        {
+                            res_data.insert(extract_begin, pos);
+                            return;
+                        }
+                }
+            }
         }
     }
 };
@@ -179,7 +165,7 @@ struct ExtractParamImpl
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -208,7 +194,8 @@ struct ExtractParamImpl
             ++i;
         }
 
-        memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+        if (res.size() > i)
+            memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
     }
 
     static void constant_constant(const std::string & data, std::string needle, ResultType & res)
@@ -252,7 +239,7 @@ struct ExtractParamToStringImpl
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
 
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 

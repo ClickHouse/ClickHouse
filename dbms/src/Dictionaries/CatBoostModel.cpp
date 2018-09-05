@@ -234,7 +234,7 @@ private:
             data += size;
         }
 
-        return std::move(data_column);
+        return data_column;
     }
 
     /// Place columns into buffer, returns data which was used for fixed string columns.
@@ -345,7 +345,7 @@ private:
 
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
             }
-            return std::move(result);
+            return result;
         }
 
         /// Prepare cat features.
@@ -386,7 +386,7 @@ private:
             }
         }
 
-        return std::move(result);
+        return result;
     }
 };
 

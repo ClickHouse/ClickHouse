@@ -61,7 +61,7 @@ namespace ZeroTraits \
  \
     template <> \
     inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } \
-}; \
+} \
  \
 template <> \
 struct DefaultHash<STRUCT> \

@@ -117,5 +117,23 @@ SELECT
 └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 ```
 
-Conversion to FixedString (N) only works for arguments of type String or FixedString (N).
+Conversion to FixedString(N) only works for arguments of type String or FixedString(N).
+
+Type conversion to [Nullable](../../data_types/nullable.md#data_type-nullable) and back is supported. Example:
+
+```
+SELECT toTypeName(x) FROM t_null
+
+┌─toTypeName(x)─┐
+│ Int8          │
+│ Int8          │
+└───────────────┘
+
+SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
+
+┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
+│ Nullable(UInt16)                        │
+│ Nullable(UInt16)                        │
+└─────────────────────────────────────────┘
+```
 

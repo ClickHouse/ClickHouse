@@ -1,7 +1,5 @@
 # JDBC Driver
 
-There is an official JDBC driver for ClickHouse. See [here](https://github.com/yandex/clickhouse-jdbc) .
+- [Official driver](https://github.com/yandex/clickhouse-jdbc).
+- Third-party driver from [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC).
 
-JDBC drivers implemented by other organizations:
-
-- [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)

@@ -18,14 +18,14 @@ class RangeHashedDictionary final : public IDictionaryBase
 {
 public:
     RangeHashedDictionary(
-        const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
+        const std::string & dictionary_name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
         const DictionaryLifetime dict_lifetime, bool require_nonempty);
 
     RangeHashedDictionary(const RangeHashedDictionary & other);
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
 
-    std::string getName() const override { return name; }
+    std::string getName() const override { return dictionary_name; }
 
     std::string getTypeName() const override { return "RangeHashed"; }
 
@@ -180,7 +180,7 @@ private:
     void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
                         PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
 
-    const std::string name;
+    const std::string dictionary_name;
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;

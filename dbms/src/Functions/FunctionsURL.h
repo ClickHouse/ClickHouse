@@ -3,8 +3,9 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/StringView.h>
 #include <Common/typeid_cast.h>
+#include <common/find_first_symbols.h>
+#include <common/StringRef.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsString.h>
 #include <Functions/FunctionsStringArray.h>
@@ -59,52 +60,53 @@ using Pos = const char *;
 
 
 /// Extracts scheme from given url.
-inline StringView getURLScheme(const StringView & url)
+inline StringRef getURLScheme(const char * data, size_t size)
 {
     // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-    const char * p = url.data();
-    const char * end = url.data() + url.size();
+    const char * pos = data;
+    const char * end = data + size;
 
-    if (isAlphaASCII(*p))
+    if (isAlphaASCII(*pos))
     {
-        for (++p; p < end; ++p)
+        for (++pos; pos < end; ++pos)
         {
-            if (!(isAlphaNumericASCII(*p) || *p == '+' || *p == '-' || *p == '.'))
+            if (!(isAlphaNumericASCII(*pos) || *pos == '+' || *pos == '-' || *pos == '.'))
             {
                 break;
             }
         }
 
-        return StringView(url.data(), p - url.data());
+        return StringRef(data, pos - data);
     }
 
-    return StringView();
+    return {};
 }
 
 
 /// Extracts host from given url.
-inline StringView getURLHost(const StringView & url)
+inline StringRef getURLHost(const char * data, size_t size)
 {
-    Pos pos = url.data();
-    Pos end = url.data() + url.size();
+    Pos pos = data;
+    Pos end = data + size;
 
     if (nullptr == (pos = strchr(pos, '/')))
-        return StringView();
+        return {};
 
-    if (pos != url.data())
+    if (pos != data)
     {
-        StringView scheme = getURLScheme(url);
-        Pos scheme_end = url.data() + scheme.size();
+        StringRef scheme = getURLScheme(data, size);
+        Pos scheme_end = data + scheme.size;
 
         // Colon must follows after scheme.
         if (pos - scheme_end != 1 || *scheme_end != ':')
-            return StringView();
+            return {};
     }
 
     if (end - pos < 2 || *(pos) != '/' || *(pos + 1) != '/')
-        return StringView();
+        return {};
+    pos += 2;
 
-    const char *start_of_host = (pos += 2);
+    const char * start_of_host = pos;
     for (; pos < end; ++pos)
     {
         if (*pos == '@')
@@ -113,7 +115,7 @@ inline StringView getURLHost(const StringView & url)
             break;
     }
 
-    return (pos == start_of_host) ? StringView() : StringView(start_of_host, pos - start_of_host);
+    return (pos == start_of_host) ? StringRef{} : StringRef(start_of_host, pos - start_of_host);
 }
 
 
@@ -131,20 +133,20 @@ struct ExtractDomain
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        StringView host = getURLHost(StringView(data, size));
+        StringRef host = getURLHost(data, size);
 
-        if (host.empty())
+        if (host.size == 0)
         {
             res_data = data;
             res_size = 0;
         }
         else
         {
-            if (without_www && host.size() > 4 && !strncmp(host.data(), "www.", 4))
-                host = host.substr(4);
+            if (without_www && host.size > 4 && !strncmp(host.data, "www.", 4))
+                host = { host.data + 4, host.size - 4 };
 
-            res_data = host.data();
-            res_size = host.size();
+            res_data = host.data;
+            res_size = host.size;
         }
     }
 };
@@ -178,14 +180,14 @@ struct ExtractFirstSignificantSubdomain
         auto begin = tmp;
         auto end = begin + domain_length;
         const char * last_3_periods[3]{};
-        auto pos = static_cast<const char *>(memchr(begin, '.', domain_length));
 
-        while (pos)
+        auto pos = find_first_symbols<'.'>(begin, end);
+        while (pos < end)
         {
             last_3_periods[2] = last_3_periods[1];
             last_3_periods[1] = last_3_periods[0];
             last_3_periods[0] = pos;
-            pos = static_cast<const char *>(memchr(pos + 1, '.', end - pos - 1));
+            pos = find_first_symbols<'.'>(pos + 1, end);
         }
 
         if (!last_3_periods[0])
@@ -243,17 +245,17 @@ struct ExtractTopLevelDomain
 
     static void execute(Pos data, size_t size, Pos & res_data, size_t & res_size)
     {
-        StringView host = getURLHost(StringView(data, size));
+        StringRef host = getURLHost(data, size);
 
         res_data = data;
         res_size = 0;
 
-        if (!host.empty())
+        if (host.size != 0)
         {
-            if (host.back() == '.')
-                host = StringView(host.data(), host.size() - 1);
+            if (host.data[host.size - 1] == '.')
+                host.size -= 1;
 
-            Pos last_dot = reinterpret_cast<Pos>(memrchr(host.data(), '.', host.size()));
+            Pos last_dot = reinterpret_cast<Pos>(memrchr(host.data, '.', host.size));
 
             if (!last_dot)
                 return;
@@ -262,7 +264,7 @@ struct ExtractTopLevelDomain
                 return;
 
             res_data = last_dot + 1;
-            res_size = (host.data() + host.size()) - res_data;
+            res_size = (host.data + host.size) - res_data;
         }
     }
 };
@@ -987,7 +989,7 @@ struct CutSubstringImpl
         {
             const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
             Extractor::execute(current, offsets[i] - prev_offset - 1, start, length);
-            size_t start_index = start - reinterpret_cast<const char *>(&data[0]);
+            size_t start_index = start - reinterpret_cast<const char *>(data.data());
 
             res_data.resize(res_data.size() + offsets[i] - prev_offset - length);
             memcpySmallAllowReadWriteOverflow15(

@@ -33,19 +33,19 @@ try
 
     std::string initial_path = options.at("path").as<std::string>();
 
-    std::list<std::pair<std::string, std::future<zkutil::ListResponse>>> list_futures;
+    std::list<std::pair<std::string, std::future<Coordination::ListResponse>>> list_futures;
     list_futures.emplace_back(initial_path, zookeeper.asyncGetChildren(initial_path));
 
     for (auto it = list_futures.begin(); it != list_futures.end(); ++it)
     {
-        zkutil::ListResponse response;
+        Coordination::ListResponse response;
         try
         {
             response = it->second.get();
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+            if (e.code == Coordination::ZNONODE)
                 continue;
             throw;
         }

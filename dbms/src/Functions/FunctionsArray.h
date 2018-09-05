@@ -15,7 +15,6 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Functions/IFunction.h>
-#include <Functions/ObjectPool.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -909,7 +908,7 @@ private:
                 const auto & value = (*item_arg)[row];
 
                 data[row] = 0;
-                for (size_t i = 0, size = arr.size(); i < size; ++i)
+                for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
                 {
                     bool hit = false;
 
@@ -1252,18 +1251,18 @@ private:
         const ColumnNullable * nullable_col);
 
     void executeHashed(
-        const ColumnArray::Offsets & offsets,
-        const ColumnRawPtrs & columns,
+        const IColumn & src_data,
+        const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
 };
 
 
-class FunctionArrayEnumerateUniq : public IFunction
+template <typename Derived>
+class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static constexpr auto name = "arrayEnumerateUniq";
     static FunctionPtr create(const Context & context);
 
     String getName() const override;
@@ -1298,6 +1297,21 @@ private:
         ColumnUInt32::Container & res_values);
 };
 
+class FunctionArrayEnumerateUniq : public FunctionArrayEnumerateExtended<FunctionArrayEnumerateUniq>
+{
+    using Base = FunctionArrayEnumerateExtended<FunctionArrayEnumerateUniq>;
+public:
+    static constexpr auto name = "arrayEnumerateUniq";
+    using Base::create;
+};
+
+class FunctionArrayEnumerateDense : public FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>
+{
+    using Base = FunctionArrayEnumerateExtended<FunctionArrayEnumerateDense>;
+public:
+    static constexpr auto name = "arrayEnumerateDense";
+    using Base::create;
+};
 
 template <typename Type> struct TypeToColumnType { using ColumnType = ColumnVector<Type>; };
 template <> struct TypeToColumnType<String> { using ColumnType = ColumnString; };
@@ -1452,7 +1466,7 @@ class FunctionArrayConcat : public IFunction
 public:
     static constexpr auto name = "arrayConcat";
     static FunctionPtr create(const Context & context);
-    FunctionArrayConcat(const Context & context) : context(context) {};
+    FunctionArrayConcat(const Context & context) : context(context) {}
 
     String getName() const override;
 
@@ -1579,7 +1593,7 @@ class FunctionArrayIntersect : public IFunction
 public:
     static constexpr auto name = "arrayIntersect";
     static FunctionPtr create(const Context & context);
-    FunctionArrayIntersect(const Context & context) : context(context) {};
+    FunctionArrayIntersect(const Context & context) : context(context) {}
 
     String getName() const override;
 
@@ -1681,7 +1695,7 @@ class FunctionArrayResize : public IFunction
 public:
     static constexpr auto name = "arrayResize";
     static FunctionPtr create(const Context & context);
-    FunctionArrayResize(const Context & context) : context(context) {};
+    FunctionArrayResize(const Context & context) : context(context) {}
 
     String getName() const override;
 

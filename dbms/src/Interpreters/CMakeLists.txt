@@ -9,8 +9,9 @@ set (INTERNAL_COMPILER_BIN_ROOT "${CMAKE_INSTALL_FULL_BINDIR}/" CACHE STRING "")
 set (INTERNAL_COMPILER_EXECUTABLE "clickhouse-clang" CACHE STRING "")
 set (INTERNAL_LINKER_EXECUTABLE "clickhouse-lld" CACHE STRING "")
 
-# Disabling asan reporting for these tools
-if (CMAKE_BUILD_TYPE_UC STREQUAL "ASAN")
+# Disabling leak reporting for these tools
+if (SANITIZE STREQUAL "address")
+    # Note that this doesn't work for setuid and setcap binaries
     set(INTERNAL_COMPILER_ENV "env ASAN_OPTIONS=detect_leaks=0" CACHE STRING "")
 else ()
     set(INTERNAL_COMPILER_ENV "" CACHE STRING "")

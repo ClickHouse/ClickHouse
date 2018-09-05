@@ -110,7 +110,7 @@ public:
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
-            auto begin = reinterpret_cast<char *>(&vec_res[0]);
+            auto begin = reinterpret_cast<char *>(vec_res.data());
             auto pos = begin;
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
@@ -219,7 +219,7 @@ public:
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
-            auto begin = reinterpret_cast<char *>(&vec_res[0]);
+            auto begin = reinterpret_cast<char *>(vec_res.data());
             auto pos = begin;
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
@@ -519,7 +519,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt32>(&*arguments[0]))
+        if (!checkDataType<DataTypeUInt32>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -543,7 +543,7 @@ public:
 
             vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
-            char * begin = reinterpret_cast<char *>(&vec_res[0]);
+            char * begin = reinterpret_cast<char *>(vec_res.data());
             char * pos = begin;
 
             for (size_t i = 0; i < vec_in.size(); ++i)
@@ -714,7 +714,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt64>(&*arguments[0]))
+        if (!checkDataType<DataTypeUInt64>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1120,7 +1120,7 @@ public:
 
         size_t size = input_rows_count;
         vec_to.resize(size);
-        Rand64Impl::execute(reinterpret_cast<UInt64 *>(&vec_to[0]), vec_to.size() * 2);
+        Rand64Impl::execute(reinterpret_cast<UInt64 *>(vec_to.data()), vec_to.size() * 2);
 
         for (UInt128 & uuid: vec_to)
         {
@@ -1154,10 +1154,10 @@ public:
         if (!arguments[0]->isString()
             && !arguments[0]->isFixedString()
             && !arguments[0]->isDateOrDateTime()
-            && !checkDataType<DataTypeUInt8>(&*arguments[0])
-            && !checkDataType<DataTypeUInt16>(&*arguments[0])
-            && !checkDataType<DataTypeUInt32>(&*arguments[0])
-            && !checkDataType<DataTypeUInt64>(&*arguments[0]))
+            && !checkDataType<DataTypeUInt8>(arguments[0].get())
+            && !checkDataType<DataTypeUInt16>(arguments[0].get())
+            && !checkDataType<DataTypeUInt32>(arguments[0].get())
+            && !checkDataType<DataTypeUInt64>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1259,7 +1259,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * 2 - size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
@@ -1303,7 +1303,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * 2 + size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
 
             size_t n = col_fstr_in->getN();
@@ -1415,7 +1415,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() / 2 + size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
@@ -1569,7 +1569,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size());
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
 
             ColumnString::Offset current_in_offset = 0;
@@ -1616,9 +1616,9 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() + size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
-            const char * pos_in = reinterpret_cast<const char *>(&in_vec[0]);
+            const char * pos_in = reinterpret_cast<const char *>(in_vec.data());
 
             size_t n = col_fstr_in->getN();
 

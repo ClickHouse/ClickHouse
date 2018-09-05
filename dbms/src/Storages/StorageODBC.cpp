@@ -89,14 +89,15 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
 
 void registerStorageODBC(StorageFactory & factory)
 {
-    factory.registerStorage("ODBC", [](const StorageFactory::Arguments & args) {
+    factory.registerStorage("ODBC", [](const StorageFactory::Arguments & args)
+    {
         ASTs & engine_args = args.engine_args;
 
         if (engine_args.size() != 3)
             throw Exception(
-                "Storage ODBC requires exactly 3 parameters: ODBC('DSN', database, table).", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                "Storage ODBC requires exactly 3 parameters: ODBC('DSN', database or schema, table)", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < 2; ++i)
+        for (size_t i = 0; i < 3; ++i)
             engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
         return StorageODBC::create(args.table_name,

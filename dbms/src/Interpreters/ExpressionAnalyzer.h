@@ -4,6 +4,7 @@
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/evaluateQualified.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Parsers/StringRange.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -76,7 +77,7 @@ struct ScopeStack
     using Levels = std::vector<Level>;
 
     Levels stack;
-    Settings settings;
+    const Settings & settings;
 
     ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
 
@@ -91,19 +92,6 @@ struct ScopeStack
     const Block & getSampleBlock() const;
 };
 
-struct DatabaseAndTableWithAlias
-{
-    String database;
-    String table;
-    String alias;
-
-    /// "alias." or "database.table." if alias is empty
-    String getQualifiedNamePrefix() const;
-
-    /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
-    void makeQualifiedName(const ASTPtr & ast) const;
-};
-
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
   *
   * NOTE: if `ast` is a SELECT query from a table, the structure of this table should not change during the lifetime of ExpressionAnalyzer.
@@ -115,7 +103,7 @@ private:
 
 public:
     ExpressionAnalyzer(
-        const ASTPtr & ast_,
+        const ASTPtr & query_,
         const Context & context_,
         const StoragePtr & storage_,
         const NamesAndTypesList & source_columns_ = {},
@@ -194,7 +182,7 @@ public:
     bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
 private:
-    ASTPtr ast;
+    ASTPtr query;
     ASTSelectQuery * select_query;
     const Context & context;
     Settings settings;
@@ -273,11 +261,11 @@ private:
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions;
 
-        void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
+        void createJoinedBlockActions(const ASTSelectQuery * select_query_with_join, const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
 
-        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query);
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query_with_join);
     };
 
     AnalyzedJoin analyzed_join;
@@ -337,9 +325,12 @@ private:
 
     void optimizeLimitBy();
 
+    /// Remove duplicated columns from USING(...).
+    void optimizeUsing();
+
     /// remove Function_if AST if condition is constant
     void optimizeIfWithConstantCondition();
-    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
+    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
     void makeSet(const ASTFunction * node, const Block & sample_block);

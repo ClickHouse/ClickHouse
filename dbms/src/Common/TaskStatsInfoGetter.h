@@ -4,12 +4,7 @@
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
 
-#if defined(__linux__)
 struct taskstats;
-#else
-struct taskstats {};
-#endif
-
 
 namespace DB
 {
