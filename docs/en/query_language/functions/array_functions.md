@@ -62,6 +62,7 @@ arrayConcat(arrays)
 ```sql
 SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 ```
+
 ```
 ┌─res───────────┐
 │ [1,2,3,4,5,6] │
@@ -81,13 +82,49 @@ If the index falls outside of the bounds of an array, it returns some default va
 Checks whether the 'arr' array has the 'elem' element.
 Returns 0 if the the element is not in the array, or 1 if it is.
 
+`NULL` is processed as a value.
+
+```
+SELECT has([1, 2, NULL], NULL)
+
+┌─has([1, 2, NULL], NULL)─┐
+│                       1 │
+└─────────────────────────┘
+```
+
 ## indexOf(arr, x)
 
-Returns the index of the 'x' element (starting from 1) if it is in the array, or 0 if it is not.
+Returns the index of the first 'x' element (starting from 1) if it is in the array, or 0 if it is not.
+
+Example:
+
+```
+:) select indexOf([1,3,NULL,NULL],NULL)
+
+SELECT indexOf([1, 3, NULL, NULL], NULL)
+
+┌─indexOf([1, 3, NULL, NULL], NULL)─┐
+│                                 3 │
+└───────────────────────────────────┘
+```
+
+Elements set to `NULL` are handled as normal values.
 
 ## countEqual(arr, x)
 
-Returns the number of elements in the array equal to x. Equivalent to arrayCount (elem-&gt;  elem = x, arr).
+Returns the number of elements in the array equal to x. Equivalent to arrayCount (elem -> elem = x, arr).
+
+`NULL` elements are handled as separate values.
+
+Example:
+
+```
+SELECT countEqual([1, 2, NULL, NULL], NULL)
+
+┌─countEqual([1, 2, NULL, NULL], NULL)─┐
+│                                    2 │
+└──────────────────────────────────────┘
+```
 
 ## arrayEnumerate(arr)
 
@@ -202,6 +239,7 @@ arrayPopBack(array)
 ```sql
 SELECT arrayPopBack([1, 2, 3]) AS res
 ```
+
 ```
 ┌─res───┐
 │ [1,2] │
@@ -225,6 +263,7 @@ arrayPopFront(array)
 ```sql
 SELECT arrayPopFront([1, 2, 3]) AS res
 ```
+
 ```
 ┌─res───┐
 │ [2,3] │
@@ -242,7 +281,7 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about ClickHouse data types, read the section "[Data types](../../data_types/index.md#data_types)".
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -267,17 +306,56 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about ClickHouse data types, read the section "[Data types](../../data_types/index.md#data_types)".
+- `single_value` – A single value.  Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array.  For more information about the types of data in ClickHouse, see "[Data types](../../data_types/index.md#data_types)".  Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
 ```sql
 SELECT arrayPushBack(['b'], 'a') AS res
 ```
+
 ```
 ┌─res───────┐
 │ ['a','b'] │
 └───────────┘
+```
+
+## arrayResize
+
+Changes the length of the array.
+
+```
+arrayResize(array, size[, extender])
+```
+
+**Parameters:**
+
+- `array` — Array.
+- `size` — Required length of the array.
+    - If `size` is less than the original size of the array, the array is truncated from the right.
+- If `size` is larger than the initial size of the array, the array is extended to the right with `extender` values or default values for the data type of the array items.
+- `extender` — Value for extending an array. Can be `NULL`.
+
+**Returned value:**
+
+An array of length `size`.
+
+**Examples of calls**
+
+```
+SELECT arrayResize([1], 3)
+
+┌─arrayResize([1], 3)─┐
+│ [1,0,0]             │
+└─────────────────────┘
+```
+
+```
+SELECT arrayResize([1], 3, NULL)
+
+┌─arrayResize([1], 3, NULL)─┐
+│ [1,NULL,NULL]             │
+└───────────────────────────┘
 ```
 
 ## arraySlice
@@ -297,13 +375,16 @@ arraySlice(array, offset[, length])
 **Example**
 
 ```sql
-SELECT arraySlice([1, 2, 3, 4, 5], 2, 3) AS res
+SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 ```
+
 ```
-┌─res─────┐
-│ [2,3,4] │
-└─────────┘
+┌─res────────┐
+│ [2,NULL,4] │
+└────────────┘
 ```
+
+Array elements set to `NULL` are handled as normal values.
 
 ## arrayUniq(arr, ...)
 
@@ -315,4 +396,3 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 ## arrayJoin(arr)
 
 A special function. See the section ["ArrayJoin function"](array_join.md#functions_arrayjoin).
-

@@ -9,9 +9,21 @@ Returns a string with the name of the host that this function was performed on. 
 Calculates the approximate width when outputting values to the console in text format (tab-separated).
 This function is used by the system for implementing Pretty formats.
 
+`NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
+
+```
+SELECT visibleWidth(NULL)
+
+┌─visibleWidth(NULL)─┐
+│                  4 │
+└────────────────────┘
+```
+
 ## toTypeName(x)
 
 Returns a string containing the type name of the passed argument.
+
+If `NULL` is passed to the function as input, then it returns the `Nullable(Nothing)` type, which corresponds to an internal `NULL` representation in ClickHouse.
 
 ## blockSize()
 
@@ -25,7 +37,7 @@ In ClickHouse, full columns and constants are represented differently in memory.
 
 ## ignore(...)
 
-Accepts any arguments and always returns 0.
+Accepts any arguments, including `NULL`. Always returns 0.
 However, the argument is still evaluated. This can be used for benchmarks.
 
 ## sleep(seconds)
@@ -59,13 +71,13 @@ For elements in a nested data structure, the function checks for the existence o
 
 Allows building a unicode-art diagram.
 
-`bar (x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
+`bar(x, min, max, width)` draws a band with a width proportional to `(x - min)` and equal to `width` characters when `x = max`.
 
 Parameters:
 
-- `x` – Value to display.
-- `min, max` – Integer constants. The value must fit in Int64.
-- `width` – Constant, positive number, may be a fraction.
+- `x` — Size to display.
+- `min, max` — Integer constants. The value must fit in `Int64`.
+- `width` — Constant, positive integer, can be fractional.
 
 The band is drawn with accuracy to one eighth of a symbol.
 
@@ -283,3 +295,267 @@ The inverse function of MACNumToString. If the MAC address has an invalid format
 ## MACStringToOUI(s)
 
 Accepts a MAC address in the format AA:BB:CC:DD:EE:FF (colon-separated numbers in hexadecimal form). Returns the first three octets as a UInt64 number. If the MAC address has an invalid format, it returns 0.
+
+## getSizeOfEnumType
+
+Returns the number of fields in [Enum](../../data_types/enum.md#data_type-enum).
+
+```
+getSizeOfEnumType(value)
+```
+
+**Parameters:**
+
+- `value` — Value of type `Enum`.
+
+**Returned values**
+
+- The number of fields with `Enum` input values.
+- An exception is thrown if the type is not `Enum`.
+
+**Example**
+
+```
+SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
+
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+## toColumnTypeName
+
+Returns the name of the class that represents the data type of the column in RAM.
+
+```
+toColumnTypeName(value)
+```
+
+**Parameters:**
+
+- `value` — Any type of value.
+
+**Returned values**
+
+- A string with the name of the class that is used for representing the `value`  data type in RAM.
+
+**Example of the difference between` toTypeName ' and ' toColumnTypeName`**
+
+```
+:) select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
+
+SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
+
+┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ DateTime                                            │
+└─────────────────────────────────────────────────────┘
+
+1 rows in set. Elapsed: 0.008 sec.
+
+:) select toColumnTypeName(cast('2018-01-01 01:02:03' AS DateTime))
+
+SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
+
+┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ Const(UInt32)                                             │
+└───────────────────────────────────────────────────────────┘
+```
+
+The example shows that the `DateTime` data type is stored in memory as `Const(UInt32)`.
+
+## dumpColumnStructure
+
+Outputs a detailed description of data structures in RAM
+
+```
+dumpColumnStructure(value)
+```
+
+**Parameters:**
+
+- `value` — Any type of value.
+
+**Returned values**
+
+- A string describing the structure that is used for representing the `value`  data type in RAM.
+
+**Example**
+
+```
+SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
+
+┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+│ DateTime, Const(size = 1, UInt32(size = 1))                  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## defaultValueOfArgumentType
+
+Outputs the default value for the data type.
+
+Does not include default values for custom columns set by the user.
+
+```
+defaultValueOfArgumentType(expression)
+```
+
+**Parameters:**
+
+- `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
+
+**Returned values**
+
+- `0` for numbers.
+- Empty string for strings.
+- `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md#data_type-nullable).
+
+**Example**
+
+```
+:) SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
+
+SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
+
+┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
+│                                           0 │
+└─────────────────────────────────────────────┘
+
+1 rows in set. Elapsed: 0.002 sec.
+
+:) SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
+
+SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
+
+┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
+│                                                  ᴺᵁᴸᴸ │
+└───────────────────────────────────────────────────────┘
+
+1 rows in set. Elapsed: 0.002 sec.
+```
+
+## indexHint
+
+Outputs data in the range selected by the index without filtering by the expression specified as an argument.
+
+The expression passed to the function is not calculated, but ClickHouse applies the index to this expression in the same way as if the expression was in the query without `indexHint`.
+
+**Returned value**
+
+- 1. 
+
+**Example**
+
+Here is a table with the test data for [ontime](../../getting_started/example_datasets/ontime.md#example_datasets-ontime).
+
+```
+SELECT count() FROM ontime
+
+┌─count()─┐
+│ 4276457 │
+└─────────┘
+```
+
+The table has indexes for the fields `(FlightDate, (Year, FlightDate))`.
+
+Create a selection by date like this:
+
+```
+:) SELECT FlightDate AS k, count() FROM ontime GROUP BY k ORDER BY k
+
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+GROUP BY k
+ORDER BY k ASC
+
+┌──────────k─┬─count()─┐
+│ 2017-01-01 │   13970 │
+│ 2017-01-02 │   15882 │
+........................
+│ 2017-09-28 │   16411 │
+│ 2017-09-29 │   16384 │
+│ 2017-09-30 │   12520 │
+└────────────┴─────────┘
+
+273 rows in set. Elapsed: 0.072 sec. Processed 4.28 million rows, 8.55 MB (59.00 million rows/s., 118.01 MB/s.)
+```
+
+In this selection, the index is not used and ClickHouse processed the entire table (`Processed 4.28 million rows`). To apply the index, select a specific date and run the following query:
+
+```
+:) SELECT FlightDate AS k, count() FROM ontime WHERE k = '2017-09-15' GROUP BY k ORDER BY k
+
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE k = '2017-09-15'
+GROUP BY k
+ORDER BY k ASC
+
+┌──────────k─┬─count()─┐
+│ 2017-09-15 │   16428 │
+└────────────┴─────────┘
+
+1 rows in set. Elapsed: 0.014 sec. Processed 32.74 thousand rows, 65.49 KB (2.31 million rows/s., 4.63 MB/s.)
+```
+
+The last line of output shows that by using the index, ClickHouse processed a significantly smaller number of rows (`Processed 32.74 thousand rows`).
+
+Now pass the expression `k = '2017-09-15'` to the `indexHint` function:
+
+```
+:) SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2017-09-15') GROUP BY k ORDER BY k
+
+SELECT
+    FlightDate AS k,
+    count()
+FROM ontime
+WHERE indexHint(k = '2017-09-15')
+GROUP BY k
+ORDER BY k ASC
+
+┌──────────k─┬─count()─┐
+│ 2017-09-14 │    7071 │
+│ 2017-09-15 │   16428 │
+│ 2017-09-16 │    1077 │
+│ 2017-09-30 │    8167 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.004 sec. Processed 32.74 thousand rows, 65.49 KB (8.97 million rows/s., 17.94 MB/s.)
+```
+
+The response to the request shows that ClickHouse applied the index in the same way as the previous time (`Processed 32.74 thousand rows`). However, the resulting set of rows shows that the expression `k = '2017-09-15'` was not used when generating the result.
+
+Because the index is sparse in ClickHouse, "extra" data ends up in the response when reading a range (in this case, the adjacent dates). Use the `indexHint` function to see it.
+
+## replicate
+
+Creates an array with a single value.
+
+Used for internal implementation of [arrayJoin](array_join.md#functions_arrayjoin).
+
+```
+replicate(x, arr)
+```
+
+**Parameters:**
+
+- `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
+- `x` — The value that the resulting array will be filled with.
+
+**Output value**
+
+- An array filled with the value `x`.
+
+**Example**
+
+```
+SELECT replicate(1, ['a', 'b', 'c'])
+
+┌─replicate(1, ['a', 'b', 'c'])─┐
+│ [1,1,1]                       │
+└───────────────────────────────┘
+```
+
