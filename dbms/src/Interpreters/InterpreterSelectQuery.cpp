@@ -546,8 +546,6 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
 
-                
-
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
 
