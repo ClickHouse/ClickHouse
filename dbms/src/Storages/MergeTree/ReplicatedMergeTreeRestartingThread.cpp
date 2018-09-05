@@ -86,7 +86,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     storage.setZooKeeper(storage.context.getZooKeeper());
                 }
-                catch (const zkutil::KeeperException &)
+                catch (const zkutil::KeeperException & e)
                 {
                     /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                     tryLogCurrentException(log, __PRETTY_FUNCTION__);

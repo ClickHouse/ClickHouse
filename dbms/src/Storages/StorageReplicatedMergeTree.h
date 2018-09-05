@@ -23,7 +23,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -106,7 +106,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum processed_stage,
+        QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -138,9 +138,7 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
-    void checkTableCanBeDropped() const override;
-
-    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
+    bool checkTableCanBeDropped() const override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 

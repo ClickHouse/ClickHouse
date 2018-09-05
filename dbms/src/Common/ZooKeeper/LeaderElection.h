@@ -6,7 +6,7 @@
 #include <memory>
 #include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/BackgroundSchedulePool.h>
 
 
 namespace ProfileEvents

@@ -1,4 +1,4 @@
-SELECT * FROM
+SELECT *, joined FROM
 (
     SELECT reinterpretAsString(number + reinterpretAsUInt8('A')) AS k FROM system.numbers LIMIT 10
 )

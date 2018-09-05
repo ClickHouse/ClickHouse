@@ -60,14 +60,11 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const;
-
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum processed_stage,
+        QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -87,6 +84,9 @@ public:
     void shutdown() override;
 
     String getDataPath() const override { return path; }
+
+    /// From each replica, get a description of the corresponding local table.
+    BlockInputStreams describe(const Context & context, const Settings & settings);
 
     const ExpressionActionsPtr & getShardingKeyExpr() const { return sharding_key_expr; }
     const String & getShardingKeyColumnName() const { return sharding_key_column_name; }

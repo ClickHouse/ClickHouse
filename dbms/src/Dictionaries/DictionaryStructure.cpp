@@ -240,22 +240,22 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
     const bool hierarchy_allowed, const bool allow_null_values)
 {
-    Poco::Util::AbstractConfiguration::Keys config_elems;
-    config.keys(config_prefix, config_elems);
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
     auto has_hierarchy = false;
 
-    std::vector<DictionaryAttribute> res_attributes;
+    std::vector<DictionaryAttribute> attributes;
 
     const FormatSettings format_settings;
 
-    for (const auto & config_elem : config_elems)
+    for (const auto & key : keys)
     {
-        if (!startsWith(config_elem.data(), "attribute"))
+        if (!startsWith(key.data(), "attribute"))
             continue;
 
-        const auto prefix = config_prefix + '.' + config_elem + '.';
+        const auto prefix = config_prefix + '.' + key + '.';
         Poco::Util::AbstractConfiguration::Keys attribute_keys;
-        config.keys(config_prefix + '.' + config_elem, attribute_keys);
+        config.keys(config_prefix + '.' + key, attribute_keys);
 
         checkAttributeKeys(attribute_keys);
 
@@ -300,12 +300,12 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 
         has_hierarchy = has_hierarchy || hierarchical;
 
-        res_attributes.emplace_back(DictionaryAttribute{
+        attributes.emplace_back(DictionaryAttribute{
             name, underlying_type, type, expression, null_value, hierarchical, injective, is_object_id
         });
     }
 
-    return res_attributes;
+    return attributes;
 }
 
 }

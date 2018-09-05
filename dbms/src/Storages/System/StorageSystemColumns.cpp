@@ -42,11 +42,7 @@ void StorageSystemColumns::fillData(MutableColumns & res_columns, const Context 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
         for (const auto & database : databases)
-        {
-            if (context.hasDatabaseAccessRights(database.first))
-                database_column_mut->insert(database.first);
-        }
-
+            database_column_mut->insert(database.first);
         block_to_filter.insert(ColumnWithTypeAndName(std::move(database_column_mut), std::make_shared<DataTypeString>(), "database"));
 
         /// Filter block with `database` column.
@@ -98,10 +94,10 @@ void StorageSystemColumns::fillData(MutableColumns & res_columns, const Context 
 
     /// We compose the result.
     size_t rows = filtered_database_column->size();
-    for (size_t row_no = 0; row_no < rows; ++row_no)
+    for (size_t i = 0; i < rows; ++i)
     {
-        const std::string database_name = (*filtered_database_column)[row_no].get<std::string>();
-        const std::string table_name = (*filtered_table_column)[row_no].get<std::string>();
+        const std::string database_name = (*filtered_database_column)[i].get<std::string>();
+        const std::string table_name = (*filtered_table_column)[i].get<std::string>();
 
         NamesAndTypesList columns;
         ColumnDefaults column_defaults;
@@ -134,13 +130,13 @@ void StorageSystemColumns::fillData(MutableColumns & res_columns, const Context 
             /** Info about sizes of columns for tables of MergeTree family.
               * NOTE: It is possible to add getter for this info to IStorage interface.
               */
-            if (auto storage_concrete_plain = dynamic_cast<StorageMergeTree *>(storage.get()))
+            if (auto storage_concrete = dynamic_cast<StorageMergeTree *>(storage.get()))
             {
-                column_sizes = storage_concrete_plain->getData().getColumnSizes();
+                column_sizes = storage_concrete->getData().getColumnSizes();
             }
-            else if (auto storage_concrete_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+            else if (auto storage_concrete = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
             {
-                column_sizes = storage_concrete_replicated->getData().getColumnSizes();
+                column_sizes = storage_concrete->getData().getColumnSizes();
             }
         }
 

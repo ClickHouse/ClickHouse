@@ -9,7 +9,7 @@
 
 ## multiIf
 
-Позволяет более компактно записать оператор [CASE](../operators.md#operator_case) в запросе.
+Позволяет более компактно записать оператор [CASE](../operators/index.html#operator_case) в запросе.
 
 ```
 multiIf(cond_1, then_1, cond_2, then_2...else)

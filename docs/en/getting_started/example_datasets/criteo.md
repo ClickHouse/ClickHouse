@@ -1,4 +1,4 @@
-# Terabyte of Click Logs from Criteo
+# Terabyte of click logs from Criteo
 
 Download the data from <http://labs.criteo.com/downloads/download-terabyte-click-logs/>
 

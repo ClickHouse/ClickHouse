@@ -1,4 +1,4 @@
-# Usage Recommendations
+# Usage recommendations
 
 ## CPU
 
@@ -16,7 +16,7 @@ Don't disable hyper-threading. It helps for some queries, but not for others.
 Turbo Boost is highly recommended. It significantly improves performance with a typical load.
 You can use `turbostat` to view the CPU's actual clock rate under a load.
 
-## CPU Scaling Governor
+## CPU scaling governor
 
 Always use the `performance` scaling governor.  The `on-demand` scaling governor works much worse with constantly high demand.
 
@@ -24,7 +24,7 @@ Always use the `performance` scaling governor.  The `on-demand` scaling governor
 sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
 ```
 
-## CPU Limitations
+## CPU limitations
 
 Processors can overheat. Use `dmesg` to see if the CPU's clock rate was limited due to overheating.
 The restriction can also be set externally at the datacenter level. You can use `turbostat` to monitor it under a load.
@@ -35,11 +35,11 @@ For small amounts of data (up to \~200 GB compressed), it is best to use as much
 For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
 Even for data volumes of \~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
 
-## Swap File
+## Swap file
 
 Always disable the swap file. The only reason for not doing this is if you are using ClickHouse on your personal laptop.
 
-## Huge Pages
+## Huge pages
 
 Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
 
@@ -50,7 +50,7 @@ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
-## Storage Subsystem
+## Storage subsystem
 
 If your budget allows you to use SSD, use SSD.
 If not, use HDD. SATA HDDs 7200 RPM will do.
@@ -83,13 +83,13 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don't reduce the 'readahead' setting.
 For HDD, enable the write cache.
 
-## File System
+## File system
 
 Ext4 is the most reliable option. Set the mount options `noatime, nobarrier`.
 XFS is also suitable, but it hasn't been as thoroughly tested with ClickHouse.
 Most other file systems should also work fine. File systems with delayed allocation work better.
 
-## Linux Kernel
+## Linux kernel
 
 Don't use an outdated Linux kernel. In 2015, 3.18.19 was new enough.
 Consider using the kernel build from Yandex:<https://github.com/yandex/smart> – it provides at least a 5% performance increase.

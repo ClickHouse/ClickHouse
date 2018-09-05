@@ -73,7 +73,7 @@ try
         column_names.push_back("a");
         column_names.push_back("b");
 
-        QueryProcessingStage::Enum stage = table->getQueryProcessingStage(Context::createGlobal());
+        QueryProcessingStage::Enum stage;
 
         BlockInputStreamPtr in = table->read(column_names, {}, Context::createGlobal(), stage, 8192, 1)[0];
 

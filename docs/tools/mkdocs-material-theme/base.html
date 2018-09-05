@@ -26,16 +26,15 @@
         "clipboard.copy",
         "clipboard.copied",
         "search.language",
-        "search.pipeline.stopwords",
-        "search.pipeline.trimmer",
         "search.result.none",
         "search.result.one",
         "search.result.other",
         "search.tokenizer"
       ] %}
-      <meta name="lang:{{ key }}" content="{{ lang.t(key) }}">
+        <meta name="lang:{{ key }}" content="{{ lang.t(key) }}">
       {% endfor %}
       <link rel="shortcut icon" href="{{ base_url }}/{{ config.theme.favicon }}">
+      <meta name="generator" content="mkdocs-{{ mkdocs_version }}, mkdocs-material-2.2.1">
     {% endblock %}
     {% block htmltitle %}
       {% if page and page.meta and page.meta.title %}
@@ -182,9 +181,9 @@
     </div>
     {% block scripts %}
       {% block libs %}
-        <script src="{{ base_url }}/assets/javascripts/modernizr.js"></script>
+        <script src="{{ base_url }}/assets/javascripts/modernizr.1aa3b519.js"></script>
       {% endblock %}
-      <script src="{{ base_url }}/assets/javascripts/application.js"></script>
+      <script src="{{ base_url }}/assets/javascripts/application.5165553b.js"></script>
       {% if lang.t("search.language") != "en" %}
         {% set languages = lang.t("search.language").split(",") %}
         {% if languages | length and languages[0] != "" %}
@@ -198,7 +197,7 @@
               <script src="{{ path }}/lunr.{{ language }}.js"></script>
             {% endif %}
           {% endfor %}
-          {% if languages | length > 0 %}
+          {% if languages | length > 1 %}
             <script src="{{ path }}/lunr.multi.js"></script>
           {% endif %}
         {% endif %}

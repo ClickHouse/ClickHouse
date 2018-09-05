@@ -247,7 +247,6 @@ Connection::Packet MultiplexedConnections::receivePacketUnlocked()
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
-        case Protocol::Server::Log:
             break;
 
         case Protocol::Server::EndOfStream:
@@ -277,7 +276,7 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     for (const ReplicaState & state : replica_states)
     {
         Connection * connection = state.connection;
-        if ((connection != nullptr) && connection->hasReadPendingData())
+        if ((connection != nullptr) && connection->hasReadBufferPendingData())
             read_list.push_back(*connection->socket);
     }
 

@@ -72,7 +72,7 @@ struct QuantileExactWeighted
         size_t size = map.size();
 
         if (0 == size)
-            return std::numeric_limits<Value>::quiet_NaN();
+            return Value();
 
         /// Copy the data to a temporary array to get the element you need in order.
         using Pair = typename Map::value_type;

@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict"></a>
 
-# Configuring an External Dictionary
+# Configuring an external dictionary
 
 The dictionary configuration has the following structure:
 

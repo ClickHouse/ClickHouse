@@ -26,6 +26,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
+        QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams,
         Int64 max_block_number_to_read) const;
@@ -35,6 +36,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
+        QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size,
         unsigned num_streams,
         Int64 max_block_number_to_read) const;
@@ -50,7 +52,8 @@ private:
         const Names & column_names,
         size_t max_block_size,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        ExpressionActionsPtr prewhere_actions,
+        const String & prewhere_column,
         const Names & virt_columns,
         const Settings & settings) const;
 
@@ -59,7 +62,8 @@ private:
         const Names & column_names,
         size_t max_block_size,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        ExpressionActionsPtr prewhere_actions,
+        const String & prewhere_column,
         const Names & virt_columns,
         const Settings & settings) const;
 

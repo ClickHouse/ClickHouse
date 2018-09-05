@@ -17,9 +17,8 @@ namespace ErrorCodes
 }
 
 
-FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_,
-                                               const String & filter_column_name, bool remove_filter)
-    : remove_filter(remove_filter), expression(expression_)
+FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input, const ExpressionActionsPtr & expression_, const String & filter_column_name)
+    : expression(expression_)
 {
     children.push_back(input);
 
@@ -41,9 +40,6 @@ FilterBlockInputStream::FilterBlockInputStream(const BlockInputStreamPtr & input
         FilterDescription filter_description_check(*column_elem.column);
         column_elem.column = column_elem.type->createColumnConst(header.rows(), UInt64(1));
     }
-
-    if (remove_filter)
-        header.erase(filter_column_name);
 }
 
 
@@ -73,7 +69,7 @@ Block FilterBlockInputStream::readImpl()
     Block res;
 
     if (constant_filter_description.always_false)
-        return removeFilterIfNeed(std::move(res));
+        return res;
 
     /// Until non-empty block after filtering or end of stream.
     while (1)
@@ -85,7 +81,7 @@ Block FilterBlockInputStream::readImpl()
         expression->execute(res);
 
         if (constant_filter_description.always_true)
-            return removeFilterIfNeed(std::move(res));
+            return res;
 
         size_t columns = res.columns();
         ColumnPtr column = res.safeGetByPosition(filter_column).column;
@@ -104,7 +100,7 @@ Block FilterBlockInputStream::readImpl()
         }
 
         if (constant_filter_description.always_true)
-            return removeFilterIfNeed(std::move(res));
+            return res;
 
         FilterDescription filter_and_holder(*column);
 
@@ -146,7 +142,7 @@ Block FilterBlockInputStream::readImpl()
             /// Replace the column with the filter by a constant.
             res.safeGetByPosition(filter_column).column = res.safeGetByPosition(filter_column).type->createColumnConst(filtered_rows, UInt64(1));
             /// No need to touch the rest of the columns.
-            return removeFilterIfNeed(std::move(res));
+            return res;
         }
 
         /// Filter the rest of the columns.
@@ -174,17 +170,8 @@ Block FilterBlockInputStream::readImpl()
                 current_column.column = current_column.column->filter(*filter_and_holder.data, -1);
         }
 
-        return removeFilterIfNeed(std::move(res));
+        return res;
     }
-}
-
-
-Block FilterBlockInputStream::removeFilterIfNeed(Block && block)
-{
-    if (block && remove_filter)
-        block.erase(static_cast<size_t>(filter_column));
-
-    return std::move(block);
 }
 
 

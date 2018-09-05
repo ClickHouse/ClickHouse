@@ -2,54 +2,55 @@
 
 #include "Poco/Foundation.h"
 #include "Poco/Channel.h"
+#include "Poco/Mutex.h"
 #include "Poco/Message.h"
 #include <vector>
 
 
-namespace Poco
-{
+namespace Poco {
 
-/// This channel sends messages only higher then specified level
-class Foundation_API LevelFilterChannel : public Channel
+
+class Foundation_API LevelFilterChannel: public Channel
+    /// This channel sends messages only higher then specified level
 {
 public:
-    /// Sends the given Message to all
-    /// attaches channels.
-    void log(const Message & msg);
+    void log(const Message& msg);
+        /// Sends the given Message to all
+        /// attaches channels.
 
-    /// Sets or changes a configuration property.
-    ///
-    /// Only the "level" property is supported, which allows setting desired level
-    void setProperty(const std::string & name, const std::string & value);
+    void setProperty(const std::string& name, const std::string& value);
+        /// Sets or changes a configuration property.
+        ///
+        /// Only the "level" property is supported, which allows setting desired level
 
-    /// Sets the destination channel to which the formatted
-    /// messages are passed on.
-    void setChannel(Channel * channel_);
+    void setChannel(Channel* pChannel);
+        /// Sets the destination channel to which the formatted
+        /// messages are passed on.
 
-    /// Returns the channel to which the formatted
-    /// messages are passed on.
-    Channel * getChannel() const;
+    Channel* getChannel() const;
+        /// Returns the channel to which the formatted
+        /// messages are passed on.
 
-    /// Opens the attached channel.
     void open();
+        /// Opens the attached channel.
 
-    /// Closes the attached channel.
     void close();
+        /// Closes the attached channel.
 
-    /// Sets the Logger's log level.
     void setLevel(Message::Priority);
-    /// Sets the Logger's log level using a symbolic value.
-    void setLevel(const std::string & value);
-
-    /// Returns the Logger's log level.
+        /// Sets the Logger's log level.
+    void setLevel(const std::string& value);
+        /// Sets the Logger's log level using a symbolic value.
     Message::Priority getLevel() const;
+        /// Returns the Logger's log level.
 
 protected:
     ~LevelFilterChannel();
 
 private:
-    Channel * channel = nullptr;
-    Message::Priority priority = Message::PRIO_ERROR;
+    Channel*          _channel = nullptr;
+    Message::Priority _priority = Message::PRIO_ERROR;
 };
+
 
 }

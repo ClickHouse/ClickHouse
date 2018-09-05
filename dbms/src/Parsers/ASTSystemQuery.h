@@ -35,7 +35,6 @@ public:
         START_REPLICATEDS_SENDS,
         STOP_REPLICATION_QUEUES,
         START_REPLICATION_QUEUES,
-        FLUSH_SYSTEM_TABLES,
         END
     };
 

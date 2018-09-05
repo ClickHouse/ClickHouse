@@ -183,7 +183,7 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
     if (!has_collation)
     {
         for (size_t i = 0; i < cursors.size(); ++i)
-            queue_without_collation.push(SortCursor(&cursors[i]));
+            queue.push(SortCursor(&cursors[i]));
     }
     else
     {
@@ -206,7 +206,7 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
     }
 
     return !has_collation
-        ? mergeImpl<SortCursor>(queue_without_collation)
+        ? mergeImpl<SortCursor>(queue)
         : mergeImpl<SortCursorWithCollation>(queue_with_collation);
 }
 

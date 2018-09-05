@@ -384,10 +384,6 @@ public:
 
     size_t getMaxPartsCountForPartition() const;
 
-    /// Get min value of part->info.getDataVersion() for all active parts.
-    /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
-    std::optional<Int64> getMinPartDataVersion() const;
-
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
     void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;

@@ -90,9 +90,7 @@ void SelectStreamFactory::createForShard(
         res.emplace_back(std::move(stream));
     };
 
-    const auto & settings = context.getSettingsRef();
-
-    if (settings.prefer_localhost_replica && shard_info.isLocal())
+    if (shard_info.isLocal())
     {
         StoragePtr main_table_storage;
 
@@ -108,18 +106,22 @@ void SelectStreamFactory::createForShard(
         if (!main_table_storage) /// Table is absent on a local server.
         {
             ProfileEvents::increment(ProfileEvents::DistributedConnectionMissingTable);
-            if (shard_info.hasRemoteConnections())
+            if (shard_info.pool)
             {
                 LOG_WARNING(
                         &Logger::get("ClusterProxy::SelectStreamFactory"),
                         "There is no table " << main_table.database << "." << main_table.table
                         << " on local replica of shard " << shard_info.shard_num << ", will try remote replicas.");
+
                 emplace_remote_stream();
+                return;
             }
             else
-                emplace_local_stream();  /// Let it fail the usual way.
-
-            return;
+            {
+                /// Let it fail the usual way.
+                emplace_local_stream();
+                return;
+            }
         }
 
         const auto * replicated_storage = dynamic_cast<const StorageReplicatedMergeTree *>(main_table_storage.get());
@@ -131,6 +133,7 @@ void SelectStreamFactory::createForShard(
             return;
         }
 
+        const Settings & settings = context.getSettingsRef();
         UInt64 max_allowed_delay = settings.max_replica_delay_for_distributed_queries;
 
         if (!max_allowed_delay)
@@ -155,7 +158,7 @@ void SelectStreamFactory::createForShard(
 
         if (!settings.fallback_to_stale_replicas_for_distributed_queries)
         {
-            if (shard_info.hasRemoteConnections())
+            if (shard_info.pool)
             {
                 /// If we cannot fallback, then we cannot use local replica. Try our luck with remote replicas.
                 emplace_remote_stream();
@@ -168,7 +171,7 @@ void SelectStreamFactory::createForShard(
                     ErrorCodes::ALL_REPLICAS_ARE_STALE);
         }
 
-        if (!shard_info.hasRemoteConnections())
+        if (!shard_info.pool)
         {
             /// There are no remote replicas but we are allowed to fall back to stale local replica.
             emplace_local_stream();

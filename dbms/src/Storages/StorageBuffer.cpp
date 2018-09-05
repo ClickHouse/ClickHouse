@@ -103,30 +103,15 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context) const
-{
-    if (!no_destination)
-    {
-        auto destination = context.getTable(destination_database, destination_table);
-
-        if (destination.get() == this)
-            throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
-
-        return destination->getQueryProcessingStage(context);
-    }
-
-    return QueryProcessingStage::FetchColumns;
-}
-
 BlockInputStreams StorageBuffer::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum & processed_stage,
     size_t max_block_size,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
+    processed_stage = QueryProcessingStage::FetchColumns;
 
     BlockInputStreams streams_from_dst;
 
@@ -193,7 +178,7 @@ static void appendBlock(const Block & from, Block & to)
         try
         {
             /// Avoid "memory limit exceeded" exceptions during rollback.
-            auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
+            TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
 
             for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
             {

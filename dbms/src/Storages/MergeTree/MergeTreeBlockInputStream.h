@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -25,7 +24,8 @@ public:
         Names column_names,
         const MarkRanges & mark_ranges,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        ExpressionActionsPtr prewhere_actions,
+        String prewhere_column,
         bool check_columns,
         size_t min_bytes_to_use_direct_io,
         size_t max_read_buffer_size,
@@ -51,8 +51,6 @@ private:
     Block header;
 
     /// Used by Task
-    Names required_columns;
-    /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
     NameSet column_name_set;
     NamesAndTypesList columns;

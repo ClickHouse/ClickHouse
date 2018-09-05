@@ -1,7 +1,7 @@
 if (APPLE)
     # lib from libs/libcommon
     set (RT_LIBRARY "apple_rt")
-elseif (OS_FREEBSD)
+elseif (ARCH_FREEBSD)
     find_library (RT_LIBRARY rt)
 else ()
     set (RT_LIBRARY "")

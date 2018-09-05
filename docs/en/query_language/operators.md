@@ -3,17 +3,17 @@
 All operators are transformed to the corresponding functions at the query parsing stage, in accordance with their precedence and associativity.
 Groups of operators are listed in order of priority (the higher it is in the list, the earlier the operator is connected to its arguments).
 
-## Access Operators
+## Access operators
 
 `a[N]`  Access to an element of an array; ` arrayElement(a, N) function`.
 
 `a.N` – Access to a tuble element; `tupleElement(a, N)` function.
 
-## Numeric Negation Operator
+## Numeric negation operator
 
 `-a`  – The `negate (a)` function.
 
-## Multiplication and Division Operators
+## Multiplication and division operators
 
 `a * b`  – The `multiply (a, b) function.`
 
@@ -21,13 +21,13 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a % b` – The `modulo(a, b) function.`
 
-## Addition and Subtraction Operators
+## Addition and subtraction operators
 
 `a + b` – The `plus(a, b) function.`
 
 `a - b`  – The `minus(a, b) function.`
 
-## Comparison Operators
+## Comparison operators
 
 `a = b` – The `equals(a, b) function.`
 
@@ -51,7 +51,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a BETWEEN b AND c` – The same as `a >= b AND a <= c.`
 
-## Operators for Working With Data Sets
+## Operators for working with data sets
 
 *See the section "IN operators".*
 
@@ -63,19 +63,19 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b) function.`
 
-## Logical Negation Operator
+## Logical negation operator
 
 `NOT a` The `not(a) function.`
 
-## Logical AND Operator
+## Logical AND operator
 
 `a AND b` – The`and(a, b) function.`
 
-## Logical OR Operator
+## Logical OR operator
 
 `a OR b` – The `or(a, b) function.`
 
-## Conditional Operator
+## Conditional operator
 
 `a ? b : c` – The `if(a, b, c) function.`
 
@@ -83,7 +83,7 @@ Note:
 
 The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If "b" or "c" is an arrayJoin() function, each row will be replicated regardless of the "a" condition.
 
-## Conditional Expression
+## Conditional expression
 
 ```sql
 CASE [x]
@@ -95,21 +95,21 @@ END
 
 If "x" is specified, then transform(x, \[a, ...\], \[b, ...\], c). Otherwise – multiIf(a, b, ..., c).
 
-## Concatenation Operator
+## Concatenation operator
 
 `s1 || s2` – The `concat(s1, s2) function.`
 
-## Lambda Creation Operator
+## Lambda creation operator
 
 `x -> expr` – The `lambda(x, expr) function.`
 
 The following operators do not have a priority, since they are brackets:
 
-## Array Creation Operator
+## Array creation operator
 
 `[x1, ...]` – The `array(x1, ...) function.`
 
-## Tuple Creation Operator
+## Tuple creation operator
 
 `(x1, x2, ...)` – The `tuple(x2, x2, ...) function.`
 

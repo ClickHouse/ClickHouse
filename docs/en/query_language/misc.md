@@ -1,4 +1,4 @@
-# Miscellaneous Queries
+# Miscellaneous queries
 
 ## ATTACH
 

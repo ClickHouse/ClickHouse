@@ -23,7 +23,7 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isDeterministic() const override { return false; }
+    bool isDeterministic() override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
 

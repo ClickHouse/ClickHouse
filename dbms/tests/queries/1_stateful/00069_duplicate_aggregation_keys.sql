@@ -1,1 +1,0 @@
-SELECT URL, EventDate, max(URL) FROM test.hits WHERE CounterID = 731962 AND UserID = 2651474201385397001 GROUP BY URL, EventDate, EventDate ORDER BY URL, EventDate;

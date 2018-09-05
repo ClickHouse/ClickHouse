@@ -12,7 +12,8 @@
 #include <vector>
 #include <random>
 #include <pcg_random.hpp>
-#include <IO/ReadHelpers.h>
+#include <Poco/NumberParser.h>
+#include <Poco/NumberFormatter.h>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -34,11 +35,11 @@ int mainImpl(int argc, char ** argv)
 {
     const char * file_name = 0;
     Mode mode = MODE_READ;
-    UInt64 min_offset = 0;
-    UInt64 max_offset = 0;
-    UInt64 block_size = 0;
-    UInt64 descriptors = 0;
-    UInt64 count = 0;
+    size_t min_offset = 0;
+    size_t max_offset = 0;
+    size_t block_size = 0;
+    size_t descriptors = 0;
+    size_t count = 0;
 
     if (argc != 8)
     {
@@ -47,11 +48,11 @@ int mainImpl(int argc, char ** argv)
     }
 
     file_name = argv[1];
-    min_offset = DB::parse<UInt64>(argv[3]);
-    max_offset = DB::parse<UInt64>(argv[4]);
-    block_size = DB::parse<UInt64>(argv[5]);
-    descriptors = DB::parse<UInt64>(argv[6]);
-    count = DB::parse<UInt64>(argv[7]);
+    min_offset = Poco::NumberParser::parseUnsigned64(argv[3]);
+    max_offset = Poco::NumberParser::parseUnsigned64(argv[4]);
+    block_size = Poco::NumberParser::parseUnsigned64(argv[5]);
+    descriptors = Poco::NumberParser::parseUnsigned(argv[6]);
+    count = Poco::NumberParser::parseUnsigned(argv[7]);
 
     if (!strcmp(argv[2], "r"))
         mode = MODE_READ;

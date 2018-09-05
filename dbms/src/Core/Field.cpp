@@ -5,7 +5,6 @@
 
 #include <Core/Field.h>
 #include <Common/FieldVisitors.h>
-#include <Functions/FunctionsComparison.h>
 
 
 namespace DB
@@ -270,24 +269,5 @@ namespace DB
     {
         DB::String res = applyVisitor(DB::FieldVisitorToString(), DB::Field(x));
         buf.write(res.data(), res.size());
-    }
-
-
-    bool DecimalField::operator < (const DecimalField & r) const
-    {
-        using Comparator = DecimalComparison<Decimal128, Decimal128, LessOp>;
-        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
-    }
-
-    bool DecimalField::operator <= (const DecimalField & r) const
-    {
-        using Comparator = DecimalComparison<Decimal128, Decimal128, LessOrEqualsOp>;
-        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
-    }
-
-    bool DecimalField::operator == (const DecimalField & r) const
-    {
-        using Comparator = DecimalComparison<Decimal128, Decimal128, EqualsOp>;
-        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
     }
 }

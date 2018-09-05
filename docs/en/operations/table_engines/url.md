@@ -5,7 +5,7 @@
 This data source operates with data on remote HTTP/HTTPS server. The engine is
 similar to [`File`](./file.md#).
 
-## Usage in ClickHouse Server
+## Usage in ClickHouse server
 
 ```
 URL(URL, Format)
@@ -67,7 +67,7 @@ SELECT * FROM url_engine_table
 ```
 
 
-## Details of Implementation
+## Details of implementation
 
 - Reads and writes can be parallel
 - Not supported:

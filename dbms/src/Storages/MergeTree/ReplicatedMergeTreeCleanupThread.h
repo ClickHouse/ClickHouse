@@ -4,9 +4,10 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Common/BackgroundSchedulePool.h>
 #include <thread>
 #include <map>
+
 #include <pcg_random.hpp>
 
 
@@ -44,9 +45,6 @@ private:
 
     /// Remove old block hashes from ZooKeeper. This is done by the leader replica.
     void clearOldBlocks();
-
-    /// Remove old mutations that are done from ZooKeeper. This is done by the leader replica.
-    void clearOldMutations();
 
     using NodeCTimeCache = std::map<String, Int64>;
     NodeCTimeCache cached_block_stats;

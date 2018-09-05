@@ -68,28 +68,15 @@ protected:
       */
     virtual bool useDefaultImplementationForConstants() const { return false; }
 
-    /** If function arguments has single column with dictionary and all other arguments are constants, call function on nested column.
-      * Otherwise, convert all columns with dictionary to ordinary columns.
-      * Returns ColumnWithDictionary if at least one argument is ColumnWithDictionary.
-      */
-    virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
-
     /** Some arguments could remain constant during this implementation.
       */
     virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
-    /** True if function can be called on default arguments (include Nullable's) and won't throw.
-      * Counterexample: modulo(0, 0)
-      */
-    virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
 private:
     bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
                                            size_t input_rows_count);
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
                                                        size_t input_rows_count);
-    void executeWithoutColumnsWithDictionary(Block & block, const ColumnNumbers & arguments, size_t result,
-                                             size_t input_rows_count);
 };
 
 using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
@@ -172,9 +159,9 @@ public:
       * Example: now(). Another example: functions that work with periodically updated dictionaries.
       */
 
-    virtual bool isDeterministic() const { return true; }
+    virtual bool isDeterministic() { return true; }
 
-    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+    virtual bool isDeterministicInScopeOfQuery() { return true; }
 
     /** Lets you know if the function is monotonic in a range of values.
       * This is used to work with the index in a sorted chunk of data.
@@ -279,25 +266,12 @@ protected:
       */
     virtual bool useDefaultImplementationForNulls() const { return true; }
 
-    /** If useDefaultImplementationForNulls() is true, than change arguments for getReturnType() and buildImpl().
-      * If function arguments has types with dictionary, convert them to ordinary types.
-      * getReturnType returns ColumnWithDictionary if at least one argument type is ColumnWithDictionary.
-      */
-    virtual bool useDefaultImplementationForColumnsWithDictionary() const { return true; }
-
-    /// If it isn't, will convert all ColumnWithDictionary arguments to full columns.
-    virtual bool canBeExecutedOnLowCardinalityDictionary() const { return true; }
-
     virtual FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const = 0;
 
     virtual void getLambdaArgumentTypesImpl(DataTypes & /*arguments*/) const
     {
         throw Exception("Function " + getName() + " can't have lambda-expressions as arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
-
-private:
-
-    DataTypePtr getReturnTypeWithoutDictionary(const ColumnsWithTypeAndName & arguments) const;
 };
 
 /// Previous function interface.
@@ -312,10 +286,7 @@ public:
     /// Override this functions to change default implementation behavior. See details in IMyFunction.
     bool useDefaultImplementationForNulls() const override { return true; }
     bool useDefaultImplementationForConstants() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
-    bool canBeExecutedOnDefaultArguments() const override { return true; }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return isDeterministicInScopeOfQuery(); }
 
     using PreparedFunctionImpl::execute;
     using FunctionBuilderImpl::getReturnTypeImpl;
@@ -394,9 +365,7 @@ protected:
     }
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
-    bool useDefaultImplementationForColumnsWithDictionary() const final { return function->useDefaultImplementationForColumnsWithDictionary(); }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
-    bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
 
 private:
     std::shared_ptr<IFunction> function;
@@ -427,9 +396,9 @@ public:
 
     bool isInjective(const Block & sample_block) override { return function->isInjective(sample_block); }
 
-    bool isDeterministic() const override { return function->isDeterministic(); }
+    bool isDeterministic() override { return function->isDeterministic(); }
 
-    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
+    bool isDeterministicInScopeOfQuery() override { return function->isDeterministicInScopeOfQuery(); }
 
     bool hasInformationAboutMonotonicity() const override { return function->hasInformationAboutMonotonicity(); }
 
@@ -462,8 +431,6 @@ protected:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override { return function->getReturnTypeImpl(arguments); }
 
     bool useDefaultImplementationForNulls() const override { return function->useDefaultImplementationForNulls(); }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return function->useDefaultImplementationForColumnsWithDictionary(); }
-    bool canBeExecutedOnLowCardinalityDictionary() const override { return function->canBeExecutedOnLowCardinalityDictionary(); }
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {

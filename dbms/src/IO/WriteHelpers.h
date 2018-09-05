@@ -23,7 +23,6 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -174,7 +173,7 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
 {
     writeChar('"', buf);
     for (const char * it = begin; it != end; ++it)
@@ -206,8 +205,7 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 writeChar('\\', buf);
                 break;
             case '/':
-                if (settings.json.escape_forward_slashes)
-                    writeChar('\\', buf);
+                writeChar('\\', buf);
                 writeChar('/', buf);
                 break;
             case '"':
@@ -313,15 +311,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const String & s, WriteBuffer & buf)
 {
-    writeJSONString(s.data(), s.data() + s.size(), buf, settings);
+    writeJSONString(s.data(), s.data() + s.size(), buf);
 }
 
 
-inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings)
+inline void writeJSONString(const StringRef & ref, WriteBuffer & buf)
 {
-    writeJSONString(ref.data, ref.data + ref.size, buf, settings);
+    writeJSONString(ref.data, ref.data + ref.size, buf);
 }
 
 
@@ -419,12 +417,12 @@ inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F
 
 inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s, WriteBuffer & buf) { return writeBackQuotedString(s, buf); });
 }
 
 inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
 {
-    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s, WriteBuffer & buf) { return writeDoubleQuotedString(s, buf); });
 }
 
 
@@ -674,7 +672,6 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
-inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }

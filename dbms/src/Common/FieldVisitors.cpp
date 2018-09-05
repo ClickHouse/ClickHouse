@@ -4,7 +4,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <Common/FieldVisitors.h>
 #include <Common/SipHash.h>
 
@@ -36,13 +35,6 @@ String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuot
 String FieldVisitorDump::operator() (const Int64 & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
 String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuotedWithPrefix(x, "Float64_"); }
 
-String FieldVisitorDump::operator() (const UInt128 & x) const
-{
-    WriteBufferFromOwnString wb;
-    wb << "UInt128_" << x.low << "_" << x.high;
-    return wb.str();
-
-}
 
 String FieldVisitorDump::operator() (const String & x) const
 {
@@ -55,14 +47,14 @@ String FieldVisitorDump::operator() (const Array & x) const
 {
     WriteBufferFromOwnString wb;
 
-    wb << "Array_[";
+    wb.write("Array_[", 7);
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
+            wb.write(", ", 2);
+        writeString(applyVisitor(*this, *it), wb);
     }
-    wb << ']';
+    writeChar(']', wb);
 
     return wb.str();
 }
@@ -72,14 +64,14 @@ String FieldVisitorDump::operator() (const Tuple & x_def) const
     auto & x = x_def.toUnderType();
     WriteBufferFromOwnString wb;
 
-    wb << "Tuple_(";
+    wb.write("Tuple_(", 7);
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
+            wb.write(", ", 2);
+        writeString(applyVisitor(*this, *it), wb);
     }
-    wb << ')';
+    writeChar(')', wb);
 
     return wb.str();
 }
@@ -113,24 +105,19 @@ String FieldVisitorToString::operator() (const Int64 & x) const { return formatQ
 String FieldVisitorToString::operator() (const Float64 & x) const { return formatFloat(x); }
 String FieldVisitorToString::operator() (const String & x) const { return formatQuoted(x); }
 
-String FieldVisitorToString::operator() (const UInt128 & x) const
-{
-    /// Dummy implementation. There is no UInt128 literals in SQL.
-    return FieldVisitorDump()(x);
-}
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
     WriteBufferFromOwnString wb;
 
-    wb << '[';
+    writeChar('[', wb);
     for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
             wb.write(", ", 2);
-        wb << applyVisitor(*this, *it);
+        writeString(applyVisitor(*this, *it), wb);
     }
-    wb << ']';
+    writeChar(']', wb);
 
     return wb.str();
 }
@@ -140,14 +127,14 @@ String FieldVisitorToString::operator() (const Tuple & x_def) const
     auto & x = x_def.toUnderType();
     WriteBufferFromOwnString wb;
 
-    wb << '(';
+    writeChar('(', wb);
     for (auto it = x.begin(); it != x.end(); ++it)
     {
         if (it != x.begin())
-            wb << ", ";
-        wb << applyVisitor(*this, *it);
+            wb.write(", ", 2);
+        writeString(applyVisitor(*this, *it), wb);
     }
-    wb << ')';
+    writeChar(')', wb);
 
     return wb.str();
 }
@@ -164,13 +151,6 @@ void FieldVisitorHash::operator() (const Null &) const
 void FieldVisitorHash::operator() (const UInt64 & x) const
 {
     UInt8 type = Field::Types::UInt64;
-    hash.update(type);
-    hash.update(x);
-}
-
-void FieldVisitorHash::operator() (const UInt128 & x) const
-{
-    UInt8 type = Field::Types::UInt128;
     hash.update(type);
     hash.update(x);
 }

@@ -22,7 +22,6 @@ try
     size_t size = strlen(s) + 1;
     DataTypeString data_type;
 
-
     {
         auto column = ColumnString::create();
         ColumnString::Chars_t & data = column->getChars();
@@ -38,14 +37,8 @@ try
 
         WriteBufferFromFile out_buf("test");
 
-        IDataType::SerializeBinaryBulkSettings settings;
-        IDataType::SerializeBinaryBulkStatePtr state;
-        settings.getter = [&](const IDataType::SubstreamPath &){ return &out_buf; };
-
         stopwatch.restart();
-        data_type.serializeBinaryBulkStatePrefix(settings, state);
-        data_type.serializeBinaryBulkWithMultipleStreams(*column, 0, 0, settings, state);
-        data_type.serializeBinaryBulkStateSuffix(settings, state);
+        data_type.serializeBinaryBulkWithMultipleStreams(*column, [&](const IDataType::SubstreamPath &){ return &out_buf; }, 0, 0, true, {});
         stopwatch.stop();
 
         std::cout << "Writing, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
@@ -56,13 +49,8 @@ try
 
         ReadBufferFromFile in_buf("test");
 
-        IDataType::DeserializeBinaryBulkSettings settings;
-        IDataType::DeserializeBinaryBulkStatePtr state;
-        settings.getter = [&](const IDataType::SubstreamPath &){ return &in_buf; };
-
         stopwatch.restart();
-        data_type.deserializeBinaryBulkStatePrefix(settings, state);
-        data_type.deserializeBinaryBulkWithMultipleStreams(*column, n, settings, state);
+        data_type.deserializeBinaryBulkWithMultipleStreams(*column, [&](const IDataType::SubstreamPath &){ return &in_buf; }, n, 0, true, {});
         stopwatch.stop();
 
         std::cout << "Reading, elapsed: " << stopwatch.elapsedSeconds() << std::endl;
