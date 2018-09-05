@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # HTTP interface
 
@@ -13,7 +13,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 درخواست های خود را پارامتر 'query'، یا با متد POST، یا ابتدای query را در پارامتر 'query' ارسال کنید، و بقیه را در POST (بعدا توضیح خواهیم داد که چرا این کار ضروری است). سایت URL محدود به 16 کیلوبایت است، پس هنگام ارسال query های بزرگ، اینو به خاطر داشته باشید
 
@@ -40,7 +40,7 @@ Date: Fri, 16 Nov 2012 19:21:50 GMT
 1
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 همانطور که می بینید،  curl is somewhat inconvenient in that spaces must be URL escaped. هر چند wget همه چیز را خودش escape می کنه، ما توصیه به استفاده از اون رو نمی کنیم، چون wget به خوبی با HTTP 1.1 در هنگام استفاده از هدر های keep-alive و Transfer-Encoding: chunked کار نمی کند.
 
@@ -57,7 +57,7 @@ $ echo '1' | curl 'http://localhost:8123/?query=SELECT' --data-binary @-
 1
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 اگر بخشی از query در پارامتر ارسال شود، و بخش دیگر در POST، یک line feed بین دو بخش وارد می شود. مثال (این کار نمی کند):
 
@@ -70,7 +70,7 @@ ECT 1
 , expected One of: SHOW TABLES, SHOW DATABASES, SELECT, INSERT, CREATE, ATTACH, RENAME, DROP, DETACH, USE, SET, OPTIMIZE., e.what() = DB::Exception
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 به صورت پیش فرض، داده ها با فرمت TabSeparated بر میگردند. (برای اطلاعات بیشتر بخش "فرمت" را مشاهده کنید). شما میتوانید از دستور FORMAT در query خود برای ست کردن فرمتی دیگر استفاده کنید.
 
@@ -85,7 +85,7 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 └───┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 برای query های INSERT متد POST ضروری است. در این مورد، شما می توانید ابتدای query خود را در URL parameter بنویسید، و از POST برای پاس داده داده ها برای درج استفاده کنید. داده ی برای درج می تواند، برای مثال یک دامپ tab-separated شده از MySQL باشد. به این ترتیب، query INSERT جایگزین  LOAD DATA LOCAL INFILE از MySQL می شود.
 
@@ -97,7 +97,7 @@ $ echo 'SELECT 1 FORMAT Pretty' | curl 'http://localhost:8123/?' --data-binary @
 echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 استفاده از query INSERT برای درج داده:
 
@@ -107,7 +107,7 @@ echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' 
 echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 داده ها میتوانند جدا از پارامتر query ارسال شوند:
 
@@ -117,7 +117,7 @@ echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-b
 echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 شما می توانید هر نوع فرمت دیتایی مشخص کنید. فرمت 'Values' دقیقا مشابه زمانی است که شما INSERT INTO t VALUES را می نویسید:
 
@@ -127,7 +127,7 @@ echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALU
 echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 برای درج داده ها از یک دامپ tab-separate، فرمت مشخص زیر را وارد کنید:
 
@@ -137,7 +137,7 @@ echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORM
 echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 به دلیل پردازش موازی، نتایج query با ترتیب رندوم چاپ می شود:
 
@@ -159,7 +159,7 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 6
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 حدف جدول:
 
@@ -169,7 +169,7 @@ $ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 برای درخواست هایی موفقی که داده ای از جدول بر نمیگردد، بدنه response خالی است.
 
@@ -199,7 +199,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 9
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 به صورت پیش فرض، دیتابیس ثبت شده در تنظیمات سرور به عنوان دیتابیس پیش فرض مورد استفاده قرار می گیرد، این دیتابیس 'default' نامیده می شود. از سوی دیگر، شما می توانید همیشه نام دیتابیس را با دات و قبل از اسم جدول مشخص کنید.
 
@@ -213,7 +213,7 @@ $ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?data
 echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 2. با دو پارامتر 'user' و 'password' در URL. مثال:
 
@@ -223,7 +223,7 @@ echo 'SELECT 1' | curl 'http://user:password@localhost:8123/' -d @-
 echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @-
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 اگر نام کاربری مشخص نشود، نام کاربری 'default' استفاده می شود. اگر پسورد مشخص نشود، پسورد خالی استفاده می شود. شما همچنین می توانید از پارامتر های URL برای مشخص کردن هر تنظیمی برای اجرای یک query استفاده کنید. مثال: http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
@@ -245,7 +245,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 9
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 برای اطلاعات بیشتر در مورد دیگر پارامترها، بخش "SET" را ببینید.
 
@@ -275,7 +275,7 @@ HTTP interface اجازه ی پاس دادن داده های external (جداو�
 curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wait_end_of_query=1' -d 'SELECT toUInt8(number) FROM system.numbers LIMIT 9000000 FORMAT RowBinary'
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 از بافرینگ به منظور اجتناب از شرایطی که یک خطای پردازش query رخ داده بعد از response کد و هدر های ارسال شده به کلاینت استفاده کنید. در این شرایط، پیغام خطا در انتهای بنده response نوشته می شود، و در سمت کلاینت، پیغام خطا فقط از طریق مرحله پارس کردن قابل شناسایی است.
 
