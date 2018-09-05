@@ -1,8 +1,14 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeArray.h>
 #include <Interpreters/ProcessList.h>
 #include <Storages/System/StorageSystemProcesses.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Settings.h>
+#include <Interpreters/ProfileEventsExt.h>
+#include <Common/typeid_cast.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
 
 
 namespace DB
@@ -30,6 +36,7 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"client_name", std::make_shared<DataTypeString>()},
         {"client_version_major", std::make_shared<DataTypeUInt64>()},
         {"client_version_minor", std::make_shared<DataTypeUInt64>()},
+        {"client_version_patch", std::make_shared<DataTypeUInt64>()},
         {"client_revision", std::make_shared<DataTypeUInt64>()},
 
         {"http_method", std::make_shared<DataTypeUInt8>()},
@@ -47,13 +54,19 @@ NamesAndTypesList StorageSystemProcesses::getNamesAndTypes()
         {"memory_usage", std::make_shared<DataTypeInt64>()},
         {"peak_memory_usage", std::make_shared<DataTypeInt64>()},
         {"query", std::make_shared<DataTypeString>()},
+
+        { "thread_numbers", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()) },
+        { "ProfileEvents.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "ProfileEvents.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) },
+        { "Settings.Names", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
+        { "Settings.Values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()) },
     };
 }
 
 
 void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    ProcessList::Info info = context.getProcessList().getInfo();
+    ProcessList::Info info = context.getProcessList().getInfo(true, true, true);
 
     for (const auto & process : info)
     {
@@ -73,6 +86,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         res_columns[i++]->insert(process.client_info.client_name);
         res_columns[i++]->insert(process.client_info.client_version_major);
         res_columns[i++]->insert(process.client_info.client_version_minor);
+        res_columns[i++]->insert(process.client_info.client_version_patch);
         res_columns[i++]->insert(UInt64(process.client_info.client_revision));
         res_columns[i++]->insert(UInt64(process.client_info.http_method));
         res_columns[i++]->insert(process.client_info.http_user_agent);
@@ -87,6 +101,40 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, const Contex
         res_columns[i++]->insert(process.memory_usage);
         res_columns[i++]->insert(process.peak_memory_usage);
         res_columns[i++]->insert(process.query);
+
+        {
+            Array threads_array;
+            threads_array.reserve(process.thread_numbers.size());
+            for (const UInt32 thread_number : process.thread_numbers)
+                threads_array.emplace_back(UInt64(thread_number));
+            res_columns[i++]->insert(threads_array);
+        }
+
+        {
+            IColumn * column_profile_events_names = res_columns[i++].get();
+            IColumn * column_profile_events_values = res_columns[i++].get();
+
+            if (process.profile_counters)
+                ProfileEvents::dumpToArrayColumns(*process.profile_counters, column_profile_events_names, column_profile_events_values, true);
+            else
+            {
+                column_profile_events_names->insertDefault();
+                column_profile_events_values->insertDefault();
+            }
+        }
+
+        {
+            IColumn * column_settings_names = res_columns[i++].get();
+            IColumn * column_settings_values = res_columns[i++].get();
+
+            if (process.query_settings)
+                process.query_settings->dumpToArrayColumns(column_settings_names, column_settings_values, true);
+            else
+            {
+                column_settings_names->insertDefault();
+                column_settings_values->insertDefault();
+            }
+        }
     }
 }
 

@@ -212,9 +212,9 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(serializeToString(function, column, row_num), ostr);
+    writeJSONString(serializeToString(function, column, row_num), ostr, settings);
 }
 
 

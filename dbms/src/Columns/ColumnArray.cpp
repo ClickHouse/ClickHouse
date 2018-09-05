@@ -626,6 +626,44 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
     return std::move(res);
 }
 
+ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+template <typename T>
+ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
+{
+    if (limit == 0)
+        return ColumnArray::create(data);
+
+    /// Convert indexes to UInt64 in case of overflow.
+    auto nested_indexes_column = ColumnUInt64::create();
+    PaddedPODArray<UInt64> & nested_indexes = nested_indexes_column->getData();
+    nested_indexes.reserve(getOffsets().back());
+
+    auto res = ColumnArray::create(data->cloneEmpty());
+
+    Offsets & res_offsets = res->getOffsets();
+    res_offsets.resize(limit);
+    size_t current_offset = 0;
+
+    for (size_t i = 0; i < limit; ++i)
+    {
+        for (size_t j = 0; j < sizeAt(indexes[i]); ++j)
+            nested_indexes.push_back(offsetAt(indexes[i]) + j);
+        current_offset += sizeAt(indexes[i]);
+        res_offsets[i] = current_offset;
+    }
+
+    if (current_offset != 0)
+        res->data = data->index(*nested_indexes_column, current_offset);
+
+    return std::move(res);
+}
+
+INSTANTIATE_INDEX_IMPL(ColumnArray);
+
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     size_t s = size();

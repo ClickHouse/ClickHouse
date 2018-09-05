@@ -307,13 +307,13 @@ private:
 
     /// buffer[column_size * cat_features_count] -> char * => cat_features[column_size][cat_features_count] -> char *
     void fillCatFeaturesBuffer(const char *** cat_features, const char ** buffer,
-                               size_t column_size, size_t cat_features_count) const
+                               size_t column_size, size_t cat_features_count_current) const
     {
         for (size_t i = 0; i < column_size; ++i)
         {
             *cat_features = buffer;
             ++cat_features;
-            buffer += cat_features_count;
+            buffer += cat_features_count_current;
         }
     }
 
@@ -321,7 +321,7 @@ private:
     ///  * CalcModelPredictionFlat if no cat features
     ///  * CalcModelPrediction if all cat features are strings
     ///  * CalcModelPredictionWithHashedCatFeatures if has int cat features.
-    ColumnPtr evalImpl(const ColumnRawPtrs & columns, size_t float_features_count, size_t cat_features_count,
+    ColumnPtr evalImpl(const ColumnRawPtrs & columns, size_t float_features_count_current, size_t cat_features_count_current,
                        bool cat_features_are_strings) const
     {
         std::string error_msg = "Error occurred while applying CatBoost model: ";
@@ -334,12 +334,12 @@ private:
         PODArray<const float *> float_features(column_size);
         auto float_features_buf = float_features.data();
         /// Store all float data into single column. float_features is a list of pointers to it.
-        auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count, float_features_buf);
+        auto float_features_col = placeNumericColumns<float>(columns, 0, float_features_count_current, float_features_buf);
 
-        if (cat_features_count == 0)
+        if (cat_features_count_current == 0)
         {
             if (!api->CalcModelPredictionFlat(handle->get(), column_size,
-                                              float_features_buf, float_features_count,
+                                              float_features_buf, float_features_count_current,
                                               result_buf, column_size))
             {
 
@@ -352,18 +352,18 @@ private:
         if (cat_features_are_strings)
         {
             /// cat_features_holder stores pointers to ColumnString data or fixed_strings_data.
-            PODArray<const char *> cat_features_holder(cat_features_count * column_size);
+            PODArray<const char *> cat_features_holder(cat_features_count_current * column_size);
             PODArray<const char **> cat_features(column_size);
             auto cat_features_buf = cat_features.data();
 
-            fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size, cat_features_count);
+            fillCatFeaturesBuffer(cat_features_buf, cat_features_holder.data(), column_size, cat_features_count_current);
             /// Fixed strings are stored without termination zero, so have to copy data into fixed_strings_data.
-            auto fixed_strings_data = placeStringColumns(columns, float_features_count,
-                                                         cat_features_count, cat_features_holder.data());
+            auto fixed_strings_data = placeStringColumns(columns, float_features_count_current,
+                                                         cat_features_count_current, cat_features_holder.data());
 
             if (!api->CalcModelPrediction(handle->get(), column_size,
-                                          float_features_buf, float_features_count,
-                                          cat_features_buf, cat_features_count,
+                                          float_features_buf, float_features_count_current,
+                                          cat_features_buf, cat_features_count_current,
                                           result_buf, column_size))
             {
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
@@ -373,13 +373,13 @@ private:
         {
             PODArray<const int *> cat_features(column_size);
             auto cat_features_buf = cat_features.data();
-            auto cat_features_col = placeNumericColumns<int>(columns, float_features_count,
-                                                             cat_features_count, cat_features_buf);
-            calcHashes(columns, float_features_count, cat_features_count, cat_features_buf);
+            auto cat_features_col = placeNumericColumns<int>(columns, float_features_count_current,
+                                                             cat_features_count_current, cat_features_buf);
+            calcHashes(columns, float_features_count_current, cat_features_count_current, cat_features_buf);
             if (!api->CalcModelPredictionWithHashedCatFeatures(
                     handle->get(), column_size,
-                    float_features_buf, float_features_count,
-                    cat_features_buf, cat_features_count,
+                    float_features_buf, float_features_count_current,
+                    cat_features_buf, cat_features_count_current,
                     result_buf, column_size))
             {
                 throw Exception(error_msg + api->GetErrorString(), ErrorCodes::CANNOT_APPLY_CATBOOST_MODEL);
@@ -453,7 +453,7 @@ CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::st
 {
     try
     {
-        init(lib_path);
+        init();
     }
     catch (...)
     {
@@ -463,7 +463,7 @@ CatBoostModel::CatBoostModel(std::string name_, std::string model_path_, std::st
     creation_time = std::chrono::system_clock::now();
 }
 
-void CatBoostModel::init(const std::string & lib_path)
+void CatBoostModel::init()
 {
     api_provider = getCatBoostWrapperHolder(lib_path);
     api = &api_provider->getAPI();

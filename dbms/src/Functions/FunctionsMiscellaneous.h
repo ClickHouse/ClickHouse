@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {

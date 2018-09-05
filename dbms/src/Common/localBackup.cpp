@@ -108,7 +108,7 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
 
             continue;
         }
-        catch (const Poco::FileNotFoundException & e)
+        catch (const Poco::FileNotFoundException &)
         {
             ++try_no;
             if (try_no == max_tries)

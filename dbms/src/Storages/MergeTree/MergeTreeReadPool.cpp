@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <ext/range.h>
+#include <Storages/MergeTree/MergeTreeBaseBlockInputStream.h>
 
 
 namespace ProfileEvents
@@ -15,19 +16,20 @@ namespace DB
 
 MergeTreeReadPool::MergeTreeReadPool(
     const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
-    RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
-    const String & prewhere_column_name, const bool check_columns, const Names & column_names,
+    RangesInDataParts parts, MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
+    const bool check_columns, const Names & column_names,
     const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
     const bool do_not_steal_tasks)
     : backoff_settings{backoff_settings}, backoff_state{threads}, data{data},
-    column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks}, predict_block_size_bytes{preferred_block_size_bytes > 0}
+      column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks},
+      predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}
 {
-    const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_actions, prewhere_column_name, check_columns);
+    const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_info, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
 }
 
 
-MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread)
+MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names)
 {
     const std::lock_guard<std::mutex> lock{mutex};
 
@@ -111,9 +113,9 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
         : std::make_unique<MergeTreeBlockSizePredictor>(*per_part_size_predictor[part_idx]); /// make a copy
 
     return std::make_unique<MergeTreeReadTask>(
-        part.data_part, ranges_to_get_from_part, part.part_index_in_query, column_names,
+        part.data_part, ranges_to_get_from_part, part.part_index_in_query, ordered_names,
         per_part_column_name_set[part_idx], per_part_columns[part_idx], per_part_pre_columns[part_idx],
-        per_part_remove_prewhere_column[part_idx], per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
+        prewhere_info && prewhere_info->remove_prewhere_column, per_part_should_reorder[part_idx], std::move(curr_task_size_predictor));
 }
 
 
@@ -121,7 +123,6 @@ Block MergeTreeReadPool::getHeader() const
 {
     return data.getSampleBlockForColumns(column_names);
 }
-
 
 void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInfo info)
 {
@@ -165,8 +166,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
 
 
 std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
-    RangesInDataParts & parts, const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name,
-    const bool check_columns)
+    RangesInDataParts & parts, const PrewhereInfoPtr & prewhere_info, const bool check_columns)
 {
     std::vector<size_t> per_part_sum_marks;
     Block sample_block = data.getSampleBlock();
@@ -193,10 +193,10 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         Names required_pre_column_names;
 
-        if (prewhere_actions)
+        if (prewhere_info)
         {
             /// collect columns required for PREWHERE evaluation
-            required_pre_column_names = prewhere_actions->getRequiredColumns();
+            required_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
 
             /// there must be at least one column required for PREWHERE
             if (required_pre_column_names.empty())
@@ -208,13 +208,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
                 should_reoder = true;
 
             /// will be used to distinguish between PREWHERE and WHERE columns when applying filter
-            const NameSet pre_name_set{
-                std::begin(required_pre_column_names), std::end(required_pre_column_names)
-            };
-            /** If expression in PREWHERE is not table column, then no need to return column with it to caller
-                *    (because storage is expected only to read table columns).
-                */
-            per_part_remove_prewhere_column.push_back(0 == pre_name_set.count(prewhere_column_name));
+            const NameSet pre_name_set(required_pre_column_names.begin(), required_pre_column_names.end());
 
             Names post_column_names;
             for (const auto & name : required_column_names)
@@ -223,8 +217,6 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
             required_column_names = post_column_names;
         }
-        else
-            per_part_remove_prewhere_column.push_back(false);
 
         per_part_column_name_set.emplace_back(std::begin(required_column_names), std::end(required_column_names));
 

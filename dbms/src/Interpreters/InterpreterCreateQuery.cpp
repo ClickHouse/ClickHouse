@@ -34,6 +34,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
@@ -53,6 +54,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
     extern const int READONLY;
+    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -348,6 +350,40 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
 }
 
 
+void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & columns, const Context & context)
+{
+    const auto & settings = context.getSettingsRef();
+    bool allow_low_cardinality = settings.allow_experimental_low_cardinality_type != 0;
+    bool allow_decimal = settings.allow_experimental_decimal_type;
+
+    if (allow_low_cardinality && allow_decimal)
+        return;
+
+    auto check_types = [&](const NamesAndTypesList & list)
+    {
+        for (const auto & column : list)
+        {
+            if (!allow_low_cardinality && column.type && column.type->withDictionary())
+            {
+                String message = "Cannot create table with column " + column.name + " which type is "
+                                 + column.type->getName() + " because LowCardinality type is not allowed. "
+                                 + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+            if (!allow_decimal && column.type && isDecimal(*column.type))
+            {
+                String message = "Cannot create table with column " + column.name + " which type is " + column.type->getName()
+                                 + ". Set setting allow_experimental_decimal_type = 1 in order to allow it.";
+                throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+    };
+
+    check_types(columns.ordinary);
+    check_types(columns.materialized);
+}
+
+
 ColumnsDescription InterpreterCreateQuery::setColumns(
     ASTCreateQuery & create, const Block & as_select_sample, const StoragePtr & as_storage) const
 {
@@ -486,6 +522,10 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns.
     ColumnsDescription columns = setColumns(create, as_select_sample, as_storage);
+
+    /// Some column types may be not allowed according to settings.
+    if (!create.attach)
+        checkSupportedTypes(columns, context);
 
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);

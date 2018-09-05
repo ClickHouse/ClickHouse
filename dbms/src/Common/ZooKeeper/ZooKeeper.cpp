@@ -493,7 +493,7 @@ Responses ZooKeeper::multi(const Requests & requests)
 int32_t ZooKeeper::tryMulti(const Requests & requests, Responses & responses)
 {
     int32_t code = multiImpl(requests, responses);
-    if (code && !isUserError(code))
+    if (code && !ZooKeeperImpl::ZooKeeper::isUserError(code))
         throw KeeperException(code);
     return code;
 }
@@ -824,7 +824,7 @@ size_t KeeperMultiException::getFailedOpIndex(int32_t code, const Responses & re
         if (responses[index]->error)
             return index;
 
-    if (!isUserError(code))
+    if (!ZooKeeperImpl::ZooKeeper::isUserError(code))
         throw DB::Exception("There are no failed OPs because '" + ZooKeeper::error2string(code) + "' is not valid response code for that",
             DB::ErrorCodes::LOGICAL_ERROR);
 
@@ -850,7 +850,7 @@ void KeeperMultiException::check(int32_t code, const Requests & requests, const 
     if (!code)
         return;
 
-    if (isUserError(code))
+    if (ZooKeeperImpl::ZooKeeper::isUserError(code))
         throw KeeperMultiException(code, requests, responses);
     else
         throw KeeperException(code);

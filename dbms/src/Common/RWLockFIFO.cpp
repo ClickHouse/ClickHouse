@@ -86,7 +86,7 @@ RWLockFIFO::LockHandler RWLockFIFO::getLock(RWLockFIFO::Type type, RWLockFIFO::C
 
         handler_ptr->it_client->info += "; " + client.info;
 
-        return  handler_ptr;
+        return handler_ptr;
     }
 
     if (type == Type::Write || queue.empty() || queue.back().type == Type::Write)

@@ -56,6 +56,7 @@ public:
         const ConnectionTimeouts & timeouts,
         const String & user,
         const String & password,
+        const String & interserver_scheme,
         bool to_detached = false,
         const String & tmp_prefix_ = "");
 

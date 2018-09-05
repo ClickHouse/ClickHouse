@@ -10,7 +10,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -140,6 +140,8 @@ private:
     /// Notify subscribers about queue change
     void notifySubscribers(size_t new_queue_size);
 
+    /// Check that entry_ptr is REPLACE_RANGE entry and can be removed from queue because current entry covers it
+    bool checkReplaceRangeCanBeRemoved(const MergeTreePartInfo & part_info, const LogEntryPtr entry_ptr, const ReplicatedMergeTreeLogEntryData & current) const;
 
     /// Ensures that only one thread is simultaneously updating mutations.
     std::mutex update_mutations_mutex;
@@ -249,7 +251,7 @@ public:
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
 
     /** Throws and exception if there are currently executing entries in the range .
      */
@@ -274,6 +276,15 @@ public:
       * Returns true if there were no exceptions during the processing.
       */
     bool processEntry(std::function<zkutil::ZooKeeperPtr()> get_zookeeper, LogEntryPtr & entry, const std::function<bool(LogEntryPtr &)> func);
+
+    /// Count the number of merges and mutations of single parts in the queue.
+    size_t countMergesAndPartMutations() const;
+
+    /// Count the total number of active mutations.
+    size_t countMutations() const;
+
+    /// Count the total number of active mutations that are finished (is_done = true).
+    size_t countFinishedMutations() const;
 
     ReplicatedMergeTreeMergePredicate getMergePredicate(zkutil::ZooKeeperPtr & zookeeper);
 
@@ -344,12 +355,6 @@ public:
     bool operator()(
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
-
-    /// Count the number of merges and mutations of single parts in the queue.
-    size_t countMergesAndPartMutations() const;
-
-    /// Count the total number of active mutations.
-    size_t countMutations() const;
 
     /// Return nonempty optional if the part can and should be mutated.
     /// Returned mutation version number is always the biggest possible.

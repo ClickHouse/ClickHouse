@@ -1,4 +1,4 @@
-# Visual interfaces from third-party developers
+# Visual Interfaces from Third-party Developers
 
 ## Tabix
 

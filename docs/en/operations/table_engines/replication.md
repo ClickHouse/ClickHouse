@@ -1,6 +1,6 @@
 <a name="table_engines-replication"></a>
 
-# Data replication
+# Data Replication
 
 Replication is only supported for tables in the MergeTree family:
 
@@ -70,7 +70,7 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 <a name="table_engines-replication-creation_of_rep_tables"></a>
 
-## Creating replicated tables
+## Creating Replicated Tables
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
@@ -113,7 +113,7 @@ If you add a new replica after the table already contains some data on other rep
 
 To delete a replica, run `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recovery after failures
+## Recovery After Failures
 
 If ZooKeeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ZooKeeper.
 
@@ -137,7 +137,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then restart the server. On start, the server deletes these flags and starts recovery.
 
-## Recovery after complete data loss
+## Recovery After Complete Data Loss
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -175,7 +175,7 @@ If you want to get rid of a `ReplicatedMergeTree` table without launching the se
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
-## Recovery when metadata in the ZooKeeper cluster is lost or damaged
+## Recovery When Metadata in The ZooKeeper Cluster is Lost or Damaged
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
 

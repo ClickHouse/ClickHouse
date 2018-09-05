@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromArena.h>
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnsCommon.h>
 
 namespace DB
 {
@@ -160,6 +161,25 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
 
     return std::move(res);
 }
+
+ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+template <typename Type>
+ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    auto res = createView();
+
+    res->getData().resize(limit);
+    for (size_t i = 0; i < limit; ++i)
+        res->getData()[i] = getData()[indexes[i]];
+
+    return std::move(res);
+}
+
+INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction);
 
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const

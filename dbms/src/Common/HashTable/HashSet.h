@@ -75,6 +75,7 @@ struct HashSetCellWithSavedHash : public HashTableCell<Key, Hash, TState>
 
     bool keyEquals(const Key & key_) const { return this->key == key_; }
     bool keyEquals(const Key & key_, size_t hash_) const { return saved_hash == hash_ && this->key == key_; }
+    bool keyEquals(const Key & key_, size_t hash_, const typename Base::State &) const { return keyEquals(key_, hash_); }
 
     void setHash(size_t hash_value) { saved_hash = hash_value; }
     size_t getHash(const Hash & /*hash_function*/) const { return saved_hash; }

@@ -2,14 +2,14 @@
 
 Fixed-length integers, with or without a sign.
 
-## Int ranges
+## Int Ranges
 
 - Int8 - [-128 : 127]
 - Int16 - [-32768 : 32767]
 - Int32 - [-2147483648 : 2147483647]
 - Int64 - [-9223372036854775808 : 9223372036854775807]
 
-## Uint ranges
+## Uint Ranges
 
 - UInt8 - [0 : 255]
 - UInt16 - [0 : 65535]

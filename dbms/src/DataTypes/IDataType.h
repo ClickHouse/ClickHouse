@@ -45,6 +45,9 @@ public:
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
+    /// Unique type number or zero
+    virtual size_t getTypeId() const { return 0; }
+
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
       * Some data types are represented in multiple streams while being serialized.
@@ -79,6 +82,9 @@ public:
             NullMap,
 
             TupleElement,
+
+            DictionaryKeys,
+            DictionaryIndexes,
         };
         Type type;
 
@@ -91,13 +97,66 @@ public:
     using SubstreamPath = std::vector<Substream>;
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
-    virtual void enumerateStreams(StreamCallback callback, SubstreamPath path) const
+    virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
     {
         callback(path);
     }
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
+    void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
+
+    struct SerializeBinaryBulkState
+    {
+        virtual ~SerializeBinaryBulkState() = default;
+    };
+    struct DeserializeBinaryBulkState
+    {
+        virtual ~DeserializeBinaryBulkState() = default;
+    };
+
+    using SerializeBinaryBulkStatePtr = std::shared_ptr<SerializeBinaryBulkState>;
+    using DeserializeBinaryBulkStatePtr = std::shared_ptr<DeserializeBinaryBulkState>;
+
+    struct SerializeBinaryBulkSettings
+    {
+        OutputStreamGetter getter;
+        SubstreamPath path;
+
+        size_t low_cardinality_max_dictionary_size = 0;
+        bool low_cardinality_use_single_dictionary_for_part = true;
+
+        bool position_independent_encoding = true;
+    };
+
+    struct DeserializeBinaryBulkSettings
+    {
+        InputStreamGetter getter;
+        SubstreamPath path;
+
+        /// True if continue reading from previous positions in file. False if made fseek to the start of new granule.
+        bool continuous_reading = true;
+
+        bool position_independent_encoding = true;
+        /// If not zero, may be used to avoid reallocations while reading column of String type.
+        double avg_value_size_hint = 0;
+    };
+
+    /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
+    virtual void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & /*settings*/,
+            SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    /// Call after serializeBinaryBulkWithMultipleStreams chain to finish serialization.
+    virtual void serializeBinaryBulkStateSuffix(
+        SerializeBinaryBulkSettings & /*settings*/,
+        SerializeBinaryBulkStatePtr & /*state*/) const {}
+
+    /// Call before before deserializeBinaryBulkWithMultipleStreams chain to get DeserializeBinaryBulkStatePtr.
+    virtual void deserializeBinaryBulkStatePrefix(
+        DeserializeBinaryBulkSettings & /*settings*/,
+        DeserializeBinaryBulkStatePtr & /*state*/) const {}
 
     /** 'offset' and 'limit' are used to specify range.
       * limit = 0 - means no limit.
@@ -107,29 +166,24 @@ public:
       */
     virtual void serializeBinaryBulkWithMultipleStreams(
         const IColumn & column,
-        OutputStreamGetter getter,
         size_t offset,
         size_t limit,
-        bool /*position_independent_encoding*/,
-        SubstreamPath path) const
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & /*state*/) const
     {
-        if (WriteBuffer * stream = getter(path))
+        if (WriteBuffer * stream = settings.getter(settings.path))
             serializeBinaryBulk(column, *stream, offset, limit);
     }
 
-    /** Read no more than limit values and append them into column.
-      * avg_value_size_hint - if not zero, may be used to avoid reallocations while reading column of String type.
-      */
+    /// Read no more than limit values and append them into column.
     virtual void deserializeBinaryBulkWithMultipleStreams(
         IColumn & column,
-        InputStreamGetter getter,
         size_t limit,
-        double avg_value_size_hint,
-        bool /*position_independent_encoding*/,
-        SubstreamPath path) const
+        DeserializeBinaryBulkSettings & settings,
+        DeserializeBinaryBulkStatePtr & /*state*/) const
     {
-        if (ReadBuffer * stream = getter(path))
-            deserializeBinaryBulk(column, *stream, limit, avg_value_size_hint);
+        if (ReadBuffer * stream = settings.getter(settings.path))
+            deserializeBinaryBulk(column, *stream, limit, settings.avg_value_size_hint);
     }
 
     /** Override these methods for data types that require just single stream (most of data types).
@@ -358,6 +412,8 @@ public:
     /** If this data type cannot be wrapped in Nullable data type.
       */
     virtual bool canBeInsideNullable() const { return false; }
+
+    virtual bool withDictionary() const { return false; }
 
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.

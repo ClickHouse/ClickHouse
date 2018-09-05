@@ -3,10 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>

@@ -8,12 +8,8 @@ Build-Depends: debhelper (>= 9),
                gcc-7 [amd64 i386] | gcc-8 [amd64 i386], g++-7 [amd64 i386] | g++-8 [amd64 i386],
                clang-6.0 [arm64 armhf] | clang-5.0 [arm64 armhf] | clang-7 [arm64 armhf],
                libc6-dev,
-               libmariadbclient-dev | default-libmysqlclient-dev | libmysqlclient-dev,
                libicu-dev,
-               libltdl-dev,
-               libreadline-dev,
-               libssl1.0-dev | libssl-dev,
-               unixodbc-dev
+               libreadline-dev
 Standards-Version: 3.9.8
 
 Package: clickhouse-client

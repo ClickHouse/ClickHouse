@@ -9,10 +9,11 @@
 
 #include <ext/scope_guard.h>
 
-#include <Common/ExternalTable.h>
+#include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
+#include <Common/CurrentThread.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -208,6 +209,13 @@ void HTTPHandler::processQuery(
     Poco::Net::HTTPServerResponse & response,
     Output & used_output)
 {
+    Context context = server.context();
+    context.setGlobalContext(server.context());
+
+    /// It will forcibly detach query even if unexpected error ocurred and detachQuery() was not called
+    /// Normal detaching is happen in BlockIO callbacks
+    CurrentThread::QueryScope query_scope_holder(context);
+
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
     std::istream & istr = request.stream();
@@ -257,14 +265,9 @@ void HTTPHandler::processQuery(
     }
 
     std::string query_id = params.get("query_id", "");
-
-    const auto & config = server.config();
-
-    Context context = server.context();
-    context.setGlobalContext(server.context());
-
     context.setUser(user, password, request.clientAddress(), quota_key);
     context.setCurrentQueryId(query_id);
+    CurrentThread::attachQueryContext(context);
 
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
@@ -273,6 +276,7 @@ void HTTPHandler::processQuery(
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
+    const auto & config = server.config();
 
     if (session_is_set)
     {
@@ -421,34 +425,45 @@ void HTTPHandler::processQuery(
 
     std::unique_ptr<ReadBuffer> in;
 
-    // Used in case of POST request with form-data, but it not to be expectd to be deleted after that scope
+    static const NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
+        "buffer_size", "wait_end_of_query", "session_id", "session_timeout", "session_check"};
+
+    Names reserved_param_suffixes;
+
+    auto param_could_be_skipped = [&] (const String & name)
+    {
+        if (reserved_param_names.count(name))
+            return true;
+
+        for (const String & suffix : reserved_param_suffixes)
+        {
+            if (endsWith(name, suffix))
+                return true;
+        }
+
+        return false;
+    };
+
+    /// Used in case of POST request with form-data, but it isn't expected to be deleted after that scope.
     std::string full_query;
 
     /// Support for "external data for query processing".
     if (startsWith(request.getContentType().data(), "multipart/form-data"))
     {
         ExternalTablesHandler handler(context, params);
-
-        /// Params are of both form params POST and uri (GET params)
         params.load(request, istr, handler);
 
-        for (const auto & it : params)
-        {
-            if (it.first == "query")
-            {
-                full_query += it.second;
-            }
-        }
-        in = std::make_unique<ReadBufferFromString>(full_query);
+        /// Skip unneeded parameters to avoid confusing them later with context settings or query parameters.
+        reserved_param_suffixes.emplace_back("_format");
+        reserved_param_suffixes.emplace_back("_types");
+        reserved_param_suffixes.emplace_back("_structure");
 
-        /// Erase unneeded parameters to avoid confusing them later with context settings or query
-        /// parameters.
-        for (const auto & it : handler.names)
-        {
-            params.erase(it + "_format");
-            params.erase(it + "_types");
-            params.erase(it + "_structure");
-        }
+        /// Params are of both form params POST and uri (GET params)
+        for (const auto & it : params)
+            if (it.first == "query")
+                full_query += it.second;
+
+        in = std::make_unique<ReadBufferFromString>(full_query);
     }
     else
         in = std::make_unique<ConcatReadBuffer>(*in_param, *in_post_maybe_compressed);
@@ -475,11 +490,6 @@ void HTTPHandler::processQuery(
 
     auto readonly_before_query = settings.readonly;
 
-    NameSet reserved_param_names{"query", "compress", "decompress", "user", "password", "quota_key", "query_id", "stacktrace",
-        "buffer_size", "wait_end_of_query",
-        "session_id", "session_timeout", "session_check"
-    };
-
     for (auto it = params.begin(); it != params.end(); ++it)
     {
         if (it->first == "database")
@@ -490,7 +500,7 @@ void HTTPHandler::processQuery(
         {
             context.setDefaultFormat(it->second);
         }
-        else if (reserved_param_names.find(it->first) != reserved_param_names.end())
+        else if (param_could_be_skipped(it->first))
         {
         }
         else

@@ -29,11 +29,13 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const override;
+
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 

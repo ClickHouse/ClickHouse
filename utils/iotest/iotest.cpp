@@ -7,8 +7,7 @@
 #include <vector>
 #include <random>
 #include <pcg_random.hpp>
-#include <Poco/NumberParser.h>
-#include <Poco/NumberFormatter.h>
+#include <IO/ReadHelpers.h>
 #include <Poco/Exception.h>
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
@@ -76,11 +75,11 @@ int mainImpl(int argc, char ** argv)
 {
     const char * file_name = 0;
     int mode = MODE_NONE;
-    size_t min_offset = 0;
-    size_t max_offset = 0;
-    size_t block_size = 0;
-    size_t threads = 0;
-    size_t count = 0;
+    UInt64 min_offset = 0;
+    UInt64 max_offset = 0;
+    UInt64 block_size = 0;
+    UInt64 threads = 0;
+    UInt64 count = 0;
 
     if (argc != 8)
     {
@@ -90,11 +89,11 @@ int mainImpl(int argc, char ** argv)
     }
 
     file_name = argv[1];
-    min_offset = Poco::NumberParser::parseUnsigned64(argv[3]);
-    max_offset = Poco::NumberParser::parseUnsigned64(argv[4]);
-    block_size = Poco::NumberParser::parseUnsigned64(argv[5]);
-    threads = Poco::NumberParser::parseUnsigned(argv[6]);
-    count = Poco::NumberParser::parseUnsigned(argv[7]);
+    min_offset = DB::parse<UInt64>(argv[3]);
+    max_offset = DB::parse<UInt64>(argv[4]);
+    block_size = DB::parse<UInt64>(argv[5]);
+    threads = DB::parse<UInt64>(argv[6]);
+    count = DB::parse<UInt64>(argv[7]);
 
     for (int i = 0; argv[2][i]; ++i)
     {

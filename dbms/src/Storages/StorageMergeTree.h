@@ -56,7 +56,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -83,7 +83,9 @@ public:
 
     void alter(const AlterCommands & params, const String & database_name, const String & table_name, const Context & context) override;
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
+
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -139,6 +141,8 @@ private:
     Int64 getCurrentMutationVersion(
         const MergeTreeData::DataPartPtr & part,
         std::lock_guard<std::mutex> & /* currently_merging_mutex_lock */) const;
+
+    void clearOldMutations();
 
     friend class MergeTreeBlockOutputStream;
     friend class MergeTreeData;

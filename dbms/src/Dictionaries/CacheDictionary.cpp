@@ -101,12 +101,12 @@ void CacheDictionary::isInImpl(
 {
     /// Transform all children to parents until ancestor id or null_value will be reached.
 
-    size_t size = out.size();
-    memset(out.data(), 0xFF, size);        /// 0xFF means "not calculated"
+    size_t out_size = out.size();
+    memset(out.data(), 0xFF, out_size);        /// 0xFF means "not calculated"
 
     const auto null_value = std::get<UInt64>(hierarchical_attribute->null_values);
 
-    PaddedPODArray<Key> children(size);
+    PaddedPODArray<Key> children(out_size);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
     while (true)
@@ -115,7 +115,7 @@ void CacheDictionary::isInImpl(
         size_t parents_idx = 0;
         size_t new_children_idx = 0;
 
-        while (out_idx < size)
+        while (out_idx < out_size)
         {
             /// Already calculated
             if (out[out_idx] != 0xFF)
@@ -203,7 +203,7 @@ void CacheDictionary::isInConstantVector(
     }
 
     /// Assuming short hierarchy, so linear search is Ok.
-    for (size_t i = 0, size = out.size(); i < size; ++i)
+    for (size_t i = 0, out_size = out.size(); i < out_size; ++i)
         out[i] = std::find(ancestors.begin(), ancestors.end(), ancestor_ids[i]) != ancestors.end();
 }
 
@@ -936,12 +936,12 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
             if (string_ref.data && string_ref.data != null_value_ref.data())
                 string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
 
-            const auto size = string.size();
-            if (size != 0)
+            const auto str_size = string.size();
+            if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(size + 1);
-                std::copy(string.data(), string.data() + size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, size};
+                auto string_ptr = string_arena->alloc(str_size + 1);
+                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
+                string_ref = StringRef{string_ptr, str_size};
             }
             else
                 string_ref = {};

@@ -406,9 +406,6 @@ ConfigProcessor::Files ConfigProcessor::getConfigMergeFiles(const std::string & 
     /// Add path_to_config/conf.d dir
     merge_dir_path.setBaseName("conf");
     merge_dirs.insert(merge_dir_path.toString());
-    /// Add path_to_config/config.d dir
-    merge_dir_path.setBaseName("config");
-    merge_dirs.insert(merge_dir_path.toString());
 
     for (const std::string & merge_dir_name : merge_dirs)
     {
