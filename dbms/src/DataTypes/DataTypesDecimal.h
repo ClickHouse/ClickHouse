@@ -246,17 +246,6 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline bool isDecimal(const IDataType & data_type)
-{
-    if (typeid_cast<const DataTypeDecimal<Decimal32> *>(&data_type))
-        return true;
-    if (typeid_cast<const DataTypeDecimal<Decimal64> *>(&data_type))
-        return true;
-    if (typeid_cast<const DataTypeDecimal<Decimal128> *>(&data_type))
-        return true;
-    return false;
-}
-
 inline UInt32 getDecimalScale(const IDataType & data_type)
 {
     if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
@@ -269,20 +258,6 @@ inline UInt32 getDecimalScale(const IDataType & data_type)
 }
 
 ///
-inline bool notDecimalButComparableToDecimal(const IDataType & data_type)
-{
-    if (data_type.isInteger())
-        return true;
-    return false;
-}
-
-///
-inline bool comparableToDecimal(const IDataType & data_type)
-{
-    if (data_type.isInteger())
-        return true;
-    return isDecimal(data_type);
-}
 
 template <typename DataType> constexpr bool IsDecimal = false;
 template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal32>> = true;
