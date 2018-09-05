@@ -122,7 +122,7 @@ public:
     bool isCompilableImpl(const DataTypes & types) const override
     {
         for (const auto & type : types)
-            if (!isCompilable(removeNullable(type)))
+            if (!isCompilableType(removeNullable(type).get()))
                 return false;
         return true;
     }

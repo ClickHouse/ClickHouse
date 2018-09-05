@@ -1237,7 +1237,7 @@ public:
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-        return isCompilable(types[0]) && isCompilable(types[1]);
+        return isCompilableType(types[0].get()) && isCompilableType(types[1].get());
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
