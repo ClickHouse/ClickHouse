@@ -232,7 +232,7 @@ def generate_data(args):
                         'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
                         'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
                         'Float32_ float, Float64_ double, '
-                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned, UUID varchar(36)'
+                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned, UUID_ varchar(36)'
                   ');'
                   'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
                   .format(prefix), shell=True)
