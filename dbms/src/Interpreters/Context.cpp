@@ -1821,7 +1821,7 @@ std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() c
     return shared->compiled_expression_cache;
 }
 
-void Context::setCompiledExressionCache(size_t cache_size)
+void Context::setCompiledExpressionCache(size_t cache_size)
 {
 
     auto lock = getLock();

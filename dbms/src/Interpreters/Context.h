@@ -441,7 +441,7 @@ public:
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
-    void setCompiledExressionCache(size_t cache_size);
+    void setCompiledExpressionCache(size_t cache_size);
     void dropCompiledExpressionCache() const;
 #endif
 
