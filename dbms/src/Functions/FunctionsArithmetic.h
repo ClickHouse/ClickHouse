@@ -1,6 +1,5 @@
 #pragma once
 
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
