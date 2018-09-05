@@ -16,6 +16,7 @@
 #include <Common/UnicodeBar.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/FieldVisitors.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/config_version.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
@@ -607,11 +608,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeFloat64>(&*arguments[0]) && !checkDataType<DataTypeFloat32>(&*arguments[0])
-            && !checkDataType<DataTypeUInt64>(&*arguments[0])
-            && !checkDataType<DataTypeUInt32>(&*arguments[0])
-            && !checkDataType<DataTypeUInt16>(&*arguments[0])
-            && !checkDataType<DataTypeUInt8>(&*arguments[0]))
+        if (!checkDataType<DataTypeFloat64>(arguments[0].get()) && !checkDataType<DataTypeFloat32>(arguments[0].get())
+            && !checkDataType<DataTypeUInt64>(arguments[0].get())
+            && !checkDataType<DataTypeUInt32>(arguments[0].get())
+            && !checkDataType<DataTypeUInt16>(arguments[0].get())
+            && !checkDataType<DataTypeUInt8>(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -927,7 +928,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(&*arguments[0]);
+        const DataTypeArray * arr = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!arr)
             throw Exception("Argument for function " + getName() + " must be Array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -954,7 +955,7 @@ FunctionPtr FunctionReplicate::create(const Context &)
 
 DataTypePtr FunctionReplicate::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(&*arguments[1]);
+    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
     if (!array_type)
         throw Exception("Second argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1104,7 +1105,7 @@ private:
     {
         Float64 width = UnicodeBar::getWidth(src, min, max, max_width);
         dst_chars.resize(UnicodeBar::getWidthInBytes(width));
-        UnicodeBar::render(width, &dst_chars[0]);
+        UnicodeBar::render(width, dst_chars.data());
     }
 
     template <typename T>
@@ -1401,7 +1402,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(&*arguments[0]);
+        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1422,14 +1423,9 @@ public:
         AggregateFunctionPtr aggregate_function_ptr = column_with_states->getAggregateFunction();
         const IAggregateFunction & agg_func = *aggregate_function_ptr;
 
-        auto deleter = [&agg_func](char * ptr)
-        {
-            agg_func.destroy(ptr);
-            free(ptr);
-        };
-        std::unique_ptr<char, decltype(deleter)> place{reinterpret_cast<char *>(malloc(agg_func.sizeOfData())), deleter};
-
-        agg_func.create(place.get()); /// Not much exception-safe. If an exception is thrown out, destroy will be called in vain.
+        AlignedBuffer place(agg_func.sizeOfData(), agg_func.alignOfData());
+        agg_func.create(place.data());
+        SCOPE_EXIT(agg_func.destroy(place.data()));
 
         std::unique_ptr<Arena> arena = agg_func.allocatesMemoryInArena() ? std::make_unique<Arena>() : nullptr;
 
@@ -1441,8 +1437,8 @@ public:
         for (const auto & state_to_add : states)
         {
             /// Will pass empty arena if agg_func does not allocate memory in arena
-            agg_func.merge(place.get(), state_to_add, arena.get());
-            agg_func.insertResultInto(place.get(), result_column);
+            agg_func.merge(place.data(), state_to_add, arena.get());
+            agg_func.insertResultInto(place.data(), result_column);
         }
 
         block.getByPosition(result).column = std::move(result_column_ptr);
@@ -1647,7 +1643,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(&*arguments[0]);
+        const DataTypeAggregateFunction * type = checkAndGetDataType<DataTypeAggregateFunction>(arguments[0].get());
         if (!type)
             throw Exception("Argument for function " + getName() + " must have type AggregateFunction - state of aggregate function.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

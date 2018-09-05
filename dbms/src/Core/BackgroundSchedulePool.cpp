@@ -145,9 +145,9 @@ void BackgroundSchedulePool::TaskInfo::scheduleImpl(std::lock_guard<std::mutex> 
         pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
 }
 
-zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
+Coordination::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
 {
-     return [t = shared_from_this()](const ZooKeeperImpl::ZooKeeper::WatchResponse &)
+     return [t = shared_from_this()](const Coordination::WatchResponse &)
      {
          t->schedule();
      };

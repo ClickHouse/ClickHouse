@@ -1,5 +1,4 @@
 #include <type_traits>
-#include <common/intExp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -8,6 +7,7 @@
 #include <IO/readFloatText.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -18,6 +18,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
+
+
+bool decimalCheckComparisonOverflow(const Context & context) { return context.getSettingsRef().decimal_check_comparison_overflow; }
+bool decimalCheckArithmeticOverflow(const Context & context) { return context.getSettingsRef().decimal_check_arithmetic_overflow; }
 
 
 //
@@ -42,31 +46,22 @@ template <typename T>
 void DataTypeDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     T value = static_cast<const ColumnType &>(column).getData()[row_num];
-    if (value < T(0))
-    {
-        value *= T(-1);
-        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
-    }
-
-    writeIntText(static_cast<typename T::NativeType>(wholePart(value)), ostr);
-    if (scale)
-    {
-        writeChar('.', ostr);
-        String str_fractional(scale, '0');
-        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= T(10))
-            str_fractional[pos] += value % T(10);
-        ostr.write(str_fractional.data(), scale);
-    }
+    writeText(value, scale, ostr);
 }
 
+template <typename T>
+void DataTypeDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale)
+{
+    UInt32 unread_scale = scale;
+    readDecimalText(istr, x, precision, unread_scale);
+    x *= getScaleMultiplier(unread_scale);
+}
 
 template <typename T>
 void DataTypeDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
-    UInt32 unread_scale = scale;
-    readDecimalText(istr, x, precision, unread_scale);
-    x *= getScaleMultiplier(unread_scale);
+    readText(x, istr);
     static_cast<ColumnType &>(column).getData().push_back(x);
 }
 
@@ -86,7 +81,7 @@ T DataTypeDecimal<T>::parseFromString(const String & str) const
 template <typename T>
 void DataTypeDecimal<T>::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
-    FieldType x = get<DecimalField>(field);
+    FieldType x = get<DecimalField<T>>(field);
     writeBinary(x, ostr);
 }
 
@@ -148,13 +143,26 @@ Field DataTypeDecimal<T>::getDefault() const
 template <typename T>
 MutableColumnPtr DataTypeDecimal<T>::createColumn() const
 {
-    auto column = ColumnType::create();
-    column->getData().setScale(scale);
-    return column;
+    return ColumnType::create(0, scale);
 }
 
 
 //
+
+DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
+{
+    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Decimal128>())
+        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (static_cast<UInt64>(scale_value) > precision_value)
+        throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    if (precision_value <= maxDecimalPrecision<Decimal32>())
+        return std::make_shared<DataTypeDecimal<Decimal32>>(precision_value, scale_value);
+    else if (precision_value <= maxDecimalPrecision<Decimal64>())
+        return std::make_shared<DataTypeDecimal<Decimal64>>(precision_value, scale_value);
+    return std::make_shared<DataTypeDecimal<Decimal128>>(precision_value, scale_value);
+}
 
 static DataTypePtr create(const ASTPtr & arguments)
 {
@@ -170,24 +178,35 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     UInt64 precision_value = precision->value.get<UInt64>();
-    Int64 scale_value = scale->value.get<Int64>();
+    UInt64 scale_value = scale->value.get<UInt64>();
 
-    if (precision_value < minDecimalPrecision() || precision_value > maxDecimalPrecision<Decimal128>())
-        throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    if (scale_value < 0 || static_cast<UInt64>(scale_value) > precision_value)
-        throw Exception("Negative scales and scales larger than presicion are not supported", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-
-    if (precision_value <= maxDecimalPrecision<Decimal32>())
-        return std::make_shared<DataTypeDecimal<Decimal32>>(precision_value, scale_value);
-    else if (precision_value <= maxDecimalPrecision<Decimal64>())
-        return std::make_shared<DataTypeDecimal<Decimal64>>(precision_value, scale_value);
-    return std::make_shared<DataTypeDecimal<Decimal128>>(precision_value, scale_value);
+    return createDecimal(precision_value, scale_value);
 }
 
+template <typename T>
+static DataTypePtr createExect(const ASTPtr & arguments)
+{
+    if (!arguments || arguments->children.size() != 1)
+        throw Exception("Decimal data type family must have exactly two arguments: precision and scale",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    const ASTLiteral * scale_arg = typeid_cast<const ASTLiteral *>(arguments->children[0].get());
+
+    if (!scale_arg || !(scale_arg->value.getType() == Field::Types::Int64 || scale_arg->value.getType() == Field::Types::UInt64))
+        throw Exception("Decimal data type family must have a two numbers as its arguments", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+    UInt64 precision = maxDecimalPrecision<T>();
+    UInt64 scale = scale_arg->value.get<UInt64>();
+
+    return createDecimal(precision, scale);
+}
 
 void registerDataTypeDecimal(DataTypeFactory & factory)
 {
+    factory.registerDataType("Decimal32", createExect<Decimal32>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal64", createExect<Decimal64>, DataTypeFactory::CaseInsensitive);
+    factory.registerDataType("Decimal128", createExect<Decimal128>, DataTypeFactory::CaseInsensitive);
+
     factory.registerDataType("Decimal", create, DataTypeFactory::CaseInsensitive);
     factory.registerAlias("DEC", "Decimal", DataTypeFactory::CaseInsensitive);
 }
@@ -196,19 +215,19 @@ void registerDataTypeDecimal(DataTypeFactory & factory)
 template <>
 Decimal32 DataTypeDecimal<Decimal32>::getScaleMultiplier(UInt32 scale_)
 {
-    return common::exp10_i32(scale_);
+    return decimalScaleMultiplier<Int32>(scale_);
 }
 
 template <>
 Decimal64 DataTypeDecimal<Decimal64>::getScaleMultiplier(UInt32 scale_)
 {
-    return common::exp10_i64(scale_);
+    return decimalScaleMultiplier<Int64>(scale_);
 }
 
 template <>
 Decimal128 DataTypeDecimal<Decimal128>::getScaleMultiplier(UInt32 scale_)
 {
-    return common::exp10_i128(scale_);
+    return decimalScaleMultiplier<Int128>(scale_);
 }
 
 

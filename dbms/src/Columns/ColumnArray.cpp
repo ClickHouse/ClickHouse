@@ -61,7 +61,7 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
     auto res = ColumnArray::create(getData().cloneEmpty());
 
     if (to_size == 0)
-        return std::move(res);
+        return res;
 
     size_t from_size = size();
 
@@ -89,7 +89,7 @@ MutableColumnPtr ColumnArray::cloneResized(size_t to_size) const
             res->getOffsets()[i] = offset;
     }
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -237,11 +237,11 @@ void ColumnArray::insertDefault()
 
 void ColumnArray::popBack(size_t n)
 {
-    auto & offsets = getOffsets();
-    size_t nested_n = offsets.back() - offsetAt(offsets.size() - n);
+    auto & offsets_data = getOffsets();
+    size_t nested_n = offsets_data.back() - offsetAt(offsets_data.size() - n);
     if (nested_n)
         getData().popBack(nested_n);
-    offsets.resize_assume_reserved(offsets.size() - n);
+    offsets_data.resize_assume_reserved(offsets_data.size() - n);
 }
 
 
@@ -313,7 +313,8 @@ bool ColumnArray::hasEqualOffsets(const ColumnArray & other) const
 
     const Offsets & offsets1 = getOffsets();
     const Offsets & offsets2 = other.getOffsets();
-    return offsets1.size() == offsets2.size() && 0 == memcmp(&offsets1[0], &offsets2[0], sizeof(offsets1[0]) * offsets1.size());
+    return offsets1.size() == offsets2.size()
+        && (offsets1.size() == 0 || 0 == memcmp(offsets1.data(), offsets2.data(), sizeof(offsets1[0]) * offsets1.size()));
 }
 
 
@@ -421,7 +422,7 @@ ColumnPtr ColumnArray::filterNumber(const Filter & filt, ssize_t result_size_hin
     Offsets & res_offsets = res->getOffsets();
 
     filterArraysImpl<T>(static_cast<const ColumnVector<T> &>(*data).getData(), getOffsets(), res_elems, res_offsets, filt, result_size_hint);
-    return std::move(res);
+    return res;
 }
 
 ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hint) const
@@ -489,7 +490,7 @@ ColumnPtr ColumnArray::filterString(const Filter & filt, ssize_t result_size_hin
         }
     }
 
-    return std::move(res);
+    return res;
 }
 
 ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hint) const
@@ -534,7 +535,7 @@ ColumnPtr ColumnArray::filterGeneric(const Filter & filt, ssize_t result_size_hi
         }
     }
 
-    return std::move(res);
+    return res;
 }
 
 ColumnPtr ColumnArray::filterNullable(const Filter & filt, ssize_t result_size_hint) const
@@ -623,7 +624,7 @@ ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
     if (current_offset != 0)
         res->data = data->permute(nested_perm, current_offset);
 
-    return std::move(res);
+    return res;
 }
 
 ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
@@ -659,10 +660,10 @@ ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit
     if (current_offset != 0)
         res->data = data->index(*nested_indexes_column, current_offset);
 
-    return std::move(res);
+    return res;
 }
 
-INSTANTIATE_INDEX_IMPL(ColumnArray);
+INSTANTIATE_INDEX_IMPL(ColumnArray)
 
 void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
@@ -693,6 +694,9 @@ void ColumnArray::getPermutation(bool reverse, size_t limit, int nan_direction_h
 
 ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
 {
+    if (replicate_offsets.empty())
+        return cloneEmpty();
+
     if (typeid_cast<const ColumnUInt8 *>(data.get()))     return replicateNumber<UInt8>(replicate_offsets);
     if (typeid_cast<const ColumnUInt16 *>(data.get()))    return replicateNumber<UInt16>(replicate_offsets);
     if (typeid_cast<const ColumnUInt32 *>(data.get()))    return replicateNumber<UInt32>(replicate_offsets);
@@ -748,8 +752,11 @@ ColumnPtr ColumnArray::replicateNumber(const Offsets & replicate_offsets) const
             current_new_offset += value_size;
             res_offsets.push_back(current_new_offset);
 
-            res_data.resize(res_data.size() + value_size);
-            memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
+            if (value_size)
+            {
+                res_data.resize(res_data.size() + value_size);
+                memcpy(&res_data[res_data.size() - value_size], &src_data[prev_data_offset], value_size * sizeof(T));
+            }
         }
 
         prev_replicate_offset = replicate_offsets[i];
@@ -820,10 +827,13 @@ ColumnPtr ColumnArray::replicateString(const Offsets & replicate_offsets) const
                 prev_src_string_offset_local += chars_size;
             }
 
-            /// Copies the characters of the array of rows.
-            res_chars.resize(res_chars.size() + sum_chars_size);
-            memcpySmallAllowReadWriteOverflow15(
-                &res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
+            if (sum_chars_size)
+            {
+                /// Copies the characters of the array of rows.
+                res_chars.resize(res_chars.size() + sum_chars_size);
+                memcpySmallAllowReadWriteOverflow15(
+                    &res_chars[res_chars.size() - sum_chars_size], &src_chars[prev_src_string_offset], sum_chars_size);
+            }
         }
 
         prev_replicate_offset = replicate_offsets[i];

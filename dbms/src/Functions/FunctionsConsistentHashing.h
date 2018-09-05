@@ -8,8 +8,8 @@
 #include <Common/typeid_cast.h>
 #include <common/likely.h>
 
-#include <mailru/sumbur.h>
-#include <yandex/consistent_hashing.h>
+#include <sumbur.h>
+#include <consistent_hashing.h>
 
 
 namespace DB
@@ -92,7 +92,7 @@ public:
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
-    };
+    }
 
     String getName() const override
     {

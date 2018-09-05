@@ -1,5 +1,5 @@
 #include <Core/Defines.h>
-
+#include <Common/Arena.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -21,7 +21,7 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     auto res = ColumnString::create();
 
     if (to_size == 0)
-        return std::move(res);
+        return res;
 
     size_t from_size = size();
 
@@ -56,7 +56,7 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
         }
     }
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -105,7 +105,7 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Offsets & res_offsets = res->offsets;
 
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
-    return std::move(res);
+    return res;
 }
 
 
@@ -155,7 +155,37 @@ ColumnPtr ColumnString::permute(const Permutation & perm, size_t limit) const
         res_offsets[i] = current_new_offset;
     }
 
-    return std::move(res);
+    return res;
+}
+
+
+StringRef ColumnString::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+{
+    size_t string_size = sizeAt(n);
+    size_t offset = offsetAt(n);
+
+    StringRef res;
+    res.size = sizeof(string_size) + string_size;
+    char * pos = arena.allocContinue(res.size, begin);
+    memcpy(pos, &string_size, sizeof(string_size));
+    memcpy(pos + sizeof(string_size), &chars[offset], string_size);
+    res.data = pos;
+
+    return res;
+}
+
+const char * ColumnString::deserializeAndInsertFromArena(const char * pos)
+{
+    const size_t string_size = *reinterpret_cast<const size_t *>(pos);
+    pos += sizeof(string_size);
+
+    const size_t old_size = chars.size();
+    const size_t new_size = old_size + string_size;
+    chars.resize(new_size);
+    memcpy(&chars[old_size], pos, string_size);
+
+    offsets.push_back(new_size);
+    return pos + string_size;
 }
 
 
@@ -196,7 +226,7 @@ ColumnPtr ColumnString::indexImpl(const PaddedPODArray<Type> & indexes, size_t l
         res_offsets[i] = current_new_offset;
     }
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -255,7 +285,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
     auto res = ColumnString::create();
 
     if (0 == col_size)
-        return std::move(res);
+        return res;
 
     Chars_t & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
@@ -285,7 +315,7 @@ ColumnPtr ColumnString::replicate(const Offsets & replicate_offsets) const
         prev_string_offset = offsets[i];
     }
 
-    return std::move(res);
+    return res;
 }
 
 

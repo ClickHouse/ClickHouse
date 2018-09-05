@@ -7,7 +7,7 @@
 void test(size_t data_size)
 {
     std::vector<char> vec(data_size);
-    char * data = &vec[0];
+    char * data = vec.data();
 
     for (size_t i = 0; i < data_size; ++i)
         data[i] = rand() & 255;

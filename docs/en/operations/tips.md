@@ -21,7 +21,7 @@ You can use `turbostat` to view the CPU's actual clock rate under a load.
 Always use the `performance` scaling governor.  The `on-demand` scaling governor works much worse with constantly high demand.
 
 ```bash
-sudo echo 'performance' | tee /sys/devices/system/cpu/cpu\*/cpufreq/scaling_governor
+sudo echo 'performance' | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
 ## CPU Limitations
@@ -106,6 +106,8 @@ Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be m
 You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn't already overloaded.
 
 It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+
+Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
 
 With the default settings, ZooKeeper is a time bomb:
 

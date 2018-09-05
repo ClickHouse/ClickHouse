@@ -136,6 +136,8 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->strictness = ASTTableJoin::Strictness::Any;
             else if (ParserKeyword("ALL").ignore(pos))
                 table_join->strictness = ASTTableJoin::Strictness::All;
+            else
+                table_join->strictness = ASTTableJoin::Strictness::Unspecified;
 
             if (ParserKeyword("INNER").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Inner;

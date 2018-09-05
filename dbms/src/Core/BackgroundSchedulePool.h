@@ -58,8 +58,8 @@ public:
         /// Atomically activate task and schedule it for execution.
         bool activateAndSchedule();
 
-        /// get zkutil::WatchCallback needed for notifications from ZooKeeper watches.
-        zkutil::WatchCallback getWatchCallback();
+        /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
+        Coordination::WatchCallback getWatchCallback();
 
     private:
         friend class TaskNotification;

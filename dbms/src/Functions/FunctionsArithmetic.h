@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/Native.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -19,6 +20,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
 #include <common/intExp.h>
+#include <common/arithmeticOverflow.h>
 #include <boost/integer/common_factor.hpp>
 
 #if USE_EMBEDDED_COMPILER
@@ -120,6 +122,7 @@ struct PlusImpl
         return static_cast<Result>(a) + b;
     }
 
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
@@ -149,6 +152,7 @@ struct MultiplyImpl
         return static_cast<Result>(a) * b;
     }
 
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
@@ -177,6 +181,7 @@ struct MinusImpl
         return static_cast<Result>(a) - b;
     }
 
+    /// Apply operation and check overflow. It's used for Deciamal operations. @returns true if overflowed, false othervise.
     template <typename Result = ResultType>
     static inline bool apply(A a, B b, Result & c)
     {
@@ -725,15 +730,16 @@ template <> struct NativeType<Decimal128> { using Type = Int128; };
 /// +|- scale one of args (which scale factor is not 1). ScaleR = oneof(Scale1, Scale2);
 /// *   no agrs scale. ScaleR = Scale1 + Scale2;
 /// /   first arg scale. ScaleR = Scale1 (scale_a = DecimalType<B>::getScale()).
-template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_>
+template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_, bool _check_overflow = true>
 struct DecimalBinaryOperation
 {
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = Operation<NativeResultType, NativeResultType>;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayB = typename ColumnVector<B>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
+    using ArrayA = std::conditional_t<IsDecimalNumber<A>, typename ColumnDecimal<A>::Container, typename ColumnVector<A>::Container>;
+    using ArrayB = std::conditional_t<IsDecimalNumber<B>, typename ColumnDecimal<B>::Container, typename ColumnVector<B>::Container>;
+    using ArrayC = typename ColumnDecimal<ResultType>::Container;
+    using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
     static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
                                             std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
@@ -743,6 +749,38 @@ struct DecimalBinaryOperation
                                             std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
+
+    static void vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            vector_vector(a, b, c, scale_a, scale_b);
+        else
+            SelfNoOverflow::vector_vector(a, b, c, scale_a, scale_b);
+    }
+
+    static void vector_constant(const ArrayA & a, B b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            vector_constant(a, b, c, scale_a, scale_b);
+        else
+            SelfNoOverflow::vector_constant(a, b, c, scale_a, scale_b);
+    }
+
+    static void constant_vector(A a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            constant_vector(a, b, c, scale_a, scale_b);
+        else
+            SelfNoOverflow::constant_vector(a, b, c, scale_a, scale_b);
+    }
+
+    static ResultType constant_constant(A a, B b, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    {
+        if (check_overflow)
+            return constant_constant(a, b, scale_a, scale_b);
+        else
+            return SelfNoOverflow::constant_constant(a, b, scale_a, scale_b);
+    }
 
     static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
@@ -855,7 +893,7 @@ private:
     /// there's implicit type convertion here
     static NativeResultType apply(NativeResultType a, NativeResultType b)
     {
-        if constexpr (can_overflow)
+        if constexpr (can_overflow && _check_overflow)
         {
             NativeResultType res;
             if (Op::template apply<NativeResultType>(a, b, res))
@@ -873,19 +911,30 @@ private:
         {
             NativeResultType res;
 
-            bool overflow = false;
-            if constexpr (scale_left)
-                overflow |= common::mulOverflow(a, scale, a);
-            else
-                overflow |= common::mulOverflow(b, scale, b);
+            if constexpr (_check_overflow)
+            {
+                bool overflow = false;
+                if constexpr (scale_left)
+                    overflow |= common::mulOverflow(a, scale, a);
+                else
+                    overflow |= common::mulOverflow(b, scale, b);
 
-            if constexpr (can_overflow)
-                overflow |= Op::template apply<NativeResultType>(a, b, res);
+                if constexpr (can_overflow)
+                    overflow |= Op::template apply<NativeResultType>(a, b, res);
+                else
+                    res = Op::template apply<NativeResultType>(a, b);
+
+                if (overflow)
+                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
             else
+            {
+                if constexpr (scale_left)
+                    a *= scale;
+                else
+                    b *= scale;
                 res = Op::template apply<NativeResultType>(a, b);
-
-            if (overflow)
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
 
             return res;
         }
@@ -895,12 +944,21 @@ private:
     {
         if constexpr (is_division)
         {
-            bool overflow = false;
-            if constexpr (!IsDecimalNumber<A>)
-                overflow |= common::mulOverflow(scale, scale, scale);
-            overflow |= common::mulOverflow(a, scale, a);
-            if (overflow)
-                throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            if constexpr (_check_overflow)
+            {
+                bool overflow = false;
+                if constexpr (!IsDecimalNumber<A>)
+                    overflow |= common::mulOverflow(scale, scale, scale);
+                overflow |= common::mulOverflow(a, scale, a);
+                if (overflow)
+                    throw Exception("Decimal math overflow", ErrorCodes::DECIMAL_OVERFLOW);
+            }
+            else
+            {
+                if constexpr (!IsDecimalNumber<A>)
+                    scale *= scale;
+                a *= scale;
+            }
 
             return Op::template apply<NativeResultType>(a, b);
         }
@@ -929,11 +987,6 @@ template <> constexpr bool IsIntegral<DataTypeInt64> = true;
 template <typename DataType> constexpr bool IsDateOrDateTime = false;
 template <> constexpr bool IsDateOrDateTime<DataTypeDate> = true;
 template <> constexpr bool IsDateOrDateTime<DataTypeDateTime> = true;
-
-template <typename DataType> constexpr bool IsDecimal = false;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal32>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal64>> = true;
-template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal128>> = true;
 
 template <typename T0, typename T1> constexpr bool UseLeftDecimal = false;
 template <> constexpr bool UseLeftDecimal<DataTypeDecimal<Decimal128>, DataTypeDecimal<Decimal32>> = true;
@@ -1003,6 +1056,7 @@ template <template <typename, typename> class Op, typename Name, bool CanBeExecu
 class FunctionBinaryArithmetic : public IFunction
 {
     const Context & context;
+    bool check_decimal_overflow = true;
 
     template <typename F>
     static bool castType(const IDataType * type, F && f)
@@ -1029,7 +1083,7 @@ class FunctionBinaryArithmetic : public IFunction
     template <typename F>
     static bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     {
-        return castType(left, [&](const auto & left) { return castType(right, [&](const auto & right) { return f(left, right); }); });
+        return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
     }
 
     FunctionBuilderPtr getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1) const
@@ -1077,7 +1131,10 @@ public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
-    FunctionBinaryArithmetic(const Context & context) : context(context) {}
+    FunctionBinaryArithmetic(const Context & context_)
+    :   context(context_),
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context))
+    {}
 
     String getName() const override
     {
@@ -1163,9 +1220,9 @@ public:
             return;
         }
 
-        auto * left = block.getByPosition(arguments[0]).type.get();
-        auto * right = block.getByPosition(arguments[1]).type.get();
-        bool valid = castBothTypes(left, right, [&](const auto & left, const auto & right)
+        auto * left_generic = block.getByPosition(arguments[0]).type.get();
+        auto * right_generic = block.getByPosition(arguments[1]).type.get();
+        bool valid = castBothTypes(left_generic, right_generic, [&](const auto & left, const auto & right)
         {
             using LeftDataType = std::decay_t<decltype(left)>;
             using RightDataType = std::decay_t<decltype(right)>;
@@ -1179,9 +1236,9 @@ public:
                 using T0 = typename LeftDataType::FieldType;
                 using T1 = typename RightDataType::FieldType;
                 using ResultType = typename ResultDataType::FieldType;
-                using ColVecT0 = ColumnVector<T0>;
-                using ColVecT1 = ColumnVector<T1>;
-                using ColVecResult = ColumnVector<ResultType>;
+                using ColVecT0 = std::conditional_t<IsDecimalNumber<T0>, ColumnDecimal<T0>, ColumnVector<T0>>;
+                using ColVecT1 = std::conditional_t<IsDecimalNumber<T1>, ColumnDecimal<T1>, ColumnVector<T1>>;
+                using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
                 /// Decimal operations need scale. Operations are on result type.
                 using OpImpl = std::conditional_t<IsDecimal<ResultDataType>,
@@ -1202,10 +1259,13 @@ public:
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
+
                             auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
-                                                                 scale_a, scale_b);
+                                                                    scale_a, scale_b, check_decimal_overflow);
                             block.getByPosition(result).column =
-                                ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(col_left->size(), toField(res));
+                                ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
+                                    col_left->size(), toField(res, type.getScale()));
+
                         }
                         else
                         {
@@ -1216,26 +1276,36 @@ public:
                     }
                 }
 
-                auto col_res = ColVecResult::create();
+                typename ColVecResult::MutablePtr col_res = nullptr;
+                if constexpr (result_is_decimal)
+                {
+                    ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
+                    col_res = ColVecResult::create(0, type.getScale());
+                }
+                else
+                    col_res = ColVecResult::create();
+
                 auto & vec_res = col_res->getData();
                 vec_res.resize(block.rows());
-                if (auto col_left = checkAndGetColumnConst<ColVecT0>(col_left_raw))
+
+                if (auto col_left_const = checkAndGetColumnConst<ColVecT0>(col_left_raw))
                 {
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                     {
                         if constexpr (result_is_decimal)
                         {
                             ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
-                            vec_res.setScale(type.getScale());
 
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                             if constexpr (IsDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
-                            OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res, scale_a, scale_b);
+
+                            OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
+                                                    scale_a, scale_b, check_decimal_overflow);
                         }
                         else
-                            OpImpl::constant_vector(col_left->template getValue<T0>(), col_right->getData(), vec_res);
+                            OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res);
                     }
                     else
                         return false;
@@ -1245,16 +1315,21 @@ public:
                     if constexpr (result_is_decimal)
                     {
                         ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
-                        vec_res.setScale(type.getScale());
 
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
                         if constexpr (IsDecimal<RightDataType> && is_division)
                             scale_a = right.getScaleMultiplier();
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                            OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b);
-                        else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                            OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res, scale_a, scale_b);
+                        {
+                            OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
+                                                  check_decimal_overflow);
+                        }
+                        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                        {
+                            OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res,
+                                                    scale_a, scale_b, check_decimal_overflow);
+                        }
                         else
                             return false;
                     }
@@ -1262,16 +1337,15 @@ public:
                     {
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                             OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res);
-                        else if (auto col_right = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                            OpImpl::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
+                        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
+                            OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
                         else
                             return false;
                     }
                 }
                 else
-                {
                     return false;
-                }
+
                 block.getByPosition(result).column = std::move(col_res);
                 return true;
             }
@@ -1400,9 +1474,9 @@ public:
             {
                 if constexpr (allow_decimal)
                 {
-                    if (auto col = checkAndGetColumn<ColumnVector<T0>>(block.getByPosition(arguments[0]).column.get()))
+                    if (auto col = checkAndGetColumn<ColumnDecimal<T0>>(block.getByPosition(arguments[0]).column.get()))
                     {
-                        auto col_res = ColumnVector<typename Op<T0>::ResultType>::create();
+                        auto col_res = ColumnDecimal<typename Op<T0>::ResultType>::create(0, type.getScale());
                         auto & vec_res = col_res->getData();
                         vec_res.resize(col->getData().size());
                         UnaryOperationImpl<T0, Op<T0>>::vector(col->getData(), vec_res);
@@ -1632,9 +1706,9 @@ struct DivideIntegralByConstantImpl
         libdivide::divider<A> divider(b);
 
         size_t size = a.size();
-        const A * a_pos = &a[0];
+        const A * a_pos = a.data();
         const A * a_end = a_pos + size;
-        ResultType * c_pos = &c[0];
+        ResultType * c_pos = c.data();
 
 #if __SSE2__
         static constexpr size_t values_per_sse_register = 16 / sizeof(A);
@@ -1799,7 +1873,7 @@ private:
         {
             const auto size = value_col->size();
             bool is_const;
-            const auto mask = createConstMask<T>(block, arguments, is_const);
+            const auto const_mask = createConstMaskIfConst<T>(block, arguments, is_const);
             const auto & val = value_col->getData();
 
             auto out_col = ColumnVector<UInt8>::create(size);
@@ -1808,7 +1882,7 @@ private:
             if (is_const)
             {
                 for (const auto i : ext::range(0, size))
-                    out[i] = Impl::apply(val[i], mask);
+                    out[i] = Impl::apply(val[i], const_mask);
             }
             else
             {
@@ -1821,16 +1895,16 @@ private:
             block.getByPosition(result).column = std::move(out_col);
             return true;
         }
-        else if (const auto value_col = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
+        else if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            const auto size = value_col->size();
+            const auto size = value_col_const->size();
             bool is_const;
-            const auto mask = createConstMask<T>(block, arguments, is_const);
-            const auto val = value_col->template getValue<T>();
+            const auto const_mask = createConstMaskIfConst<T>(block, arguments, is_const);
+            const auto val = value_col_const->template getValue<T>();
 
             if (is_const)
             {
-                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, mask)));
+                block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(size, toField(Impl::apply(val, const_mask)));
             }
             else
             {
@@ -1852,9 +1926,9 @@ private:
     }
 
     template <typename ValueType>
-    ValueType createConstMask(const Block & block, const ColumnNumbers & arguments, bool & is_const)
+    ValueType createConstMaskIfConst(const Block & block, const ColumnNumbers & arguments, bool & out_is_const)
     {
-        is_const = true;
+        out_is_const = true;
         ValueType mask = 0;
 
         for (const auto i : ext::range(1, arguments.size()))
@@ -1866,7 +1940,7 @@ private:
             }
             else
             {
-                is_const = false;
+                out_is_const = false;
                 return {};
             }
         }
@@ -1905,9 +1979,9 @@ private:
 
             return true;
         }
-        else if (const auto pos_col = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
+        else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
-            const auto & pos = pos_col->template getValue<PosType>();
+            const auto & pos = pos_col_const->template getValue<PosType>();
             const auto new_mask = 1 << pos;
 
             for (const auto i : ext::range(0, mask.size()))

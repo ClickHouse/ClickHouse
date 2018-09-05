@@ -363,8 +363,8 @@ struct TaskCluster
 struct MultiTransactionInfo
 {
     int32_t code;
-    zkutil::Requests requests;
-    zkutil::Responses responses;
+    Coordination::Requests requests;
+    Coordination::Responses responses;
 };
 
 
@@ -373,7 +373,7 @@ struct MultiTransactionInfo
 static MultiTransactionInfo checkNoNodeAndCommit(
     const zkutil::ZooKeeperPtr & zookeeper,
     const String & checking_node_path,
-    zkutil::RequestPtr && op)
+    Coordination::RequestPtr && op)
 {
     MultiTransactionInfo info;
     info.requests.emplace_back(zkutil::makeCreateRequest(checking_node_path, "", zkutil::CreateMode::Persistent));
@@ -742,7 +742,7 @@ public:
     {
         auto zookeeper = context.getZooKeeper();
 
-        task_description_watch_callback = [this] (const ZooKeeperImpl::ZooKeeper::WatchResponse &)
+        task_description_watch_callback = [this] (const Coordination::WatchResponse &)
         {
             UInt64 version = ++task_descprtion_version;
             LOG_DEBUG(log, "Task description should be updated, local version " << version);
@@ -902,7 +902,7 @@ public:
         task_description_watch_zookeeper = zookeeper;
 
         String task_config_str;
-        zkutil::Stat stat;
+        Coordination::Stat stat;
         int code;
 
         zookeeper->tryGetWatch(task_description_path, task_config_str, &stat, task_description_watch_callback, &code);
@@ -1052,7 +1052,7 @@ protected:
         {
             updateConfigIfNeeded();
 
-            zkutil::Stat stat;
+            Coordination::Stat stat;
             zookeeper->get(workers_version_path, &stat);
             auto version = stat.version;
             zookeeper->get(workers_path, &stat);
@@ -1070,16 +1070,16 @@ protected:
             }
             else
             {
-                zkutil::Requests ops;
+                Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeSetRequest(workers_version_path, description, version));
                 ops.emplace_back(zkutil::makeCreateRequest(current_worker_path, description, zkutil::CreateMode::Ephemeral));
-                zkutil::Responses responses;
+                Coordination::Responses responses;
                 auto code = zookeeper->tryMulti(ops, responses);
 
-                if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+                if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
                     return std::make_shared<zkutil::EphemeralNodeHolder>(current_worker_path, *zookeeper, false, false, description);
 
-                if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+                if (code == Coordination::ZBADVERSION)
                 {
                     ++num_bad_version_errors;
 
@@ -1093,7 +1093,7 @@ protected:
                     }
                 }
                 else
-                    throw zkutil::KeeperException(code);
+                    throw Coordination::Exception(code);
             }
         }
     }
@@ -1157,7 +1157,7 @@ protected:
                 zxid2.push_back(res.stat.pzxid);
             }
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
             LOG_INFO(log, "A ZooKeeper error occurred while checking partition " << partition_name
                           << ". Will recheck the partition. Error: " << e.displayText());
@@ -1242,9 +1242,9 @@ protected:
         {
             cleaner_holder = zkutil::EphemeralNodeHolder::create(dirt_cleaner_path, *zookeeper, host_id);
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+            if (e.code == Coordination::ZNODEEXISTS)
             {
                 LOG_DEBUG(log, "Partition " << task_partition.name << " is cleaning now by somebody, sleep");
                 std::this_thread::sleep_for(default_sleep_time);
@@ -1254,7 +1254,7 @@ protected:
             throw;
         }
 
-        zkutil::Stat stat;
+        Coordination::Stat stat;
         if (zookeeper->exists(current_partition_active_workers_dir, &stat))
         {
             if (stat.numChildren != 0)
@@ -1291,7 +1291,7 @@ protected:
         }
 
         /// Remove the locking node
-        zkutil::Requests requests;
+        Coordination::Requests requests;
         requests.emplace_back(zkutil::makeRemoveRequest(dirt_cleaner_path, -1));
         requests.emplace_back(zkutil::makeRemoveRequest(is_dirty_flag_path, -1));
         zookeeper->multi(requests);
@@ -1503,8 +1503,8 @@ protected:
         auto create_is_dirty_node = [&] ()
         {
             auto code = zookeeper->tryCreate(is_dirty_flag_path, current_task_status_path, zkutil::CreateMode::Persistent);
-            if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-                throw zkutil::KeeperException(code, is_dirty_flag_path);
+            if (code && code != Coordination::ZNODEEXISTS)
+                throw Coordination::Exception(code, is_dirty_flag_path);
         };
 
         /// Returns SELECT query filtering current partition and applying user filter
@@ -1552,9 +1552,9 @@ protected:
         {
             partition_task_node_holder = zkutil::EphemeralNodeHolder::create(current_task_is_active_path, *zookeeper, host_id);
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+            if (e.code == Coordination::ZNODEEXISTS)
             {
                 LOG_DEBUG(log, "Someone is already processing " << current_task_is_active_path);
                 return PartitionTaskStatus::Active;
@@ -1605,7 +1605,7 @@ protected:
 
             if (count != 0)
             {
-                zkutil::Stat stat_shards;
+                Coordination::Stat stat_shards;
                 zookeeper->get(task_partition.getPartitionShardsPath(), &stat_shards);
 
                 if (stat_shards.numChildren == 0)
@@ -1698,7 +1698,7 @@ protected:
                     output = io_insert.out;
                 }
 
-                std::future<zkutil::ExistsResponse> future_is_dirty_checker;
+                std::future<Coordination::ExistsResponse> future_is_dirty_checker;
 
                 Stopwatch watch(CLOCK_MONOTONIC_COARSE);
                 constexpr size_t check_period_milliseconds = 500;
@@ -1716,9 +1716,9 @@ protected:
                     /// Otherwise, the insertion will slow a little bit
                     if (watch.elapsedMilliseconds() >= check_period_milliseconds)
                     {
-                        zkutil::ExistsResponse status = future_is_dirty_checker.get();
+                        Coordination::ExistsResponse status = future_is_dirty_checker.get();
 
-                        if (status.error != ZooKeeperImpl::ZooKeeper::ZNONODE)
+                        if (status.error != Coordination::ZNONODE)
                             throw Exception("Partition is dirty, cancel INSERT SELECT", ErrorCodes::UNFINISHED);
                     }
 
@@ -1990,7 +1990,7 @@ protected:
                         if (increment_and_check_exit())
                             return;
                     }
-                    catch (const Exception & e)
+                    catch (const Exception &)
                     {
                         LOG_INFO(log, getCurrentExceptionMessage(false, true));
                     }
@@ -2023,13 +2023,13 @@ private:
     /// Auto update config stuff
     UInt64 task_descprtion_current_version = 1;
     std::atomic<UInt64> task_descprtion_version{1};
-    zkutil::WatchCallback task_description_watch_callback;
+    Coordination::WatchCallback task_description_watch_callback;
     /// ZooKeeper session used to set the callback
     zkutil::ZooKeeperPtr task_description_watch_zookeeper;
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    zkutil::Stat task_descprtion_current_stat;
+    Coordination::Stat task_descprtion_current_stat;
 
     std::unique_ptr<TaskCluster> task_cluster;
 

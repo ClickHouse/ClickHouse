@@ -98,7 +98,7 @@ nav:
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External dictionaries':
-      - 'General desription': 'query_language/dicts/external_dicts.md'
+      - 'General description': 'query_language/dicts/external_dicts.md'
       - 'Configuring an external dictionary': 'query_language/dicts/external_dicts_dict.md'
       - 'Storing dictionaries in memory': 'query_language/dicts/external_dicts_dict_layout.md'
       - 'Dictionary updates': 'query_language/dicts/external_dicts_dict_lifetime.md'

@@ -47,16 +47,34 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
     std::optional<time_t> min_unprocessed_insert_time_changed;
 
     {
-        std::lock_guard lock(state_mutex);
+        std::lock_guard pull_logs_lock(pull_logs_to_queue_mutex);
 
         String log_pointer_str = zookeeper->get(replica_path + "/log_pointer");
         log_pointer = log_pointer_str.empty() ? 0 : parse<UInt64>(log_pointer_str);
 
+        std::unordered_set<String> already_loaded_paths;
+        {
+            std::lock_guard lock(state_mutex);
+            for (const LogEntryPtr & log_entry : queue)
+                already_loaded_paths.insert(log_entry->znode_name);
+        }
+
         Strings children = zookeeper->getChildren(queue_path);
-        LOG_DEBUG(log, "Having " << children.size() << " queue entries to load.");
+
+        auto to_remove_it = std::remove_if(
+                children.begin(), children.end(), [&](const String & path)
+                {
+                    return already_loaded_paths.count(path);
+                });
+
+        LOG_DEBUG(log,
+                  "Having " << (to_remove_it - children.begin()) << " queue entries to load, "
+                            << (children.end() - to_remove_it) << " entries already loaded.");
+        children.erase(to_remove_it, children.end());
+
         std::sort(children.begin(), children.end());
 
-        zkutil::AsyncResponses<zkutil::GetResponse> futures;
+        zkutil::AsyncResponses<Coordination::GetResponse> futures;
         futures.reserve(children.size());
 
         for (const String & child : children)
@@ -64,9 +82,11 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
         for (auto & future : futures)
         {
-            zkutil::GetResponse res = future.second.get();
+            Coordination::GetResponse res = future.second.get();
             LogEntryPtr entry = LogEntry::parse(res.data, res.stat);
             entry->znode_name = future.first;
+
+            std::lock_guard lock(state_mutex);
 
             insertUnlocked(entry, min_unprocessed_insert_time_changed, lock);
 
@@ -85,7 +105,7 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
 void ReplicatedMergeTreeQueue::initialize(
     const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-    const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper)
+    const MergeTreeData::DataParts & parts)
 {
     zookeeper_path = zookeeper_path_;
     replica_path = replica_path_;
@@ -93,7 +113,6 @@ void ReplicatedMergeTreeQueue::initialize(
     log = &Logger::get(logger_name);
 
     addVirtualParts(parts);
-    load(zookeeper);
 }
 
 
@@ -237,7 +256,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
     ///  because we update times in ZooKeeper with unlocked mutex, while these times may change.
     /// Consider it unimportant (for a short time, ZK will have a slightly different time value).
 
-    zkutil::Requests ops;
+    Coordination::Requests ops;
 
     if (min_unprocessed_insert_time_changed)
         ops.emplace_back(zkutil::makeSetRequest(
@@ -249,7 +268,7 @@ void ReplicatedMergeTreeQueue::updateTimesInZooKeeper(
 
     if (!ops.empty())
     {
-        zkutil::Responses responses;
+        Coordination::Responses responses;
         auto code = zookeeper->tryMulti(ops, responses);
 
         if (code)
@@ -356,7 +375,7 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
 }
 
 
-void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback)
+void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
 
@@ -418,7 +437,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             LOG_DEBUG(log, "Pulling " << (end - begin) << " entries to queue: " << *begin << " - " << *last);
 
-            zkutil::AsyncResponses<zkutil::GetResponse> futures;
+            zkutil::AsyncResponses<Coordination::GetResponse> futures;
             futures.reserve(end - begin);
 
             for (auto it = begin; it != end; ++it)
@@ -426,7 +445,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             /// Simultaneously add all new entries to the queue and move the pointer to the log.
 
-            zkutil::Requests ops;
+            Coordination::Requests ops;
             std::vector<LogEntryPtr> copied_entries;
             copied_entries.reserve(end - begin);
 
@@ -434,7 +453,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
             for (auto & future : futures)
             {
-                zkutil::GetResponse res = future.second.get();
+                Coordination::GetResponse res = future.second.get();
 
                 copied_entries.emplace_back(LogEntry::parse(res.data, res.stat));
 
@@ -472,7 +491,7 @@ void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, z
 
                 for (size_t i = 0, size = copied_entries.size(); i < size; ++i)
                 {
-                    String path_created = dynamic_cast<const zkutil::CreateResponse &>(*responses[i]).path_created;
+                    String path_created = dynamic_cast<const Coordination::CreateResponse &>(*responses[i]).path_created;
                     copied_entries[i]->znode_name = path_created.substr(path_created.find_last_of('/') + 1);
 
                     std::optional<time_t> unused = false;
@@ -523,7 +542,7 @@ static size_t countPartsToMutate(
 }
 
 
-void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback)
+void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(update_mutations_mutex);
 
@@ -567,7 +586,7 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, z
         LOG_INFO(log, "Loading " + toString(entries_to_load.size()) + " mutation entries: "
             + entries_to_load.front() + " - " + entries_to_load.back());
 
-        std::vector<std::future<zkutil::GetResponse>> futures;
+        std::vector<std::future<Coordination::GetResponse>> futures;
         for (const String & entry : entries_to_load)
             futures.emplace_back(zookeeper->asyncGet(zookeeper_path + "/mutations/" + entry));
 
@@ -1340,7 +1359,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     if (!lock_holder_paths.empty())
     {
         Strings partitions = zookeeper->getChildren(queue.zookeeper_path + "/block_numbers");
-        std::vector<std::future<zkutil::ListResponse>> lock_futures;
+        std::vector<std::future<Coordination::ListResponse>> lock_futures;
         for (const String & partition : partitions)
             lock_futures.push_back(zookeeper->asyncGetChildren(queue.zookeeper_path + "/block_numbers/" + partition));
 
@@ -1349,7 +1368,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
             String partition;
             Int64 number;
             String zk_path;
-            std::future<zkutil::GetResponse> contents_future;
+            std::future<Coordination::GetResponse> contents_future;
         };
 
         std::vector<BlockInfo> block_infos;
@@ -1372,7 +1391,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
         for (BlockInfo & block : block_infos)
         {
-            zkutil::GetResponse resp = block.contents_future.get();
+            Coordination::GetResponse resp = block.contents_future.get();
             if (!resp.error && lock_holder_paths.count(resp.data))
                 committing_blocks[block.partition].insert(block.number);
         }
@@ -1380,11 +1399,11 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 
     queue_.pullLogsToQueue(zookeeper);
 
-    zkutil::GetResponse quorum_last_part_response = quorum_last_part_future.get();
+    Coordination::GetResponse quorum_last_part_response = quorum_last_part_future.get();
     if (!quorum_last_part_response.error)
         last_quorum_part = quorum_last_part_response.data;
 
-    zkutil::GetResponse quorum_status_response = quorum_status_future.get();
+    Coordination::GetResponse quorum_status_response = quorum_status_future.get();
     if (!quorum_status_response.error)
     {
         ReplicatedMergeTreeQuorumEntry quorum_status;

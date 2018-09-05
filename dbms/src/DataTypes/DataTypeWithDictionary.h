@@ -123,9 +123,9 @@ public:
     bool isComparable() const override { return dictionary_type->isComparable(); }
     bool canBeComparedWithCollation() const override { return dictionary_type->canBeComparedWithCollation(); }
     bool canBeUsedAsVersion() const override { return dictionary_type->canBeUsedAsVersion(); }
-    bool isSummable() const override { return dictionary_type->isSummable(); };
-    bool canBeUsedInBitOperations() const override { return dictionary_type->canBeUsedInBitOperations(); };
-    bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); };
+    bool isSummable() const override { return dictionary_type->isSummable(); }
+    bool canBeUsedInBitOperations() const override { return dictionary_type->canBeUsedInBitOperations(); }
+    bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); }
     bool isNumber() const override { return false; }
     bool isInteger() const override { return false; }
     bool isUnsignedInteger() const override { return false; }

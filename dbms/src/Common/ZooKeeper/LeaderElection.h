@@ -11,7 +11,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event ObsoleteEphemeralNode;
     extern const Event LeaderElectionAcquiredLeadership;
 }
 
@@ -122,7 +121,7 @@ private:
         {
             DB::tryLogCurrentException(log);
 
-            if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+            if (e.code == Coordination::ZSESSIONEXPIRED)
                 return;
         }
         catch (...)

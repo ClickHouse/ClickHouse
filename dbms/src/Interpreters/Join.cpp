@@ -716,6 +716,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     MutableColumns added_columns;
     added_columns.reserve(num_columns_to_add);
 
+    std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>> added_type_name;
+    added_type_name.reserve(num_columns_to_add);
+
     std::vector<size_t> right_indexes;
     right_indexes.reserve(num_columns_to_add);
 
@@ -728,6 +731,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         {
             added_columns.push_back(src_column.column->cloneEmpty());
             added_columns.back()->reserve(src_column.column->size());
+            added_type_name.emplace_back(src_column.type, src_column.name);
             right_indexes.push_back(num_columns_to_skip + i);
         }
     }
@@ -762,11 +766,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
             throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 
-    for (size_t i = 0; i < num_columns_to_add; ++i)
-    {
-        const ColumnWithTypeAndName & sample_col = sample_block_with_columns_to_add.getByPosition(i);
-        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), sample_col.type, sample_col.name));
-    }
+    const auto added_columns_size = added_columns.size();
+    for (size_t i = 0; i < added_columns_size; ++i)
+        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
 
     /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
     if (filter)
