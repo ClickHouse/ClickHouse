@@ -706,7 +706,7 @@ void InterpreterSelectQuery::executeFetchColumns(
         max_streams = settings.max_distributed_connections;
     }
 
-     size_t max_block_size = settings.max_block_size;
+    size_t max_block_size = settings.max_block_size;
 
     if (!max_block_size)
         throw Exception("Setting 'max_block_size' cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
