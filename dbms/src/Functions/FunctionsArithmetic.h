@@ -909,16 +909,24 @@ public:
             const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(new_arguments[0]).column.get());
             IAggregateFunction * function = column->getAggregateFunction().get();
 
-            MutableColumnPtr current = column->cloneEmpty();
             auto arena = std::make_shared<Arena>();
-            auto & res = typeid_cast<ColumnAggregateFunction &>(*current);
-            auto & vec_to = res.getData();
-            const auto & vec_from = column->getData();
+
+            auto column_to = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
+            column_to->reserve(input_rows_count); 
+
+            auto column_from = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
+            column_from->reserve(input_rows_count);
 
             for (size_t i = 0; i < input_rows_count; ++i)
-                res.insertDefault();
+            {
+                column_to->insertDefault();
+                column_from->insertFrom(column->getData()[i]);
+            }
 
-            size_t m = block.getByPosition(new_arguments[1]).column->getUInt(0);
+            auto & vec_to = column_to->getData();
+            auto & vec_from = column_from->getData();
+
+            UInt64 m = block.getByPosition(new_arguments[1]).column->getUInt(0);
 
             /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
             /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
@@ -937,8 +945,8 @@ public:
                     m /= 2;
                 }
             }
-
-            block.getByPosition(result).column = std::move(current);
+        
+            block.getByPosition(result).column = std::move(column_to);
             return;
         }
 
