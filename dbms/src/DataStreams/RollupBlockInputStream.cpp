@@ -28,7 +28,7 @@ RollupBlockInputStream::RollupBlockInputStream(
         keys(params_.keys)
 {
     children.push_back(input_);
-    Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
+    Aggregator::CancellationHook hook = [this]() { return this->isCancelled(); };
     aggregator.setCancellationHook(hook);
 }
 
@@ -57,12 +57,12 @@ Block RollupBlockInputStream::readImpl()
         return finalized;
     }
 
-    current_block = children[0]->read();
+    Block block = children[0]->read();
     current_key = keys.size() - 1;
 
-    rollup_block = current_block;
-    finalize(current_block);
+    rollup_block = block;
+    finalize(block);
 
-    return current_block;
+    return block;
 }
 }

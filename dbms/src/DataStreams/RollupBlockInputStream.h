@@ -35,7 +35,6 @@ private:
     Aggregator aggregator;
     ColumnNumbers keys;
     ssize_t current_key = -1;
-    Block current_block;
     Block rollup_block;
 };
 
