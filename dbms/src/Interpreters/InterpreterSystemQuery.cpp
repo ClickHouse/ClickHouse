@@ -150,8 +150,8 @@ BlockIO InterpreterSystemQuery::execute()
             system_context.dropUncompressedCache();
             break;
 #if USE_EMBEDDED_COMPILER
-        case Type::DROP_COMPILED_EXPRESSIONS_CACHE:
-            system_context.dropCompiledExpressionsCache();
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            system_context.dropCompiledExpressionCache();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:

@@ -319,6 +319,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", std::numeric_limits<UInt64>::max());
+    if (compiled_expression_cache_size)
+        global_context->setCompiledExressionCache(compiled_expression_cache_size);
+
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path() + "/");

@@ -1815,17 +1815,24 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 
 #if USE_EMBEDDED_COMPILER
 
-std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionsCache() const
+std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
 {
     auto lock = getLock();
-
-    if (!shared->compiled_expression_cache)
-        shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(settings.compiled_expressions_cache_size);
-
     return shared->compiled_expression_cache;
 }
 
-void Context::dropCompiledExpressionsCache() const
+void Context::setCompiledExressionCache(size_t cache_size)
+{
+
+    auto lock = getLock();
+
+    if (shared->compiled_expression_cache)
+        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
+}
+
+void Context::dropCompiledExpressionCache() const
 {
     auto lock = getLock();
     if (shared->compiled_expression_cache)
