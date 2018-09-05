@@ -423,5 +423,29 @@ public:
 };
 
 
+/// IDataType helpers (alternative for IDataType virtual methods)
+
+inline bool isEnum(const IDataType * data_type)
+{
+    TypeIndex idx = data_type->getTypeId();
+    return idx == TypeIndex::Enum8 || idx == TypeIndex::Enum16;
+}
+
+inline bool isDecimal(const IDataType * data_type)
+{
+    TypeIndex idx = data_type->getTypeId();
+    return idx == TypeIndex::Decimal32 || idx == TypeIndex::Decimal64 || idx == TypeIndex::Decimal128;
+}
+
+inline bool isNotDecimalButComparableToDecimal(const IDataType * data_type)
+{
+    return data_type->isInteger();
+}
+
+inline bool isCompilableType(const IDataType * data_type)
+{
+    return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
+}
+
 }
 

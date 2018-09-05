@@ -1203,9 +1203,9 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (isDecimal(*left_type) || isDecimal(*right_type))
+        else if (isDecimal(left_type.get()) || isDecimal(right_type.get()))
         {
-            if (!allowDecimalComparison(*left_type, *right_type))
+            if (!allowDecimalComparison(left_type.get(), right_type.get()))
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1237,7 +1237,7 @@ public:
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-        return types[0]->isValueRepresentedByNumber() && types[1]->isValueRepresentedByNumber();
+        return isCompilableType(types[0].get()) && isCompilableType(types[1].get());
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override
