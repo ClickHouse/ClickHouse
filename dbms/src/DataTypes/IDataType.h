@@ -442,7 +442,7 @@ inline bool isNotDecimalButComparableToDecimal(const IDataType * data_type)
     return data_type->isInteger();
 }
 
-inline bool isCompilable(const IDataType * data_type)
+inline bool isCompilableType(const IDataType * data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }
