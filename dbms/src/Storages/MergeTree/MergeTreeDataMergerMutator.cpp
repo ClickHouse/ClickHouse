@@ -825,7 +825,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     const std::vector<MutationCommand> & commands,
     const Context & context)
 {
-    auto check_cancelled = [&]()
+    auto check_not_cancelled = [&]()
     {
         if (actions_blocker.isCancelled())
             throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
@@ -833,7 +833,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         return true;
     };
 
-    check_cancelled();
+    check_not_cancelled();
 
     if (future_part.parts.size() != 1)
         throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
@@ -895,7 +895,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         out.writePrefix();
 
         Block block;
-        while (check_cancelled() && (block = in->read()))
+        while (check_not_cancelled() && (block = in->read()))
         {
             minmax_idx.update(block, data.minmax_idx_columns);
             out.write(block);
@@ -944,7 +944,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         out.writePrefix();
 
         Block block;
-        while (check_cancelled() && (block = in->read()))
+        while (check_not_cancelled() && (block = in->read()))
             out.write(block);
 
         in->readSuffix();
