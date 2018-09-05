@@ -109,7 +109,10 @@ try
 
     if (prewhere_info)
     {
-        pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+        if (prewhere_info->alias_actions)
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+        else
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);

@@ -366,13 +366,13 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
 
 MergeTreeRangeReader::MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader, size_t index_granularity,
-        MergeTreeRangeReader * prev_reader, ExpressionActionsPtr prewhere_actions,
+        MergeTreeReader * merge_tree_reader, size_t index_granularity, MergeTreeRangeReader * prev_reader,
+        ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
         const String * prewhere_column_name, const Names * ordered_names,
         bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain)
         : index_granularity(index_granularity), merge_tree_reader(merge_tree_reader)
         , prev_reader(prev_reader), prewhere_column_name(prewhere_column_name)
-        , ordered_names(ordered_names), prewhere_actions(std::move(prewhere_actions))
+        , ordered_names(ordered_names), alias_actions(alias_actions), prewhere_actions(std::move(prewhere_actions))
         , always_reorder(always_reorder), remove_prewhere_column(remove_prewhere_column)
         , last_reader_in_chain(last_reader_in_chain), is_initialized(true)
 {
@@ -570,6 +570,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 {
     if (!prewhere_actions)
         return;
+
+    if (alias_actions)
+        alias_actions->execute(result.block);
 
     prewhere_actions->execute(result.block);
     auto & prewhere_column = result.block.getByName(*prewhere_column_name);
