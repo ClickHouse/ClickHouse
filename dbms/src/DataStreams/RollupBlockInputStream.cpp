@@ -24,9 +24,12 @@ static void finalize(Block & block)
 }
 
 RollupBlockInputStream::RollupBlockInputStream(
-    const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : params(params_)
+    const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : aggregator(params_), 
+        keys(params_.keys)
 {
     children.push_back(input_);
+    Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
+    aggregator.setCancellationHook(hook);
 }
 
 
@@ -40,46 +43,26 @@ Block RollupBlockInputStream::getHeader() const
 
 Block RollupBlockInputStream::readImpl()
 {
-    Block block;
-
-    while(1)
+    if (current_key >= 0)
     {
-        if (!blocks.empty())
-        {
-           auto finalized = std::move(blocks.front());
-           finalize(finalized);
-           blocks.pop_front();
-           return finalized; 
-        }
+        auto & current = rollup_block.getByPosition(keys[current_key]);
+        current.column = current.column->cloneEmpty()->cloneResized(rollup_block.rows());
+        --current_key;
 
-        block = children[0]->read();
+        BlocksList rollup_blocks = { rollup_block };
+        rollup_block = aggregator.mergeBlocks(rollup_blocks, false);
 
-        if (!block)
-            return block;
-
-        Aggregator aggregator(params);
-
-        Aggregator::CancellationHook hook = [&]() { return this->isCancelled(); };
-        aggregator.setCancellationHook(hook);
-
-        Block rollup_block = block;
-
-        for (ssize_t i = params.keys_size - 1; i >= 0; --i) 
-        {
-            auto & current = rollup_block.getByPosition(params.keys[i]);
-            current.column = current.column->cloneEmpty()->cloneResized(rollup_block.rows());
-            
-            BlocksList rollup_blocks = { rollup_block };
-            rollup_block = aggregator.mergeBlocks(rollup_blocks, false);
-            blocks.push_back(rollup_block);
-        }
-
-        finalize(block);
-
-        if (!block)
-            continue;
-
-        return block;
+        Block finalized = rollup_block;
+        finalize(finalized);
+        return finalized;
     }
+
+    current_block = children[0]->read();
+    current_key = keys.size() - 1;
+
+    rollup_block = current_block;
+    finalize(current_block);
+
+    return current_block;
 }
 }

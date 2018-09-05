@@ -3,6 +3,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Common/Arena.h>
 #include <Interpreters/Aggregator.h>
+#include <Core/ColumnNumbers.h>
 
 
 namespace DB
@@ -31,8 +32,11 @@ protected:
     Block readImpl() override;
 
 private:
-    Aggregator::Params params;
-    BlocksList blocks;
+    Aggregator aggregator;
+    ColumnNumbers keys;
+    ssize_t current_key = -1;
+    Block current_block;
+    Block rollup_block;
 };
 
 }
