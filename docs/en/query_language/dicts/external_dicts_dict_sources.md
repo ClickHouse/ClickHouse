@@ -29,6 +29,8 @@ Types of sources (`source_type`):
 - [Executable file](#dicts-external_dicts_dict_sources-executable)
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - [ODBC](#dicts-external_dicts_dict_sources-odbc)
+    - [Example of Connecting PostgreSQL](dicts-external_dicts_dict_sources-postgresql)
+    - [Example of Connecting MS SQL Server](#dicts-external_dicts_dict_sources-mssql)
 - DBMS
     - [MySQL](#dicts-external_dicts_dict_sources-mysql)
     - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
@@ -124,7 +126,9 @@ Setting fields:
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-## Example of Connecting PostgreSQL
+<a name="dicts-external_dicts_dict_sources-postgresql"></a>
+
+### Example of Connecting PostgreSQL
 
 Ubuntu OS.
 
@@ -189,6 +193,8 @@ The dictionary configuration in ClickHouse:
 ```
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
+
+<a name="dicts-external_dicts_dict_sources-mssql"></a>
 
 ### Example of Connecting MS SQL Server
 
