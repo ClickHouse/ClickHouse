@@ -3,6 +3,8 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 
+from helpers.test_tools import assert_eq_with_retry
+
 """
 Both ssl_conf.xml and no_ssl_conf.xml have the same port
 """
@@ -35,16 +37,14 @@ def both_https_cluster():
 
 def test_both_https(both_https_cluster):
     node1.query("insert into test_table values ('2017-06-16', 111, 0)")
-    time.sleep(1)
 
-    assert node1.query("SELECT id FROM test_table order by id") == '111\n'
-    assert node2.query("SELECT id FROM test_table order by id") == '111\n'
+    assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", '111')
+    assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", '111')
 
     node2.query("insert into test_table values ('2017-06-17', 222, 1)")
-    time.sleep(1)
 
-    assert node1.query("SELECT id FROM test_table order by id") == '111\n222\n'
-    assert node2.query("SELECT id FROM test_table order by id") == '111\n222\n'
+    assert_eq_with_retry(node1, "SELECT id FROM test_table order by id", '111\n222')
+    assert_eq_with_retry(node2, "SELECT id FROM test_table order by id", '111\n222')
 
 node3 = cluster.add_instance('node3', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
 node4 = cluster.add_instance('node4', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
@@ -63,16 +63,14 @@ def both_http_cluster():
 
 def test_both_http(both_http_cluster):
     node3.query("insert into test_table values ('2017-06-16', 111, 0)")
-    time.sleep(1)
 
-    assert node3.query("SELECT id FROM test_table order by id") == '111\n'
-    assert node4.query("SELECT id FROM test_table order by id") == '111\n'
+    assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", '111')
+    assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111')
 
     node4.query("insert into test_table values ('2017-06-17', 222, 1)")
-    time.sleep(1)
 
-    assert node3.query("SELECT id FROM test_table order by id") == '111\n222\n'
-    assert node4.query("SELECT id FROM test_table order by id") == '111\n222\n'
+    assert_eq_with_retry(node3, "SELECT id FROM test_table order by id", '111\n222')
+    assert_eq_with_retry(node4, "SELECT id FROM test_table order by id", '111\n222')
 
 node5 = cluster.add_instance('node5', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/ssl_conf.xml'], with_zookeeper=True)
 node6 = cluster.add_instance('node6', config_dir="configs", main_configs=['configs/remote_servers.xml', 'configs/no_ssl_conf.xml'], with_zookeeper=True)
@@ -91,13 +89,11 @@ def mixed_protocol_cluster():
 
 def test_mixed_protocol(mixed_protocol_cluster):
     node5.query("insert into test_table values ('2017-06-16', 111, 0)")
-    time.sleep(1)
 
-    assert node5.query("SELECT id FROM test_table order by id") == '111\n'
-    assert node6.query("SELECT id FROM test_table order by id") == ''
+    assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", '111')
+    assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '')
 
     node6.query("insert into test_table values ('2017-06-17', 222, 1)")
-    time.sleep(1)
 
-    assert node5.query("SELECT id FROM test_table order by id") == '111\n'
-    assert node6.query("SELECT id FROM test_table order by id") == '222\n'
+    assert_eq_with_retry(node5, "SELECT id FROM test_table order by id", '111')
+    assert_eq_with_retry(node6, "SELECT id FROM test_table order by id", '222')

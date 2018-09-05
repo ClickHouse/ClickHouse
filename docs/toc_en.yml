@@ -40,6 +40,7 @@ nav:
   - 'Array(T)': 'data_types/array.md'
   - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
   - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+  - 'Nullable': 'data_types/nullable.md'
   - 'Nested data structures':
     - 'hidden': 'data_types/nested_data_structures/index.md'
     - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
@@ -47,6 +48,7 @@ nav:
     - 'hidden': 'data_types/special_data_types/index.md'
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
+    - 'Nothing': 'data_types/special_data_types/nothing.md'
 
 - 'SQL reference':
   - 'hidden': 'query_language/index.md'
@@ -83,6 +85,8 @@ nav:
     - 'Functions for working with Yandex.Metrica dictionaries': 'query_language/functions/ym_dict_functions.md'
     - 'Functions for implementing the IN operator': 'query_language/functions/in_functions.md'
     - 'arrayJoin function': 'query_language/functions/array_join.md'
+    - 'Functions for working with geographical coordinates': 'query_language/functions/geo.md'
+    - 'Functions for working with Nullable arguments': 'query_language/functions/functions_for_nulls.md'
   - 'Aggregate functions':
     - 'Introduction': 'query_language/agg_functions/index.md'
     - 'Function reference': 'query_language/agg_functions/reference.md'

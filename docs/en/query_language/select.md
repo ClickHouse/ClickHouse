@@ -1,6 +1,6 @@
 # SELECT Queries Syntax
 
-`SELECT` performs data retrieval.
+`SELECT` forms samples of the data.
 
 ```sql
 SELECT [DISTINCT] expr_list
@@ -26,7 +26,9 @@ The clauses below are described in almost the same order as in the query executi
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM.
 Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified: `max_memory_usage`, `max_rows_to_group_by`, `max_rows_to_sort`, `max_rows_in_distinct`, `max_bytes_in_distinct`, `max_rows_in_set`, `max_bytes_in_set`, `max_rows_in_join`, `max_bytes_in_join`, `max_bytes_before_external_sort`, `max_bytes_before_external_group_by`. For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation. `The system does not have "merge join"`.
 
-### FROM Clause
+<a name="query_language-section-from"></a>
+
+### FROM clause
 
 If the FROM clause is omitted, data will be read from the `system.one` table.
 The 'system.one' table contains exactly one row (this table fulfills the same purpose as the DUAL table found in other DBMSs).
@@ -332,7 +334,9 @@ The query can only specify a single ARRAY JOIN clause.
 
 The corresponding conversion can be performed before the WHERE/PREWHERE clause (if its result is needed in this clause), or after completing WHERE/PREWHERE (to reduce the volume of calculations).
 
-### JOIN Clause
+<a name="query_language-join"></a>
+
+### JOIN clause
 
 The normal JOIN, which is not related to ARRAY JOIN described above.
 
@@ -426,29 +430,58 @@ Among the various types of JOINs, the most efficient is ANY LEFT JOIN, then ANY 
 
 If you need a JOIN for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a JOIN might not be very convenient due to the bulky syntax and the fact that the right table is re-accessed for every query. For such cases, there is an "external dictionaries" feature that you should use instead of JOIN. For more information, see the section "External dictionaries".
 
-### WHERE Clause
+#### NULL processing
 
-If there is a WHERE clause, it must contain an expression with the UInt8 type. This is usually an expression with comparison and logical operators.
-This expression will be used for filtering data before all other transformations.
+The JOIN behavior is affected by the [join_use_nulls](../operations/settings/settings.md#settings-join_use_nulls) setting. With `join_use_nulls=1,`  `JOIN` works like in standard SQL.
 
-If indexes are supported by the database table engine, the expression is evaluated on the ability to use indexes.
+If the JOIN keys are [Nullable](../data_types/nullable.md#data_types-nullable) fields, the rows where at least one of the keys has the value [NULL](syntax.md#null-literal) are not joined.
+
+<a name="query_language-queries-where"></a>
+
+### WHERE clause
+
+Allows you to set an expression that ClickHouse uses to filter data before all other actions in the query, other than the expressions contained in the [PREWHERE](#query_language-queries-prewhere) clause. This is usually an expression with logical operators.
+
+The result of the expression must be of type `UInt8`.
+
+ClickHouse uses indexes in the expression if this is allowed by the [table engine](../operations/table_engines/index.md#table_engines).
+
+If [NULL](syntax.md#null-literal) must be checked in the clause, then use the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md#operator-is-not-null) operators and the related `isNull` and `isNotNull` functions. Otherwise, the expression will always be considered as not executed.
+
+Example of checking for `NULL`:
+
+```bash
+:) SELECT * FROM t_null WHERE y IS NULL
+
+SELECT *
+FROM t_null
+WHERE isNull(y)
+
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+
+1 rows in set. Elapsed: 0.002 sec.
+```
+
+<a name="query_language-queries-prewhere"></a>
 
 ### PREWHERE Clause
 
-This clause has the same meaning as the WHERE clause. The difference is in which data is read from the table.
-When using PREWHERE, first only the columns necessary for executing PREWHERE are read. Then the other columns are read that are needed for running the query, but only those blocks where the PREWHERE expression is true.
+It has the same purpose as the [WHERE](#query_language-queries-where) clause. The difference is in which data is read from the table.
+When using `PREWHERE`, first only the columns necessary for executing `PREWHERE` are read. Then the other columns are read that are needed for running the query, but only those blocks where the `PREWHERE` expression is true.
 
-It makes sense to use PREWHERE if there are filtration conditions that are not suitable for indexes that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
+`PREWHERE` makes sense if there are filtration conditions that are not suitable for indexes that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
 
-For example, it is useful to write PREWHERE for queries that extract a large number of columns, but that only have filtration for a few columns.
+For example, it is useful to write `PREWHERE` for queries that extract a large number of columns, but that only have filtration for a few columns.
 
-PREWHERE is only supported by tables from the `*MergeTree` family.
+`PREWHERE` is only supported by tables from the `*MergeTree` family.
 
-A query may simultaneously specify PREWHERE and WHERE. In this case, PREWHERE precedes WHERE.
+A query may simultaneously specify `PREWHERE` and `WHERE`. In this case, `PREWHERE` goes before `WHERE`.
 
-Keep in mind that it does not make much sense for PREWHERE to only specify those columns that have an index, because when using an index, only the data blocks that match the index are read.
+Keep in mind that it does not make much sense for `PREWHERE` to only specify those columns that have an index, because when using an index, only the data blocks that match the index are read.
 
-If the 'optimize_move_to_prewhere' setting is set to 1 and PREWHERE is omitted, the system uses heuristics to automatically move parts of expressions from WHERE to PREWHERE.
+If the setting `optimize_move_to_prewhere` is set to `1`, in the absence of `PREWHERE`, the system will automatically move parts of expressions from `WHERE` to `PREWHERE` according to heuristic analysis.
 
 ### GROUP BY Clause
 
@@ -490,7 +523,39 @@ GROUP BY is not supported for array columns.
 
 A constant can't be specified as arguments for aggregate functions. Example: sum(1). Instead of this, you can get rid of the constant. Example: `count()`.
 
-#### WITH TOTALS Modifier
+#### NULL processing
+
+For grouping, ClickHouse interprets [NULL](syntax.md#null-literal) as a value, and `NULL=NULL`.
+
+Here's an example to show what this means.
+
+Assume you have this table:
+
+```
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
+
+```
+┌─sum(x)─┬────y─┐
+│      4 │    2 │
+│      3 │    3 │
+│      5 │ ᴺᵁᴸᴸ │
+└────────┴──────┘
+```
+
+You can see that `GROUP BY` for `У = NULL` summed up `x`, as if `NULL` is this value.
+
+If you pass several keys to `GROUP BY`, the result will give you all the combinations of the selection, as if `NULL` were a specific value.
+
+#### WITH TOTALS modifier
 
 If the WITH TOTALS modifier is specified, another row will be calculated. This row will have key columns containing default values (zeros or empty lines), and columns of aggregate functions with the values calculated across all the rows (the "total" values).
 
@@ -522,20 +587,20 @@ The `max_bytes_before_external_group_by` setting determines the threshold RAM co
 
 When using `max_bytes_before_external_group_by`, we recommend that you set max_memory_usage about twice as high. This is necessary because there are two stages to aggregation: reading the date and forming intermediate data (1) and merging the intermediate data (2). Dumping data to the file system can only occur during stage 1. If the temporary data wasn't dumped, then stage 2 might require up to the same amount of memory as in stage 1.
 
-For example, if `max_memory_usage` was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and max_memory_usage to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than ` max_bytes_before_external_group_by`.
+For example, if `max_memory_usage` was set to 10000000000 and you want to use external aggregation, it makes sense to set `max_bytes_before_external_group_by` to 10000000000, and max_memory_usage to 20000000000. When external aggregation is triggered (if there was at least one dump of temporary data), maximum consumption of RAM is only slightly more than `max_bytes_before_external_group_by`.
 
-With distributed query processing, external aggregation is performed on remote servers. In order for the requestor server to use only a small amount of RAM, set ` distributed_aggregation_memory_efficient`  to 1.
+With distributed query processing, external aggregation is performed on remote servers. In order for the requestor server to use only a small amount of RAM, set `distributed_aggregation_memory_efficient`  to 1.
 
-When merging data flushed to the disk, as well as when merging results from remote servers when the ` distributed_aggregation_memory_efficient` setting is enabled, consumes up to 1/256 \* the number of threads from the total amount of RAM.
+When merging data flushed to the disk, as well as when merging results from remote servers when the `distributed_aggregation_memory_efficient` setting is enabled, consumes up to 1/256 \* the number of threads from the total amount of RAM.
 
-When external aggregation is enabled, if there was less than ` max_bytes_before_external_group_by`  of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
+When external aggregation is enabled, if there was less than `max_bytes_before_external_group_by`  of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
 If you have an ORDER BY with a small LIMIT after GROUP BY, then the ORDER BY CLAUSE will not use significant amounts of RAM.
 But if the ORDER BY doesn't have LIMIT, don't forget to enable external sorting (`max_bytes_before_external_sort`).
 
 ### LIMIT N BY Clause
 
-LIMIT N BY COLUMNS selects the top N rows for each group of COLUMNS. LIMIT N BY is not related to LIMIT; they can both be used in the same query. The key for LIMIT N BY can contain any number of columns or expressions.
+`LIMIT N BY COLUMNS` selects the top `N` rows for each group of `COLUMNS`. `LIMIT N BY` is not related to `LIMIT`; they can both be used in the same query. The key for `LIMIT N BY` can contain any number of columns or expressions.
 
 Example:
 
@@ -554,7 +619,9 @@ LIMIT 100
 
 The query will select the top 5 referrers for each `domain, device_type` pair, but not more than 100 rows (`LIMIT n BY + LIMIT`).
 
-### HAVING Clause
+`LIMIT n BY` works with [NULL](syntax.md#null-literal) as if it were a specific value. This means that as the result of the query, the user will get all the combinations of fields specified in `BY`.
+
+### HAVING clause
 
 Allows filtering the result received after GROUP BY, similar to the WHERE clause.
 WHERE and HAVING differ in that WHERE is performed before aggregation (GROUP BY), while HAVING is performed after it.
@@ -573,7 +640,47 @@ We only recommend using COLLATE for final sorting of a small number of rows, sin
 Rows that have identical values for the list of sorting expressions are output in an arbitrary order, which can also be nondeterministic (different each time).
 If the ORDER BY clause is omitted, the order of the rows is also undefined, and may be nondeterministic as well.
 
-When floating point numbers are sorted, NaNs are separate from the other values. Regardless of the sorting order, NaNs come at the end. In other words, for ascending sorting they are placed as if they are larger than all the other numbers, while for descending sorting they are placed as if they are smaller than the rest.
+`NaN` and `NULL` sorting order:
+
+- With the modifier `NULLS FIRST` — First `NULL`, then `NaN`, then other values.
+- With the modifier `NULLS LAST` — First the values, then `NaN`, then `NULL`.
+- Default — The same as with the `NULLS LAST` modifier.
+
+Example:
+
+For the table
+
+```
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    2 │
+│ 1 │  nan │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │  nan │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
+
+Run the query `SELECT * FROM t_null_nan ORDER BY y NULLS FIRST` to get:
+
+```
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 7 │ ᴺᵁᴸᴸ │
+│ 1 │  nan │
+│ 6 │  nan │
+│ 2 │    2 │
+│ 2 │    2 │
+│ 3 │    4 │
+│ 5 │    6 │
+│ 6 │    7 │
+│ 8 │    9 │
+└───┴──────┘
+```
 
 Less RAM is used if a small enough LIMIT is specified in addition to ORDER BY. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if GROUP BY is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
@@ -592,14 +699,16 @@ These expressions work as if they are applied to separate rows in the result.
 
 ### DISTINCT Clause
 
-If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
-The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:
+If `DISTINCT` is specified, only a single row will remain out of all the sets of fully matching rows in the result.
+The result will be the same as if `GROUP BY` were specified across all the fields specified in `SELECT` without aggregate functions. But there are several differences from `GROUP BY`:
 
-- DISTINCT can be applied together with GROUP BY.
-- When ORDER BY is omitted and LIMIT is defined, the query stops running immediately after the required number of different rows has been read.
+- `DISTINCT` can be applied together with `GROUP BY`.
+- When `ORDER BY` is omitted and `LIMIT` is defined, the query stops running immediately after the required number of different rows has been read.
 - Data blocks are output as they are processed, without waiting for the entire query to finish running.
 
-DISTINCT is not supported if SELECT has at least one array column.
+`DISTINCT` is not supported if `SELECT` has at least one array column.
+
+`DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
 
 ### LIMIT Clause
 
@@ -610,9 +719,11 @@ LIMIT n, m allows you to select the first 'm' rows from the result after skippin
 
 If there isn't an ORDER BY clause that explicitly sorts results, the result may be arbitrary and nondeterministic.
 
-### UNION ALL Clause
+`DISTINCT` works with [NULL](syntax.md#null-literal) as if `NULL` were a specific value, and `NULL=NULL`. In other words, in the  `DISTINCT` results, different combinations with `NULL` only occur once.
 
-You can use UNION ALL to combine any number of queries. Example:
+### UNION ALL clause
+
+You can use `UNION ALL` to combine any number of queries. Example:
 
 ```sql
 SELECT CounterID, 1 AS table, toInt64(count()) AS c
@@ -627,13 +738,13 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
     HAVING c > 0
 ```
 
-Only UNION ALL is supported. The regular UNION (UNION DISTINCT) is not supported. If you need UNION DISTINCT, you can write SELECT DISTINCT from a subquery containing UNION ALL.
+Only `UNION ALL` is supported. The normal `UNION` (`UNION DISTINCT`) is not supported. If you need `UNION DISTINCT`, you can write `SELECT DISTINCT` from a subquery containing `UNION ALL`.
 
-Queries that are parts of UNION ALL can be run simultaneously, and their results can be mixed together.
+Queries that are part of a `UNION ALL` can be run in parallel and their results might be mixed together when returned.
 
-The structure of results (the number and type of columns) must match for the queries. But the column names can differ. In this case, the column names for the final result will be taken from the first query.
+The structure of results (the number and type of columns) must match for the queries. But the column names can differ. In this case, the column names for the final result will be taken from the first query. Type casting is performed for unions. For example, if two queries being combined have the same field with non-`Nullable` and `Nullable` types from a compatible type, the resulting `UNION ALL` has a `Nullable` type field.
 
-Queries that are parts of UNION ALL can't be enclosed in brackets. ORDER BY and LIMIT are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with UNION ALL in a subquery in the FROM clause.
+Queries that are parts of `UNION ALL` can't be enclosed in brackets. `ORDER BY` and `LIMIT` are applied to separate queries, not to the final result. If you need to apply a conversion to the final result, you can put all the queries with `UNION ALL` in a subquery in the `FROM` clause.
 
 ### INTO OUTFILE Clause
 
@@ -652,7 +763,9 @@ If the FORMAT clause is omitted, the default format is used, which depends on bo
 
 When using the command-line client, data is passed to the client in an internal efficient format. The client independently interprets the FORMAT clause of the query and formats the data itself (thus relieving the network and the server from the load).
 
-### IN Operators
+<a name="query_language-in_operators"></a>
+
+### IN operators
 
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
@@ -716,14 +829,47 @@ ORDER BY EventDate ASC
 For each day after March 17th, count the percentage of pageviews made by users who visited the site on March 17th.
 A subquery in the IN clause is always run just one time on a single server. There are no dependent subqueries.
 
+#### NULL processing
+
+During request processing, the IN operator assumes that the result of an operation with [NULL](syntax.md#null-literal) is always equal to `0`, regardless of whether `NULL` is on the right or left side of the operator.  `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared.
+
+Here is an example with the `t_null` table:
+
+```
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+│ 2 │    3 │
+└───┴──────┘
+```
+
+Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
+
+```
+┌─x─┐
+│ 2 │
+└───┘
+```
+
+You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
+
+```
+SELECT y IN (NULL, 3)
+FROM t_null
+
+┌─in(y, tuple(NULL, 3))─┐
+│                     0 │
+│                     1 │
+└───────────────────────┘
+```
+
 <a name="queries-distributed-subrequests"></a>
 
 #### Distributed Subqueries
 
-There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / ` OIN`  and `IN GLOBAL`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
+There are two options for IN-s with subqueries (similar to JOINs): normal `IN`  / `OIN`  and `IN GLOBAL`  / `GLOBAL JOIN`. They differ in how they are run for distributed query processing.
 
-!!! attention
-    Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode` setting.
+!!! Attention:
+Remember that the algorithms described below may work differently depending on the [settings](../operations/settings/settings.md#settings-distributed_product_mode) `distributed_product_mode` setting.
 
 When using the regular IN, the query is sent to remote servers, and each of them runs the subqueries in the `IN` or `JOIN` clause.
 
