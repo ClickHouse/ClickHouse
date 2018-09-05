@@ -735,6 +735,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
         rows_sources_write_buf->next();
         rows_sources_uncompressed_write_buf->next();
+
+        size_t rows_sources_count = rows_sources_write_buf->count();
+        /// In special case, when there is only one source part, and no rows were skipped, we may have
+        /// skipped writing rows_sources file. Otherwise rows_sources_count must be equal to the total
+        /// number of input rows.
+        if ((rows_sources_count > 0 || parts.size() > 1) && sum_input_rows_exact != rows_sources_count)
+            throw Exception("Number of rows in source parts (" + toString(sum_input_rows_exact)
+                + ") differs from number of bytes written to rows_sources file (" + toString(rows_sources_count)
+                + "). It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
         CompressedReadBufferFromFile rows_sources_read_buf(rows_sources_file_path, 0, 0);
 
         for (size_t column_num = 0, gathering_column_names_size = gathering_column_names.size();
