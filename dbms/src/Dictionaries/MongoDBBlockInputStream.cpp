@@ -79,9 +79,8 @@ namespace
     }
 
     void insertValue(
-        IColumn & column, const ValueType type, Poco::MongoDB::Element::Ptr value_ptr, const std::string & name)
+        IColumn & column, const ValueType type, const Poco::MongoDB::Element & value, const std::string & name)
     {
-        const Poco::MongoDB::Element & value = *value_ptr;
         switch (type)
         {
             case ValueType::UInt8: insertNumber<UInt8>(column, value, name); break;
@@ -186,7 +185,7 @@ Block MongoDBBlockInputStream::readImpl()
                 if (value.isNull() || value->type() == Poco::MongoDB::ElementTraits<Poco::MongoDB::NullValue>::TypeId)
                     insertDefaultValue(*columns[idx], *description.sample_columns[idx]);
                 else
-                    insertValue(*columns[idx], description.types[idx], value, name);
+                    insertValue(*columns[idx], description.types[idx], *value, name);
             }
         }
 
