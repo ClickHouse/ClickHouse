@@ -1,7 +1,9 @@
 #pragma once
+
 #include <memory>
 #include <string>
 
+#include <Common/ThreadStatus.h>
 
 namespace ProfileEvents
 {
@@ -16,13 +18,8 @@ namespace DB
 
 class Context;
 class QueryStatus;
-class ThreadStatus;
 struct Progress;
-using ThreadStatusPtr = std::shared_ptr<ThreadStatus>;
 class InternalTextLogsQueue;
-class ThreadGroupStatus;
-using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
-
 
 class CurrentThread
 {
@@ -30,6 +27,7 @@ public:
 
     /// Handler to current thread
     static ThreadStatusPtr get();
+
     /// Group to which belongs current thread
     static ThreadGroupStatusPtr getGroup();
 
@@ -77,6 +75,29 @@ public:
         explicit QueryScope(Context & query_context);
         ~QueryScope();
     };
+
+public:
+    /// Implicitly finalizes current thread in the destructor
+    class ThreadScope
+    {
+    public:
+        void (*deleter)() = nullptr;
+
+        ThreadScope() = default;
+        ~ThreadScope()
+        {
+            if (deleter)
+                deleter();
+
+            /// std::terminate on exception: this is Ok.
+        }
+    };
+
+    using ThreadScopePtr = std::shared_ptr<ThreadScope>;
+    static ThreadScopePtr getScope();
+
+private:
+    static void defaultThreadDeleter();
 };
 
 }
