@@ -8,11 +8,11 @@
 abcdefghijklmn!@Aab#AAabcdefghijklmn$%
 xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   * There are two lines. First line make sense. Second line contains padding to make file size large enough.
-  * Compile with 
+  * Compile with
   *  cmake -D SANITIZE=address
   * and run:
 
-./zlib_ng_bug data2.bin 
+./zlib_ng_bug data2.bin
 =================================================================
 ==204952==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x6310000147ff at pc 0x000000596d7a bp 0x7ffd139edd50 sp 0x7ffd139edd48
 READ of size 1 at 0x6310000147ff thread T0

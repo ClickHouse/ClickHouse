@@ -1027,7 +1027,7 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
 {
     if (deduplicate)
         return MergeAlgorithm::Horizontal;
-    if (data.context.getMergeTreeSettings().enable_vertical_merge_algorithm == 0)
+    if (data.settings.enable_vertical_merge_algorithm == 0)
         return MergeAlgorithm::Horizontal;
 
     bool is_supported_storage =
@@ -1036,9 +1036,9 @@ MergeTreeDataMergerMutator::MergeAlgorithm MergeTreeDataMergerMutator::chooseMer
         data.merging_params.mode == MergeTreeData::MergingParams::Replacing ||
         data.merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
 
-    bool enough_ordinary_cols = gathering_columns.size() >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_columns_to_activate;
+    bool enough_ordinary_cols = gathering_columns.size() >= data.settings.vertical_merge_algorithm_min_columns_to_activate;
 
-    bool enough_total_rows = sum_rows_upper_bound >= data.context.getMergeTreeSettings().vertical_merge_algorithm_min_rows_to_activate;
+    bool enough_total_rows = sum_rows_upper_bound >= data.settings.vertical_merge_algorithm_min_rows_to_activate;
 
     bool no_parts_overflow = parts.size() <= RowSourcePart::MAX_PARTS;
 

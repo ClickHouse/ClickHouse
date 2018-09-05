@@ -32,12 +32,14 @@ cmake $CUR_DIR/../.. -DCMAKE_CXX_COMPILER=`which $DEB_CXX $CXX` -DCMAKE_C_COMPIL
     `# Use all possible contrib libs from system` \
     -DUNBUNDLED=1 \
     `# Disable all features` \
-    -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_JEMALLOC=0 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 -DUSE_INTERNAL_LLVM_LIBRARY=0 $CMAKE_FLAGS \
-    && ninja clickhouse-bundle \
-    `# Skip tests:` \
-    `# 00281 requires internal compiler` \
-    `# 00428 requires sudo (not all vms allow this)` \
-    `# 00385 runs infinitly (TODO: fix it)` \
-    && ( [ ! ${TEST_RUN=1} ] || ( ( cd $CUR_DIR/../.. && env TEST_OPT="--skip long compile 00428 00385 $TEST_OPT" TEST_PORT_RANDOM= TEST_PERF= bash -x dbms/tests/clickhouse-test-server ) || ${TEST_TRUE=false} ) )
+    -DENABLE_CAPNP=0 -DENABLE_RDKAFKA=0 -DENABLE_EMBEDDED_COMPILER=0 -DENABLE_JEMALLOC=0 -DENABLE_UNWIND=0 -DENABLE_MYSQL=0 -DENABLE_POCO_ODBC=0 -DENABLE_ODBC=0 -DUSE_INTERNAL_LLVM_LIBRARY=0 $CMAKE_FLAGS
+
+ninja clickhouse-bundle
+
+# Skip tests:
+# 00281 requires internal compiler
+# 00428 requires sudo (not all vms allow this)
+# 00385 runs infinitly (TODO: fix it)
+[ ! ${TEST_RUN=1} ] || ( ( cd $CUR_DIR/../.. && env TEST_OPT="--skip long compile 00428 00385 $TEST_OPT" TEST_PORT_RANDOM= TEST_PERF= TEST_SERVER_STARTUP_WAIT=10 bash -x dbms/tests/clickhouse-test-server ) || ${TEST_TRUE=false} )
 
 date

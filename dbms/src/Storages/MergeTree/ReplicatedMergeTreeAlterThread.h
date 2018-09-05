@@ -23,11 +23,7 @@ class ReplicatedMergeTreeAlterThread
 public:
     ReplicatedMergeTreeAlterThread(StorageReplicatedMergeTree & storage_);
 
-    void start()
-    {
-        task->activate();
-        task->schedule();
-    }
+    void start() { task->activateAndSchedule(); }
 
     void stop() { task->deactivate(); }
 

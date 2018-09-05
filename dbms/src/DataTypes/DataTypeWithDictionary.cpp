@@ -669,6 +669,9 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         }
     };
 
+    if (!settings.continuous_reading)
+        state_with_dictionary->num_pending_rows = 0;
+
     bool first_dictionary = true;
     while (limit)
     {

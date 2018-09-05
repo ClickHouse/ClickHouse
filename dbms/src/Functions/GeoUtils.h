@@ -563,7 +563,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
     }
 
-    return std::move(result);
+    return result;
 }
 
 template <typename ... Types>

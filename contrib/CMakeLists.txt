@@ -2,7 +2,7 @@
 
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-stringop-overflow")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-implicit-fallthrough -std=c++1z")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-maybe-uninitialized -Wno-format -Wno-misleading-indentation -Wno-implicit-fallthrough -Wno-class-memaccess -std=c++1z")
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-format -Wno-parentheses-equality")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-old-style-cast -Wno-unused-function -Wno-unused-variable -Wno-unused-result -Wno-deprecated-declarations -Wno-non-virtual-dtor -Wno-format -std=c++1z")
@@ -54,14 +54,24 @@ if (USE_INTERNAL_UNWIND_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
+    set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
+    set (WITH_NATIVE_INSTRUCTIONS ${ARCHNATIVE} CACHE INTERNAL "")
+    if (OS_FREEBSD OR ARCH_I386)
+        set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
+    endif ()
+    if (ARCH_AARCH64)
+        set(WITH_NEON 1 CACHE INTERNAL "")
+        set(WITH_ACLE 1 CACHE INTERNAL "")
+    endif ()
+
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # todo: make pull to Dead2/zlib-ng and remove:
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
     target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64" OR CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64")
-       target_compile_definitions (zlib PUBLIC X86_64)
-       target_compile_definitions (zlibstatic PUBLIC X86_64)
+       target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+       target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
     endif ()
 
     set_target_properties(example PROPERTIES EXCLUDE_FROM_ALL 1)
@@ -104,14 +114,14 @@ endif ()
 
 if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
     add_subdirectory (mariadb-connector-c-cmake)
-    target_include_directories(mysqlclient PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
-    target_include_directories(mysqlclient PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(mysqlclient BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(mysqlclient BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
     add_subdirectory (librdkafka-cmake)
-    target_include_directories(rdkafka PRIVATE BEFORE ${ZLIB_INCLUDE_DIR})
-    target_include_directories(rdkafka PRIVATE BEFORE ${OPENSSL_INCLUDE_DIR})
+    target_include_directories(rdkafka BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
+    target_include_directories(rdkafka BEFORE PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif ()
 
 if (ENABLE_ODBC AND USE_INTERNAL_ODBC_LIBRARY)
@@ -126,7 +136,6 @@ if (USE_INTERNAL_CAPNP_LIBRARY)
     set (CMAKE_CXX_EXTENSIONS ${_save})
     target_include_directories(${CAPNP_LIBRARY} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/capnproto/c++/src>)
 endif ()
-
 
 if (USE_INTERNAL_POCO_LIBRARY)
     set (save_CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS})
@@ -155,4 +164,12 @@ if (USE_INTERNAL_LLVM_LIBRARY)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
     add_subdirectory (llvm/llvm)
+endif ()
+
+if (USE_INTERNAL_GTEST_LIBRARY)
+    # Google Test from sources
+    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    # avoid problems with <regexp.h>
+    target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+    target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
 endif ()

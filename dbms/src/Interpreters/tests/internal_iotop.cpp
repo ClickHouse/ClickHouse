@@ -6,7 +6,6 @@
 #include <Poco/File.h>
 #include <Common/Stopwatch.h>
 #include <IO/WriteBufferFromString.h>
-
 #include <linux/taskstats.h>
 #include <sys/time.h>
 #include <sys/resource.h>

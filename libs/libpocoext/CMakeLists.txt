@@ -1,4 +1,4 @@
-add_library (pocoext ${SPLIT_SHARED}
+add_library (pocoext ${LINK_MODE}
     src/LevelFilterChannel.cpp
     src/ThreadNumber.cpp
     src/SessionPoolHelpers.cpp

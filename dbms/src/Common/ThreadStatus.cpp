@@ -1,6 +1,5 @@
 #include <sstream>
 
-#include <common/Types.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
@@ -21,19 +20,12 @@ namespace ErrorCodes
     extern const int PTHREAD_ERROR;
 }
 
-
-/// Order of current_thread and current_thread_scope matters
-thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
-thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
-
-
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    current_thread->taskstats_getter->getStat(res.stat, current_thread->os_thread_id);
+    CurrentThread::get()->taskstats_getter->getStat(res.stat, CurrentThread::get()->os_thread_id);
     return res;
 }
-
 
 ThreadStatus::ThreadStatus()
 {
@@ -73,10 +65,23 @@ void ThreadStatus::initPerformanceCounters()
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
 
-    if (TaskStatsInfoGetter::checkPermissions())
+    try
     {
-        taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
-        *last_taskstats = TasksStatsCounters::current();
+        if (TaskStatsInfoGetter::checkPermissions())
+        {
+            if (!taskstats_getter)
+            {
+                static SimpleObjectPool<TaskStatsInfoGetter> pool;
+                taskstats_getter = pool.getDefault();
+            }
+
+            *last_taskstats = TasksStatsCounters::current();
+        }
+    }
+    catch (...)
+    {
+        taskstats_getter.reset();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

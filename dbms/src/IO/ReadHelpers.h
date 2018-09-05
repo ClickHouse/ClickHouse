@@ -129,7 +129,7 @@ inline void readStringBinary(std::string & s, ReadBuffer & buf, size_t MAX_STRIN
         throw Poco::Exception("Too large string size.");
 
     s.resize(size);
-    buf.readStrict(&s[0], size);
+    buf.readStrict(s.data(), size);
 }
 
 
@@ -555,6 +555,14 @@ inline void readUUIDText(UUID & uuid, ReadBuffer & buf)
 template <typename T>
 inline T parse(const char * data, size_t size);
 
+template <typename T>
+inline T parseFromString(const String & str)
+{
+    return parse<T>(str.data(), str.size());
+}
+
+UInt128 stringToUUID(const String & str);
+
 
 template <typename ReturnType = void>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut);
@@ -818,8 +826,8 @@ inline void skipWhitespaceIfAny(ReadBuffer & buf)
         ++buf.position();
 }
 
-/// Skips json value. If the value contains objects (i.e. {...} sequence), an exception will be thrown.
-void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed);
+/// Skips json value.
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
 
 
 /** Read serialized exception.

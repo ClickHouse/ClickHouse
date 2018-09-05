@@ -231,11 +231,11 @@ ProcessListEntry::~ProcessListEntry()
     auto range = user_process_list.queries.equal_range(query_id);
     if (range.first != range.second)
     {
-        for (auto it = range.first; it != range.second; ++it)
+        for (auto jt = range.first; jt != range.second; ++jt)
         {
-            if (it->second == process_list_element_ptr)
+            if (jt->second == process_list_element_ptr)
             {
-                user_process_list.queries.erase(it);
+                user_process_list.queries.erase(jt);
                 found = true;
                 break;
             }

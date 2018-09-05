@@ -227,10 +227,10 @@ private:
 
     struct Cell
     {
-        bool expired(const Timestamp & last_timestamp, const Delay & expiration_delay) const
+        bool expired(const Timestamp & last_timestamp, const Delay & delay) const
         {
-            return (expiration_delay == Delay::zero()) ||
-                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > expiration_delay));
+            return (delay == Delay::zero()) ||
+                ((last_timestamp > timestamp) && ((last_timestamp - timestamp) > delay));
         }
 
         MappedPtr value;

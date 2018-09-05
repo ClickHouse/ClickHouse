@@ -4,7 +4,6 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/memcpySmall.h>
 
@@ -111,7 +110,7 @@ public:
 #pragma GCC diagnostic pop
 #endif
 
-        void insertFrom(const IColumn & src_, size_t n) override
+    void insertFrom(const IColumn & src_, size_t n) override
     {
         const ColumnString & src = static_cast<const ColumnString &>(src_);
 
@@ -176,34 +175,9 @@ public:
         offsets.resize_assume_reserved(offsets.size() - n);
     }
 
-    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override
-    {
-        size_t string_size = sizeAt(n);
-        size_t offset = offsetAt(n);
+    StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-        StringRef res;
-        res.size = sizeof(string_size) + string_size;
-        char * pos = arena.allocContinue(res.size, begin);
-        memcpy(pos, &string_size, sizeof(string_size));
-        memcpy(pos + sizeof(string_size), &chars[offset], string_size);
-        res.data = pos;
-
-        return res;
-    }
-
-    const char * deserializeAndInsertFromArena(const char * pos) override
-    {
-        const size_t string_size = *reinterpret_cast<const size_t *>(pos);
-        pos += sizeof(string_size);
-
-        const size_t old_size = chars.size();
-        const size_t new_size = old_size + string_size;
-        chars.resize(new_size);
-        memcpy(&chars[old_size], pos, string_size);
-
-        offsets.push_back(new_size);
-        return pos + string_size;
-    }
+    const char * deserializeAndInsertFromArena(const char * pos) override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {

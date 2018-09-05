@@ -4,27 +4,27 @@ matrix:
   fast_finish: true
   include:
     # We need to have gcc7 headers to compile c++17 code on clang
-    - os: linux
-
-      cache:
-        ccache: true
-        timeout: 1000
-        directories:
-        - /home/travis/.ccache
-
-      addons:
-        apt:
-          update: true
-          sources:
-            - ubuntu-toolchain-r-test
-            - llvm-toolchain-trusty-5.0
-          packages: [ ninja-build, g++-7, clang-5.0, lld-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl]
-
-      env:
-        - MATRIX_EVAL="export CC=clang-5.0 CXX=clang++-5.0"
-
-      script:
-        - utils/travis/normal.sh
+#    - os: linux
+#
+#      cache:
+#        ccache: true
+#        timeout: 1000
+#        directories:
+#        - /home/travis/.ccache
+#
+#      addons:
+#        apt:
+#          update: true
+#          sources:
+#            - ubuntu-toolchain-r-test
+#            - llvm-toolchain-trusty-5.0
+#          packages: [ ninja-build, g++-7, clang-5.0, lld-5.0, libicu-dev, libreadline-dev, libmysqlclient-dev, unixodbc-dev, libltdl-dev, libssl-dev, libboost-dev, zlib1g-dev, libdouble-conversion-dev, libsparsehash-dev, librdkafka-dev, libcapnp-dev, libsparsehash-dev, libgoogle-perftools-dev, bash, expect, python, python-lxml, python-termcolor, curl, perl, sudo, openssl]
+#
+#      env:
+#        - MATRIX_EVAL="export CC=clang-5.0 CXX=clang++-5.0"
+#
+#      script:
+#        - utils/travis/normal.sh
 
     - os: linux
 

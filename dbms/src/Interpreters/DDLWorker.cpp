@@ -517,9 +517,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        Context local_context(context);
-        local_context.setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, local_context, nullptr);
+        current_context = std::make_unique<Context>(context);
+        current_context->setCurrentQueryId(""); // generate random query_id
+        executeQuery(istr, ostr, false, *current_context, nullptr);
     }
     catch (...)
     {
@@ -545,19 +545,19 @@ void DDLWorker::processTask(DDLTask & task)
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
-    if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+    if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+    else if (code == Coordination::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path);
-        if (ZooKeeperImpl::ZooKeeper::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
-            throw zkutil::KeeperException(code, active_node_path);
+        if (Coordination::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+            throw Coordination::Exception(code, active_node_path);
     }
     else
-        throw zkutil::KeeperException(code, active_node_path);
+        throw Coordination::Exception(code, active_node_path);
 
     if (!task.was_executed)
     {
@@ -578,7 +578,7 @@ void DDLWorker::processTask(DDLTask & task)
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
             }
         }
-        catch (const zkutil::KeeperException &)
+        catch (const Coordination::Exception &)
         {
             throw;
         }
@@ -594,7 +594,7 @@ void DDLWorker::processTask(DDLTask & task)
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
     /// Delete active flag and create finish flag
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
@@ -734,7 +734,7 @@ void DDLWorker::cleanupQueue()
         String node_path = queue_dir + "/" + node_name;
         String lock_path = node_path + "/lock";
 
-        zkutil::Stat stat;
+        Coordination::Stat stat;
         String dummy;
 
         try
@@ -784,7 +784,7 @@ void DDLWorker::cleanupQueue()
                 }
 
                 /// Remove the lock node and its parent atomically
-                zkutil::Requests ops;
+                Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
                 ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
@@ -803,21 +803,21 @@ void DDLWorker::cleanupQueue()
 /// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path)
 {
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     {
-        zkutil::CreateRequest request;
+        Coordination::CreateRequest request;
         request.path = node_path + "/active";
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     {
-        zkutil::CreateRequest request;
+        Coordination::CreateRequest request;
         request.path = node_path + "/finished";
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
-    zkutil::Responses responses;
+    Coordination::Responses responses;
     int code = zookeeper->tryMulti(ops, responses);
-    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw zkutil::KeeperException(code);
+    if (code && code != Coordination::ZNODEEXISTS)
+        throw Coordination::Exception(code);
 }
 
 
@@ -862,9 +862,9 @@ void DDLWorker::run()
                 zookeeper->createAncestors(queue_dir + "/");
                 initialized = true;
             }
-            catch (const zkutil::KeeperException & e)
+            catch (const Coordination::Exception & e)
             {
-                if (!ZooKeeperImpl::ZooKeeper::isHardwareError(e.code))
+                if (!Coordination::isHardwareError(e.code))
                     throw;
             }
         }
@@ -890,9 +890,9 @@ void DDLWorker::run()
             /// TODO: it might delay the execution, move it to separate thread.
             cleanupQueue();
         }
-        catch (zkutil::KeeperException & e)
+        catch (Coordination::Exception & e)
         {
-            if (ZooKeeperImpl::ZooKeeper::isHardwareError(e.code))
+            if (Coordination::isHardwareError(e.code))
             {
                 LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 
@@ -1066,8 +1066,8 @@ private:
     {
         Strings res;
         int code = zookeeper->tryGetChildren(node_path, res);
-        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            throw zkutil::KeeperException(code, node_path);
+        if (code && code != Coordination::ZNONODE)
+            throw Coordination::Exception(code, node_path);
         return res;
     }
 

@@ -1,13 +1,15 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/ProfileEvents.h>
-
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
 
 #if defined(__linux__)
 #include <linux/taskstats.h>
+#else
+struct taskstats {};
 #endif
 
 
@@ -87,8 +89,10 @@ struct RUsageCounters
 
     static RUsageCounters current(UInt64 real_time_ = getCurrentTimeNanoseconds())
     {
-        ::rusage rusage;
+        ::rusage rusage {};
+#if !defined(__APPLE__)
         ::getrusage(RUSAGE_THREAD, &rusage);
+#endif
         return RUsageCounters(rusage, real_time_);
     }
 
@@ -154,7 +158,7 @@ struct TasksStatsCounters
 {
     ::taskstats stat;
 
-    static TasksStatsCounters current() { return {}; }
+    static TasksStatsCounters current();
     static void incrementProfileEvents(const TasksStatsCounters &, const TasksStatsCounters &, ProfileEvents::Counters &) {}
     static void updateProfileEvents(TasksStatsCounters &, ProfileEvents::Counters &) {}
 };

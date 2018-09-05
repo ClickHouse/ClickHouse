@@ -10,6 +10,7 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/find_first_symbols.h>
+#include <common/intExp.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -703,12 +704,36 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
-inline void writeText(const UInt128 &, WriteBuffer &)
+inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
+
+template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
+template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
+template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
+template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+
+
+template <typename T>
+void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
-    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
-     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
-     */
-    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (value < Decimal<T>(0))
+    {
+        value *= Decimal<T>(-1);
+        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
+    }
+
+    T whole_part = value;
+    if (scale)
+        whole_part = value / decimalScaleMultiplier<T>(scale);
+
+    writeIntText(whole_part, ostr);
+    if (scale)
+    {
+        writeChar('.', ostr);
+        String str_fractional(scale, '0');
+        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
+            str_fractional[pos] += value % Decimal<T>(10);
+        ostr.write(str_fractional.data(), scale);
+    }
 }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
@@ -732,6 +757,12 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+inline void writeQuoted(const UUID & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -823,7 +854,7 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 
 
 /// Serialize exception (so that it can be transferred over the network)
-void writeException(const Exception & e, WriteBuffer & buf);
+void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace);
 
 
 /// An easy-to-use method for converting something to a string in text form.

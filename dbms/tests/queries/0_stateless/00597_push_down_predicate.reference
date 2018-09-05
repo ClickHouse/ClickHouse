@@ -1,15 +1,24 @@
+-------Query that previously worked but now doesn\'t work.-------
+-------Not need optimize predicate, but it works.-------
 1
 1
 1
-2000-01-01	1	test string 1	1
+-------Need push down-------
 1
 1
 2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
-2000-01-01	1
 2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
-1	test string 1	1	test string 1
-1	test string 1	1	test string 1
-test string 1	1	1
-test string 1	1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+1	2000-01-01	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+1	2000-01-01	2000-01-01	1	test string 1	1
+-------Push to having expression, need check.-------
+-------Compatibility test-------

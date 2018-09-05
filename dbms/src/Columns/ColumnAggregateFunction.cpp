@@ -3,11 +3,15 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromArena.h>
 #include <Common/SipHash.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 #include <Columns/ColumnsCommon.h>
+
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
@@ -66,7 +70,7 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         auto res = createView();
         res->set(function_state->getNestedFunction());
         res->getData().assign(getData().begin(), getData().end());
-        return std::move(res);
+        return res;
     }
 
     MutableColumnPtr res = function->getReturnType()->createColumn();
@@ -106,7 +110,6 @@ void ColumnAggregateFunction::insertRangeFrom(const IColumn & from, size_t start
         /// Keep shared ownership of aggregation states.
         src = from_concrete.getPtr();
 
-        auto & data = getData();
         size_t old_size = data.size();
         data.resize(old_size + length);
         memcpy(&data[old_size], &from_concrete.getData()[start], length * sizeof(data[0]));
@@ -137,7 +140,7 @@ ColumnPtr ColumnAggregateFunction::filter(const Filter & filter, ssize_t result_
     if (res_data.size() * 2 < res_data.capacity())
         res_data = Container(res_data.cbegin(), res_data.cend());
 
-    return std::move(res);
+    return res;
 }
 
 
@@ -159,7 +162,7 @@ ColumnPtr ColumnAggregateFunction::permute(const Permutation & perm, size_t limi
     for (size_t i = 0; i < limit; ++i)
         res->getData()[i] = getData()[perm[i]];
 
-    return std::move(res);
+    return res;
 }
 
 ColumnPtr ColumnAggregateFunction::index(const IColumn & indexes, size_t limit) const
@@ -176,10 +179,10 @@ ColumnPtr ColumnAggregateFunction::indexImpl(const PaddedPODArray<Type> & indexe
     for (size_t i = 0; i < limit; ++i)
         res->getData()[i] = getData()[indexes[i]];
 
-    return std::move(res);
+    return res;
 }
 
-INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction);
+INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
@@ -246,13 +249,13 @@ void ColumnAggregateFunction::insertData(const char * pos, size_t /*length*/)
     getData().push_back(*reinterpret_cast<const AggregateDataPtr *>(pos));
 }
 
-void ColumnAggregateFunction::insertFrom(const IColumn & src, size_t n)
+void ColumnAggregateFunction::insertFrom(const IColumn & from, size_t n)
 {
     /// Must create new state of aggregate function and take ownership of it,
     ///  because ownership of states of aggregate function cannot be shared for individual rows,
     ///  (only as a whole, see comment above).
     insertDefault();
-    insertMergeFrom(src, n);
+    insertMergeFrom(from, n);
 }
 
 void ColumnAggregateFunction::insertFrom(ConstAggregateDataPtr place)
@@ -266,9 +269,9 @@ void ColumnAggregateFunction::insertMergeFrom(ConstAggregateDataPtr place)
     func->merge(getData().back(), place, &createOrGetArena());
 }
 
-void ColumnAggregateFunction::insertMergeFrom(const IColumn & src, size_t n)
+void ColumnAggregateFunction::insertMergeFrom(const IColumn & from, size_t n)
 {
-    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(src).getData()[n]);
+    insertMergeFrom(static_cast<const ColumnAggregateFunction &>(from).getData()[n]);
 }
 
 Arena & ColumnAggregateFunction::createOrGetArena()
@@ -284,7 +287,7 @@ void ColumnAggregateFunction::insert(const Field & x)
 
     Arena & arena = createOrGetArena();
 
-    getData().push_back(arena.alloc(function->sizeOfData()));
+    getData().push_back(arena.alignedAlloc(function->sizeOfData(), function->alignOfData()));
     function->create(getData().back());
     ReadBufferFromString read_buffer(x.get<const String &>());
     function->deserialize(getData().back(), read_buffer, &arena);
@@ -296,7 +299,7 @@ void ColumnAggregateFunction::insertDefault()
 
     Arena & arena = createOrGetArena();
 
-    getData().push_back(arena.alloc(function->sizeOfData()));
+    getData().push_back(arena.alignedAlloc(function->sizeOfData(), function->alignOfData()));
     function->create(getData().back());
 }
 
@@ -317,7 +320,7 @@ const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char *
       */
     Arena & dst_arena = createOrGetArena();
 
-    getData().push_back(dst_arena.alloc(function->sizeOfData()));
+    getData().push_back(dst_arena.alignedAlloc(function->sizeOfData(), function->alignOfData()));
     function->create(getData().back());
 
     /** We will read from src_arena.
@@ -368,7 +371,7 @@ ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) c
             res_data.push_back(data[i]);
     }
 
-    return std::move(res);
+    return res;
 }
 
 MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const
@@ -411,7 +414,7 @@ void ColumnAggregateFunction::getExtremes(Field & min, Field & max) const
 {
     /// Place serialized default values into min/max.
 
-    PODArrayWithStackMemory<char, 16> place_buffer(func->sizeOfData());
+    AlignedBuffer place_buffer(func->sizeOfData(), func->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
     String serialized;
