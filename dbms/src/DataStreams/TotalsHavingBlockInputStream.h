@@ -1,11 +1,13 @@
 #pragma once
 
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <Common/Arena.h>
 
 
 namespace DB
 {
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
 
 class ExpressionActions;
 

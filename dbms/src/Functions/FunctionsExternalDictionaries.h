@@ -1547,5 +1547,4 @@ private:
     const ExternalDictionaries & dictionaries;
 };
 
-
-};
+}

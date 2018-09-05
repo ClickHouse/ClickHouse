@@ -274,14 +274,11 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
 
 int main(int argc, char ** argv)
 {
-    const size_t BUF_SIZE = 1024;
-
     size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
     size_t method = argc <= 2 ? 0 : atoi(argv[2]);
 
     std::cerr << std::fixed << std::setprecision(2);
 
-    using Source = std::vector<UInt64>;
     Source data(BUF_SIZE);
 
     {
@@ -302,18 +299,18 @@ int main(int argc, char ** argv)
 
     setAffinity();
 
-    if (!method || method == 1) test<identity>  (n, &data[0], "0: identity");
-    if (!method || method == 2) test<intHash32> (n, &data[0], "1: intHash32");
-    if (!method || method == 3) test<_intHash64>(n, &data[0], "2: intHash64");
-    if (!method || method == 4) test<hash3>     (n, &data[0], "3: two rounds");
-    if (!method || method == 5) test<hash4>     (n, &data[0], "4: two rounds and two variables");
-    if (!method || method == 6) test<hash5>     (n, &data[0], "5: two rounds with less ops");
-    if (!method || method == 7) test<murmurMix> (n, &data[0], "6: murmur64 mixer");
-    if (!method || method == 8) test<mulShift>  (n, &data[0], "7: mulShift");
-    if (!method || method == 9) test<tabulation>(n, &data[0], "8: tabulation");
+    if (!method || method == 1) test<identity>  (n, data.data(), "0: identity");
+    if (!method || method == 2) test<intHash32> (n, data.data(), "1: intHash32");
+    if (!method || method == 3) test<_intHash64>(n, data.data(), "2: intHash64");
+    if (!method || method == 4) test<hash3>     (n, data.data(), "3: two rounds");
+    if (!method || method == 5) test<hash4>     (n, data.data(), "4: two rounds and two variables");
+    if (!method || method == 6) test<hash5>     (n, data.data(), "5: two rounds with less ops");
+    if (!method || method == 7) test<murmurMix> (n, data.data(), "6: murmur64 mixer");
+    if (!method || method == 8) test<mulShift>  (n, data.data(), "7: mulShift");
+    if (!method || method == 9) test<tabulation>(n, data.data(), "8: tabulation");
 
 #if __x86_64__
-    if (!method || method == 10) test<crc32Hash> (n, &data[0], "9: crc32");
+    if (!method || method == 10) test<crc32Hash> (n, data.data(), "9: crc32");
 #endif
 
     return 0;

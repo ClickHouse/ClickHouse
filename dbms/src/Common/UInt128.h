@@ -29,15 +29,7 @@ struct UInt128
 
     UInt128() = default;
     explicit UInt128(const UInt64 low, const UInt64 high) : low(low), high(high) {}
-
-#if 1
-    explicit UInt128(const unsigned __int128 rhs)
-    :   low(rhs & 0xffffffffffffffffll),
-        high(rhs >> 64)
-    {}
-#else
     explicit UInt128(const UInt64 rhs) : low(rhs), high() {}
-#endif
 
     auto tuple() const { return std::tie(high, low); }
 
@@ -73,7 +65,7 @@ template <typename T> bool inline operator<  (T a, const UInt128 b) { return UIn
 
 template <> constexpr bool IsNumber<UInt128> = true;
 template <> struct TypeName<UInt128> { static const char * get() { return "UInt128"; } };
-template <> struct TypeId<UInt128> { static constexpr const size_t value = 5; };
+template <> struct TypeId<UInt128> { static constexpr const TypeIndex value = TypeIndex::UInt128; };
 
 struct UInt128Hash
 {

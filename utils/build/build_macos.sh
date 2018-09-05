@@ -12,15 +12,19 @@ fi
 
 ## Install required compilers, tools, libraries
 
-brew install cmake gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline librdkafka
+brew install cmake ninja gcc icu4c mariadb-connector-c openssl unixodbc libtool gettext readline librdkafka
 
 ## Checkout ClickHouse sources
 
 #  To get the latest stable version:
 
-git clone -b stable --recursive --depth=10 https://github.com/yandex/ClickHouse.git
+BASE_DIR=$(dirname $0) && [ -f "$BASE_DIR/../../CMakeLists.txt" ] && ROOT_DIR=$BASE_DIR/../.. && cd $ROOT_DIR
 
-cd ClickHouse
+if [ -z $ROOT_DIR ]; then
+    # Checkout ClickHouse sources
+    git clone -b stable --recursive https://github.com/yandex/ClickHouse.git
+    cd ClickHouse
+fi
 
 #  For development, switch to the `master` branch.
 #  For the latest release candidate, switch to the `testing` branch.
@@ -30,15 +34,15 @@ cd ClickHouse
 mkdir build
 cd build
 cmake .. -DCMAKE_CXX_COMPILER=`which g++-8 g++-7` -DCMAKE_C_COMPILER=`which gcc-8 gcc-7`
-make -j `sysctl -n hw.ncpu`
+cmake --build .
 
-cd ../..
+cd ..
 
 #  Run server:
-# ClickHouse/build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
+# build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
 
 #  Run client:
-# ClickHouse/build/dbms/programs/clickhouse-client
+# build/dbms/programs/clickhouse-client
 
 
 ## Caveats

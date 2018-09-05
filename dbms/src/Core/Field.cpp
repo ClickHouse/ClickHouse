@@ -4,8 +4,8 @@
 #include <IO/WriteHelpers.h>
 
 #include <Core/Field.h>
+#include <Core/DecimalComparison.h>
 #include <Common/FieldVisitors.h>
-#include <Functions/FunctionsComparison.h>
 
 
 namespace DB
@@ -273,21 +273,51 @@ namespace DB
     }
 
 
-    bool DecimalField::operator < (const DecimalField & r) const
+    template <> Decimal32 DecimalField<Decimal32>::getScaleMultiplier() const
     {
-        using Comparator = DecimalComparison<Decimal128, Decimal128, LessOp>;
-        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
+        return DataTypeDecimal<Decimal32>::getScaleMultiplier(scale);
     }
 
-    bool DecimalField::operator <= (const DecimalField & r) const
+    template <> Decimal64 DecimalField<Decimal64>::getScaleMultiplier() const
     {
-        using Comparator = DecimalComparison<Decimal128, Decimal128, LessOrEqualsOp>;
-        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
+        return DataTypeDecimal<Decimal64>::getScaleMultiplier(scale);
     }
 
-    bool DecimalField::operator == (const DecimalField & r) const
+    template <> Decimal128 DecimalField<Decimal128>::getScaleMultiplier() const
     {
-        using Comparator = DecimalComparison<Decimal128, Decimal128, EqualsOp>;
-        return Comparator::compare(Decimal128(dec), Decimal128(r.dec), scale, r.scale);
+        return DataTypeDecimal<Decimal128>::getScaleMultiplier(scale);
     }
+
+    template <typename T>
+    static bool decEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
+    {
+        using Comparator = DecimalComparison<T, T, EqualsOp>;
+        return Comparator::compare(x, y, x_scale, y_scale);
+    }
+
+    template <typename T>
+    static bool decLess(T x, T y, UInt32 x_scale, UInt32 y_scale)
+    {
+        using Comparator = DecimalComparison<T, T, LessOp>;
+        return Comparator::compare(x, y, x_scale, y_scale);
+    }
+
+    template <typename T>
+    static bool decLessOrEqual(T x, T y, UInt32 x_scale, UInt32 y_scale)
+    {
+        using Comparator = DecimalComparison<T, T, LessOrEqualsOp>;
+        return Comparator::compare(x, y, x_scale, y_scale);
+    }
+
+    template <> bool decimalEqual(Decimal32 x, Decimal32 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
+    template <> bool decimalLess(Decimal32 x, Decimal32 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
+    template <> bool decimalLessOrEqual(Decimal32 x, Decimal32 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
+
+    template <> bool decimalEqual(Decimal64 x, Decimal64 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
+    template <> bool decimalLess(Decimal64 x, Decimal64 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
+    template <> bool decimalLessOrEqual(Decimal64 x, Decimal64 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
+
+    template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
+    template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
+    template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
 }

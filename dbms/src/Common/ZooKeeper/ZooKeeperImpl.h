@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/IKeeper.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -78,348 +79,24 @@ namespace CurrentMetrics
 }
 
 
-namespace ZooKeeperImpl
+namespace Coordination
 {
 
 using namespace DB;
 
-
-class Exception : public DB::Exception
-{
-private:
-    /// Delegate constructor, used to minimize repetition; last parameter used for overload resolution.
-    Exception(const std::string & msg, const int32_t code, int);
-
-public:
-    explicit Exception(const int32_t code);
-    Exception(const std::string & msg, const int32_t code);
-    Exception(const int32_t code, const std::string & path);
-    Exception(const Exception & exc);
-
-    const char * name() const throw() override { return "ZooKeeperImpl::Exception"; }
-    const char * className() const throw() override { return "ZooKeeperImpl::Exception"; }
-    Exception * clone() const override { return new Exception(*this); }
-
-    const int32_t code;
-};
+struct ZooKeeperRequest;
 
 
-/** Usage scenario:
-  * - create an object and issue commands;
-  * - you provide callbacks for your commands; callbacks are invoked in internal thread and must be cheap:
-  *   for example, just signal a condvar / fulfull a promise.
-  * - you also may provide callbacks for watches; they are also invoked in internal thread and must be cheap.
-  * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
-  *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
-  * - whenever session is expired or ZooKeeper instance is destroying, all callbacks are notified with special event.
-  * - data for callbacks must be alive when ZooKeeper instance is alive.
+
+/** Usage scenario: look at the documentation for IKeeper class.
   */
-class ZooKeeper
+class ZooKeeper : public IKeeper
 {
 public:
     using Addresses = std::vector<Poco::Net::SocketAddress>;
 
-    struct ACL
-    {
-        static constexpr int32_t Read = 1;
-        static constexpr int32_t Write = 2;
-        static constexpr int32_t Create = 4;
-        static constexpr int32_t Delete = 8;
-        static constexpr int32_t Admin = 16;
-        static constexpr int32_t All = 0x1F;
-
-        int32_t permissions;
-        String scheme;
-        String id;
-
-        void write(WriteBuffer & out) const;
-    };
-    using ACLs = std::vector<ACL>;
-
-    struct Stat
-    {
-        int64_t czxid;
-        int64_t mzxid;
-        int64_t ctime;
-        int64_t mtime;
-        int32_t version;
-        int32_t cversion;
-        int32_t aversion;
-        int64_t ephemeralOwner;
-        int32_t dataLength;
-        int32_t numChildren;
-        int64_t pzxid;
-
-        void read(ReadBuffer & in);
-    };
-
     using XID = int32_t;
     using OpNum = int32_t;
-
-    struct Response;
-    using ResponsePtr = std::shared_ptr<Response>;
-    using Responses = std::vector<ResponsePtr>;
-    using ResponseCallback = std::function<void(const Response &)>;
-
-    struct Response
-    {
-        int32_t error = 0;
-        virtual ~Response() {}
-        virtual void readImpl(ReadBuffer &) = 0;
-
-        virtual void removeRootPath(const String & /* root_path */) {}
-    };
-
-    struct Request;
-    using RequestPtr = std::shared_ptr<Request>;
-    using Requests = std::vector<RequestPtr>;
-
-    struct Request
-    {
-        XID xid = 0;
-        bool has_watch = false;
-
-        virtual ~Request() {}
-        virtual RequestPtr clone() const = 0;
-
-        virtual OpNum getOpNum() const = 0;
-
-        /// Writes length, xid, op_num, then the rest.
-        void write(WriteBuffer & out) const;
-        virtual void writeImpl(WriteBuffer &) const = 0;
-
-        virtual ResponsePtr makeResponse() const = 0;
-
-        virtual void addRootPath(const String & /* root_path */) {}
-        virtual String getPath() const = 0;
-    };
-
-    struct HeartbeatRequest final : Request
-    {
-        RequestPtr clone() const override { return std::make_shared<HeartbeatRequest>(*this); }
-        OpNum getOpNum() const override { return 11; }
-        void writeImpl(WriteBuffer &) const override {}
-        ResponsePtr makeResponse() const override;
-        String getPath() const override { return {}; }
-    };
-
-    struct HeartbeatResponse final : Response
-    {
-        void readImpl(ReadBuffer &) override {}
-    };
-
-    struct WatchResponse final : Response
-    {
-        int32_t type = 0;
-        int32_t state = 0;
-        String path;
-
-        void readImpl(ReadBuffer &) override;
-        void removeRootPath(const String & root_path) override;
-    };
-
-    using WatchCallback = std::function<void(const WatchResponse &)>;
-
-    struct AuthRequest final : Request
-    {
-        int32_t type = 0;   /// ignored by the server
-        String scheme;
-        String data;
-
-        RequestPtr clone() const override { return std::make_shared<AuthRequest>(*this); }
-        OpNum getOpNum() const override { return 100; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        String getPath() const override { return {}; }
-    };
-
-    struct AuthResponse final : Response
-    {
-        void readImpl(ReadBuffer &) override {}
-    };
-
-    struct CloseRequest final : Request
-    {
-        RequestPtr clone() const override { return std::make_shared<CloseRequest>(*this); }
-        OpNum getOpNum() const override { return -11; }
-        void writeImpl(WriteBuffer &) const override {}
-        ResponsePtr makeResponse() const override;
-        String getPath() const override { return {}; }
-    };
-
-    struct CloseResponse final : Response
-    {
-        void readImpl(ReadBuffer &) override;
-    };
-
-    struct CreateRequest final : Request
-    {
-        String path;
-        String data;
-        bool is_ephemeral = false;
-        bool is_sequential = false;
-        ACLs acls;
-
-        RequestPtr clone() const override { return std::make_shared<CreateRequest>(*this); }
-        OpNum getOpNum() const override { return 1; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct CreateResponse final : Response
-    {
-        String path_created;
-
-        void readImpl(ReadBuffer &) override;
-        void removeRootPath(const String & root_path) override;
-    };
-
-    struct RemoveRequest final : Request
-    {
-        String path;
-        int32_t version = -1;
-
-        RequestPtr clone() const override { return std::make_shared<RemoveRequest>(*this); }
-        OpNum getOpNum() const override { return 2; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct RemoveResponse final : Response
-    {
-        void readImpl(ReadBuffer &) override {}
-    };
-
-    struct ExistsRequest final : Request
-    {
-        String path;
-
-        RequestPtr clone() const override { return std::make_shared<ExistsRequest>(*this); }
-        OpNum getOpNum() const override { return 3; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct ExistsResponse final : Response
-    {
-        Stat stat;
-
-        void readImpl(ReadBuffer &) override;
-    };
-
-    struct GetRequest final : Request
-    {
-        String path;
-
-        RequestPtr clone() const override { return std::make_shared<GetRequest>(*this); }
-        OpNum getOpNum() const override { return 4; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct GetResponse final : Response
-    {
-        String data;
-        Stat stat;
-
-        void readImpl(ReadBuffer &) override;
-    };
-
-    struct SetRequest final : Request
-    {
-        String path;
-        String data;
-        int32_t version = -1;
-
-        RequestPtr clone() const override { return std::make_shared<SetRequest>(*this); }
-        OpNum getOpNum() const override { return 5; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct SetResponse final : Response
-    {
-        Stat stat;
-
-        void readImpl(ReadBuffer &) override;
-    };
-
-    struct ListRequest final : Request
-    {
-        String path;
-
-        RequestPtr clone() const override { return std::make_shared<ListRequest>(*this); }
-        OpNum getOpNum() const override { return 12; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct ListResponse final : Response
-    {
-        std::vector<String> names;
-        Stat stat;
-
-        void readImpl(ReadBuffer &) override;
-    };
-
-    struct CheckRequest final : Request
-    {
-        String path;
-        int32_t version = -1;
-
-        RequestPtr clone() const override { return std::make_shared<CheckRequest>(*this); }
-        OpNum getOpNum() const override { return 13; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return path; }
-    };
-
-    struct CheckResponse final : Response
-    {
-        void readImpl(ReadBuffer &) override {}
-    };
-
-    struct MultiRequest final : Request
-    {
-        Requests requests;
-
-        RequestPtr clone() const override;
-        OpNum getOpNum() const override { return 14; }
-        void writeImpl(WriteBuffer &) const override;
-        ResponsePtr makeResponse() const override;
-        void addRootPath(const String & root_path) override;
-        String getPath() const override { return {}; }
-    };
-
-    struct MultiResponse final : Response
-    {
-        Responses responses;
-
-        MultiResponse(const Requests & requests);
-
-        void readImpl(ReadBuffer &) override;
-        void removeRootPath(const String & root_path) override;
-    };
-
-    /// This response may be received only as an element of responses in MultiResponse.
-    struct ErrorResponse final : Response
-    {
-        void readImpl(ReadBuffer &) override;
-    };
-
 
     /** Connection to addresses is performed in order. If you want, shuffle them manually.
       * Operation timeout couldn't be greater than session timeout.
@@ -434,34 +111,17 @@ public:
         Poco::Timespan connection_timeout,
         Poco::Timespan operation_timeout);
 
-    ~ZooKeeper();
+    ~ZooKeeper() override;
 
 
     /// If expired, you can only destroy the object. All other methods will throw exception.
-    bool isExpired() const { return expired; }
+    bool isExpired() const override { return expired; }
 
     /// Useful to check owner of ephemeral node.
-    int64_t getSessionID() const { return session_id; }
+    int64_t getSessionID() const override { return session_id; }
 
 
-    using CreateCallback = std::function<void(const CreateResponse &)>;
-    using RemoveCallback = std::function<void(const RemoveResponse &)>;
-    using ExistsCallback = std::function<void(const ExistsResponse &)>;
-    using GetCallback = std::function<void(const GetResponse &)>;
-    using SetCallback = std::function<void(const SetResponse &)>;
-    using ListCallback = std::function<void(const ListResponse &)>;
-    using CheckCallback = std::function<void(const CheckResponse &)>;
-    using MultiCallback = std::function<void(const MultiResponse &)>;
-
-    /// If the method will throw an exception, callbacks won't be called.
-    ///
-    /// After the method is executed successfully, you must wait for callbacks
-    ///  (don't destroy callback data before it will be called).
-    ///
-    /// All callbacks are executed sequentially (the execution of callbacks is serialized).
-    ///
-    /// If an exception is thrown inside the callback, the session will expire,
-    ///  and all other callbacks will be called with "Session expired" error.
+    /// See the documentation about semantics of these methods in IKeeper class.
 
     void create(
         const String & path,
@@ -469,114 +129,42 @@ public:
         bool is_ephemeral,
         bool is_sequential,
         const ACLs & acls,
-        CreateCallback callback);
+        CreateCallback callback) override;
 
     void remove(
         const String & path,
         int32_t version,
-        RemoveCallback callback);
+        RemoveCallback callback) override;
 
     void exists(
         const String & path,
         ExistsCallback callback,
-        WatchCallback watch);
+        WatchCallback watch) override;
 
     void get(
         const String & path,
         GetCallback callback,
-        WatchCallback watch);
+        WatchCallback watch) override;
 
     void set(
         const String & path,
         const String & data,
         int32_t version,
-        SetCallback callback);
+        SetCallback callback) override;
 
     void list(
         const String & path,
         ListCallback callback,
-        WatchCallback watch);
+        WatchCallback watch) override;
 
     void check(
         const String & path,
         int32_t version,
-        CheckCallback callback);
+        CheckCallback callback) override;
 
     void multi(
         const Requests & requests,
-        MultiCallback callback);
-
-
-    enum Error
-    {
-        ZOK = 0,
-
-        /** System and server-side errors.
-          * This is never thrown by the server, it shouldn't be used other than
-          * to indicate a range. Specifically error codes greater than this
-          * value, but lesser than ZAPIERROR, are system errors.
-          */
-        ZSYSTEMERROR = -1,
-
-        ZRUNTIMEINCONSISTENCY = -2, /// A runtime inconsistency was found
-        ZDATAINCONSISTENCY = -3,    /// A data inconsistency was found
-        ZCONNECTIONLOSS = -4,       /// Connection to the server has been lost
-        ZMARSHALLINGERROR = -5,     /// Error while marshalling or unmarshalling data
-        ZUNIMPLEMENTED = -6,        /// Operation is unimplemented
-        ZOPERATIONTIMEOUT = -7,     /// Operation timeout
-        ZBADARGUMENTS = -8,         /// Invalid arguments
-        ZINVALIDSTATE = -9,         /// Invliad zhandle state
-
-        /** API errors.
-          * This is never thrown by the server, it shouldn't be used other than
-          * to indicate a range. Specifically error codes greater than this
-          * value are API errors.
-          */
-        ZAPIERROR = -100,
-
-        ZNONODE = -101,                     /// Node does not exist
-        ZNOAUTH = -102,                     /// Not authenticated
-        ZBADVERSION = -103,                 /// Version conflict
-        ZNOCHILDRENFOREPHEMERALS = -108,    /// Ephemeral nodes may not have children
-        ZNODEEXISTS = -110,                 /// The node already exists
-        ZNOTEMPTY = -111,                   /// The node has children
-        ZSESSIONEXPIRED = -112,             /// The session has been expired by the server
-        ZINVALIDCALLBACK = -113,            /// Invalid callback specified
-        ZINVALIDACL = -114,                 /// Invalid ACL specified
-        ZAUTHFAILED = -115,                 /// Client authentication failed
-        ZCLOSING = -116,                    /// ZooKeeper is closing
-        ZNOTHING = -117,                    /// (not error) no server responses to process
-        ZSESSIONMOVED = -118                /// Session moved to another server, so operation is ignored
-    };
-
-    /// Network errors and similar. You should reinitialize ZooKeeper session in case of these errors
-    static bool isHardwareError(int32_t code);
-
-    /// Valid errors sent from the server about database state (like "no node"). Logical and authentication errors (like "bad arguments") are not here.
-    static bool isUserError(int32_t code);
-
-    static const char * errorMessage(int32_t code);
-
-    /// For watches.
-    enum State
-    {
-        EXPIRED_SESSION = -112,
-        AUTH_FAILED = -113,
-        CONNECTING = 1,
-        ASSOCIATING = 2,
-        CONNECTED = 3,
-        NOTCONNECTED = 999
-    };
-
-    enum Event
-    {
-        CREATED = 1,
-        DELETED = 2,
-        CHANGED = 3,
-        CHILD = 4,
-        SESSION = -1,
-        NOTWATCHING = -2
-    };
+        MultiCallback callback) override;
 
 private:
     String root_path;
@@ -591,7 +179,7 @@ private:
 
     int64_t session_id = 0;
 
-    std::atomic<XID> xid {1};
+    std::atomic<XID> next_xid {1};
     std::atomic<bool> expired {false};
     std::mutex push_request_mutex;
 
@@ -599,7 +187,7 @@ private:
 
     struct RequestInfo
     {
-        RequestPtr request;
+        std::shared_ptr<ZooKeeperRequest> request;
         ResponseCallback callback;
         WatchCallback watch;
         clock::time_point time;

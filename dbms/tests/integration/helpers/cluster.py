@@ -146,11 +146,26 @@ class ClickHouseCluster:
                 conn.close()
                 print "Mysql Started"
                 return
-            except Exception:
+            except Exception as ex:
+                print "Can't connect to MySQL " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait MySQL container")
 
+    def wait_zookeeper_to_start(self, timeout=60):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                for instance in ['zoo1', 'zoo2', 'zoo3']:
+                    conn = self.get_kazoo_client(instance)
+                    conn.get_children('/')
+                print "All instances of ZooKeeper started"
+                return
+            except Exception as ex:
+                print "Can't connect to ZooKeeper " + str(ex)
+                time.sleep(0.5)
+
+        raise Exception("Cannot wait ZooKeeper container")
 
     def start(self, destroy_dirs=True):
         if self.is_up:
@@ -176,10 +191,11 @@ class ClickHouseCluster:
             subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
+            self.wait_zookeeper_to_start()
 
         if self.with_mysql and self.base_mysql_cmd:
             subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
-            self.wait_mysql_to_start()
+            self.wait_mysql_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
             subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
@@ -306,8 +322,24 @@ class ClickHouseInstance:
         self.image = image
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, *args, **kwargs):
-        return self.client.query(*args, **kwargs)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
+        return self.client.query(sql, stdin, timeout, settings, user, ignore_error)
+
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False, retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.query(sql, stdin, timeout, settings, user, ignore_error)
+                if check_callback(result):
+                    return result
+                time.sleep(sleep_time)
+            except Exception as ex:
+                print "Retry {} got exception {}".format(i + 1, ex)
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception("Can't execute query {}".format(sql))
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, *args, **kwargs):

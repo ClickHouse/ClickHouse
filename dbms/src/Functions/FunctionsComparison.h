@@ -2,13 +2,13 @@
 
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnArray.h>
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,6 +26,8 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Core/AccurateComparison.h>
+#include <Core/DecimalComparison.h>
+
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
@@ -35,11 +37,6 @@
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int DECIMAL_OVERFLOW;
-}
 
 
 /** Comparison functions: ==, !=, <, >, <=, >=.
@@ -54,93 +51,7 @@ namespace ErrorCodes
   * - tuples (lexicographic comparison).
   *
   * Exception: You can compare the date and datetime with a constant string. Example: EventDate = '2015-01-01'.
-  *
-  * TODO Arrays.
   */
-
-template <typename A, typename B> struct EqualsOp
-{
-    /// An operation that gives the same result, if arguments are passed in reverse order.
-    using SymmetricOp = EqualsOp<B, A>;
-
-    static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
-
-#if USE_EMBEDDED_COMPILER
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
-    {
-        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y); /// qNaNs always compare false
-    }
-#endif
-};
-
-template <typename A, typename B> struct NotEqualsOp
-{
-    using SymmetricOp = NotEqualsOp<B, A>;
-    static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
-
-#if USE_EMBEDDED_COMPILER
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
-    {
-        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
-    }
-#endif
-};
-
-template <typename A, typename B> struct GreaterOp;
-
-template <typename A, typename B> struct LessOp
-{
-    using SymmetricOp = GreaterOp<B, A>;
-    static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
-
-#if USE_EMBEDDED_COMPILER
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
-    {
-        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLT(x, y) : b.CreateICmpULT(x, y)) : b.CreateFCmpOLT(x, y);
-    }
-#endif
-};
-
-template <typename A, typename B> struct GreaterOp
-{
-    using SymmetricOp = LessOp<B, A>;
-    static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
-
-#if USE_EMBEDDED_COMPILER
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
-    {
-        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGT(x, y) : b.CreateICmpUGT(x, y)) : b.CreateFCmpOGT(x, y);
-    }
-#endif
-};
-
-template <typename A, typename B> struct GreaterOrEqualsOp;
-
-template <typename A, typename B> struct LessOrEqualsOp
-{
-    using SymmetricOp = GreaterOrEqualsOp<B, A>;
-    static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
-
-#if USE_EMBEDDED_COMPILER
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
-    {
-        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLE(x, y) : b.CreateICmpULE(x, y)) : b.CreateFCmpOLE(x, y);
-    }
-#endif
-};
-
-template <typename A, typename B> struct GreaterOrEqualsOp
-{
-    using SymmetricOp = LessOrEqualsOp<B, A>;
-    static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
-
-#if USE_EMBEDDED_COMPILER
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
-    {
-        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGE(x, y) : b.CreateICmpUGE(x, y)) : b.CreateFCmpOGE(x, y);
-    }
-#endif
-};
 
 
 template <typename A, typename B, typename Op>
@@ -155,9 +66,9 @@ struct NumComparisonImpl
           */
 
         size_t size = a.size();
-        const A * a_pos = &a[0];
-        const B * b_pos = &b[0];
-        UInt8 * c_pos = &c[0];
+        const A * a_pos = a.data();
+        const B * b_pos = b.data();
+        UInt8 * c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -172,8 +83,8 @@ struct NumComparisonImpl
     static void NO_INLINE vector_constant(const PaddedPODArray<A> & a, B b, PaddedPODArray<UInt8> & c)
     {
         size_t size = a.size();
-        const A * a_pos = &a[0];
-        UInt8 * c_pos = &c[0];
+        const A * a_pos = a.data();
+        UInt8 * c_pos = c.data();
         const A * a_end = a_pos + size;
 
         while (a_pos < a_end)
@@ -192,289 +103,6 @@ struct NumComparisonImpl
     static void constant_constant(A a, B b, UInt8 & c)
     {
         c = Op::apply(a, b);
-    }
-};
-
-///
-inline bool allowDecimalComparison(const IDataType & left_type, const IDataType & right_type)
-{
-    if (isDecimal(left_type))
-    {
-        if (isDecimal(right_type) || notDecimalButComparableToDecimal(right_type))
-            return true;
-    }
-    else if (notDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
-        return true;
-    return false;
-}
-
-template <size_t > struct ConstructDecInt { using Type = Int32; };
-template <> struct ConstructDecInt<8> { using Type = Int64; };
-template <> struct ConstructDecInt<16> { using Type = Int128; };
-
-template <typename T, typename U>
-struct DecCompareInt
-{
-    using Type = typename ConstructDecInt<(!IsDecimalNumber<U> || sizeof(T) > sizeof(U)) ? sizeof(T) : sizeof(U)>::Type;
-    using TypeA = Type;
-    using TypeB = Type;
-};
-
-///
-template <typename A, typename B, template <typename, typename> typename Operation, bool _actual = IsDecimalNumber<A> || IsDecimalNumber<B>>
-class DecimalComparison
-{
-public:
-    using CompareInt = typename DecCompareInt<A, B>::Type;
-    using Op = Operation<CompareInt, CompareInt>;
-    using ColVecA = ColumnVector<A>;
-    using ColVecB = ColumnVector<B>;
-    using ArrayA = typename ColVecA::Container;
-    using ArrayB = typename ColVecB::Container;
-
-    DecimalComparison(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
-    {
-        if (!apply(block, result, col_left, col_right))
-            throw Exception("Wrong decimal comparison with " + col_left.type->getName() + " and " + col_right.type->getName(),
-                            ErrorCodes::LOGICAL_ERROR);
-    }
-
-    static bool apply(Block & block, size_t result [[maybe_unused]],
-                      const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
-    {
-        if constexpr (_actual)
-        {
-            ColumnPtr c_res;
-            Shift shift = getScales<A, B>(col_left.type, col_right.type);
-
-            c_res = applyWithScale(col_left.column, col_right.column, shift);
-            if (c_res)
-                block.getByPosition(result).column = std::move(c_res);
-            return true;
-        }
-        return false;
-    }
-
-    static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
-    {
-        static const UInt32 max_scale = maxDecimalPrecision<Decimal128>();
-        if (scale_a > max_scale || scale_b > max_scale)
-            throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
-
-        Shift shift;
-        if (scale_a < scale_b)
-            shift.a = DataTypeDecimal<B>(maxDecimalPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
-        if (scale_a > scale_b)
-            shift.b = DataTypeDecimal<A>(maxDecimalPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
-
-        return applyWithScale(a, b, shift);
-    }
-
-private:
-    struct Shift
-    {
-        CompareInt a = 1;
-        CompareInt b = 1;
-
-        bool none() const { return a == 1 && b == 1; }
-        bool left() const { return a != 1; }
-        bool right() const { return b != 1; }
-    };
-
-    template <typename T, typename U>
-    static auto applyWithScale(T a, U b, const Shift & shift)
-    {
-        if (shift.left())
-            return apply<true, false>(a, b, shift.a);
-        else if (shift.right())
-            return apply<false, true>(a, b, shift.b);
-        return apply<false, false>(a, b, 1);
-    }
-
-    template <typename T, typename U>
-    static std::enable_if_t<IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr & right_type)
-    {
-        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
-        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
-
-        Shift shift;
-        if (decimal0 && decimal1)
-        {
-            auto result_type = decimalResultType(*decimal0, *decimal1, false, false);
-            shift.a = result_type.scaleFactorFor(*decimal0, false);
-            shift.b = result_type.scaleFactorFor(*decimal1, false);
-        }
-        else if (decimal0)
-            shift.b = decimal0->getScaleMultiplier();
-        else if (decimal1)
-            shift.a = decimal1->getScaleMultiplier();
-
-        return shift;
-    }
-
-    template <typename T, typename U>
-    static std::enable_if_t<IsDecimalNumber<T> && !IsDecimalNumber<U>, Shift>
-    getScales(const DataTypePtr & left_type, const DataTypePtr &)
-    {
-        Shift shift;
-        const DataTypeDecimal<T> * decimal0 = checkDecimal<T>(*left_type);
-        if (decimal0)
-            shift.b = decimal0->getScaleMultiplier();
-        return shift;
-    }
-
-    template <typename T, typename U>
-    static std::enable_if_t<!IsDecimalNumber<T> && IsDecimalNumber<U>, Shift>
-    getScales(const DataTypePtr &, const DataTypePtr & right_type)
-    {
-        Shift shift;
-        const DataTypeDecimal<U> * decimal1 = checkDecimal<U>(*right_type);
-        if (decimal1)
-            shift.a = decimal1->getScaleMultiplier();
-        return shift;
-    }
-
-    template <bool scale_left, bool scale_right>
-    static ColumnPtr apply(const ColumnPtr & c0, const ColumnPtr & c1, CompareInt scale)
-    {
-        auto c_res = ColumnUInt8::create();
-
-        if constexpr (_actual)
-        {
-            bool c0_const = c0->isColumnConst();
-            bool c1_const = c1->isColumnConst();
-
-            if (c0_const && c1_const)
-            {
-                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
-                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
-
-                A a = c0_const->template getValue<A>();
-                B b = c1_const->template getValue<B>();
-                UInt8 res = apply<scale_left, scale_right>(a, b, scale);
-                return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
-            }
-
-            ColumnUInt8::Container & vec_res = c_res->getData();
-            vec_res.resize(c0->size());
-
-            if (c0_const)
-            {
-                const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
-                A a = c0_const->template getValue<A>();
-                if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
-                else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
-            }
-            else if (c1_const)
-            {
-                const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
-                B b = c1_const->template getValue<B>();
-                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
-                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
-            }
-            else
-            {
-                if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                {
-                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                }
-                else if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                {
-                    if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                    else if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
-                }
-            }
-        }
-
-        return c_res;
-    }
-
-    template <bool scale_left, bool scale_right>
-    static NO_INLINE UInt8 apply(A a, B b, CompareInt scale [[maybe_unused]])
-    {
-        CompareInt x = a;
-        CompareInt y = b;
-        bool overflow = false;
-
-        if constexpr (sizeof(A) > sizeof(CompareInt))
-            overflow |= (A(x) != a);
-        if constexpr (sizeof(B) > sizeof(CompareInt))
-            overflow |= (B(y) != b);
-        if constexpr (std::is_unsigned_v<A>)
-            overflow |= (x < 0);
-        if constexpr (std::is_unsigned_v<B>)
-            overflow |= (y < 0);
-
-        if constexpr (scale_left)
-            overflow |= common::mulOverflow(x, scale, x);
-        if constexpr (scale_right)
-            overflow |= common::mulOverflow(y, scale, y);
-
-        if (overflow)
-            throw Exception("Can't compare", ErrorCodes::DECIMAL_OVERFLOW);
-
-        return Op::apply(x, y);
-    }
-
-    template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
-                                        CompareInt scale)
-    {
-        size_t size = a.size();
-        const A * a_pos = &a[0];
-        const B * b_pos = &b[0];
-        UInt8 * c_pos = &c[0];
-        const A * a_end = a_pos + size;
-
-        while (a_pos < a_end)
-        {
-            *c_pos = apply<scale_left, scale_right>(*a_pos, *b_pos, scale);
-            ++a_pos;
-            ++b_pos;
-            ++c_pos;
-        }
-    }
-
-    template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
-    {
-        size_t size = a.size();
-        const A * a_pos = &a[0];
-        UInt8 * c_pos = &c[0];
-        const A * a_end = a_pos + size;
-
-        while (a_pos < a_end)
-        {
-            *c_pos = apply<scale_left, scale_right>(*a_pos, b, scale);
-            ++a_pos;
-            ++c_pos;
-        }
-    }
-
-    template <bool scale_left, bool scale_right>
-    static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
-    {
-        size_t size = b.size();
-        const B * b_pos = &b[0];
-        UInt8 * c_pos = &c[0];
-        const B * b_end = b_pos + size;
-
-        while (b_pos < b_end)
-        {
-            *c_pos = apply<scale_left, scale_right>(a, *b_pos, scale);
-            ++b_pos;
-            ++c_pos;
-        }
     }
 };
 
@@ -523,7 +151,7 @@ struct StringComparisonImpl
             {
                 a_size = a_offsets[0];
                 b_size = b_offsets[0];
-                res = memcmp(&a_data[0], &b_data[0], std::min(a_size, b_size));
+                res = memcmp(a_data.data(), b_data.data(), std::min(a_size, b_size));
             }
             else
             {
@@ -546,7 +174,7 @@ struct StringComparisonImpl
         {
             if (i == 0)
             {
-                int res = memcmp(&a_data[0], &b_data[0], std::min(a_offsets[0] - 1, b_n));
+                int res = memcmp(a_data.data(), b_data.data(), std::min(a_offsets[0] - 1, b_n));
                 c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_n + 1));
             }
             else
@@ -571,7 +199,7 @@ struct StringComparisonImpl
             /// Trailing zero byte of the smaller string is included in the comparison.
             if (i == 0)
             {
-                int res = memcmp(&a_data[0], b_data, std::min(a_offsets[0], b_size));
+                int res = memcmp(a_data.data(), b_data, std::min(a_offsets[0], b_size));
                 c[i] = Op::apply(res, 0) || (res == 0 && Op::apply(a_offsets[0], b_size));
             }
             else
@@ -701,7 +329,7 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
-                ? (a_offsets[0] == b_offsets[0] && !memcmp(&a_data[0], &b_data[0], a_offsets[0] - 1))
+                ? (a_offsets[0] == b_offsets[0] && !memcmp(a_data.data(), b_data.data(), a_offsets[0] - 1))
                 : (a_offsets[i] - a_offsets[i - 1] == b_offsets[i] - b_offsets[i - 1]
                     && !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_offsets[i - 1]], a_offsets[i] - a_offsets[i - 1] - 1)));
     }
@@ -714,7 +342,7 @@ struct StringEqualsImpl
         size_t size = a_offsets.size();
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
-                ? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], &b_data[0], b_n))
+                ? (a_offsets[0] == b_n + 1 && !memcmp(a_data.data(), b_data.data(), b_n))
                 : (a_offsets[i] - a_offsets[i - 1] == b_n + 1
                     && !memcmp(&a_data[a_offsets[i - 1]], &b_data[b_n * i], b_n)));
     }
@@ -729,7 +357,7 @@ struct StringEqualsImpl
         const UInt8 * b_data = reinterpret_cast<const UInt8 *>(b.data());
         for (size_t i = 0; i < size; ++i)
             c[i] = positive == ((i == 0)
-                ? (a_offsets[0] == b_n + 1 && !memcmp(&a_data[0], b_data, b_n))
+                ? (a_offsets[0] == b_n + 1 && !memcmp(a_data.data(), b_data, b_n))
                 : (a_offsets[i] - a_offsets[i - 1] == b_n + 1
                     && !memcmp(&a_data[a_offsets[i - 1]], b_data, b_n)));
     }
@@ -896,6 +524,61 @@ struct GenericComparisonImpl
 };
 
 
+#if USE_EMBEDDED_COMPILER
+
+template <template <typename, typename> typename Op> struct CompileOp;
+
+template <> struct CompileOp<EqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpEQ(x, y) : b.CreateFCmpOEQ(x, y); /// qNaNs always compare false
+    }
+};
+
+template <> struct CompileOp<NotEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool /*is_signed*/)
+    {
+        return x->getType()->isIntegerTy() ? b.CreateICmpNE(x, y) : b.CreateFCmpONE(x, y);
+    }
+};
+
+template <> struct CompileOp<LessOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLT(x, y) : b.CreateICmpULT(x, y)) : b.CreateFCmpOLT(x, y);
+    }
+};
+
+template <> struct CompileOp<GreaterOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGT(x, y) : b.CreateICmpUGT(x, y)) : b.CreateFCmpOGT(x, y);
+    }
+};
+
+template <> struct CompileOp<LessOrEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSLE(x, y) : b.CreateICmpULE(x, y)) : b.CreateFCmpOLE(x, y);
+    }
+};
+
+template <> struct CompileOp<GreaterOrEqualsOp>
+{
+    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * x, llvm::Value * y, bool is_signed)
+    {
+        return x->getType()->isIntegerTy() ? (is_signed ? b.CreateICmpSGE(x, y) : b.CreateICmpUGE(x, y)) : b.CreateFCmpOGE(x, y);
+    }
+};
+
+#endif
+
+
 struct NameEquals          { static constexpr auto name = "equals"; };
 struct NameNotEquals       { static constexpr auto name = "notEquals"; };
 struct NameLess            { static constexpr auto name = "less"; };
@@ -912,10 +595,15 @@ class FunctionComparison : public IFunction
 public:
     static constexpr auto name = Name::name;
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionComparison>(context); }
-    FunctionComparison(const Context & context) : context(context) {}
+
+    FunctionComparison(const Context & context)
+    :   context(context),
+        check_decimal_overflow(decimalCheckComparisonOverflow(context))
+    {}
 
 private:
     const Context & context;
+    bool check_decimal_overflow = true;
 
     template <typename T0, typename T1>
     bool executeNumRightType(Block & block, size_t result, const ColumnVector<T0> * col_left, const IColumn * col_right_untyped)
@@ -931,13 +619,13 @@ private:
             block.getByPosition(result).column = std::move(col_res);
             return true;
         }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             auto col_res = ColumnUInt8::create();
 
             ColumnUInt8::Container & vec_res = col_res->getData();
             vec_res.resize(col_left->size());
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right->template getValue<T1>(), vec_res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res);
 
             block.getByPosition(result).column = std::move(col_res);
             return true;
@@ -960,10 +648,10 @@ private:
             block.getByPosition(result).column = std::move(col_res);
             return true;
         }
-        else if (auto col_right = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
+        else if (auto col_right_const = checkAndGetColumnConst<ColumnVector<T1>>(col_right_untyped))
         {
             UInt8 res = 0;
-            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(), res);
+            NumComparisonImpl<T0, T1, Op<T0, T1>>::constant_constant(col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), res);
 
             block.getByPosition(result).column = DataTypeUInt8().createColumnConst(col_left->size(), toField(res));
             return true;
@@ -995,20 +683,20 @@ private:
                     + " of second argument of function " + getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
         }
-        else if (auto col_left = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
+        else if (auto col_left_const = checkAndGetColumnConst<ColumnVector<T0>>(col_left_untyped))
         {
-            if (   executeNumConstRightType<T0, UInt8>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt16>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt32>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt64>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, UInt128>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int8>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int16>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int32>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int64>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Int128>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Float32>(block, result, col_left, col_right_untyped)
-                || executeNumConstRightType<T0, Float64>(block, result, col_left, col_right_untyped))
+            if (   executeNumConstRightType<T0, UInt8>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt16>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt32>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt64>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, UInt128>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int8>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int16>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int32>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int64>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Int128>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Float32>(block, result, col_left_const, col_right_untyped)
+                || executeNumConstRightType<T0, Float64>(block, result, col_left_const, col_right_untyped))
                 return true;
             else
                 throw Exception("Illegal column " + col_right_untyped->getName()
@@ -1021,18 +709,23 @@ private:
 
     void executeDecimal(Block & block, size_t result, const ColumnWithTypeAndName & col_left, const ColumnWithTypeAndName & col_right)
     {
-        size_t left_number = col_left.type->getTypeId();
-        size_t right_number = col_right.type->getTypeId();
+        TypeIndex left_number = col_left.type->getTypeId();
+        TypeIndex right_number = col_right.type->getTypeId();
 
-        auto call = [&](const auto & left, const auto & right)
+        auto call = [&](const auto & types) -> bool
         {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
+            using Types = std::decay_t<decltype(types)>;
+            using LeftDataType = typename Types::LeftType;
+            using RightDataType = typename Types::RightType;
 
-            DecimalComparison<LeftDataType, RightDataType, Op>(block, result, col_left, col_right);
+            if (check_decimal_overflow)
+                DecimalComparison<LeftDataType, RightDataType, Op, true>(block, result, col_left, col_right);
+            else
+                DecimalComparison<LeftDataType, RightDataType, Op, false>(block, result, col_left, col_right);
+            return true;
         };
 
-        if (!callByNumbers(left_number, right_number, call))
+        if (!callOnBasicTypes(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -1567,18 +1260,10 @@ public:
             x = nativeCast(b, types[0], x, common);
             y = nativeCast(b, types[1], y, common);
         }
-        auto * result = Op<int, int>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
+        auto * result = CompileOp<Op>::compile(b, x, y, typeIsSigned(*types[0]) || typeIsSigned(*types[1]));
         return b.CreateSelect(result, b.getInt8(1), b.getInt8(0));
     }
 #endif
 };
-
-
-using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
-using FunctionNotEquals = FunctionComparison<NotEqualsOp, NameNotEquals>;
-using FunctionLess = FunctionComparison<LessOp, NameLess>;
-using FunctionGreater = FunctionComparison<GreaterOp, NameGreater>;
-using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
-using FunctionGreaterOrEquals = FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>;
 
 }

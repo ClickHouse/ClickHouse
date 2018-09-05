@@ -5,6 +5,7 @@
 #include <common/logger_useful.h>
 
 #include <Common/HTMLForm.h>
+#include <Common/setThreadName.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
@@ -86,6 +87,8 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
 void InterserverIOHTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
+    setThreadName("IntersrvHandler");
+
     /// In order to work keep-alive.
     if (request.getVersion() == Poco::Net::HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);

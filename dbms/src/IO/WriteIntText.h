@@ -209,12 +209,11 @@ namespace detail
 
 
 template <typename T>
-std::enable_if_t<std::is_signed_v<T>, void> writeIntText(T x, WriteBuffer & buf)
+std::enable_if_t<std::is_signed_v<T> || std::is_same_v<T, Int128>, void> writeIntText(T x, WriteBuffer & buf)
 {
     detail::writeSIntText(x, buf);
 
 }
-
 
 template <typename T>
 std::enable_if_t<std::is_unsigned_v<T>, void> writeIntText(T x, WriteBuffer & buf)

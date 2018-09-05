@@ -269,7 +269,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             res.finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
                 QueryStatus * process_list_elem = context.getProcessListElement();
-                const Settings & settings = context.getSettingsRef();
 
                 if (!process_list_elem)
                     return;
@@ -277,7 +276,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 /// Update performance counters before logging to query_log
                 CurrentThread::finalizePerformanceCounters();
 
-                QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events);
+                QueryStatusInfo info = process_list_elem->getInfo(true, context.getSettingsRef().log_profile_events);
 
                 double elapsed_seconds = info.elapsed_seconds;
 
@@ -345,14 +344,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.exception = getCurrentExceptionMessage(false);
 
                 QueryStatus * process_list_elem = context.getProcessListElement();
-                const Settings & settings = context.getSettingsRef();
+                const Settings & current_settings = context.getSettingsRef();
 
                 /// Update performance counters before logging to query_log
                 CurrentThread::finalizePerformanceCounters();
 
                 if (process_list_elem)
                 {
-                    QueryStatusInfo info = process_list_elem->getInfo(true, settings.log_profile_events, false);
+                    QueryStatusInfo info = process_list_elem->getInfo(true, current_settings.log_profile_events, false);
 
                     elem.query_duration_ms = info.elapsed_seconds * 1000;
 
@@ -365,7 +364,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     elem.profile_counters = std::move(info.profile_counters);
                 }
 
-                if (settings.calculate_text_stack_trace)
+                if (current_settings.calculate_text_stack_trace)
                     setExceptionStackTrace(elem);
                 logException(context, elem);
 
@@ -440,8 +439,8 @@ void executeQuery(
     {
         /// If not - copy enough data into 'parse_buf'.
         parse_buf.resize(max_query_size + 1);
-        parse_buf.resize(istr.read(&parse_buf[0], max_query_size + 1));
-        begin = &parse_buf[0];
+        parse_buf.resize(istr.read(parse_buf.data(), max_query_size + 1));
+        begin = parse_buf.data();
         end = begin + parse_buf.size();
     }
 

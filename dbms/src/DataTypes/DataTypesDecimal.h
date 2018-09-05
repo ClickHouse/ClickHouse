@@ -1,7 +1,7 @@
 #pragma once
 #include <common/likely.h>
 #include <Common/typeid_cast.h>
-#include <Columns/ColumnVector.h>
+#include <Columns/ColumnDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 
@@ -13,6 +13,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 ///
@@ -62,11 +63,19 @@ class DataTypeSimpleSerialization : public IDataType
 };
 
 
+class Context;
+bool decimalCheckComparisonOverflow(const Context & context);
+bool decimalCheckArithmeticOverflow(const Context & context);
+
+
 static constexpr size_t minDecimalPrecision() { return 1; }
 template <typename T> static constexpr size_t maxDecimalPrecision() { return 0; }
 template <> constexpr size_t maxDecimalPrecision<Decimal32>() { return 9; }
 template <> constexpr size_t maxDecimalPrecision<Decimal64>() { return 18; }
 template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
+
+
+DataTypePtr createDecimal(UInt64 precision, UInt64 scale);
 
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
@@ -84,23 +93,25 @@ class DataTypeDecimal final : public DataTypeSimpleSerialization
 {
 public:
     using FieldType = T;
-    using ColumnType = ColumnVector<T>;
+    using ColumnType = ColumnDecimal<T>;
 
     static constexpr bool is_parametric = true;
+
+    static constexpr size_t maxPrecision() { return maxDecimalPrecision<T>(); }
 
     DataTypeDecimal(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
         scale(scale_)
     {
-        if (unlikely(precision < 1 || precision > maxDecimalPrecision<T>()))
+        if (unlikely(precision < 1 || precision > maxPrecision()))
             throw Exception("Precision is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-        if (unlikely(scale < 0 || static_cast<UInt32>(scale) > maxDecimalPrecision<T>()))
+        if (unlikely(scale < 0 || static_cast<UInt32>(scale) > maxPrecision()))
             throw Exception("Scale is out of bounds", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
     }
 
     const char * getFamilyName() const override { return "Decimal"; }
     std::string getName() const override;
-    size_t getTypeId() const override { return TypeId<T>::value; }
+    TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -137,7 +148,7 @@ public:
     bool canBeUsedInBooleanContext() const override { return true; }
     bool isNumber() const override { return true; }
     bool isInteger() const override { return false; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullable() const override { return false; }
 
     /// Decimal specific
 
@@ -161,7 +172,7 @@ public:
         return x % getScaleMultiplier();
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(maxDecimalPrecision<T>() - scale) - T(1); }
+    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
 
     bool canStoreWhole(T x) const
     {
@@ -191,6 +202,8 @@ public:
 
     T parseFromString(const String & str) const;
 
+    void readText(T & x, ReadBuffer & istr) const { readText(x, istr, precision, scale); }
+    static void readText(T & x, ReadBuffer & istr, UInt32 precision, UInt32 scale);
     static T getScaleMultiplier(UInt32 scale);
 
 private:
@@ -253,6 +266,17 @@ inline bool isDecimal(const IDataType & data_type)
     return false;
 }
 
+inline UInt32 getDecimalScale(const IDataType & data_type)
+{
+    if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
+        return decimal_type->getScale();
+    if (auto * decimal_type = checkDecimal<Decimal64>(data_type))
+        return decimal_type->getScale();
+    if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
+        return decimal_type->getScale();
+    return std::numeric_limits<UInt32>::max();
+}
+
 ///
 inline bool notDecimalButComparableToDecimal(const IDataType & data_type)
 {
@@ -267,6 +291,56 @@ inline bool comparableToDecimal(const IDataType & data_type)
     if (data_type.isInteger())
         return true;
     return isDecimal(data_type);
+}
+
+template <typename DataType> constexpr bool IsDecimal = false;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal32>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal64>> = true;
+template <> constexpr bool IsDecimal<DataTypeDecimal<Decimal128>> = true;
+
+template <typename FromDataType, typename ToDataType>
+inline std::enable_if_t<IsDecimal<FromDataType> && IsDecimal<ToDataType>, typename ToDataType::FieldType>
+convertDecimals(const typename FromDataType::FieldType & value, UInt32 scale_from, UInt32 scale_to)
+{
+    ToDataType type_to(ToDataType::maxPrecision(), scale_to);
+    FromDataType type_from(FromDataType::maxPrecision(), scale_from);
+
+    if (scale_from > scale_to)
+    {
+        typename FromDataType::FieldType factor = type_from.scaleFactorFor(type_to, false);
+        return value / factor;
+    }
+    else
+    {
+        typename ToDataType::FieldType factor = type_to.scaleFactorFor(type_from, false);
+        return value * factor;
+    }
+}
+
+template <typename FromDataType, typename ToDataType>
+inline std::enable_if_t<IsDecimal<FromDataType> && !IsDecimal<ToDataType>, typename ToDataType::FieldType>
+convertFromDecimal(const typename FromDataType::FieldType & value, UInt32 scale [[maybe_unused]])
+{
+    if (scale > FromDataType::maxPrecision())
+        throw Exception("Wrong decimal scale", ErrorCodes::LOGICAL_ERROR);
+
+    if constexpr (!std::is_same_v<ToDataType, DataTypeNumber<typename ToDataType::FieldType>>)
+        throw Exception("Illegal convertion from decimal", ErrorCodes::CANNOT_CONVERT_TYPE);
+    else
+        return static_cast<typename ToDataType::FieldType>(value) / FromDataType::getScaleMultiplier(scale);
+}
+
+template <typename FromDataType, typename ToDataType>
+inline std::enable_if_t<!IsDecimal<FromDataType> && IsDecimal<ToDataType>, typename ToDataType::FieldType>
+convertToDecimal(const typename FromDataType::FieldType & value, UInt32 scale [[maybe_unused]])
+{
+    if (scale > ToDataType::maxPrecision())
+        throw Exception("Wrong decimal scale", ErrorCodes::LOGICAL_ERROR);
+
+    if constexpr (!std::is_same_v<FromDataType, DataTypeNumber<typename FromDataType::FieldType>>)
+        throw Exception("Illegal convertion to decimal", ErrorCodes::CANNOT_CONVERT_TYPE);
+    else
+        return value * ToDataType::getScaleMultiplier(scale);
 }
 
 }

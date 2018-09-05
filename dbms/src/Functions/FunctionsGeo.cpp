@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsGeo.h>
 #include <Functions/GeoUtils.h>
-#include <Functions/ObjectPool.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -14,6 +13,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ObjectPool.h>
 #include <string>
 #include <memory>
 

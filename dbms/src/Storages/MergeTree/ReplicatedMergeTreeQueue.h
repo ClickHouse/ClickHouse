@@ -149,9 +149,6 @@ private:
     /// Put a set of (already existing) parts in virtual_parts.
     void addVirtualParts(const MergeTreeData::DataParts & parts);
 
-    /// Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
-    bool load(zkutil::ZooKeeperPtr zookeeper);
-
     void insertUnlocked(
         const LogEntryPtr & entry, std::optional<time_t> & min_unprocessed_insert_time_changed,
         std::lock_guard<std::mutex> & state_lock);
@@ -222,7 +219,7 @@ public:
     ~ReplicatedMergeTreeQueue();
 
     void initialize(const String & zookeeper_path_, const String & replica_path_, const String & logger_name_,
-        const MergeTreeData::DataParts & parts, zkutil::ZooKeeperPtr zookeeper);
+        const MergeTreeData::DataParts & parts);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
@@ -235,6 +232,12 @@ public:
       */
     bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
+    /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
+      * If queue was not empty load() would not load duplicate records.
+      * return true, if we update queue.
+      */
+    bool load(zkutil::ZooKeeperPtr zookeeper);
+
     bool removeFromVirtualParts(const MergeTreePartInfo & part_info);
 
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
@@ -242,11 +245,11 @@ public:
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       */
-    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback = {});
+    void pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
-    void updateMutations(zkutil::ZooKeeperPtr zookeeper, zkutil::WatchCallback watch_callback = {});
+    void updateMutations(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.

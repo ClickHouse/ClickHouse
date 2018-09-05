@@ -118,7 +118,7 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
     if (path_part == "/")
         path_part.clear();
 
-    std::vector<std::future<zkutil::GetResponse>> futures;
+    std::vector<std::future<Coordination::GetResponse>> futures;
     futures.reserve(nodes.size());
     for (const String & node : nodes)
         futures.push_back(zookeeper->asyncTryGet(path_part + '/' + node));
@@ -126,10 +126,10 @@ void StorageSystemZooKeeper::fillData(MutableColumns & res_columns, const Contex
     for (size_t i = 0, size = nodes.size(); i < size; ++i)
     {
         auto res = futures[i].get();
-        if (res.error == ZooKeeperImpl::ZooKeeper::ZNONODE)
+        if (res.error == Coordination::ZNONODE)
             continue;   /// Node was deleted meanwhile.
 
-        const zkutil::Stat & stat = res.stat;
+        const Coordination::Stat & stat = res.stat;
 
         size_t col_num = 0;
         res_columns[col_num++]->insert(nodes[i]);
