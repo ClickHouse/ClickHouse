@@ -81,7 +81,9 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 Note:
 
-The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If "b" or "c" is an arrayJoin() function, each row will be replicated regardless of the "a" condition.
+The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](functions/array_join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
+
+<a name="operator_case"><a>
 
 ## Conditional Expression
 
@@ -120,3 +122,52 @@ Sometimes this doesn't work the way you expect. For example, ` SELECT 4 > 2 > 3`
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed to a single call of these functions.
 
+## Checking for `NULL`
+
+ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
+
+<a name="operator-is-null"></a>
+
+### IS NULL
+
+- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NULL` operator returns:
+    - `1`, if the value is `NULL`.
+    - `0` otherwise.
+- For other values, the `IS NULL` operator always returns `0`.
+
+```bash
+:) SELECT x+100 FROM t_null WHERE y IS NULL
+
+SELECT x + 100
+FROM t_null
+WHERE isNull(y)
+
+┌─plus(x, 100)─┐
+│          101 │
+└──────────────┘
+
+1 rows in set. Elapsed: 0.002 sec.
+```
+
+<a name="operator-is-not-null"></a>
+
+### IS NOT NULL
+
+- For [Nullable](../data_types/nullable.md#data_type-nullable) type values, the `IS NOT NULL` operator returns:
+    - `0`, if the value is `NULL`.
+    - `1` otherwise.
+- For other values, the `IS NOT NULL` operator always returns `1`.
+
+```bash
+:) SELECT * FROM t_null WHERE y IS NOT NULL
+
+SELECT *
+FROM t_null
+WHERE isNotNull(y)
+
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+
+1 rows in set. Elapsed: 0.002 sec.
+```

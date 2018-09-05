@@ -15,6 +15,7 @@ For information on connecting and configuring external dictionaries, see "[Exter
 ## dictGetUUID
 
 ## dictGetString
+
 `dictGetT('dict_name', 'attr_name', id)`
 
 - Get the value of the attr_name attribute  from the dict_name dictionary using the 'id' key.`dict_name`  and `attr_name`  are constant strings.`id`must be UInt64.
@@ -28,7 +29,7 @@ The same as the `dictGetT` functions, but the default value is taken from the fu
 
 ## dictIsIn
 
-`dictIsIn('dict_name', child_id, ancestor_id)`
+`dictIsIn ('dict_name', child_id, ancestor_id)`
 
 - For the 'dict_name' hierarchical dictionary, finds out whether the 'child_id' key is located inside 'ancestor_id' (or matches 'ancestor_id'). Returns UInt8.
 

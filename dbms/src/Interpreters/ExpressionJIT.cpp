@@ -594,6 +594,11 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                     current_dependents[proj.first].emplace();
                 break;
 
+            case ExpressionAction::ADD_ALIASES:
+                for (const auto & proj : actions[i].projection)
+                    current_dependents[proj.first].emplace();
+                break;
+
             case ExpressionAction::ADD_COLUMN:
             case ExpressionAction::COPY_COLUMN:
             case ExpressionAction::ARRAY_JOIN:

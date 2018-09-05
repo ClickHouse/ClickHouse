@@ -1,14 +1,6 @@
 SET allow_experimental_decimal_type = 1;
 SET send_logs_level = 'none';
 
-CREATE TABLE IF NOT EXISTS test.x (a Nullable(Decimal(9, 2))) ENGINE = Memory; -- { serverError 43 }
-CREATE TABLE IF NOT EXISTS test.x (a Nullable(Decimal(18, 2))) ENGINE = Memory; -- { serverError 43 }
-CREATE TABLE IF NOT EXISTS test.x (a Nullable(Decimal(38, 2))) ENGINE = Memory; -- { serverError 43 }
-
-SELECT toNullable(toDecimal32(0, 0)); -- { serverError 43 }
-SELECT toNullable(toDecimal64(0, 0)); -- { serverError 43 }
-SELECT toNullable(toDecimal128(0, 0)); -- { serverError 43 }
-
 SELECT toDecimal32('1.1', 1), toDecimal32('1.1', 2), toDecimal32('1.1', 8);
 SELECT toDecimal32('1.1', 0); -- { serverError 69 }
 SELECT toDecimal32(1.1, 0), toDecimal32(1.1, 1), toDecimal32(1.1, 2), toDecimal32(1.1, 8);

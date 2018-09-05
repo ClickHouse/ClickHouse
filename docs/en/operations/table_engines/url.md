@@ -2,36 +2,34 @@
 
 # URL(URL, Format)
 
-This data source operates with data on remote HTTP/HTTPS server. The engine is
-similar to [`File`](./file.md#).
+Manages data on a remote HTTP/HTTPS server. This engine is similar
+to the [`File`](./file.md#) engine.
 
-## Usage in ClickHouse Server
+## Using the engine in the ClickHouse server
 
-```
-URL(URL, Format)
-```
+`The format` must be one that ClickHouse can use in
+`SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see
+[Formats](../../interfaces/formats.md#formats).
 
-`Format` should be supported for `SELECT` and/or `INSERT`. For the full list of
-supported formats see [Formats](../../interfaces/formats.md#formats).
+`The URL` must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server
+that uses HTTP or HTTPS. This does not require any
+additional headers for getting a response from the server.
 
-`URL` must match the format of Uniform Resource Locator. The specified
-URL must address a server working with HTTP or HTTPS. The server shouldn't
-require any additional HTTP-headers.
-
-`INSERT` and `SELECT` queries are transformed into `POST` and `GET` requests
-respectively. For correct `POST`-requests handling the remote server should support
-[Chunked transfer encoding](https://ru.wikipedia.org/wiki/Chunked_transfer_encoding).
+`INSERT` and `SELECT` queries are transformed to `POST` and `GET` requests,
+respectively. For processing `POST` requests, the remote server must support
+[Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
 **Example:**
 
-**1.** Create the `url_engine_table` table:
+**1.** Create a `url_engine_table` table on the server :
 
 ```sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
 
-**2.** Implement simple http-server using python3:
+**2.** Create a basic HTTP server using the standard Python 3 tools and
+start it:
 
 ```python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -53,7 +51,7 @@ if __name__ == "__main__":
 python3 server.py
 ```
 
-**3.** Query the data:
+**3.** Request data:
 
 ```sql
 SELECT * FROM url_engine_table
@@ -66,12 +64,16 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
+## Usage
 
+<<<<<<< HEAD
+- Multi-stream reading and writing are supported.
+=======
 ## Details of Implementation
 
 - Reads and writes can be parallel
+>>>>>>> upstream/master
 - Not supported:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - Indices
-  - Replication
+    - `ALTER` and `SELECT...SAMPLE` operations.
+    - Indexes.
+    - Replication.
