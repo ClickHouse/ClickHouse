@@ -147,7 +147,7 @@ class ClickHouseCluster:
                 print "Mysql Started"
                 return
             except Exception as ex:
-                print "Can't connecto to MySQL " + str(ex)
+                print "Can't connect to MySQL " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait MySQL container")
@@ -162,7 +162,7 @@ class ClickHouseCluster:
                 print "All instances of ZooKeeper started"
                 return
             except Exception as ex:
-                print "Can't connec to to ZooKeeper " + str(ex)
+                print "Can't connect to ZooKeeper " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper container")
@@ -322,8 +322,24 @@ class ClickHouseInstance:
         self.image = image
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, *args, **kwargs):
-        return self.client.query(*args, **kwargs)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
+        return self.client.query(sql, stdin, timeout, settings, user, ignore_error)
+
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False, retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.query(sql, stdin, timeout, settings, user, ignore_error)
+                if check_callback(result):
+                    return result
+                time.sleep(sleep_time)
+            except Exception as ex:
+                print "Retry {} got exception {}".format(i + 1, ex)
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception("Can't execute query {}".format(sql))
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, *args, **kwargs):

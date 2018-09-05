@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <time.h>
-#include <IO/createReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/CompressedReadBufferBase.h>
 #include <IO/UncompressedCache.h>
 #include <port/clock.h>

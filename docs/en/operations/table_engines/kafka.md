@@ -115,11 +115,11 @@ To stop receiving topic data or to change the conversion logic, detach the mater
   ATTACH MATERIALIZED VIEW consumer;
 ```
 
-If you want to change the target table by using ` ALTER`materialized view, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
+If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
 ## Configuration
 
-Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_topic_*`). The global configuration is applied first, and the topic-level configuration is second (if it exists).
+Similar to GraphiteMergeTree, the Kafka engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`kafka`) and topic-level (`kafka_topic_*`). The global configuration is applied first, and then the topic-level configuration is applied (if it exists).
 
 ```xml
   <!--  Global configuration options for all tables of Kafka engine type -->
@@ -136,4 +136,3 @@ Similar to GraphiteMergeTree, the Kafka engine supports extended configuration u
 ```
 
 For a list of possible configuration options, see the [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Use the underscore (`_`) instead of a dot in the ClickHouse configuration. For example, `check.crcs=true` will be `<check_crcs>true</check_crcs>`.
-
