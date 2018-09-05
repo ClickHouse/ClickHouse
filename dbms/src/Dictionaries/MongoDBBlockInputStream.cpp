@@ -5,7 +5,6 @@
 #include <string>
 #include <sstream>
 
-#include <Poco/MongoDB/Binary.h>
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
 #include <Poco/MongoDB/Element.h>
