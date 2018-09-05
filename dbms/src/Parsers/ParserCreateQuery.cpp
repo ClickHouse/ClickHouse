@@ -244,6 +244,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             query->attach = attach;
             query->if_not_exists = if_not_exists;
+            query->cluster = cluster_str;
 
             if (database)
                 query->database = typeid_cast<ASTIdentifier &>(*database).name;
