@@ -2927,7 +2927,8 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool proje
         else
             actions->add(ExpressionAction::addAliases(result_columns));
     }
-    else
+
+    if (!(add_aliases && project_result))
     {
         /// We will not delete the original columns.
         for (const auto & column_name_type : source_columns)
