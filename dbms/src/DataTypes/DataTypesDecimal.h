@@ -131,23 +131,14 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return true; }
-    bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }
-    bool isValueRepresentedByInteger() const override { return true; }
-    bool isValueRepresentedByUnsignedInteger() const override { return false; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(T); }
-    bool isCategorial() const override { return isValueRepresentedByInteger(); }
 
-    bool canBeUsedAsVersion() const override { return false; }
     bool isSummable() const override { return true; }
-    bool canBeUsedInBitOperations() const override { return false; }
-    bool isUnsignedInteger() const override { return false; }
     bool canBeUsedInBooleanContext() const override { return true; }
-    bool isNumber() const override { return true; }
-    bool isInteger() const override { return false; }
     bool canBeInsideNullable() const override { return true; }
 
     /// Decimal specific
