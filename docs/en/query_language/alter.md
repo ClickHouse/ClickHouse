@@ -230,13 +230,19 @@ The functionality is in beta testing and is available starting from version 1.1.
 
 You don't need to convert existing tables to work with mutations. However, after the first mutation is applied, the table data format becomes incompatible with previous versions and it is not possible to roll back to the previous version.
 
-The `ALTER DELETE` command is currently available:
+Currently available commands:
 
 ```sql
-ALTER TABLE [db.]table DELETE WHERE expr
+ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
-The `expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
+The `filter_expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
+
+```sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
+```
+
+The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
 A single query can specify multiple comma-separated commands.
 
