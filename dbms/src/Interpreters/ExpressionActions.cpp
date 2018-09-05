@@ -828,6 +828,12 @@ void ExpressionActions::finalize(const Names & output_columns)
         else if (action.type == ExpressionAction::ADD_ALIASES)
         {
             needed_columns.insert(in.begin(), in.end());
+            for (auto & name_wit_alias : action.projection)
+            {
+                auto it = unmodified_columns.find(name_wit_alias.second);
+                if (it != unmodified_columns.end())
+                    unmodified_columns.erase(it);
+            }
         }
         else if (action.type == ExpressionAction::ARRAY_JOIN)
         {
