@@ -1111,7 +1111,7 @@ public:
         return std::make_shared<DataTypeUUID>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {

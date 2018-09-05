@@ -12,6 +12,8 @@
 #include <Poco/Event.h>
 #include <Poco/Timestamp.h>
 #include <Core/Types.h>
+#include <Common/CurrentThread.h>
+
 
 namespace DB
 {
@@ -64,6 +66,8 @@ protected:
     std::atomic<bool> shutdown {false};
     std::condition_variable wake_event;
 
+    /// Thread group used for profiling purposes
+    ThreadGroupStatusPtr thread_group;
 
     void threadFunction();
 };

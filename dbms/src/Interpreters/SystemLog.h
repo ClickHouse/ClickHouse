@@ -20,6 +20,7 @@
 #include <Common/setThreadName.h>
 #include <IO/WriteHelpers.h>
 #include <common/logger_useful.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -54,17 +55,19 @@ namespace DB
 
 class Context;
 class QueryLog;
+class QueryThreadLog;
 class PartLog;
 
 
-/// System logs should be destroyed in destructor of last Context and before tables,
+/// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
 {
     ~SystemLogs();
 
-    std::unique_ptr<QueryLog> query_log;    /// Used to log queries.
-    std::unique_ptr<PartLog> part_log;      /// Used to log operations with parts
+    std::unique_ptr<QueryLog> query_log;                /// Used to log queries.
+    std::unique_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.
+    std::unique_ptr<PartLog> part_log;                  /// Used to log operations with parts
 };
 
 
@@ -72,6 +75,8 @@ template <typename LogElement>
 class SystemLog : private boost::noncopyable
 {
 public:
+
+    using Self = SystemLog<SystemLog>;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.
@@ -100,6 +105,9 @@ public:
             LOG_ERROR(log, "SystemLog queue is full");
     }
 
+    /// Flush data in the buffer to disk
+    void flush(bool quiet = false);
+
 protected:
     Context & context;
     const String database_name;
@@ -118,6 +126,7 @@ protected:
       *  than accumulation of large amount of log records (for example, for query log - processing of large amount of queries).
       */
     std::vector<LogElement> data;
+    std::mutex data_mutex;
 
     Logger * log;
 
@@ -126,7 +135,6 @@ protected:
     std::thread saving_thread;
 
     void threadFunction();
-    void flush();
 
     /** Creates new table if it does not exist.
       * Renames old table if its structure is not suitable.
@@ -184,7 +192,16 @@ void SystemLog<LogElement>::threadFunction()
             QueueItem element;
             bool has_element = false;
 
-            if (data.empty())
+            bool is_empty;
+            {
+                std::unique_lock lock(data_mutex);
+                is_empty = data.empty();
+            }
+
+            /// data.size() is increased only in this function
+            /// TODO: get rid of data and queue duality
+
+            if (is_empty)
             {
                 queue.pop(element);
                 has_element = true;
@@ -206,14 +223,17 @@ void SystemLog<LogElement>::threadFunction()
                     break;
                 }
                 else
+                {
+                    std::unique_lock lock(data_mutex);
                     data.push_back(element.second);
+                }
             }
 
             size_t milliseconds_elapsed = time_after_last_write.elapsed() / 1000000;
             if (milliseconds_elapsed >= flush_interval_milliseconds)
             {
                 /// Write data to a table.
-                flush();
+                flush(true);
                 time_after_last_write.restart();
             }
         }
@@ -228,10 +248,15 @@ void SystemLog<LogElement>::threadFunction()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::flush()
+void SystemLog<LogElement>::flush(bool quiet)
 {
+    std::unique_lock lock(data_mutex);
+
     try
     {
+        if (quiet && data.empty())
+            return;
+
         LOG_TRACE(log, "Flushing system log");
 
         /// We check for existence of the table and create it as needed at every flush.
@@ -345,6 +370,25 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
+}
+
+/// Creates a system log with MergeTree engines using parameters from config
+template<typename TSystemLog>
+std::unique_ptr<TSystemLog> createDefaultSystemLog(
+        Context & context_,
+        const String & default_database_name,
+        const String & default_table_name,
+        Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix)
+{
+    String database     = config.getString(config_prefix + ".database",     default_database_name);
+    String table        = config.getString(config_prefix + ".table",        default_table_name);
+    String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+    String engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+
+    size_t flush_interval_milliseconds = config.getUInt64("query_log.flush_interval_milliseconds", DEFAULT_QUERY_LOG_FLUSH_INTERVAL_MILLISECONDS);
+
+    return std::make_unique<TSystemLog>(context_, database, table, engine, flush_interval_milliseconds);
 }
 
 

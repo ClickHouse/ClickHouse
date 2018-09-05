@@ -1,4 +1,4 @@
-pages:
+nav:
 
 - 'Введение':
   - 'Обзор': 'index.md'
@@ -113,7 +113,6 @@ pages:
   - 'Операторы': 'query_language/operators.md'
   - 'Общий синтаксис': 'query_language/syntax.md'
 
-
 - 'Эксплуатация':
   - 'hidden': 'operations/index.md'
   - 'Движки таблиц':
@@ -170,11 +169,13 @@ pages:
 
 - 'Разработка':
   - 'hidden': 'development/index.md'
-  - 'Overview of ClickHouse architecture': 'development/architecture.md'
+  - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
 
-- 'Roadmap': 'roadmap.md'
-- 'Changelog': 'changelog.md'
+- 'Что нового':
+  - 'Changelog': 'changelog.md'
+  - 'Security changelog': 'security_changelog.md'
+  - 'Roadmap': 'roadmap.md'

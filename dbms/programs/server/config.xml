@@ -322,10 +322,12 @@
     <!-- Protection from accidental DROP.
          If size of a MergeTree table is greater than max_table_size_to_drop (in bytes) than table could not be dropped with any DROP query.
          If you want do delete one table and don't want to restart clickhouse-server, you could create special file <clickhouse-path>/flags/force_drop_table and make DROP once.
-         By default max_table_size_to_drop is 50GB, max_table_size_to_drop=0 allows to DROP any tables.
+         By default max_table_size_to_drop is 50GB; max_table_size_to_drop=0 allows to DROP any tables.
+         The same for max_partition_size_to_drop.
          Uncomment to disable protection.
     -->
     <!-- <max_table_size_to_drop>0</max_table_size_to_drop> -->
+    <!-- <max_partition_size_to_drop>0</max_partition_size_to_drop> -->
 
     <!-- Example of parameters for GraphiteMergeTree table engine -->
     <graphite_rollup_example>

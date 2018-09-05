@@ -8,20 +8,41 @@ Kafka lets you:
 - Organize fault-tolerant storage.
 - Process streams as they become available.
 
+
+Old format:
+
 ```
-Kafka(broker_list, topic_list, group_name, format[, schema, num_consumers])
+Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
+      [, kafka_row_delimiter, kafka_schema, kafka_num_consumers])
 ```
 
-Parameters:
+New format:
 
-- `broker_list` – A comma-separated list of brokers (`localhost:9092`).
-- `topic_list` – A list of Kafka topics (`my_topic`).
-- `group_name` – A group of Kafka consumers (`group1`). Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
-- `--format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section.
-- `schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
-- `num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
+```
+Kafka SETTINGS
+  kafka_broker_list = 'localhost:9092',
+  kafka_topic_list = 'topic1,topic2',
+  kafka_group_name = 'group1',
+  kafka_format = 'JSONEachRow',
+  kafka_row_delimiter = '\n'
+  kafka_schema = '',
+  kafka_num_consumers = 2
+```
 
-Example:
+Required parameters:
+
+- `kafka_broker_list` – A comma-separated list of brokers (`localhost:9092`).
+- `kafka_topic_list` – A list of Kafka topics (`my_topic`).
+- `kafka_group_name` – A group of Kafka consumers (`group1`). Reading margins are tracked for each group separately. If you don't want messages to be duplicated in the cluster, use the same group name everywhere.
+- `kafka_format` – Message format. Uses the same notation as the SQL ` FORMAT` function, such as ` JSONEachRow`. For more information, see the "Formats" section.
+
+Optional parameters:
+
+- `kafka_row_delimiter` - Character-delimiter of records (rows), which ends the message.
+- `kafka_schema` – An optional parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/)  requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `kafka_num_consumers` – The number of consumers per table. Default: `1`. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition.
+
+Examples:
 
 ```sql
   CREATE TABLE queue (
@@ -31,6 +52,24 @@ Example:
   ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
 
   SELECT * FROM queue LIMIT 5;
+
+  CREATE TABLE queue2 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka SETTINGS kafka_broker_list = 'localhost:9092',
+                            kafka_topic_list = 'topic',
+                            kafka_group_name = 'group1',
+                            kafka_format = 'JSONEachRow',
+                            kafka_num_consumers = 4;
+
+  CREATE TABLE queue2 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1')
+              SETTINGS kafka_format = 'JSONEachRow',
+                       kafka_num_consumers = 4;
 ```
 
 The delivered messages are tracked automatically, so each message in a group is only counted once. If you want to get the data twice, then create a copy of the table with another group name.
@@ -59,7 +98,7 @@ Example:
     level String,
     total UInt64
   ) ENGINE = SummingMergeTree(day, (day, level), 8192);
-  
+
   CREATE MATERIALIZED VIEW consumer TO daily
     AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() as total
     FROM queue GROUP BY day, level;

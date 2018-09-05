@@ -22,7 +22,7 @@ It is possible to create two Merge tables that will endlessly try to read each o
 
 The typical way to use the Merge engine is for working with a large number of TinyLog tables as if with a single table.
 
-## Virtual columns
+## Virtual Columns
 
 Virtual columns are columns that are provided by the table engine, regardless of the table definition. In other words, these columns are not specified in CREATE TABLE, but they are accessible for SELECT.
 

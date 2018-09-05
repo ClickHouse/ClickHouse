@@ -99,7 +99,7 @@ public:
     {
     public:
         bool isLocal() const { return !local_addresses.empty(); }
-        bool hasRemoteConnections() const { return pool != nullptr; }
+        bool hasRemoteConnections() const { return local_addresses.size() != per_replica_pools.size(); }
         size_t getLocalNodeCount() const { return local_addresses.size(); }
         bool hasInternalReplication() const { return has_internal_replication; }
 

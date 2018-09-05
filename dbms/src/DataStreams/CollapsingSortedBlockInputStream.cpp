@@ -40,60 +40,45 @@ void CollapsingSortedBlockInputStream::reportIncorrectData()
 }
 
 
-void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_columns, size_t & merged_rows, bool last_in_stream)
+void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_columns, size_t & merged_rows)
 {
     if (count_positive == 0 && count_negative == 0)
+    {
+        /// No input rows have been read.
         return;
+    }
 
     if (count_positive == count_negative && !last_is_positive)
     {
-        /// If all the rows in the input streams was collapsed, we still want to give at least one block in the result.
-        if (last_in_stream && merged_rows == 0 && !blocks_written)
-        {
-            LOG_INFO(log, "All rows collapsed");
-            ++merged_rows;
-            for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
-            ++merged_rows;
-            for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i]->insertFrom(*(*last_negative.columns)[i], last_negative.row_num);
-
-            if (out_row_sources_buf)
-            {
-                /// true flag value means "skip row"
-                current_row_sources[last_positive_pos].setSkipFlag(false);
-                current_row_sources[last_negative_pos].setSkipFlag(false);
-            }
-        }
+        /// Input rows exactly cancel out.
+        return;
     }
-    else
+
+    if (count_positive <= count_negative)
     {
-        if (count_positive <= count_negative)
-        {
-            ++merged_rows;
-            for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i]->insertFrom(*(*first_negative.columns)[i], first_negative.row_num);
+        ++merged_rows;
+        for (size_t i = 0; i < num_columns; ++i)
+            merged_columns[i]->insertFrom(*(*first_negative.columns)[i], first_negative.row_num);
 
-            if (out_row_sources_buf)
-                current_row_sources[first_negative_pos].setSkipFlag(false);
-        }
+        if (out_row_sources_buf)
+            current_row_sources[first_negative_pos].setSkipFlag(false);
+    }
 
-        if (count_positive >= count_negative)
-        {
-            ++merged_rows;
-            for (size_t i = 0; i < num_columns; ++i)
-                merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
+    if (count_positive >= count_negative)
+    {
+        ++merged_rows;
+        for (size_t i = 0; i < num_columns; ++i)
+            merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
 
-            if (out_row_sources_buf)
-                current_row_sources[last_positive_pos].setSkipFlag(false);
-        }
+        if (out_row_sources_buf)
+            current_row_sources[last_positive_pos].setSkipFlag(false);
+    }
 
-        if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-        {
-            if (count_incorrect_data < MAX_ERROR_MESSAGES)
-                reportIncorrectData();
-            ++count_incorrect_data;
-        }
+    if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
+    {
+        if (count_incorrect_data < MAX_ERROR_MESSAGES)
+            reportIncorrectData();
+        ++count_incorrect_data;
     }
 
     if (out_row_sources_buf)
@@ -117,7 +102,7 @@ Block CollapsingSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return {};
 
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -211,7 +196,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
     }
 
     /// Write data for last primary key.
-    insertRows(merged_columns, merged_rows, true);
+    insertRows(merged_columns, merged_rows);
 
     finished = true;
 }

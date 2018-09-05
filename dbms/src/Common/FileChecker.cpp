@@ -95,13 +95,14 @@ void FileChecker::save() const
         /// So complex JSON structure - for compatibility with the old format.
         writeCString("{\"yandex\":{", out);
 
+        auto settings = FormatSettings();
         for (auto it = map.begin(); it != map.end(); ++it)
         {
             if (it != map.begin())
                 writeString(",", out);
 
             /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
-            writeJSONString(escapeForFileName(it->first), out);
+            writeJSONString(escapeForFileName(it->first), out, settings);
             writeString(":{\"size\":\"", out);
             writeIntText(it->second, out);
             writeString("\"}", out);

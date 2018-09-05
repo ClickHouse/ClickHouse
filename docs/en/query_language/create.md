@@ -44,7 +44,7 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 
 In all cases, if `IF NOT EXISTS` is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
 
-### Default values
+### Default Values
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
@@ -79,7 +79,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-### Temporary tables
+### Temporary Tables
 
 In all cases, if `TEMPORARY` is specified, a temporary table will be created. Temporary tables have the following characteristics:
 

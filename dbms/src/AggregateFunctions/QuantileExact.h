@@ -77,7 +77,7 @@ struct QuantileExact
             return array[n];
         }
 
-        return Value();
+        return std::numeric_limits<Value>::quiet_NaN();
     }
 
     /// Get the `size` values of `levels` quantiles. Write `size` results starting with `result` address.

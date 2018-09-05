@@ -1,6 +1,6 @@
-# How to write C++ code
+# How to Write C++ Code
 
-## General recommendations
+## General Recommendations
 
 **1.** The following are recommendations, not requirements.
 
@@ -415,7 +415,7 @@ You can also use an abbreviation if the full name is included next to it in the 
 
 **17.** File names with C++ source code must have the `.cpp` extension. Header files must have the `.h` extension.
 
-## How to write code
+## How to Write Code
 
 **1.** Memory management.
 
@@ -680,7 +680,7 @@ std::string s{"Hello"};
 
 **26.** For virtual functions, write `virtual` in the base class, but write `override` in descendent classes.
 
-## Unused features of C++
+## Unused Features of C++
 
 **1.** Virtual inheritance is not used.
 
@@ -754,7 +754,7 @@ If there is a good solution already available, then use it, even if it means you
 
 **5.** Preference is always given to libraries that are  already used.
 
-## General recommendations
+## General Recommendations
 
 **1.** Write as little code as possible.
 
@@ -768,7 +768,7 @@ If there is a good solution already available, then use it, even if it means you
 
 **6.** Code simplification is encouraged. Reduce the size of your code where possible.
 
-## Additional recommendations
+## Additional Recommendations
 
 **1.** Explicit `std::` for types from `stddef.h` is not recommended.
 

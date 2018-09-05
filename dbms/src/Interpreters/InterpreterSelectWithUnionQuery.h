@@ -24,7 +24,7 @@ public:
         size_t subquery_depth_ = 0,
         bool only_analyze = false);
 
-    ~InterpreterSelectWithUnionQuery();
+    ~InterpreterSelectWithUnionQuery() override;
 
     BlockIO execute() override;
 

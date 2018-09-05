@@ -83,13 +83,13 @@ StorageMemory::StorageMemory(String table_name_, ColumnsDescription columns_desc
 BlockInputStreams StorageMemory::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
-    const Context & /*context*/,
-    QueryProcessingStage::Enum & processed_stage,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
     size_t /*max_block_size*/,
     unsigned num_streams)
 {
+    checkQueryProcessingStage(processed_stage, context);
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     std::lock_guard<std::mutex> lock(mutex);
 

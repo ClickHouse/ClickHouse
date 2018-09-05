@@ -1255,7 +1255,8 @@ private:
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
-        ColumnArray::Offsets & res_offsets);
+        ColumnArray::Offsets & res_offsets,
+        const ColumnNullable * nullable_col);
 };
 
 

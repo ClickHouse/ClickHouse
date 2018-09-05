@@ -13,7 +13,6 @@
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
@@ -145,6 +144,11 @@ public:
         return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
 
+    /// close all process FDs except
+    /// 0-2 -- stdin, stdout, stderr
+    /// also doesn't close global internal pipes for signal handling
+    void closeFDs();
+
 protected:
     /// Возвращает TaskManager приложения
     /// все методы task_manager следует вызывать из одного потока
@@ -158,6 +162,9 @@ protected:
 
     /// thread safe
     virtual void handleSignal(int signal_id);
+
+    /// initialize termination process and signal handlers
+    virtual void initializeTerminationAndSignalProcessing();
 
     /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()

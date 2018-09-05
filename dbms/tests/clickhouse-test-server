@@ -64,8 +64,9 @@ fi
 #    --remote_servers.test_shard_localhost_secure.shard.replica.port=$CLICKHOUSE_PORT_TCP_SECURE \
 #    --remote_servers.test_shard_localhost.shard.replica.port=$CLICKHOUSE_PORT_TCP \
 
+VERSION=`${BIN_DIR}clickhouse-client --version-clean`
 # If run from compile dir - use in-place compile binary and headers
-[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=$BUILD_DIR/dbms/programs/ --compiler_headers=$BUILD_DIR/dbms/headers/ --compiler_headers_root=$BUILD_DIR/dbms/headers/"
+[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=$BUILD_DIR/dbms/programs/ --compiler_headers=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/ --compiler_headers_root=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/"
 
 $GDB ${BIN_DIR}clickhouse-server --config-file=$CLICKHOUSE_CONFIG -- \
     --http_port=$CLICKHOUSE_PORT_HTTP \

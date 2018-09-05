@@ -75,10 +75,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
-            if (!database_and_table.second->checkTableCanBeDropped())
-                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
-                                " couldn't be truncated due to failed pre-drop check",
-                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+            database_and_table.second->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
@@ -87,10 +84,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         }
         else if (kind == ASTDropQuery::Kind::Drop)
         {
-            if (!database_and_table.second->checkTableCanBeDropped())
-                throw Exception("Table " + database_name + "." + database_and_table.second->getTableName() +
-                                " couldn't be dropped due to failed pre-drop check",
-                                ErrorCodes::TABLE_WAS_NOT_DROPPED);
+            database_and_table.second->checkTableCanBeDropped();
 
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
