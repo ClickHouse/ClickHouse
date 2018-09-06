@@ -2894,7 +2894,7 @@ void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, Express
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
     ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(source_columns, settings);
     NamesWithAliases result_columns;
@@ -2911,7 +2911,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
     {
         std::string name = asts[i]->getColumnName();
         std::string alias;
-        if (project_result)
+        if (add_aliases)
             alias = asts[i]->getAliasOrColumnName();
         else
             alias = name;
@@ -2920,11 +2920,15 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
         getRootActions(asts[i], false, false, actions);
     }
 
-    if (project_result)
+    if (add_aliases)
     {
-        actions->add(ExpressionAction::project(result_columns));
+        if (project_result)
+            actions->add(ExpressionAction::project(result_columns));
+        else
+            actions->add(ExpressionAction::addAliases(result_columns));
     }
-    else
+
+    if (!(add_aliases && project_result))
     {
         /// We will not delete the original columns.
         for (const auto & column_name_type : source_columns)

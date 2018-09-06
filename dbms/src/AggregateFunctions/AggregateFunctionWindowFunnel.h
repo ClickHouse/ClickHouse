@@ -66,7 +66,7 @@ struct AggregateFunctionWindowFunnelData
 
         /// either sort whole container or do so partially merging ranges afterwards
         if (!sorted && !other.sorted)
-            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+            std::stable_sort(std::begin(events_list), std::end(events_list), Comparator{});
         else
         {
             const auto begin = std::begin(events_list);
@@ -74,10 +74,10 @@ struct AggregateFunctionWindowFunnelData
             const auto end = std::end(events_list);
 
             if (!sorted)
-                std::sort(begin, middle, Comparator{});
+                std::stable_sort(begin, middle, Comparator{});
 
             if (!other.sorted)
-                std::sort(middle, end, Comparator{});
+                std::stable_sort(middle, end, Comparator{});
 
             std::inplace_merge(begin, middle, end, Comparator{});
         }
@@ -89,7 +89,7 @@ struct AggregateFunctionWindowFunnelData
     {
         if (!sorted)
         {
-            std::sort(std::begin(events_list), std::end(events_list), Comparator{});
+            std::stable_sort(std::begin(events_list), std::end(events_list), Comparator{});
             sorted = true;
         }
     }
@@ -215,19 +215,13 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        UInt8 event_level = 0;
-        for (const auto i : ext::range(1, events_size + 1))
+        const auto timestamp = static_cast<const ColumnVector<UInt32> *>(columns[0])->getData()[row_num];
+        // reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
+        for (auto i = events_size; i > 0; --i)
         {
             auto event = static_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
-            {
-                event_level = i;
-                break;
-            }
-        }
-        if (event_level)
-        {
-            this->data(place).add(static_cast<const ColumnVector<UInt32> *>(columns[0])->getData()[row_num], event_level);
+                this->data(place).add(timestamp, i);
         }
     }
 

@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # ویژگی های از ClickHouse که می تواند معایبی باشد.
 

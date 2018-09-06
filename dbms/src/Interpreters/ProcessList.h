@@ -19,7 +19,6 @@
 #include <Common/CurrentThread.h>
 #include <Interpreters/QueryPriorities.h>
 #include <Interpreters/ClientInfo.h>
-#include <Common/ThreadStatus.h>
 #include <DataStreams/BlockIO.h>
 
 

@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=18.12.1
+ARG version=18.12.6
 
 RUN apt-get update && \
     apt-get install -y apt-transport-https dirmngr && \

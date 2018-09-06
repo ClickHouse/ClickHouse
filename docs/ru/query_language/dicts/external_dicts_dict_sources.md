@@ -124,7 +124,7 @@
 -   `connection_string` - строка соединения.
 -   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-## Пример подключения PostgreSQL
+### Пример подключения PostgreSQL
 
 ОС Ubuntu.
 
