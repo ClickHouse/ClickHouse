@@ -271,9 +271,9 @@ void HashedDictionary::blockToAttributes(const Block & block)
     const auto & id_column = *block.safeGetByPosition(0).column;
     element_count += id_column.size();
 
-    for (const auto attribute_idx : ext::range(0, attributes.size()))
+    for (const size_t attribute_idx : ext::range(0, attributes.size()))
     {
-        const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+        const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
         auto & attribute = attributes[attribute_idx];
 
         for (const auto row_idx : ext::range(0, id_column.size()))
