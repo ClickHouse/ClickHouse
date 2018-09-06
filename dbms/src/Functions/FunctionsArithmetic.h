@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TOO_LESS_ARGUMENTS_FOR_FUNCTION;
     extern const int DECIMAL_OVERFLOW;
+    extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES;
 }
 
 
@@ -1186,11 +1187,11 @@ public:
 
             if (new_arguments[0]->getFunctionName() != new_arguments[1]->getFunctionName())
                 throw Exception("Cannot add aggregate states of different functions: " 
-                    + new_arguments[0]->getFunctionName() + " and " + new_arguments[1]->getFunctionName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    + new_arguments[0]->getFunctionName() + " and " + new_arguments[1]->getFunctionName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
 
             if (new_arguments[0]->getReturnType()->getName() != new_arguments[1]->getReturnType()->getName())
                 throw Exception("Cannot add aggregate states with different return types: " 
-                    + new_arguments[0]->getReturnType()->getName() + " and " + new_arguments[1]->getReturnType()->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                    + new_arguments[0]->getReturnType()->getName() + " and " + new_arguments[1]->getReturnType()->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
 
             return arguments[0];
         }
