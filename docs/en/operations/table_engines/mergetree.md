@@ -172,7 +172,7 @@ In the example below, the index can't be used.
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../settings /settings.md#settings-settings-force_index_by_date) and [force_primary_key](../settings/settings.md#settings-settings-force_primary_key).
+To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](../settings/settings.md#settings-settings-force_index_by_date) and [force_primary_key](../settings/settings.md#settings-settings-force_primary_key).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
