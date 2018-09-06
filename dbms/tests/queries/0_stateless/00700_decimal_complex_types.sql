@@ -42,12 +42,12 @@ SELECT arrayPushBack(a, toDecimal32(0, 3)), arrayPushFront(a, toDecimal32(0, 3))
 SELECT arrayPushBack(b, toDecimal64(0, 3)), arrayPushFront(b, toDecimal64(0, 3)) FROM test.decimal;
 SELECT arrayPushBack(c, toDecimal128(0, 3)), arrayPushFront(c, toDecimal128(0, 3)) FROM test.decimal;
 
-SELECT arrayPushBack(a, toDecimal32(0, 2)) FROM test.decimal; -- { serverError 386 }
-SELECT arrayPushBack(b, toDecimal64(0, 2)) FROM test.decimal; -- { serverError 386 }
-SELECT arrayPushBack(c, toDecimal128(0, 2)) FROM test.decimal; -- { serverError 386 }
-SELECT arrayPushFront(a, toDecimal32(0, 4)) FROM test.decimal; -- { serverError 386 }
-SELECT arrayPushFront(b, toDecimal64(0, 4)) FROM test.decimal; -- { serverError 386 }
-SELECT arrayPushFront(c, toDecimal128(0, 4)) FROM test.decimal; -- { serverError 386 }
+SELECT arrayPushBack(a, toDecimal32(0, 2)) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayPushBack(b, toDecimal64(0, 2)) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayPushBack(c, toDecimal128(0, 2)) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayPushFront(a, toDecimal32(0, 4)) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayPushFront(b, toDecimal64(0, 4)) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayPushFront(c, toDecimal128(0, 4)) AS x, toTypeName(x) FROM test.decimal;
 
 SELECT length(a), length(b), length(c) FROM test.decimal;
 SELECT length(nest.a), length(nest.b), length(nest.c) FROM test.decimal;
@@ -92,11 +92,17 @@ SELECT indexOf(c, toDecimal64(0.7, 3)) FROM test.decimal; -- { serverError 43 }
 SELECT indexOf(c, toDecimal128(0.7, 2)) FROM test.decimal; -- { serverError 43 }
 SELECT indexOf(c, toDecimal128(0.7, 4)) FROM test.decimal; -- { serverError 43 }
 
-SELECT arrayConcat(a, b) FROM test.decimal; -- { serverError 386 }
-SELECT arrayConcat(a, c) FROM test.decimal; -- { serverError 386 }
-SELECT arrayConcat(b, c) FROM test.decimal; -- { serverError 386 }
-SELECT arrayConcat(a, nest.a) FROM test.decimal; -- { serverError 386 }
-SELECT arrayConcat(b, nest.b) FROM test.decimal; -- { serverError 386 }
-SELECT arrayConcat(c, nest.c) FROM test.decimal; -- { serverError 386 }
+SELECT arrayConcat(a, b) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(a, c) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(b, c) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(a, nest.a) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(b, nest.b) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(c, nest.c) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(a, nest.b) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(a, nest.c) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(b, nest.a) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(b, nest.c) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(c, nest.a) AS x, toTypeName(x) FROM test.decimal;
+SELECT arrayConcat(c, nest.b) AS x, toTypeName(x) FROM test.decimal;
 
 DROP TABLE IF EXISTS test.decimal;
