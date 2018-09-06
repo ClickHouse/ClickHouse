@@ -63,6 +63,16 @@ StorageBuffer::StorageBuffer(const std::string & name_, const ColumnsDescription
 {
 }
 
+StorageBuffer::~StorageBuffer()
+{
+    // Should not happen if shutdown was called
+    if (flush_thread.joinable())
+    {
+        shutdown_event.set();
+        flush_thread.join();
+    }
+}
+
 
 /// Reads from one buffer (from one block) under its mutex.
 class BufferBlockInputStream : public IProfilingBlockInputStream

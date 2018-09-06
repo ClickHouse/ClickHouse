@@ -21,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
 #include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
@@ -1488,6 +1489,8 @@ try
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
     auto timeouts = DB::ConnectionTimeouts::getTCPTimeoutsWithoutFailover(DB::Settings());
+
+    DB::UseSSL use_ssl;
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),

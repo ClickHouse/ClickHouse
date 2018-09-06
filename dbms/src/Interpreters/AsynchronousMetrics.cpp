@@ -1,8 +1,10 @@
 #include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
+#include <Common/config.h>
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -131,6 +133,16 @@ void AsynchronousMetrics::update()
             set("UncompressedCacheCells", uncompressed_cache->count());
         }
     }
+
+#if USE_EMBEDDED_COMPILER
+    {
+        if (auto compiled_expression_cache = context.getCompiledExpressionCache())
+        {
+            set("CompiledExpressionCacheBytes", compiled_expression_cache->weight());
+            set("CompiledExpressionCacheCount", compiled_expression_cache->count());
+        }
+    }
+#endif
 
     set("Uptime", context.getUptimeSeconds());
 

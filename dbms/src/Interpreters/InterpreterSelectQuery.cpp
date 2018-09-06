@@ -315,7 +315,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     };
 
     {
-        ExpressionActionsChain chain;
+        ExpressionActionsChain chain(context);
 
         if (query_analyzer->appendPrewhere(chain, !res.first_stage))
         {
@@ -740,7 +740,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (prewhere_info)
             {
                 /// Don't remove columns which are needed to be aliased.
-                auto new_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->getRequiredColumnsWithTypes(), settings);
+                auto new_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->getRequiredColumnsWithTypes(), context);
                 for (const auto & action : prewhere_info->prewhere_actions->getActions())
                 {
                     if (action.type != ExpressionAction::REMOVE_COLUMN
