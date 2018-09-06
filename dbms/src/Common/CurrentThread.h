@@ -5,6 +5,7 @@
 
 #include <Common/ThreadStatus.h>
 
+
 namespace ProfileEvents
 {
 class Counters;
@@ -21,10 +22,15 @@ class QueryStatus;
 struct Progress;
 class InternalTextLogsQueue;
 
+
+/** Collection of static methods to work with thread-local objects.
+  * Allows to attach and detach query/process (thread group) to a thread
+  * (to calculate query-related metrics and to allow to obtain query-related data from a thread).
+  * Thread will propagate it's metrics to attached query.
+  */
 class CurrentThread
 {
 public:
-
     /// Handler to current thread
     static ThreadStatusPtr get();
 
