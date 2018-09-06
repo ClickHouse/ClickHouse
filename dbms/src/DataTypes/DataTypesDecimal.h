@@ -131,6 +131,7 @@ public:
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return true; }
+    bool textCanContainOnlyValidUTF8() const override { return true; }
     bool isComparable() const override { return true; }
     bool isValueRepresentedByNumber() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
