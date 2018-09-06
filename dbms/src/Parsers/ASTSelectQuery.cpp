@@ -103,6 +103,9 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
             : typeid_cast<const ASTExpressionList &>(*group_expression_list).formatImplMultiline(s, state, frame);
     }
 
+    if (group_by_with_rollup)
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH ROLLUP" << (s.hilite ? hilite_none : "");
+
     if (group_by_with_totals)
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "WITH TOTALS" << (s.hilite ? hilite_none : "");
 
