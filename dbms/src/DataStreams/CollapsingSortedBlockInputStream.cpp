@@ -48,37 +48,34 @@ void CollapsingSortedBlockInputStream::insertRows(MutableColumns & merged_column
         return;
     }
 
-    if (count_positive == count_negative && !last_is_positive)
+    if (last_is_positive || count_positive != count_negative)
     {
-        /// Input rows exactly cancel out.
-        return;
-    }
+        if (count_positive <= count_negative)
+        {
+            ++merged_rows;
+            for (size_t i = 0; i < num_columns; ++i)
+                merged_columns[i]->insertFrom(*(*first_negative.columns)[i], first_negative.row_num);
 
-    if (count_positive <= count_negative)
-    {
-        ++merged_rows;
-        for (size_t i = 0; i < num_columns; ++i)
-            merged_columns[i]->insertFrom(*(*first_negative.columns)[i], first_negative.row_num);
+            if (out_row_sources_buf)
+                current_row_sources[first_negative_pos].setSkipFlag(false);
+        }
 
-        if (out_row_sources_buf)
-            current_row_sources[first_negative_pos].setSkipFlag(false);
-    }
+        if (count_positive >= count_negative)
+        {
+            ++merged_rows;
+            for (size_t i = 0; i < num_columns; ++i)
+                merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
 
-    if (count_positive >= count_negative)
-    {
-        ++merged_rows;
-        for (size_t i = 0; i < num_columns; ++i)
-            merged_columns[i]->insertFrom(*(*last_positive.columns)[i], last_positive.row_num);
+            if (out_row_sources_buf)
+                current_row_sources[last_positive_pos].setSkipFlag(false);
+        }
 
-        if (out_row_sources_buf)
-            current_row_sources[last_positive_pos].setSkipFlag(false);
-    }
-
-    if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
-    {
-        if (count_incorrect_data < MAX_ERROR_MESSAGES)
-            reportIncorrectData();
-        ++count_incorrect_data;
+        if (!(count_positive == count_negative || count_positive + 1 == count_negative || count_positive == count_negative + 1))
+        {
+            if (count_incorrect_data < MAX_ERROR_MESSAGES)
+                reportIncorrectData();
+            ++count_incorrect_data;
+        }
     }
 
     if (out_row_sources_buf)

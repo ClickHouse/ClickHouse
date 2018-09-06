@@ -70,6 +70,7 @@ def build_for_lang(lang, args):
         cfg = config.load_config(
             config_file=config_path,
             site_name='ClickHouse Documentation' if lang == 'en' or 'fa' else 'Документация ClickHouse',
+      			site_url='https://clickhouse.yandex/docs/%s/' % lang,
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=os.path.join(args.output_dir, lang),
             strict=True,
@@ -88,7 +89,7 @@ def build_for_lang(lang, args):
             ],
             plugins=[{
                 'search': {
-                    'lang': ['en'] if lang == 'en' or 'fa'  else ['en', lang]
+                    'lang': ['en'] if lang == 'en' else ['en', lang]
                 }
             }],
             extra={

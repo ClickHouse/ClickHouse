@@ -27,6 +27,7 @@ set (INTERNAL_COMPILER_CUSTOM_ROOT ON CACHE INTERNAL "")
 set (INTERNAL_COMPILER_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_CXX_FLAGS_${CMAKE_BUILD_TYPE_UC}} ${CXX_FLAGS_INTERNAL_COMPILER} -x c++ -march=native -fPIC -fvisibility=hidden -fno-implement-inlines -nostdinc -nostdinc++ -Wno-unused-command-line-argument -Bprefix=${PATH_SHARE}/clickhouse -isysroot=${INTERNAL_COMPILER_HEADERS_ROOT}" CACHE STRING "")
 # TODO: use libs from package: -nodefaultlibs  -lm -lc -lgcc_s -lgcc  -lc++ -lc++abi
 
+string(REPLACE "${INCLUDE_DEBUG_HELPERS}" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
 string(REPLACE "-no-pie" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
 if (INTERNAL_COMPILER_NO_WARNING)
     string (REPLACE "-Wall" "" INTERNAL_COMPILER_FLAGS ${INTERNAL_COMPILER_FLAGS})
@@ -46,7 +47,7 @@ string (REPLACE ${ClickHouse_SOURCE_DIR} "" INTERNAL_Boost_INCLUDE_DIRS ${Boost_
 string (REPLACE ${ClickHouse_SOURCE_DIR} "" INTERNAL_Poco_Foundation_INCLUDE_DIR ${Poco_Foundation_INCLUDE_DIR})
 string (REPLACE ${ClickHouse_SOURCE_DIR} "" INTERNAL_Poco_Util_INCLUDE_DIR ${Poco_Util_INCLUDE_DIR})
 
-message (STATUS "Using internal=${USE_INTERNAL_LLVM_LIBRARY} compiler=${USE_EMBEDDED_COMPILER}: headers=${INTERNAL_COMPILER_HEADERS} : ${INTERNAL_COMPILER_ENV} ${INTERNAL_COMPILER_EXECUTABLE} ${INTERNAL_COMPILER_FLAGS}; ${INTERNAL_LINKER_EXECUTABLE}")
+message (STATUS "Using internal=${USE_INTERNAL_LLVM_LIBRARY} compiler=${USE_EMBEDDED_COMPILER}: headers=${INTERNAL_COMPILER_HEADERS} : ${INTERNAL_COMPILER_ENV} ${INTERNAL_COMPILER_BIN_ROOT}${INTERNAL_COMPILER_EXECUTABLE} ${INTERNAL_COMPILER_FLAGS}; ${INTERNAL_LINKER_EXECUTABLE}")
 
 set (CONFIG_COMPILE ${ClickHouse_BINARY_DIR}/dbms/src/Interpreters/config_compile.h)
 configure_file (${ClickHouse_SOURCE_DIR}/dbms/src/Interpreters/config_compile.h.in ${CONFIG_COMPILE})

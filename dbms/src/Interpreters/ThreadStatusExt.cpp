@@ -203,6 +203,7 @@ void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
     get()->attachQuery(thread_group, false);
+    getScope()->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 std::string CurrentThread::getCurrentQueryID()
