@@ -8,7 +8,6 @@
 
 namespace DB
 {
-
 UseSSL::UseSSL()
 {
 #if USE_POCO_NETSSL
