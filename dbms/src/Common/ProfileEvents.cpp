@@ -89,6 +89,8 @@
     M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
     \
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
+    M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
+    M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
     \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
@@ -167,7 +169,6 @@
     M(OSWriteBytes, "Number of bytes written to disks or block devices. Doesn't include bytes that are in page cache dirty pages. May not include data that was written by OS asynchronously.") \
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
-
 
 namespace ProfileEvents
 {
