@@ -47,7 +47,7 @@ if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
 fi
 
 CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${BIN_DIR}${CLICKHOUSE_BINARY}-extract-from-config --config=$CLICKHOUSE_CONFIG"}
-CLICKHOUSE_LOG=${CLICKHOUSE_LOG:=$DATA_DIR/log/clickhouse-server.log}
+CLICKHOUSE_LOG=${CLICKHOUSE_LOG:=${LOG_DIR}clickhouse-server.log}
 export CLICKHOUSE_PORT_TCP=${CLICKHOUSE_PORT_TCP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=tcp_port || echo 9000`}
 export CLICKHOUSE_PORT_HTTP=${CLICKHOUSE_PORT_HTTP:=`$CLICKHOUSE_EXTRACT_CONFIG --key=http_port || echo 8123`}
 export CLICKHOUSE_PORT_INTERSERVER=${CLICKHOUSE_PORT_INTERSERVER:=`$CLICKHOUSE_EXTRACT_CONFIG --key=interserver_http_port || echo 9009`}
@@ -63,7 +63,7 @@ CERT=`${BIN_DIR}clickhouse-extract-from-config --config=$CLICKHOUSE_CONFIG --key
 [ -n "$PRIVATEKEY" ] && [ -n "$CERT" ] && openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout $PRIVATEKEY -out $CERT
 
 if [ "$TEST_GDB" ] || [ "$GDB" ]; then
-    echo -e "run \nset pagination off \nset logging file $DATA_DIR/gdb.log \nset logging on \nthread apply all backtrace \ndetach \nquit " > $DATA_DIR/gdb.cmd
+    echo -e "run \nset pagination off \nset logging file $LOG_DIR/server.gdb.log \nset logging on \nbacktrace \nthread apply all backtrace \nbacktrace \ndetach \nquit " > $DATA_DIR/gdb.cmd
     GDB=${GDB:="gdb -x $DATA_DIR/gdb.cmd --args "}
 fi
 
@@ -103,7 +103,7 @@ function finish {
     wait
     tail -n 50 $LOG_DIR/*.log || true
     if [ "$GDB" ]; then
-        cat $DATA_DIR/gdb.log || true
+        cat $LOG_DIR/server.gdb.log || true
     fi
     rm -rf $DATA_DIR
 }
