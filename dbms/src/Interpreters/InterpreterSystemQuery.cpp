@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
+#include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <common/ThreadPool.h>
@@ -148,6 +149,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_UNCOMPRESSED_CACHE:
             system_context.dropUncompressedCache();
             break;
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            system_context.dropCompiledExpressionCache();
+            break;
+#endif
         case Type::RELOAD_DICTIONARY:
             system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
             break;
