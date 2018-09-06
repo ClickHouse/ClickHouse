@@ -52,8 +52,7 @@ The history is written to `~/.clickhouse-client-history`.
 
 By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.
 
-To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query:
-"exit", "quit", "logout", "exit;", "quit;", "logout;", "q", "Q", ":q"
+To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query: "exit", "quit", "logout", "exit;", "quit;", "logout;", "q", "Q", ":q"
 
 When processing a query, the client shows:
 
