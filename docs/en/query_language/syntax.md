@@ -70,6 +70,20 @@ For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
 
+<a name="null-literal"></a>
+
+### NULL Literal
+
+Indicates that the value is missing.
+
+In order to store `NULL` in a table field, it must be of the [Nullable](../data_types/nullable.md#data_type-nullable) type.
+
+Depending on the data format (input or output), `NULL` may have a different representation. For more information, see the documentation for [data formats](../interfaces/formats.md#formats).
+
+There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation will also be `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
+
+In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md#operator-is-not-null) operators and the related functions `isNull` and `isNotNull`.
+
 ## Functions
 
 Functions are written like an identifier with a list of arguments (possibly empty) in brackets. In contrast to standard SQL, the brackets are required, even for an empty arguments list. Example: `now()`.
