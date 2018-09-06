@@ -92,7 +92,7 @@ sleep ${TEST_SERVER_STARTUP_WAIT:=5}
 
 if [ "$GDB" ]; then
     # Long symbols read
-    sleep 40
+    sleep ${TEST_GDB_SLEEP:=60}
 fi
 
 tail -n50 $LOG_DIR/*.log || true
