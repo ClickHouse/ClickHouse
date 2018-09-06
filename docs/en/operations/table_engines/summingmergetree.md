@@ -1,3 +1,5 @@
+<a name="table_engine-summingmergetree"></a>
+
 # SummingMergeTree
 
 This engine differs from `MergeTree` in that it totals data while merging.

@@ -1,51 +1,51 @@
 <a name="table_engines-file"></a>
 
-# File(Format)
+# File(InputFormat)
 
-Manages data in a single file on disk in the specified format.
+The data source is a file that stores data in one of the supported input formats (TabSeparated, Native, etc.).
 
 Usage examples:
 
-- Downloading data from ClickHouse to a file.
-- Converting data from one format to another.
-- Updating data in ClickHouse by editing the file on disk.
+- Data export from ClickHouse to file.
+- Convert data from one format to another.
+- Updating data in ClickHouse via editing a file on a disk.
 
-## Using the engine in the ClickHouse server
+## Usage in ClickHouse Server
 
 ```
 File(Format)
 ```
 
-`The format` must be one that ClickHouse can use both in `INSERT` queries and in `SELECT` queries. For the full list of supported formats, see [Formats](../../interfaces/formats.md#formats).
+`Format` should be supported for either `INSERT` and `SELECT`. For the full list of supported formats see [Formats](../../interfaces/formats.md#formats).
 
-The ClickHouse server does not allow you to specify the path to the file tthat `File` will work with. It uses the path to the storage that is specified by the [path](../server_settings/settings.md#server_settings-path) parameter in the server configuration.
+ClickHouse does not allow to specify filesystem path for`File`. It will use folder defined by [path](../server_settings/settings.md#server_settings-path) setting in server configuration.
 
-When creating a table using `File(Format)`, the ClickHouse server creates a directory with the name of the table in the storage, and puts the `data.Format` file there after it is added to the data table.
+When creating table using `File(Format)` it creates empty subdirectory in that folder. When data is written to that table, it's put into `data.Format` file in that subdirectory.
 
-You can manually create the table's directory in storage, put the file there, and then use [ATTACH](../../query_language/misc.md#queries-attach) the ClickHouse server to add information about the table corresponding to the directory name and read data from the file.
+You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md#queries-attach) it to table information with matching name, so you can query data from that file.
 
-!!! Warning:
-Be careful with this functionality, because the ClickHouse server does not track external data changes. If the file will be written to simultaneously from the ClickHouse server and from an external source, the result is unpredictable.
+!!! warning
+    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
 **Example:**
 
-**1.** Create a `file_engine_table` table on the server :
+**1.** Set up the `file_engine_table` table:
 
 ```sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
-In the default configuration, the ClickHouse server creates the directory `/var/lib/clickhouse/data/default/file_engine_table`.
+By default ClickHouse will create folder `/var/lib/clickhouse/data/default/file_engine_table`.
 
-**2.** Manually create the file `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` with the contents:
+**2.** Manually create `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` containing:
 
 ```bash
-$cat data.TabSeparated
+$ cat data.TabSeparated
 one	1
 two	2
 ```
 
-**3.** Request data:
+**3.** Query the data:
 
 ```sql
 SELECT * FROM file_engine_table
@@ -58,9 +58,9 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Using the engine in clickhouse-local
+## Usage in Clickhouse-local
 
-In [clickhouse-local](../utils/clickhouse-local.md#utils-clickhouse-local) the engine takes the file path as a parameter, as well as the format. The standard input/output streams can be specified using numbers or letters: `0` or `stdin`, `1` or `stdout`.
+In [clickhouse-local](../utils/clickhouse-local.md#utils-clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`.
 
 **Example:**
 
@@ -70,8 +70,9 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## Details of Implementation
 
-- Multi-stream reading and single-stream writing are supported.
+- Reads can be parallel, but not writes
 - Not supported:
-    - `ALTER` and `SELECT...SAMPLE` operations.
-    - Indexes.
-    - Replication.
+  - `ALTER`
+  - `SELECT ... SAMPLE`
+  - Indices
+  - Replication

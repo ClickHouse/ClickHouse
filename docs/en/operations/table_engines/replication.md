@@ -152,6 +152,8 @@ An alternative recovery option is to delete information about the lost replica f
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
+<a name="convert-mergetree-to-replicated"></a>
+
 ## Converting from MergeTree to ReplicatedMergeTree
 
 We use the term `MergeTree` to refer to all table engines in the ` MergeTree family`, the same as for `ReplicatedMergeTree`.

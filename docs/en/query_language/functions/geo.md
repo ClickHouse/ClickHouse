@@ -56,7 +56,7 @@ The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
 `1` if the point is inside at least one of the ellipses; `0`if it is not.
 
-**Examples:**
+**Example**
 
 ```sql
 SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
@@ -66,5 +66,36 @@ SELECT pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1.0, 2.0)
 ┌─pointInEllipses(55.755831, 37.617673, 55.755831, 37.617673, 1., 2.)─┐
 │                                                                   1 │
 └─────────────────────────────────────────────────────────────────────┘
+```
+
+## pointInPolygon
+
+Checks whether the point belongs to the polygon on the plane.
+
+```
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**Input values**
+
+- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md#data_type-tuple) —  A  tuple of two numbers.
+- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data_types/array.md#data_type-array). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
+- The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
+
+**Returned values**
+
+`1` if the point is inside the polygon, `0` if it is not.
+If the point is on the polygon boundary, the function may return either 0 or 1.
+
+**Example**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```
+┌─res─┐
+│   1 │
+└─────┘
 ```
 
