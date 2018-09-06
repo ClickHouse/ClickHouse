@@ -11,6 +11,8 @@
 # env DIST=unstable EXTRAPACKAGES="clang-7 libstdc++-8-dev lld-7 liblld-7-dev libclang-7-dev liblld-7" DEB_CC=clang-7 DEB_CXX=clang++-7 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
 # Clang6 without internal compiler (for low memory arm64):
 # env DIST=bionic DISABLE_PARALLEL=1 EXTRAPACKAGES="clang-6.0 libstdc++-8-dev" DEB_CC=clang-6.0 DEB_CXX=clang++-6.0 CMAKE_FLAGS=" -DNO_WERROR=1 " ./release
+# Do not compile internal compiler but use from system:
+# env CMAKE_FLAGS="-DUSE_INTERNAL_LLVM_LIBRARY=0 -DENABLE_EMBEDDED_COMPILER=0 -DINTERNAL_COMPILER_EXECUTABLE=clang-6.0 -DINTERNAL_LINKER_EXECUTABLE=ld.lld-6.0 -DINTERNAL_COMPILER_BIN_ROOT=/usr/bin/" EXTRAPACKAGES="clang-6.0 lld-6.0 libstdc++-8-dev" DEB_CXX=clang++-6.0 DEB_CC=clang-6.0 TEST_RUN=1 TEST_OPT="compile" ./release
 
 # Build with ASan:
 # env SANITIZER=address ./release

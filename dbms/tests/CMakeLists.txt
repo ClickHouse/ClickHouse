@@ -27,5 +27,5 @@ if (ENABLE_TESTS)
 
     # maybe add --no-long ?
     # if you want disable some tests: env TEST_OPT0='--skip compile'
-    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
+    add_test(NAME with_server COMMAND bash -c "env BUILD_DIR=${ClickHouse_BINARY_DIR} INTERNAL_COMPILER_BIN_ROOT=${INTERNAL_COMPILER_BIN_ROOT} ${CMAKE_CURRENT_SOURCE_DIR}/clickhouse-test-server")
 endif ()

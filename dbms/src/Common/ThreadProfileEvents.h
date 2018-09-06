@@ -13,6 +13,9 @@ struct taskstats {};
 #endif
 
 
+/** Implement ProfileEvents with statistics about resource consumption of the current thread.
+  */
+
 namespace ProfileEvents
 {
     extern const Event RealTimeMicroseconds;

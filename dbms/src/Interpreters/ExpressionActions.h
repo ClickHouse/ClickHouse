@@ -61,6 +61,8 @@ public:
 
         /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.
         PROJECT,
+        /// Add columns with alias names. This columns are the same as non-aliased. PROJECT columns if you need to modify them.
+        ADD_ALIASES,
     };
 
     Type type;
@@ -106,6 +108,7 @@ public:
     static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
+    static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
                                          const NamesAndTypesList & columns_added_by_join_);
