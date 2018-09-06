@@ -24,6 +24,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <IO/HTTPCommon.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
@@ -93,6 +94,8 @@ std::string Server::getDefaultCorePath() const
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     registerFunctions();
     registerAggregateFunctions();
@@ -473,7 +476,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("https_port"))
                 {
 #if USE_POCO_NETSSL
-                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -511,7 +513,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port_secure"))
                 {
 #if USE_POCO_NETSSL
-                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
@@ -551,7 +552,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("interserver_https_port"))
                 {
 #if USE_POCO_NETSSL
-                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
