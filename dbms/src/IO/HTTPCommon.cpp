@@ -39,24 +39,6 @@ void setResponseDefaultHeaders(Poco::Net::HTTPServerResponse & response, unsigne
         response.set("Keep-Alive", "timeout=" + std::to_string(timeout.totalSeconds()));
 }
 
-
-void initSSL()
-{
-    // http://stackoverflow.com/questions/18315472/https-request-in-c-using-poco
-#if USE_POCO_NETSSL
-    struct Initializer
-    {
-        Initializer()
-        {
-            Poco::Net::initializeSSL();
-        }
-    };
-
-    static Initializer initializer;
-#endif
-}
-
-
 std::unique_ptr<Poco::Net::HTTPClientSession> makeHTTPSession(const Poco::URI & uri, const ConnectionTimeouts & timeouts)
 {
     bool is_ssl = static_cast<bool>(uri.getScheme() == "https");

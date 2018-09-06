@@ -21,6 +21,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/UseSSL.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <common/ErrorHandlers.h>
@@ -100,6 +101,8 @@ int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
     Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     if (!config().has("query") && !config().has("table-structure")) /// Nothing to process
     {
