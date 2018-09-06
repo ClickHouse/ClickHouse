@@ -4,12 +4,9 @@
       <loc>https://clickhouse.yandex/docs/ru/sitemap.xml</loc>
    </sitemap>
    <sitemap>
-      <loc>https://clickhouse.yandex/docs/ru/single_page/sitemap.xml</loc>
-   </sitemap>
-   <sitemap>
       <loc>https://clickhouse.yandex/docs/en/sitemap.xml</loc>
    </sitemap>
    <sitemap>
-      <loc>https://clickhouse.yandex/docs/en/single_pabe/sitemap.xml</loc>
+      <loc>https://clickhouse.yandex/docs/sitemap_static.xml</loc>
    </sitemap>
 </sitemapindex>

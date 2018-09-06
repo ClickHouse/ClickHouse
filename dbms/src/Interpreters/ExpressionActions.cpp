@@ -133,6 +133,14 @@ ExpressionAction ExpressionAction::project(const Names & projected_columns_)
     return a;
 }
 
+ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_columns_)
+{
+    ExpressionAction a;
+    a.type = ADD_ALIASES;
+    a.projection = aliased_columns_;
+    return a;
+}
+
 ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context)
 {
     if (array_joined_columns.empty())
@@ -256,12 +264,27 @@ void ExpressionAction::prepare(Block & sample_block)
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = sample_block.getByName(name);
+                if (column.column)
+                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
             }
 
             sample_block.swap(new_block);
+            break;
+        }
+
+        case ADD_ALIASES:
+        {
+            for (size_t i = 0; i < projection.size(); ++i)
+            {
+                const std::string & name = projection[i].first;
+                const std::string & alias = projection[i].second;
+                const ColumnWithTypeAndName & column = sample_block.getByName(name);
+                if (alias != "" && !sample_block.has(alias))
+                    sample_block.insert({column.column, column.type, alias});
+            }
             break;
         }
 
@@ -438,6 +461,8 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = block.getByName(name);
+                if (column.column)
+                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -445,6 +470,19 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 
             block.swap(new_block);
 
+            break;
+        }
+
+        case ADD_ALIASES:
+        {
+            for (size_t i = 0; i < projection.size(); ++i)
+            {
+                const std::string & name = projection[i].first;
+                const std::string & alias = projection[i].second;
+                const ColumnWithTypeAndName & column = block.getByName(name);
+                if (alias != "" && !block.has(alias))
+                    block.insert({column.column, column.type, alias});
+            }
             break;
         }
 
@@ -529,8 +567,9 @@ std::string ExpressionAction::toString() const
             }
             break;
 
-        case PROJECT:
-            ss << "PROJECT ";
+        case PROJECT: [[fallthrough]];
+        case ADD_ALIASES:
+            ss << (type == PROJECT ? "PROJECT " : "ADD_ALIASES ");
             for (size_t i = 0; i < projection.size(); ++i)
             {
                 if (i)
@@ -785,6 +824,16 @@ void ExpressionActions::finalize(const Names & output_columns)
         {
             needed_columns = NameSet(in.begin(), in.end());
             unmodified_columns.clear();
+        }
+        else if (action.type == ExpressionAction::ADD_ALIASES)
+        {
+            needed_columns.insert(in.begin(), in.end());
+            for (auto & name_wit_alias : action.projection)
+            {
+                auto it = unmodified_columns.find(name_wit_alias.second);
+                if (it != unmodified_columns.end())
+                    unmodified_columns.erase(it);
+            }
         }
         else if (action.type == ExpressionAction::ARRAY_JOIN)
         {

@@ -220,7 +220,7 @@ public:
     {
         char * res = alloc(new_size);
         if (old_data)
-            memcpySmallAllowReadWriteOverflow15(res, old_data, old_size);
+            memcpy(res, old_data, old_size);
         return res;
     }
 
@@ -228,7 +228,7 @@ public:
     {
         char * res = alignedAlloc(new_size, alignment);
         if (old_data)
-            memcpySmallAllowReadWriteOverflow15(res, old_data, old_size);
+            memcpy(res, old_data, old_size);
         return res;
     }
 
@@ -236,14 +236,14 @@ public:
     const char * insert(const char * data, size_t size)
     {
         char * res = alloc(size);
-        memcpySmallAllowReadWriteOverflow15(res, data, size);
+        memcpy(res, data, size);
         return res;
     }
 
     const char * alignedInsert(const char * data, size_t size, size_t alignment)
     {
         char * res = alignedAlloc(size, alignment);
-        memcpySmallAllowReadWriteOverflow15(res, data, size);
+        memcpy(res, data, size);
         return res;
     }
 

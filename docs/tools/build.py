@@ -70,6 +70,7 @@ def build_for_lang(lang, args):
         cfg = config.load_config(
             config_file=config_path,
             site_name='ClickHouse Documentation' if lang == 'en' else 'Документация ClickHouse',
+			site_url='https://clickhouse.yandex/docs/en/' if lang == 'en' else 'https://clickhouse.yandex/docs/ru/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=os.path.join(args.output_dir, lang),
             strict=True,
