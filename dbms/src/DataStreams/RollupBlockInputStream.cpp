@@ -43,6 +43,11 @@ Block RollupBlockInputStream::getHeader() const
 
 Block RollupBlockInputStream::readImpl()
 {
+    /** After reading a block from input stream,
+      * we will subsequently roll it up on next iterations of 'readImpl'
+      * by zeroing out every column one-by-one and re-merging a block.
+      */
+    
     if (current_key >= 0)
     {
         auto & current = rollup_block.getByPosition(keys[current_key]);
