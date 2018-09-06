@@ -423,5 +423,77 @@ public:
 };
 
 
+struct DataTypeExtractor
+{
+    TypeIndex idx;
+
+    DataTypeExtractor(const IDataType * data_type)
+        : idx(data_type->getTypeId())
+    {}
+
+    bool isUInt8() const { return idx == TypeIndex::UInt8; }
+    bool isUInt16() const { return idx == TypeIndex::UInt16; }
+    bool isUInt32() const { return idx == TypeIndex::UInt32; }
+    bool isUInt64() const { return idx == TypeIndex::UInt64; }
+    bool isUInt128() const { return idx == TypeIndex::UInt128; }
+    bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128(); }
+
+    bool isInt8() const { return idx == TypeIndex::Int8; }
+    bool isInt16() const { return idx == TypeIndex::Int16; }
+    bool isInt32() const { return idx == TypeIndex::Int32; }
+    bool isInt64() const { return idx == TypeIndex::Int64; }
+    bool isInt128() const { return idx == TypeIndex::Int128; }
+    bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128(); }
+
+    bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
+    bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
+    bool isDecimal128() const { return idx == TypeIndex::Decimal128; }
+    bool isDecimal() const { return isDecimal32() || isDecimal64() || isDecimal128(); }
+
+    bool isFloat32() const { return idx == TypeIndex::Float32; }
+    bool isFloat64() const { return idx == TypeIndex::Float64; }
+    bool isFloat() const { return isFloat32() || isFloat64(); }
+
+    bool isEnum8() const { return idx == TypeIndex::Enum8; }
+    bool isEnum16() const { return idx == TypeIndex::Enum16; }
+    bool isEnum() const { return isEnum8() || isEnum16(); }
+
+    bool isDate() const { return idx == TypeIndex::Date; }
+    bool isDateTime() const { return idx == TypeIndex::DateTime; }
+    bool isDateOrDateTime() const { return isDate() || isDateTime(); }
+
+    bool isString() const { return idx == TypeIndex::String; }
+    bool isFixedString() const { return idx == TypeIndex::FixedString; }
+    bool isStringOrFixedString() const { return isString() || isFixedString(); }
+
+    bool isUUID() const { return idx == TypeIndex::UUID; }
+    bool isArray() const { return idx == TypeIndex::Array; }
+    bool isTuple() const { return idx == TypeIndex::Tuple; }
+};
+
+/// IDataType helpers (alternative for IDataType virtual methods)
+
+inline bool isEnum(const IDataType * data_type)
+{
+    return DataTypeExtractor(data_type).isEnum();
+}
+
+inline bool isDecimal(const IDataType * data_type)
+{
+    return DataTypeExtractor(data_type).isDecimal();
+}
+
+inline bool isNotDecimalButComparableToDecimal(const IDataType * data_type)
+{
+    DataTypeExtractor which(data_type);
+    return which.isInt() || which.isUInt();
+}
+
+inline bool isCompilableType(const IDataType * data_type)
+{
+    return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
+}
+
+
 }
 
