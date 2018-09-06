@@ -107,7 +107,6 @@ if (USE_INTERNAL_SSL_LIBRARY)
     endif ()
     set (USE_SHARED ${USE_STATIC_LIBRARIES})
     set (LIBRESSL_SKIP_INSTALL 1)
-    set (HAVE_EXPLICIT_BZERO 1) # already in libglibc-compatibility
     add_subdirectory (ssl)
     target_include_directories(${OPENSSL_CRYPTO_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_include_directories(${OPENSSL_SSL_LIBRARY} SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
