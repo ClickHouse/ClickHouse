@@ -163,6 +163,7 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 }
 #endif
 
+#if LLVM_VERSION_MAJOR >= 6
 struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
 {
     MemoryTracker memory_tracker{VariableContext::Global};
@@ -188,6 +189,7 @@ struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
         return llvm::sys::Memory::releaseMappedMemory(block);
     }
 };
+#endif
 
 struct LLVMContext
 {
@@ -200,7 +202,9 @@ struct LLVMContext
     std::shared_ptr<llvm::Module> module;
 #endif
     std::unique_ptr<llvm::TargetMachine> machine;
+#if LLVM_VERSION_MAJOR >= 6
     std::unique_ptr<CountingMMapper> memory_mapper;
+#endif
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
     llvm::orc::RTDyldObjectLinkingLayer object_layer;
     llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
@@ -216,8 +220,13 @@ struct LLVMContext
         : module(std::make_shared<llvm::Module>("jit", context))
 #endif
         , machine(getNativeMachine())
+
+#if LLVM_VERSION_MAJOR >= 6
         , memory_mapper(std::make_unique<CountingMMapper>())
         , memory_manager(std::make_shared<llvm::SectionMemoryManager>(memory_mapper.get()))
+#else
+        , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
+#endif
 #if LLVM_VERSION_MAJOR >= 7
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
@@ -569,6 +578,8 @@ static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & fu
 
 size_t CompiledExpressionCache::weight() const
 {
+
+#if LLVM_VERSION_MAJOR >= 6
     std::lock_guard<std::mutex> lock(mutex);
     size_t result{0};
     std::unordered_set<size_t> seen;
@@ -582,6 +593,9 @@ size_t CompiledExpressionCache::weight() const
         }
     }
     return result;
+#else
+    return Base::weight();
+#endif
 }
 
 void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache)
