@@ -18,6 +18,7 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
+#include <DataStreams/RollupBlockInputStream.h>
 #include <DataStreams/ConvertColumnWithDictionaryToFullBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
@@ -45,6 +46,7 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -479,7 +481,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         bool aggregate_final =
             expressions.need_aggregate &&
             to_stage > QueryProcessingStage::WithMergeableState &&
-            !query.group_by_with_totals;
+            !query.group_by_with_totals && !query.group_by_with_rollup;
 
         if (expressions.first_stage)
         {
@@ -535,7 +537,13 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     executeMergeAggregated(pipeline, aggregate_overflow_row, aggregate_final);
 
                 if (!aggregate_final)
-                    executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row);
+                {
+                    if (query.group_by_with_totals)
+                        executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, !query.group_by_with_rollup);
+
+                     if (query.group_by_with_rollup)
+                        executeRollup(pipeline);
+                }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
 
@@ -549,7 +557,10 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
 
                 if (query.group_by_with_totals && !aggregate_final)
-                    executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row);
+                    executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row, !query.group_by_with_rollup);
+
+                if (query.group_by_with_rollup && !aggregate_final)
+                    executeRollup(pipeline);
             }
 
             if (expressions.has_order_by)
@@ -669,6 +680,7 @@ void InterpreterSelectQuery::executeFetchColumns(
 
             /// Columns which we will get after prewhere execution.
             auto source_columns = storage->getColumns().getAllPhysical();
+            auto physical_columns = ext::map<NameSet>(source_columns, [] (const auto & it) { return it.name; });
 
             for (const auto & column : required_columns)
             {
@@ -713,14 +725,17 @@ void InterpreterSelectQuery::executeFetchColumns(
                     prewhere_info->remove_prewhere_column = false;
 
             /// Remove columns which will be added by prewhere.
+            size_t next_req_column_pos = 0;
             for (size_t i = 0; i < required_columns.size(); ++i)
             {
-                if (!storage->getColumns().hasPhysical(required_columns[i]))
+                if (physical_columns.count(required_columns[i]))
                 {
-                    std::swap(required_columns[i], required_columns.back());
-                    required_columns.pop_back();
+                    if (next_req_column_pos < i)
+                        std::swap(required_columns[i], required_columns[next_req_column_pos]);
+                    ++next_req_column_pos;
                 }
             }
+            required_columns.resize(next_req_column_pos);
 
             if (prewhere_info)
             {
@@ -1044,7 +1059,7 @@ void InterpreterSelectQuery::executeHaving(Pipeline & pipeline, const Expression
 }
 
 
-void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row)
+void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final)
 {
     executeUnion(pipeline);
 
@@ -1052,7 +1067,34 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
 
     pipeline.firstStream() = std::make_shared<TotalsHavingBlockInputStream>(
         pipeline.firstStream(), overflow_row, expression,
-        has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold);
+        has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold, final);
+}
+
+void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
+{
+    executeUnion(pipeline);
+
+    Names key_names;
+    AggregateDescriptions aggregates;
+    query_analyzer->getAggregateInfo(key_names, aggregates);
+
+    Block header = pipeline.firstStream()->getHeader();
+
+    ColumnNumbers keys;
+
+    for (const auto & name : key_names)
+        keys.push_back(header.getPositionByName(name));
+
+    const Settings & settings = context.getSettingsRef();
+
+    Aggregator::Params params(header, keys, aggregates,
+        false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+        settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
+        SettingUInt64(0), SettingUInt64(0),
+        settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+        context.getTemporaryPath());
+
+    pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
 }
 
 
