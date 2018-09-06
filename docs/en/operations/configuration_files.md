@@ -20,7 +20,22 @@ Substitutions can also be performed from ZooKeeper. To do this, specify the attr
 
 The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the 'users_config' element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
-In addition, `users_config` may have overrides in files from the `users_config.d` directory (for example, `users.d`) and substitutions.
+In addition, `users_config` may have overrides in files from the `users_config.d` directory (for example, `users.d`) and substitutions. For example, you can have separate config file for each user like this:
+``` xml
+$ cat /etc/clickhouse-server/users.d/alice.xml
+<yandex>
+    <users>
+      <alice>
+          <profile>analytics</profile>
+            <networks>
+                  <ip>::/0</ip>
+            </networks>
+          <password_sha256_hex>...</password_sha256_hex>
+          <quota>analytics</quota>
+      </alice>
+    </users>
+</yandex>
+```
 
 For each config file, the server also generates `file-preprocessed.xml` files when starting. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in the config files but ZooKeeper is not available on the server start, the server loads the configuration from the preprocessed file.
 
