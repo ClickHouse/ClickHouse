@@ -39,7 +39,7 @@ ClickHouse supports the following types of keys:
 
 A structure can contain either `<id>` or `<key>` .
 
-!!! note
+!!! warning
     The key doesn't need to be defined separately in attributes.
 
 ### Numeric Key
@@ -112,7 +112,6 @@ Configuration fields:
 - `type` – The column type. Sets the method for interpreting data in the source. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the source table, but it can be uploaded as `String`.
 - `null_value` – The default value for a non-existing element. In the example, it is an empty string.
 - `expression` – The attribute can be an expression. The tag is not required.
-- `hierarchical` – Hierarchical support. Mirrored to the parent identifier. By default, `false`.
-- `injective` – Whether the `id -> attribute` image is injective. If `true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
+- `hierarchical` – Hierarchical support. Mirrored to the parent identifier. By default, ` false`.
+- `injective` – Whether the `id -> attribute` image is injective. If ` true`, then you can optimize the ` GROUP BY` clause. By default, `false`.
 - `is_object_id` – Whether the query is executed for a MongoDB document by `ObjectID`.
-
