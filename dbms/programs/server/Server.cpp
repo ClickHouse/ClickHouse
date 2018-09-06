@@ -322,9 +322,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 
+#if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", std::numeric_limits<UInt64>::max());
     if (compiled_expression_cache_size)
         global_context->setCompiledExpressionCache(compiled_expression_cache_size);
+#endif
 
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
