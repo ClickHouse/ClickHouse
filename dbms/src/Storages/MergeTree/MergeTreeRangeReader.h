@@ -19,8 +19,8 @@ class MergeTreeReader;
 class MergeTreeRangeReader
 {
 public:
-    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader, size_t index_granularity,
-                         MergeTreeRangeReader * prev_reader, ExpressionActionsPtr prewhere_actions,
+    MergeTreeRangeReader(MergeTreeReader * merge_tree_reader, size_t index_granularity, MergeTreeRangeReader * prev_reader,
+                         ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
                          const String * prewhere_column_name, const Names * ordered_names,
                          bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain);
 
@@ -175,6 +175,7 @@ private:
 
     const String * prewhere_column_name = nullptr;
     const Names * ordered_names = nullptr;
+    ExpressionActionsPtr alias_actions = nullptr; /// If not nullptr, calculate aliases.
     ExpressionActionsPtr prewhere_actions = nullptr; /// If not nullptr, calculate filter.
 
     Stream stream;

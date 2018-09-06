@@ -2,6 +2,7 @@ import time
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 def fill_nodes(nodes, shard):
     for node in nodes:
@@ -40,10 +41,6 @@ def test_recovery(start_cluster):
     for i in range(100):
         node1.query("INSERT INTO test_table VALUES (1, {})".format(i))
 
-    time.sleep(2)
+    node2.query_with_retry("ATTACH TABLE test_table", check_callback=lambda x: len(node2.query("select * from test_table")) > 0)
 
-    node2.query("ATTACH TABLE test_table")
-
-    time.sleep(2)
-
-    assert node1.query("SELECT count(*) FROM test_table") == node2.query("SELECT count(*) FROM test_table")
+    assert_eq_with_retry(node2, "SELECT count(*) FROM test_table", node1.query("SELECT count(*) FROM test_table"))

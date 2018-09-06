@@ -14,10 +14,10 @@ namespace DB
 TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
     const BlockInputStreamPtr & input_,
     bool overflow_row_, const ExpressionActionsPtr & expression_,
-    const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_)
+    const std::string & filter_column_, TotalsMode totals_mode_, double auto_include_threshold_, bool final_)
     : overflow_row(overflow_row_),
     expression(expression_), filter_column_name(filter_column_), totals_mode(totals_mode_),
-    auto_include_threshold(auto_include_threshold_)
+    auto_include_threshold(auto_include_threshold_), final(final_)
 {
     children.push_back(input_);
 
@@ -100,7 +100,8 @@ Block TotalsHavingBlockInputStream::getTotals()
 Block TotalsHavingBlockInputStream::getHeader() const
 {
     Block res = children.at(0)->getHeader();
-    finalize(res);
+    if (final)
+        finalize(res);
     if (expression)
         expression->execute(res);
     return res;
@@ -127,7 +128,8 @@ Block TotalsHavingBlockInputStream::readImpl()
             return finalized;
 
         finalized = block;
-        finalize(finalized);
+        if (final)
+            finalize(finalized);
 
         total_keys += finalized.rows();
 
