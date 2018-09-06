@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Nested(Name1 Type1, Name2 Type2, ...)
 
@@ -31,7 +31,7 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 این مثال `Goals` را به عنوان یک ساختار داده nested تعریف می کند، که می تواند شامل داده های مربوط به conversion (اهداف رسیده) باشد. هر سطر در جدول `visit` می تواند با صفر یا چند coversion ارتباط داشته باشد.
 
@@ -67,7 +67,7 @@ LIMIT 10
 └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 ساده ترین راه برای فکر کردن به یک ساختار داده nestet این است که، یک nestet  مجموعه ای از آرایه های چند ستونی با طول ثابت است.
 
@@ -100,7 +100,7 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 شما نمیتوانید در قسمت SELECT تمام ساختار داده ی nested را قرار دهید. شما فقط می توانید ستون های فردی که هر کدام بخشی از این ساختار داده هستند را لیست کنید.
 
