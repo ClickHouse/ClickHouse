@@ -18,6 +18,7 @@
 #include <Core/AccurateComparison.h>
 #include <Common/FieldVisitors.h>
 #include <Common/typeid_cast.h>
+#include <Common/Arena.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionActions.h>
 #include <ext/range.h>
@@ -1209,7 +1210,7 @@ public:
     {
         if constexpr (!std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>)
             return false;
-        auto is_uint_type = [](const DataTypePtr & type) 
+        auto is_uint_type = [](const DataTypePtr & type)
         {
             return checkDataType<DataTypeUInt8>(type.get()) || checkDataType<DataTypeUInt16>(type.get())
                 || checkDataType<DataTypeUInt32>(type.get()) || checkDataType<DataTypeUInt64>(type.get());
@@ -1226,14 +1227,14 @@ public:
             ColumnNumbers new_arguments = arguments;
             if (checkDataType<DataTypeAggregateFunction>(block.getByPosition(new_arguments[1]).type.get()))
                 std::swap(new_arguments[0], new_arguments[1]);
-                
+
             const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(new_arguments[0]).column.get());
             IAggregateFunction * function = column->getAggregateFunction().get();
 
             auto arena = std::make_shared<Arena>();
 
             auto column_to = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
-            column_to->reserve(input_rows_count); 
+            column_to->reserve(input_rows_count);
 
             auto column_from = ColumnAggregateFunction::create(column->getAggregateFunction(), Arenas(1, arena));
             column_from->reserve(input_rows_count);
@@ -1266,7 +1267,7 @@ public:
                     m /= 2;
                 }
             }
-        
+
             block.getByPosition(result).column = std::move(column_to);
             return;
         }
