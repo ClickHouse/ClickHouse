@@ -1293,6 +1293,9 @@ public:
                     m /= 2;
                 }
             }
+
+            block.getByPosition(result).column = std::move(column_to);
+            return;
         }
 
         /// Special case - addition of two aggregate functions states
