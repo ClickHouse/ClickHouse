@@ -678,10 +678,6 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// Separate expression for columns used in prewhere.
             auto required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
 
-            /// Columns which we will get after prewhere execution.
-            auto source_columns = storage->getColumns().getAllPhysical();
-            auto physical_columns = ext::map<NameSet>(source_columns, [] (const auto & it) { return it.name; });
-
             for (const auto & column : required_columns)
             {
                 ASTPtr column_expr;
@@ -714,6 +710,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                 required_columns_expr_list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
                 additional_source_columns.emplace_back(column.name, column.type);
             }
+            auto additional_source_columns_set = ext::map<NameSet>(additional_source_columns, [] (const auto & it) { return it.name; });
 
             alias_actions = ExpressionAnalyzer(required_columns_expr_list, context, storage, additional_source_columns).getActions(true);
 
@@ -730,7 +727,7 @@ void InterpreterSelectQuery::executeFetchColumns(
             size_t next_req_column_pos = 0;
             for (size_t i = 0; i < required_columns.size(); ++i)
             {
-                if (physical_columns.count(required_columns[i]))
+                if (!additional_source_columns_set.count(required_columns[i]))
                 {
                     if (next_req_column_pos < i)
                         std::swap(required_columns[i], required_columns[next_req_column_pos]);
