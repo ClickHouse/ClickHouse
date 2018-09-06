@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Common/typeid_cast.h>
 
 
@@ -55,6 +56,8 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.push_back(ValueType::Date);
         else if (typeid_cast<const DataTypeDateTime *>(type))
             types.push_back(ValueType::DateTime);
+        else if (typeid_cast<const DataTypeUUID *>(type))
+            types.push_back(ValueType::UUID);
         else
             throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
 

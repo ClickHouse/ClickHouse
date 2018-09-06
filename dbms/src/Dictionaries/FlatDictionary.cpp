@@ -266,7 +266,7 @@ void FlatDictionary::createAttributes()
 
         if (attribute.hierarchical)
         {
-            hierarchical_attribute = &attributes.back();
+            hierarchical_attribute = & attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
@@ -274,15 +274,15 @@ void FlatDictionary::createAttributes()
     }
 }
 
-void FlatDictionary::blockToAttributes(const Block &block)
+void FlatDictionary::blockToAttributes(const Block & block)
 {
-    const auto & id_column = *block.safeGetByPosition(0).column;
+    const IColumn & id_column = *block.safeGetByPosition(0).column;
     element_count += id_column.size();
 
-    for (const auto attribute_idx : ext::range(0, attributes.size()))
+    for (const size_t attribute_idx : ext::range(0, attributes.size()))
     {
-        const auto &attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-        auto &attribute = attributes[attribute_idx];
+        const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+        Attribute & attribute = attributes[attribute_idx];
 
         for (const auto row_idx : ext::range(0, id_column.size()))
             setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);

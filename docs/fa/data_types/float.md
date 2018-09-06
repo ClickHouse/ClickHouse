@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Float32, Float64
 
@@ -26,7 +26,7 @@ SELECT 1 - 0.9
 └─────────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 - نتایج محاسبات بسته به متد محاسباتی می باشد (نوع processor و معماری سیستم).
 - محاسبات Float ممکن اسن نتایجی مثل infinity (`inf`) و "Not-a-number" (`Nan`) داشته باشد. این در هنگام پردازش نتایج محاسبات باید مورد توجه قرار گیرد.
@@ -50,7 +50,7 @@ SELECT 0.5 / 0
 └────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 - `-Inf` – Negative infinity.
 
@@ -66,7 +66,7 @@ SELECT -0.5 / 0
 └─────────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 - `NaN` – Not a number.
 
@@ -82,7 +82,7 @@ SELECT 0 / 0
 └──────────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 قوانین مربوط به مرتب سازی ` Nan ` را در بخش [ORDER BY clause](../query_language/select.md#query_language-queries-order_by) ببینید.
 
