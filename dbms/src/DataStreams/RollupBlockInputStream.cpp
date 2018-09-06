@@ -24,7 +24,7 @@ static void finalize(Block & block)
 }
 
 RollupBlockInputStream::RollupBlockInputStream(
-    const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : aggregator(params_), 
+    const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : aggregator(params_),
         keys(params_.keys)
 {
     children.push_back(input_);
@@ -47,7 +47,7 @@ Block RollupBlockInputStream::readImpl()
       * we will subsequently roll it up on next iterations of 'readImpl'
       * by zeroing out every column one-by-one and re-merging a block.
       */
-    
+
     if (current_key >= 0)
     {
         auto & current = rollup_block.getByPosition(keys[current_key]);

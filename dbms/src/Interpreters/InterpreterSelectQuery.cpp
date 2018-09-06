@@ -539,7 +539,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 {
                     if (query.group_by_with_totals)
                         executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, !query.group_by_with_rollup);
-                    
+
                      if (query.group_by_with_rollup)
                         executeRollup(pipeline);
                 }
@@ -1079,9 +1079,9 @@ void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
 
     for (const auto & name : key_names)
         keys.push_back(header.getPositionByName(name));
-                
+
     const Settings & settings = context.getSettingsRef();
- 
+
     Aggregator::Params params(header, keys, aggregates,
         false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
