@@ -145,7 +145,7 @@ types = [
     'Int8', 'Int16', 'Int32', 'Int64',
     'Float32', 'Float64',
     'String',
-    'Date', 'DateTime'
+    'Date', 'DateTime', 'UUID'
 ]
 
 
@@ -154,7 +154,7 @@ explicit_defaults = [
     '-42', '-42', '-42', '-42',
     '1.5', '1.6',
     "'explicit-default'",
-    "'2015-01-01'", "'2015-01-01 00:00:00'"
+    "'2015-01-01'", "'2015-01-01 00:00:00'", "'550e8400-e29b-41d4-a716-446655440000'"
 ]
 
 
@@ -163,7 +163,7 @@ implicit_defaults = [
     '-1', '-1', '-1', '-1',
     '2.71828', '2.71828',
     'implicit-default',
-    '2015-11-25', '2015-11-25 00:00:00'
+    '2015-11-25', '2015-11-25 00:00:00', "550e8400-e29b-41d4-a716-446655440000"
 ]
 
 
@@ -210,7 +210,7 @@ def generate_data(args):
                     'Int8_ Int8, Int16_ Int16, Int32_ Int32, Int64_ Int64,'
                     'Float32_ Float32, Float64_ Float64,'
                     'String_ String,'
-                    'Date_ Date, DateTime_ DateTime, Parent UInt64'
+                    'Date_ Date, DateTime_ DateTime, Parent UInt64, UUID_ UUID'
               ') engine=Log; insert into test.dictionary_source format TabSeparated'
               '"'.format(source = args.source, ch = args.client, port = args.port))
 
@@ -232,7 +232,7 @@ def generate_data(args):
                         'UInt8_ tinyint unsigned, UInt16_ smallint unsigned, UInt32_ int unsigned, UInt64_ bigint unsigned, '
                         'Int8_ tinyint, Int16_ smallint, Int32_ int, Int64_ bigint, '
                         'Float32_ float, Float64_ double, '
-                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned'
+                        'String_ text, Date_ date, DateTime_ datetime, Parent bigint unsigned, UUID_ varchar(36)'
                   ');'
                   'load data local infile \'{0}/source.tsv\' into table test.dictionary_source;" | mysql $MYSQL_OPTIONS --local-infile=1'
                   .format(prefix), shell=True)

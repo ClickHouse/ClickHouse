@@ -135,8 +135,8 @@ def test_insert_multithreaded(started_cluster):
     assert runner.total_inserted > 0
 
     all_replicated = False
-    for i in range(50): # wait for replication 5 seconds max
-        time.sleep(0.1)
+    for i in range(100): # wait for replication 50 seconds max
+        time.sleep(0.5)
 
         def get_delay(node):
             return int(node.query("SELECT absolute_delay FROM system.replicas WHERE table = 'repl_test'").rstrip())

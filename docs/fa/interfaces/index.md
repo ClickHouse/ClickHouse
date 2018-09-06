@@ -1,6 +1,6 @@
 <a name="interfaces"></a>
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Interface ها
 
