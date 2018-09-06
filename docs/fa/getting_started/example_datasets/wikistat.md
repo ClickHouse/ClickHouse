@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # WikiStat
 
@@ -22,7 +22,7 @@ CREATE TABLE wikistat
 ```
 
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 load دیتا
 

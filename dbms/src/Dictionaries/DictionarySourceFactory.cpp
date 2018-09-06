@@ -165,8 +165,6 @@ DictionarySourcePtr DictionarySourceFactory::create(
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
-        // Used for https queries
-        initSSL();
         return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
     }
     else if ("library" == source_type)

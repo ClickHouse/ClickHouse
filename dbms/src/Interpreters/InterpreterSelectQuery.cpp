@@ -46,6 +46,7 @@
 #include <Columns/Collator.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -314,7 +315,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     };
 
     {
-        ExpressionActionsChain chain;
+        ExpressionActionsChain chain(context);
 
         if (query_analyzer->appendPrewhere(chain, !res.first_stage))
         {
@@ -677,6 +678,9 @@ void InterpreterSelectQuery::executeFetchColumns(
             /// Separate expression for columns used in prewhere.
             auto required_prewhere_columns_expr_list = std::make_shared<ASTExpressionList>();
 
+            /// Columns which we will get after prewhere execution.
+            auto source_columns = storage->getColumns().getAllPhysical();
+            auto physical_columns = ext::map<NameSet>(source_columns, [] (const auto & it) { return it.name; });
 
             for (const auto & column : required_columns)
             {
@@ -723,19 +727,22 @@ void InterpreterSelectQuery::executeFetchColumns(
                     prewhere_info->remove_prewhere_column = false;
 
             /// Remove columns which will be added by prewhere.
+            size_t next_req_column_pos = 0;
             for (size_t i = 0; i < required_columns.size(); ++i)
             {
-                if (!storage->getColumns().hasPhysical(required_columns[i]))
+                if (physical_columns.count(required_columns[i]))
                 {
-                    std::swap(required_columns[i], required_columns.back());
-                    required_columns.pop_back();
+                    if (next_req_column_pos < i)
+                        std::swap(required_columns[i], required_columns[next_req_column_pos]);
+                    ++next_req_column_pos;
                 }
             }
+            required_columns.resize(next_req_column_pos);
 
             if (prewhere_info)
             {
                 /// Don't remove columns which are needed to be aliased.
-                auto new_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->getRequiredColumnsWithTypes(), settings);
+                auto new_actions = std::make_shared<ExpressionActions>(prewhere_info->prewhere_actions->getRequiredColumnsWithTypes(), context);
                 for (const auto & action : prewhere_info->prewhere_actions->getActions())
                 {
                     if (action.type != ExpressionAction::REMOVE_COLUMN

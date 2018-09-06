@@ -41,6 +41,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
@@ -295,6 +296,8 @@ private:
 
     int mainImpl()
     {
+        UseSSL use_ssl;
+
         registerFunctions();
         registerAggregateFunctions();
 

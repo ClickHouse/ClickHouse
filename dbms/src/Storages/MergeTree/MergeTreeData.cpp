@@ -272,7 +272,7 @@ void MergeTreeData::initPartitionKey()
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -996,7 +996,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 /// Need to modify column type.
                 if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
+                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
 
                 out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
