@@ -21,6 +21,7 @@ namespace ErrorCodes
 thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
 thread_local CurrentThread::ThreadScopePtr current_thread_scope = std::make_shared<CurrentThread::ThreadScope>();
 
+
 void CurrentThread::updatePerformanceCounters()
 {
     get()->updatePerformanceCounters();

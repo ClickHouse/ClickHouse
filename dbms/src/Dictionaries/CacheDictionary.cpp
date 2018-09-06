@@ -432,7 +432,7 @@ void CacheDictionary::createAttributes()
 
         if (attribute.hierarchical)
         {
-            hierarchical_attribute = &attributes.back();
+            hierarchical_attribute = & attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
