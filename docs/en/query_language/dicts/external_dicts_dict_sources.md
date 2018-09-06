@@ -124,7 +124,7 @@ Setting fields:
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-## Example of Connecting PostgreSQL
+### Example of Connecting PostgreSQL
 
 Ubuntu OS.
 
