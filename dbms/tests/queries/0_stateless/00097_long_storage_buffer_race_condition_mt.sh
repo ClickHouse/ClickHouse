@@ -6,7 +6,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export NO_SHELL_CONFIG=1
 
 for i in {1..4}; do
-$CURDIR/00097_long_storage_buffer_race_condition.sh  > /dev/null 2>&1 &
+    $CURDIR/00097_long_storage_buffer_race_condition.sh  > /dev/null 2>&1 &
 done
 
 wait
