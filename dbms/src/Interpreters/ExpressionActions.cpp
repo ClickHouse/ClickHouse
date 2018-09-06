@@ -1166,6 +1166,8 @@ size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action)
                 hash.update(pair_of_strs.second);
             }
             break;
+        case ADD_ALIASES:
+            break;
     }
     return hash.get64();
 }
