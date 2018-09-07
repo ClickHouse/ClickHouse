@@ -338,7 +338,7 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     {
         ExpressionActionsChain chain(context);
 
-        ASTPtr sampling_expression = storage ? storage->getSamplingExpression() : nullptr;
+        ASTPtr sampling_expression = storage && query.sample_size() ? storage->getSamplingExpression() : nullptr;
         if (query_analyzer->appendPrewhere(chain, !res.first_stage, sampling_expression))
         {
             has_prewhere = true;
