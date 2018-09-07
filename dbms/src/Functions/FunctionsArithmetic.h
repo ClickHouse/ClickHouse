@@ -1156,7 +1156,7 @@ class FunctionBinaryArithmetic : public IFunction
     void executeAggregateMultiply(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const 
     {
         ColumnNumbers new_arguments = arguments;
-        if (checkDataType<DataTypeAggregateFunction>(block.getByPosition(new_arguments[1]).type.get()))
+        if (WhichDataType(block.getByPosition(new_arguments[1]).type).isAggregateFunction())
             std::swap(new_arguments[0], new_arguments[1]);
 
         if (!block.getByPosition(new_arguments[1]).column->isColumnConst())
@@ -1231,7 +1231,7 @@ class FunctionBinaryArithmetic : public IFunction
         ColumnNumbers new_arguments = arguments;
 
         /// Interval argument must be second.
-        if (checkDataType<DataTypeInterval>(block.getByPosition(arguments[0]).type.get()))
+        if (WhichDataType(block.getByPosition(arguments[0]).type).isInterval())
             std::swap(new_arguments[0], new_arguments[1]);
 
         /// Change interval argument type to its representation
@@ -1267,7 +1267,7 @@ public:
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
         {
-            if (checkDataType<DataTypeAggregateFunction>(arguments[0].get()))
+            if (WhichDataType(arguments[0]).isAggregateFunction())
                 return arguments[0];
             return arguments[1];
         }
@@ -1291,7 +1291,7 @@ public:
                 new_arguments[i].type = arguments[i];
 
             /// Interval argument must be second.
-            if (checkDataType<DataTypeInterval>(new_arguments[0].type.get()))
+            if (WhichDataType(new_arguments[0].type).isInterval())
                 std::swap(new_arguments[0], new_arguments[1]);
 
             /// Change interval argument to its representation
@@ -1330,6 +1330,18 @@ public:
             throw Exception("Illegal types " + arguments[0]->getName() + " and " + arguments[1]->getName() + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         return type_res;
+    }
+
+    bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1) const
+    {
+        if constexpr (!std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>)
+            return false;
+
+        WhichDataType which0(type0);
+        WhichDataType which1(type1);
+
+        return (which0.isAggregateFunction() && which1.isNativeUInt())
+            || (which0.isNativeUInt() && which1.isAggregateFunction());
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
@@ -1966,17 +1978,17 @@ public:
             throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be at least 2.", ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION};
 
-        const auto first_arg = arguments.front().get();
+        const auto & first_arg = arguments.front();
 
-        if (!first_arg->isInteger())
+        if (!isInteger(first_arg))
             throw Exception{"Illegal type " + first_arg->getName() + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
 
         for (const auto i : ext::range(1, arguments.size()))
         {
-            const auto pos_arg = arguments[i].get();
+            const auto & pos_arg = arguments[i];
 
-            if (!pos_arg->isUnsignedInteger())
+            if (!isUnsignedInteger(pos_arg))
                 throw Exception{"Illegal type " + pos_arg->getName() + " of " + toString(i) + " argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 

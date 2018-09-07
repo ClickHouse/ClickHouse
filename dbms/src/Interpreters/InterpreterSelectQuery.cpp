@@ -47,6 +47,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/queryToString.h>
 #include <ext/map.h>
+#include <memory>
 
 
 namespace DB
@@ -63,6 +64,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int PARAMETER_OUT_OF_BOUND;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
@@ -279,7 +281,6 @@ BlockInputStreams InterpreterSelectQuery::executeWithMultipleStreams()
     return pipeline.streams;
 }
 
-
 InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run)
 {
     AnalysisResult res;
@@ -305,7 +306,27 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
         chain.finalize();
 
         if (has_prewhere)
-            res.prewhere_info->remove_prewhere_column = chain.steps.at(0).can_remove_required_output.at(0);
+        {
+            const ExpressionActionsChain::Step & step = chain.steps.at(0);
+            res.prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
+
+            Names columns_to_remove_after_sampling;
+            for (size_t i = 1; i < step.required_output.size(); ++i)
+            {
+                if (step.can_remove_required_output[i])
+                    columns_to_remove_after_sampling.push_back(step.required_output[i]);
+            }
+
+            if (!columns_to_remove_after_sampling.empty())
+            {
+                auto columns = res.prewhere_info->prewhere_actions->getSampleBlock().getNamesAndTypesList();
+                ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(columns, context);
+                for (const auto & column : columns_to_remove_after_sampling)
+                    actions->add(ExpressionAction::removeColumn(column));
+
+                res.prewhere_info->after_sampling_actions = std::move(actions);
+            }
+        }
         if (has_where)
             res.remove_where_filter = chain.steps.at(where_step_num).can_remove_required_output.at(0);
 
@@ -317,7 +338,8 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     {
         ExpressionActionsChain chain(context);
 
-        if (query_analyzer->appendPrewhere(chain, !res.first_stage))
+        ASTPtr sampling_expression = storage && query.sample_size() ? storage->getSamplingExpression() : nullptr;
+        if (query_analyzer->appendPrewhere(chain, !res.first_stage, sampling_expression))
         {
             has_prewhere = true;
 
