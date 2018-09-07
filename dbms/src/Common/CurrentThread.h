@@ -82,7 +82,6 @@ public:
         ~QueryScope();
     };
 
-public:
     /// Implicitly finalizes current thread in the destructor
     class ThreadScope
     {

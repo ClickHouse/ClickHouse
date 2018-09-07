@@ -24,12 +24,14 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -54,6 +56,7 @@
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -173,6 +176,10 @@ struct ContextShared
     std::unique_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Soteres updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
+
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
+#endif
 
     bool shutdown_called = false;
 
@@ -1804,6 +1811,35 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
     return getQueryContext().sample_block_cache;
 }
+
+
+#if USE_EMBEDDED_COMPILER
+
+std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    return shared->compiled_expression_cache;
+}
+
+void Context::setCompiledExpressionCache(size_t cache_size)
+{
+
+    auto lock = getLock();
+
+    if (shared->compiled_expression_cache)
+        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
+}
+
+void Context::dropCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    if (shared->compiled_expression_cache)
+        shared->compiled_expression_cache->reset();
+}
+
+#endif
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {
