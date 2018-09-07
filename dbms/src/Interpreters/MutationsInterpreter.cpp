@@ -209,11 +209,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
 
     /// First, break a sequence of commands into stages.
-    stages.emplace_back();
+    stages.emplace_back(context);
     for (const auto & command : commands)
     {
         if (!stages.back().column_to_updated.empty())
-            stages.emplace_back();
+            stages.emplace_back(context);
 
         if (command.type == MutationCommand::DELETE)
         {
@@ -223,7 +223,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::UPDATE)
         {
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
-                stages.emplace_back();
+                stages.emplace_back(context);
 
             NameSet affected_materialized;
 
@@ -250,7 +250,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             if (!affected_materialized.empty())
             {
-                stages.emplace_back();
+                stages.emplace_back(context);
                 for (const auto & column : columns_desc.materialized)
                 {
                     stages.back().column_to_updated.emplace(
