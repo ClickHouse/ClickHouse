@@ -7,7 +7,10 @@
 # How to install Ninja on Ubuntu:
 #  sudo apt-get install ninja-build
 
-find_program(NINJA_PATH ninja)
-if (NINJA_PATH)
-    set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)
-endif ()
+# CLion does not support Ninja
+if (NOT ${CMAKE_COMMAND} MATCHES "clion")
+    find_program(NINJA_PATH ninja)
+    if (NINJA_PATH)
+        set(CMAKE_GENERATOR "Ninja" CACHE INTERNAL "" FORCE)
+    endif ()
+endif()
