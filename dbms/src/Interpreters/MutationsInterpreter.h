@@ -44,19 +44,23 @@ private:
     const Context & context;
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
-    /// DELETEs, possibly followed by an UPDATE. Commands can reuse expressions calculated by the previous
-    /// commands in the same stage, but at the end of each stage intermediate columns are thrown away
-    /// (they may contain wrong values because of an UPDATE).
+    /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the
+    /// previous commands in the same stage, but at the end of each stage intermediate columns are thrown away
+    /// (they may contain wrong values because the column values have been updated).
+    ///
+    /// If an UPDATE command changes some columns that some MATERIALIZED columns depend on, a stage to
+    /// recalculate these columns is added.
     ///
     /// Each stage has output_columns that contain columns that are changed at the end of that stage
     /// plus columns needed for the next mutations.
     ///
     /// First stage is special: it can contain only DELETEs and is executed using InterpreterSelectQuery
     /// to take advantage of table indexes (if there are any).
+
     struct Stage
     {
-        std::vector<MutationCommand> deletes;
-        std::optional<MutationCommand> update;
+        ASTs filters;
+        std::unordered_map<String, ASTPtr> column_to_updated;
 
         /// Contains columns that are changed by this stage,
         /// columns changed by the previous stages and also columns needed by the next stages.
@@ -65,10 +69,10 @@ private:
         std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
-        /// First steps calculate filter columns for DELETEs (in the same order as in `delete_filter_column_names`),
+        /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE stage, and finally a projection stage.
         ExpressionActionsChain expressions_chain;
-        Names delete_filter_column_names;
+        Names filter_column_names;
     };
 
     std::unique_ptr<InterpreterSelectQuery> interpreter_select;

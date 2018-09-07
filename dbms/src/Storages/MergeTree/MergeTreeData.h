@@ -37,8 +37,6 @@ namespace ErrorCodes
     extern const int TABLE_DIFFERS_TOO_MUCH;
 }
 
-class MutationCommands;
-
 
 /// Data structure for *MergeTree engines.
 /// Merge tree is used for incremental sorting of data.
@@ -468,11 +466,6 @@ public:
     /// - columns corresponding to primary key, sign, sampling expression and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlter(const AlterCommands & commands);
-
-    /// MergeTree-specific checks for mutations:
-    /// - columns corresponding to primary key, sign, sampling expression and date are not affected.
-    /// If something is wrong, throws an exception.
-    void checkMutations(const MutationCommands & commands);
 
     /// Performs ALTER of the data part, writes the result to temporary files.
     /// Returns an object allowing to rename temporary files to permanent files.

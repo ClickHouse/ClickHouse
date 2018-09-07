@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.alter_update"
 
 ${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.alter_update \
-    (d Date, key UInt32, value1 String, value2 UInt64, materialized_value String MATERIALIZED concat('materialized_', toString(value2))) \
+    (d Date, key UInt32, value1 String, value2 UInt64, materialized_value String MATERIALIZED concat('materialized_', toString(value2 + 7))) \
     ENGINE MergeTree ORDER BY key PARTITION BY toYYYYMM(d)"
 
 
@@ -95,11 +95,38 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.alter_update \
     DELETE WHERE value2 IN (8, 9, 10), \
     UPDATE value2 = value2 + 10 WHERE value2 <= 10, \
     DELETE WHERE length(value1) + value2 = 23, \
-    DELETE WHERE materialized_value = 'materialized_30', \
+    DELETE WHERE materialized_value = 'materialized_37', \
     UPDATE value1 = concat(value1, '_', materialized_value) WHERE key = 456"
 wait_for_mutation "alter_update" "mutation_10.txt"
 
 ${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.alter_update ORDER BY key"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.alter_update DROP PARTITION 200001"
+
+
+${CLICKHOUSE_CLIENT} --query="SELECT '*** Test updating columns that MATERIALIZED columns depend on ***'"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.materialized_key"
+
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.materialized_key \
+    (key UInt32 MATERIALIZED value + 1, value UInt32) \
+    ENGINE MergeTree ORDER BY key"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.materialized_key UPDATE value = 1 WHERE 1" 2>/dev/null || echo "Updating column that MATERIALIZED key column depends on should fail"
+
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.materialized_key"
+
+${CLICKHOUSE_CLIENT} --query="INSERT INTO test.alter_update VALUES \
+    ('2000-01-01', 123, 'abc', 10), \
+    ('2000-01-01', 234, 'cde', 20), \
+    ('2000-01-01', 345, 'fgh', 30), \
+    ('2000-01-01', 456, 'ijk', 40)"
+
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.alter_update \
+    UPDATE value2 = value2 + 7 WHERE value2 <= 20"
+wait_for_mutation "alter_update" "mutation_12.txt"
+
+${CLICKHOUSE_CLIENT} --query="SELECT value2, materialized_value FROM test.alter_update ORDER BY key"
 
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.alter_update DROP PARTITION 200001"
 
