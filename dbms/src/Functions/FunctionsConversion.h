@@ -1468,6 +1468,24 @@ private:
         };
     }
 
+    WrapperType createUUIDWrapper(const DataTypePtr & from_type, const DataTypeUUID * const, bool requested_result_is_nullable) const
+    {
+        if (requested_result_is_nullable)
+            throw Exception{"CAST AS Nullable(UUID) is not implemented", ErrorCodes::NOT_IMPLEMENTED};
+
+        FunctionPtr function = FunctionTo<DataTypeUUID>::Type::create(context);
+
+        /// Check conversion using underlying function
+        {
+            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
+        }
+
+        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        {
+            function->execute(block, arguments, result, input_rows_count);
+        };
+    }
+
     template <typename FieldType>
     WrapperType createDecimalWrapper(const DataTypePtr & from_type, const DataTypeDecimal<FieldType> * to_type) const
     {
@@ -1918,6 +1936,14 @@ private:
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
+            }
+            if constexpr (std::is_same_v<ToDataType, DataTypeUUID>)
+            {
+                if (isStringOrFixedString(from_type))
+                {
+                    ret = createUUIDWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                    return true;
+                }
             }
 
             return false;
