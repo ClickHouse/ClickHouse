@@ -305,15 +305,17 @@ struct CurrentlyMergingPartsTagger
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     MergeTreeMutationEntry entry(commands, full_path, data.insert_increment.get());
+    String file_name;
     {
         std::lock_guard lock(currently_merging_mutex);
 
         Int64 version = increment.get();
         entry.commit(version);
+        file_name = entry.file_name;
         current_mutations_by_version.emplace(version, std::move(entry));
     }
 
-    LOG_INFO(log, "Added mutation: " << entry.file_name);
+    LOG_INFO(log, "Added mutation: " << file_name);
     background_task_handle->wake();
 }
 
