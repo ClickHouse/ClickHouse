@@ -138,6 +138,7 @@ public:
     bool withDictionary() const override { return true; }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
+    const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique->assumeMutable()); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
