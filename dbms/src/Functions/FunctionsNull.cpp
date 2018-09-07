@@ -300,7 +300,7 @@ std::string FunctionNullIf::getName() const
 
 DataTypePtr FunctionNullIf::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    return FunctionIf{}.getReturnTypeImpl({std::make_shared<DataTypeUInt8>(), makeNullable(arguments[0]), arguments[0]});
+    return makeNullable(arguments[0]);
 }
 
 void FunctionNullIf::executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
