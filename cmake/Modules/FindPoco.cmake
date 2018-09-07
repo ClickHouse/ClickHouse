@@ -103,7 +103,7 @@ if(Poco_INSTALLED)
     set(Poco_INCLUDE_DIRS ${Poco_ROOT_DIR}/include/ CACHE PATH "The global include path for Poco")
 endif()
 
-# append thea  default minimum components to the list to find
+# append the default minimum components to the list to find
 list(APPEND components
     ${Poco_FIND_COMPONENTS}
     # default components:
