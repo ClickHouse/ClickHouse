@@ -26,7 +26,7 @@ var paths = {
     docstxt: ['docs/**/*.txt', 'docs/redirects.conf'],
     docsjson: ['docs/**/*.json'],
     docsxml: ['docs/**/*.xml'],
-    docssitemap: ['sitemap.xml'],
+    docssitemap: ['sitemap.xml', 'sitemap_static.xml'],
     scripts: [
         '**/*.js',
         '!gulpfile.js',

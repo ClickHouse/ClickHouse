@@ -20,7 +20,7 @@ In a column-oriented DBMS, data is stored like this:
 
 | Row: | #0 | #1 | #2 | #N |
 | ----------- | ------------------- | ------------------- | ------------------- | ------------------- |
-| WatchID: | 5385521489354350662 | 5385521490329509958 | 5385521489953706054 | ... |
+| WatchID: | 89354350662 | 90329509958 | 89953706054 | ... |
 | JavaEnable: | 1 | 0 | 1 | ... |
 | Title: | Investor Relations | Contact us | Mission | ... |
 | GoodEvent: | 1 | 1 | 1 | ... |
@@ -61,11 +61,11 @@ Column-oriented databases are better suited to OLAP scenarios: they are at least
 
 **Row-oriented DBMS**
 
-![Row-oriented ]( images/row_oriented.gif#)
+![Row-oriented](images/row_oriented.gif#)
 
 **Column-oriented DBMS**
 
-![Column-oriented](images / column_oriented.gif#)
+![Column-oriented](images/column_oriented.gif#)
 
 See the difference?
 
