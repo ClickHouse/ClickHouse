@@ -1,5 +1,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Storages/StorageMergeTree.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
@@ -84,36 +86,80 @@ bool MutationsInterpreter::isStorageTouchedByMutations() const
 }
 
 
-static void validateUpdateColumns(const StoragePtr & storage, const std::vector<MutationCommand> & commands)
+static NameSet getKeyColumns(const StoragePtr & storage)
 {
-    for (const MutationCommand & command : commands)
+    const MergeTreeData * merge_tree_data = nullptr;
+    if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
+        merge_tree_data = &merge_tree->getData();
+    else if (auto replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(storage.get()))
+        merge_tree_data = &replicated_merge_tree->getData();
+    else
+        return {};
+
+    NameSet key_columns;
+
+    if (merge_tree_data->partition_expr)
+        for (const String & col : merge_tree_data->partition_expr->getRequiredColumns())
+            key_columns.insert(col);
+
+    auto primary_expr = merge_tree_data->getPrimaryExpression();
+    if (primary_expr)
+        for (const String & col : primary_expr->getRequiredColumns())
+            key_columns.insert(col);
+    /// We don't process sampling_expression separately because it must be among the primary key columns.
+
+    auto secondary_sort_expr = merge_tree_data->getSecondarySortExpression();
+    if (secondary_sort_expr)
+        for (const String & col : secondary_sort_expr->getRequiredColumns())
+            key_columns.insert(col);
+
+    if (!merge_tree_data->merging_params.sign_column.empty())
+        key_columns.insert(merge_tree_data->merging_params.sign_column);
+
+    return key_columns;
+}
+
+static void validateUpdateColumns(
+    const StoragePtr & storage, const NameSet & updated_columns,
+    const std::unordered_map<String, Names> & column_to_affected_materialized)
+{
+    NameSet key_columns = getKeyColumns(storage);
+
+    for (const String & column_name : updated_columns)
     {
-        if (command.type != MutationCommand::UPDATE)
-            continue;
-
-        for (const auto & kv : command.column_to_update_expression)
+        auto found = false;
+        for (const auto & col : storage->getColumns().ordinary)
         {
-            const String & column_name = kv.first;
+            if (col.name == column_name)
+            {
+                found = true;
+                break;
+            }
+        }
 
-            auto found = false;
-            for (const auto & col : storage->getColumns().ordinary)
+        if (!found)
+        {
+            for (const auto & col : storage->getColumns().materialized)
             {
                 if (col.name == column_name)
-                {
-                    found = true;
-                    break;
-                }
+                    throw Exception("Cannot UPDATE materialized column `" + column_name + "`", ErrorCodes::CANNOT_UPDATE_COLUMN);
             }
 
-            if (!found)
-            {
-                for (const auto & col : storage->getColumns().materialized)
-                {
-                    if (col.name == column_name)
-                        throw Exception("Cannot UPDATE materialized column " + column_name, ErrorCodes::CANNOT_UPDATE_COLUMN);
-                }
+            throw Exception("There is no column `" + column_name + "` in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        }
 
-                throw Exception("There is no column " + column_name + " in table", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+        if (key_columns.count(column_name))
+            throw Exception("Cannot UPDATE key column `" + column_name + "`", ErrorCodes::CANNOT_UPDATE_COLUMN);
+
+        auto materialized_it = column_to_affected_materialized.find(column_name);
+        if (materialized_it != column_to_affected_materialized.end())
+        {
+            for (const String & materialized : materialized_it->second)
+            {
+                if (key_columns.count(materialized))
+                    throw Exception("Updated column `" + column_name + "` affects MATERIALIZED column `"
+                        + materialized + "`, which is a key column. Cannot UPDATE it.",
+                        ErrorCodes::CANNOT_UPDATE_COLUMN);
             }
         }
     }
@@ -128,25 +174,90 @@ void MutationsInterpreter::prepare(bool dry_run)
     if (commands.empty())
         throw Exception("Empty mutation commands list", ErrorCodes::LOGICAL_ERROR);
 
-    validateUpdateColumns(storage, commands);
+    const ColumnsDescription & columns_desc = storage->getColumns();
+    NamesAndTypesList all_columns = columns_desc.getAllPhysical();
 
-    NamesAndTypesList all_columns = storage->getColumns().getAllPhysical();
+    NameSet updated_columns;
+    for (const MutationCommand & command : commands)
+    {
+        for (const auto & kv : command.column_to_update_expression)
+            updated_columns.insert(kv.first);
+    }
+
+    /// We need to know which columns affect which MATERIALIZED columns to recalculate them if dependencies
+    /// are updated.
+    std::unordered_map<String, Names> column_to_affected_materialized;
+    if (!updated_columns.empty())
+    {
+        for (const auto & kv : columns_desc.defaults)
+        {
+            const String & column = kv.first;
+            const ColumnDefault & col_default = kv.second;
+            if (col_default.kind == ColumnDefaultKind::Materialized)
+            {
+                ExpressionAnalyzer analyzer(col_default.expression->clone(), context, nullptr, all_columns);
+                for (const String & dependency : analyzer.getRequiredSourceColumns())
+                {
+                    if (updated_columns.count(dependency))
+                        column_to_affected_materialized[dependency].push_back(column);
+                }
+            }
+        }
+    }
+
+    if (!updated_columns.empty())
+        validateUpdateColumns(storage, updated_columns, column_to_affected_materialized);
 
     /// First, break a sequence of commands into stages.
     stages.emplace_back();
     for (const auto & command : commands)
     {
-        if (stages.back().update)
+        if (!stages.back().column_to_updated.empty())
             stages.emplace_back();
 
         if (command.type == MutationCommand::DELETE)
-            stages.back().deletes.push_back(command);
+        {
+            auto negated_predicate = makeASTFunction("not", command.predicate->clone());
+            stages.back().filters.push_back(negated_predicate);
+        }
         else if (command.type == MutationCommand::UPDATE)
         {
-            if (stages.size() == 1) /// First stage only supports DELETEs.
+            if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back();
 
-            stages.back().update = command;
+            NameSet affected_materialized;
+
+            for (const auto & kv : command.column_to_update_expression)
+            {
+                const String & column = kv.first;
+
+                auto materialized_it = column_to_affected_materialized.find(column);
+                if (materialized_it != column_to_affected_materialized.end())
+                {
+                    for (const String & mat_column : materialized_it->second)
+                        affected_materialized.emplace(mat_column);
+                }
+
+                const auto & update_expr = kv.second;
+                auto updated_column = makeASTFunction("CAST",
+                    makeASTFunction("if",
+                        command.predicate->clone(),
+                        update_expr->clone(),
+                        std::make_shared<ASTIdentifier>(column)),
+                    std::make_shared<ASTLiteral>(columns_desc.getPhysical(column).type->getName()));
+                stages.back().column_to_updated.emplace(column, updated_column);
+            }
+
+            if (!affected_materialized.empty())
+            {
+                stages.emplace_back();
+                for (const auto & column : columns_desc.materialized)
+                {
+                    stages.back().column_to_updated.emplace(
+                        column.name,
+                        columns_desc.defaults.at(column.name).expression->clone());
+                }
+            }
         }
         else
             throw Exception("Unknown mutation command type: " + DB::toString<int>(command.type), ErrorCodes::UNKNOWN_MUTATION_COMMAND);
@@ -155,7 +266,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// Next, for each stage calculate columns changed by this and previous stages.
     for (size_t i = 0; i < stages.size(); ++i)
     {
-        if (!stages[i].deletes.empty())
+        if (!stages[i].filters.empty())
         {
             for (const auto & column : all_columns)
                 stages[i].output_columns.insert(column.name);
@@ -165,9 +276,9 @@ void MutationsInterpreter::prepare(bool dry_run)
         if (i > 0)
             stages[i].output_columns = stages[i - 1].output_columns;
 
-        if (stages[i].update && stages[i].output_columns.size() < all_columns.size())
+        if (stages[i].output_columns.size() < all_columns.size())
         {
-            for (const auto & kv : (*stages[i].update).column_to_update_expression)
+            for (const auto & kv : stages[i].column_to_updated)
                 stages[i].output_columns.insert(kv.first);
         }
     }
@@ -179,32 +290,12 @@ void MutationsInterpreter::prepare(bool dry_run)
         auto & stage = stages[i];
 
         ASTPtr all_asts = std::make_shared<ASTExpressionList>();
-        ASTs delete_filter_columns;
-        std::unordered_map<String, ASTPtr> column_to_updated;
 
-        for (const auto & command : stage.deletes)
-        {
-            auto negated_predicate = makeASTFunction("not", command.predicate->clone());
-            all_asts->children.push_back(negated_predicate);
-            delete_filter_columns.push_back(negated_predicate);
-        }
+        for (const auto & ast : stage.filters)
+            all_asts->children.push_back(ast);
 
-        if (stage.update)
-        {
-            for (const auto & kv : stage.update->column_to_update_expression)
-            {
-                const String & column = kv.first;
-                const auto & update_expr = kv.second;
-                auto updated_column = makeASTFunction("CAST",
-                    makeASTFunction("if",
-                        stage.update->predicate->clone(),
-                        update_expr->clone(),
-                        std::make_shared<ASTIdentifier>(column)),
-                    std::make_shared<ASTLiteral>(storage->getColumn(column).type->getName()));
-                column_to_updated.emplace(column, updated_column);
-                all_asts->children.push_back(updated_column);
-            }
-        }
+        for (const auto & kv : stage.column_to_updated)
+            all_asts->children.push_back(kv.second);
 
         /// Add all output columns to prevent ExpressionAnalyzer from deleting them from source columns.
         for (const String & column : stage.output_columns)
@@ -214,23 +305,23 @@ void MutationsInterpreter::prepare(bool dry_run)
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
 
-        for (const auto & ast : delete_filter_columns)
+        for (const auto & ast : stage.filters)
         {
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
             stage.analyzer->appendExpression(actions_chain, ast, dry_run);
-            stage.delete_filter_column_names.push_back(ast->getColumnName());
+            stage.filter_column_names.push_back(ast->getColumnName());
         }
 
-        if (stage.update)
+        if (!stage.column_to_updated.empty())
         {
             if (!actions_chain.steps.empty())
                 actions_chain.addStep();
 
-            for (const auto & kv : column_to_updated)
+            for (const auto & kv : stage.column_to_updated)
                 stage.analyzer->appendExpression(actions_chain, kv.second, dry_run);
 
-            for (const auto & kv : column_to_updated)
+            for (const auto & kv : stage.column_to_updated)
             {
                 actions_chain.getLastActions()->add(ExpressionAction::copyColumn(
                     kv.second->getColumnName(), kv.first, /* can_replace = */ true));
@@ -257,22 +348,18 @@ void MutationsInterpreter::prepare(bool dry_run)
     for (const auto & column_name : stages[0].output_columns)
         select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column_name));
 
-    if (!stages[0].deletes.empty())
+    if (!stages[0].filters.empty())
     {
-        ASTs delete_filters;
-        for (const auto & delete_ : stages[0].deletes)
-            delete_filters.push_back(makeASTFunction("not", delete_.predicate->clone()));
-
         ASTPtr where_expression;
-        if (stages[0].deletes.size() == 1)
-            where_expression = delete_filters[0];
+        if (stages[0].filters.size() == 1)
+            where_expression = stages[0].filters[0];
         else
         {
             auto coalesced_predicates = std::make_shared<ASTFunction>();
             coalesced_predicates->name = "and";
             coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
             coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-            coalesced_predicates->arguments->children = delete_filters;
+            coalesced_predicates->arguments->children = stages[0].filters;
             where_expression = std::move(coalesced_predicates);
         }
         select->where_expression = where_expression;
@@ -293,10 +380,10 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(BlockInputStr
         for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
         {
             const auto & step = stage.expressions_chain.steps[i];
-            if (i < stage.delete_filter_column_names.size())
+            if (i < stage.filter_column_names.size())
             {
-                /// Execute DELETE.
-                in = std::make_shared<FilterBlockInputStream>(in, step.actions, stage.delete_filter_column_names[i]);
+                /// Execute DELETEs.
+                in = std::make_shared<FilterBlockInputStream>(in, step.actions, stage.filter_column_names[i]);
             }
             else
             {

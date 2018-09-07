@@ -304,7 +304,6 @@ struct CurrentlyMergingPartsTagger
 
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
-    data.checkMutations(commands);
     MergeTreeMutationEntry entry(commands, full_path, data.insert_increment.get());
     {
         std::lock_guard lock(currently_merging_mutex);

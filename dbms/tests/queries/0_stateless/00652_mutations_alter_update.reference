@@ -15,4 +15,10 @@ Updating with non-UInt8 predicate should fail
 *** Test UPDATE of columns that DELETE depends on ***
 2000-01-01	234	cde	30
 *** Test complex mixture of UPDATEs and DELETEs ***
-2000-01-01	456	ijk_materialized_40	40
+2000-01-01	456	ijk_materialized_47	40
+*** Test updating columns that MATERIALIZED columns depend on ***
+Updating column that MATERIALIZED key column depends on should fail
+17	materialized_24
+27	materialized_34
+30	materialized_37
+40	materialized_47
