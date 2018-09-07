@@ -803,7 +803,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
     if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block, compilation_cache);
+        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
@@ -1116,7 +1116,7 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 
 
 /// It is not important to calculate the hash of individual strings or their concatenation
-size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
+UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
 {
     SipHash hash;
     hash.update(action.type);
@@ -1169,7 +1169,9 @@ size_t ExpressionAction::ActionHash::operator()(const ExpressionAction & action)
         case ADD_ALIASES:
             break;
     }
-    return hash.get64();
+    UInt128 result;
+    hash.get128(result.low, result.high);
+    return result;
 }
 
 bool ExpressionAction::operator==(const ExpressionAction & other) const
