@@ -104,7 +104,7 @@ drwxrwxrwx 2 clickhouse clickhouse  4096 May  5 02:55 detached
 -rw-rw-rw- 1 clickhouse clickhouse     2 May  5 02:58 increment.txt
 ```
 
-Here, `20140317_20140323_2_2_0` and `20140317_20140323_4_4_0` are the directories of data parts.
+Here, `20140317_20140323_2_2_0` and ` 20140317_20140323_4_4_0` are the directories of data parts.
 
 Let's break down the name of the first part: `20140317_20140323_2_2_0`.
 
@@ -208,7 +208,7 @@ Although the query is called `ALTER TABLE`, it does not change the table structu
 
 Data is placed in the `detached` directory. You can use the `ALTER TABLE ... ATTACH` query to attach the data.
 
-The `FROM`  clause specifies the path in `ZooKeeper`. For example, `/clickhouse/tables/01-01/visits`.
+The ` FROM`  clause specifies the path in ` ZooKeeper`. For example, `/clickhouse/tables/01-01/visits`.
 Before downloading, the system checks that the partition exists and the table structure matches. The most appropriate replica is selected automatically from the healthy replicas.
 
 The `ALTER ... FETCH PARTITION` query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the `ALTER TABLE ... ATTACH` query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
@@ -224,45 +224,45 @@ Possible values: `0` – do not wait; `1` – only wait for own execution (defau
 
 ### Mutations
 
-A mutation is a type of ALTER query that lets you change or delete data in a table. In contrast to standard `DELETE` and `UPDATE` queries that are calculated for point-based data changes, mutations are used for broad changes that affect many rows in the table.
+Mutations are an ALTER query variant that allows changing or deleting rows in a table. In contrast to standard `UPDATE` and `DELETE` queries that are intended for point data changes, mutations are intended for heavy operations that change a lot of rows in a table.
 
-The functionality is in beta testing and is available starting from version 1.1.54388. Implemented support for \*MergeTree tables (with and without replication).
+The functionality is in beta stage and is available starting with the 1.1.54388 version. Currently *MergeTree table engines are supported (both replicated and unreplicated).
 
-You don't need to convert existing tables to work with mutations. However, after the first mutation is applied, the table data format becomes incompatible with previous versions and it is not possible to roll back to the previous version.
+Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 
-The `ALTER DELETE` command is currently available:
+At the moment the `ALTER DELETE` command is available:
 
 ```sql
 ALTER TABLE [db.]table DELETE WHERE expr
 ```
 
-The `expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
+The expression `expr` must be of UInt8 type. The query deletes rows for which this expression evaluates to a non-zero value.
 
-A single query can specify multiple comma-separated commands.
+One query can contain several commands separated by commas.
 
-For \*Merge-tables, the mutations are applied by overwriting the data in chunks (parts). However, there is no atomicity: the parts are replaced with the mutations as they are processed and the `SELECT` query specified during execution of the mutation will see the data for both the changed parts and the parts that have not yet been changed.
+For *MergeTree tables mutations execute by rewriting whole data parts. There is no atomicity - parts are substituted for mutated parts as soon as they are ready and a `SELECT` query that started executing during a mutation will see data from parts that have already been mutated along with data from parts that have not been mutated yet.
 
-The mutations have a linear order and they are applied to each part in the order they were added. Mutations are also ordered with inserts. This guarantees that data inserted in the table before the start of the mutation query will be changed, and data inserted after the query ends will not be changed. However, mutations do not block inserts in any way.
+Mutations are totally ordered by their creation order and are applied to each part in that order. Mutations are also partially ordered with INSERTs - data that was inserted into the table before the mutation was submitted will be mutated and data that was inserted after that will not be mutated. Note that mutations do not block INSERTs in any way.
 
-The query is completed immediately after adding information about the mutation (for replicated tables, in Zookeeper; for non-replicated tables, in the file system). The mutation itself is executed asynchronously using the system profile settings. You can monitor the progress in the `system.mutations` table. Added mutations are fully completed even if ClickHouse is restarted. You can't revert a mutation after it has been added.
+A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the `system.mutations` table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted.
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
 #### system.mutations Table
 
-This table contains information about the progress of mutations on MergeTree tables. Each mutation command corresponds to a single row. The table has the following columns:
+The table contains information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
 
-**database**, **table** — The name of the database and the table that the mutation was applied to.
+**database**, **table** - The name of the database and table to which the mutation was applied.
 
-**mutation_id** — ID of the query. For replicated tables, these IDs correspond to the names of entries in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables, they are the file names in the directory with the table data.
+**mutation_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
 
-**command** — The mutation command (the part of the query after `ALTER TABLE [db.]table`).
+**command** - The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
 
-**create_time** — The time of creation of the mutation.
+**create_time** - When this mutation command was submitted for execution.
 
-**block_numbers.partition_id**, **block_numbers.number** —  Nested column. For mutations in replicated tables, it contains the block number obtained by this mutation for each partition (each partition will only have changes in the parts that contain blocks with numbers less than the number obtained by the mutation in this partition). For non-replicated tables, the block numbering carries through the partitions, so the column contains a single entry with a single block number that was obtained by the mutation.
+**block_numbers.partition_id**, **block_numbers.number** - A Nested column. For mutations of replicated tables contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). Because in non-replicated tables blocks numbers in all partitions form a single sequence, for mutatations of non-replicated tables the column will contain one record with a single block number acquired by the mutation.
 
-**parts_to_do** — The number of parts of the table that still need to be changed.
+**parts_to_do** - The number of data parts that need to be mutated for the mutation to finish.
 
-**is_done** — Whether the mutation is complete. Note: Even if `parts_to_do = 0`, for a replicated table, there may be a situation when the mutation has not yet finished because of a long insert that is adding data that will need to be mutated.
+**is_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
 

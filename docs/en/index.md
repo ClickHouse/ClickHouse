@@ -6,9 +6,9 @@ In a "normal" row-oriented DBMS, data is stored in this order:
 
 | Row | WatchID | JavaEnable | Title | GoodEvent | EventTime |
 | ------ | ------------------- | ---------- | ------------------ | --------- | ------------------- |
-| #0 | 5385521489354350662 | 1 | Investor Relations | 1 | 2016-05-18 05:19:20 |
-| #1 | 5385521490329509958 | 0 | Contact us | 1 | 2016-05-18 08:10:20 |
-| #2 | 5385521489953706054 | 1 | Mission | 1 | 2016-05-18 07:38:00 |
+| #0 | 89354350662 | 1 | Investor Relations | 1 | 2016-05-18 05:19:20 |
+| #1 | 90329509958 | 0 | Contact us | 1 | 2016-05-18 08:10:20 |
+| #2 | 89953706054 | 1 | Mission | 1 | 2016-05-18 07:38:00 |
 | #N | ... | ... | ... | ... | ... |
 
 In order words, all the values related to a row are physically stored next to each other.
@@ -20,7 +20,7 @@ In a column-oriented DBMS, data is stored like this:
 
 | Row: | #0 | #1 | #2 | #N |
 | ----------- | ------------------- | ------------------- | ------------------- | ------------------- |
-| WatchID: | 5385521489354350662 | 5385521490329509958 | 5385521489953706054 | ... |
+| WatchID: | 89354350662 | 90329509958 | 89953706054 | ... |
 | JavaEnable: | 1 | 0 | 1 | ... |
 | Title: | Investor Relations | Contact us | Mission | ... |
 | GoodEvent: | 1 | 1 | 1 | ... |
@@ -35,9 +35,9 @@ Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon 
 Different orders for storing data are better suited to different scenarios.
 The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 
-The higher the load on the system, the more important it is to customize the system to the scenario, and the more specific this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one of the scenarios.
+The higher the load on the system, the more important it is to customize the system set up to match the requirements of the usage scenario, and the more fine grained this customization becomes. There is no system that is equally well-suited to significantly different scenarios. If a system is adaptable to a wide set of scenarios, under a high load, the system will handle all the scenarios equally poorly, or will work well for just one or few of possible scenarios.
 
-## Key features of the OLAP scenario
+## Key Properties of the OLAP scenario
 
 - The vast majority of requests are for read access.
 - Data is updated in fairly large batches (> 1000 rows), not by single rows; or it is not updated at all.
@@ -48,28 +48,28 @@ The higher the load on the system, the more important it is to customize the sys
 - For simple queries, latencies around 50 ms are allowed.
 - Column values are fairly small: numbers and short strings (for example, 60 bytes per URL).
 - Requires high throughput when processing a single query (up to billions of rows per second per server).
-- There are no transactions.
+- Transactions are not necessary.
 - Low requirements for data consistency.
 - There is one large table per query. All tables are small, except for one.
-- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated. The result fits in a single server's RAM.
+- A query result is significantly smaller than the source data. In other words, data is filtered or aggregated, so the result fits in a single server's RAM.
 
 It is easy to see that the OLAP scenario is very different from other popular scenarios (such as OLTP or Key-Value access). So it doesn't make sense to try to use OLTP or a Key-Value DB for processing analytical queries if you want to get decent performance. For example, if you try to use MongoDB or Redis for analytics, you will get very poor performance compared to OLAP databases.
 
-## Why column-oriented databases are better for the OLAP scenario
+## Why Column-Oriented Databases Work Better in the OLAP Scenario
 
 Column-oriented databases are better suited to OLAP scenarios: they are at least 100 times faster in processing most queries. The reasons are explained in detail below, but the fact is easier to demonstrate visually:
 
 **Row-oriented DBMS**
 
-![Row-oriented ]( images/row_oriented.gif#)
+![Row-oriented](images/row_oriented.gif#)
 
 **Column-oriented DBMS**
 
-![Column-oriented](images / column_oriented.gif#)
+![Column-oriented](images/column_oriented.gif#)
 
 See the difference?
 
-### About input/output
+### Input/output
 
 1. For an analytical query, only a small number of table columns need to be read. In a column-oriented database, you can read just the data you need. For example, if you need 5 columns out of 100, you can expect a 20-fold reduction in I/O.
 2. Since data is read in packets, it is easier to compress. Data in columns is also easier to compress. This further reduces the I/O volume.
@@ -124,7 +124,7 @@ LIMIT 20
 
 </p></details>
 
-### By calculation
+### CPU
 
 Since executing a query requires processing a large number of rows, it helps to dispatch all operations for entire vectors instead of for separate rows, or to implement the query engine so that there is almost no dispatching cost. If you don't do this, with any half-decent disk subsystem, the query interpreter inevitably stalls the CPU.
 It makes sense to both store data in columns and process it, when possible, by columns.
