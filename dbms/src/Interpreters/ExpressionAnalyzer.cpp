@@ -201,7 +201,16 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     }
 
     if (storage && source_columns.empty())
-        source_columns = storage->getColumns().getAllPhysical();
+    {
+        auto physical_columns = storage->getColumns().getAllPhysical();
+        if (source_columns.empty())
+            source_columns.swap(physical_columns);
+        else
+        {
+            source_columns.insert(source_columns.end(), physical_columns.begin(), physical_columns.end());
+            removeDuplicateColumns(source_columns);
+        }
+    }
     else
         removeDuplicateColumns(source_columns);
 

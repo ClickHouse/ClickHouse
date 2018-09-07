@@ -61,11 +61,11 @@ Column-oriented databases are better suited to OLAP scenarios: they are at least
 
 **Row-oriented DBMS**
 
-![Row-oriented ]( images/row_oriented.gif#)
+![Row-oriented](images/row_oriented.gif#)
 
 **Column-oriented DBMS**
 
-![Column-oriented](images / column_oriented.gif#)
+![Column-oriented](images/column_oriented.gif#)
 
 See the difference?
 

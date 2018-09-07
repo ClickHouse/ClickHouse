@@ -208,7 +208,7 @@ DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_
             throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
                             ErrorCodes::UNKNOWN_TABLE);
 
-        return std::make_pair<DatabasePtr, StoragePtr>(std::move(database), std::move(table));
+        return {std::move(database), std::move(table)};
     }
     return {};
 }
