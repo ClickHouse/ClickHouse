@@ -770,7 +770,7 @@ DataTypePtr FunctionArrayElement::getReturnTypeImpl(const DataTypes & arguments)
     if (!array_type)
         throw Exception("First argument for function " + getName() + " must be array.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (!arguments[1]->isInteger())
+    if (!isInteger(arguments[1]))
         throw Exception("Second argument for function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return array_type->getNestedType();
@@ -2342,7 +2342,7 @@ DataTypePtr FunctionRange::getReturnTypeImpl(const DataTypes & arguments) const
 {
     const DataTypePtr & arg = arguments.front();
 
-    if (!arg->isUnsignedInteger())
+    if (!isUnsignedInteger(arg))
         throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -2973,7 +2973,7 @@ DataTypePtr FunctionArraySlice::getReturnTypeImpl(const DataTypes & arguments) c
 
     for (size_t i = 1; i < number_of_arguments; ++i)
     {
-        if (!removeNullable(arguments[i])->isInteger() && !arguments[i]->onlyNull())
+        if (!isInteger(removeNullable(arguments[i])) && !arguments[i]->onlyNull())
             throw Exception(
                     "Argument " + toString(i) + " for function " + getName() + " must be integer but it has type "
                     + arguments[i]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -3412,9 +3412,9 @@ Columns FunctionArrayIntersect::castColumns(
     auto & type_nested = type_array->getNestedType();
     auto type_not_nullable_nested = removeNullable(type_nested);
 
-    const bool is_numeric_or_string = type_not_nullable_nested->isNumber()
-                                      || type_not_nullable_nested->isDateOrDateTime()
-                                      || type_not_nullable_nested->isStringOrFixedString();
+    const bool is_numeric_or_string = isNumber(type_not_nullable_nested)
+                                      || isDateOrDateTime(type_not_nullable_nested)
+                                      || isStringOrFixedString(type_not_nullable_nested);
 
     DataTypePtr nullable_return_type;
 
@@ -3548,14 +3548,15 @@ void FunctionArrayIntersect::executeImpl(Block & block, const ColumnNumbers & ar
     if (!result_column)
     {
         auto column = not_nullable_nested_return_type->createColumn();
+        WhichDataType which(not_nullable_nested_return_type);
 
-        if (checkDataType<DataTypeDate>(not_nullable_nested_return_type.get()))
+        if (which.isDate())
             result_column = execute<DateMap, ColumnVector<DataTypeDate::FieldType>, true>(arrays, std::move(column));
-        else if (checkDataType<DataTypeDateTime>(not_nullable_nested_return_type.get()))
+        else if (which.isDateTime())
             result_column = execute<DateTimeMap, ColumnVector<DataTypeDateTime::FieldType>, true>(arrays, std::move(column));
-        else if(not_nullable_nested_return_type->isString())
+        else if(which.isString())
             result_column = execute<StringMap, ColumnString, false>(arrays, std::move(column));
-        else if(not_nullable_nested_return_type->isFixedString())
+        else if(which.isFixedString())
             result_column = execute<StringMap, ColumnFixedString, false>(arrays, std::move(column));
         else
         {
@@ -3706,10 +3707,10 @@ DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) 
         throw Exception("First argument for function " + getName() + " must be an array but it has type "
                         + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (checkDataType<DataTypeNothing>(array_type->getNestedType().get()))
+    if (WhichDataType(array_type->getNestedType()).isNothing())
         throw Exception("Function " + getName() + " cannot resize " + array_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    if (!removeNullable(arguments[1])->isInteger() && !arguments[1]->onlyNull())
+    if (!isInteger(removeNullable(arguments[1])) && !arguments[1]->onlyNull())
         throw Exception(
                 "Argument " + toString(1) + " for function " + getName() + " must be integer but it has type "
                 + arguments[1]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);

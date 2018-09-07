@@ -150,12 +150,12 @@ public:
                             ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeUInt8>(arguments[1].get()))
+        if (!WhichDataType(arguments[1]).isUInt8())
             throw Exception("Illegal type " + arguments[1]->getName() +
                             " of argument 2 of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeUInt8>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt8())
             throw Exception("Illegal type " + arguments[2]->getName() +
                             " of argument 3 of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -266,7 +266,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -519,7 +519,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt32>(arguments[0].get()))
+        if (!WhichDataType(arguments[0]).isUInt32())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -579,7 +579,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -714,7 +714,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt64>(arguments[0].get()))
+        if (!WhichDataType(arguments[0]).isUInt64())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -843,7 +843,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1006,7 +1006,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// String or FixedString(36)
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
         {
             const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != uuid_text_length)
@@ -1151,13 +1151,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString()
-            && !arguments[0]->isFixedString()
-            && !arguments[0]->isDateOrDateTime()
-            && !checkDataType<DataTypeUInt8>(arguments[0].get())
-            && !checkDataType<DataTypeUInt16>(arguments[0].get())
-            && !checkDataType<DataTypeUInt32>(arguments[0].get())
-            && !checkDataType<DataTypeUInt64>(arguments[0].get()))
+        WhichDataType which(arguments[0]);
+
+        if (!which.isStringOrFixedString()
+            && !which.isDateOrDateTime()
+            && !which.isUInt())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1370,7 +1368,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1460,7 +1458,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isInteger())
+        if (!isInteger(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1543,7 +1541,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

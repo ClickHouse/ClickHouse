@@ -550,8 +550,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isStringOrFixedString()
-            && !checkDataType<DataTypeArray>(arguments[0].get()))
+        if (!isStringOrFixedString(arguments[0])
+            && !isArray(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -638,8 +638,8 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isStringOrFixedString()
-            && !checkDataType<DataTypeArray>(arguments[0].get()))
+        if (!isStringOrFixedString(arguments[0])
+            && !isArray(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -710,7 +710,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(arguments[0].get()))
+        if (!is_injective && !arguments.empty() && isArray(arguments[0]))
             return FunctionArrayConcat(context).getReturnTypeImpl(arguments);
 
         if (arguments.size() < 2)
@@ -721,7 +721,7 @@ public:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!arg->isStringOrFixedString())
+            if (!isStringOrFixedString(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
@@ -731,7 +731,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (!is_injective && !arguments.empty() && checkDataType<DataTypeArray>(block.getByPosition(arguments[0]).type.get()))
+        if (!is_injective && !arguments.empty() && isArray(block.getByPosition(arguments[0]).type))
             return FunctionArrayConcat(context).executeImpl(block, arguments, result, input_rows_count);
 
         if (arguments.size() == 2)
@@ -814,16 +814,16 @@ public:
                 + toString(number_of_arguments) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[0]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumber())
+        if (!isNumber(arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName()
                     + " of second argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (number_of_arguments == 3 && !arguments[2]->isNumber())
+        if (number_of_arguments == 3 && !isNumber(arguments[2]))
             throw Exception("Illegal type " + arguments[2]->getName()
                     + " of second argument of function "
                     + getName(),
@@ -947,12 +947,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isNumber() || !arguments[2]->isNumber())
-            throw Exception("Illegal type " + (arguments[1]->isNumber() ? arguments[2]->getName() : arguments[1]->getName())
+        if (!isNumber(arguments[1]) || !isNumber(arguments[2]))
+            throw Exception("Illegal type " + (isNumber(arguments[1]) ? arguments[2]->getName() : arguments[1]->getName())
                     + " of argument of function "
                     + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1022,10 +1022,10 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!arguments[1]->isString())
+        if (!isString(arguments[1]))
             throw Exception{"Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeString>();
@@ -1127,10 +1127,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<UInt8>>();

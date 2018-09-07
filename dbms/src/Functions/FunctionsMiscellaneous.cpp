@@ -262,9 +262,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (checkDataType<DataTypeEnum8>(arguments[0].get()))
+        WhichDataType which(arguments[0]);
+
+        if (which.isEnum8())
             return std::make_shared<DataTypeUInt8>();
-        else if (checkDataType<DataTypeEnum16>(arguments[0].get()))
+        else if (which.isEnum16())
             return std::make_shared<DataTypeUInt16>();
 
         throw Exception("The argument for function " + getName() + " must be Enum", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -608,11 +610,10 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeFloat64>(arguments[0].get()) && !checkDataType<DataTypeFloat32>(arguments[0].get())
-            && !checkDataType<DataTypeUInt64>(arguments[0].get())
-            && !checkDataType<DataTypeUInt32>(arguments[0].get())
-            && !checkDataType<DataTypeUInt16>(arguments[0].get())
-            && !checkDataType<DataTypeUInt8>(arguments[0].get()))
+        WhichDataType which(arguments[0]);
+
+        if (!which.isFloat()
+            && !which.isNativeUInt())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected Float64",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1016,8 +1017,8 @@ public:
                     + ".",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[0]->isNumber() || !arguments[1]->isNumber() || !arguments[2]->isNumber()
-            || (arguments.size() == 4 && !arguments[3]->isNumber()))
+        if (!isNumber(arguments[0]) || !isNumber(arguments[1]) || !isNumber(arguments[2])
+            || (arguments.size() == 4 && !isNumber(arguments[3])))
             throw Exception("All arguments for function " + getName() + " must be numeric.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -1144,7 +1145,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments.front()->isNumber())
+        if (!isNumber(arguments.front()))
             throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
@@ -1511,29 +1512,31 @@ private:
     template <typename F>
     void dispatchForSourceType(const IDataType & src_type, F && f) const
     {
-        if (checkDataType<DataTypeUInt8>(&src_type))
+        WhichDataType which(src_type);
+
+        if (which.isUInt8())
             f(UInt8());
-        else if (checkDataType<DataTypeUInt16>(&src_type))
+        else if (which.isUInt16())
             f(UInt16());
-        else if (checkDataType<DataTypeUInt32>(&src_type))
+        else if (which.isUInt32())
             f(UInt32());
-        else if (checkDataType<DataTypeUInt64>(&src_type))
+        else if (which.isUInt64())
             f(UInt64());
-        else if (checkDataType<DataTypeInt8>(&src_type))
+        else if (which.isInt8())
             f(Int8());
-        else if (checkDataType<DataTypeInt16>(&src_type))
+        else if (which.isInt16())
             f(Int16());
-        else if (checkDataType<DataTypeInt32>(&src_type))
+        else if (which.isInt32())
             f(Int32());
-        else if (checkDataType<DataTypeInt64>(&src_type))
+        else if (which.isInt64())
             f(Int64());
-        else if (checkDataType<DataTypeFloat32>(&src_type))
+        else if (which.isFloat32())
             f(Float32());
-        else if (checkDataType<DataTypeFloat64>(&src_type))
+        else if (which.isFloat64())
             f(Float64());
-        else if (checkDataType<DataTypeDate>(&src_type))
+        else if (which.isDate())
             f(DataTypeDate::FieldType());
-        else if (checkDataType<DataTypeDateTime>(&src_type))
+        else if (which.isDateTime())
             f(DataTypeDateTime::FieldType());
         else
             throw Exception("Argument for function " + getName() + " must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -1822,7 +1825,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments.front()->isNumber())
+        if (!isNumber(arguments.front()))
             throw Exception{"Argument for function " + getName() + " must be number", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeUInt8>();
