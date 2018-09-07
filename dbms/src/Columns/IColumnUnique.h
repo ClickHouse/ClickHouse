@@ -1,6 +1,7 @@
 #pragma once
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
+#include <Common/UInt128.h>
 
 namespace DB
 {
@@ -52,6 +53,8 @@ public:
     virtual bool canContainNulls() const = 0;
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
+
+    virtual UInt128 getHash() const = 0;
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
 

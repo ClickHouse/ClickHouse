@@ -13,6 +13,7 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 #include <common/ThreadPool.h>
+#include <Common/UInt128.h>
 
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/SizeLimits.h>
@@ -344,7 +345,9 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             const UInt64 * saved_hash = nullptr;
             PaddedPODArray<AggregateDataPtr> aggregate_data;
             Arena * pool = nullptr;
-            ColumnPtr dict = nullptr;
+            const IColumn * dict = nullptr;
+            ColumnPtr column_unique_holder;
+            UInt128 dict_hash;
         };
 
         void init(ColumnRawPtrs &)
@@ -363,10 +366,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 cache_ptr = std::make_shared<Cache>();
             auto cache = static_cast<Cache *>(cache_ptr.get());
 
-            ColumnPtr dict = column->getDictionary().getNestedColumn();
-            key = {dict.get()};
+            auto * dict = column->getDictionary().getNestedColumn().get();
+            key = {dict};
+            UInt128 dict_hash = column->getDictionary().getHash();
 
-            bool dict_in_cache = cache->dict && dict.get() == cache->dict.get();
+            // bool dict_in_cache = cache->dict && dict == cache->dict;
+            bool dict_in_cache = cache->dict && dict->size() == cache->dict->size() && dict_hash == cache->dict_hash;
             bool is_shared_dict = column->isSharedDictionary();
 
             saved_hash = cache->saved_hash;
@@ -395,6 +400,8 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
                 {
                     cache->dict = dict;
                     cache->saved_hash = saved_hash;
+                    cache->dict_hash = dict_hash;
+                    cache->column_unique_holder = column->getDictionaryPtr();
                 }
             }
 
