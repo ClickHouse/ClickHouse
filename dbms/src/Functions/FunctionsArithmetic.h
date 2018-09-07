@@ -1135,13 +1135,12 @@ class FunctionBinaryArithmetic : public IFunction
     {
         if constexpr (!std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>)
             return false;
-        auto is_uint_type = [](const DataTypePtr & type) 
-        {
-            return checkDataType<DataTypeUInt8>(type.get()) || checkDataType<DataTypeUInt16>(type.get())
-                || checkDataType<DataTypeUInt32>(type.get()) || checkDataType<DataTypeUInt64>(type.get());
-        };
-        return ((checkDataType<DataTypeAggregateFunction>(type0.get()) && is_uint_type(type1))
-            || (is_uint_type(type0) && checkDataType<DataTypeAggregateFunction>(type1.get())));
+
+        WhichDataType which0(type0);
+        WhichDataType which1(type1);
+
+        return (which0.isAggregateFunction() && which1.isNativeUInt())
+            || (which0.isNativeUInt() && which1.isAggregateFunction());
     }
 
     bool isAggregateAddition(const DataTypePtr & type0, const DataTypePtr & type1) const
