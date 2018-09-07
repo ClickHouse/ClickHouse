@@ -1,6 +1,6 @@
 <a name="formats"></a>
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # فرمت های Input و Output
 
@@ -49,7 +49,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits
        GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 جایی که `schema.capnp` شبیه این است:
 
@@ -62,7 +62,7 @@ struct Message {
 }
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [ format_schema_path](../operations/server_settings/settings.md#server_settings-format_schema_path) قرار گرفته اند.
 
@@ -80,7 +80,7 @@ Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 &ast;به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format_csv_delimiter](/operations/settings/settings/#format_csv_delimiter) را ببینید.
 
@@ -166,7 +166,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 JSON با جاوااسکریپت سازگار است. برای اطمینان از این، بعضی از کاراکتر ها ecape های اضافه دارند: اسلش `/` به صورت `\/` escape می شود؛ line break جایگزین یعنی `U+2028` و `U+2029` که باعث break در بعضی از مروگرها می شود، به شکل `\uXXXX` escape می شوند. کاراکتر های کنترلی ASCII هم escape می شوند: backspace، form feed، line feed، carriage return، و horizontal tab به ترتیب با `\b`، `\f`، `\n`، `\r`، `\t` جایگزین می شوند. همچنین بایت های باقی مانده در محدوده 00 تا 1F با استفاده از `\uXXXX` جایگزین می شوند. کاراکتر های بی اعتبار UTF-8 با � جایگزین می شوند، پس خروجی JSON شامل موارد معتبر UTF-8 می باشد. برای سازگاری با جاوااسکریپت، اعداد Int64 و Uint64 به صورت پیش فرض، با استفاده از دابل کوتیشن enclose می شوند. برای حذف کوتیشن، شما باید پارامتر output_format_json_quote_64bit_integers v رو برابر با 0 قرار دهید.
 
@@ -225,7 +225,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 }
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 این فرمت فقط مناسب خروجی query های می باشد، به این معنی که برای عملیات پارس کردن (دریافت داده برای insert در جدول) نیست. همچنین فرمت JSONEachRow را ببینید.
 
@@ -248,7 +248,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 {"SearchPhrase":"baku","count()":"1000"}
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 بر خلاف فرمت JSON، هیچ جایگزینی برای کاراکتر های بی اعتبار UTF-8 وجود ندارد. هر مجموعه ای از بایت های می تواند داخل سطر در خروجی باشند. پس داده ها بدون از دست دادن هیچ اطلاعاتی فرمت می شوند. مقادیر شبیه به JSON، escape می شوند.
 
@@ -299,7 +299,7 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 ## PrettyCompact
 
@@ -321,7 +321,7 @@ Extremes:
 watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 شما می توانید برای نمایش در مرورگر از interface HTTP استفاده کنید.
 
@@ -370,7 +370,7 @@ Hello\
 world
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 نوع دوم به دلیل پشتیبانی MySQL در هنگام نوشتن دامپ به صورت tab-separate، پشتیبانی می شود.
 
@@ -405,7 +405,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-23      1406958
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 این فرمت نیز تحت نام `TSV` موجود است.
 
@@ -448,7 +448,7 @@ SearchPhrase=curtain design        count()=1064
 SearchPhrase=baku       count()=1000
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 وقتی تعداد زیادی از ستون ها وجود دارد، این فرمت بی فایده است، و در حالت کلی دلیلی بر استفاده از این فرمت در این مواقع وجود ندارد. این فرمت در بعضی از دپارتمان های Yandex استفاده می شد.
 
@@ -489,7 +489,7 @@ test: string with 'quotes' and   with some special
  characters
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 در مقایسه با فرمت Vertical:
 
@@ -503,7 +503,7 @@ test: string with \'quotes\' and \t with some special \n characters
 ```
 ## XML
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 فرمت XML فقط برای خروجی مناسب است، نه برای پارس کردن. مثال:
 
@@ -571,7 +571,7 @@ test: string with \'quotes\' and \t with some special \n characters
 </result>
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 اگر نام فیلد، فرمت قابل قبولی نداشته باشد، اسم 'field' به عنوان نام عنصر استفاده می شود. به طور کلی، ساختار XML مشابه ساختار JSON می باشد. فقط در JSON، موارد بی اعتبار UTF-8 تبدیل به کاراکتر � می شوند که منجر به خروجی معتبر UTF-8 می شود.
 

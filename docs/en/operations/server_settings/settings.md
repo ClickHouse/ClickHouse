@@ -22,8 +22,8 @@ Default value: 3600.
 
 Data compression settings.
 
-!!! Important
-Don't use it if you have just started using ClickHouse.
+!!! warning
+    Don't use it if you have just started using ClickHouse.
 
 The configuration looks like this:
 
@@ -560,8 +560,8 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! Note:
-The end slash is mandatory.
+!!! note
+    The trailing slash is mandatory.
 
 **Example**
 
@@ -647,8 +647,8 @@ Port for communicating with clients over the TCP protocol.
 
 Path to temporary data for processing large queries.
 
-!!! Note:
-The end slash is mandatory.
+!!! note
+    The trailing slash is mandatory.
 
 **Example**
 

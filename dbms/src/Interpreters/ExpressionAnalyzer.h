@@ -77,9 +77,10 @@ struct ScopeStack
     using Levels = std::vector<Level>;
 
     Levels stack;
-    const Settings & settings;
 
-    ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
+    const Context & context;
+
+    ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -157,9 +158,10 @@ public:
     void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
-    /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.
+    /// If add_aliases, only the calculated values in the desired order and add aliases.
+    ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ExpressionActionsPtr getActions(bool project_result);
+    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
@@ -187,7 +189,7 @@ private:
     ASTPtr query;
     ASTSelectQuery * select_query;
     const Context & context;
-    Settings settings;
+    const Settings settings;
     size_t subquery_depth;
 
     /** Original columns.

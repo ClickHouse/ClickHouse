@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # کلاینت Command-line
 
@@ -15,7 +15,7 @@ Connected to ClickHouse server version 0.0.26176.
 :)
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 کلاینت از آپشن های command-line و فایل های کانفیگ پشتیبانی می کند. برای اطلاعات بیشتر بخش "[پیکربندی](#interfaces_cli_configuration)" را مشاهده کنید.
 
@@ -37,7 +37,7 @@ _EOF
 
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 در حالت Batch، فرمت داده ها به صورت پیش فرض به صورت TabSeparated می باشد. شما میتوانید فرمت داده ها رو در هنگام اجرای query و با استفاده از شرط FORMAT مشخص کنید.
 

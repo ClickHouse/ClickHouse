@@ -425,6 +425,7 @@ void StorageKafka::pushConsumer(StorageKafka::ConsumerPtr c)
 void StorageKafka::streamThread()
 {
     setThreadName("KafkaStreamThr");
+    CurrentThread::initializeQuery();
 
     while (!stream_cancelled)
     {

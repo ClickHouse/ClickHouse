@@ -244,8 +244,8 @@ void ComplexKeyHashedDictionary::blockToAttributes(const Block & block)
 
         for (const auto attribute_idx : ext::range(0, attributes_size))
         {
-            const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
-            auto &attribute = attributes[attribute_idx];
+            const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+            auto & attribute = attributes[attribute_idx];
             const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
             if (!inserted)
                 should_rollback = true;

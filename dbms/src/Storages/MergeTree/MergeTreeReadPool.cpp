@@ -196,7 +196,10 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
         if (prewhere_info)
         {
             /// collect columns required for PREWHERE evaluation
-            required_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+            if (prewhere_info->alias_actions)
+                required_pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+            else
+                required_pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
 
             /// there must be at least one column required for PREWHERE
             if (required_pre_column_names.empty())

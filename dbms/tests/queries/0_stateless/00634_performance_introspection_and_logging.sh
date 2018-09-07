@@ -101,35 +101,5 @@ WHERE
     NOT (PVq <= PVt AND PVt <= 1.1 * PVq)
 "
 
-
-# Check that logs from remote servers are passed from client
-
-# SELECT
-> "$server_logs_file"
-$CLICKHOUSE_CLIENT $settings -q "SELECT 1 FROM system.one FORMAT Null"
-lines_one_server=`cat "$server_logs_file" | wc -l`
-
-> "$server_logs_file"
-$CLICKHOUSE_CLIENT $settings -q "SELECT 1 FROM remote('127.0.0.2,127.0.0.3', system, one) FORMAT Null"
-lines_two_servers=`cat "$server_logs_file" | wc -l`
-
-(( $lines_two_servers >= 2 * $lines_one_server )) || echo "Fail: $lines_two_servers $lines_one_server"
-
-# INSERT
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS test.null"
-$CLICKHOUSE_CLIENT $settings -q "CREATE TABLE test.null (i Int8) ENGINE = Null"
-
-> "$server_logs_file"
-$CLICKHOUSE_CLIENT $settings -q "INSERT INTO test.null VALUES (0)"
-lines_one_server=`cat "$server_logs_file" | wc -l`
-
-> "$server_logs_file"
-$CLICKHOUSE_CLIENT $settings -q "INSERT INTO TABLE FUNCTION remote('127.0.0.2', 'test', 'null') VALUES (0)"
-lines_two_servers=`cat "$server_logs_file" | wc -l`
-
-$CLICKHOUSE_CLIENT $settings -q "DROP TABLE IF EXISTS test.null"
-(( $lines_two_servers > $lines_one_server )) || echo "Fail: $lines_two_servers $lines_one_server"
-
-
 # Clean
 rm "$server_logs_file"
