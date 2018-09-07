@@ -82,12 +82,12 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[1].get()) &&
-            !checkDataType<DataTypeTuple>(arguments[1].get()))
+        if (!WhichDataType(arguments[1]).isUInt64() &&
+            !isTuple(arguments[1]))
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -230,27 +230,27 @@ private:
             throw Exception{"Number of arguments for function " + getName() + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be 3 or 4.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
         {
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!arguments[1]->isString())
+        if (!isString(arguments[1]))
         {
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
-            !checkDataType<DataTypeTuple>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt64() &&
+            !isTuple(arguments[2]))
         {
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
         /// This is for the case of range dictionaries.
-        if (arguments.size() == 4 && !checkDataType<DataTypeDate>(arguments[3].get()))
+        if (arguments.size() == 4 && !WhichDataType(arguments[3]).isDate())
         {
             throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
                 + ", must be Date.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -467,22 +467,22 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() +
                 ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!arguments[1]->isString())
+        if (!isString(arguments[1]))
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() +
                 ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
-            !checkDataType<DataTypeTuple>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt64() &&
+            !isTuple(arguments[2]))
         {
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 
-        if (!arguments[3]->isString())
+        if (!isString(arguments[3]))
             throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName() +
                 ", must be String.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -735,20 +735,20 @@ private:
         if (arguments.size() != 3 && arguments.size() != 4)
             throw Exception{"Function " + getName() + " takes 3 or 4 arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!arguments[1]->isString())
+        if (!isString(arguments[1]))
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
-            !checkDataType<DataTypeTuple>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt64() &&
+            !isTuple(arguments[2]))
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (arguments.size() == 4 && !checkDataType<DataTypeDate>(arguments[3].get()))
+        if (arguments.size() == 4 && !WhichDataType(arguments[3]).isDate())
             throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
                 + ", must be Date.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -1010,20 +1010,20 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!arguments[1]->isString())
+        if (!isString(arguments[1]))
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[2].get()) &&
-            !checkDataType<DataTypeTuple>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt64() &&
+            !isTuple(arguments[2]))
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataType>(arguments[3].get()))
+        if (!checkAndGetDataType<DataType>(arguments[3].get()))
             throw Exception{"Illegal type " + arguments[3]->getName() + " of fourth argument of function " + getName()
                 + ", must be " + String(DataType{}.getFamilyName()) + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -1252,11 +1252,11 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[1].get()))
+        if (!WhichDataType(arguments[1]).isUInt64())
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -1408,15 +1408,15 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception{"Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                 + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[1].get()))
+        if (!WhichDataType(arguments[1]).isUInt64())
             throw Exception{"Illegal type " + arguments[1]->getName() + " of second argument of function " + getName()
                 + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!checkDataType<DataTypeUInt64>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt64())
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 

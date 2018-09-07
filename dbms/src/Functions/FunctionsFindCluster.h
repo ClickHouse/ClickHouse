@@ -116,7 +116,7 @@ public:
 
         const auto type_x = arguments[0];
 
-        if (!type_x->isNumber())
+        if (!isNumber(type_x))
             throw Exception{"Unsupported type " + type_x->getName() + " of first argument of function " + getName() + " must be a numeric type",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
