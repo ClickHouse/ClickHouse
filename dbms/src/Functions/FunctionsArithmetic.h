@@ -1183,7 +1183,7 @@ class FunctionBinaryArithmetic : public IFunction
         auto & vec_to = column_to->getData();
         auto & vec_from = column_from->getData();
 
-        UInt64 m = block.getByPosition(new_arguments[1]).column->getUInt(0);
+        UInt64 m = typeid_cast<const ColumnConst *>(block.getByPosition(new_arguments[1]).column.get())->getValue<UInt64>();
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
