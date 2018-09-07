@@ -8,6 +8,8 @@ add_library(clickhouse-compiler-lib
 
 target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions -g0)
 
+string(REPLACE "${INCLUDE_DEBUG_HELPERS}" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS}) # cant compile with -fno-rtti
+
 llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 
 message(STATUS "Using LLVM ${LLVM_VERSION}: ${LLVM_INCLUDE_DIRS} : ${REQUIRED_LLVM_LIBRARIES}")
