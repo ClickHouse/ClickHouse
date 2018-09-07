@@ -42,8 +42,8 @@ MergeTreeThreadBlockInputStream::MergeTreeThreadBlockInputStream(
 Block MergeTreeThreadBlockInputStream::getHeader() const
 {
     auto res = pool->getHeader();
-    injectVirtualColumns(res);
     executePrewhereActions(res, prewhere_info);
+    injectVirtualColumns(res);
     return res;
 }
 

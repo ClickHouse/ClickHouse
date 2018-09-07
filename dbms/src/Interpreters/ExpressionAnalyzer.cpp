@@ -2668,12 +2668,16 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
-bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types)
+bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types, const ASTPtr & sampling_expression)
 {
     assertSelect();
 
     if (!select_query->prewhere_expression)
         return false;
+
+    Names required_sample_columns;
+    if (sampling_expression)
+        required_sample_columns = ExpressionAnalyzer(sampling_expression, context, nullptr, source_columns).getRequiredSourceColumns();
 
     initChain(chain, source_columns);
     auto & step = chain.getLastStep();
@@ -2681,6 +2685,15 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
     String prewhere_column_name = select_query->prewhere_expression->getColumnName();
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
+
+    /// Add required columns for sample expression to required output in order not to remove them after
+    /// prewhere execution because sampling is executed after prewhere.
+    /// TODO: add sampling execution to common chain.
+    for (const auto & column : required_sample_columns)
+    {
+        step.required_output.push_back(column);
+        step.can_remove_required_output.push_back(true);
+    }
 
     {
         /// Remove unused source_columns from prewhere actions.
