@@ -6,10 +6,9 @@ This query is exactly the same as `CREATE`, but
 
 - instead of the word `CREATE` it uses the word `ATTACH`.
 - The query doesn't create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
+After executing an ATTACH query, the server will know about the existence of the table.
 
-After executing an `ATTACH`  query, the server will know about the existence of the table.
-
-If the table was previously detached (`DETACH`), meaning that its structure is known, you can use shorthand without defining the structure.
+If the table was previously detached (``DETACH``), meaning that its structure is known, you can use shorthand without defining the structure.
 
 ```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
@@ -176,8 +175,8 @@ Supported only by `*MergeTree` engines, in which this query initializes a non-sc
 If you specify a `PARTITION`, only the specified partition will be optimized.
 If you specify `FINAL`, optimization will be performed even when all the data is already in one part.
 
-!!! Important:
-The OPTIMIZE query can't fix the cause of the "Too many parts" error.
+!!! warning
+    OPTIMIZE can't fix the "Too many parts" error.
 
 ## KILL QUERY
 
@@ -194,7 +193,7 @@ The queries to terminate are selected from the system.processes table using the 
 Examples:
 
 ```sql
--- Terminates all queries with the specified query_id:
+-- Forcibly terminates all queries with the specified query_id:
 KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 
 -- Synchronously terminates all queries run by 'username':

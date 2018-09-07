@@ -1,3 +1,5 @@
+#include <unordered_set>
+
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
@@ -11,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 
 
 namespace DB
@@ -185,22 +188,19 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// Non-recursive rules
 
+    std::unordered_set<TypeIndex> type_ids;
+    for (const auto & type : types)
+        type_ids.insert(type->getTypeId());
+
     /// For String and FixedString, or for different FixedStrings, the common type is String.
     /// No other types are compatible with Strings. TODO Enums?
     {
-        bool have_string = false;
-        bool all_strings = true;
+        UInt32 have_string = type_ids.count(TypeIndex::String);
+        UInt32 have_fixed_string = type_ids.count(TypeIndex::FixedString);
 
-        for (const auto & type : types)
+        if (have_string || have_fixed_string)
         {
-            if (type->isStringOrFixedString())
-                have_string = true;
-            else
-                all_strings = false;
-        }
-
-        if (have_string)
-        {
+            bool all_strings = type_ids.size() == (have_string + have_fixed_string);
             if (!all_strings)
                 throw Exception(getExceptionMessagePrefix(types) + " because some of them are String/FixedString and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
@@ -210,23 +210,45 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
     /// For Date and DateTime, the common type is DateTime. No other types are compatible.
     {
-        bool have_date_or_datetime = false;
-        bool all_date_or_datetime = true;
+        UInt32 have_date = type_ids.count(TypeIndex::Date);
+        UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
 
-        for (const auto & type : types)
+        if (have_date || have_datetime)
         {
-            if (type->isDateOrDateTime())
-                have_date_or_datetime = true;
-            else
-                all_date_or_datetime = false;
-        }
-
-        if (have_date_or_datetime)
-        {
+            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime);
             if (!all_date_or_datetime)
                 throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime and some of them are not", ErrorCodes::NO_COMMON_TYPE);
 
             return std::make_shared<DataTypeDateTime>();
+        }
+    }
+
+    /// Decimals
+    {
+        UInt32 have_decimal32 = type_ids.count(TypeIndex::Decimal32);
+        UInt32 have_decimal64 = type_ids.count(TypeIndex::Decimal64);
+        UInt32 have_decimal128 = type_ids.count(TypeIndex::Decimal128);
+
+        if (have_decimal32 || have_decimal64 || have_decimal128)
+        {
+            bool all_are_decimals = type_ids.size() == (have_decimal32 + have_decimal64 + have_decimal128);
+            if (!all_are_decimals)
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Decimals and some are not",
+                                ErrorCodes::NO_COMMON_TYPE);
+
+            UInt32 max_scale = 0;
+            for (const auto & type : types)
+            {
+                UInt32 scale = getDecimalScale(*type);
+                if (scale > max_scale)
+                    max_scale = scale;
+            }
+
+            if (have_decimal128)
+                return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), max_scale);
+            if (have_decimal64)
+                return std::make_shared<DataTypeDecimal<Decimal64>>(DataTypeDecimal<Decimal64>::maxPrecision(), max_scale);
+            return std::make_shared<DataTypeDecimal<Decimal32>>(DataTypeDecimal<Decimal32>::maxPrecision(), max_scale);
         }
     }
 

@@ -18,4 +18,4 @@ if (NOT USE_INTERNAL_POCO_LIBRARY)
     target_include_directories (pocoext SYSTEM BEFORE PUBLIC ${Poco_INCLUDE_DIRS})
 endif ()
 
-target_link_libraries(pocoext ${Poco_Util_LIBRARY} ${Poco_Net_LIBRARY} ${Poco_XML_LIBRARY} ${Poco_Foundation_LIBRARY})
+target_link_libraries(pocoext ${Poco_Foundation_LIBRARY})
