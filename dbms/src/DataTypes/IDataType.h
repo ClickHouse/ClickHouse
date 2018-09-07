@@ -46,7 +46,7 @@ public:
     virtual const char * getFamilyName() const = 0;
 
     /// Unique type number or zero
-    virtual TypeIndex getTypeId() const { return TypeIndex::None; }
+    virtual TypeIndex getTypeId() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -342,17 +342,6 @@ public:
       */
     virtual bool canBeUsedInBooleanContext() const { return false; }
 
-    /** Integers, floats, not Nullable. Not Enums. Not Date/DateTime.
-      */
-    virtual bool isNumber() const { return false; }
-
-    /** Integers. Not Nullable. Not Enums. Not Date/DateTime.
-      */
-    virtual bool isInteger() const { return false; }
-    virtual bool isUnsignedInteger() const { return false; }
-
-    virtual bool isDateOrDateTime() const { return false; }
-
     /** Numbers, Enums, Date, DateTime. Not nullable.
       */
     virtual bool isValueRepresentedByNumber() const { return false; }
@@ -376,12 +365,8 @@ public:
 
     virtual bool isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion() const
     {
-        return isValueRepresentedByNumber() || isFixedString();
+        return isValueRepresentedByNumber();
     }
-
-    virtual bool isString() const { return false; }
-    virtual bool isFixedString() const { return false; }
-    virtual bool isStringOrFixedString() const { return isString() || isFixedString(); }
 
     /** Example: numbers, Date, DateTime, FixedString, Enum... Nullable and Tuple of such types.
       * Counterexamples: String, Array.
@@ -400,8 +385,6 @@ public:
     /** Integers (not floats), Enum, String, FixedString.
       */
     virtual bool isCategorial() const { return false; }
-
-    virtual bool isEnum() const { return false; }
 
     virtual bool isNullable() const { return false; }
 
@@ -423,11 +406,20 @@ public:
 };
 
 
-struct DataTypeExtractor
+/// Some sugar to check data type of IDataType
+struct WhichDataType
 {
     TypeIndex idx;
 
-    DataTypeExtractor(const IDataType * data_type)
+    WhichDataType(const IDataType & data_type)
+        : idx(data_type.getTypeId())
+    {}
+
+    WhichDataType(const IDataType * data_type)
+        : idx(data_type->getTypeId())
+    {}
+
+    WhichDataType(const DataTypePtr & data_type)
         : idx(data_type->getTypeId())
     {}
 
@@ -437,6 +429,7 @@ struct DataTypeExtractor
     bool isUInt64() const { return idx == TypeIndex::UInt64; }
     bool isUInt128() const { return idx == TypeIndex::UInt128; }
     bool isUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64() || isUInt128(); }
+    bool isNativeUInt() const { return isUInt8() || isUInt16() || isUInt32() || isUInt64(); }
 
     bool isInt8() const { return idx == TypeIndex::Int8; }
     bool isInt16() const { return idx == TypeIndex::Int16; }
@@ -444,6 +437,7 @@ struct DataTypeExtractor
     bool isInt64() const { return idx == TypeIndex::Int64; }
     bool isInt128() const { return idx == TypeIndex::Int128; }
     bool isInt() const { return isInt8() || isInt16() || isInt32() || isInt64() || isInt128(); }
+    bool isNativeInt() const { return isInt8() || isInt16() || isInt32() || isInt64(); }
 
     bool isDecimal32() const { return idx == TypeIndex::Decimal32; }
     bool isDecimal64() const { return idx == TypeIndex::Decimal64; }
@@ -469,27 +463,69 @@ struct DataTypeExtractor
     bool isUUID() const { return idx == TypeIndex::UUID; }
     bool isArray() const { return idx == TypeIndex::Array; }
     bool isTuple() const { return idx == TypeIndex::Tuple; }
+    bool isSet() const { return idx == TypeIndex::Set; }
+    bool isInterval() const { return idx == TypeIndex::Interval; }
+
+    bool isNothing() const { return idx == TypeIndex::Nothing; }
+    bool isNullable() const { return idx == TypeIndex::Nullable; }
+    bool isFunction() const { return idx == TypeIndex::Function; }
+    bool isAggregateFunction() const { return idx == TypeIndex::AggregateFunction; }
 };
 
-/// IDataType helpers (alternative for IDataType virtual methods)
+/// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
-inline bool isEnum(const IDataType * data_type)
+inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
+inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
+inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }
+inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_type).isTuple(); }
+inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
+
+template <typename T>
+inline bool isUnsignedInteger(const T & data_type)
 {
-    return DataTypeExtractor(data_type).isEnum();
+    return WhichDataType(data_type).isUInt();
 }
 
-inline bool isDecimal(const IDataType * data_type)
+template <typename T>
+inline bool isInteger(const T & data_type)
 {
-    return DataTypeExtractor(data_type).isDecimal();
-}
-
-inline bool isNotDecimalButComparableToDecimal(const IDataType * data_type)
-{
-    DataTypeExtractor which(data_type);
+    WhichDataType which(data_type);
     return which.isInt() || which.isUInt();
 }
 
-inline bool isCompilableType(const IDataType * data_type)
+template <typename T>
+inline bool isNumber(const T & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isInt() || which.isUInt() || which.isFloat();
+}
+
+template <typename T>
+inline bool isString(const T & data_type)
+{
+    return WhichDataType(data_type).isString();
+}
+
+template <typename T>
+inline bool isFixedString(const T & data_type)
+{
+    return WhichDataType(data_type).isFixedString();
+}
+
+template <typename T>
+inline bool isStringOrFixedString(const T & data_type)
+{
+    return WhichDataType(data_type).isStringOrFixedString();
+}
+
+
+inline bool isNotDecimalButComparableToDecimal(const DataTypePtr & data_type)
+{
+    WhichDataType which(data_type);
+    return which.isInt() || which.isUInt();
+}
+
+inline bool isCompilableType(const DataTypePtr & data_type)
 {
     return data_type->isValueRepresentedByNumber() && !isDecimal(data_type);
 }

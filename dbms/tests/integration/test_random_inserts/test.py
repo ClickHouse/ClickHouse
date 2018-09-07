@@ -50,7 +50,7 @@ def test_random_inserts(started_cluster):
         bash_script = os.path.join(os.path.dirname(__file__), "test.sh")
         inserters = []
         for node in nodes:
-            cmd = ['/bin/bash', bash_script, node.ip_address, str(min_timestamp), str(max_timestamp)]
+            cmd = ['/bin/bash', bash_script, node.ip_address, str(min_timestamp), str(max_timestamp), str(cluster.get_client_cmd())]
             inserters.append(CommandRequest(cmd, timeout=DURATION_SECONDS * 2, stdin=''))
             print node.name, node.ip_address
 
@@ -60,7 +60,7 @@ def test_random_inserts(started_cluster):
     answer="{}\t{}\t{}\t{}\n".format(num_timestamps, num_timestamps, min_timestamp, max_timestamp)
 
     for node in nodes:
-        res = node.query("SELECT count(), uniqExact(i), min(i), max(i) FROM simple")
+        res = node.query_with_retry("SELECT count(), uniqExact(i), min(i), max(i) FROM simple", check_callback=lambda res: TSV(res) == TSV(answer))
         assert TSV(res) == TSV(answer), node.name + " : " + node.query("SELECT groupArray(_part), i, count() AS c FROM simple GROUP BY i ORDER BY c DESC LIMIT 1")
 
     node1.query("""DROP TABLE simple ON CLUSTER test_cluster""")

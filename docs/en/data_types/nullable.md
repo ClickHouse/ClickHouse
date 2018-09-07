@@ -52,4 +52,4 @@ FROM t_null
 └────────────┘
 
 2 rows in set. Elapsed: 0.144 sec.
-``
+```

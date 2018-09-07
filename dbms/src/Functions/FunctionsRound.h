@@ -578,7 +578,7 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (const auto & type : arguments)
-            if (!type->isNumber())
+            if (!isNumber(type))
                 throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
