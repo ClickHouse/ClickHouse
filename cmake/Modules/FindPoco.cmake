@@ -103,7 +103,7 @@ if(Poco_INSTALLED)
     set(Poco_INCLUDE_DIRS ${Poco_ROOT_DIR}/include/ CACHE PATH "The global include path for Poco")
 endif()
 
-# append the default minimum components to the list to find
+# append thea  default minimum components to the list to find
 list(APPEND components
     ${Poco_FIND_COMPONENTS}
     # default components:
@@ -124,8 +124,10 @@ foreach( component ${components} )
         endif ()
         if (${component} STREQUAL "NetSSL")
             set (component_alt "Net")
+            set (component_root "NetSSL_OpenSSL")
         else ()
-            set (component_alt ${component})
+            set (component_alt "${component}")
+            set (component_root "${component}")
         endif ()
         find_path(Poco_${component}_INCLUDE_DIR
             NAMES
@@ -137,7 +139,7 @@ foreach( component ${components} )
                 ${Poco_ROOT_DIR}
             PATH_SUFFIXES
                 include
-                ${component}/include
+                ${component_root}/include
         )
     endif()
     if(NOT Poco_${component}_INCLUDE_DIR)
