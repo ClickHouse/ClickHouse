@@ -42,9 +42,9 @@ DataTypeWithDictionary::DataTypeWithDictionary(DataTypePtr dictionary_type_)
     if (dictionary_type->isNullable())
         inner_type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
 
-    if (!inner_type->isStringOrFixedString()
-        && !inner_type->isDateOrDateTime()
-        && !inner_type->isNumber())
+    if (!isStringOrFixedString(inner_type)
+        && !isDateOrDateTime(inner_type)
+        && !isNumber(inner_type))
         throw Exception("DataTypeWithDictionary is supported only for numbers, strings, Date or DateTime, but got "
                         + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
@@ -769,15 +769,15 @@ MutableColumnUniquePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDat
     if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&keys_type))
         type = nullable_type->getNestedType().get();
 
-    if (type->isString())
+    if (isString(type))
         return creator((ColumnString *)(nullptr));
-    if (type->isFixedString())
+    if (isFixedString(type))
         return creator((ColumnFixedString *)(nullptr));
     if (typeid_cast<const DataTypeDate *>(type))
         return creator((ColumnVector<UInt16> *)(nullptr));
     if (typeid_cast<const DataTypeDateTime *>(type))
         return creator((ColumnVector<UInt32> *)(nullptr));
-    if (type->isNumber())
+    if (isNumber(type))
     {
         MutableColumnUniquePtr column;
         TypeListNumbers::forEach(CreateColumnVector(column, *type, creator));

@@ -205,7 +205,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
             nested_type = arg.get();
         }
 
-        if (!checkDataType<DataTypeUInt8>(nested_type))
+        if (!WhichDataType(nested_type).isUInt8())
             throw Exception{"Illegal type " + arg->getName() + " of argument (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};

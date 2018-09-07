@@ -106,7 +106,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isInteger())
+        if (!isInteger(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of the first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -115,7 +115,7 @@ public:
                     + ", got " + arguments[0]->getName(),
                 ErrorCodes::BAD_ARGUMENTS);
 
-        if (!arguments[1]->isInteger())
+        if (!isInteger(arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of the second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -178,21 +178,23 @@ private:
         const IDataType * hash_type = block.getByPosition(arguments[0]).type.get();
         auto res_col = ColumnVector<ResultType>::create();
 
-        if (checkDataType<DataTypeUInt8>(hash_type))
+        WhichDataType which(hash_type);
+
+        if (which.isUInt8())
             executeType<UInt8>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeUInt16>(hash_type))
+        else if (which.isUInt16())
             executeType<UInt16>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeUInt32>(hash_type))
+        else if (which.isUInt32())
             executeType<UInt32>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeUInt64>(hash_type))
+        else if (which.isUInt64())
             executeType<UInt64>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeInt8>(hash_type))
+        else if (which.isInt8())
             executeType<Int8>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeInt16>(hash_type))
+        else if (which.isInt16())
             executeType<Int16>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeInt32>(hash_type))
+        else if (which.isInt32())
             executeType<Int32>(hash_col, num_buckets, res_col.get());
-        else if (checkDataType<DataTypeInt64>(hash_type))
+        else if (which.isInt64())
             executeType<Int64>(hash_col, num_buckets, res_col.get());
         else
             throw Exception("Illegal type " + hash_type->getName() + " of the first argument of function " + getName(),
