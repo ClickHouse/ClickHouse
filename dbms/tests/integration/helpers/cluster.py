@@ -76,6 +76,12 @@ class ClickHouseCluster:
         self.is_up = False
 
 
+    def get_client_cmd(self):
+        cmd = self.client_bin_path
+        if p.basename(cmd) == 'clickhouse':
+            cmd += " client"
+        return cmd
+
     def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, hostname=None, env_variables={}, image="ubuntu:14.04"):
         """Add an instance to the cluster.
 
