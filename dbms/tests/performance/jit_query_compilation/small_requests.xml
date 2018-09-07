@@ -30,6 +30,8 @@
             x3 * 0xc4ceb9fe1a85ec53 AS x4,
             bitXor(x4, bitShiftRight(x4, 33)) AS x5
         SELECT x5, intHash64(number) FROM system.numbers LIMIT 10
+        SETTINGS
+            compile_expressions = 0
     </query>
     <query>
         WITH
@@ -41,7 +43,6 @@
             bitXor(x4, bitShiftRight(x4, 33)) AS x5
         SELECT x5, intHash64(number) FROM system.numbers LIMIT 10
         SETTINGS
-            compile = 1,
             compile_expressions = 1
     </query>
 </test>
