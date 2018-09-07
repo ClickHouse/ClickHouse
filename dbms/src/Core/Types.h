@@ -59,7 +59,7 @@ template <> struct TypeName<String>  { static const char * get() { return "Strin
 
 enum class TypeIndex
 {
-    None = 0,
+    Nothing = 0,
     UInt8,
     UInt16,
     UInt32,
@@ -84,6 +84,12 @@ enum class TypeIndex
     UUID,
     Array,
     Tuple,
+    Set,
+    Interval,
+    Nullable,
+    Function,
+    AggregateFunction,
+    LowCardinality,
 };
 
 template <typename T> struct TypeId;

@@ -133,7 +133,7 @@ public:
 
             for (auto j : ext::range(0, elements.size()))
             {
-                if (!elements[j]->isNumber())
+                if (!isNumber(elements[j]))
                 {
                     throw Exception(getMsgPrefix(i) + " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -162,7 +162,7 @@ public:
         const Columns & tuple_columns = tuple_col->getColumns();
         const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
 
-        bool use_float64 = checkDataType<DataTypeFloat64>(tuple_types[0].get()) || checkDataType<DataTypeFloat64>(tuple_types[1].get());
+        bool use_float64 = WhichDataType(tuple_types[0]).isFloat64() || WhichDataType(tuple_types[1]).isFloat64();
 
         auto & result_column = block.safeGetByPosition(result).column;
 

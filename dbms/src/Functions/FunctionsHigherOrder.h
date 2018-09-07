@@ -310,20 +310,15 @@ struct ArraySumImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
-            checkDataType<DataTypeUInt16>(&*expression_return) ||
-            checkDataType<DataTypeUInt32>(&*expression_return) ||
-            checkDataType<DataTypeUInt64>(&*expression_return))
+        WhichDataType which(expression_return);
+
+        if (which.isNativeUInt())
             return std::make_shared<DataTypeUInt64>();
 
-        if (checkDataType<DataTypeInt8>(&*expression_return) ||
-            checkDataType<DataTypeInt16>(&*expression_return) ||
-            checkDataType<DataTypeInt32>(&*expression_return) ||
-            checkDataType<DataTypeInt64>(&*expression_return))
+        if (which.isNativeInt())
             return std::make_shared<DataTypeInt64>();
 
-        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
-            checkDataType<DataTypeFloat64>(&*expression_return))
+        if (which.isFloat())
             return std::make_shared<DataTypeFloat64>();
 
         throw Exception("arraySum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -602,20 +597,15 @@ struct ArrayCumSumImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
-            checkDataType<DataTypeUInt16>(&*expression_return) ||
-            checkDataType<DataTypeUInt32>(&*expression_return) ||
-            checkDataType<DataTypeUInt64>(&*expression_return))
+        WhichDataType which(expression_return);
+
+        if (which.isNativeUInt())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 
-        if (checkDataType<DataTypeInt8>(&*expression_return) ||
-            checkDataType<DataTypeInt16>(&*expression_return) ||
-            checkDataType<DataTypeInt32>(&*expression_return) ||
-            checkDataType<DataTypeInt64>(&*expression_return))
+        if (which.isNativeInt())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
-        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
-            checkDataType<DataTypeFloat64>(&*expression_return))
+        if (which.isFloat())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
         throw Exception("arrayCumSum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -824,7 +814,7 @@ public:
 
             DataTypePtr nested_type = array_type->getNestedType();
 
-            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*nested_type))
+            if (Impl::needBoolean() && !WhichDataType(nested_type).isUInt8())
                 throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
                                 + arguments[0].type->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -845,7 +835,7 @@ public:
             /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
 
             DataTypePtr return_type = data_type_function->getReturnType();
-            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
+            if (Impl::needBoolean() && !WhichDataType(return_type).isUInt8())
                 throw Exception("Expression for function " + getName() + " must return UInt8, found "
                                 + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
