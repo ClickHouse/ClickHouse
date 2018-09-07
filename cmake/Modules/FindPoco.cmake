@@ -117,30 +117,35 @@ foreach( component ${components} )
 
     # include directory for the component
     if(NOT Poco_${component}_INCLUDE_DIR)
+        set (component_alt "${component}")
+        set (component_root "${component}")
         if (${component} STREQUAL "DataODBC")
-            set (component_in_data "ODBC")
-        else ()
-            set (component_in_data "")
+            set (component_top "Data")
+            set (component_in "ODBC")
+            set (component_root "Data/ODBC")
+        endif ()
+        if (${component} STREQUAL "SQLODBC")
+            set (component_top "SQL")
+            set (component_in "ODBC")
+            set (component_root "SQL/ODBC")
         endif ()
         if (${component} STREQUAL "NetSSL")
             set (component_alt "Net")
             set (component_root "NetSSL_OpenSSL")
-        else ()
-            set (component_alt "${component}")
-            set (component_root "${component}")
         endif ()
         find_path(Poco_${component}_INCLUDE_DIR
             NAMES
                 Poco/${component}.h     # e.g. Foundation.h
                 Poco/${component}/${component}.h # e.g. OSP/OSP.h Util/Util.h
                 Poco/${component_alt}/${component}.h # e.g. Net/NetSSL.h
-                Poco/Data/${component_in_data}/${component_in_data}.h # e.g. Data/ODBC/ODBC.h
+                Poco/${component_top}/${component_in}/${component_in}.h # e.g. Data/ODBC/ODBC.h
             HINTS
                 ${Poco_ROOT_DIR}
             PATH_SUFFIXES
                 include
                 ${component_root}/include
         )
+        # message(STATUS "poco include debug: {component}: ${Poco_${component}_INCLUDE_DIR}")
     endif()
     if(NOT Poco_${component}_INCLUDE_DIR)
         message(WARNING "Poco_${component}_INCLUDE_DIR NOT FOUND")
