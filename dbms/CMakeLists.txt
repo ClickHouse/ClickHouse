@@ -167,6 +167,7 @@ target_link_libraries (clickhouse_common_io
     ${ZSTD_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
+    ${Poco_Foundation_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
     ${ELF_LIBRARY}
