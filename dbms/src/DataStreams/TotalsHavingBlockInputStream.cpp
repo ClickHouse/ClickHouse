@@ -1,4 +1,5 @@
 #include <DataStreams/TotalsHavingBlockInputStream.h>
+#include <DataStreams/finalizeBlock.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
@@ -53,23 +54,6 @@ TotalsHavingBlockInputStream::TotalsHavingBlockInputStream(
 }
 
 
-static void finalize(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnWithTypeAndName & current = block.getByPosition(i);
-        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
-
-        if (unfinalized_type)
-        {
-            current.type = unfinalized_type->getReturnType();
-            if (current.column)
-                current.column = typeid_cast<const ColumnAggregateFunction &>(*current.column).convertToValues();
-        }
-    }
-}
-
-
 Block TotalsHavingBlockInputStream::getTotals()
 {
     if (!totals)
@@ -87,7 +71,7 @@ Block TotalsHavingBlockInputStream::getTotals()
         }
 
         totals = children.at(0)->getHeader().cloneWithColumns(std::move(current_totals));
-        finalize(totals);
+        finalizeBlock(totals);
     }
 
     if (totals && expression)
@@ -101,7 +85,7 @@ Block TotalsHavingBlockInputStream::getHeader() const
 {
     Block res = children.at(0)->getHeader();
     if (final)
-        finalize(res);
+        finalizeBlock(res);
     if (expression)
         expression->execute(res);
     return res;
@@ -129,7 +113,7 @@ Block TotalsHavingBlockInputStream::readImpl()
 
         finalized = block;
         if (final)
-            finalize(finalized);
+            finalizeBlock(finalized);
 
         total_keys += finalized.rows();
 
