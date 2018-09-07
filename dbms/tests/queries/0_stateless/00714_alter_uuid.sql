@@ -39,6 +39,8 @@ ENGINE = MergeTree
 PARTITION BY toDate(created_at)
 ORDER BY (created_at, id0, id1);
 
+SET send_logs_level = 'none';
+
 ALTER TABLE uuid MODIFY COLUMN id0 UUID; -- { serverError 44 }
 ALTER TABLE uuid MODIFY COLUMN id1 UUID; -- { serverError 44 }
 
