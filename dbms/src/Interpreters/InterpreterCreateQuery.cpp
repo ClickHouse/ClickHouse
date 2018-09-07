@@ -576,9 +576,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
-    }
 
-    res->startup();
+        /// We must call "startup" and "shutdown" while holding DDLGuard.
+        /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup
+        /// (in case when table was created and instantly dropped before started up)
+        ///
+        /// Method "startup" may create background tasks and method "shutdown" will wait for them.
+        /// But if "shutdown" is called before "startup", it will exit early, because there are no background tasks to wait.
+        /// Then background task is created by "startup" method. And when destructor of a table object is called, background task is still active,
+        /// and the task will use references to freed data.
+
+        res->startup();
+    }
 
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
