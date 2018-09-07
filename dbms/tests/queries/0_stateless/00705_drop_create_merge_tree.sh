@@ -16,6 +16,7 @@ function stress()
 export -f stress
 
 for thread in {1..5}; do
+    # Ten seconds are just barely enough to reproduce the issue in most of runs.
     timeout 10 bash -c stress &
 done
 
