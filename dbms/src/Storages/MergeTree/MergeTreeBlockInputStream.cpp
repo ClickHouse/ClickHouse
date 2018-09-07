@@ -77,8 +77,8 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         }
     }
 
-    injectVirtualColumns(header);
     executePrewhereActions(header, prewhere_info);
+    injectVirtualColumns(header);
 
     ordered_names = getHeader().getNames();
 }
