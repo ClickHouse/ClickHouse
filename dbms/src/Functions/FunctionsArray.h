@@ -733,6 +733,14 @@ struct ArrayIndexGenericNullImpl
     }
 };
 
+
+inline bool allowArrayIndex(const IDataType * data_type0, const IDataType * data_type1)
+{
+    return ((data_type0->isNumber() || isEnum(data_type0)) && data_type1->isNumber())
+        || data_type0->equals(*data_type1);
+}
+
+
 template <typename IndexConv, typename Name>
 class FunctionArrayIndex : public IFunction
 {
@@ -1010,9 +1018,7 @@ public:
             DataTypePtr observed_type0 = removeNullable(array_type->getNestedType());
             DataTypePtr observed_type1 = removeNullable(arguments[1]);
 
-            /// We also support arrays of Enum type (that are represented by number) to search numeric values.
-            if (!(observed_type0->isValueRepresentedByNumber() && observed_type1->isNumber())
-                && !observed_type0->equals(*observed_type1))
+            if (!allowArrayIndex(observed_type0.get(), observed_type1.get()))
                 throw Exception("Types of array and 2nd argument of function "
                     + getName() + " must be identical up to nullability or numeric types or Enum and numeric type. Passed: "
                     + arguments[0]->getName() + " and " + arguments[1]->getName() + ".",

@@ -69,7 +69,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         {
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            auto table_lock = database_and_table.second->lockForAlter(__PRETTY_FUNCTION__);
             /// Drop table from memory, don't touch data and metadata
             database_and_table.first->detachTable(database_and_table.second->getTableName());
         }
@@ -78,7 +78,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.second->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            auto table_lock = database_and_table.second->lockForAlter(__PRETTY_FUNCTION__);
             /// Drop table data, don't touch metadata
             database_and_table.second->truncate(query_ptr);
         }
@@ -88,7 +88,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            auto table_lock = database_and_table.second->lockForAlter(__PRETTY_FUNCTION__);
             /// Delete table metdata and table itself from memory
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             /// Delete table data
@@ -124,7 +124,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockDataForAlter(__PRETTY_FUNCTION__);
+                auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr);
             }
@@ -208,7 +208,7 @@ DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_
             throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
                             ErrorCodes::UNKNOWN_TABLE);
 
-        return std::make_pair<DatabasePtr, StoragePtr>(std::move(database), std::move(table));
+        return {std::move(database), std::move(table)};
     }
     return {};
 }

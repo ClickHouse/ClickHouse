@@ -1,6 +1,6 @@
 <a name="data_types"></a>
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # Data types
 

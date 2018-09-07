@@ -201,7 +201,16 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     }
 
     if (storage && source_columns.empty())
-        source_columns = storage->getColumns().getAllPhysical();
+    {
+        auto physical_columns = storage->getColumns().getAllPhysical();
+        if (source_columns.empty())
+            source_columns.swap(physical_columns);
+        else
+        {
+            source_columns.insert(source_columns.end(), physical_columns.begin(), physical_columns.end());
+            removeDuplicateColumns(source_columns);
+        }
+    }
     else
         removeDuplicateColumns(source_columns);
 
@@ -491,7 +500,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     if (select_query && (select_query->group_expression_list || select_query->having_expression))
         has_aggregation = true;
 
-    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
+    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(source_columns, context);
 
     if (select_query && select_query->array_join_expression_list())
     {
@@ -1539,7 +1548,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
                     temp_columns.insert(temp_columns.end(), array_join_columns.begin(), array_join_columns.end());
                     for (const auto & joined_column : analyzed_join.columns_added_by_join)
                         temp_columns.push_back(joined_column.name_and_type);
-                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, settings);
+                    ExpressionActionsPtr temp_actions = std::make_shared<ExpressionActions>(temp_columns, context);
                     getRootActions(func->arguments->children.at(0), true, false, temp_actions);
 
                     Block sample_block_with_calculated_columns = temp_actions->getSampleBlock();
@@ -1742,8 +1751,8 @@ static String getUniqueName(const Block & block, const String & prefix)
   * For example, in the expression "select arrayMap(x -> x + column1 * column2, array1)"
   *  calculation of the product must be done outside the lambda expression (it does not depend on x), and the calculation of the sum is inside (depends on x).
   */
-ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_)
-    : settings(settings_)
+ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Context & context_)
+    : context(context_)
 {
     stack.emplace_back();
     stack.back().actions = actions;
@@ -1776,7 +1785,7 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
             all_columns.push_back(col);
     }
 
-    stack.back().actions = std::make_shared<ExpressionActions>(all_columns, settings);
+    stack.back().actions = std::make_shared<ExpressionActions>(all_columns, context);
 }
 
 size_t ScopeStack::getColumnLevel(const std::string & name)
@@ -1822,7 +1831,7 @@ const Block & ScopeStack::getSampleBlock() const
 
 void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_subqueries, bool only_consts, ExpressionActionsPtr & actions)
 {
-    ScopeStack scopes(actions, settings);
+    ScopeStack scopes(actions, context);
 
     ProjectionManipulatorPtr projection_manipulator;
     if (!isThereArrayJoin(ast) && settings.enable_conditional_computation && !only_consts)
@@ -1993,7 +2002,7 @@ bool ExpressionAnalyzer::isThereArrayJoin(const ASTPtr & ast)
 void ExpressionAnalyzer::getActionsFromJoinKeys(const ASTTableJoin & table_join, bool no_subqueries, bool only_consts,
                                                 ExpressionActionsPtr & actions)
 {
-    ScopeStack scopes(actions, settings);
+    ScopeStack scopes(actions, context);
 
     ProjectionManipulatorPtr projection_manipulator;
     if (!isThereArrayJoin(query) && settings.enable_conditional_computation && !only_consts)
@@ -2405,8 +2414,7 @@ void ExpressionAnalyzer::initChain(ExpressionActionsChain & chain, const NamesAn
 {
     if (chain.steps.empty())
     {
-        chain.settings = settings;
-        chain.steps.emplace_back(std::make_shared<ExpressionActions>(columns, settings));
+        chain.steps.emplace_back(std::make_shared<ExpressionActions>(columns, context));
     }
 }
 
@@ -2676,7 +2684,7 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
 
     {
         /// Remove unused source_columns from prewhere actions.
-        auto tmp_actions = std::make_shared<ExpressionActions>(source_columns, settings);
+        auto tmp_actions = std::make_shared<ExpressionActions>(source_columns, context);
         getRootActions(select_query->prewhere_expression, only_types, false, tmp_actions);
         tmp_actions->finalize({prewhere_column_name});
         auto required_columns = tmp_actions->getRequiredColumns();
@@ -2715,7 +2723,7 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
             }
         }
 
-        chain.steps.emplace_back(std::make_shared<ExpressionActions>(std::move(columns), settings));
+        chain.steps.emplace_back(std::make_shared<ExpressionActions>(std::move(columns), context));
         chain.steps.back().additional_input = std::move(unused_source_columns);
     }
 
@@ -2903,9 +2911,9 @@ void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, Express
 }
 
 
-ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
+ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
-    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(source_columns, settings);
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(source_columns, context);
     NamesWithAliases result_columns;
     Names result_names;
 
@@ -2920,7 +2928,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
     {
         std::string name = asts[i]->getColumnName();
         std::string alias;
-        if (project_result)
+        if (add_aliases)
             alias = asts[i]->getAliasOrColumnName();
         else
             alias = name;
@@ -2929,11 +2937,15 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
         getRootActions(asts[i], false, false, actions);
     }
 
-    if (project_result)
+    if (add_aliases)
     {
-        actions->add(ExpressionAction::project(result_columns));
+        if (project_result)
+            actions->add(ExpressionAction::project(result_columns));
+        else
+            actions->add(ExpressionAction::addAliases(result_columns));
     }
-    else
+
+    if (!(add_aliases && project_result))
     {
         /// We will not delete the original columns.
         for (const auto & column_name_type : source_columns)
@@ -2948,7 +2960,7 @@ ExpressionActionsPtr ExpressionAnalyzer::getActions(bool project_result)
 
 ExpressionActionsPtr ExpressionAnalyzer::getConstActions()
 {
-    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(NamesAndTypesList(), settings);
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
 
     getRootActions(query, true, true, actions);
 

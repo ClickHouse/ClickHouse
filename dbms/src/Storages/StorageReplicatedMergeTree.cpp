@@ -3431,8 +3431,6 @@ void StorageReplicatedMergeTree::drop()
         if (is_readonly || !zookeeper)
             throw Exception("Can't drop readonly replicated table (need to drop data in ZooKeeper as well)", ErrorCodes::TABLE_IS_READ_ONLY);
 
-        // checkTableCanBeDropped(); // uncomment to feel yourself safe
-
         shutdown();
 
         if (zookeeper->expired())

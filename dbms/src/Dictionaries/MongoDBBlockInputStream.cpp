@@ -135,6 +135,18 @@ namespace
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
                 break;
             }
+            case ValueType::UUID:
+            {
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                {
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
+                }
+                else
+                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) +
+                              " for column " + name, ErrorCodes::TYPE_MISMATCH};
+                break;
+            }
         }
     }
 

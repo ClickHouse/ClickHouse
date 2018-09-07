@@ -58,7 +58,7 @@ SELECT 21 + j, 21 - j, 84 - j, 21 * j, -21 * j, 21 / j, 84 / j FROM test.decimal
 SELECT a, -a, -b, -c, -d, -e, -f, -g, -h, -j from test.decimal ORDER BY a;
 SELECT abs(a), abs(b), abs(c), abs(d), abs(e), abs(f), abs(g), abs(h), abs(j) from test.decimal ORDER BY a;
 
-SET decimal_check_arithmetic_overflow = 0;
+SET decimal_check_overflow = 0;
 
 SELECT (h * h) != 0, (h / h) != 1 FROM test.decimal WHERE h > 0;
 SELECT (i * i) != 0, (i / i) = 1 FROM test.decimal WHERE i > 0;

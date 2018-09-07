@@ -421,8 +421,7 @@ private:
     void createConcrete(T && x)
     {
         using JustT = std::decay_t<T>;
-        JustT * MAY_ALIAS ptr = reinterpret_cast<JustT *>(&storage);
-        new (ptr) JustT(std::forward<T>(x));
+        new (&storage) JustT(std::forward<T>(x));
         which = TypeToEnum<JustT>::value;
     }
 
@@ -492,8 +491,7 @@ private:
 
     void create(const char * data, size_t size)
     {
-        String * MAY_ALIAS ptr = reinterpret_cast<String*>(&storage);
-        new (ptr) String(data, size);
+        new (&storage) String(data, size);
         which = Types::String;
     }
 

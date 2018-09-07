@@ -1,5 +1,5 @@
-clickhouse (18.12.1) unstable; urgency=low
+clickhouse (18.12.8) unstable; urgency=low
 
   * Modified source code
 
- --  <root@yandex-team.ru>  Thu, 30 Aug 2018 22:28:33 +0300
+ --  <root@yandex-team.ru>  Fri, 07 Sep 2018 04:43:52 +0300
