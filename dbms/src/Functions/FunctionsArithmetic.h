@@ -1152,11 +1152,16 @@ class FunctionBinaryArithmetic : public IFunction
                 && checkDataType<DataTypeAggregateFunction>(type1.get());
     }
 
+    /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
     void executeAggregateMultiply(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const 
     {
         ColumnNumbers new_arguments = arguments;
         if (checkDataType<DataTypeAggregateFunction>(block.getByPosition(new_arguments[1]).type.get()))
             std::swap(new_arguments[0], new_arguments[1]);
+
+        if (!block.getByPosition(new_arguments[1]).column->isColumnConst())
+            throw Exception{"Illegal column " + block.getByPosition(new_arguments[1]).column->getName() 
+                + " of argument of aggregation state multiply. Should be integer constant", ErrorCodes::ILLEGAL_COLUMN};
 
         const ColumnAggregateFunction * column = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(new_arguments[0]).column.get());
         IAggregateFunction * function = column->getAggregateFunction().get();
@@ -1201,14 +1206,14 @@ class FunctionBinaryArithmetic : public IFunction
         block.getByPosition(result).column = std::move(column_to);
     }
 
+    /// Merge two aggregation states together.
     void executeAggregateAddition(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) const
     {
         const ColumnAggregateFunction * columns[2];
         for (size_t i = 0; i < 2; ++i)
             columns[i] = typeid_cast<const ColumnAggregateFunction *>(block.getByPosition(arguments[i]).column.get());
 
-        auto arena = std::make_shared<Arena>();
-        auto column_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction(), Arenas(1, arena));
+        auto column_to = ColumnAggregateFunction::create(columns[0]->getAggregateFunction());
         column_to->reserve(input_rows_count); 
 
         for(size_t i = 0; i < input_rows_count; ++i)
@@ -1270,17 +1275,9 @@ public:
         /// Special case - addition of two aggregate functions states
         if (isAggregateAddition(arguments[0], arguments[1]))
         {
-            const DataTypeAggregateFunction * new_arguments[2];
-            for (size_t i = 0; i < 2; ++i)
-                new_arguments[i] = typeid_cast<const DataTypeAggregateFunction *>(arguments[i].get());
-
-            if (!new_arguments[0]->equals(*new_arguments[1]))
+            if (!arguments[0]->equals(*arguments[1]))
                 throw Exception("Cannot add aggregate states of different functions: " 
-                    + new_arguments[0]->getFunctionName() + " and " + new_arguments[1]->getFunctionName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
-
-            if (!new_arguments[0]->getReturnType()->equals(*new_arguments[1]->getReturnType().get()))
-                throw Exception("Cannot add aggregate states with different return types: " 
-                    + new_arguments[0]->getReturnType()->getName() + " and " + new_arguments[1]->getReturnType()->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
+                    + arguments[0]->getName() + " and " + arguments[1]->getName(), ErrorCodes::CANNOT_ADD_DIFFERENT_AGGREGATE_STATES);
 
             return arguments[0];
         }

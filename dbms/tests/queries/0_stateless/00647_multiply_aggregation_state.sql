@@ -19,4 +19,6 @@ SELECT groupArrayMerge(y * 5) FROM (SELECT groupArrayState(x) AS y FROM (SELECT 
 SELECT groupArrayMerge(2)(y * 5) FROM (SELECT groupArrayState(2)(x) AS y FROM (SELECT 1 AS x));
 SELECT groupUniqArrayMerge(y * 5) FROM (SELECT groupUniqArrayState(x) AS y FROM (SELECT 1 AS x));
 
+SELECT sumMerge(y * a) FROM (SELECT a, sumState(b) AS y FROM test.mult_aggregation GROUP BY a); -- { serverError 44}
+
 DROP TABLE IF EXISTS test.mult_aggregation;
