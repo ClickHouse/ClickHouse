@@ -207,7 +207,8 @@ ExpressionAnalyzer::ExpressionAnalyzer(
             source_columns.swap(physical_columns);
         else
         {
-            source_columns.insert(source_columns.end(), physical_columns.begin(), physical_columns.end());
+            physical_columns.insert(physical_columns.end(), source_columns.begin(), source_columns.end());
+            source_columns.swap(physical_columns);
             removeDuplicateColumns(source_columns);
         }
     }
