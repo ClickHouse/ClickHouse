@@ -1147,8 +1147,11 @@ class FunctionBinaryArithmetic : public IFunction
     {
         if constexpr (!std::is_same_v<Op<UInt8, UInt8>, PlusImpl<UInt8, UInt8>>)
             return false;
-        return checkDataType<DataTypeAggregateFunction>(type0.get())
-                && checkDataType<DataTypeAggregateFunction>(type1.get());
+            
+        WhichDataType which0(type0);
+        WhichDataType which1(type1);
+        
+        return which0.isAggregateFunction() && which1.isAggregateFunction();
     }
 
     /// Multiply aggregation state by integer constant: by merging it with itself specified number of times.
