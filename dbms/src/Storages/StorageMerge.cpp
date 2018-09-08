@@ -141,7 +141,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
     auto database = context.getDatabase(source_database);
     auto iterator = database->getIterator(context);
 
-    bool first = true;
+    size_t selected_table_size = 0;
 
     while (iterator->isValid())
     {
@@ -149,23 +149,14 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
         {
             auto & table = iterator->table();
             if (table.get() != this)
-            {
-                auto stage = table->getQueryProcessingStage(context);
-
-                if (first)
-                    stage_in_source_tables = stage;
-                else if (stage != stage_in_source_tables)
-                    throw Exception("Source tables for Merge table are processing data up to different stages",
-                                    ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
-
-                first = false;
-            }
+                ++selected_table_size;
         }
 
         iterator->next();
     }
 
-    return stage_in_source_tables;
+    auto fetch_or_mergeable_stage = std::min(stage_in_source_tables, QueryProcessingStage::WithMergeableState);
+    return selected_table_size == 1 ? stage_in_source_tables : fetch_or_mergeable_stage;
 }
 
 
@@ -202,12 +193,6 @@ BlockInputStreams StorageMerge::read(
 
     for (const auto & elem : selected_tables)
     {
-        /// Check processing stage again in case new table was added after getQueryProcessingStage call.
-        auto stage = elem.first->getQueryProcessingStage(context);
-        if (stage != processed_stage)
-            throw Exception("Source tables for Merge table are processing data up to different stages",
-                            ErrorCodes::INCOMPATIBLE_SOURCE_TABLES);
-
         /// If PREWHERE is used in query, you need to make sure that all tables support this.
         if (typeid_cast<const ASTSelectQuery &>(*query).prewhere_expression)
             if (!elem.first->supportsPrewhere())
