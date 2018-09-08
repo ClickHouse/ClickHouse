@@ -7,7 +7,7 @@
 
 namespace DB
 {
-    
+
 RollupBlockInputStream::RollupBlockInputStream(
     const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : aggregator(params_),
         keys(params_.keys)
