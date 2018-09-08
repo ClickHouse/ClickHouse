@@ -23,9 +23,9 @@ Block SquashingBlockInputStream::readImpl()
         if (!block)
             all_read = true;
 
-        SquashingTransform::Result result = transform.add(std::move(block));
+        SquashingTransform::Result result = transform.add(block.mutateColumns());
         if (result.ready)
-            return result.block;
+            return block.cloneWithColumns(std::move(result.columns));
     }
 }
 
