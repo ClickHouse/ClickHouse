@@ -39,7 +39,6 @@ void registerFunctionFinalizeAggregation(FunctionFactory &);
 void registerFunctionToLowCardinality(FunctionFactory &);
 void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
-void registerFunctionsReplicate(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
@@ -80,7 +79,6 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionToLowCardinality(factory);
     registerFunctionLowCardinalityIndices(factory);
     registerFunctionLowCardinalityKeys(factory);
-    registerFunctionReplicate(factory);
     registerFunctionsIn(factory);
 }
 
