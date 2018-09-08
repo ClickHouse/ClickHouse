@@ -52,7 +52,7 @@ public:
 
         {
             auto equals_func = FunctionFactory::instance().get("equals", context)->build(
-                {block.getByPosition(arguments[0]), block.getByPosition(arguments[1])});
+                {temp_block.getByPosition(arguments[0]), temp_block.getByPosition(arguments[1])});
             equals_func->execute(temp_block, {arguments[0], arguments[1]}, res_pos, input_rows_count);
         }
 
@@ -68,7 +68,7 @@ public:
         temp_block.insert(null_elem);
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {block.getByPosition(res_pos), block.getByPosition(null_pos), block.getByPosition(arguments[0])});
+            {temp_block.getByPosition(res_pos), temp_block.getByPosition(null_pos), temp_block.getByPosition(arguments[0])});
         func_if->execute(temp_block, {res_pos, null_pos, arguments[0]}, result, input_rows_count);
 
         block.getByPosition(result).column = std::move(temp_block.getByPosition(result).column);
