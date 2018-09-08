@@ -53,13 +53,12 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
     const SelectQueryInfo &,
-    const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
     check(column_names);
-    checkQueryProcessingStage(processed_stage, context);
 
     if (limit && limit < max_block_size)
     {

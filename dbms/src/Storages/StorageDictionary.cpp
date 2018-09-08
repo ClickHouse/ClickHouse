@@ -38,11 +38,10 @@ BlockInputStreams StorageDictionary::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    checkQueryProcessingStage(processed_stage, context);
     auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }

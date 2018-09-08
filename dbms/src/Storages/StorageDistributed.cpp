@@ -249,7 +249,6 @@ BlockInputStreams StorageDistributed::read(
     const unsigned /*num_streams*/)
 {
     auto cluster = getCluster();
-    checkQueryProcessingStage(processed_stage, getQueryProcessingStage(context, cluster));
 
     const Settings & settings = context.getSettingsRef();
 
