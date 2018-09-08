@@ -210,20 +210,11 @@ public:
 };
 
 
-void registerFunctionsCharset(FunctionFactory & factory)
+void registerFunctionConvertCharset(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionConvertCharset>();
 }
 
 }
-
-#else
-
-namespace DB
-{
-    class FunctionFactory;
-    void registerFunctionsCharset(FunctionFactory & factory) { (void)factory; }
-}
-
 
 #endif

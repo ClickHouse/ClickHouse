@@ -34,11 +34,12 @@ void registerFunctionUptime(FunctionFactory &);
 void registerFunctionTimeZone(FunctionFactory &);
 void registerFunctionRunningAccumulate(FunctionFactory &);
 void registerFunctionRunningDifference(FunctionFactory &);
-void registerFunctionRunningIncome(FunctionFactory &);
+void registerFunctionRunningDifferenceStartingWithFirstValue(FunctionFactory &);
 void registerFunctionFinalizeAggregation(FunctionFactory &);
 void registerFunctionToLowCardinality(FunctionFactory &);
-void registerFunctionLowCardinalityIndexes(FunctionFactory &);
+void registerFunctionLowCardinalityIndices(FunctionFactory &);
 void registerFunctionLowCardinalityKeys(FunctionFactory &);
+void registerFunctionsReplicate(FunctionFactory &);
 void registerFunctionsIn(FunctionFactory &);
 
 void registerFunctionsMiscellaneous(FunctionFactory & factory)
@@ -74,11 +75,12 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTimeZone(factory);
     registerFunctionRunningAccumulate(factory);
     registerFunctionRunningDifference(factory);
-    registerFunctionRunningIncome(factory);
+    registerFunctionRunningDifferenceStartingWithFirstValue(factory);
     registerFunctionFinalizeAggregation(factory);
     registerFunctionToLowCardinality(factory);
-    registerFunctionLowCardinalityIndexes(factory);
+    registerFunctionLowCardinalityIndices(factory);
     registerFunctionLowCardinalityKeys(factory);
+    registerFunctionReplicate(factory);
     registerFunctionsIn(factory);
 }
 
