@@ -72,13 +72,13 @@ public:
         temp_block.insert({nullptr, removeNullable(block.getByPosition(arguments[0]).type), ""});
 
         auto is_not_null = FunctionFactory::instance().get("isNotNull", context)->build(
-            {block.getByPosition(arguments[0])});
+            {temp_block.getByPosition(arguments[0])});
 
         auto assume_not_null = FunctionFactory::instance().get("assumeNotNull", context)->build(
-            {block.getByPosition(arguments[0])});
+            {temp_block.getByPosition(arguments[0])});
 
         auto func_if = FunctionFactory::instance().get("if", context)->build(
-            {block.getByPosition(is_not_null_pos), block.getByPosition(assume_not_null_pos), block.getByPosition(arguments[1])});
+            {temp_block.getByPosition(is_not_null_pos), temp_block.getByPosition(assume_not_null_pos), temp_block.getByPosition(arguments[1])});
 
         is_not_null->execute(temp_block, {arguments[0]}, is_not_null_pos, input_rows_count);
         assume_not_null->execute(temp_block, {arguments[0]}, assume_not_null_pos, input_rows_count);
