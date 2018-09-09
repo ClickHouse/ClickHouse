@@ -4,6 +4,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/GatherUtils/GatherUtils.h>
+#include <Functions/GatherUtils/Sources.h>
+#include <Functions/GatherUtils/Sinks.h>
+#include <Functions/GatherUtils/Slices.h>
+#include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
 

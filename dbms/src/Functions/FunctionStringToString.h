@@ -1,7 +1,8 @@
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/ColumnString.h>
-#include <DataTypes/ColumnFixedString.h>
-#include <Functions/FunctionFactory.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB

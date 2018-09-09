@@ -1,4 +1,5 @@
 #include <Columns/ColumnString.h>
+#include <Poco/UTF8Encoding.h>
 
 #if __SSE2__
 #include <emmintrin.h>
@@ -89,7 +90,7 @@ struct LowerUpperUTF8Impl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vector_fixed(const ColumnString::Chars_t & data, size_t n, ColumnString::Chars_t & res_data)
+    static void vector_fixed(const ColumnString::Chars_t & data, size_t /*n*/, ColumnString::Chars_t & res_data)
     {
         res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());
