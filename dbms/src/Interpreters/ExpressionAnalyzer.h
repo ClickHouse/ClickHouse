@@ -336,7 +336,7 @@ private:
     void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
-    void makeSet(const ASTFunction * node, const Block & sample_block);
+    void makeSet(const ASTFunction * node, const Block & sample_block, bool no_subqueries);
 
     /// Adds a list of ALIAS columns from the table.
     void addAliasColumns();
