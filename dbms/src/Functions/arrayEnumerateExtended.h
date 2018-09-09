@@ -5,8 +5,9 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnString.h>
 #include <Interpreters/AggregationCommon.h>
-#include <Common/ClearableHashMap.h>
+#include <Common/HashTable/ClearableHashMap.h>
 
 
 namespace DB
@@ -17,14 +18,17 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
 }
 
+class FunctionArrayEnumerateUniq;
+class FunctionArrayEnumerateDense;
 
 template <typename Derived>
 class FunctionArrayEnumerateExtended : public IFunction
 {
 public:
-    static FunctionPtr create(const Context & context) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 

@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Common/SipHash.h>
 
@@ -24,7 +25,7 @@ class FunctionArrayDistinct : public IFunction
 public:
     static constexpr auto name = "arrayDistinct";
 
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionArrayDistinct>();
     }

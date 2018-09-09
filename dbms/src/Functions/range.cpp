@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnVector.h>
-#include <algorithm>
+#include <numeric>
 
 
 namespace DB

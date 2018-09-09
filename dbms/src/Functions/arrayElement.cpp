@@ -2,6 +2,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>

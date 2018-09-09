@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
