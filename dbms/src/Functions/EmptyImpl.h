@@ -1,5 +1,5 @@
 #include <cstring>
-#include <DataTypes/ColumnString.h>
+#include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 
 
