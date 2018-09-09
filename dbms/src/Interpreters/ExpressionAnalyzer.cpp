@@ -902,21 +902,24 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
     }
     else if (auto subquery = typeid_cast<ASTSubquery *>(ast.get()))
     {
-        /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
-        ///  and auto-generated column names could become incorrect.
-
-        size_t subquery_index = 1;
-        while (true)
+        if (subquery->alias.empty())
         {
-            alias = "_subquery" + toString(subquery_index);
-            if (!aliases.count("_subquery" + toString(subquery_index)))
-                break;
-            ++subquery_index;
-        }
+            /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
+            ///  and auto-generated column names could become incorrect.
 
-        subquery->setAlias(alias);
-        subquery->prefer_alias_to_column_name = true;
-        aliases[alias] = ast;
+            size_t subquery_index = 1;
+            while (true)
+            {
+                alias = "_subquery" + toString(subquery_index);
+                if (!aliases.count("_subquery" + toString(subquery_index)))
+                    break;
+                ++subquery_index;
+            }
+
+            subquery->setAlias(alias);
+            subquery->prefer_alias_to_column_name = true;
+            aliases[alias] = ast;
+        }
     }
 }
 
@@ -1561,7 +1564,7 @@ void ExpressionAnalyzer::makeSetsForIndexImpl(const ASTPtr & node, const Block &
 }
 
 
-void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_block)
+void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_block, bool no_subqueries)
 {
     /** You need to convert the right argument to a set.
       * This can be a table name, a value, a value enumeration, or a subquery.
@@ -1574,6 +1577,16 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
     if (prepared_sets.count(arg->range))
         return;
 
+    if (no_subqueries)
+    {
+        String set_id = arg->getColumnName();
+        SubqueryForSet & subquery_for_set = subqueries_for_sets[set_id];
+        SetPtr set = std::make_shared<Set>(SizeLimits(settings.max_rows_in_set, settings.max_bytes_in_set, settings.set_overflow_mode), false);
+        subquery_for_set.set = set;
+        prepared_sets[arg->range] = set;
+        return;
+    }
+
     /// If the subquery or table name for SELECT.
     const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(arg.get());
     if (typeid_cast<const ASTSubquery *>(arg.get()) || identifier)
@@ -1581,7 +1594,7 @@ void ExpressionAnalyzer::makeSet(const ASTFunction * node, const Block & sample_
         /// We get the stream of blocks for the subquery. Create Set and put it in place of the subquery.
         String set_id = arg->getColumnName();
 
-        /// A special case is if the name of the table is specified on the right side of the IN statement,
+        /// A special case if the name of the table is specified on the right side of the IN statement,
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
@@ -2082,31 +2095,11 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
         if (functionIsInOrGlobalInOperator(node->name))
         {
-            if (!no_subqueries)
-            {
-                /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
-                getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
-                               projection_manipulator);
+            /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
+            getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack, projection_manipulator);
 
-                /// Transform tuple or subquery into a set.
-                makeSet(node, actions_stack.getSampleBlock());
-            }
-            else
-            {
-                if (!only_consts)
-                {
-                    /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                    /// Do not subquery and create sets. We insert an arbitrary column of the correct type.
-                    ColumnWithTypeAndName fake_column;
-                    fake_column.name = projection_manipulator->getColumnName(getColumnName());
-                    fake_column.type = std::make_shared<DataTypeUInt8>();
-                    fake_column.column = fake_column.type->createColumn();
-                    actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
-                    getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
-                                   projection_manipulator);
-                }
-                return;
-            }
+            /// Transform tuple or subquery into a set.
+            makeSet(node, actions_stack.getSampleBlock(), no_subqueries);
         }
 
         /// A special function `indexHint`. Everything that is inside it is not calculated
