@@ -12,7 +12,7 @@ SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr & ds
 
 void SquashingBlockOutputStream::write(const Block & block)
 {
-    SquashingTransform::Result result = transform.add(block.mutateColumns());
+    SquashingTransform::Result result = transform.add(Block(block).mutateColumns());
     if (result.ready)
         output->write(header.cloneWithColumns(std::move(result.columns)));
 }

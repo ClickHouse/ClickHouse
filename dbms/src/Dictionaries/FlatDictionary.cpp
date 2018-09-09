@@ -315,7 +315,7 @@ void FlatDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
             const auto &update_id_column = *block.safeGetByPosition(0).column;
