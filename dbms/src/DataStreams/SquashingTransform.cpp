@@ -12,6 +12,7 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows, size_t min_bl
 
 SquashingTransform::Result SquashingTransform::add(MutableColumns && columns)
 {
+    /// End of input stream.
     if (columns.empty())
         return Result(std::move(accumulated_columns));
 
@@ -22,7 +23,7 @@ SquashingTransform::Result SquashingTransform::add(MutableColumns && columns)
         if (accumulated_columns.empty())
             return Result(std::move(columns));
 
-        /// Return accumulated data (may be it has small size) and place new block to accumulated data.
+        /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
         columns.swap(accumulated_columns);
         return Result(std::move(columns));
     }
