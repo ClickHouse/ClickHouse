@@ -1,7 +1,10 @@
 #include <Functions/IFunction.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
 
 

@@ -9,7 +9,7 @@ class FunctionArrayPopBack : public FunctionArrayPop
 {
 public:
     static constexpr auto name = "arrayPopBack";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayPopBack>(context); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayPopBack>(); }
     FunctionArrayPopBack() : FunctionArrayPop(false, name) {}
 };
 

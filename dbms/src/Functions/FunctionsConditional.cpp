@@ -1,5 +1,4 @@
 #include <Functions/FunctionsConditional.h>
-#include <Functions/FunctionsArray.h>
 #include <Functions/FunctionsTransform.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnNullable.h>

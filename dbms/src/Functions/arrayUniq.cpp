@@ -6,6 +6,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
 #include <Interpreters/AggregationCommon.h>
 #include <IO/WriteHelpers.h>

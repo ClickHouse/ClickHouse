@@ -25,7 +25,7 @@ class FunctionArrayReverse : public IFunction
 {
 public:
     static constexpr auto name = "arrayReverse";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayReverse>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayReverse>(); }
 
     String getName() const override { return name; }
 
