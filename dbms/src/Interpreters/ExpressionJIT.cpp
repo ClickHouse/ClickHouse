@@ -420,7 +420,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
 
 static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
 {
-    if (!type)
+    if (!type || column.size() <= i)
         return nullptr;
     if (auto * constant = typeid_cast<const ColumnConst *>(&column))
         return getNativeValue(type, constant->getDataColumn(), 0);
