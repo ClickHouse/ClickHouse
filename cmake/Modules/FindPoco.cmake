@@ -197,6 +197,8 @@ foreach( component ${components} )
     elseif(NOT Poco_FIND_QUIETLY)
         message(WARNING "Could not find Poco component ${component}!")
     endif()
+
+    # message(STATUS "Poco component ${component}: Poco_${component}_LIBRARY : Poco_${component}_INCLUDE_DIR")
 endforeach()
 
 if(Poco_DataODBC_LIBRARY)

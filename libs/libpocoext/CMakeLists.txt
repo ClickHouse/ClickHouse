@@ -8,7 +8,7 @@ add_library (pocoext ${LINK_MODE}
     include/Poco/Ext/SessionPoolHelpers.h)
 
 if (Poco_Data_FOUND)
-    target_include_directories (pocoext SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
+    target_include_directories (pocoext SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
     target_link_libraries(pocoext PRIVATE ${Poco_Data_LIBRARY})
 endif()
 
