@@ -29,7 +29,7 @@ if (ENABLE_CAPNP)
         find_library (CAPNP capnp PATHS ${CAPNP_PATHS})
         find_library (CAPNPC capnpc PATHS ${CAPNP_PATHS})
         find_library (KJ kj PATHS ${CAPNP_PATHS})
-        set (CAPNP_LIBRARY ${CAPNP} ${CAPNPC} ${KJ})
+        set (CAPNP_LIBRARY ${CAPNPC} ${CAPNP} ${KJ})
         find_path (CAPNP_INCLUDE_DIR NAMES capnp/schema-parser.h PATHS ${CAPNP_INCLUDE_PATHS})
     endif ()
 

@@ -7,7 +7,7 @@
 #include <common/find_first_symbols.h>
 #include <common/StringRef.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsString.h>
+#include <Functions/FunctionStringToString.h>
 #include <Functions/FunctionsStringArray.h>
 #include <port/memrchr.h>
 
