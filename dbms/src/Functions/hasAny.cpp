@@ -13,7 +13,7 @@ public:
     FunctionArrayHasAny(const Context & context) : FunctionArrayHasAllAny(context, false, name) {}
 };
 
-void registerFunctionArrayHasAny(FunctionFactory & factory)
+void registerFunctionHasAny(FunctionFactory & factory)
 {
     factory.registerFunction<FunctionArrayHasAny>();
 }

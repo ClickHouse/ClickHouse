@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -59,9 +60,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!is_injective && !arguments.empty() && isArray(arguments[0]))
-            return FunctionArrayConcat(context).getReturnTypeImpl(arguments);
-
         if (arguments.size() < 2)
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
                 + ", should be at least 2.",
@@ -80,9 +78,6 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        if (!is_injective && !arguments.empty() && isArray(block.getByPosition(arguments[0]).type))
-            return FunctionArrayConcat(context).executeImpl(block, arguments, result, input_rows_count);
-
         if (arguments.size() == 2)
             executeBinary(block, arguments, result, input_rows_count);
         else
@@ -134,6 +129,7 @@ private:
     }
 };
 
+
 struct NameConcat
 {
     static constexpr auto name = "concat";
@@ -146,9 +142,45 @@ struct NameConcatAssumeInjective
 using FunctionConcat = ConcatImpl<NameConcat, false>;
 using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true>;
 
+
+/// Also works with arrays.
+class FunctionBuilderConcat : public FunctionBuilderImpl
+{
+public:
+    static constexpr auto name = "concat";
+    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderConcat>(context); }
+
+    FunctionBuilderConcat(const Context & context) : context(context) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+protected:
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*return_type*/) const override
+    {
+        if (isArray(arguments.at(0).type))
+            return FunctionFactory::instance().get("arrayConcat", context)->build(arguments);
+        else
+            return FunctionConcat::create(context);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        DataTypes arg_types;
+        for (const auto & arg : arguments)
+            arg_types.emplace_back(arg.type);
+
+        return getLeastSupertype(arg_types);
+    }
+
+private:
+    const Context & context;
+};
+
+
 void registerFunctionsConcat(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionConcat>();
+    factory.registerFunction<FunctionBuilderConcat>();
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

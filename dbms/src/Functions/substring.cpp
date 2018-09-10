@@ -9,6 +9,7 @@
 #include <Functions/GatherUtils/Sources.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
+#include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
 
 
