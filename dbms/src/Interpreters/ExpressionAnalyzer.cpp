@@ -2678,7 +2678,7 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
 
     Names required_sample_columns;
     if (sampling_expression)
-        required_sample_columns = ExpressionAnalyzer(sampling_expression, context, nullptr, source_columns).getRequiredSourceColumns();
+        required_sample_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
 
     initChain(chain, source_columns);
     auto & step = chain.getLastStep();
@@ -2687,15 +2687,6 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
     step.required_output.push_back(prewhere_column_name);
     step.can_remove_required_output.push_back(true);
 
-    /// Add required columns for sample expression to required output in order not to remove them after
-    /// prewhere execution because sampling is executed after prewhere.
-    /// TODO: add sampling execution to common chain.
-    for (const auto & column : required_sample_columns)
-    {
-        step.required_output.push_back(column);
-        step.can_remove_required_output.push_back(true);
-    }
-
     {
         /// Remove unused source_columns from prewhere actions.
         auto tmp_actions = std::make_shared<ExpressionActions>(source_columns, context);
@@ -2703,6 +2694,18 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
         tmp_actions->finalize({prewhere_column_name});
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
+
+        /// Add required columns for sample expression to required output in order not to remove them after
+        /// prewhere execution because sampling is executed after prewhere.
+        /// TODO: add sampling execution to common chain.
+        for (const auto & column : required_sample_columns)
+        {
+            if (required_source_columns.count(column))
+            {
+                step.required_output.push_back(column);
+                step.can_remove_required_output.push_back(true);
+            }
+        }
 
         auto names = step.actions->getSampleBlock().getNames();
         NameSet name_set(names.begin(), names.end());
