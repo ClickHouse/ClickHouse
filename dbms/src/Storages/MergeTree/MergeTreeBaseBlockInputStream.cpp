@@ -211,6 +211,16 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 
                 block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
+            else if (virt_column_name == "_partition_id")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeString().createColumnConst(rows, task->data_part->info.partition_id)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeString().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
+            }
         }
     }
 }
