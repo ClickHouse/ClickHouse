@@ -51,7 +51,6 @@ struct ReverseImpl
 };
 
 
-/// Also works with arrays.
 class FunctionReverse : public IFunction
 {
 public:
@@ -88,7 +87,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
         const ColumnPtr column = block.getByPosition(arguments[0]).column;
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column.get()))
@@ -103,10 +102,6 @@ public:
             ReverseImpl::vector_fixed(col->getChars(), col->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
         }
-        else if (checkColumn<ColumnArray>(column.get()))
-        {
-            FunctionArrayReverse().execute(block, arguments, result, input_rows_count);
-        }
         else
             throw Exception(
                 "Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of argument of function " + getName(),
@@ -114,9 +109,41 @@ public:
     }
 };
 
+
+/// Also works with arrays.
+class FunctionBuilderReverse : public FunctionBuilderImpl
+{
+public:
+    static constexpr auto name = "reverse";
+    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
+
+    FunctionBuilderReverse(const Context & context) : context(context) {}
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 1; }
+
+protected:
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*return_type*/) const override
+    {
+        if (isArray(arguments.at(0).type))
+            return FunctionFactory::instance().get("arrayReverse", context)->build(arguments);
+        else
+            return FunctionReverse::create(context);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return arguments.at(0).type;
+    }
+
+private:
+    const Context & context;
+};
+
+
 void registerFunctionReverse(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionReverse>();
+    factory.registerFunction<FunctionBuilderReverse>();
 }
 
 }
