@@ -3,13 +3,6 @@
 #include <DataTypes/IDataType.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 
-
-#define FOR_UNSIGNED_INTEGER_TYPES(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64)
-
 #define FOR_NUMERIC_TYPES(M) \
     M(UInt8) \
     M(UInt16) \
@@ -22,20 +15,6 @@
     M(Float32) \
     M(Float64)
 
-#define FOR_NUMERIC_TYPES_AND_ENUMS(M) \
-    M(UInt8) \
-    M(UInt16) \
-    M(UInt32) \
-    M(UInt64) \
-    M(Int8) \
-    M(Int16) \
-    M(Int32) \
-    M(Int64) \
-    M(Float32) \
-    M(Float64) \
-    M(UInt8) \
-    M(UInt16)
-
 namespace DB
 {
 
@@ -45,10 +24,12 @@ template <template <typename, typename ... TArgs> class AggregateFunctionTemplat
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-#define DISPATCH(FIELDTYPE) \
-    if (which.idx == TypeIndex::FIELDTYPE) return new AggregateFunctionTemplate<FIELDTYPE>(std::forward<TArgs>(args)...);
-    FOR_NUMERIC_TYPES_AND_ENUMS(DISPATCH)
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<UInt8>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<UInt16>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -56,10 +37,12 @@ template <template <typename, typename> class AggregateFunctionTemplate, typenam
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-#define DISPATCH(FIELDTYPE) \
-    if (which.idx == TypeIndex::FIELDTYPE) return new AggregateFunctionTemplate<FIELDTYPE, Data>(std::forward<TArgs>(args)...);
-    FOR_NUMERIC_TYPES_AND_ENUMS(DISPATCH)
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<UInt8, Data>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<UInt16, Data>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -67,10 +50,12 @@ template <template <typename, typename> class AggregateFunctionTemplate, templat
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-#define DISPATCH(FIELDTYPE) \
-    if (which.idx == TypeIndex::FIELDTYPE) return new AggregateFunctionTemplate<FIELDTYPE, Data<FIELDTYPE>>(std::forward<TArgs>(args)...);
-    FOR_NUMERIC_TYPES_AND_ENUMS(DISPATCH)
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<TYPE, Data<TYPE>>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -79,10 +64,10 @@ template <template <typename, typename> class AggregateFunctionTemplate, templat
 static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
-#define DISPATCH(FIELDTYPE) \
-    if (which.idx == TypeIndex::FIELDTYPE) return new AggregateFunctionTemplate<FIELDTYPE, Data<FIELDTYPE>>(std::forward<TArgs>(args)...);
-    FOR_UNSIGNED_INTEGER_TYPES(DISPATCH)
-#undef DISPATCH
+    if (which.idx == TypeIndex::UInt8) return new AggregateFunctionTemplate<UInt8, Data<UInt8>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -93,10 +78,12 @@ template <typename FirstType, template <typename, typename> class AggregateFunct
 static IAggregateFunction * createWithTwoNumericTypesSecond(const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(second_type);
-#define DISPATCH(FIELDTYPE) \
-    if (which.idx == TypeIndex::FIELDTYPE) return new AggregateFunctionTemplate<FirstType, FIELDTYPE>(std::forward<TArgs>(args)...);
-    FOR_NUMERIC_TYPES_AND_ENUMS(DISPATCH)
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) return new AggregateFunctionTemplate<FirstType, TYPE>(std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+    if (which.idx == TypeIndex::Enum8) return new AggregateFunctionTemplate<FirstType, UInt8>(std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16) return new AggregateFunctionTemplate<FirstType, UInt16>(std::forward<TArgs>(args)...);
     return nullptr;
 }
 
@@ -104,11 +91,15 @@ template <template <typename, typename> class AggregateFunctionTemplate, typenam
 static IAggregateFunction * createWithTwoNumericTypes(const IDataType & first_type, const IDataType & second_type, TArgs && ... args)
 {
     WhichDataType which(first_type);
-#define DISPATCH(FIELDTYPE) \
-    if (which.idx == TypeIndex::FIELDTYPE) \
-        return createWithTwoNumericTypesSecond<FIELDTYPE, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
-    FOR_NUMERIC_TYPES_AND_ENUMS(DISPATCH)
+#define DISPATCH(TYPE) \
+    if (which.idx == TypeIndex::TYPE) \
+        return createWithTwoNumericTypesSecond<TYPE, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    FOR_NUMERIC_TYPES(DISPATCH)
 #undef DISPATCH
+    if (which.idx == TypeIndex::Enum8)
+        return createWithTwoNumericTypesSecond<UInt8, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Enum16)
+        return createWithTwoNumericTypesSecond<UInt16, AggregateFunctionTemplate>(second_type, std::forward<TArgs>(args)...);
     return nullptr;
 }
 
