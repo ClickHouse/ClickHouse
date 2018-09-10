@@ -6,7 +6,6 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/IDataType.h>
-#include <Common/typeid_cast.h>
 #include <common/StringRef.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
