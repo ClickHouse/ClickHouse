@@ -110,7 +110,7 @@ struct ConvertImpl
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
-            if constexpr (IsDecimal<ToDataType>)
+            if constexpr (IsDataTypeDecimal<ToDataType>)
             {
                 UInt32 scale = additions;
                 col_to = ColVecTo::create(0, scale);
@@ -125,11 +125,11 @@ struct ConvertImpl
 
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (IsDecimal<FromDataType> && IsDecimal<ToDataType>)
+                if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
                     vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                else if constexpr (IsDecimal<FromDataType>)
+                else if constexpr (IsDataTypeDecimal<FromDataType>)
                     vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                else if constexpr (IsDecimal<ToDataType>)
+                else if constexpr (IsDataTypeDecimal<ToDataType>)
                     vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
@@ -490,7 +490,7 @@ struct ConvertThroughParsing
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
 
-        if constexpr (IsDecimal<ToDataType>)
+        if constexpr (IsDataTypeDecimal<ToDataType>)
         {
             UInt32 scale = additions;
             ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
@@ -533,7 +533,7 @@ struct ConvertThroughParsing
 
             ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
-            if constexpr (IsDecimal<ToDataType>)
+            if constexpr (IsDataTypeDecimal<ToDataType>)
             {
                 ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
             }
@@ -880,7 +880,7 @@ private:
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDecimal<RightDataType>)
+            if constexpr (IsDataTypeDecimal<RightDataType>)
             {
                 if (arguments.size() != 2)
                     throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.",
