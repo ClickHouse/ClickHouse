@@ -1,4 +1,4 @@
-add_library (clickhouse-odbc-bridge-lib
+add_library (clickhouse-odbc-bridge-lib ${LINK_MODE}
     PingHandler.cpp
     MainHandler.cpp
     ColumnInfoHandler.cpp
