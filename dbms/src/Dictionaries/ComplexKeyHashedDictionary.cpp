@@ -289,7 +289,7 @@ void ComplexKeyHashedDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
 
         stream->readPrefix();
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
             {

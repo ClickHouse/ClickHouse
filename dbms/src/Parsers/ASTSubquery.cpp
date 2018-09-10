@@ -8,13 +8,17 @@ void ASTSubquery::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// This is a hack. We use alias, if available, because otherwise tree could change during analysis.
     if (!alias.empty())
+    {
         writeString(alias, ostr);
-
-    Hash hash = getTreeHash();
-    writeCString("__subquery_", ostr);
-    writeText(hash.first, ostr);
-    ostr.write('_');
-    writeText(hash.second, ostr);
+    }
+    else
+    {
+        Hash hash = getTreeHash();
+        writeCString("__subquery_", ostr);
+        writeText(hash.first, ostr);
+        ostr.write('_');
+        writeText(hash.second, ostr);
+    }
 }
 
 void ASTSubquery::formatImplWithoutAlias(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

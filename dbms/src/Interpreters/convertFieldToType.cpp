@@ -194,7 +194,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
             }
         }
     }
-    else if (type.isStringOrFixedString())
+    else if (isStringOrFixedString(type))
     {
         if (src.getType() == Field::Types::String)
             return src;

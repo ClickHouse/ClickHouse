@@ -15,10 +15,7 @@ class DataTypeNumber final : public DataTypeNumberBase<T>
     bool canBeUsedAsVersion() const override { return true; }
     bool isSummable() const override { return true; }
     bool canBeUsedInBitOperations() const override { return true; }
-    bool isUnsignedInteger() const override { return isInteger() && std::is_unsigned_v<T>; }
     bool canBeUsedInBooleanContext() const override { return true; }
-    bool isNumber() const override { return true; }
-    bool isInteger() const override { return std::is_integral_v<T>; }
     bool canBeInsideNullable() const override { return true; }
 };
 
