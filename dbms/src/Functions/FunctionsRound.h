@@ -535,12 +535,12 @@ class Dispatcher
             }
             else if (scale_arg > 0)
             {
-                size_t scale = pow(10, scale_arg);
+                size_t scale = intExp10(scale_arg);
                 FunctionRoundingImpl<ScaleMode::Positive>::apply(col->getData(), scale, vec_res);
             }
             else
             {
-                size_t scale = pow(10, -scale_arg);
+                size_t scale = intExp10(-scale_arg);
                 FunctionRoundingImpl<ScaleMode::Negative>::apply(col->getData(), scale, vec_res);
             }
         }
