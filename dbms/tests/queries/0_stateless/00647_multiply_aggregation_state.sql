@@ -1,3 +1,5 @@
+SET send_logs_level = 'none';
+
 SELECT countMerge(x) AS y FROM ( SELECT countState() * 2 AS x FROM ( SELECT 1 ));
 SELECT countMerge(x) AS y FROM ( SELECT countState() * 0 AS x FROM ( SELECT 1 UNION ALL SELECT 2));
 SELECT sumMerge(y) AS z FROM ( SELECT sumState(x) * 11 AS y FROM ( SELECT 1 AS x UNION ALL SELECT 2 AS x));
@@ -18,5 +20,7 @@ SELECT avgMerge(x * 10) FROM (SELECT avgState(b) AS x FROM test.mult_aggregation
 SELECT groupArrayMerge(y * 5) FROM (SELECT groupArrayState(x) AS y FROM (SELECT 1 AS x));
 SELECT groupArrayMerge(2)(y * 5) FROM (SELECT groupArrayState(2)(x) AS y FROM (SELECT 1 AS x));
 SELECT groupUniqArrayMerge(y * 5) FROM (SELECT groupUniqArrayState(x) AS y FROM (SELECT 1 AS x));
+
+SELECT sumMerge(y * a) FROM (SELECT a, sumState(b) AS y FROM test.mult_aggregation GROUP BY a); -- { serverError 44}
 
 DROP TABLE IF EXISTS test.mult_aggregation;

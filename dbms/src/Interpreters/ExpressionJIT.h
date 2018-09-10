@@ -61,10 +61,11 @@ public:
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
  * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
  */
-class CompiledExpressionCache : public LRUCache<std::vector<ExpressionAction>, LLVMFunction, ActionsHash>
+class CompiledExpressionCache : public LRUCache<UInt128, LLVMFunction, UInt128Hash>
 {
 private:
-    using Base = LRUCache<std::vector<ExpressionAction>, LLVMFunction, ActionsHash>;
+    using Base = LRUCache<UInt128, LLVMFunction, UInt128Hash>;
+
 public:
     using Base::Base;
 
@@ -73,7 +74,7 @@ public:
 
 /// For each APPLY_FUNCTION action, try to compile the function to native code; if the only uses of a compilable
 /// function's result are as arguments to other compilable functions, inline it and leave the now-redundant action as-is.
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache);
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile);
 
 }
 

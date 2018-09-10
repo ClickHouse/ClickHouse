@@ -176,6 +176,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == "_partition_id")
+        {
+            virt_column_names.push_back(name);
+        }
         else if (name == "_sample_factor")
         {
             sample_factor_column_queried = true;
@@ -592,6 +596,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         for (auto & stream : res)
             stream = std::make_shared<AddingConstColumnBlockInputStream<Float64>>(
                 stream, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
+
+    if (query_info.prewhere_info && query_info.prewhere_info->after_sampling_actions)
+        for (auto & stream : res)
+            stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->after_sampling_actions);
 
     return res;
 }

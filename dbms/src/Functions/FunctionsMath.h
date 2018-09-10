@@ -78,7 +78,7 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments.front()->isNumber())
+        if (!isNumber(arguments.front()))
             throw Exception{"Illegal type " + arguments.front()->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeFloat64>();
@@ -199,7 +199,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!arg->isNumber())
+            if (!isNumber(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         };

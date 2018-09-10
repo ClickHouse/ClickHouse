@@ -167,7 +167,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const IDataType & type = *arguments[0];
-        if (!type.isStringOrFixedString())
+        if (!isStringOrFixedString(type))
             throw Exception("Cannot reinterpret " + type.getName() + " as " + ToDataType().getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<ToDataType>();

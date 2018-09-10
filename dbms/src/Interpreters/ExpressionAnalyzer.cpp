@@ -905,18 +905,21 @@ void ExpressionAnalyzer::addASTAliases(ASTPtr & ast, int ignore_levels)
         /// Set unique aliases for all subqueries. This is needed, because content of subqueries could change after recursive analysis,
         ///  and auto-generated column names could become incorrect.
 
-        size_t subquery_index = 1;
-        while (true)
+        if (subquery->alias.empty())
         {
-            alias = "_subquery" + toString(subquery_index);
-            if (!aliases.count("_subquery" + toString(subquery_index)))
-                break;
-            ++subquery_index;
-        }
+            size_t subquery_index = 1;
+            while (true)
+            {
+                alias = "_subquery" + toString(subquery_index);
+                if (!aliases.count("_subquery" + toString(subquery_index)))
+                    break;
+                ++subquery_index;
+            }
 
-        subquery->setAlias(alias);
-        subquery->prefer_alias_to_column_name = true;
-        aliases[alias] = ast;
+            subquery->setAlias(alias);
+            subquery->prefer_alias_to_column_name = true;
+            aliases[alias] = ast;
+        }
     }
 }
 
@@ -2082,12 +2085,11 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
 
         if (functionIsInOrGlobalInOperator(node->name))
         {
+            /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
+            getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack, projection_manipulator);
+
             if (!no_subqueries)
             {
-                /// Let's find the type of the first argument (then getActionsImpl will be called again and will not affect anything).
-                getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
-                               projection_manipulator);
-
                 /// Transform tuple or subquery into a set.
                 makeSet(node, actions_stack.getSampleBlock());
             }
@@ -2096,14 +2098,13 @@ void ExpressionAnalyzer::getActionsImpl(const ASTPtr & ast, bool no_subqueries, 
                 if (!only_consts)
                 {
                     /// We are in the part of the tree that we are not going to compute. You just need to define types.
-                    /// Do not subquery and create sets. We insert an arbitrary column of the correct type.
-                    ColumnWithTypeAndName fake_column;
-                    fake_column.name = projection_manipulator->getColumnName(getColumnName());
-                    fake_column.type = std::make_shared<DataTypeUInt8>();
-                    fake_column.column = fake_column.type->createColumn();
-                    actions_stack.addAction(ExpressionAction::addColumn(fake_column, projection_manipulator->getProjectionSourceColumn(), false));
-                    getActionsImpl(node->arguments->children.at(0), no_subqueries, only_consts, actions_stack,
-                                   projection_manipulator);
+                    /// Do not subquery and create sets. We treat "IN" as "ignore" function.
+
+                    actions_stack.addAction(ExpressionAction::applyFunction(
+                            FunctionFactory::instance().get("ignore", context),
+                            { node->arguments->children.at(0)->getColumnName() },
+                            projection_manipulator->getColumnName(getColumnName()),
+                            projection_manipulator->getProjectionSourceColumn()));
                 }
                 return;
             }
@@ -2668,12 +2669,16 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
-bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types)
+bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types, const ASTPtr & sampling_expression)
 {
     assertSelect();
 
     if (!select_query->prewhere_expression)
         return false;
+
+    Names required_sample_columns;
+    if (sampling_expression)
+        required_sample_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
 
     initChain(chain, source_columns);
     auto & step = chain.getLastStep();
@@ -2689,6 +2694,18 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
         tmp_actions->finalize({prewhere_column_name});
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
+
+        /// Add required columns for sample expression to required output in order not to remove them after
+        /// prewhere execution because sampling is executed after prewhere.
+        /// TODO: add sampling execution to common chain.
+        for (const auto & column : required_sample_columns)
+        {
+            if (required_source_columns.count(column))
+            {
+                step.required_output.push_back(column);
+                step.can_remove_required_output.push_back(true);
+            }
+        }
 
         auto names = step.actions->getSampleBlock().getNames();
         NameSet name_set(names.begin(), names.end());
