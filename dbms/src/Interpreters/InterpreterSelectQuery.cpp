@@ -379,6 +379,11 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
     {
         pipeline.streams.emplace_back(std::make_shared<NullBlockInputStream>(source_header));
         expressions = analyzeExpressions(QueryProcessingStage::FetchColumns, true);
+
+        if (expressions.prewhere_info)
+            pipeline.streams.back() = std::make_shared<FilterBlockInputStream>(
+                    pipeline.streams.back(), expressions.prewhere_info->prewhere_actions,
+                    expressions.prewhere_info->prewhere_column_name, expressions.prewhere_info->remove_prewhere_column);
     }
     else
     {
