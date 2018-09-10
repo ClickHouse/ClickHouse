@@ -317,7 +317,7 @@ Columns Block::getColumns() const
 }
 
 
-MutableColumns Block::mutateColumns() const
+MutableColumns Block::mutateColumns()
 {
     size_t num_columns = data.size();
     MutableColumns columns(num_columns);

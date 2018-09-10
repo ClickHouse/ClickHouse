@@ -227,7 +227,7 @@ bool CSVRowInputStream::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
         if (curr_position < prev_position)
             throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);
 
-        if (data_types[i]->isNumber() || data_types[i]->isDateOrDateTime())
+        if (isNumber(data_types[i]) || isDateOrDateTime(data_types[i]))
         {
             /// An empty string instead of a value.
             if (curr_position == prev_position)
