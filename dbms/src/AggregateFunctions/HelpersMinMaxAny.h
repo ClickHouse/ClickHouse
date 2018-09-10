@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
-//#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
