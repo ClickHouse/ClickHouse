@@ -4,6 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -123,17 +124,20 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
 
 protected:
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*return_type*/) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
             return FunctionFactory::instance().get("arrayReverse", context)->build(arguments);
         else
-            return FunctionReverse::create(context);
+            return std::make_shared<DefaultFunction>(
+                FunctionReverse::create(context),
+                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return arguments.at(0).type;
+        return arguments.at(0);
     }
 
 private:
