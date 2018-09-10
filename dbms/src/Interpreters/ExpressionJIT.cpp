@@ -566,12 +566,12 @@ LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType
 }
 
 
-static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase & function)
+static bool isCompilable(const IFunctionBase & function)
 {
-    if (!toNativeType(builder, function.getReturnType()))
+    if (!canBeNativeType(*function.getReturnType()))
         return false;
     for (const auto & type : function.getArgumentTypes())
-        if (!toNativeType(builder, type))
+        if (!canBeNativeType(*type))
             return false;
     return function.isCompilable();
 }
@@ -598,21 +598,8 @@ size_t CompiledExpressionCache::weight() const
 #endif
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache)
+std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
 {
-    struct LLVMTargetInitializer
-    {
-        LLVMTargetInitializer()
-        {
-            llvm::InitializeNativeTarget();
-            llvm::InitializeNativeTargetAsmPrinter();
-            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
-        }
-    };
-
-    static LLVMTargetInitializer initializer;
-
-    auto context = std::make_shared<LLVMContext>();
     /// an empty optional is a poisoned value prohibiting the column's producer from being removed
     /// (which it could be, if it was inlined into every dependent function).
     std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
@@ -656,7 +643,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             case ExpressionAction::APPLY_FUNCTION:
             {
                 dependents[i] = current_dependents[actions[i].result_name];
-                const bool compilable = isCompilable(context->builder, *actions[i].function);
+                const bool compilable = isCompilable(*actions[i].function);
                 for (const auto & name : actions[i].argument_names)
                 {
                     if (compilable)
@@ -668,11 +655,34 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             }
         }
     }
+    return dependents;
+}
 
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile)
+{
+    static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
+    static std::mutex mutex;
+
+    struct LLVMTargetInitializer
+    {
+        LLVMTargetInitializer()
+        {
+            llvm::InitializeNativeTarget();
+            llvm::InitializeNativeTargetAsmPrinter();
+            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+        }
+    };
+
+    static LLVMTargetInitializer initializer;
+
+
+    auto dependents = getActionsDependents(actions, output_columns);
+    /// Initialize context as late as possible and only if needed
+    std::shared_ptr<LLVMContext> context;
     std::vector<ExpressionActions::Actions> fused(actions.size());
     for (size_t i = 0; i < actions.size(); ++i)
     {
-        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(context->builder, *actions[i].function))
+        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function))
             continue;
 
         fused[i].push_back(actions[i]);
@@ -682,18 +692,31 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             if (fused[i].size() == 1)
                 continue;
 
+
+            auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (counter[hash_key]++ < min_count_to_compile)
+                    continue;
+            }
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
-                bool success;
-                auto set_func = [&fused, i, context, &sample_block] () { return std::make_shared<LLVMFunction>(fused[i], context, sample_block); };
-                Stopwatch watch;
-                std::tie(fn, success) = compilation_cache->getOrSet(fused[i], set_func);
-                if (success)
+                fn = compilation_cache->get(hash_key);
+                if (!fn)
+                {
+                    if (!context)
+                        context = std::make_shared<LLVMContext>();
+                    Stopwatch watch;
+                    fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
                     ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+                    compilation_cache->set(hash_key, fn);
+                }
             }
             else
             {
+                if (!context)
+                    context = std::make_shared<LLVMContext>();
                 Stopwatch watch;
                 fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
                 ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
@@ -711,7 +734,8 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    context->finalize();
+    if (context)
+        context->finalize();
 }
 
 }

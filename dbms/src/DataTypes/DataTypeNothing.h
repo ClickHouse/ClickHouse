@@ -16,6 +16,7 @@ public:
     static constexpr bool is_parametric = false;
 
     const char * getFamilyName() const override { return "Nothing"; }
+    TypeIndex getTypeId() const override { return TypeIndex::Nothing; }
 
     MutableColumnPtr createColumn() const override;
 
