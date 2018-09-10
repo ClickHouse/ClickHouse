@@ -60,7 +60,8 @@ Names ExpressionAction::getNeededColumns() const
 }
 
 
-ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & function_,
+ExpressionAction ExpressionAction::applyFunction(
+    const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_,
     const std::string & row_projection_column)
@@ -86,9 +87,10 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & func
     return a;
 }
 
-ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_,
-                                             const std::string & row_projection_column,
-                                             bool is_row_projection_complementary)
+ExpressionAction ExpressionAction::addColumn(
+    const ColumnWithTypeAndName & added_column_,
+    const std::string & row_projection_column,
+    bool is_row_projection_complementary)
 {
     ExpressionAction a;
     a.type = ADD_COLUMN;
