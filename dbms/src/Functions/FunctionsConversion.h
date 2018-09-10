@@ -802,7 +802,7 @@ public:
                     || std::is_same_v<Name, NameToUnixTimestamp>;
 
                 if (!(to_date_or_time
-                    || (std::is_same_v<Name, NameToString> && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
+                    || (std::is_same_v<Name, NameToString> && WhichDataType(arguments[0].type).isDateTime())))
                 {
                     throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                         + toString(arguments.size()) + ", should be 1.",
@@ -950,7 +950,7 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[0].type->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0].type))
             throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -963,7 +963,7 @@ public:
                     + toString(arguments.size()) + ", should be 1. Second argument makes sense only when converting to DateTime.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!arguments[1].type->isString())
+            if (!isString(arguments[1].type))
                 throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -1020,11 +1020,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!arguments[1].type->isUnsignedInteger())
+        if (!isUnsignedInteger(arguments[1].type))
             throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!arguments[0].type->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0].type))
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = arguments[1].column->getUInt(0);
@@ -1140,8 +1140,8 @@ struct ToIntMonotonicity
         }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
-        if (checkDataType<DataTypeNumber<T>>(&type) ||
-            checkDataType<DataTypeEnum<T>>(&type))
+        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
+            checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
 
         /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
@@ -1149,8 +1149,7 @@ struct ToIntMonotonicity
             return {};
 
         /// If converting from float, for monotonicity, arguments must fit in range of result type.
-        if (checkDataType<DataTypeFloat32>(&type)
-            || checkDataType<DataTypeFloat64>(&type))
+        if (WhichDataType(type).isFloat())
         {
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
@@ -1460,12 +1459,30 @@ private:
 
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
-        if (!from_type->isStringOrFixedString())
+        if (!isStringOrFixedString(from_type))
             throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
         return [N] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             FunctionToFixedString::executeForN(block, arguments, result, N);
+        };
+    }
+
+    WrapperType createUUIDWrapper(const DataTypePtr & from_type, const DataTypeUUID * const, bool requested_result_is_nullable) const
+    {
+        if (requested_result_is_nullable)
+            throw Exception{"CAST AS Nullable(UUID) is not implemented", ErrorCodes::NOT_IMPLEMENTED};
+
+        FunctionPtr function = FunctionTo<DataTypeUUID>::Type::create(context);
+
+        /// Check conversion using underlying function
+        {
+            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
+        }
+
+        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        {
+            function->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1628,7 +1645,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (from_type->isNumber() || from_type->isEnum())
+        else if (isNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create(context);
 
@@ -1878,7 +1895,7 @@ private:
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
-        else if (checkDataType<DataTypeNothing>(from_type.get()))
+        else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 
         WrapperType ret;
@@ -1919,6 +1936,14 @@ private:
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
+            }
+            if constexpr (std::is_same_v<ToDataType, DataTypeUUID>)
+            {
+                if (isStringOrFixedString(from_type))
+                {
+                    ret = createUUIDWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                    return true;
+                }
             }
 
             return false;
@@ -2027,7 +2052,7 @@ private:
             return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
-        else if (from_type->isEnum())
+        else if (isEnum(from_type))
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);

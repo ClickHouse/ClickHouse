@@ -309,8 +309,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < arguments.size(); ++i)
-            if (!(arguments[i]->isNumber()
-                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || removeNullable(arguments[i])->isNumber()))))
+            if (!(isNumber(arguments[i])
+                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || isNumber(removeNullable(arguments[i]))))))
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
@@ -488,7 +488,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumber())
+        if (!isNumber(arguments[0]))
             throw Exception("Illegal type ("
                 + arguments[0]->getName()
                 + ") of argument of function " + getName(),
