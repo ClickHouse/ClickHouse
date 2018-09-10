@@ -4,6 +4,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <common/intExp.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -479,7 +480,7 @@ public:
 template <typename T, RoundingMode rounding_mode>
 class DecimalRounding
 {
-    using NativeType= typename T::NativeType;
+    using NativeType = typename T::NativeType;
     using Op = IntegerRoundingComputation<NativeType, rounding_mode, ScaleMode::Negative>;
     using Container = typename ColumnDecimal<T>::Container;
 
@@ -489,7 +490,7 @@ public:
         scale_arg = in.getScale() - scale_arg;
         if (scale_arg > 0)
         {
-            size_t scale = pow(10, scale_arg);
+            size_t scale = intExp10(scale_arg);
 
             const NativeType * __restrict p_in = reinterpret_cast<const NativeType *>(in.data());
             const NativeType * end_in = reinterpret_cast<const NativeType *>(in.data()) + in.size();
