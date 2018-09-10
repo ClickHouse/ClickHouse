@@ -343,6 +343,9 @@ public:
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
 
+    /// Returns sampling expression for storage or nullptr if there is no.
+    virtual ASTPtr getSamplingExpression() const { return nullptr; }
+
 protected:
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;

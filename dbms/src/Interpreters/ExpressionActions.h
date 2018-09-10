@@ -126,7 +126,7 @@ public:
 
     struct ActionHash
     {
-        size_t operator()(const ExpressionAction & action) const;
+        UInt128 operator()(const ExpressionAction & action) const;
     };
 
 private:
@@ -230,6 +230,20 @@ public:
 
     const Settings & getSettings() const { return settings; }
 
+
+    struct ActionsHash
+    {
+        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        {
+            SipHash hash;
+            for (const ExpressionAction & act : actions)
+                hash.update(ExpressionAction::ActionHash{}(act));
+            UInt128 result;
+            hash.get128(result.low, result.high);
+            return result;
+        }
+    };
+
 private:
     NamesAndTypesList input_columns;
     Actions actions;
@@ -248,18 +262,6 @@ private:
 };
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-struct ActionsHash
-{
-    size_t operator()(const ExpressionActions::Actions & actions) const
-    {
-        SipHash hash;
-        for (const ExpressionAction & act : actions)
-            hash.update(ExpressionAction::ActionHash{}(act));
-        return hash.get64();
-    }
-};
-
 
 
 /** The sequence of transformations over the block.

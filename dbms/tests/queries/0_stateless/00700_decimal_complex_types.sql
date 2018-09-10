@@ -105,4 +105,11 @@ SELECT arrayConcat(b, nest.c) AS x, toTypeName(x) FROM test.decimal;
 SELECT arrayConcat(c, nest.a) AS x, toTypeName(x) FROM test.decimal;
 SELECT arrayConcat(c, nest.b) AS x, toTypeName(x) FROM test.decimal;
 
+SELECT toDecimal32(12345.6789, 4) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x-0);
+SELECT toDecimal32(-12345.6789, 4) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x+0);
+SELECT toDecimal64(123456789.123456789, 9) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x-0);
+SELECT toDecimal64(-123456789.123456789, 9) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x+0);
+SELECT toDecimal128(0.123456789123456789, 18) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x-0);
+SELECT toDecimal128(-0.1234567891123456789, 18) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x+0);
+
 DROP TABLE IF EXISTS test.decimal;
