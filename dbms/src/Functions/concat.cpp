@@ -11,6 +11,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <IO/WriteHelpers.h>
 #include <ext/range.h>
+#include <ext/map.h>
 
 
 namespace DB
@@ -157,21 +158,25 @@ public:
     bool isVariadic() const override { return true; }
 
 protected:
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*return_type*/) const override
+    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
             return FunctionFactory::instance().get("arrayConcat", context)->build(arguments);
         else
-            return FunctionConcat::create(context);
+            return std::make_shared<DefaultFunction>(
+                FunctionConcat::create(context),
+                ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
+                return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        DataTypes arg_types;
-        for (const auto & arg : arguments)
-            arg_types.emplace_back(arg.type);
+        if (arguments.size() < 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed " + toString(arguments.size())
+                + ", should be at least 2.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        return getLeastSupertype(arg_types);
+        return getLeastSupertype(arguments);
     }
 
 private:
