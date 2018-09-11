@@ -45,17 +45,18 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 
         AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0]));
 
+        WhichDataType which(argument_type);
         if (res)
             return res;
-        else if (typeid_cast<const DataTypeDate *>(&argument_type))
+        else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data>>();
-        else if (typeid_cast<const DataTypeDateTime *>(&argument_type))
+        else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data>>();
-        else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString *>(&argument_type))
+        else if (which.isStringOrFixedString())
             return std::make_shared<AggregateFunctionUniq<String, Data>>();
-        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+        else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data>>();
-        else if (typeid_cast<const DataTypeTuple *>(&argument_type))
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
                 return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true, true>>(argument_types);
@@ -90,17 +91,18 @@ AggregateFunctionPtr createAggregateFunctionUniq(const std::string & name, const
 
         AggregateFunctionPtr res(createWithNumericType<AggregateFunctionUniq, Data>(*argument_types[0]));
 
+        WhichDataType which(argument_type);
         if (res)
             return res;
-        else if (typeid_cast<const DataTypeDate *>(&argument_type))
+        else if (which.isDate())
             return std::make_shared<AggregateFunctionUniq<DataTypeDate::FieldType, Data<DataTypeDate::FieldType>>>();
-        else if (typeid_cast<const DataTypeDateTime *>(&argument_type))
+        else if (which.isDateTime())
             return std::make_shared<AggregateFunctionUniq<DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>>>();
-        else if (typeid_cast<const DataTypeString *>(&argument_type) || typeid_cast<const DataTypeFixedString *>(&argument_type))
+        else if (which.isStringOrFixedString())
             return std::make_shared<AggregateFunctionUniq<String, Data<String>>>();
-        else if (typeid_cast<const DataTypeUUID *>(&argument_type))
+        else if (which.isUUID())
             return std::make_shared<AggregateFunctionUniq<DataTypeUUID::FieldType, Data<DataTypeUUID::FieldType>>>();
-        else if (typeid_cast<const DataTypeTuple *>(&argument_type))
+        else if (which.isTuple())
         {
             if (use_exact_hash_function)
                 return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic, true, true>>(argument_types);
