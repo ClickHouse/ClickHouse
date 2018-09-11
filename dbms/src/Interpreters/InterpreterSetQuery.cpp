@@ -47,7 +47,7 @@ void InterpreterSetQuery::checkAccess(const ASTSetQuery & ast)
         {
 
             if (!allow_ddl && change.name == "allow_ddl")
-                throw Exception("Cannot modify 'allow_ddl' setting when DDL queries are not allowed", ErrorCodes::QUERY_IS_PROHIBITED);
+                throw Exception("Cannot modify 'allow_ddl' setting when DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 
             if (readonly == 1)
                 throw Exception("Cannot execute SET query in readonly mode", ErrorCodes::READONLY);
