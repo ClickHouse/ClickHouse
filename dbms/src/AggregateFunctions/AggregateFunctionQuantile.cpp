@@ -29,17 +29,17 @@ AggregateFunctionPtr createAggregateFunctionQuantile(const std::string & name, c
 
     const DataTypePtr & argument_type = argument_types[0];
 
+    WhichDataType which(argument_type);
 #define CREATE(TYPE) \
-    if (typeid_cast<const DataType ## TYPE *>(argument_type.get())) \
+    if (which.idx == TypeIndex::TYPE) \
         return std::make_shared<AggregateFunctionQuantile<TYPE, Data<TYPE>, Name, have_second_arg, FloatReturnType, returns_many>>(argument_type, params);
-
     FOR_NUMERIC_TYPES(CREATE)
 #undef CREATE
 
-    if (typeid_cast<const DataTypeDate *>(argument_type.get()))
+    if (which.idx == TypeIndex::Date)
         return std::make_shared<AggregateFunctionQuantile<
             DataTypeDate::FieldType, Data<DataTypeDate::FieldType>, Name, have_second_arg, void, returns_many>>(argument_type, params);
-    if (typeid_cast<const DataTypeDateTime *>(argument_type.get()))
+    if (which.idx == TypeIndex::DateTime)
         return std::make_shared<AggregateFunctionQuantile<
             DataTypeDateTime::FieldType, Data<DataTypeDateTime::FieldType>, Name, have_second_arg, void, returns_many>>(argument_type, params);
 

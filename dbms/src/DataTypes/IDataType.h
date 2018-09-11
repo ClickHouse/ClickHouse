@@ -481,6 +481,12 @@ inline bool isTuple(const DataTypePtr & data_type) { return WhichDataType(data_t
 inline bool isArray(const DataTypePtr & data_type) { return WhichDataType(data_type).isArray(); }
 
 template <typename T>
+inline bool isUInt8(const T & data_type)
+{
+    return WhichDataType(data_type).isUInt8();
+}
+
+template <typename T>
 inline bool isUnsignedInteger(const T & data_type)
 {
     return WhichDataType(data_type).isUInt();
