@@ -52,9 +52,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
-#include <Poco/Logger.h>
-#include <common/logger_useful.h>
-
 
 namespace ProfileEvents
 {
