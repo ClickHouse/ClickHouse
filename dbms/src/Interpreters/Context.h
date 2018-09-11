@@ -228,6 +228,8 @@ public:
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table, const String & message) const;
     /// If the table already exists, it returns nullptr, otherwise guard is created.
     std::unique_ptr<DDLGuard> getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const;
+    std::unique_ptr<DDLGuard> getDDLGuardIfDatabaseDoesntExist(const String & database, const String & message) const;
+
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;

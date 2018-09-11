@@ -52,6 +52,9 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <common/logger_useful.h>
 
+#include <Poco/Logger.h>
+#include <common/logger_useful.h>
+
 
 namespace ProfileEvents
 {
@@ -927,6 +930,19 @@ std::unique_ptr<DDLGuard> Context::getDDLGuardIfTableDoesntExist(const String & 
         return {};
 
     return getDDLGuard(database, table, message);
+}
+
+
+std::unique_ptr<DDLGuard> Context::getDDLGuardIfDatabaseDoesntExist(const String & database, const String & message) const
+{
+    auto lock = getLock();
+
+    auto it = shared->ddl_guards.find(database);
+
+    if (it != shared->ddl_guards.end() && !it->second.empty())
+        return {};
+    
+    return getDDLGuard(database, "", message);
 }
 
 
