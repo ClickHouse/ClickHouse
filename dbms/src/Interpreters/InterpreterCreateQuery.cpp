@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int DATABASE_ALREADY_EXISTS;
 }
 
 
@@ -71,8 +72,19 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     String database_name = create.database;
 
-    if (create.if_not_exists && context.isDatabaseExist(database_name))
-        return {};
+    auto guard = context.getDDLGuardIfDatabaseDoesntExist(database_name, "Database " + database_name + " is creating or attaching right now");
+    if (!guard)
+    {
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+    }
+    else 
+    {
+        if (create.if_not_exists && context.isDatabaseExist(database_name))
+            return {};
+    }
 
     String database_engine_name;
     if (!create.storage)
