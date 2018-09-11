@@ -6,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -128,6 +129,46 @@ public:
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+};
+
+
+template <typename T, typename TResult, typename Data>
+class AggregateFunctionDecimalSum final : public IAggregateFunctionDataHelper<Data, AggregateFunctionSum<T, TResult, Data>>
+{
+public:
+    using ResultDataType = DataTypeDecimal<TResult>;
+
+    AggregateFunctionDecimalSum(const IDataType & data_type)
+        : scale(getDecimalScale(data_type))
+    {}
+
+    String getName() const override { return "sum"; }
+
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+    }
+
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        const auto & column = static_cast<const ColumnDecimal<T> &>(*columns[0]);
+        this->data(place).add(column.getData()[row_num]);
+    }
+
+    void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
+    {
+        auto & column = static_cast<ColumnDecimal<TResult> &>(to);
+        column.getData().push_back(this->data(place).get());
+    }
+
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override { this->data(place).write(buf); }
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena *) const override { this->data(place).read(buf); }
+
+    const char * getHeaderFilePath() const override { return __FILE__; }
+
+private:
+    UInt32 scale;
 };
 
 
