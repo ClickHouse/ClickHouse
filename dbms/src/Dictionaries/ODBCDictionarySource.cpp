@@ -97,6 +97,8 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     invalidate_query{other.invalidate_query},
     invalidate_query_response{other.invalidate_query_response},
     odbc_bridge_helper{other.odbc_bridge_helper},
+    bridge_url{other.bridge_url},
+    timeouts{other.timeouts},
     global_context{other.global_context}
 {
 
