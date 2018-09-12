@@ -37,7 +37,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>

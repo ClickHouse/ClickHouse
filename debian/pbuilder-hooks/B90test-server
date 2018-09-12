@@ -44,14 +44,15 @@ if [ "${TEST_CONNECT}" ]; then
     [ "${TEST_PORT_RANDOM}" ] && echo "<yandex><http_port>${CLICKHOUSE_PORT_HTTP}</http_port><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><interserver_http_port>${CLICKHOUSE_PORT_INTERSERVER}</interserver_http_port></yandex>" > /etc/clickhouse-server/config.d/port.xml
 
     if  [ "${TEST_SSL}" ]; then
-        echo "<yandex><https_port>${CLICKHOUSE_PORT_HTTPS}</https_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure></yandex>" > /etc/clickhouse-server/config.d/ssl.xml
-        echo "<yandex><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL></yandex>" > /etc/clickhouse-client/config.xml
+        CLICKHOUSE_SSL_CONFIG="<openSSL><client><verificationMode>none</verificationMode><invalidCertificateHandler><name>AcceptCertificateHandler</name></invalidCertificateHandler></client></openSSL>"
+        echo "<yandex><https_port>${CLICKHOUSE_PORT_HTTPS}</https_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure>${CLICKHOUSE_SSL_CONFIG}</yandex>" > /etc/clickhouse-server/config.d/ssl.xml
+        echo "<yandex><tcp_port>${CLICKHOUSE_PORT_TCP}</tcp_port><tcp_port_secure>${CLICKHOUSE_PORT_TCP_SECURE}</tcp_port_secure>${CLICKHOUSE_SSL_CONFIG}</yandex>" > /etc/clickhouse-client/config.xml
         openssl dhparam -out /etc/clickhouse-server/dhparam.pem 256
         openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt
         chmod a+r /etc/clickhouse-server/* /etc/clickhouse-client/*
-        CLIENT_ADD+="--secure --port $CLICKHOUSE_PORT_TCP_SECURE"
+        CLIENT_ADD+="--secure --port ${CLICKHOUSE_PORT_TCP_SECURE}"
     else
-        CLIENT_ADD+="--port $CLICKHOUSE_PORT_TCP"
+        CLIENT_ADD+="--port ${CLICKHOUSE_PORT_TCP}"
     fi
 
     # For debug

@@ -473,10 +473,10 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     }
 
     /// If single string key - will use hash table with references to it. Strings itself are stored separately in Arena.
-    if (params.keys_size == 1 && types_removed_nullable[0]->isString())
+    if (params.keys_size == 1 && isString(types_removed_nullable[0]))
         return AggregatedDataVariants::Type::key_string;
 
-    if (params.keys_size == 1 && types_removed_nullable[0]->isFixedString())
+    if (params.keys_size == 1 && isFixedString(types_removed_nullable[0]))
         return AggregatedDataVariants::Type::key_fixed_string;
 
     return AggregatedDataVariants::Type::serialized;

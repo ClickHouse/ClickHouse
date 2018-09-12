@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/ColumnArray.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/WriteHelpers.h>
@@ -32,7 +31,7 @@ public:
         : nested_func(nested_), num_arguments(arguments.size())
     {
         for (const auto & type : arguments)
-            if (!typeid_cast<const DataTypeArray *>(type.get()))
+            if (!isArray(type))
                 throw Exception("All arguments for aggregate function " + getName() + " must be arrays", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 

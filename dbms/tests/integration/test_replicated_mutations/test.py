@@ -130,7 +130,7 @@ class Runner:
 
 
 def test_mutations(started_cluster):
-    DURATION_SECONDS = 50
+    DURATION_SECONDS = 30
 
     runner = Runner()
 
@@ -155,8 +155,8 @@ def test_mutations(started_cluster):
     assert runner.total_mutations > 0
 
     all_done = False
-    for i in range(100): # wait for replication 50 seconds max
-        time.sleep(0.5)
+    for i in range(100): # wait for replication 80 seconds max
+        time.sleep(0.8)
 
         def get_done_mutations(node):
             return int(node.query("SELECT sum(is_done) FROM system.mutations WHERE table = 'test_mutations'").rstrip())
