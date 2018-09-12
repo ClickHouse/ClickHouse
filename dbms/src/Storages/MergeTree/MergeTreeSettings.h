@@ -146,7 +146,10 @@ struct MergeTreeSettings
                                                                                                               \
     /** How many records about mutations that are done to keep.                                               \
      *  If zero, then keep all of them */                                                                     \
-    M(SettingUInt64, finished_mutations_to_keep, 100)
+    M(SettingUInt64, finished_mutations_to_keep, 100)                                                         \
+                                                                                                              \
+    /** Minimal amount of bytes to enable O_DIRECT in merge (0 - disabled) */                                 \
+    M(SettingUInt64, min_merge_bytes_to_use_direct_io, 0)
 
     /// Settings that should not change after the creation of a table.
 #define APPLY_FOR_IMMUTABLE_MERGE_TREE_SETTINGS(M)  \
