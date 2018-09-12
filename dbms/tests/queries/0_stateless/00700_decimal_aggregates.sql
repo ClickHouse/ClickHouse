@@ -16,8 +16,7 @@ SELECT toDecimal32(number - 50, 4), toDecimal64(number - 50, 8) / 3, toDecimal12
 FROM system.numbers LIMIT 101;
 
 SELECT count(a), count(b), count(c) FROM test.decimal;
-SELECT min(a), min(b), min(c) FROM test.decimal;
-SELECT max(a), max(b), max(c) FROM test.decimal;
+SELECT [min(a), max(a)], [min(b), max(b)], [min(c), max(c)] FROM test.decimal;
 
 SELECT sum(a), sum(b), sum(c), sumWithOverflow(a), sumWithOverflow(b), sumWithOverflow(c) FROM test.decimal;
 SELECT sum(a), sum(b), sum(c), sumWithOverflow(a), sumWithOverflow(b), sumWithOverflow(c) FROM test.decimal WHERE a > 0;
@@ -29,25 +28,33 @@ SELECT avg(a), avg(b), avg(c) FROM test.decimal;
 SELECT avg(a), avg(b), avg(c) FROM test.decimal WHERE a > 0;
 SELECT avg(a), avg(b), avg(c) FROM test.decimal WHERE a < 0;
 
-SELECT uniq(a), uniq(b), uniq(c) FROM (SELECT * FROM test.decimal ORDER BY a);
-SELECT uniqCombined(a), uniqCombined(b), uniqCombined(c) FROM (SELECT * FROM test.decimal ORDER BY a);
-SELECT uniqExact(a), uniqExact(b), uniqExact(c) FROM (SELECT * FROM test.decimal ORDER BY a);
-SELECT uniqHLL12(a), uniqHLL12(b), uniqHLL12(c) FROM (SELECT * FROM test.decimal ORDER BY a);
+SELECT (uniq(a), uniq(b), uniq(c)),
+    (uniqCombined(a), uniqCombined(b), uniqCombined(c)),
+    (uniqExact(a), uniqExact(b), uniqExact(c)),
+    (uniqHLL12(a), uniqHLL12(b), uniqHLL12(c))
+FROM (SELECT * FROM test.decimal ORDER BY a);
+
+SELECT uniqUpTo(10)(a), uniqUpTo(10)(b), uniqUpTo(10)(c) FROM test.decimal WHERE a >= 0 AND a < 5;
+SELECT uniqUpTo(10)(a), uniqUpTo(10)(b), uniqUpTo(10)(c) FROM test.decimal WHERE a >= 0 AND a < 10;
 
 SELECT argMin(a, b), argMin(a, c), argMin(b, a), argMin(b, c), argMin(c, a), argMin(c, b) FROM test.decimal;
 SELECT argMin(a, b), argMin(a, c), argMin(b, a), argMin(b, c), argMin(c, a), argMin(c, b) FROM test.decimal WHERE a > 0;
 SELECT argMax(a, b), argMax(a, c), argMax(b, a), argMax(b, c), argMax(c, a), argMax(c, b) FROM test.decimal;
 SELECT argMax(a, b), argMax(a, c), argMax(b, a), argMax(b, c), argMax(c, a), argMax(c, b) FROM test.decimal WHERE a < 0;
 
---SELECT median(a), median(b), median(c) FROM test.decimal;
---SELECT quantile(a), quantile(b), quantile(c) FROM test.decimal;
---SELECT quantile(0.9)(a), quantile(0.9)(b), quantile(0.9)(c) FROM test.decimal;
--- TODO: quantileDeterministic, quantileTiming
---SELECT quantileExact(a), quantileExact(b), quantileExact(c) FROM test.decimal;
---SELECT quantileExact(0.9)(a), quantileExact(0.9)(b), quantileExact(0.9)(c) FROM test.decimal;
---SELECT quantileTDigest(a), quantileTDigest(b), quantileTDigest(c) FROM test.decimal;
---SELECT quantileTDigest(0.9)(a), quantileTDigest(0.9)(b), quantileTDigest(0.9)(c) FROM test.decimal;
---SELECT quantiles(0.5, 0.9)(a), quantiles(0.5, 0.9)(b), quantiles(0.5, 0.9)(c) FROM test.decimal;
+SELECT medianExact(a), medianExact(b), medianExact(c) FROM test.decimal;
+SELECT quantileExact(a), quantileExact(b), quantileExact(c) FROM test.decimal WHERE a < 0;
+SELECT quantileExact(0.0)(a), quantileExact(0.0)(b), quantileExact(0.0)(c) FROM test.decimal WHERE a >= 0;
+SELECT quantileExact(0.2)(a), quantileExact(0.2)(b), quantileExact(0.2)(c) FROM test.decimal WHERE a >= 0;
+SELECT quantileExact(0.4)(a), quantileExact(0.4)(b), quantileExact(0.4)(c) FROM test.decimal WHERE a >= 0;
+SELECT quantileExact(0.6)(a), quantileExact(0.6)(b), quantileExact(0.6)(c) FROM test.decimal WHERE a >= 0;
+SELECT quantileExact(0.8)(a), quantileExact(0.8)(b), quantileExact(0.8)(c) FROM test.decimal WHERE a >= 0;
+SELECT quantileExact(1.0)(a), quantileExact(1.0)(b), quantileExact(1.0)(c) FROM test.decimal WHERE a >= 0;
+SELECT quantilesExact(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(a) FROM test.decimal;
+SELECT quantilesExact(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(b) FROM test.decimal;
+SELECT quantilesExact(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)(c) FROM test.decimal;
 
 -- TODO: sumMap
+-- TODO: other quantile(s)
 -- TODO: groupArray, groupArrayInsertAt, groupUniqArray
+-- TODO: topK
