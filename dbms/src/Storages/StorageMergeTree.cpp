@@ -383,7 +383,6 @@ void StorageMergeTree::loadMutations()
 
 
 bool StorageMergeTree::merge(
-    size_t aio_threshold,
     bool aggressive,
     const String & partition_id,
     bool final,
@@ -477,7 +476,7 @@ bool StorageMergeTree::merge(
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, *merge_entry, aio_threshold, time(nullptr),
+            future_part, *merge_entry, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
@@ -618,9 +617,8 @@ bool StorageMergeTree::backgroundTask()
             clearOldMutations();
         }
 
-        size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
         ///TODO: read deduplicate option from table config
-        if (merge(aio_threshold, false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+        if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return true;
 
         return tryMutatePart();
@@ -751,7 +749,7 @@ bool StorageMergeTree::optimize(
 
         for (const String & partition_id : partition_ids)
         {
-            if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, true, deduplicate, &disable_reason))
+            if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
                 if (context.getSettingsRef().optimize_throw_if_noop)
                     throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
@@ -761,7 +759,7 @@ bool StorageMergeTree::optimize(
     }
     else
     {
-        if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate, &disable_reason))
+        if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
             if (context.getSettingsRef().optimize_throw_if_noop)
                 throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
