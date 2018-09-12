@@ -403,7 +403,6 @@ size_t StorageDistributed::getShardCount() const
     return getCluster()->getShardCount();
 }
 
-
 ClusterPtr StorageDistributed::getCluster() const
 {
     return owned_cluster ? owned_cluster : context.getCluster(cluster_name);
