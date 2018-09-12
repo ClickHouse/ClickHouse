@@ -91,6 +91,8 @@ DataTypePtr createDecimal(UInt64 precision, UInt64 scale);
 template <typename T>
 class DataTypeDecimal final : public DataTypeSimpleSerialization
 {
+    static_assert(IsDecimalNumber<T>);
+
 public:
     using FieldType = T;
     using ColumnType = ColumnDecimal<T>;
