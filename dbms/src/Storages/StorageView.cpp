@@ -9,6 +9,10 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 #include <Common/typeid_cast.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
+#include <Parsers/ASTAsterisk.h>
+#include <iostream>
+#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -45,16 +49,21 @@ BlockInputStreams StorageView::read(
 
     BlockInputStreams res;
 
+    ASTPtr & current_inner_query = inner_query;
+
     if (context.getSettings().enable_optimize_predicate_expression)
     {
-        replaceTableNameWithSubquery(typeid_cast<ASTSelectQuery *>(query_info.query.get()), inner_query);
-        auto res_io = InterpreterSelectQuery(query_info.query, context, column_names, processed_stage).execute();
+        auto new_inner_query = inner_query->clone();
+        auto new_outer_query = query_info.query->clone();
+        auto new_outer_select = typeid_cast<ASTSelectQuery *>(new_outer_query.get());
 
-        res.emplace_back(res_io.in);
-        return res;
+        replaceTableNameWithSubquery(new_outer_select, new_inner_query);
+
+        if (PredicateExpressionsOptimizer(new_outer_select, context.getSettings(), context).optimize())
+            current_inner_query = new_inner_query;
     }
 
-    res = InterpreterSelectWithUnionQuery(inner_query, context, column_names).executeWithMultipleStreams();
+    res = InterpreterSelectWithUnionQuery(current_inner_query, context, column_names).executeWithMultipleStreams();
 
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
@@ -76,9 +85,12 @@ void StorageView::replaceTableNameWithSubquery(ASTSelectQuery * select_query, AS
     if (!table_expression->database_and_table_name)
         throw Exception("Logical error: incorrect table expression", ErrorCodes::LOGICAL_ERROR);
 
+    const auto alias = table_expression->database_and_table_name->tryGetAlias();
     table_expression->database_and_table_name = {};
     table_expression->subquery = std::make_shared<ASTSubquery>();
-    table_expression->subquery->children.push_back(subquery->clone());
+    table_expression->subquery->children.push_back(subquery);
+    if (!alias.empty())
+        table_expression->subquery->setAlias(alias);
 }
 
 
