@@ -197,7 +197,7 @@ void validateArraySizes(const Block & block)
     {
         const auto & elem = block.getByPosition(i);
 
-        if (const DataTypeArray * type_arr = typeid_cast<const DataTypeArray *>(elem.type.get()))
+        if (isArray(elem.type))
         {
             if (!typeid_cast<const ColumnArray *>(elem.column.get()))
                 throw Exception("Column with Array type is not represented by ColumnArray column: " + elem.column->dumpStructure(), ErrorCodes::ILLEGAL_COLUMN);
