@@ -13,6 +13,7 @@
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 
 
 namespace DB
@@ -51,7 +52,10 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
     AggregateFunctionQuantile<Value, Data, Name, have_second_arg, FloatReturnType, returns_many>>
 {
 private:
+    using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
+
     static constexpr bool returns_float = !std::is_same_v<FloatReturnType, void>;
+    static_assert(!IsDecimalNumber<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 
@@ -87,13 +91,13 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
+        const auto & column = static_cast<const ColVecType &>(*columns[0]);
         if constexpr (have_second_arg)
             this->data(place).add(
-                static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num],
+                column.getData()[row_num],
                 columns[1]->getUInt(row_num));
         else
-            this->data(place).add(
-                static_cast<const ColumnVector<Value> &>(*columns[0]).getData()[row_num]);
+            this->data(place).add(column.getData()[row_num]);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -138,7 +142,7 @@ public:
             }
             else
             {
-                auto & data_to = static_cast<ColumnVector<Value> &>(arr_to.getData()).getData();
+                auto & data_to = static_cast<ColVecType &>(arr_to.getData()).getData();
                 size_t old_size = data_to.size();
                 data_to.resize(data_to.size() + size);
 
@@ -150,7 +154,7 @@ public:
             if constexpr (returns_float)
                 static_cast<ColumnVector<FloatReturnType> &>(to).getData().push_back(data.getFloat(level));
             else
-                static_cast<ColumnVector<Value> &>(to).getData().push_back(data.get(level));
+                static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
     }
 
