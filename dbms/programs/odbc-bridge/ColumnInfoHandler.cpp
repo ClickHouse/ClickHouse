@@ -16,14 +16,12 @@
 
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-
+#include <Poco/Net/HTMLForm.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
-#include <Common/HTMLForm.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
-
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include "validateODBCConnectionString.h"
