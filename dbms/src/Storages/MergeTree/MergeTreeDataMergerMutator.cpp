@@ -521,7 +521,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FuturePart & future_part, MergeList::Entry & merge_entry,
-    size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
+    time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -608,11 +608,30 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     BlockInputStreams src_streams;
     UInt64 watch_prev_elapsed = 0;
 
+    /// Note: this is dirty hack, because MergeTreeBlockInputStream expects amount of bytes instead of flag.
+    /// But when we send `use_direct_io = 1 (bytes)`, it will enable direct_io in any case
+    /// because we can't read less then single byte
+    size_t use_direct_io = 0;
+    if (data.settings.min_merge_bytes_to_use_direct_io != 0)
+    {
+        size_t total_size = 0;
+        for (const auto & part : parts)
+        {
+            total_size += part->bytes_on_disk;
+            if (total_size >= data.settings.min_merge_bytes_to_use_direct_io)
+            {
+                use_direct_io = 1;
+                break;
+            }
+        }
+    }
+
+
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeBlockInputStream>(
             data, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, part->marks_count)),
-            false, nullptr, true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
+            false, nullptr, true, use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
@@ -684,7 +703,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     MergedBlockOutputStream to{
-        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, aio_threshold};
+        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, use_direct_io};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -762,7 +781,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             {
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
                     data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->marks_count)},
-                    false, nullptr, true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
+                    false, nullptr, true, use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
                 column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
                         merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed));
