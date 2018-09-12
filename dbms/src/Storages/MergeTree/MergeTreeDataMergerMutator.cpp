@@ -609,8 +609,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     UInt64 watch_prev_elapsed = 0;
 
     /// Note: this is dirty hack, because MergeTreeBlockInputStream expects amount of bytes instead of flag.
-    /// But when we send `use_direct_io = 1 (bytes)`, it will enable direct_io in any case
-    /// because we can't read less then single byte
+    /// But when we send `use_direct_io = 1 (byte)`, it will enable O_DIRECT in any case
+    /// because stream can't read less then single byte
     size_t use_direct_io = 0;
     if (data.settings.min_merge_bytes_to_use_direct_io != 0)
     {
@@ -620,6 +620,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             total_size += part->bytes_on_disk;
             if (total_size >= data.settings.min_merge_bytes_to_use_direct_io)
             {
+                LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
                 use_direct_io = 1;
                 break;
             }
