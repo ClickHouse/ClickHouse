@@ -1147,7 +1147,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
-    size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
     MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
