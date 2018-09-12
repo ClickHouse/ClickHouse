@@ -7,7 +7,7 @@
 #include <common/find_first_symbols.h>
 #include <common/StringRef.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsString.h>
+#include <Functions/FunctionStringToString.h>
 #include <Functions/FunctionsStringArray.h>
 #include <port/memrchr.h>
 
@@ -584,7 +584,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -669,7 +669,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -746,7 +746,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -841,7 +841,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }

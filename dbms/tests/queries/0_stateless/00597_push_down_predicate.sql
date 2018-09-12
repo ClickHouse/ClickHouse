@@ -1,8 +1,10 @@
 SET send_logs_level = 'none';
 
 DROP TABLE IF EXISTS test.test;
+DROP TABLE IF EXISTS test.test_view;
 
 CREATE TABLE test.test(date Date, id Int8, name String, value Int64) ENGINE = MergeTree(date, (id, date), 8192);
+CREATE VIEW test.test_view AS SELECT * FROM test.test;
 
 INSERT INTO test.test VALUES('2000-01-01', 1, 'test string 1', 1);
 INSERT INTO test.test VALUES('2000-01-01', 2, 'test string 2', 2);
@@ -50,6 +52,9 @@ SELECT * FROM (SELECT * FROM (SELECT * FROM test.test) ANY LEFT JOIN (SELECT * F
 -- Optimize predicate expression with join query and qualified
 SELECT * FROM (SELECT 1 AS id, toDate('2000-01-01') AS date FROM system.numbers LIMIT 1) ANY LEFT JOIN (SELECT * FROM test.test) AS b USING date WHERE b.id = 1;
 
+-- Optimize predicate expression with view
+SELECT * FROM test.test_view WHERE id = 1;
+
 SELECT '-------Push to having expression, need check.-------';
 SELECT id FROM (SELECT min(id) AS id FROM test.test) WHERE id = 1; -- { serverError 277 }
 
@@ -57,3 +62,4 @@ SELECT '-------Compatibility test-------';
 SELECT * FROM (SELECT 1 AS id, toDate('2000-01-01') AS date FROM system.numbers LIMIT 1) ANY LEFT JOIN (SELECT * FROM test.test) AS b USING date WHERE b.date = toDate('2000-01-01'); -- {serverError 47}
 
 DROP TABLE IF EXISTS test.test;
+DROP TABLE IF EXISTS test.test_view;

@@ -79,7 +79,7 @@ public:
         if (arguments.size() != 2)
             throw Exception("Aggregate function " + getName() + " requires two arguments.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[1]->isUnsignedInteger())
+        if (!isUnsignedInteger(arguments[1]))
             throw Exception("Second argument of aggregate function " + getName() + " must be integer.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         type = arguments.front();
