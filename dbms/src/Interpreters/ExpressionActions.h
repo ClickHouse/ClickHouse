@@ -166,6 +166,9 @@ public:
             input_columns.emplace_back(input_elem.name, input_elem.type);
             sample_block.insert(input_elem);
         }
+#if USE_EMBEDDED_COMPILER
+        compilation_cache = context_.getCompiledExpressionCache();
+#endif
     }
 
     /// Add the input column.
