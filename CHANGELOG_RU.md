@@ -2,22 +2,22 @@
 
 ### Новые возможности:
 
-* Добавлена поддержка запросов `ALTER UPDATE`. [3035](https://github.com/yandex/ClickHouse/pull/3035)
-* Добавлена настройка `allow_ddl`, упраляющая доступом пользователя к DDL-запросам. [3104](https://github.com/yandex/ClickHouse/pull/3104)
-* Добавлена настройка `min_merge_bytes_to_use_direct_io` для движков семейства `MergeTree`, позволяющая задать порог на суммарный размер слияния после которого работа с файлами кусков будет происходить с O_DIRECT. [3117](https://github.com/yandex/ClickHouse/pull/3117)
-* В системную таблицу `system.merges` добавлен столбец `partition_id`. [3099](https://github.com/yandex/ClickHouse/pull/3099)
+* Добавлена поддержка запросов `ALTER UPDATE`. [#3035](https://github.com/yandex/ClickHouse/pull/3035)
+* Добавлена настройка `allow_ddl`, упраляющая доступом пользователя к DDL-запросам. [#3104](https://github.com/yandex/ClickHouse/pull/3104)
+* Добавлена настройка `min_merge_bytes_to_use_direct_io` для движков семейства `MergeTree`, позволяющая задать порог на суммарный размер слияния после которого работа с файлами кусков будет происходить с O_DIRECT. [#3117](https://github.com/yandex/ClickHouse/pull/3117)
+* В системную таблицу `system.merges` добавлен столбец `partition_id`. [#3099](https://github.com/yandex/ClickHouse/pull/3099)
 
 ### Улучшения
 
-* Если в процессе мутации кусок остался неизменённым он не будет скачан репликами. [3103](https://github.com/yandex/ClickHouse/pull/3103)
-* При работе с `clickhouse-client` добавлено автодополнение для имён настроек. [3106](https://github.com/yandex/ClickHouse/pull/3106)
+* Если в процессе мутации кусок остался неизменённым, он не будет скачан репликами. [#3103](https://github.com/yandex/ClickHouse/pull/3103)
+* При работе с `clickhouse-client` добавлено автодополнение для имён настроек. [#3106](https://github.com/yandex/ClickHouse/pull/3106)
 
 ### Исправление ошибок
 
-* Добавлена проверка размеров массивов, которые являются элементами полей типа `Nested`. [3118](https://github.com/yandex/ClickHouse/pull/3118)
+* Добавлена проверка размеров массивов, которые являются элементами полей типа `Nested`, при вставке. [#3118](https://github.com/yandex/ClickHouse/pull/3118)
 * Исправлена ошибка обновления внешних словарей с источником `ODBC` и форматом хранения `hashed`.
-* Исправлено падение при создании временной таблицы таблицы из запроса с условием `IN`. [zhang2014](https://github.com/yandex/ClickHouse/pull/3098)
-* Исправлена ошибка в работе агрегатных функций для массивов, элементами которых может быть `NULL`. [zhang2014](https://github.com/yandex/ClickHouse/pull/3097)
+* Исправлено падение при создании временной таблицы таблицы из запроса с условием `IN`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3098)
+* Исправлена ошибка в работе агрегатных функций для массивов, элементами которых может быть `NULL`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3097)
 
 
 ## ClickHouse release 18.12.13, 2018-09-10
