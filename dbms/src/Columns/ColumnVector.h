@@ -125,7 +125,7 @@ class ColumnVector final : public COWPtrHelper<IColumn, ColumnVector<T>>
     static_assert(!IsDecimalNumber<T>);
 
 private:
-    using Self = ColumnVector<T>;
+    using Self = ColumnVector;
     friend class COWPtrHelper<IColumn, Self>;
 
     struct less;
