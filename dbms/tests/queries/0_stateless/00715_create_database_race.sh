@@ -6,8 +6,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS db_create_race"
 
-for i in {1..10}; do
-    ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS db_create_race" &    
+function query()
+{
+    for i in {1..100}; do
+        ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS db_create_race"
+        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS db_create_race"  
+    done
+}
+
+for i in {1..2}; do
+    query &
 done
 
 wait
