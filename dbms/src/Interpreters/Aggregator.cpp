@@ -104,11 +104,6 @@ Block Aggregator::getHeader(bool final) const
         for (size_t i = 0; i < params.keys_size; ++i)
         {
             auto col = params.src_header.safeGetByPosition(params.keys[i]).cloneEmpty();
-//            if (auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(col.column.get()))
-//            {
-//                col.column = col_with_dict->getDictionary().getNestedColumn()->cloneEmpty();
-//                col.type = removeLowCardinality(col.type);
-//            }
             res.insert(std::move(col));
         }
 
