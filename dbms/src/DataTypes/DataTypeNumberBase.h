@@ -11,6 +11,8 @@ namespace DB
 template <typename T>
 class DataTypeNumberBase : public IDataType
 {
+    static_assert(IsNumber<T>);
+
 public:
     static constexpr bool is_parametric = false;
     using FieldType = T;

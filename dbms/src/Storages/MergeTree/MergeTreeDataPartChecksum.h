@@ -100,6 +100,15 @@ struct MinimalisticDataPartChecksums
     uint128 hash_of_uncompressed_files {};
     uint128 uncompressed_hash_of_compressed_files {};
 
+    bool operator==(const MinimalisticDataPartChecksums & other) const
+    {
+        return num_compressed_files == other.num_compressed_files
+            && num_uncompressed_files == other.num_uncompressed_files
+            && hash_of_all_files == other.hash_of_all_files
+            && hash_of_uncompressed_files == other.hash_of_uncompressed_files
+            && uncompressed_hash_of_compressed_files == other.uncompressed_hash_of_compressed_files;
+    }
+
     /// Is set only for old formats
     std::unique_ptr<MergeTreeDataPartChecksums> full_checksums;
 
