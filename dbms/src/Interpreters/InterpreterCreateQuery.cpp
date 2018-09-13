@@ -604,7 +604,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         if (create.is_temporary && !context.getSessionContext().hasQueryContext())
             context.getSessionContext().setQueryContext(context.getSessionContext());
-        
+
         return InterpreterInsertQuery(insert,
             create.is_temporary ? context.getSessionContext() : context,
             context.getSettingsRef().insert_allow_materialized_columns).execute();
@@ -649,7 +649,7 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
         if (readonly)
             throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
 
-        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);        
+        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
 
     if (create.is_temporary && readonly >= 2)
@@ -658,6 +658,6 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
     if (readonly)
         throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
 
-    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);        
+    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 }
