@@ -2,14 +2,16 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/typeid_cast.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -17,6 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
