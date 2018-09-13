@@ -136,7 +136,6 @@ bool ClickHouseDictionarySource::isModified() const
     if (!invalidate_query.empty())
     {
         auto response = doInvalidateQuery(invalidate_query);
-        std::cout << response << std::endl;
         if (invalidate_query_response == response)
             return false;
         invalidate_query_response = response;
@@ -166,13 +165,14 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 {
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
-    invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), ""));
 
     if (is_local)
     {
         auto tmp = executeQuery(request, context, true).in;
         return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream&>((*tmp)));
     }
+ 
 
     auto invalidate_stream = RemoteBlockInputStream(pool, request, invalidate_sample_block, context);
 
