@@ -96,8 +96,10 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecC = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayC = typename ColVecC::Container;
 
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
@@ -740,8 +742,10 @@ struct DecimalBinaryOperation
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = Operation<NativeResultType, NativeResultType>;
-    using ArrayA = std::conditional_t<IsDecimalNumber<A>, typename ColumnDecimal<A>::Container, typename ColumnVector<A>::Container>;
-    using ArrayB = std::conditional_t<IsDecimalNumber<B>, typename ColumnDecimal<B>::Container, typename ColumnVector<B>::Container>;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayB = typename ColVecB::Container;
     using ArrayC = typename ColumnDecimal<ResultType>::Container;
     using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
