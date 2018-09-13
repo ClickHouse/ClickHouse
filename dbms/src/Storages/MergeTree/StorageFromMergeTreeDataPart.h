@@ -30,6 +30,13 @@ public:
             {part}, column_names, query_info, context, max_block_size, num_streams, 0);
     }
 
+    bool supportsIndexForIn() const override { return true; }
+
+    bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override
+    {
+        return part->storage.mayBenefitFromIndexForIn(left_in_operand);
+    }
+
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
         : IStorage(part_->storage.getColumns()), part(part_)

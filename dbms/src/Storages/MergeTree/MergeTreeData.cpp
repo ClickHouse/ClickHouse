@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_UPDATE_COLUMN;
 }
 
 
