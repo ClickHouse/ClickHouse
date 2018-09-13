@@ -321,6 +321,7 @@ struct AggregationMethodFixedString
     static AggregationStateCachePtr createCache(const AggregationStateCache::Settings & /*settings*/) { return nullptr; }
 };
 
+/// Cache stores dictionaries and saved_hash per dictionary key.
 class LowCardinalityDictionaryCache : public AggregationStateCache
 {
 public:
@@ -356,7 +357,7 @@ public:
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
-    LowCardinalityDictionaryCache(const AggregationStateCache::Settings & settings) : cache(settings.max_threads) {}
+    explicit LowCardinalityDictionaryCache(const AggregationStateCache::Settings & settings) : cache(settings.max_threads) {}
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -397,9 +398,12 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
         const IColumn * positions = nullptr;
         size_t size_of_index_type = 0;
 
+        /// saved hash is from current column or from cache.
         const UInt64 * saved_hash = nullptr;
+        /// Hold dictionary in case saved_hash is from cache to be sure it won't be deleted.
         ColumnPtr dictionary_holder;
 
+        /// Cache AggregateDataPtr for current column in order to decrease the number of hash table usages.
         PaddedPODArray<AggregateDataPtr> aggregate_data;
         PaddedPODArray<AggregateDataPtr> * aggregate_data_cache;
 
@@ -462,7 +466,6 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
             AggregateDataPtr default_data = nullptr;
             aggregate_data.assign(key[0]->size(), default_data);
             aggregate_data_cache = &aggregate_data;
-
 
             size_of_index_type = column->getSizeOfIndexType();
             positions = column->getIndexesPtr().get();
