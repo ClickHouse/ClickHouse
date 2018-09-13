@@ -61,6 +61,8 @@ private:
 
     bool isAggregateFunction(ASTPtr & node);
 
+    bool isArrayJoinFunction(const ASTPtr & node);
+
     PredicateExpressions splitConjunctionPredicate(ASTPtr & predicate_expression);
 
     void getDependenciesAndQualifiedOfExpression(const ASTPtr & expression, IdentifiersWithQualifiedNameSet & dependencies_and_qualified,
