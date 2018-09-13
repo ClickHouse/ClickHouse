@@ -24,7 +24,7 @@ template <typename T>
 struct SingleValueDataFixed
 {
 private:
-    using Self = SingleValueDataFixed<T>;
+    using Self = SingleValueDataFixed;
 
     bool has_value = false; /// We need to remember if at least one value has been passed. This is necessary for AggregateFunctionIf.
     T value;
@@ -563,7 +563,7 @@ public:
 template <typename Data>
 struct AggregateFunctionMinData : Data
 {
-    using Self = AggregateFunctionMinData<Data>;
+    using Self = AggregateFunctionMinData;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeIfLess(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfLess(to, arena); }
@@ -574,7 +574,7 @@ struct AggregateFunctionMinData : Data
 template <typename Data>
 struct AggregateFunctionMaxData : Data
 {
-    using Self = AggregateFunctionMaxData<Data>;
+    using Self = AggregateFunctionMaxData;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeIfGreater(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeIfGreater(to, arena); }
@@ -585,7 +585,7 @@ struct AggregateFunctionMaxData : Data
 template <typename Data>
 struct AggregateFunctionAnyData : Data
 {
-    using Self = AggregateFunctionAnyData<Data>;
+    using Self = AggregateFunctionAnyData;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeFirstTime(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeFirstTime(to, arena); }
@@ -596,7 +596,7 @@ struct AggregateFunctionAnyData : Data
 template <typename Data>
 struct AggregateFunctionAnyLastData : Data
 {
-    using Self = AggregateFunctionAnyLastData<Data>;
+    using Self = AggregateFunctionAnyLastData;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena) { return this->changeEveryTime(column, row_num, arena); }
     bool changeIfBetter(const Self & to, Arena * arena)                        { return this->changeEveryTime(to, arena); }
@@ -615,7 +615,7 @@ struct AggregateFunctionAnyHeavyData : Data
 {
     size_t counter = 0;
 
-    using Self = AggregateFunctionAnyHeavyData<Data>;
+    using Self = AggregateFunctionAnyHeavyData;
 
     bool changeIfBetter(const IColumn & column, size_t row_num, Arena * arena)
     {
