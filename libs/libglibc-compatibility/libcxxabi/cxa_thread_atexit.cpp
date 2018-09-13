@@ -16,16 +16,6 @@ namespace __cxxabiv1 {
 
   using Dtor = void(*)(void*);
 
-  extern "C"
-#ifndef HAVE___CXA_THREAD_ATEXIT_IMPL
-  // A weak symbol is used to detect this function's presence in the C library
-  // at runtime, even if libc++ is built against an older libc
-  _LIBCXXABI_WEAK
-#endif
-  int __cxa_thread_atexit_impl(Dtor, void*, void*);
-
-#ifndef HAVE___CXA_THREAD_ATEXIT_IMPL
-
 namespace {
   // This implementation is used if the C library does not provide
   // __cxa_thread_atexit_impl() for us.  It has a number of limitations that are
@@ -99,17 +89,10 @@ namespace {
   };
 } // namespace
 
-#endif // HAVE___CXA_THREAD_ATEXIT_IMPL
 
 extern "C" {
 
   _LIBCXXABI_FUNC_VIS int __cxa_thread_atexit(Dtor dtor, void* obj, void* dso_symbol) throw() {
-#ifdef HAVE___CXA_THREAD_ATEXIT_IMPL
-    return __cxa_thread_atexit_impl(dtor, obj, dso_symbol);
-#else
-    if (__cxa_thread_atexit_impl) {
-      return __cxa_thread_atexit_impl(dtor, obj, dso_symbol);
-    } else {
       // Initialize the dtors std::__libcpp_tls_key (uses __cxa_guard_*() for
       // one-time initialization and __cxa_atexit() for destruction)
       static DtorsManager manager;
@@ -132,8 +115,6 @@ extern "C" {
       dtors = head;
 
       return 0;
-    }
-#endif // HAVE___CXA_THREAD_ATEXIT_IMPL
   }
 
 } // extern "C"
