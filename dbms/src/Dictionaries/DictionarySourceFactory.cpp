@@ -65,6 +65,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
     }
 
     if (dict_struct.range_min)
+    {
         for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
         {
             const auto & type = std::make_shared<DataTypeNullable>(attribute->type);
@@ -73,6 +74,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 
             block.insert(ColumnWithTypeAndName{std::move(column), type, attribute->name});
         }
+    }
 
     for (const auto & attribute : dict_struct.attributes)
     {
