@@ -7,6 +7,7 @@ import subprocess
 import time
 import lxml.etree as et
 import atexit
+import fnmatch
 from itertools import chain
 from os import system
 from argparse import ArgumentParser
@@ -136,8 +137,16 @@ def generate_structure(args):
             # [ 'library_c_complex_mixed_key_cache', 2, False ],
         ])
 
+    for range_hashed_range_type in range_hashed_range_types:
+        base_name = 'range_hashed_' + range_hashed_range_type
+        dictionaries.extend([
+            [ 'file_' + base_name, 3, False ],
+            # [ 'clickhouse_' + base_name, 3, True ],
+            # [ 'executable_flat' + base_name, 3, True ]
+        ])
 
-files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv' ]
+
+files = [ 'key_simple.tsv', 'key_complex_integers.tsv', 'key_complex_mixed.tsv', 'key_range_hashed_{range_hashed_range_type}.tsv' ]
 
 
 types = [
@@ -165,6 +174,28 @@ implicit_defaults = [
     'implicit-default',
     '2015-11-25', '2015-11-25 00:00:00', "550e8400-e29b-41d4-a716-446655440000"
 ]
+
+range_hashed_range_types = [
+    '', # default type (Date) for compatibility with older versions
+    'UInt8', 'UInt16', 'UInt32', 'UInt64',
+    'Int8', 'Int16', 'Int32', 'Int64',
+    'Date', 'DateTime'
+]
+
+# values for 4th argument of dictGetX on range_hashed dictionary according to range_min/range_max type.
+range_hashed_dictGet_values = {
+    '': "toDate('2015-11-25')", # default type (Date) for compatibility with older versions
+    'UInt8': '1',
+    'UInt16': '1',
+    'UInt32': '1',
+    'UInt64': '1',
+    'Int8': '-1',
+    'Int16': '-1',
+    'Int32': '-1',
+    'Int64': '-1',
+    'Date': "toDate('2015-11-25')",
+    'DateTime': "toDateTime('2015-11-25 00:00:00')"
+}
 
 
 def dump_report(destination, suite, test_case, report):
@@ -196,7 +227,8 @@ def generate_data(args):
     key_columns = [
         [ 'id' ],
         [ 'key0', 'key1' ],
-        [ 'key0_str', 'key1' ]
+        [ 'key0_str', 'key1' ],
+        # Explicitly no column for range_hashed, since it is completely separate case
     ]
 
     print 'Creating ClickHouse table'
@@ -214,12 +246,19 @@ def generate_data(args):
               ') engine=Log; insert into test.dictionary_source format TabSeparated'
               '"'.format(source = args.source, ch = args.client, port = args.port))
 
-    # generate 3 files with different key types
+    # generate files with different key types
     print 'Creating .tsv files'
     file_source_query = 'select %s from test.dictionary_source format TabSeparated;'
     for file, keys in zip(files, key_columns):
         query = file_source_query % comma_separated(chain(keys, columns(), [ 'Parent' ] if 1 == len(keys) else []))
         call([ args.client, '--port', args.port, '--query', query ], 'generated/' + file)
+
+    for range_hashed_range_type in range_hashed_range_types:
+        file = files[3].format(range_hashed_range_type=range_hashed_range_type)
+        t = range_hashed_dictGet_values[range_hashed_range_type]
+        keys = [ 'id', t, t ]
+        query = file_source_query % comma_separated(chain(keys, columns(), ['Parent'] if 1 == len(keys) else []))
+        call([args.client, '--port', args.port, '--query', query], 'generated/' + file)
 
     # create MySQL table from complete_query
     if not args.no_mysql:
@@ -411,6 +450,7 @@ def generate_dictionaries(args):
     layout_cache = '<cache><size_in_cells>128</size_in_cells></cache>'
     layout_complex_key_hashed = '<complex_key_hashed />'
     layout_complex_key_cache = '<complex_key_cache><size_in_cells>128</size_in_cells></complex_key_cache>'
+    layout_range_hashed = '<range_hashed />'
 
     key_simple = '''
     <id>
@@ -444,7 +484,22 @@ def generate_dictionaries(args):
     </key>
     '''
 
-    keys = [ key_simple, key_complex_integers, key_complex_mixed ]
+    # For range hashed, range_min and range_max are kind of additional keys, so it makes sense to put it here.
+    key_range_hashed = '''
+    <id>
+        <name>id</name>
+    </id>
+    <range_min>
+            <name>StartDate</name>
+            {range_hashed_range_type}
+    </range_min>
+    <range_max>
+            <name>EndDate</name>
+            {range_hashed_range_type}
+    </range_max>
+    '''
+
+    keys = [ key_simple, key_complex_integers, key_complex_mixed, key_range_hashed ]
 
     parent_attribute = '''
     <attribute>
@@ -549,11 +604,27 @@ def generate_dictionaries(args):
         #[ source_library_c, layout_complex_key_cache ],
     ])
 
+    for range_hashed_range_type in range_hashed_range_types:
+        sources_and_layouts.extend([
+            [ source_file % (generated_prefix + (files[3].format(range_hashed_range_type=range_hashed_range_type))), (layout_range_hashed, range_hashed_range_type) ],
+            # [ source_clickhouse, layout_range_hashed ],
+            # [ source_executable, layout_range_hashed ]
+        ])
+
     for (name, key_idx, has_parent), (source, layout) in zip(dictionaries, sources_and_layouts):
         filename = os.path.join(args.generated, 'dictionary_%s.xml' % name)
+        key = keys[key_idx]
+
+        if key_idx == 3:
+            layout, range_hashed_range_type = layout
+            # Wrap non-empty type (default) with <type> tag.
+            if range_hashed_range_type:
+                range_hashed_range_type = '<type>{}</type>'.format(range_hashed_range_type)
+            key = key.format(range_hashed_range_type=range_hashed_range_type)
+
         with open(filename, 'w') as file:
             dictionary_xml = dictionary_skeleton.format(
-                key = keys[key_idx], parent = parent_attribute if has_parent else '', **locals())
+                parent = parent_attribute if has_parent else '', **locals())
             file.write(dictionary_xml)
 
 
@@ -570,7 +641,10 @@ def run_tests(args):
         def https_killer():
            https_server.kill()
 
-    keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)' ]
+    if args.filter:
+        print 'Only test cases matching filter "{}" are going to be executed.'.format(args.filter)
+
+    keys = [ 'toUInt64(n)', '(n, n)', '(toString(n), n)', 'toUInt64(n)' ]
     dict_get_query_skeleton = "select dictGet{type}('{name}', '{type}_', {key}) from system.one array join range(8) as n;"
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
     dict_get_or_default_query_skeleton = "select dictGet{type}OrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
@@ -581,6 +655,10 @@ def run_tests(args):
         global SERVER_DIED
 
         print "{0:100}".format('Dictionary: ' + dict + ' Name: ' + name + ": "),
+        if args.filter and not fnmatch.fnmatch(dict, args.filter) and not fnmatch.fnmatch(name, args.filter):
+            print " ... skipped due to filter."
+            return
+
         sys.stdout.flush()
         report_testcase = et.Element("testcase", attrib = {"name": name})
 
@@ -688,8 +766,14 @@ def run_tests(args):
         key = keys[key_idx]
         print 'Testing dictionary', name
 
-        # query dictHas
-        test_query(name, dict_has_query_skeleton.format(**locals()), 'has', 'dictHas')
+        if key_idx == 3:
+            # for range_hashed dictGetX takes 4 arguments, its value depends on range_min/max type.
+            t = name.split('_')[-1] # get range_min/max type from dictionary name
+            key += ', ' + range_hashed_dictGet_values[t]
+        else:
+            # query dictHas is not supported for range_hashed dictionaries
+            test_query(name, dict_has_query_skeleton.format(**locals()), 'has', 'dictHas')
+
 
         # query dictGet*
         for type, default in zip(types, explicit_defaults):
@@ -698,9 +782,10 @@ def run_tests(args):
             test_query(name,
                 dict_get_query_skeleton.format(**locals()),
                 type, 'dictGet' + type)
-            test_query(name,
-                dict_get_or_default_query_skeleton.format(**locals()),
-                type + 'OrDefault', 'dictGet' + type + 'OrDefault')
+            if key_idx != 3:
+                test_query(name,
+                    dict_get_or_default_query_skeleton.format(**locals()),
+                    type + 'OrDefault', 'dictGet' + type + 'OrDefault')
 
         # query dictGetHierarchy, dictIsIn
         if has_parent:
@@ -749,6 +834,8 @@ if __name__ == '__main__':
     parser.add_argument('--https_host', default = 'localhost', help = 'https server host')
     parser.add_argument('--https_path', default = '/generated/', help = 'https server path')
     parser.add_argument('--no_break', action='store_true', help = 'Dont stop on errors')
+
+    parser.add_argument('--filter', type = str, default = None, help = 'Run only test cases matching given glob filter.')
 
     args = parser.parse_args()
 
