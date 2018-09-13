@@ -2794,10 +2794,10 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
     {
         ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
-        auto [user, password] = context.getInterserverCredentials();
+        auto user_password = context.getInterserverCredentials();
         String interserver_scheme = context.getInterserverScheme();
 
-        get_part = [&, address, timeouts, user, password, interserver_scheme]()
+        get_part = [&, address, timeouts, user_password, interserver_scheme]()
         {
             if (interserver_scheme != address.scheme)
                 throw Exception("Interserver schemes are different: '" + interserver_scheme
@@ -2807,7 +2807,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             return fetcher.fetchPart(
                 part_name, replica_path,
                 address.host, address.replication_port,
-                timeouts, user, password, interserver_scheme, to_detached);
+                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
         };
     }
 
