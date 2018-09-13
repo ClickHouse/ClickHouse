@@ -702,6 +702,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
+                std::lock_guard<std::mutex> lock(mutex);
                 fn = compilation_cache->get(hash_key);
                 if (!fn)
                 {
@@ -735,7 +736,10 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     }
 
     if (context)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
         context->finalize();
+    }
 }
 
 }
