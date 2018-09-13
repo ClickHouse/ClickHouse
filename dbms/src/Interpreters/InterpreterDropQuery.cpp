@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -217,14 +218,16 @@ void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 {
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.readonly;
+    bool allow_ddl = settings.allow_ddl;
 
     /// It's allowed to drop temporary tables.
-    if (!readonly || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
-    {
+    if ((!readonly && allow_ddl) || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
         return;
-    }
 
-    throw Exception("Cannot drop table in readonly mode", ErrorCodes::READONLY);
+    if (readonly)
+        throw Exception("Cannot drop table in readonly mode", ErrorCodes::READONLY);
+
+    throw Exception("Cannot drop table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 
 }
