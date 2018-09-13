@@ -164,16 +164,13 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
 std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & request) const
 {
     Block invalidate_sample_block;
-    ColumnPtr column(ColumnString::create());
-    invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), ""));
 
     if (is_local)
     {
-        auto tmp = executeQuery(request, context, true).in;
-        return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream&>((*tmp)));
+        auto input_block = executeQuery(request, context, true).in;
+        return readInvalidateQuery(dynamic_cast<IProfilingBlockInputStream&>((*input_block)));
     }
  
-
     auto invalidate_stream = RemoteBlockInputStream(pool, request, invalidate_sample_block, context);
 
     return readInvalidateQuery(invalidate_stream);
