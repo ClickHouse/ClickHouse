@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/DDLWorker.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Common/typeid_cast.h>
 
@@ -49,7 +50,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        mutation_commands.validate(*table, context);
+        MutationsInterpreter(table, mutation_commands, context).validate();
         table->mutate(mutation_commands, context);
     }
 
