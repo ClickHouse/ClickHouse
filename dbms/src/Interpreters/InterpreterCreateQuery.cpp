@@ -602,6 +602,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         insert->table = table_name;
         insert->select = create.select->clone();
 
+        if (create.is_temporary && !context.getSessionContext().hasQueryContext())
+            context.getSessionContext().setQueryContext(context.getSessionContext());
+        
         return InterpreterInsertQuery(insert,
             create.is_temporary ? context.getSessionContext() : context,
             context.getSettingsRef().insert_allow_materialized_columns).execute();
