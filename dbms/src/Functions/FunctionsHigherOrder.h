@@ -28,6 +28,8 @@ namespace ErrorCodes
   * arrayCount(x1,...,xn -> expression, array1,...,arrayn) - for how many elements of the array the expression is true.
   * arrayExists(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for at least one array element.
   * arrayAll(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for all elements of the array.
+  * arrayCumSumNonNegative() - returns an array with cumulative sums of the original. (If value < 0 -> 0).
+  * arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
   *
   * For functions arrayCount, arrayExists, arrayAll, an overload of the form f(array) is available, which works in the same way as f(x -> x, array).
   */
@@ -695,6 +697,179 @@ struct ArrayCumSumImpl
 
 };
 
+struct ArrayDifferenceImpl
+{
+    static bool useDefaultImplementationForConstants() { return true; }
+    static bool needBoolean() { return false; }
+    static bool needExpression() { return false; }
+    static bool needOneArray() { return false; }
+
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
+    {
+        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
+            checkDataType<DataTypeInt8>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
+
+        if (checkDataType<DataTypeUInt16>(&*expression_return) ||
+            checkDataType<DataTypeInt16>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
+
+        if (checkDataType<DataTypeUInt32>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return) ||
+            checkDataType<DataTypeInt32>(&*expression_return) ||
+            checkDataType<DataTypeInt64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+
+        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
+            checkDataType<DataTypeFloat64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+
+        throw Exception("arrayDifference cannot process values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+
+    template <typename Element, typename Result>
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
+    {
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+
+        if (!column)
+            return false;
+
+        const IColumn::Offsets & offsets = array.getOffsets();
+        const typename ColumnVector<Element>::Container & data = column->getData();
+
+        auto res_nested = ColumnVector<Result>::create();
+        typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+        res_values.resize(data.size());
+
+        size_t pos = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            // skip empty arrays
+            if (pos < offsets[i])
+            {
+                res_values[pos] = 0;
+                for (++pos; pos < offsets[i]; ++pos)
+                {
+                    res_values[pos] = static_cast<Result>(data[pos]) - static_cast<Result>(data[pos - 1]);
+                }
+            }
+        }
+        res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
+        return true;
+
+    }
+
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    {
+        ColumnPtr res;
+
+        if (executeType< UInt8 ,  Int16>(mapped, array, res) ||
+            executeType< UInt16,  Int32>(mapped, array, res) ||
+            executeType< UInt32,  Int64>(mapped, array, res) ||
+            executeType< UInt64,  Int64>(mapped, array, res) ||
+            executeType<  Int8 ,  Int16>(mapped, array, res) ||
+            executeType<  Int16,  Int32>(mapped, array, res) ||
+            executeType<  Int32,  Int64>(mapped, array, res) ||
+            executeType<  Int64,  Int64>(mapped, array, res) ||
+            executeType<Float32,Float64>(mapped, array, res) ||
+            executeType<Float64,Float64>(mapped, array, res))
+            return res;
+        else
+            throw Exception("Unexpected column for arrayDifference: " + mapped->getName());
+    }
+
+};
+
+
+struct ArrayCumSumNonNegativeImpl
+{
+    static bool useDefaultImplementationForConstants() { return true; }
+    static bool needBoolean() { return false; }
+    static bool needExpression() { return false; }
+    static bool needOneArray() { return false; }
+
+    static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
+    {
+        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
+            checkDataType<DataTypeUInt16>(&*expression_return) ||
+            checkDataType<DataTypeUInt32>(&*expression_return) ||
+            checkDataType<DataTypeUInt64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
+
+        if (checkDataType<DataTypeInt8>(&*expression_return) ||
+            checkDataType<DataTypeInt16>(&*expression_return) ||
+            checkDataType<DataTypeInt32>(&*expression_return) ||
+            checkDataType<DataTypeInt64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
+
+        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
+            checkDataType<DataTypeFloat64>(&*expression_return))
+            return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
+
+        throw Exception("arrayCumSumNonNegativeImpl cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    }
+
+
+    template <typename Element, typename Result>
+    static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
+    {
+        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+
+        if (!column)
+            return false;
+
+        const IColumn::Offsets & offsets = array.getOffsets();
+        const typename ColumnVector<Element>::Container & data = column->getData();
+
+        auto res_nested = ColumnVector<Result>::create();
+        typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+        res_values.resize(data.size());
+
+        size_t pos = 0;
+        Result accum_sum = 0;
+        for (size_t i = 0; i < offsets.size(); ++i)
+        {
+            // skip empty arrays
+            if (pos < offsets[i])
+            {
+                accum_sum = data[pos];
+                res_values[pos] = accum_sum > 0 ? accum_sum : 0;
+                for (++pos; pos < offsets[i]; ++pos)
+                {
+                    accum_sum = accum_sum + data[pos];
+
+                    res_values[pos] = accum_sum > 0 ? accum_sum : 0;
+                }
+            }
+        }
+        res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
+        return true;
+
+    }
+
+    static ColumnPtr execute(const ColumnArray & array, ColumnPtr mapped)
+    {
+        ColumnPtr res;
+
+        if (executeType< UInt8 , UInt64>(mapped, array, res) ||
+            executeType< UInt16, UInt64>(mapped, array, res) ||
+            executeType< UInt32, UInt64>(mapped, array, res) ||
+            executeType< UInt64, UInt64>(mapped, array, res) ||
+            executeType<  Int8 ,  Int64>(mapped, array, res) ||
+            executeType<  Int16,  Int64>(mapped, array, res) ||
+            executeType<  Int32,  Int64>(mapped, array, res) ||
+            executeType<  Int64,  Int64>(mapped, array, res) ||
+            executeType<Float32,Float64>(mapped, array, res) ||
+            executeType<Float64,Float64>(mapped, array, res))
+            return res;
+        else
+            throw Exception("Unexpected column for arrayCumSumNonNegativeImpl: " + mapped->getName());
+    }
+
+};
+
 
 template <typename Impl, typename Name>
 class FunctionArrayMapped : public IFunction
@@ -948,6 +1123,8 @@ struct NameArrayFirstIndex  { static constexpr auto name = "arrayFirstIndex"; };
 struct NameArraySort        { static constexpr auto name = "arraySort"; };
 struct NameArrayReverseSort { static constexpr auto name = "arrayReverseSort"; };
 struct NameArrayCumSum      { static constexpr auto name = "arrayCumSum"; };
+struct NameArrayCumSumNonNegative      { static constexpr auto name = "arrayCumSumNonNegative"; };
+struct NameArrayDifference     { static constexpr auto name = "arrayDifference"; };
 
 using FunctionArrayMap = FunctionArrayMapped<ArrayMapImpl, NameArrayMap>;
 using FunctionArrayFilter = FunctionArrayMapped<ArrayFilterImpl, NameArrayFilter>;
@@ -960,5 +1137,7 @@ using FunctionArrayFirstIndex = FunctionArrayMapped<ArrayFirstIndexImpl, NameArr
 using FunctionArraySort = FunctionArrayMapped<ArraySortImpl<true>, NameArraySort>;
 using FunctionArrayReverseSort = FunctionArrayMapped<ArraySortImpl<false>, NameArrayReverseSort>;
 using FunctionArrayCumSum = FunctionArrayMapped<ArrayCumSumImpl, NameArrayCumSum>;
+using FunctionArrayCumSumNonNegative = FunctionArrayMapped<ArrayCumSumNonNegativeImpl, NameArrayCumSumNonNegative>;
+using FunctionArrayDifference = FunctionArrayMapped<ArrayDifferenceImpl, NameArrayDifference>;
 
 }
