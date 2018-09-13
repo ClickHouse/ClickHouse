@@ -2713,7 +2713,9 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
 bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum)
 {
-    if (auto part = data.getPartIfExists(part_name, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
+    const auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+
+    if (auto part = data.getPartIfExists(part_info, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
@@ -2754,17 +2756,64 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             part_name, part, replaced_parts, nullptr);
     };
 
-    ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
-    auto [user, password] = context.getInterserverCredentials();
-    String interserver_scheme = context.getInterserverScheme();
+    MergeTreeData::DataPartPtr part_to_clone;
+    {
+        /// If the desired part is a result of a part mutation, try to find the source part and compare
+        /// its checksums to the checksums of the desired part. If they match, we can just clone the local part.
+
+        /// If we have the source part, its part_info will contain covered_part_info.
+        auto covered_part_info = part_info;
+        covered_part_info.mutation = 0;
+        auto source_part = data.getActiveContainingPart(covered_part_info);
+
+        if (source_part)
+        {
+            MinimalisticDataPartChecksums source_part_checksums;
+            source_part_checksums.computeTotalChecksums(source_part->checksums);
+
+            String desired_checksums_str = getZooKeeper()->get(replica_path + "/parts/" + part_name + "/checksums");
+            auto desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
+            if (source_part_checksums == desired_checksums)
+            {
+                LOG_TRACE(log, "Found local part " << source_part->name << " with the same checksums as " << part_name);
+                part_to_clone = source_part;
+            }
+        }
+
+    }
+
+    std::function<MergeTreeData::MutableDataPartPtr()> get_part;
+    if (part_to_clone)
+    {
+        get_part = [&, part_to_clone]()
+        {
+            return data.cloneAndLoadDataPart(part_to_clone, "tmp_clone_", part_info);
+        };
+    }
+    else
+    {
+        ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
+        auto [user, password] = context.getInterserverCredentials();
+        String interserver_scheme = context.getInterserverScheme();
+
+        get_part = [&, address, timeouts, user, password, interserver_scheme]()
+        {
+            if (interserver_scheme != address.scheme)
+                throw Exception("Interserver schemes are different: '" + interserver_scheme
+                    + "' != '" + address.scheme + "', can't fetch part from " + address.host,
+                    ErrorCodes::LOGICAL_ERROR);
+
+            return fetcher.fetchPart(
+                part_name, replica_path,
+                address.host, address.replication_port,
+                timeouts, user, password, interserver_scheme, to_detached);
+        };
+    }
 
     try
     {
-        if (interserver_scheme != address.scheme)
-            throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
-
-        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, interserver_scheme, to_detached);
+        part = get_part();
 
         if (!to_detached)
         {
@@ -2809,7 +2858,11 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
-    LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
+    if (part_to_clone)
+        LOG_DEBUG(log, "Cloned part " << part_name << " from " << part_to_clone->name << (to_detached ? " (to 'detached' directory)" : ""));
+    else
+        LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
+
     return true;
 }
 
