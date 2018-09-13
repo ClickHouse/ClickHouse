@@ -420,7 +420,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
 
 static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
 {
-    if (!type)
+    if (!type || column.size() <= i)
         return nullptr;
     if (auto * constant = typeid_cast<const ColumnConst *>(&column))
         return getNativeValue(type, constant->getDataColumn(), 0);
@@ -702,6 +702,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
+                std::lock_guard<std::mutex> lock(mutex);
                 fn = compilation_cache->get(hash_key);
                 if (!fn)
                 {
@@ -735,7 +736,10 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     }
 
     if (context)
+    {
+        std::lock_guard<std::mutex> lock(mutex);
         context->finalize();
+    }
 }
 
 }
