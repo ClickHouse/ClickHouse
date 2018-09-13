@@ -20,7 +20,7 @@ namespace DB
 
 /** Create an aggregate function with a numeric type in the template parameter, depending on the type of the argument.
   */
-template <template <typename, typename ... TArgs> class AggregateFunctionTemplate, typename ... TArgs>
+template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
 static IAggregateFunction * createWithNumericType(const IDataType & argument_type, TArgs && ... args)
 {
     WhichDataType which(argument_type);
@@ -59,7 +59,6 @@ static IAggregateFunction * createWithNumericType(const IDataType & argument_typ
     return nullptr;
 }
 
-
 template <template <typename, typename> class AggregateFunctionTemplate, template <typename> class Data, typename ... TArgs>
 static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argument_type, TArgs && ... args)
 {
@@ -68,6 +67,16 @@ static IAggregateFunction * createWithUnsignedIntegerType(const IDataType & argu
     if (which.idx == TypeIndex::UInt16) return new AggregateFunctionTemplate<UInt16, Data<UInt16>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt32) return new AggregateFunctionTemplate<UInt32, Data<UInt32>>(std::forward<TArgs>(args)...);
     if (which.idx == TypeIndex::UInt64) return new AggregateFunctionTemplate<UInt64, Data<UInt64>>(std::forward<TArgs>(args)...);
+    return nullptr;
+}
+
+template <template <typename> class AggregateFunctionTemplate, typename ... TArgs>
+static IAggregateFunction * createWithDecimalType(const IDataType & argument_type, TArgs && ... args)
+{
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Decimal32) return new AggregateFunctionTemplate<Decimal32>(argument_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal64) return new AggregateFunctionTemplate<Decimal64>(argument_type, std::forward<TArgs>(args)...);
+    if (which.idx == TypeIndex::Decimal128) return new AggregateFunctionTemplate<Decimal128>(argument_type, std::forward<TArgs>(args)...);
     return nullptr;
 }
 

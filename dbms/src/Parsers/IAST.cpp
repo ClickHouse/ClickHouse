@@ -99,8 +99,10 @@ String IAST::getColumnName() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name, WriteBuffer & out) const
+void IAST::FormatSettings::writeIdentifier(const String & name) const
 {
+    WriteBufferFromOStream out(ostr, 32);
+
     switch (identifier_quoting_style)
     {
         case IdentifierQuotingStyle::None:
@@ -128,6 +130,8 @@ void IAST::FormatSettings::writeIdentifier(const String & name, WriteBuffer & ou
             break;
         }
     }
+
+    out.next();
 }
 
 }
