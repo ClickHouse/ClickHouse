@@ -1,10 +1,13 @@
 import time
 import pytest
 
+import os
 import pymysql.cursors
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, base_configs_dir='configs')
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+cluster = ClickHouseCluster(__file__, base_configs_dir=os.path.join(SCRIPT_DIR, 'configs'))
 node1 = cluster.add_instance('node1', with_odbc_drivers=True, with_mysql=True, image='alesapin/ubuntu_with_odbc:14.04', main_configs=['configs/dictionaries/sqlite3_odbc_hashed_dictionary.xml', 'configs/dictionaries/sqlite3_odbc_cached_dictionary.xml'])
 
 create_table_sql_template =   """
@@ -43,6 +46,8 @@ def started_cluster():
 
         yield cluster
 
+    except Exception as ex:
+        print(ex)
     finally:
         cluster.shutdown()
 
