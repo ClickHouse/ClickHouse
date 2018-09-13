@@ -20,16 +20,16 @@ void createHardLink(const String & source_path, const String & destination_path)
             struct stat destination_descr;
 
             if (0 != lstat(source_path.c_str(), &source_descr))
-                DB::throwFromErrno("Cannot stat " + source_path);
+                throwFromErrno("Cannot stat " + source_path);
 
             if (0 != lstat(destination_path.c_str(), &destination_descr))
-                DB::throwFromErrno("Cannot stat " + destination_path);
+                throwFromErrno("Cannot stat " + destination_path);
 
             if (source_descr.st_ino != destination_descr.st_ino)
-                DB::throwFromErrno("Destination file " + destination_path + " is already exist and have different inode.", 0, link_errno);
+                throwFromErrno("Destination file " + destination_path + " is already exist and have different inode.", 0, link_errno);
         }
         else
-            DB::throwFromErrno("Cannot link " + source_path + " to " + destination_path);
+            throwFromErrno("Cannot link " + source_path + " to " + destination_path);
     }
 }
 
