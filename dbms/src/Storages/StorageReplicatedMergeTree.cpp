@@ -1986,8 +1986,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         /// We check that it was not suddenly upgraded to new version.
         /// Otherwise it can be upgraded and instantly become lost, but we cannot notice that.
-        ops.push_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent));
-        ops.push_back(zkutil::makeRemoveRequest(replica_path + "/is_lost", -1));
+        ops.push_back(zkutil::makeCreateRequest(source_path + "/is_lost", "0", zkutil::CreateMode::Persistent));
+        ops.push_back(zkutil::makeRemoveRequest(source_path + "/is_lost", -1));
     }
     else    /// The replica we clone should not suddenly become lost.
         ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", source_is_lost_stat.version));
