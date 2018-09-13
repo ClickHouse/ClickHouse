@@ -51,7 +51,6 @@
 #include <Poco/Message.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Util/MapConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
@@ -69,6 +68,7 @@
 #include <daemon/OwnPatternFormatter.h>
 #include <Common/CurrentThread.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
+#include <common/argsToConfig.h>
 
 
 using Poco::Logger;
@@ -829,6 +829,7 @@ void BaseDaemon::initialize(Application & self)
     task_manager.reset(new Poco::TaskManager);
     ServerApplication::initialize(self);
 
+/*
     {
         /// Parsing all args and converting to config layer
         /// Test: -- --1=1 --1=2 --3 5 7 8 -9 10 -11=12 14= 15== --16==17 --=18 --19= --20 21 22 --23 --24 25 --26 -27 28 ---29=30 -- ----31 32 --33 3-4
@@ -885,6 +886,9 @@ void BaseDaemon::initialize(Application & self)
         /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
         config().add(map_config, PRIO_APPLICATION - 100);
     }
+*/
+    /// now highest priority (lowest value) is PRIO_APPLICATION = -100, we want higher!
+    argsToConfig(argv(), config(), PRIO_APPLICATION - 100);
 
     bool is_daemon = config().getBool("application.runAsDaemon", false);
 
