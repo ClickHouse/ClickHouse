@@ -75,6 +75,9 @@ public:
     std::string result_name;
     DataTypePtr result_type;
 
+    /// If COPY_COLUMN can replace the result column.
+    bool can_replace = false;
+
     /// For conditional projections (projections on subset of rows)
     std::string row_projection_column;
     bool is_row_projection_complementary = false;
@@ -109,7 +112,7 @@ public:
                                       const std::string & row_projection_column,
                                       bool is_row_projection_complementary);
     static ExpressionAction removeColumn(const std::string & removed_name);
-    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
+    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace = false);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);

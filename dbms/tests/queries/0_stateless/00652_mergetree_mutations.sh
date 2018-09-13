@@ -43,6 +43,8 @@ ${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM test.mutations ORDER BY d, 
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done \
     FROM system.mutations WHERE table = 'mutations' ORDER BY mutation_id"
 
+${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations"
+
 
 ${CLICKHOUSE_CLIENT} --query="SELECT '*** Test mutations cleaner ***'"
 
@@ -69,5 +71,4 @@ sleep 0.1
 # Check that the first mutation is cleaned
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, is_done FROM system.mutations WHERE table = 'mutations_cleaner' ORDER BY mutation_id"
 
-${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE test.mutations_cleaner"

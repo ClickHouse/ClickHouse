@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_UPDATE_COLUMN;
 }
 
 
@@ -1866,12 +1867,16 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     return nullptr;
 }
 
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
+{
+    DataPartsLock data_parts_lock(data_parts_mutex);
+    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+}
+
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-
-    DataPartsLock data_parts_lock(data_parts_mutex);
-    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+    return getActiveContainingPart(part_info);
 }
 
 
