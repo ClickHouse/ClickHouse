@@ -72,7 +72,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     String database_name = create.database;
 
-    auto guard = context.getDDLGuardIfDatabaseDoesntExist(database_name, "Database " + database_name + " is creating or attaching right now");
+    auto guard = context.getDDLGuardIfDatabaseDoesntExist(database_name, "Database " + database_name + " is creating right now");
     if (!guard)
     {
         if (create.if_not_exists)

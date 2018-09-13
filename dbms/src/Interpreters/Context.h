@@ -230,7 +230,6 @@ public:
     std::unique_ptr<DDLGuard> getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const;
     std::unique_ptr<DDLGuard> getDDLGuardIfDatabaseDoesntExist(const String & database, const String & message) const;
 
-
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
     void setCurrentDatabase(const String & name);
