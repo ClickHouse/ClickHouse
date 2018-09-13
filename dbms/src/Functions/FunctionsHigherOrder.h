@@ -706,22 +706,18 @@ struct ArrayDifferenceImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
-            checkDataType<DataTypeInt8>(&*expression_return))
+        WhichDataType which(expression_return);
+
+        if (which.isUInt8() || which.isInt8())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt16>());
 
-        if (checkDataType<DataTypeUInt16>(&*expression_return) ||
-            checkDataType<DataTypeInt16>(&*expression_return))
+        if (which.isUInt16() || which.isInt16())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt32>());
 
-        if (checkDataType<DataTypeUInt32>(&*expression_return) ||
-            checkDataType<DataTypeUInt64>(&*expression_return) ||
-            checkDataType<DataTypeInt32>(&*expression_return) ||
-            checkDataType<DataTypeInt64>(&*expression_return))
+        if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
-        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
-            checkDataType<DataTypeFloat64>(&*expression_return))
+        if (which.isFloat32() || which.isFloat64())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
         throw Exception("arrayDifference cannot process values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -792,20 +788,15 @@ struct ArrayCumSumNonNegativeImpl
 
     static DataTypePtr getReturnType(const DataTypePtr & expression_return, const DataTypePtr & /*array_element*/)
     {
-        if (checkDataType<DataTypeUInt8>(&*expression_return) ||
-            checkDataType<DataTypeUInt16>(&*expression_return) ||
-            checkDataType<DataTypeUInt32>(&*expression_return) ||
-            checkDataType<DataTypeUInt64>(&*expression_return))
+        WhichDataType which(expression_return);
+
+        if (which.isNativeInt())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 
-        if (checkDataType<DataTypeInt8>(&*expression_return) ||
-            checkDataType<DataTypeInt16>(&*expression_return) ||
-            checkDataType<DataTypeInt32>(&*expression_return) ||
-            checkDataType<DataTypeInt64>(&*expression_return))
+        if (which.isNativeInt())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt64>());
 
-        if (checkDataType<DataTypeFloat32>(&*expression_return) ||
-            checkDataType<DataTypeFloat64>(&*expression_return))
+        if (which.isFloat())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
         throw Exception("arrayCumSumNonNegativeImpl cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -917,58 +908,6 @@ public:
 
         arguments[0] = std::make_shared<DataTypeFunction>(nested_types);
     }
-
-    /*
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        size_t min_args = Impl::needExpression() ? 2 : 1;
-        if (arguments.size() < min_args)
-            throw Exception("Function " + getName() + " needs at least "
-                + toString(min_args) + " argument; passed "
-                + toString(arguments.size()) + ".",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        if (arguments.size() == 1)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-
-            if (!array_type)
-                throw Exception("The only argument for function " + getName() + " must be array. Found "
-                    + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            DataTypePtr nested_type = array_type->getNestedType();
-
-            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*nested_type))
-                throw Exception("The only argument for function " + getName() + " must be array of UInt8. Found "
-                    + arguments[0]->getName() + " instead.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            return Impl::getReturnType(nested_type, nested_type);
-        }
-        else
-        {
-            if (arguments.size() > 2 && Impl::needOneArray())
-                throw Exception("Function " + getName() + " needs one array argument.",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-            const DataTypeExpression * expression = checkAndGetDataType<DataTypeExpression>(arguments[0].get());
-
-            if (!expression)
-                throw Exception("Type of first argument for function " + getName() + " must be an expression.",
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            /// The types of the remaining arguments are already checked in getLambdaArgumentTypes.
-
-            DataTypePtr return_type = expression->getReturnType();
-            if (Impl::needBoolean() && !checkDataType<DataTypeUInt8>(&*return_type))
-                throw Exception("Expression for function " + getName() + " must return UInt8, found "
-                    + return_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-            const DataTypeArray * first_array_type = checkAndGetDataType<DataTypeArray>(arguments[1].get());
-
-            return Impl::getReturnType(return_type, first_array_type->getNestedType());
-        }
-    }
-     */
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
