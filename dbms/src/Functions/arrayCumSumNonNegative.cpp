@@ -20,7 +20,7 @@ struct ArrayCumSumNonNegativeImpl
     {
         WhichDataType which(expression_return);
 
-        if (which.isNativeInt())
+        if (which.isNativeUInt())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
 
         if (which.isNativeInt())
