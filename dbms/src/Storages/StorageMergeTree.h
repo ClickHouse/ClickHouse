@@ -132,7 +132,7 @@ private:
       * If aggressive - when selects parts don't takes into account their ratio size and novelty (used for OPTIMIZE query).
       * Returns true if merge is finished successfully.
       */
-    bool merge(size_t aio_threshold, bool aggressive, const String & partition_id, bool final, bool deduplicate,
+    bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate,
                String * out_disable_reason = nullptr);
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.

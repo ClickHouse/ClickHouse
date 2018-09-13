@@ -262,6 +262,7 @@ template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name>
 {
     using FromFieldType = typename FromDataType::FieldType;
+    using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
@@ -274,11 +275,11 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
-        if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
+        if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
         {
             auto col_to = ColumnString::create();
 
-            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
+            const typename ColVecType::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();

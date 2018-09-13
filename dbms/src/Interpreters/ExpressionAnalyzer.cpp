@@ -2906,6 +2906,15 @@ void ExpressionAnalyzer::appendProjectResult(ExpressionActionsChain & chain) con
 }
 
 
+void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types)
+{
+    initChain(chain, source_columns);
+    ExpressionActionsChain::Step & step = chain.steps.back();
+    getRootActions(expr, only_types, false, step.actions);
+    step.required_output.push_back(expr->getColumnName());
+}
+
+
 void ExpressionAnalyzer::getActionsBeforeAggregation(const ASTPtr & ast, ExpressionActionsPtr & actions, bool no_subqueries)
 {
     ASTFunction * node = typeid_cast<ASTFunction *>(ast.get());

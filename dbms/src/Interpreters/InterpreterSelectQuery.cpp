@@ -135,9 +135,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     , input(input_)
     , log(&Logger::get("InterpreterSelectQuery"))
 {
-    if (!context.hasQueryContext())
-        context.setQueryContext(context);
-
     initSettings();
     const Settings & settings = context.getSettingsRef();
 
