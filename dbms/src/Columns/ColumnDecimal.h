@@ -58,7 +58,7 @@ class ColumnDecimal final : public COWPtrHelper<IColumn, ColumnDecimal<T>>
     static_assert(IsDecimalNumber<T>);
 
 private:
-    using Self = ColumnDecimal<T>;
+    using Self = ColumnDecimal;
     friend class COWPtrHelper<IColumn, Self>;
 
 public:
