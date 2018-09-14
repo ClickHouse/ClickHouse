@@ -182,7 +182,8 @@ void RangeHashedDictionary::loadData()
             const auto & attribute_column = *block.safeGetByPosition(attribute_idx + 3).column;
             auto & attribute = attributes[attribute_idx];
 
-            for (const auto row_idx : ext::range(0, id_column.size())) {
+            for (const auto row_idx : ext::range(0, id_column.size()))
+            {
                 const auto min = getColumnIntValueOrDefault(min_range_column, row_idx, is_date, RANGE_MIN_NULL_VALUE);
                 const auto max = getColumnIntValueOrDefault(max_range_column, row_idx, is_date, RANGE_MAX_NULL_VALUE);
 
