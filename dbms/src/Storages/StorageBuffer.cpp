@@ -136,8 +136,6 @@ BlockInputStreams StorageBuffer::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
-
     BlockInputStreams streams_from_dst;
 
     if (!no_destination)

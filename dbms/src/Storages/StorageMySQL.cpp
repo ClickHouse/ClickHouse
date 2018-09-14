@@ -51,12 +51,11 @@ BlockInputStreams StorageMySQL::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned)
 {
     check(column_names);
-    checkQueryProcessingStage(processed_stage, context);
     String query = transformQueryForExternalDatabase(
         *query_info.query, getColumns().ordinary, IdentifierQuotingStyle::Backticks, remote_database_name, remote_table_name, context);
 

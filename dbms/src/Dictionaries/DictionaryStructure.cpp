@@ -1,6 +1,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
@@ -21,6 +22,25 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
 }
+
+namespace
+{
+DictionaryTypedSpecialAttribute makeDictionaryTypedSpecialAttribute(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        const std::string& default_type)
+{
+    const auto name = config.getString(config_prefix + ".name", "");
+    const auto expression = config.getString(config_prefix + ".expression", "");
+
+    if (name.empty() && !expression.empty())
+        throw Exception{"Element " + config_prefix + ".name is empty", ErrorCodes::BAD_ARGUMENTS};
+
+    const auto type_name = config.getString(config_prefix + ".type", default_type);
+    return DictionaryTypedSpecialAttribute{std::move(name), std::move(expression), DataTypeFactory::instance().get(type_name)};
+}
+
+} // namespace
 
 
 bool isAttributeTypeConvertibleTo(AttributeUnderlyingType from, AttributeUnderlyingType to)
@@ -143,11 +163,33 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
         if (id->name.empty())
             throw Exception{"'id' cannot be empty", ErrorCodes::BAD_ARGUMENTS};
 
+        const auto range_default_type = "Date";
         if (config.has(config_prefix + ".range_min"))
-            range_min.emplace(config, config_prefix + ".range_min");
+            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
 
         if (config.has(config_prefix + ".range_max"))
-            range_max.emplace(config, config_prefix + ".range_max");
+            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_max", range_default_type));
+
+        if (range_min.has_value() != range_max.has_value())
+        {
+            throw Exception{"Dictionary structure should have both 'range_min' and 'range_max' either specified or not.", ErrorCodes::BAD_ARGUMENTS};
+        }
+
+        if (range_min && range_max && !range_min->type->equals(*range_max->type))
+        {
+            throw Exception{"Dictionary structure 'range_min' and 'range_max' should have same type, "
+                "'range_min' type: " + range_min->type->getName() + ", "
+                "'range_max' type: " + range_max->type->getName(),
+                ErrorCodes::BAD_ARGUMENTS};
+        }
+
+        if (range_min)
+        {
+            if (!range_min->type->isValueRepresentedByInteger())
+                throw Exception{"Dictionary structure type of 'range_min' and 'range_max' should be an integer, Date, DateTime, or Enum."
+                    " Actual 'range_min' and 'range_max' type is " + range_min->type->getName(),
+                    ErrorCodes::BAD_ARGUMENTS};
+        }
 
         if (!id->expression.empty() ||
             (range_min && !range_min->expression.empty()) ||

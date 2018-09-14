@@ -35,7 +35,7 @@ public:
     BlockInputStreamPtr loadKeys(
         const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
-    bool isModified() const override { return true; }
+    bool isModified() const override;
     bool supportsSelectiveLoad() const override { return true; }
 
     bool hasUpdateField() const override;
@@ -49,6 +49,8 @@ private:
 
     BlockInputStreamPtr createStreamForSelectiveLoad(const std::string & query);
 
+    std::string doInvalidateQuery(const std::string & request) const;
+
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
     const std::string host;
@@ -60,6 +62,8 @@ private:
     const std::string table;
     const std::string where;
     const std::string update_field;
+    std::string invalidate_query;
+    mutable std::string invalidate_query_response;
     ExternalQueryBuilder query_builder;
     Block sample_block;
     Context & context;
