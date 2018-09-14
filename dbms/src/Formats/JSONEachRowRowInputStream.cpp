@@ -37,11 +37,14 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
     {
         const String& colname = columnName(i);
         name_map[colname] = i;        /// NOTE You could place names more cache-locally.
-        const auto splitted = Nested::splitName(colname);
-        if ( ! splitted.second.empty() )
+        if ( format_settings.import_nested_json )
         {
-            const StringRef table_name(colname.data(), splitted.first.size());
-            name_map[table_name] = NESTED_FIELD;
+            const auto splitted = Nested::splitName(colname);
+            if ( ! splitted.second.empty() )
+            {
+                const StringRef table_name(colname.data(), splitted.first.size());
+                name_map[table_name] = NESTED_FIELD;
+            }
         }
     }
 }
