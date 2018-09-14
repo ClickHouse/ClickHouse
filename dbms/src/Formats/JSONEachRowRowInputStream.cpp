@@ -31,6 +31,24 @@ const String& JSONEachRowRowInputStream::column_name(size_t i) const
     return header.safeGetByPosition(i).name;
 }
 
+namespace
+{
+
+enum
+{
+    UNKNOWN_FIELD = size_t(-1)
+};
+
+} // unnamed namespace
+
+size_t JSONEachRowRowInputStream::get_column_index(const StringRef& name) const
+{
+    /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
+    /// and a quick check to match the next expected field, instead of searching the hash table.
+
+    const auto it = name_map.find(name);
+    return name_map.end() == it ? UNKNOWN_FIELD : it->second;
+}
 
 /** Read the field name in JSON format.
   * A reference to the field name will be written to ref.
@@ -70,7 +88,6 @@ void JSONEachRowRowInputStream::skipUnknownField(const StringRef& name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
 
-    skipColonDelimeter(istr);
     skipJSONField(istr, name_ref);
 }
 
@@ -90,6 +107,26 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
         e.addMessage("(while read the value of key " + column_name(index) + ")");
         throw;
     }
+}
+
+bool JSONEachRowRowInputStream::advance_to_next_key(size_t key_index)
+{
+    skipWhitespaceIfAny(istr);
+
+    if (istr.eof())
+        throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
+    else if (*istr.position() == '}')
+    {
+        ++istr.position();
+        return false;
+    }
+
+    if (key_index > 0)
+    {
+        assertChar(',', istr);
+        skipWhitespaceIfAny(istr);
+    }
+    return true;
 }
 
 bool JSONEachRowRowInputStream::read(MutableColumns & columns)
@@ -117,42 +154,17 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
     /// TODO Ability to provide your DEFAULTs.
     read_columns.assign(num_columns, false);
 
-    bool first = true;
-    while (true)
+    for ( size_t key_index = 0 ; advance_to_next_key(key_index) ; ++key_index )
     {
-        skipWhitespaceIfAny(istr);
-
-        if (istr.eof())
-            throw Exception("Unexpected end of stream while parsing JSONEachRow format", ErrorCodes::CANNOT_READ_ALL_DATA);
-        else if (*istr.position() == '}')
-        {
-            ++istr.position();
-            break;
-        }
-
-        if (first)
-            first = false;
-        else
-        {
-            assertChar(',', istr);
-            skipWhitespaceIfAny(istr);
-        }
-
         StringRef name_ref = readName(istr, name_buf);
-
-        /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
-        /// and a quick check to match the next expected field, instead of searching the hash table.
-
-        auto it = name_map.find(name_ref);
-        if (name_map.end() == it)
-        {
-            skipUnknownField(name_ref);
-            continue;
-        }
 
         skipColonDelimeter(istr);
 
-        readField(it->second, columns);
+        const size_t column_index = get_column_index(name_ref);
+        if ( column_index == UNKNOWN_FIELD )
+            skipUnknownField(name_ref);
+        else
+            readField(column_index, columns);
     }
 
     /// Fill non-visited columns with the default values.

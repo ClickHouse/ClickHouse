@@ -28,6 +28,8 @@ public:
 
 private:
     const String& column_name(size_t i) const;
+    size_t get_column_index(const StringRef& name) const;
+    bool advance_to_next_key(size_t key_index);
     void skipUnknownField(const StringRef& name_ref);
     void readField(size_t index, MutableColumns & columns);
 
