@@ -1,10 +1,12 @@
-#include "ThreadStatus.h"
-#include <common/logger_useful.h>
+#include <sstream>
+
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/ThreadProfileEvents.h>
+#include <Common/TaskStatsInfoGetter.h>
+#include <Common/ThreadStatus.h>
 
-#include <Poco/Thread.h>
+#include <Poco/Logger.h>
 #include <Poco/Ext/ThreadNumber.h>
 
 
@@ -18,19 +20,12 @@ namespace ErrorCodes
     extern const int PTHREAD_ERROR;
 }
 
-
-/// Order of current_thread and current_thread_scope matters
-thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
-thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
-
-
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
-    current_thread->taskstats_getter->getStat(res.stat, current_thread->os_thread_id);
+    CurrentThread::get()->taskstats_getter->getStat(res.stat, CurrentThread::get()->os_thread_id);
     return res;
 }
-
 
 ThreadStatus::ThreadStatus()
 {
@@ -39,7 +34,6 @@ ThreadStatus::ThreadStatus()
 
     last_rusage = std::make_unique<RUsageCounters>();
     last_taskstats = std::make_unique<TasksStatsCounters>();
-    taskstats_getter = std::make_unique<TaskStatsInfoGetter>();
 
     memory_tracker.setDescription("(for thread)");
     log = &Poco::Logger::get("ThreadStatus");
@@ -70,9 +64,25 @@ void ThreadStatus::initPerformanceCounters()
     ++queries_started;
 
     *last_rusage = RUsageCounters::current(query_start_time_nanoseconds);
-    has_permissions_for_taskstats = TaskStatsInfoGetter::checkProcessHasRequiredPermissions();
-    if (has_permissions_for_taskstats)
-        *last_taskstats = TasksStatsCounters::current();
+
+    try
+    {
+        if (TaskStatsInfoGetter::checkPermissions())
+        {
+            if (!taskstats_getter)
+            {
+                static SimpleObjectPool<TaskStatsInfoGetter> pool;
+                taskstats_getter = pool.getDefault();
+            }
+
+            *last_taskstats = TasksStatsCounters::current();
+        }
+    }
+    catch (...)
+    {
+        taskstats_getter.reset();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void ThreadStatus::updatePerformanceCounters()
@@ -80,7 +90,7 @@ void ThreadStatus::updatePerformanceCounters()
     try
     {
         RUsageCounters::updateProfileEvents(*last_rusage, performance_counters);
-        if (has_permissions_for_taskstats)
+        if (taskstats_getter)
             TasksStatsCounters::updateProfileEvents(*last_taskstats, performance_counters);
     }
     catch (...)

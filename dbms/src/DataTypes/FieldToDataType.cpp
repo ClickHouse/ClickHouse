@@ -2,6 +2,7 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -56,6 +57,24 @@ DataTypePtr FieldToDataType::operator() (const Float64 &) const
 DataTypePtr FieldToDataType::operator() (const String &) const
 {
     return std::make_shared<DataTypeString>();
+}
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal32> & x) const
+{
+    using Type = DataTypeDecimal<Decimal32>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal64> & x) const
+{
+    using Type = DataTypeDecimal<Decimal64>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal128> & x) const
+{
+    using Type = DataTypeDecimal<Decimal64>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
 }
 
 

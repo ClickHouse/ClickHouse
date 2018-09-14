@@ -52,34 +52,6 @@ ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(Storage
         check_period_ms = storage.data.settings.check_delay_period * 1000;
 
     task = storage.context.getSchedulePool().createTask(log_name, [this]{ run(); });
-    task->schedule();
-}
-
-ReplicatedMergeTreeRestartingThread::~ReplicatedMergeTreeRestartingThread()
-{
-    try
-    {
-        /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
-        need_stop = true;
-        task->deactivate();
-        LOG_TRACE(log, "Restarting thread finished");
-
-        /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
-        storage.fetcher.blocker.cancelForever();
-        storage.merger_mutator.actions_blocker.cancelForever();
-
-        /// Stop other tasks.
-
-        partialShutdown();
-
-        if (storage.queue_task_handle)
-            storage.context.getBackgroundPool().removeTask(storage.queue_task_handle);
-        storage.queue_task_handle.reset();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
-    }
 }
 
 void ReplicatedMergeTreeRestartingThread::run()
@@ -114,7 +86,7 @@ void ReplicatedMergeTreeRestartingThread::run()
                 {
                     storage.setZooKeeper(storage.context.getZooKeeper());
                 }
-                catch (const zkutil::KeeperException &)
+                catch (const Coordination::Exception &)
                 {
                     /// The exception when you try to zookeeper_init usually happens if DNS does not work. We will try to do it again.
                     tryLogCurrentException(log, __PRETTY_FUNCTION__);
@@ -196,6 +168,18 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
     {
         removeFailedQuorumParts();
         activateReplica();
+
+        const auto & zookeeper = storage.getZooKeeper();
+
+        storage.cloneReplicaIfNeeded(zookeeper);
+
+        storage.queue.load(zookeeper);
+
+        /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
+        /// because cleanup_thread doesn't delete log_pointer of active replicas.
+        storage.queue.pullLogsToQueue(zookeeper);
+        storage.last_queue_update_finish_time.store(time(nullptr));
+
         updateQuorumIfWeHavePart();
 
         if (storage.data.settings.replicated_can_become_leader)
@@ -207,17 +191,12 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_called = false;
         storage.partial_shutdown_event.reset();
 
-        storage.queue_updating_task->activate();
-        storage.queue_updating_task->schedule();
-        storage.mutations_updating_task->activate();
-        storage.mutations_updating_task->schedule();
+        storage.queue_updating_task->activateAndSchedule();
+        storage.mutations_updating_task->activateAndSchedule();
+        storage.mutations_finalizing_task->activateAndSchedule();
         storage.cleanup_thread.start();
         storage.alter_thread.start();
         storage.part_check_thread.start();
-
-        if (!storage.queue_task_handle)
-            storage.queue_task_handle = storage.context.getBackgroundPool().addTask(
-                std::bind(&StorageReplicatedMergeTree::queueTask, &storage));
 
         return true;
     }
@@ -229,7 +208,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         {
             throw;
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
             LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
             return false;
@@ -251,7 +230,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     auto zookeeper = storage.getZooKeeper();
 
     Strings failed_parts;
-    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != ZooKeeperImpl::ZooKeeper::ZOK)
+    if (zookeeper->tryGetChildren(storage.zookeeper_path + "/quorum/failed_parts", failed_parts) != Coordination::ZOK)
         return;
 
     /// Firstly, remove parts from ZooKeeper
@@ -306,23 +285,23 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
       * This is possible only when session in ZooKeeper expires.
       */
     String data;
-    zkutil::Stat stat;
+    Coordination::Stat stat;
     bool has_is_active = zookeeper->tryGet(is_active_path, data, &stat);
     if (has_is_active && data == active_node_identifier)
     {
         auto code = zookeeper->tryRemove(is_active_path, stat.version);
 
-        if (code == ZooKeeperImpl::ZooKeeper::ZBADVERSION)
+        if (code == Coordination::ZBADVERSION)
             throw Exception("Another instance of replica " + storage.replica_path + " was created just now."
                 " You shouldn't run multiple instances of same replica. You need to check configuration files.",
                 ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 
-        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            throw zkutil::KeeperException(code, is_active_path);
+        if (code && code != Coordination::ZNONODE)
+            throw Coordination::Exception(code, is_active_path);
     }
 
     /// Simultaneously declare that this replica is active, and update the host.
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     ops.emplace_back(zkutil::makeCreateRequest(is_active_path, active_node_identifier, zkutil::CreateMode::Ephemeral));
     ops.emplace_back(zkutil::makeSetRequest(storage.replica_path + "/host", address.toString(), -1));
 
@@ -330,9 +309,9 @@ void ReplicatedMergeTreeRestartingThread::activateReplica()
     {
         zookeeper->multi(ops);
     }
-    catch (const zkutil::KeeperException & e)
+    catch (const Coordination::Exception & e)
     {
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+        if (e.code == Coordination::ZNODEEXISTS)
             throw Exception("Replica " + storage.replica_path + " appears to be already active. If you're sure it's not, "
                 "try again in a minute or remove znode " + storage.replica_path + "/is_active manually", ErrorCodes::REPLICA_IS_ALREADY_ACTIVE);
 
@@ -360,12 +339,25 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     storage.queue_updating_task->deactivate();
     storage.mutations_updating_task->deactivate();
+    storage.mutations_finalizing_task->deactivate();
 
     storage.cleanup_thread.stop();
     storage.alter_thread.stop();
     storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");
+}
+
+
+void ReplicatedMergeTreeRestartingThread::shutdown()
+{
+    /// Stop restarting_thread before stopping other tasks - so that it won't restart them again.
+    need_stop = true;
+    task->deactivate();
+    LOG_TRACE(log, "Restarting thread finished");
+
+    /// Stop other tasks.
+    partialShutdown();
 }
 
 }

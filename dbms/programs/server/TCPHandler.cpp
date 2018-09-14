@@ -9,6 +9,7 @@
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
+#include <Common/setThreadName.h>
 #include <Common/config_version.h>
 #include <IO/Progress.h>
 #include <IO/CompressedReadBuffer.h>
@@ -49,6 +50,8 @@ namespace ErrorCodes
 
 void TCPHandler::runImpl()
 {
+    setThreadName("TCPHandler");
+
     connection_context = server.context();
     connection_context.setSessionContext(connection_context);
 
@@ -88,7 +91,7 @@ void TCPHandler::runImpl()
         try
         {
             /// We try to send error information to the client.
-            sendException(e);
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
         }
         catch (...) {}
 
@@ -103,7 +106,7 @@ void TCPHandler::runImpl()
             Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
                 << ", Stack trace:\n\n" << e.getStackTrace().toString());
-            sendException(e);
+            sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
 
@@ -127,11 +130,16 @@ void TCPHandler::runImpl()
         Stopwatch watch;
         state.reset();
 
+        /// Initialized later.
+        std::optional<CurrentThread::QueryScope> query_scope;
+
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
         std::unique_ptr<Exception> exception;
         bool network_error = false;
+
+        bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
 
         try
         {
@@ -147,7 +155,9 @@ void TCPHandler::runImpl()
             if (!receivePacket())
                 continue;
 
-            CurrentThread::initializeQuery();
+            query_scope.emplace(query_context);
+
+            send_exception_with_stack_trace = query_context.getSettingsRef().calculate_text_stack_trace;
 
             /// Should we send internal logs to client?
             if (client_revision >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -158,7 +168,8 @@ void TCPHandler::runImpl()
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue);
             }
 
-            query_context.setExternalTablesInitializer([&global_settings, this] (Context & context) {
+            query_context.setExternalTablesInitializer([&global_settings, this] (Context & context)
+            {
                 if (&context != &query_context)
                     throw Exception("Unexpected context in external tables initializer", ErrorCodes::LOGICAL_ERROR);
 
@@ -189,6 +200,8 @@ void TCPHandler::runImpl()
             sendLogs();
 
             sendEndOfStream();
+
+            query_scope.reset();
             state.reset();
         }
         catch (const Exception & e)
@@ -245,7 +258,7 @@ void TCPHandler::runImpl()
                     tryLogCurrentException(log, "Can't send logs to client");
                 }
 
-                sendException(*exception);
+                sendException(*exception, send_exception_with_stack_trace);
             }
         }
         catch (...)
@@ -257,9 +270,7 @@ void TCPHandler::runImpl()
 
         try
         {
-            /// It will forcibly detach query even if unexpected error ocсurred and detachQuery() was not called
-            CurrentThread::detachQueryIfNotDetached();
-
+            query_scope.reset();
             state.reset();
         }
         catch (...)
@@ -829,10 +840,10 @@ void TCPHandler::sendLogData(const Block & block)
 }
 
 
-void TCPHandler::sendException(const Exception & e)
+void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     writeVarUInt(Protocol::Server::Exception, *out);
-    writeException(e, *out);
+    writeException(e, *out, with_stack_trace);
     out->next();
 }
 

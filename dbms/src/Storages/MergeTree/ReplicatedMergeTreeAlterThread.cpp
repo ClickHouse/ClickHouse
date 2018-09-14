@@ -53,7 +53,7 @@ void ReplicatedMergeTreeAlterThread::run()
 
         auto zookeeper = storage.getZooKeeper();
 
-        zkutil::Stat stat;
+        Coordination::Stat stat;
         const String columns_str = zookeeper->getWatch(storage.zookeeper_path + "/columns", &stat, task->getWatchCallback());
         auto columns_in_zk = ColumnsDescription::parse(columns_str);
 
@@ -139,7 +139,7 @@ void ReplicatedMergeTreeAlterThread::run()
                     ++changed_parts;
 
                     /// Update part metadata in ZooKeeper.
-                    zkutil::Requests ops;
+                    Coordination::Requests ops;
                     ops.emplace_back(zkutil::makeSetRequest(
                         storage.replica_path + "/parts/" + part->name + "/columns", transaction->getNewColumns().toString(), -1));
                     ops.emplace_back(zkutil::makeSetRequest(
@@ -151,10 +151,10 @@ void ReplicatedMergeTreeAlterThread::run()
                     {
                         zookeeper->multi(ops);
                     }
-                    catch (const zkutil::KeeperException & e)
+                    catch (const Coordination::Exception & e)
                     {
                         /// The part does not exist in ZK. We will add to queue for verification - maybe the part is superfluous, and it must be removed locally.
-                        if (e.code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+                        if (e.code == Coordination::ZNONODE)
                             storage.enqueuePartForCheck(part->name);
 
                         throw;
@@ -184,11 +184,11 @@ void ReplicatedMergeTreeAlterThread::run()
             /// It's important that parts and merge_blocker are destroyed before the wait.
         }
     }
-    catch (const zkutil::KeeperException & e)
+    catch (const Coordination::Exception & e)
     {
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
 
-        if (e.code == ZooKeeperImpl::ZooKeeper::ZSESSIONEXPIRED)
+        if (e.code == Coordination::ZSESSIONEXPIRED)
             return;
 
         force_recheck_parts = true;

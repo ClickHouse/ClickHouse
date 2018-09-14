@@ -10,6 +10,9 @@
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HTMLForm.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
+
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include "validateODBCConnectionString.h"
@@ -51,7 +54,8 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     Poco::Net::HTMLForm params(request, request.stream());
     LOG_TRACE(log, "Request URI: " + request.getURI());
 
-    auto process_error = [&response, this](const std::string & message) {
+    auto process_error = [&response, this](const std::string & message)
+    {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             response.send() << message << std::endl;
@@ -68,9 +72,15 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         process_error("No 'connection_string' in request URL");
         return;
     }
+    std::string schema_name = "";
     std::string table_name = params.get("table");
     std::string connection_string = params.get("connection_string");
-    LOG_TRACE(log, "Will fetch info for table '" << table_name << "'");
+    if (params.has("schema"))
+    {
+        schema_name = params.get("schema");
+        LOG_TRACE(log, "Will fetch info for table '" << schema_name + "." + table_name << "'");
+    } else
+        LOG_TRACE(log, "Will fetch info for table '" << table_name << "'");
     LOG_TRACE(log, "Got connection str '" << connection_string << "'");
 
     try
@@ -86,8 +96,19 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
 
         /// TODO Why not do SQLColumns instead?
-        std::string query = "SELECT * FROM " + table_name + " WHERE 1 = 0";
-        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(&query[0]), query.size())))
+        std::string name = schema_name.empty() ? table_name : schema_name + "." + table_name;
+        std::stringstream ss;
+        std::string input = "SELECT * FROM " + name + " WHERE 1 = 0";
+        ParserQueryWithOutput parser;
+        ASTPtr select = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+
+        IAST::FormatSettings settings(ss, true);
+        settings.always_quote_identifiers = true;
+        settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
+        select->format(settings);
+        std::string query = ss.str();
+
+        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw Poco::Data::ODBC::DescriptorException(session.dbc());
 
         if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
@@ -106,7 +127,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             /// TODO Why 301?
             SQLCHAR column_name[301];
             /// TODO Result is not checked.
-            Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
+            Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, nullptr);
             columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
         }
 

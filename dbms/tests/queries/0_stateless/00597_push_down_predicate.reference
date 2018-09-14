@@ -1,15 +1,31 @@
+-------Not need optimize predicate, but it works.-------
 1
 1
 1
+-------Need push down-------
+1
+1
+1
+1	1
+3	3
+3	3
+2000-01-01	1	test string 1	1
+3	3
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+1	2000-01-01	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1	2000-01-01	1	test string 1	1
+2000-01-01	1	test string 1	1
+1	2000-01-01	2000-01-01	1	test string 1	1
 2000-01-01	1	test string 1	1
 1
 1
-2000-01-01	1	test string 1	1
-2000-01-01	1	test string 1	1
-2000-01-01	1
-2000-01-01	1	test string 1	1
-2000-01-01	1	test string 1	1
-1	test string 1	1	test string 1
-1	test string 1	1	test string 1
-test string 1	1	1
-test string 1	1	1
+-------Push to having expression, need check.-------
+-------Compatibility test-------

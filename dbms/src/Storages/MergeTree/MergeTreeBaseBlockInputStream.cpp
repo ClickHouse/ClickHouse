@@ -121,27 +121,29 @@ Block MergeTreeBaseBlockInputStream::readFromPart()
             if (reader->getColumns().empty())
             {
                 task->range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
-                        task->should_reorder, task->remove_prewhere_column, true);
+                    pre_reader.get(), index_granularity, nullptr,
+                    prewhere_info->alias_actions, prewhere_info->prewhere_actions,
+                    &prewhere_info->prewhere_column_name, &task->ordered_names,
+                    task->should_reorder, task->remove_prewhere_column, true);
             }
             else
             {
                 task->pre_range_reader = MergeTreeRangeReader(
-                        pre_reader.get(), index_granularity, nullptr, prewhere_info->prewhere_actions,
-                        &prewhere_info->prewhere_column_name, &task->ordered_names,
-                        task->should_reorder, task->remove_prewhere_column, false);
+                    pre_reader.get(), index_granularity, nullptr,
+                    prewhere_info->alias_actions, prewhere_info->prewhere_actions,
+                    &prewhere_info->prewhere_column_name, &task->ordered_names,
+                    task->should_reorder, task->remove_prewhere_column, false);
 
                 task->range_reader = MergeTreeRangeReader(
-                        reader.get(), index_granularity, &task->pre_range_reader, nullptr,
-                        nullptr, &task->ordered_names, true, false, true);
+                    reader.get(), index_granularity, &task->pre_range_reader, nullptr, nullptr,
+                    nullptr, &task->ordered_names, true, false, true);
             }
         }
         else
         {
             task->range_reader = MergeTreeRangeReader(
-                    reader.get(), index_granularity, nullptr, nullptr,
-                    nullptr, &task->ordered_names, task->should_reorder, false, true);
+                reader.get(), index_granularity, nullptr, nullptr, nullptr,
+                nullptr, &task->ordered_names, task->should_reorder, false, true);
         }
     }
 
@@ -209,6 +211,16 @@ void MergeTreeBaseBlockInputStream::injectVirtualColumns(Block & block) const
 
                 block.insert({ column, std::make_shared<DataTypeUInt64>(), virt_column_name});
             }
+            else if (virt_column_name == "_partition_id")
+            {
+                ColumnPtr column;
+                if (rows)
+                    column = DataTypeString().createColumnConst(rows, task->data_part->info.partition_id)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeString().createColumn();
+
+                block.insert({ column, std::make_shared<DataTypeString>(), virt_column_name});
+            }
         }
     }
 }
@@ -218,6 +230,9 @@ void MergeTreeBaseBlockInputStream::executePrewhereActions(Block & block, const 
 {
     if (prewhere_info)
     {
+        if (prewhere_info->alias_actions)
+            prewhere_info->alias_actions->execute(block);
+
         prewhere_info->prewhere_actions->execute(block);
         if (prewhere_info->remove_prewhere_column)
             block.erase(prewhere_info->prewhere_column_name);

@@ -4,7 +4,8 @@
 
 Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
 
-### Features:
+Main features:
+
 - Works with ClickHouse directly from the browser, without the need to install additional software.
 - Query editor with syntax highlighting.
 - Auto-completion of commands.
@@ -13,22 +14,25 @@ Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) pr
 
 [Tabix documentation](https://tabix.io/doc/).
 
-
 ## HouseOps
 
-[HouseOps](https://github.com/HouseOps/HouseOps) is a unique Desktop ClickHouse Ops UI / IDE for OSX, Linux and Windows.
+[HouseOps](https://github.com/HouseOps/HouseOps) is a UI/IDE for OSX, Linux and Windows.
 
-### Features:
-- Query builder with syntax highlighting, response viewed in Table and JSON Object.
-- Export results in csv and JSON object.
-- Processes List with description, Record mode and Kill processes feature.
-- Database Graph with all tables and columns with extra informations.
-- Easy view your columns size.
-- Server settings.
-- Database manangement (soon);
-- Users manangement (soon);
-- Real-Time Data Analytics (soon);
-- Cluster/Infra monitoring (soon);
-- Cluster manangement (soon);
-- Kafka and Replicated tables monitoring (soon);
-- And a lot of others features for you take a beautiful implementation of ClickHouse.
+Main features:
+
+- Query builder with syntax highlighting. View the response in a table or JSON view.
+- Export query results as CSV or JSON.
+- List of processes with descriptions. Write mode. Ability to stop (`KILL`) a process.
+- Database graph. Shows all tables and their columns with additional information.
+- Quick view of the column size.
+- Server configuration.
+
+The following features are planned for development:
+
+- Database management.
+- User management.
+- Real-time data analysis.
+- Cluster monitoring.
+- Cluster management.
+- Monitoring replicated and Kafka tables.
+

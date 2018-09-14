@@ -1,7 +1,8 @@
-#pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wsign-compare"
+#ifdef __clang__
+    #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #include <gtest/gtest.h>
-#pragma GCC diagnostic pop
 
 #include <stdexcept>
 #include <Poco/File.h>
@@ -32,7 +33,7 @@ static void testCascadeBufferRedability(
 {
     CascadeWriteBuffer cascade{std::move(arg1), std::move(arg2)};
 
-    cascade.write(&data[0], data.size());
+    cascade.write(data.data(), data.size());
     EXPECT_EQ(cascade.count(), data.size());
 
     std::vector<WriteBufferPtr> write_buffers;
@@ -149,7 +150,7 @@ static void checkHTTPHandlerCase(size_t input_size, size_t memory_buffer_size)
                 }
             });
 
-        cascade.write(&src[0], src.size());
+        cascade.write(src.data(), src.size());
         EXPECT_EQ(cascade.count(), src.size());
     }
 
@@ -174,7 +175,7 @@ TEST(CascadeWriteBuffer, HTTPHandlerCase)
 
 static void checkMemoryWriteBuffer(std::string data, MemoryWriteBuffer && buf)
 {
-    buf.write(&data[0], data.size());
+    buf.write(data.data(), data.size());
     ASSERT_EQ(buf.count(), data.size());
 
     auto rbuf = buf.tryGetReadBuffer();
@@ -205,7 +206,7 @@ TEST(MemoryWriteBuffer, WriteAndReread)
         if (s > 1)
         {
             MemoryWriteBuffer buf(s - 1);
-            EXPECT_THROW(buf.write(&data[0], data.size()), DB::Exception);
+            EXPECT_THROW(buf.write(data.data(), data.size()), DB::Exception);
         }
     }
 
@@ -222,7 +223,7 @@ try
         std::string data = makeTestArray(s);
 
         auto buf = WriteBufferFromTemporaryFile::create(tmp_template);
-        buf->write(&data[0], data.size());
+        buf->write(data.data(), data.size());
 
         std::string tmp_filename = buf->getFileName();
         ASSERT_EQ(tmp_template, tmp_filename.substr(0, tmp_template.size()));

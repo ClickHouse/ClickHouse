@@ -13,14 +13,14 @@ class LimitReadBuffer : public ReadBuffer
 {
 private:
     ReadBuffer & in;
-    UInt64 limit;
+    size_t limit;
     bool throw_exception;
     std::string exception_message;
 
     bool nextImpl() override;
 
 public:
-    LimitReadBuffer(ReadBuffer & in, UInt64 limit, bool throw_exception, std::string exception_message = {});
+    LimitReadBuffer(ReadBuffer & in, size_t limit, bool throw_exception, std::string exception_message = {});
     ~LimitReadBuffer() override;
 };
 

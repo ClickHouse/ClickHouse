@@ -8,8 +8,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.mutations_r1"
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS test.mutations_r2"
 
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.mutations_r1(d Date, x UInt32, s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/mutations', 'r1', d, intDiv(x, 10), 8192)"
-${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.mutations_r2(d Date, x UInt32, s String) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/mutations', 'r2', d, intDiv(x, 10), 8192)"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.mutations_r1(d Date, x UInt32, s String, m MATERIALIZED x + 2) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/mutations', 'r1', d, intDiv(x, 10), 8192)"
+${CLICKHOUSE_CLIENT} --query="CREATE TABLE test.mutations_r2(d Date, x UInt32, s String, m MATERIALIZED x + 2) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/mutations', 'r2', d, intDiv(x, 10), 8192)"
 
 # Test a mutation on empty table
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE x = 1"
@@ -28,16 +28,17 @@ ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE d = '11
 # Delete some values
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE x % 2 = 1"
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE s = 'd'"
+${CLICKHOUSE_CLIENT} --query="ALTER TABLE test.mutations_r1 DELETE WHERE m = 3"
 
 # Insert more data
 ${CLICKHOUSE_CLIENT} --query="INSERT INTO test.mutations_r1(d, x, s) VALUES \
     ('2000-01-01', 5, 'e'), ('2000-02-01', 5, 'e')"
 
 # Wait until the last mutation is done.
-wait_for_mutation "mutations_r2" "0000000002"
+wait_for_mutation "mutations_r2" "0000000003"
 
 # Check that the table contains only the data that should not be deleted.
-${CLICKHOUSE_CLIENT} --query="SELECT * FROM test.mutations_r2 ORDER BY d, x"
+${CLICKHOUSE_CLIENT} --query="SELECT d, x, s, m FROM test.mutations_r2 ORDER BY d, x"
 # Check the contents of the system.mutations table.
 ${CLICKHOUSE_CLIENT} --query="SELECT mutation_id, command, block_numbers.partition_id, block_numbers.number, parts_to_do, is_done \
     FROM system.mutations WHERE table = 'mutations_r2' ORDER BY mutation_id"

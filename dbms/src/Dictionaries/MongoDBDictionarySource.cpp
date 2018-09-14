@@ -12,7 +12,7 @@
 
 // only after poco
 // naming conflict:
-// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string& value);
+// Poco/MongoDB/BSONWriter.h:54: void writeCString(const std::string & value);
 // dbms/src/IO/WriteHelpers.h:146 #define writeCString(s, buf)
 #include <Dictionaries/MongoDBDictionarySource.h>
 #include <Dictionaries/MongoDBBlockInputStream.h>

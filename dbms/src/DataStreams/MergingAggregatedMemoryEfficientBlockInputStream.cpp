@@ -300,7 +300,7 @@ void MergingAggregatedMemoryEfficientBlockInputStream::mergeThread(ThreadGroupSt
     try
     {
         if (thread_group)
-            CurrentThread::attachTo(thread_group);
+            CurrentThread::attachToIfDetached(thread_group);
         setThreadName("MergeAggMergThr");
 
         while (!parallel_merge_data->finish)

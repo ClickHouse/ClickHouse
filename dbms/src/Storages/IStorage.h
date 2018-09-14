@@ -126,7 +126,7 @@ public:
         return res;
     }
 
-    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP.
+    /** Does not allow reading the table structure. It is taken for ALTER, RENAME and DROP, TRUNCATE.
       */
     TableFullWriteLock lockForAlter(const std::string & who = "Alter")
     {
@@ -342,6 +342,9 @@ public:
 
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
+
+    /// Returns sampling expression for storage or nullptr if there is no.
+    virtual ASTPtr getSamplingExpression() const { return nullptr; }
 
 protected:
     using ITableDeclaration::ITableDeclaration;

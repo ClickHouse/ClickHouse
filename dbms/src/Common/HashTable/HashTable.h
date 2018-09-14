@@ -269,7 +269,7 @@ protected:
     friend class TwoLevelHashTable;
 
     using HashValue = size_t;
-    using Self = HashTable<Key, Cell, Hash, Grower, Allocator>;
+    using Self = HashTable;
     using cell_type = Cell;
 
     size_t m_size = 0;        /// Amount of elements

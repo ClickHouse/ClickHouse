@@ -1,6 +1,6 @@
 # Libraries from Third-party Developers
 
-There are libraries for working with ClickHouse for:
+We have not tested the libraries listed below.
 
 - Python
     - [infi.clickhouse_orm](https://github.com/Infinidat/infi.clickhouse_orm)
@@ -29,6 +29,8 @@ There are libraries for working with ClickHouse for:
 - R
     - [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     - [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+- Scala
+    - [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
 - .NET
     - [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
     - [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
@@ -43,4 +45,3 @@ There are libraries for working with ClickHouse for:
 - Nim
     - [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
 
-We have not tested these libraries. They are listed in random order.

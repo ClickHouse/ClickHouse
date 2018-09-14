@@ -36,7 +36,7 @@ void BackgroundProcessingPoolTaskInfo::wake()
     Poco::Timestamp current_time;
 
     {
-        std::unique_lock<std::mutex> lock(pool.tasks_mutex);
+        std::unique_lock lock(pool.tasks_mutex);
 
         auto next_time_to_execute = iterator->first;
         auto this_task_handle = iterator->second;
@@ -58,12 +58,6 @@ BackgroundProcessingPool::BackgroundProcessingPool(int size_) : size(size_)
 {
     LOG_INFO(&Logger::get("BackgroundProcessingPool"), "Create BackgroundProcessingPool with " << size << " threads");
 
-    /// Put all threads to one thread group
-    /// The master thread exits immediately
-    CurrentThread::initializeQuery();
-    thread_group = CurrentThread::getGroup();
-    CurrentThread::detachQuery();
-
     threads.resize(size);
     for (auto & thread : threads)
         thread = std::thread([this] { threadFunction(); });
@@ -77,7 +71,7 @@ BackgroundProcessingPool::TaskHandle BackgroundProcessingPool::addTask(const Tas
     Poco::Timestamp current_time;
 
     {
-        std::unique_lock<std::mutex> lock(tasks_mutex);
+        std::unique_lock lock(tasks_mutex);
         res->iterator = tasks.emplace(current_time, res);
     }
 
@@ -93,11 +87,11 @@ void BackgroundProcessingPool::removeTask(const TaskHandle & task)
 
     /// Wait for all executions of this task.
     {
-        std::unique_lock<std::shared_mutex> wlock(task->rwlock);
+        std::unique_lock wlock(task->rwlock);
     }
 
     {
-        std::unique_lock<std::mutex> lock(tasks_mutex);
+        std::unique_lock lock(tasks_mutex);
         tasks.erase(task->iterator);
     }
 }
@@ -122,10 +116,22 @@ void BackgroundProcessingPool::threadFunction()
 {
     setThreadName("BackgrProcPool");
 
-    /// Put all threads to one thread pool
-    CurrentThread::attachTo(thread_group);
-    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
+    {
+        std::lock_guard lock(tasks_mutex);
 
+        if (thread_group)
+        {
+            /// Put all threads to one thread pool
+            CurrentThread::attachTo(thread_group);
+        }
+        else
+        {
+            CurrentThread::initializeQuery();
+            thread_group = CurrentThread::getGroup();
+        }
+    }
+
+    SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundProcessingPool);
 
     pcg64 rng(randomSeed());
@@ -141,7 +147,7 @@ void BackgroundProcessingPool::threadFunction()
             Poco::Timestamp min_time;
 
             {
-                std::unique_lock<std::mutex> lock(tasks_mutex);
+                std::unique_lock lock(tasks_mutex);
 
                 if (!tasks.empty())
                 {
@@ -162,7 +168,7 @@ void BackgroundProcessingPool::threadFunction()
 
             if (!task)
             {
-                std::unique_lock<std::mutex> lock(tasks_mutex);
+                std::unique_lock lock(tasks_mutex);
                 wake_event.wait_for(lock,
                     std::chrono::duration<double>(sleep_seconds
                         + std::uniform_real_distribution<double>(0, sleep_seconds_random_part)(rng)));
@@ -173,12 +179,12 @@ void BackgroundProcessingPool::threadFunction()
             Poco::Timestamp current_time;
             if (min_time > current_time)
             {
-                std::unique_lock<std::mutex> lock(tasks_mutex);
+                std::unique_lock lock(tasks_mutex);
                 wake_event.wait_for(lock, std::chrono::microseconds(
                     min_time - current_time + std::uniform_int_distribution<uint64_t>(0, sleep_seconds_random_part * 1000000)(rng)));
             }
 
-            std::shared_lock<std::shared_mutex> rlock(task->rwlock);
+            std::shared_lock rlock(task->rwlock);
 
             if (task->removed)
                 continue;
@@ -202,7 +208,7 @@ void BackgroundProcessingPool::threadFunction()
         Poco::Timestamp next_time_to_execute = Poco::Timestamp() + (done_work ? 0 : sleep_seconds * 1000000);
 
         {
-            std::unique_lock<std::mutex> lock(tasks_mutex);
+            std::unique_lock lock(tasks_mutex);
 
             if (task->removed)
                 continue;

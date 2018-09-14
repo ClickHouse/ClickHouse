@@ -14,3 +14,4 @@
 #cmakedefine01 USE_POCO_DATAODBC
 #cmakedefine01 USE_POCO_MONGODB
 #cmakedefine01 USE_POCO_NETSSL
+#cmakedefine01 CLICKHOUSE_SPLIT_BINARY

@@ -1,8 +1,9 @@
 #include <Functions/FunctionsConditional.h>
-#include <Functions/FunctionsArray.h>
 #include <Functions/FunctionsTransform.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnConst.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Interpreters/castColumn.h>
 #include <vector>
 
@@ -205,7 +206,7 @@ DataTypePtr FunctionMultiIf::getReturnTypeImpl(const DataTypes & args) const
             nested_type = arg.get();
         }
 
-        if (!checkDataType<DataTypeUInt8>(nested_type))
+        if (!WhichDataType(nested_type).isUInt8())
             throw Exception{"Illegal type " + arg->getName() + " of argument (condition) "
                 "of function " + getName() + ". Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -251,22 +252,15 @@ DataTypePtr FunctionCaseWithExpression::getReturnTypeImpl(const DataTypes & args
     /// See the comments in executeImpl() to understand why we actually have to
     /// get the return type of a transform function.
 
-    /// Get the return types of the arrays that we pass to the transform function.
-    ColumnsWithTypeAndName src_array_types;
-    ColumnsWithTypeAndName dst_array_types;
+    /// Get the types of the arrays that we pass to the transform function.
+    DataTypes src_array_types;
+    DataTypes dst_array_types;
 
-    for (size_t i = 1; i < (args.size() - 1); ++i)
-    {
-        if ((i % 2) != 0)
-            src_array_types.push_back({nullptr, args[i], {}});
-        else
-            dst_array_types.push_back({nullptr, args[i], {}});
-    }
+    for (size_t i = 1; i < args.size() - 1; ++i)
+        ((i % 2) ? src_array_types : dst_array_types).push_back(args[i]);
 
-    FunctionArray fun_array{context};
-
-    DataTypePtr src_array_type = fun_array.getReturnType(src_array_types);
-    DataTypePtr dst_array_type = fun_array.getReturnType(dst_array_types);
+    DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
+    DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
 
     /// Finally get the return type of the transform function.
     FunctionTransform fun_transform;
@@ -291,29 +285,31 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
 
     /// Create the arrays required by the transform function.
     ColumnNumbers src_array_args;
-    ColumnsWithTypeAndName src_array_types;
+    ColumnsWithTypeAndName src_array_elems;
+    DataTypes src_array_types;
 
     ColumnNumbers dst_array_args;
-    ColumnsWithTypeAndName dst_array_types;
+    ColumnsWithTypeAndName dst_array_elems;
+    DataTypes dst_array_types;
 
     for (size_t i = 1; i < (args.size() - 1); ++i)
     {
-        if ((i % 2) != 0)
+        if (i % 2)
         {
             src_array_args.push_back(args[i]);
-            src_array_types.push_back(block.getByPosition(args[i]));
+            src_array_elems.push_back(block.getByPosition(args[i]));
+            src_array_types.push_back(block.getByPosition(args[i]).type);
         }
         else
         {
             dst_array_args.push_back(args[i]);
-            dst_array_types.push_back(block.getByPosition(args[i]));
+            dst_array_elems.push_back(block.getByPosition(args[i]));
+            dst_array_types.push_back(block.getByPosition(args[i]).type);
         }
     }
 
-    FunctionArray fun_array{context};
-
-    DataTypePtr src_array_type = fun_array.getReturnType(src_array_types);
-    DataTypePtr dst_array_type = fun_array.getReturnType(dst_array_types);
+    DataTypePtr src_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(src_array_types));
+    DataTypePtr dst_array_type = std::make_shared<DataTypeArray>(getLeastSupertype(dst_array_types));
 
     Block temp_block = block;
 
@@ -323,8 +319,10 @@ void FunctionCaseWithExpression::executeImpl(Block & block, const ColumnNumbers 
     size_t dst_array_pos = temp_block.columns();
     temp_block.insert({nullptr, dst_array_type, ""});
 
-    fun_array.execute(temp_block, src_array_args, src_array_pos, input_rows_count);
-    fun_array.execute(temp_block, dst_array_args, dst_array_pos, input_rows_count);
+    auto fun_array = FunctionFactory::instance().get("array", context);
+
+    fun_array->build(src_array_elems)->execute(temp_block, src_array_args, src_array_pos, input_rows_count);
+    fun_array->build(dst_array_elems)->execute(temp_block, dst_array_args, dst_array_pos, input_rows_count);
 
     /// Execute transform.
     FunctionTransform fun_transform;

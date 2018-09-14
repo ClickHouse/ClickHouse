@@ -51,7 +51,7 @@ namespace DB
     */
 
 
-#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1024
+#define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
 class Context;
 class QueryLog;
@@ -76,7 +76,7 @@ class SystemLog : private boost::noncopyable
 {
 public:
 
-    using Self = SystemLog<SystemLog>;
+    using Self = SystemLog;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.

@@ -11,17 +11,26 @@ class Context;
 
 /** Implements system table 'columns', that allows to get information about columns for every table.
   */
-class StorageSystemColumns : public ext::shared_ptr_helper<StorageSystemColumns>, public IStorageSystemOneBlock<StorageSystemColumns>
+class StorageSystemColumns : public ext::shared_ptr_helper<StorageSystemColumns>, public IStorage
 {
 public:
     std::string getName() const override { return "SystemColumns"; }
 
-    static NamesAndTypesList getNamesAndTypes();
+    std::string getTableName() const override { return name; }
+
+    BlockInputStreams read(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum processed_stage,
+        size_t max_block_size,
+        unsigned num_streams) override;
+
+private:
+    const std::string name;
 
 protected:
-    using IStorageSystemOneBlock::IStorageSystemOneBlock;
-
-    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
+    StorageSystemColumns(const std::string & name_);
 };
 
 }

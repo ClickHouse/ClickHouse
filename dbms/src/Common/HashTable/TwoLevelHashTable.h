@@ -43,7 +43,7 @@ protected:
     friend class iterator;
 
     using HashValue = size_t;
-    using Self = TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable>;
+    using Self = TwoLevelHashTable;
 public:
     using Impl = ImplTable;
 

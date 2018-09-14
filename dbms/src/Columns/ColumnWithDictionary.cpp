@@ -42,7 +42,7 @@ namespace
             if (data[index[i]] != copy[i])
                 throw Exception("Expected " + toString(data[index[i]]) + ", but got " + toString(copy[i]), ErrorCodes::LOGICAL_ERROR);
 
-        return std::move(res_col);
+        return res_col;
     }
 
     template <typename T>
@@ -88,7 +88,7 @@ namespace
                 data[val] = static_cast<T>(i);
         }
 
-        return std::move(res_col);
+        return res_col;
     }
 
     /// Returns unique values of column. Write new index to column.

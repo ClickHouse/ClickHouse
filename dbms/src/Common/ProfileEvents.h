@@ -86,8 +86,11 @@ namespace ProfileEvents
     /// Increment a counter for event. Thread-safe.
     void increment(Event event, Count amount = 1);
 
-    /// Get text description of event by identifier. Returns statically allocated string.
-    const char * getDescription(Event event);
+    /// Get name of event by identifier. Returns statically allocated string.
+    const char * getName(Event event);
+
+    /// Get description of event by identifier. Returns statically allocated string.
+    const char * getDocumentation(Event event);
 
     /// Get index just after last event identifier.
     Event end();
