@@ -23,7 +23,7 @@
 #include <Common/randomSeed.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/LeaderElection.h>
-#include <Common/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePool.h>
 
 
 namespace DB
@@ -106,7 +106,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -138,7 +138,9 @@ public:
     bool supportsIndexForIn() const override { return true; }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand) const override { return data.mayBenefitFromIndexForIn(left_in_operand); }
 
-    bool checkTableCanBeDropped() const override;
+    void checkTableCanBeDropped() const override;
+
+    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
     ActionLock getActionLock(StorageActionBlockType action_type) override;
 
@@ -191,12 +193,13 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
-    friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -264,8 +267,10 @@ private:
     Poco::Event startup_event;
 
     /// Do I need to complete background threads (except restarting_thread)?
-    std::atomic<bool> shutdown_called {false};
-    Poco::Event shutdown_event;
+    std::atomic<bool> partial_shutdown_called {false};
+
+    /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
+    Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
@@ -283,24 +288,23 @@ private:
 
     /// A task that selects parts to merge.
     BackgroundSchedulePool::TaskHolder merge_selecting_task;
+    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
+    std::mutex merge_selecting_mutex;
 
     /// A task that marks finished mutations as done.
     BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
 
-    /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
-    std::mutex merge_selecting_mutex;
-
     /// A thread that removes old parts, log entries, and blocks.
-    std::unique_ptr<ReplicatedMergeTreeCleanupThread> cleanup_thread;
-
-    /// A thread that processes reconnection to ZooKeeper when the session expires.
-    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
+    ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     /// A thread monitoring changes to the column list in ZooKeeper and updating the parts in accordance with these changes.
-    std::unique_ptr<ReplicatedMergeTreeAlterThread> alter_thread;
+    ReplicatedMergeTreeAlterThread alter_thread;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
+
+    /// A thread that processes reconnection to ZooKeeper when the session expires.
+    ReplicatedMergeTreeRestartingThread restarting_thread;
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
@@ -338,7 +342,7 @@ private:
       * Call under TableStructureLock.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
-                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
@@ -347,12 +351,12 @@ private:
                                                                const MergeTreeData::DataPartPtr & part);
 
     void getCommitPartOps(
-        zkutil::Requests & ops,
+        Coordination::Requests & ops,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -396,6 +400,14 @@ private:
     void queueUpdatingTask();
 
     void mutationsUpdatingTask();
+
+    /** Clone data from another replica.
+      * If replica can not be cloned throw Exception.
+      */
+    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Clone replica if it is lost.
+    void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
     /** Performs actions from the queue.
       */

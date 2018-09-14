@@ -13,6 +13,7 @@ option (ENABLE_CLICKHOUSE_COMPRESSOR "Enable clickhouse-compressor" ${ENABLE_CLI
 option (ENABLE_CLICKHOUSE_COPIER "Enable clickhouse-copier" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_FORMAT "Enable clickhouse-format" ${ENABLE_CLICKHOUSE_ALL})
 option (ENABLE_CLICKHOUSE_OBFUSCATOR "Enable clickhouse-obfuscator" ${ENABLE_CLICKHOUSE_ALL})
+option (ENABLE_CLICKHOUSE_ODBC_BRIDGE "Enable clickhouse-odbc-bridge" ${ENABLE_CLICKHOUSE_ALL})
 
 configure_file (config_tools.h.in ${CMAKE_CURRENT_BINARY_DIR}/config_tools.h)
 
@@ -27,10 +28,11 @@ add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (clang)
 add_subdirectory (obfuscator)
+add_subdirectory (odbc-bridge)
 
 if (CLICKHOUSE_SPLIT_BINARY)
     set (CLICKHOUSE_ALL_TARGETS clickhouse-server clickhouse-client clickhouse-local clickhouse-benchmark clickhouse-performance-test
-            clickhouse-extract-from-config clickhouse-format clickhouse-copier)
+            clickhouse-extract-from-config clickhouse-compressor clickhouse-format clickhouse-copier clickhouse-odbc-bridge)
 
     if (USE_EMBEDDED_COMPILER)
         list (APPEND CLICKHOUSE_ALL_TARGETS clickhouse-clang clickhouse-lld)
@@ -83,6 +85,9 @@ else ()
     if (USE_EMBEDDED_COMPILER)
         target_link_libraries (clickhouse clickhouse-compiler-lib)
     endif ()
+    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
+        target_link_libraries (clickhouse clickhouse-odbc-bridge-lib)
+    endif()
 
     set (CLICKHOUSE_BUNDLE)
     if (ENABLE_CLICKHOUSE_SERVER)
@@ -135,6 +140,12 @@ else ()
         install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-obfuscator DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
         list(APPEND CLICKHOUSE_BUNDLE clickhouse-obfuscator)
     endif ()
+    if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
+        add_custom_target (clickhouse-odbc-bridge ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-odbc-bridge DEPENDS clickhouse)
+        install (FILES ${CMAKE_CURRENT_BINARY_DIR}/clickhouse-odbc-bridge DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+        list(APPEND CLICKHOUSE_BUNDLE clickhouse-odbc-bridge)
+    endif ()
+
 
     # install always because depian package want this files:
     add_custom_target (clickhouse-clang ALL COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse clickhouse-clang DEPENDS clickhouse)
@@ -152,6 +163,6 @@ else ()
 
 endif ()
 
-if (USE_EMBEDDED_COMPILER AND ENABLE_CLICKHOUSE_SERVER)
+if (TARGET clickhouse-server AND TARGET copy-headers)
     add_dependencies(clickhouse-server copy-headers)
 endif ()

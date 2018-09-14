@@ -70,6 +70,7 @@ private:
 private:
     Context & context;
     Logger * log;
+    std::unique_ptr<Context> current_context;
 
     std::string host_fqdn;      /// current host domain name
     std::string host_fqdn_id;   /// host_name:port

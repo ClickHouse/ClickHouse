@@ -18,9 +18,9 @@ try
 
         std::string dst;
 
-        ReadBuffer in(&src[0], src.size(), 0);
+        ReadBuffer in(src.data(), src.size(), 0);
 
-        LimitReadBuffer limit_in(in, 1);
+        LimitReadBuffer limit_in(in, 1, false);
 
         {
             WriteBufferFromString out(dst);
@@ -47,7 +47,7 @@ try
     }
     {
         std::string src = "abc";
-        ReadBuffer in(&src[0], src.size(), 0);
+        ReadBuffer in(src.data(), src.size(), 0);
 
         std::string dst;
 
@@ -57,7 +57,7 @@ try
             char x;
             readChar(x, in);
 
-            LimitReadBuffer limit_in(in, 1);
+            LimitReadBuffer limit_in(in, 1, false);
 
             copyData(limit_in, out);
 
@@ -99,10 +99,10 @@ try
 
     {
         std::string src = "abc";
-        ReadBuffer in(&src[0], src.size(), 0);
+        ReadBuffer in(src.data(), src.size(), 0);
 
         {
-            LimitReadBuffer limit_in(in, 1);
+            LimitReadBuffer limit_in(in, 1, false);
 
             char x;
             readChar(x, limit_in);

@@ -3,8 +3,8 @@
 #include <common/Types.h>
 #include <common/likely.h>
 #include <common/strong_typedef.h>
-
 #include <ctime>
+#include <string>
 
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
@@ -15,7 +15,7 @@
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 
-STRONG_TYPEDEF(UInt16, DayNum);
+STRONG_TYPEDEF(UInt16, DayNum)
 
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.

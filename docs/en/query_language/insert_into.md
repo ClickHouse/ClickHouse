@@ -41,7 +41,7 @@ INSERT INTO t FORMAT TabSeparated
 
 You can insert data separately from the query by using the command-line client or the HTTP interface. For more information, see the section "[Interfaces](../interfaces/index.md#interfaces)".
 
-### Inserting the results of `SELECT`
+### Inserting The Results of `SELECT`
 
 ```sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -54,7 +54,7 @@ None of the data formats except Values allow setting values to expressions such 
 Other queries for modifying data parts are not supported: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
-### Performance considerations
+### Performance Considerations
 
 `INSERT` sorts the input data by primary key and splits them into partitions by month. If you insert data for mixed months, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 

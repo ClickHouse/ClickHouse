@@ -110,7 +110,7 @@ public:
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
-            auto begin = reinterpret_cast<char *>(&vec_res[0]);
+            auto begin = reinterpret_cast<char *>(vec_res.data());
             auto pos = begin;
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
@@ -150,12 +150,12 @@ public:
                             ", expected FixedString(" + toString(ipv6_bytes_length) + ")",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeUInt8>(arguments[1].get()))
+        if (!WhichDataType(arguments[1]).isUInt8())
             throw Exception("Illegal type " + arguments[1]->getName() +
                             " of argument 2 of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeUInt8>(arguments[2].get()))
+        if (!WhichDataType(arguments[2]).isUInt8())
             throw Exception("Illegal type " + arguments[2]->getName() +
                             " of argument 3 of function " + getName(),
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -219,7 +219,7 @@ public:
             vec_res.resize(size * (IPV6_MAX_TEXT_LENGTH + 1));
             offsets_res.resize(size);
 
-            auto begin = reinterpret_cast<char *>(&vec_res[0]);
+            auto begin = reinterpret_cast<char *>(vec_res.data());
             auto pos = begin;
 
             for (size_t offset = 0, i = 0; offset < vec_in.size(); offset += ipv6_bytes_length, ++i)
@@ -266,7 +266,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -519,7 +519,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt32>(&*arguments[0]))
+        if (!WhichDataType(arguments[0]).isUInt32())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt32",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -543,7 +543,7 @@ public:
 
             vec_res.resize(vec_in.size() * (IPV4_MAX_TEXT_LENGTH + 1)); /// the longest value is: 255.255.255.255\0
             offsets_res.resize(vec_in.size());
-            char * begin = reinterpret_cast<char *>(&vec_res[0]);
+            char * begin = reinterpret_cast<char *>(vec_res.data());
             char * pos = begin;
 
             for (size_t i = 0; i < vec_in.size(); ++i)
@@ -579,7 +579,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -714,7 +714,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeUInt64>(&*arguments[0]))
+        if (!WhichDataType(arguments[0]).isUInt64())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName() + ", expected UInt64",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -843,7 +843,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1006,7 +1006,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// String or FixedString(36)
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
         {
             const auto ptr = checkAndGetDataType<DataTypeFixedString>(arguments[0].get());
             if (!ptr || ptr->getN() != uuid_text_length)
@@ -1111,7 +1111,7 @@ public:
         return std::make_shared<DataTypeUUID>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
@@ -1120,7 +1120,7 @@ public:
 
         size_t size = input_rows_count;
         vec_to.resize(size);
-        Rand64Impl::execute(reinterpret_cast<UInt64 *>(&vec_to[0]), vec_to.size() * 2);
+        Rand64Impl::execute(reinterpret_cast<UInt64 *>(vec_to.data()), vec_to.size() * 2);
 
         for (UInt128 & uuid: vec_to)
         {
@@ -1151,13 +1151,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString()
-            && !arguments[0]->isFixedString()
-            && !arguments[0]->isDateOrDateTime()
-            && !checkDataType<DataTypeUInt8>(&*arguments[0])
-            && !checkDataType<DataTypeUInt16>(&*arguments[0])
-            && !checkDataType<DataTypeUInt32>(&*arguments[0])
-            && !checkDataType<DataTypeUInt64>(&*arguments[0]))
+        WhichDataType which(arguments[0]);
+
+        if (!which.isStringOrFixedString()
+            && !which.isDateOrDateTime()
+            && !which.isUInt())
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1259,7 +1257,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * 2 - size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
@@ -1303,7 +1301,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() * 2 + size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
 
             size_t n = col_fstr_in->getN();
@@ -1370,7 +1368,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1415,7 +1413,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() / 2 + size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
@@ -1460,7 +1458,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isInteger())
+        if (!isInteger(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1543,7 +1541,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1569,7 +1567,7 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size());
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
 
             ColumnString::Offset current_in_offset = 0;
@@ -1616,9 +1614,9 @@ public:
             out_offsets.resize(size);
             out_vec.resize(in_vec.size() + size);
 
-            char * begin = reinterpret_cast<char *>(&out_vec[0]);
+            char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
-            const char * pos_in = reinterpret_cast<const char *>(&in_vec[0]);
+            const char * pos_in = reinterpret_cast<const char *>(in_vec.data());
 
             size_t n = col_fstr_in->getN();
 

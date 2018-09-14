@@ -51,7 +51,11 @@ function gen_revision_author {
                 VERSION_MINOR=$(($VERSION_MINOR + 1))
                 VERSION_PATCH=0
             elif [ "$TYPE" == "patch" ] || [ "$TYPE" == "bugfix" ]; then
-                # VERSION_REVISION not incremented.
+                # VERSION_REVISION not incremented in new scheme.
+                if [ "$VERSION_MAJOR" -eq "1" ] && [ "$VERSION_MINOR" -eq "1" ]; then
+                    VERSION_REVISION=$(($VERSION_REVISION + 1))
+                fi
+
                 VERSION_PATCH=$(($VERSION_PATCH + 1))
             else
                 echo "Unknown version type $TYPE"
@@ -91,8 +95,11 @@ function gen_revision_author {
                 dbms/cmake/version.cmake
 
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
-            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog
+            gen_dockerfiles "$VERSION_STRING"
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" dbms/cmake/version.cmake debian/changelog docker/*/Dockerfile
             git push
+
+            echo "Generated version: ${VERSION_STRING}, revision: ${VERSION_REVISION}."
 
             # Second tag for correct version information in version.cmake inside tag
             if git tag --force -a "$tag" -m "$tag"
@@ -107,11 +114,15 @@ function gen_revision_author {
                 fi
             fi
 
+            # Reset testing branch to current commit.
+            git checkout testing
+            git reset --hard "$tag"
+            git push
+
         else
             get_version
             echo reusing old version $VERSION_STRING
         fi
-
     fi
 
     AUTHOR=$(git config --get user.name || echo ${USER})
@@ -148,4 +159,10 @@ function gen_changelog {
         -e "s/[@]AUTHOR[@]/$AUTHOR/g" \
         -e "s/[@]EMAIL[@]/$(whoami)@yandex-team.ru/g" \
         < $CHLOG.in > $CHLOG
+}
+
+# Change package versions that are installed for Docker images.
+function gen_dockerfiles {
+    VERSION_STRING="$1"
+    ls -1 docker/*/Dockerfile | xargs sed -i -r -e 's/ARG version=.+$/ARG version='$VERSION_STRING'/'
 }

@@ -44,7 +44,7 @@ Creates a table with a structure like the result of the `SELECT` query, with the
 
 In all cases, if `IF NOT EXISTS` is specified, the query won't return an error if the table already exists. In this case, the query won't do anything.
 
-### Default values
+### Default Values
 
 The column description can specify an expression for a default value, in one of the following ways:`DEFAULT expr`, `MATERIALIZED expr`, `ALIAS expr`.
 Example: `URLDomain String DEFAULT domain(URL)`.
@@ -79,7 +79,7 @@ If you add a new column to a table but later change its default expression, the 
 
 It is not possible to set default values for elements in nested data structures.
 
-### Temporary tables
+### Temporary Tables
 
 In all cases, if `TEMPORARY` is specified, a temporary table will be created. Temporary tables have the following characteristics:
 
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE 
 
 In order to run these queries correctly, each host must have the same cluster definition (to simplify syncing configs, you can use substitutions from ZooKeeper). They must also connect to the ZooKeeper servers.
 The local version of the query will eventually be implemented on each host in the cluster, even if some hosts are currently not available. The order for executing queries within a single host is guaranteed.
-` ALTER` queries are not yet supported for replicated tables.
+`ALTER` queries are not yet supported for replicated tables.
 
 ## CREATE VIEW
 
@@ -152,4 +152,3 @@ The execution of `ALTER` queries on materialized views has not been fully develo
 Views look the same as normal tables. For example, they are listed in the result of the `SHOW TABLES` query.
 
 There isn't a separate query for deleting views. To delete a view, use `DROP TABLE`.
-

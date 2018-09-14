@@ -2,7 +2,7 @@
 # TODO: test new libcpuid - maybe already fixed
 
 if (NOT ARCH_ARM)
-    if (ARCH_FREEBSD)
+    if (OS_FREEBSD)
         set (DEFAULT_USE_INTERNAL_CPUID_LIBRARY 1)
     else ()
         set (DEFAULT_USE_INTERNAL_CPUID_LIBRARY ${NOT_UNBUNDLED})

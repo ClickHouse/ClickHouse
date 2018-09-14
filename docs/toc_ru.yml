@@ -1,12 +1,11 @@
-pages:
+nav:
 
 - 'Введение':
   - 'Обзор': 'index.md'
   - 'Отличительные возможности ClickHouse': 'introduction/distinctive_features.md'
   - 'Особенности ClickHouse, которые могут считаться недостатками': 'introduction/features_considered_disadvantages.md'
-  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
-  - 'Возможные глупые вопросы': 'introduction/possible_silly_questions.md'
   - 'Производительность': 'introduction/performance.md'
+  - 'Постановка задачи в Яндекс.Метрике': 'introduction/ya_metrika_task.md'
 
 - 'Начало работы':
   - 'Установка и запуск': 'getting_started/index.md'
@@ -41,6 +40,7 @@ pages:
   - 'Array(T)': 'data_types/array.md'
   - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
   - 'Tuple(T1, T2, ...)': 'data_types/tuple.md'
+  - 'Nullable': 'data_types/nullable.md'
   - 'Вложенные структуры данных':
     - 'hidden': 'data_types/nested_data_structures/index.md'
     - 'Nested(Name1 Type1, Name2 Type2, ...)': 'data_types/nested_data_structures/nested.md'
@@ -48,6 +48,7 @@ pages:
     - 'hidden': 'data_types/special_data_types/index.md'
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
+    - 'Nothing': 'data_types/special_data_types/nothing.md'
 
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
@@ -85,6 +86,7 @@ pages:
     - 'Функции для реализации оператора IN.': 'query_language/functions/in_functions.md'
     - 'Функция arrayJoin': 'query_language/functions/array_join.md'
     - 'Функции для работы с географическими координатами': 'query_language/functions/geo.md'
+    - 'Функции c Nullable агрументами': 'query_language/functions/functions_for_nulls.md'
 
   - 'Агрегатные функции':
     - 'Введение': 'query_language/agg_functions/index.md'
@@ -97,6 +99,7 @@ pages:
     - 'merge': 'query_language/table_functions/merge.md'
     - 'numbers': 'query_language/table_functions/numbers.md'
     - 'remote': 'query_language/table_functions/remote.md'
+    - 'url': 'query_language/table_functions/url.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
@@ -109,7 +112,6 @@ pages:
     - 'Встроенные словари': 'query_language/dicts/internal_dicts.md'
   - 'Операторы': 'query_language/operators.md'
   - 'Общий синтаксис': 'query_language/syntax.md'
-
 
 - 'Эксплуатация':
   - 'hidden': 'operations/index.md'
@@ -138,6 +140,7 @@ pages:
       - 'Null': 'operations/table_engines/null.md'
       - 'Set': 'operations/table_engines/set.md'
       - 'Join': 'operations/table_engines/join.md'
+      - 'URL': 'operations/table_engines/url.md'
       - 'View': 'operations/table_engines/view.md'
       - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Интеграции':
@@ -161,13 +164,18 @@ pages:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
 
+- 'F.A.Q.':
+  - 'Общие вопросы': 'faq/general.md'
+
 - 'Разработка':
   - 'hidden': 'development/index.md'
-  - 'Overview of ClickHouse architecture': 'development/architecture.md'
+  - 'Обзор архитектуры ClickHouse': 'development/architecture.md'
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
 
-- 'Roadmap': 'roadmap.md'
-- 'Changelog': 'changelog.md'
+- 'Что нового':
+  - 'Changelog': 'changelog.md'
+  - 'Security changelog': 'security_changelog.md'
+  - 'Roadmap': 'roadmap.md'

@@ -26,9 +26,9 @@ endif ()
 
 if (NOT Boost_SYSTEM_LIBRARY)
     set (USE_INTERNAL_BOOST_LIBRARY 1)
-    set (Boost_PROGRAM_OPTIONS_LIBRARY boost_program_options_internal)
     set (Boost_SYSTEM_LIBRARY boost_system_internal)
-    set (Boost_FILESYSTEM_LIBRARY boost_filesystem_internal)
+    set (Boost_PROGRAM_OPTIONS_LIBRARY boost_program_options_internal)
+    set (Boost_FILESYSTEM_LIBRARY boost_filesystem_internal ${Boost_SYSTEM_LIBRARY})
 
     set (Boost_INCLUDE_DIRS)
 

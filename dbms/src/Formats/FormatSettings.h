@@ -17,6 +17,7 @@ struct FormatSettings
     {
         bool quote_64bit_integers = true;
         bool quote_denormals = true;
+        bool escape_forward_slashes = true;
     };
 
     JSON json;
@@ -33,6 +34,7 @@ struct FormatSettings
     struct Pretty
     {
         UInt64 max_rows = 10000;
+        UInt64 max_column_pad_width = 250;
         bool color = true;
     };
 

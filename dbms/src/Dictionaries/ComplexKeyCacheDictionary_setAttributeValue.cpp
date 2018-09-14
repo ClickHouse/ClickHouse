@@ -28,12 +28,12 @@ void ComplexKeyCacheDictionary::setAttributeValue(Attribute & attribute, const s
             if (string_ref.data && string_ref.data != null_value_ref.data())
                 string_arena->free(const_cast<char *>(string_ref.data), string_ref.size);
 
-            const auto size = string.size();
-            if (size != 0)
+            const auto str_size = string.size();
+            if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(size + 1);
-                std::copy(string.data(), string.data() + size + 1, string_ptr);
-                string_ref = StringRef{string_ptr, size};
+                auto string_ptr = string_arena->alloc(str_size + 1);
+                std::copy(string.data(), string.data() + str_size + 1, string_ptr);
+                string_ref = StringRef{string_ptr, str_size};
             }
             else
                 string_ref = {};

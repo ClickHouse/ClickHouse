@@ -167,10 +167,10 @@ std::string MySQLDictionarySource::quoteForLike(const std::string s)
 
 LocalDateTime MySQLDictionarySource::getLastModification() const
 {
-    LocalDateTime update_time{std::time(nullptr)};
+    LocalDateTime modification_time{std::time(nullptr)};
 
     if (dont_check_update_time)
-        return update_time;
+        return modification_time;
 
     try
     {
@@ -190,8 +190,8 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
 
             if (!update_time_value.isNull())
             {
-                update_time = update_time_value.getDateTime();
-                LOG_TRACE(log, "Got update time: " << update_time);
+                modification_time = update_time_value.getDateTime();
+                LOG_TRACE(log, "Got modification time: " << modification_time);
             }
 
             /// fetch remaining rows to avoid "commands out of sync" error
@@ -211,15 +211,15 @@ LocalDateTime MySQLDictionarySource::getLastModification() const
     }
 
     /// we suppose failure to get modification time is not an error, therefore return current time
-    return update_time;
+    return modification_time;
 }
 
 std::string MySQLDictionarySource::doInvalidateQuery(const std::string & request) const
 {
-    Block sample_block;
+    Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
-    sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    MySQLBlockInputStream block_input_stream(pool.Get(), request, sample_block, 1);
+    invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+    MySQLBlockInputStream block_input_stream(pool.Get(), request, invalidate_sample_block, 1);
     return readInvalidateQuery(block_input_stream);
 }
 

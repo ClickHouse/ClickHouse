@@ -176,7 +176,7 @@ public:
     /// max_rows_in_queue should be about max_block_size_ if we won't store a lot of extra blocks (RowRef holds SharedBlockPtr).
     VersionedCollapsingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_,
-        const String & sign_column_, size_t max_block_size_, bool can_collapse_all_rows_,
+        const String & sign_column_, size_t max_block_size_,
         WriteBuffer * out_row_sources_buf_ = nullptr);
 
     String getName() const override { return "VersionedCollapsingSorted"; }
@@ -202,8 +202,6 @@ private:
 
     /// Sources of rows for VERTICAL merge algorithm. Size equals to (size + number of gaps) in current_keys.
     std::queue<RowSourcePart> current_row_sources;
-
-    const bool can_collapse_all_rows;
 
     void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
 

@@ -76,7 +76,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
         }
         else
         {
-            bool is_agg_func = checkDataType<DataTypeAggregateFunction>(column.type.get());
+            bool is_agg_func = WhichDataType(column.type).isAggregateFunction();
             if (!column.type->isSummable() && !is_agg_func)
             {
                 column_numbers_not_to_aggregate.push_back(i);
@@ -195,7 +195,7 @@ SummingSortedBlockInputStream::SummingSortedBlockInputStream(
 }
 
 
-void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns, bool force_insertion)
+void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & merged_columns)
 {
     for (auto & desc : columns_to_aggregate)
     {
@@ -237,9 +237,9 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
             desc.merged_column->insertDefault();
     }
 
-    /// If it is "zero" row and it is not the last row of the result block, then
-    ///  rollback the insertion (at this moment we need rollback only cols from columns_to_aggregate)
-    if (!force_insertion && current_row_is_zero)
+    /// If it is "zero" row, then rollback the insertion
+    /// (at this moment we need rollback only cols from columns_to_aggregate)
+    if (current_row_is_zero)
     {
         for (auto & desc : columns_to_aggregate)
             desc.merged_column->popBack(1);
@@ -252,7 +252,6 @@ void SummingSortedBlockInputStream::insertCurrentRowIfNeeded(MutableColumns & me
 
     /// Update per-block and per-group flags
     ++merged_rows;
-    output_is_non_empty = true;
 }
 
 
@@ -274,7 +273,7 @@ Block SummingSortedBlockInputStream::readImpl()
     for (auto & desc : columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
-        if (!desc.is_agg_func_type && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
         {
             size_t tuple_size = desc.column_numbers.size();
             MutableColumns tuple_columns(tuple_size);
@@ -287,13 +286,13 @@ Block SummingSortedBlockInputStream::readImpl()
             desc.merged_column = header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty();
     }
 
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     Block res = header.cloneWithColumns(std::move(merged_columns));
 
     /// Place aggregation results into block.
     for (auto & desc : columns_to_aggregate)
     {
-        if (!desc.is_agg_func_type && checkDataType<DataTypeTuple>(desc.function->getReturnType().get()))
+        if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
         {
             /// Unpack tuple into block.
             size_t tuple_size = desc.column_numbers.size();
@@ -333,7 +332,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
         {
             if (!current_key.empty())
                 /// Write the data for the previous group.
-                insertCurrentRowIfNeeded(merged_columns, false);
+                insertCurrentRowIfNeeded(merged_columns);
 
             if (merged_rows >= max_block_size)
             {
@@ -393,7 +392,7 @@ void SummingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::
 
     /// We will write the data for the last group, if it is non-zero.
     /// If it is zero, and without it the output stream will be empty, we will write it anyway.
-    insertCurrentRowIfNeeded(merged_columns, !output_is_non_empty);
+    insertCurrentRowIfNeeded(merged_columns);
     finished = true;
 }
 

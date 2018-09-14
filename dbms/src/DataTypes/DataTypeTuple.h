@@ -28,6 +28,7 @@ public:
     DataTypeTuple(const DataTypes & elems);
     DataTypeTuple(const DataTypes & elems, const Strings & names);
 
+    TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
     std::string getName() const override;
     const char * getFamilyName() const override { return "Tuple"; }
 
@@ -53,23 +54,32 @@ public:
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreams(StreamCallback callback, SubstreamPath path) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+
+    void serializeBinaryBulkStatePrefix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void serializeBinaryBulkStateSuffix(
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
+
+    void deserializeBinaryBulkStatePrefix(
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     void serializeBinaryBulkWithMultipleStreams(
-        const IColumn & column,
-        OutputStreamGetter getter,
-        size_t offset,
-        size_t limit,
-        bool position_independent_encoding,
-        SubstreamPath path) const override;
+            const IColumn & column,
+            size_t offset,
+            size_t limit,
+            SerializeBinaryBulkSettings & settings,
+            SerializeBinaryBulkStatePtr & state) const override;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
-        InputStreamGetter getter,
-        size_t limit,
-        double avg_value_size_hint,
-        bool position_independent_encoding,
-        SubstreamPath path) const override;
+            IColumn & column,
+            size_t limit,
+            DeserializeBinaryBulkSettings & settings,
+            DeserializeBinaryBulkStatePtr & state) const override;
 
     MutableColumnPtr createColumn() const override;
 

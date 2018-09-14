@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/URI.h>
 #include <IO/ReadBuffer.h>
@@ -32,6 +33,7 @@ public:
         const std::string & method = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},
+        const Poco::Net::HTTPBasicCredentials & credentials = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;

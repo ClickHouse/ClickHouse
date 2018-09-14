@@ -11,11 +11,14 @@ namespace DB
 template <typename T>
 class DataTypeNumberBase : public IDataType
 {
+    static_assert(IsNumber<T>);
+
 public:
     static constexpr bool is_parametric = false;
     using FieldType = T;
 
     const char * getFamilyName() const override { return TypeName<T>::get(); }
+    TypeIndex getTypeId() const override { return TypeId<T>::value; }
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

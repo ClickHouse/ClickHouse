@@ -27,6 +27,10 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "DROP MARK CACHE";
         case Type::DROP_UNCOMPRESSED_CACHE:
             return "DROP UNCOMPRESSED CACHE";
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            return "DROP COMPILED EXPRESSION CACHE";
+#endif
         case Type::STOP_LISTEN_QUERIES:
             return "STOP LISTEN QUERIES";
         case Type::START_LISTEN_QUERIES:
@@ -61,6 +65,8 @@ const char * ASTSystemQuery::typeToString(Type type)
             return "STOP REPLICATION QUEUES";
         case Type::START_REPLICATION_QUEUES:
             return "START REPLICATION QUEUES";
+        case Type::FLUSH_SYSTEM_TABLES:
+            return "FLUSH SYSTEM TABLES";
         default:
             throw Exception("Unknown SYSTEM query command", ErrorCodes::BAD_TYPE_OF_FIELD);
     }

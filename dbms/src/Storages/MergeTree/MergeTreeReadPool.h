@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/SelectQueryInfo.h>
 #include <mutex>
 
 
@@ -66,12 +67,12 @@ private:
 public:
     MergeTreeReadPool(
         const size_t threads, const size_t sum_marks, const size_t min_marks_for_concurrent_read,
-        RangesInDataParts parts, MergeTreeData & data, const ExpressionActionsPtr & prewhere_actions,
-        const String & prewhere_column_name, const bool check_columns, const Names & column_names,
+        RangesInDataParts parts, MergeTreeData & data, const PrewhereInfoPtr & prewhere_info,
+        const bool check_columns, const Names & column_names,
         const BackoffSettings & backoff_settings, size_t preferred_block_size_bytes,
         const bool do_not_steal_tasks = false);
 
-    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread);
+    MergeTreeReadTaskPtr getTask(const size_t min_marks_to_read, const size_t thread, const Names & ordered_names);
 
     /** Each worker could call this method and pass information about read performance.
       * If read performance is too low, pool could decide to lower number of threads: do not assign more tasks to several threads.
@@ -83,8 +84,7 @@ public:
 
 private:
     std::vector<size_t> fillPerPartInfo(
-        RangesInDataParts & parts, const ExpressionActionsPtr & prewhere_actions, const String & prewhere_column_name,
-        const bool check_columns);
+        RangesInDataParts & parts, const PrewhereInfoPtr & prewhere_info, const bool check_columns);
 
     void fillPerThreadInfo(
         const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
@@ -93,15 +93,15 @@ private:
     std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     MergeTreeData & data;
     Names column_names;
+    Names ordered_names;
     bool do_not_steal_tasks;
     bool predict_block_size_bytes;
     std::vector<NameSet> per_part_column_name_set;
     std::vector<NamesAndTypesList> per_part_columns;
     std::vector<NamesAndTypesList> per_part_pre_columns;
-    /// @todo actually all of these values are either true or false for the whole query, thus no vector required
-    std::vector<char> per_part_remove_prewhere_column;
     std::vector<char> per_part_should_reorder;
     std::vector<MergeTreeBlockSizePredictorPtr> per_part_size_predictor;
+    PrewhereInfoPtr prewhere_info;
 
     struct Part
     {

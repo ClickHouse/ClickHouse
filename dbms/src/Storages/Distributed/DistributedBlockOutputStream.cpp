@@ -23,6 +23,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
 #include <Common/escapeForFileName.h>
+#include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -32,6 +33,7 @@
 #include <future>
 #include <condition_variable>
 #include <mutex>
+
 
 
 namespace CurrentMetrics
@@ -191,9 +193,12 @@ void DistributedBlockOutputStream::waitForJobs()
 
 ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutputStream::JobReplica & job, const Block & current_block)
 {
-    auto memory_tracker = current_memory_tracker;
-    return [this, memory_tracker, &job, &current_block]()
+    auto thread_group = CurrentThread::getGroup();
+    return [this, thread_group, &job, &current_block]()
     {
+        CurrentThread::attachToIfDetached(thread_group);
+        setThreadName("DistrOutStrProc");
+
         ++job.blocks_started;
 
         SCOPE_EXIT({
@@ -203,12 +208,6 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
             job.elapsed_time_ms += elapsed_time_for_block_ms;
             job.max_elapsed_time_for_block_ms = std::max(job.max_elapsed_time_for_block_ms, elapsed_time_for_block_ms);
         });
-
-        if (!current_memory_tracker)
-        {
-            current_memory_tracker = memory_tracker;
-            setThreadName("DistrOutStrProc");
-        }
 
         const auto & shard_info = cluster->getShardsInfo()[job.shard_index];
         size_t num_shards = cluster->getShardsInfo().size();
