@@ -52,6 +52,7 @@ namespace ProfileEvents
 {
     extern const Event CompileFunction;
     extern const Event CompileExpressionsMicroseconds;
+    extern const Event CompileExpressionsBytes;
 }
 
 namespace DB
@@ -244,10 +245,11 @@ struct LLVMContext
         module->setTargetTriple(machine->getTargetTriple().getTriple());
     }
 
-    void finalize()
+    /// returns used memory
+    size_t compileAllFunctionsToNativeCode()
     {
         if (!module->size())
-            return;
+            return 0;
         llvm::PassManagerBuilder builder;
         llvm::legacy::PassManager mpm;
         llvm::legacy::FunctionPassManager fpm(module.get());
@@ -296,6 +298,11 @@ struct LLVMContext
                 throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
             symbols[name] = reinterpret_cast<void *>(*address);
         }
+#if LLVM_VERSION_MAJOR >= 6
+        return memory_mapper->memory_tracker.get();
+#else
+        return 0;
+#endif
     }
 };
 
@@ -336,7 +343,7 @@ public:
     }
 };
 
-static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
+static void compileFunctionToLLVMByteCode(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
@@ -492,7 +499,7 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shar
         subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
         originals.push_back(action.function);
     }
-    compileFunction(context, *this);
+    compileFunctionToLLVMByteCode(context, *this);
 }
 
 PreparedFunctionPtr LLVMFunction::prepare(const Block &) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
@@ -702,7 +709,9 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
+                /// Lock here, to be sure, that all functions will be compiled
                 std::lock_guard<std::mutex> lock(mutex);
+                /// Don't use getOrSet here, because sometimes we need to initialize context
                 fn = compilation_cache->get(hash_key);
                 if (!fn)
                 {
@@ -737,8 +746,10 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
 
     if (context)
     {
+        /// Lock here, because other threads can get uncompilted functions from cache
         std::lock_guard<std::mutex> lock(mutex);
-        context->finalize();
+        size_t used_memory = context->compileAllFunctionsToNativeCode();
+        ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, used_memory);
     }
 }
 
