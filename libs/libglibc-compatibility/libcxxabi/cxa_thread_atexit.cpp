@@ -7,10 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "abort_message.h"
-#include "cxxabi.h"
-#include <__threading_support>
 #include <cstdlib>
+#include <pthread.h>
 
 namespace __cxxabiv1 {
 
@@ -56,7 +54,7 @@ namespace {
   // True if the destructors are currently scheduled to run on this thread
   __thread bool dtors_alive = false;
   // Used to trigger destructors on thread exit; value is ignored
-  std::__libcpp_tls_key dtors_key;
+  pthread_key_t dtors_key;
 
   void run_dtors(void*) {
     while (auto head = dtors) {
@@ -73,8 +71,8 @@ namespace {
       // There is intentionally no matching std::__libcpp_tls_delete call, as
       // __cxa_thread_atexit() may be called arbitrarily late (for example, from
       // global destructors or atexit() handlers).
-      if (std::__libcpp_tls_create(&dtors_key, run_dtors) != 0) {
-        abort_message("std::__libcpp_tls_create() failed in __cxa_thread_atexit()");
+      if (pthread_key_create(&dtors_key, run_dtors) != 0) {
+        abort();
       }
     }
 
@@ -92,13 +90,13 @@ namespace {
 
 extern "C" {
 
-  _LIBCXXABI_FUNC_VIS int __cxa_thread_atexit(Dtor dtor, void* obj, void* dso_symbol) throw() {
+  int __cxa_thread_atexit(Dtor dtor, void* obj, void* dso_symbol) throw() {
       // Initialize the dtors std::__libcpp_tls_key (uses __cxa_guard_*() for
       // one-time initialization and __cxa_atexit() for destruction)
       static DtorsManager manager;
 
       if (!dtors_alive) {
-        if (std::__libcpp_tls_set(dtors_key, &dtors_key) != 0) {
+        if (pthread_setspecific(dtors_key, &dtors_key) != 0) {
           return -1;
         }
         dtors_alive = true;
