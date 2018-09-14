@@ -27,6 +27,11 @@ public:
     void syncAfterError() override;
 
 private:
+    const String& column_name(size_t i) const;
+    void skipUnknownField(const StringRef& name_ref);
+    void readField(size_t index, MutableColumns & columns);
+
+private:
     ReadBuffer & istr;
     Block header;
 
@@ -34,6 +39,7 @@ private:
 
     /// Buffer for the read from the stream field name. Used when you have to copy it.
     String name_buf;
+    std::vector<bool> read_columns;
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
