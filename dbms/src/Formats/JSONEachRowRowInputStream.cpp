@@ -23,10 +23,10 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
 
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
-        name_map[column_name(i)] = i;        /// NOTE You could place names more cache-locally.
+        name_map[columnName(i)] = i;        /// NOTE You could place names more cache-locally.
 }
 
-const String& JSONEachRowRowInputStream::column_name(size_t i) const
+const String& JSONEachRowRowInputStream::columnName(size_t i) const
 {
     return header.safeGetByPosition(i).name;
 }
@@ -41,7 +41,7 @@ enum
 
 } // unnamed namespace
 
-size_t JSONEachRowRowInputStream::get_column_index(const StringRef& name) const
+size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
 {
     /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -94,7 +94,7 @@ void JSONEachRowRowInputStream::skipUnknownField(const StringRef& name_ref)
 void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns)
 {
     if (read_columns[index])
-        throw Exception("Duplicate field found while parsing JSONEachRow format: " + column_name(index), ErrorCodes::INCORRECT_DATA);
+        throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
 
     read_columns[index] = true;
 
@@ -104,12 +104,12 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " + column_name(index) + ")");
+        e.addMessage("(while read the value of key " + columnName(index) + ")");
         throw;
     }
 }
 
-bool JSONEachRowRowInputStream::advance_to_next_key(size_t key_index)
+bool JSONEachRowRowInputStream::advanceToNextKey(size_t key_index)
 {
     skipWhitespaceIfAny(istr);
 
@@ -129,6 +129,24 @@ bool JSONEachRowRowInputStream::advance_to_next_key(size_t key_index)
     return true;
 }
 
+void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
+{
+    assertChar('{', istr);
+
+    for ( size_t key_index = 0 ; advanceToNextKey(key_index) ; ++key_index )
+    {
+        StringRef name_ref = readName(istr, name_buf);
+
+        skipColonDelimeter(istr);
+
+        const size_t column_index = columnIndex(name_ref);
+        if ( column_index == UNKNOWN_FIELD )
+            skipUnknownField(name_ref);
+        else
+            readField(column_index, columns);
+    }
+}
+
 bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 {
     skipWhitespaceIfAny(istr);
@@ -146,26 +164,13 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
     if (istr.eof())
         return false;
 
-    assertChar('{', istr);
-
     size_t num_columns = columns.size();
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     /// TODO Ability to provide your DEFAULTs.
     read_columns.assign(num_columns, false);
 
-    for ( size_t key_index = 0 ; advance_to_next_key(key_index) ; ++key_index )
-    {
-        StringRef name_ref = readName(istr, name_buf);
-
-        skipColonDelimeter(istr);
-
-        const size_t column_index = get_column_index(name_ref);
-        if ( column_index == UNKNOWN_FIELD )
-            skipUnknownField(name_ref);
-        else
-            readField(column_index, columns);
-    }
+    readJSONObject(columns);
 
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
