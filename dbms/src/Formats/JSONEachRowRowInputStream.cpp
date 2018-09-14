@@ -3,7 +3,7 @@
 #include <Formats/JSONEachRowRowInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/BlockInputStreamFromRowInputStream.h>
-
+#include <DataTypes/NestedUtils.h>
 
 namespace DB
 {
@@ -14,6 +14,17 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
+namespace
+{
+
+enum
+{
+    UNKNOWN_FIELD = size_t(-1),
+    NESTED_FIELD = size_t(-2)
+};
+
+} // unnamed namespace
+
 
 JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
     : istr(istr_), header(header_), format_settings(format_settings), name_map(header.columns())
@@ -23,23 +34,22 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
 
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
-        name_map[columnName(i)] = i;        /// NOTE You could place names more cache-locally.
+    {
+        const String& colname = columnName(i);
+        name_map[colname] = i;        /// NOTE You could place names more cache-locally.
+        const auto splitted = Nested::splitName(colname);
+        if ( ! splitted.second.empty() )
+        {
+            const StringRef table_name(colname.data(), splitted.first.size());
+            name_map[table_name] = NESTED_FIELD;
+        }
+    }
 }
 
 const String& JSONEachRowRowInputStream::columnName(size_t i) const
 {
     return header.safeGetByPosition(i).name;
 }
-
-namespace
-{
-
-enum
-{
-    UNKNOWN_FIELD = size_t(-1)
-};
-
-} // unnamed namespace
 
 size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
 {
@@ -50,13 +60,13 @@ size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
     return name_map.end() == it ? UNKNOWN_FIELD : it->second;
 }
 
-/** Read the field name in JSON format.
-  * A reference to the field name will be written to ref.
-  * You can also use temporary `tmp` buffer to copy field name there.
+/** Read the field name and convert it to column name
+ *  (taking into account the current nested name prefix)
   */
-static StringRef readName(ReadBuffer & buf, String & tmp)
+StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 {
-    if (buf.position() + 1 < buf.buffer().end())
+    // This is just an optimization: try to avoid copying the name into current_column_name
+    if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
     {
         const char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
 
@@ -71,8 +81,9 @@ static StringRef readName(ReadBuffer & buf, String & tmp)
         }
     }
 
-    readJSONString(tmp, buf);
-    return tmp;
+    current_column_name.resize(nested_prefix_length);
+    readJSONStringInto(current_column_name, buf);
+    return current_column_name;
 }
 
 
@@ -135,16 +146,27 @@ void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
 
     for ( size_t key_index = 0 ; advanceToNextKey(key_index) ; ++key_index )
     {
-        StringRef name_ref = readName(istr, name_buf);
+        StringRef name_ref = readColumnName(istr);
 
         skipColonDelimeter(istr);
 
         const size_t column_index = columnIndex(name_ref);
         if ( column_index == UNKNOWN_FIELD )
             skipUnknownField(name_ref);
+        else if ( column_index == NESTED_FIELD )
+            readNestedData(name_ref.toString(), columns);
         else
             readField(column_index, columns);
     }
+}
+
+void JSONEachRowRowInputStream::readNestedData(const String& name, MutableColumns & columns)
+{
+    current_column_name = name;
+    current_column_name.push_back('.');
+    nested_prefix_length = current_column_name.size();
+    readJSONObject(columns);
+    nested_prefix_length = 0;
 }
 
 bool JSONEachRowRowInputStream::read(MutableColumns & columns)
@@ -170,6 +192,7 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
     /// TODO Ability to provide your DEFAULTs.
     read_columns.assign(num_columns, false);
 
+    nested_prefix_length = 0;
     readJSONObject(columns);
 
     /// Fill non-visited columns with the default values.
