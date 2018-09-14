@@ -1452,22 +1452,23 @@ private:
     const ExternalDictionaries & dictionaries;
 };
 
+
 template <typename T>
-auto getColumnData(const IColumn* column, size_t index) ->
-    std::enable_if_t<std::is_signed<T>::value && std::is_integral<T>::value, Int64>
+auto getColumnData(const IColumn * column, size_t index) ->
+    std::enable_if_t<std::is_signed_v<T> && std::is_integral_v<T>, Int64>
 {
     return column->getInt(index);
 }
 
 template <typename T>
-auto getColumnData(const IColumn* column, size_t index) ->
-    std::enable_if_t<std::is_unsigned<T>::value && std::is_integral<T>::value, UInt64>
+auto getColumnData(const IColumn * column, size_t index) ->
+    std::enable_if_t<std::is_unsigned_v<T> && std::is_integral_v<T>, UInt64>
 {
     return column->getUInt(index);
 }
 
 template <typename T>
-const PaddedPODArray<T>* getColumnDataAsPaddedPODArray(const IColumn* column, PaddedPODArray<T>* backup_storage)
+const PaddedPODArray<T> * getColumnDataAsPaddedPODArray(const IColumn * column, PaddedPODArray<T> * backup_storage)
 {
     if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(column))
     {
