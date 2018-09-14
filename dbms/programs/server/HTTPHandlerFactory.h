@@ -41,8 +41,8 @@ public:
                                 << (request.has("User-Agent") ? request.get("User-Agent") : "none")
                                 << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
 #if !NDEBUG
-                                << ", Type:" << request.getContentType()
-                                << ", TE:" << request.getTransferEncoding()
+                                << ", Content Type: " << request.getContentType()
+                                << ", Transfer Encoding: " << request.getTransferEncoding()
 #endif
                  );
 
