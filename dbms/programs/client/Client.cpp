@@ -1,4 +1,5 @@
 #include "TestHint.h"
+#include "ConnectionParameters.h"
 
 #include <port/unistd.h>
 #include <stdlib.h>
@@ -13,11 +14,11 @@
 #include <optional>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <Poco/String.h>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/readline_use.h>
 #include <common/find_first_symbols.h>
-#include <common/SetTerminalEcho.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -40,6 +41,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
@@ -57,7 +59,14 @@
 #include <Common/InterruptListener.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
-#include <ext/scope_guard.h>
+
+#if USE_READLINE
+#include "Suggest.h"
+#endif
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
 
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
@@ -71,7 +80,6 @@
 /// This codes are possibly not supported everywhere.
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
-
 
 namespace DB
 {
@@ -173,6 +181,8 @@ private:
     int expected_client_error = 0;
     int actual_server_error = 0;
     int actual_client_error = 0;
+
+    UInt64 server_revision = 0;
     String server_version;
     String server_display_name;
 
@@ -187,65 +197,6 @@ private:
 
     /// External tables info.
     std::list<ExternalTable> external_tables;
-
-
-    struct ConnectionParameters
-    {
-        String host;
-        UInt16 port;
-        String default_database;
-        String user;
-        String password;
-        Protocol::Secure security;
-        Protocol::Compression compression;
-        ConnectionTimeouts timeouts;
-
-        ConnectionParameters() {}
-
-        ConnectionParameters(const Poco::Util::AbstractConfiguration & config)
-        {
-            bool is_secure = config.getBool("secure", false);
-            security = is_secure
-                ? Protocol::Secure::Enable
-                : Protocol::Secure::Disable;
-
-            host = config.getString("host", "localhost");
-            port = config.getInt("port",
-                config.getInt(is_secure ? "tcp_port_secure" : "tcp_port",
-                    is_secure ? DBMS_DEFAULT_SECURE_PORT : DBMS_DEFAULT_PORT));
-
-            default_database = config.getString("database", "");
-            user = config.getString("user", "");
-
-            if (config.getBool("ask-password", false))
-            {
-                if (config.has("password"))
-                    throw Exception("Specified both --password and --ask-password. Remove one of them", ErrorCodes::BAD_ARGUMENTS);
-
-                std::cout << "Password for user " << user << ": ";
-                SetTerminalEcho(false);
-
-                SCOPE_EXIT({
-                    SetTerminalEcho(true);
-                });
-                std::getline(std::cin, password);
-                std::cout << std::endl;
-            }
-            else
-            {
-                password = config.getString("password", "");
-            }
-
-            compression = config.getBool("compression", true)
-                ? Protocol::Compression::Enable
-                : Protocol::Compression::Disable;
-
-            timeouts = ConnectionTimeouts(
-                Poco::Timespan(config.getInt("connect_timeout", DBMS_DEFAULT_CONNECT_TIMEOUT_SEC), 0),
-                Poco::Timespan(config.getInt("receive_timeout", DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC), 0),
-                Poco::Timespan(config.getInt("send_timeout", DBMS_DEFAULT_SEND_TIMEOUT_SEC), 0));
-        }
-    };
 
     ConnectionParameters connection_parameters;
 
@@ -343,9 +294,10 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-
     int mainImpl()
     {
+        UseSSL use_ssl;
+
         registerFunctions();
         registerAggregateFunctions();
 
@@ -459,9 +411,25 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-            /// Turn tab completion off.
-            rl_bind_key('\t', rl_insert);
+#if USE_READLINE
+            if (server_revision >= Suggest::MIN_SERVER_REVISION
+                && !config().getBool("disable_suggestion", false))
+            {
+                /// Load suggestion data from the server.
+                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
 
+                /// Added '.' to the default list. Because it is used to separate database and table.
+                rl_basic_word_break_characters = " \t\n\r\"\\'`@$><=;|&{(.";
+
+                /// Not append whitespace after single suggestion. Because whitespace after function name is meaningless.
+                rl_completion_append_character = '\0';
+
+                rl_completion_entry_function = Suggest::generator;
+            }
+            else
+                /// Turn tab completion off.
+                rl_bind_key('\t', rl_insert);
+#endif
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -482,10 +450,40 @@ private:
                     Poco::File(history_file).createFile();
             }
 
+#if USE_READLINE
+            /// Install Ctrl+C signal handler that will be used in interactive mode.
+
+            if (rl_initialize())
+                throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
+
+            auto clear_prompt_or_exit = [](int)
+            {
+                /// This is signal safe.
+                ssize_t res = write(STDOUT_FILENO, "\n", 1);
+
+                /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
+                /// (First press to Ctrl+C will try to cancel query by InterruptListener).
+                if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
+                {
+                    rl_replace_line("", 0);
+                    if (rl_forced_update_display())
+                        _exit(0);
+                }
+                else
+                {
+                    /// A little dirty, but we struggle to find better way to correctly
+                    /// force readline to exit after returning from the signal handler.
+                    _exit(0);
+                }
+            };
+
+            if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
+                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+#endif
+
             loop();
 
             std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
-
             return 0;
         }
         else
@@ -528,7 +526,6 @@ private:
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_version_patch = 0;
-        UInt64 server_revision = 0;
 
         if (max_client_network_bandwidth)
         {
@@ -563,7 +560,7 @@ private:
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(STDIN_FILENO, &fds);
-        return select(1, &fds, 0, 0, &timeout) == 1;
+        return select(1, &fds, nullptr, nullptr, &timeout) == 1;
     }
 
     inline const String prompt() const
@@ -1518,33 +1515,6 @@ public:
             }
         }
 
-#if USE_READLINE
-        if (rl_initialize())
-            throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
-
-        auto clear_prompt_or_exit = [](int)
-        {
-            /// This is signal safe.
-            ssize_t res = write(STDOUT_FILENO, "\n", 1);
-
-            if (res == 1 && rl_line_buffer[0])
-            {
-                rl_replace_line("", 0);
-                if (rl_forced_update_display())
-                    _exit(0);
-            }
-            else
-            {
-                /// A little dirty, but we struggle to find better way to correctly
-                /// force readline to exit after returning from the signal handler.
-                _exit(0);
-            }
-        };
-
-        if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
-            throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-#endif
-
         ioctl(0, TIOCGWINSZ, &terminal_size);
 
         namespace po = boost::program_options;
@@ -1566,7 +1536,7 @@ public:
             ("config-file,c", po::value<std::string>(), "config-file path")
             ("host,h", po::value<std::string>()->default_value("localhost"), "server host")
             ("port", po::value<int>()->default_value(9000), "server port")
-            ("secure,s", "secure")
+            ("secure,s", "Use TLS connection")
             ("user,u", po::value<std::string>()->default_value("default"), "user")
             ("password", po::value<std::string>(), "password")
             ("ask-password", "ask-password")
@@ -1574,6 +1544,9 @@ public:
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
+            ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
+            ("suggestion_limit", po::value<int>()->default_value(10000),
+                "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")
@@ -1685,7 +1658,7 @@ public:
             config().setInt("port", options["port"].as<int>());
         if (options.count("secure"))
             config().setBool("secure", true);
-        if (options.count("user"))
+        if (options.count("user") && !options["user"].defaulted())
             config().setString("user", options["user"].as<std::string>());
         if (options.count("password"))
             config().setString("password", options["password"].as<std::string>());
@@ -1717,11 +1690,14 @@ public:
             config().setBool("compression", options["compression"].as<bool>());
         if (options.count("server_logs_file"))
             server_logs_file = options["server_logs_file"].as<std::string>();
+        if (options.count("disable_suggestion"))
+            config().setBool("disable_suggestion", true);
+        if (options.count("suggestion_limit"))
+            config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
     }
 };
 
 }
-
 
 int mainEntryClickHouseClient(int argc, char ** argv)
 {

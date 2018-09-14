@@ -1,4 +1,4 @@
-add_library (daemon ${SPLIT_SHARED}
+add_library (daemon ${LINK_MODE}
     src/BaseDaemon.cpp
     src/GraphiteWriter.cpp
     src/ExtendedLogChannel.cpp
@@ -23,4 +23,4 @@ endif ()
 target_include_directories (daemon PUBLIC include)
 target_include_directories (daemon PRIVATE ${ClickHouse_SOURCE_DIR}/libs/libpocoext/include)
 
-target_link_libraries (daemon clickhouse_common_io clickhouse_common_config ${EXECINFO_LIBRARY} ${ELF_LIBRARY})
+target_link_libraries (daemon clickhouse_common_io clickhouse_common_config ${Poco_Util_LIBRARY} ${EXECINFO_LIBRARY} ${ELF_LIBRARY})

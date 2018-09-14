@@ -193,12 +193,13 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
 
     friend class ReplicatedMergeTreeBlockOutputStream;
-    friend class ReplicatedMergeTreeRestartingThread;
     friend class ReplicatedMergeTreePartCheckThread;
     friend class ReplicatedMergeTreeCleanupThread;
     friend class ReplicatedMergeTreeAlterThread;
@@ -303,7 +304,7 @@ private:
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
     /// A thread that processes reconnection to ZooKeeper when the session expires.
-    std::unique_ptr<ReplicatedMergeTreeRestartingThread> restarting_thread;
+    ReplicatedMergeTreeRestartingThread restarting_thread;
 
     /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
     zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
@@ -341,7 +342,7 @@ private:
       * Call under TableStructureLock.
       */
     void checkPartChecksumsAndAddCommitOps(const zkutil::ZooKeeperPtr & zookeeper, const MergeTreeData::DataPartPtr & part,
-                                           zkutil::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
+                                           Coordination::Requests & ops, String part_name = "", NameSet * absent_replicas_paths = nullptr);
 
     String getChecksumsForZooKeeper(const MergeTreeDataPartChecksums & checksums) const;
 
@@ -350,12 +351,12 @@ private:
                                                                const MergeTreeData::DataPartPtr & part);
 
     void getCommitPartOps(
-        zkutil::Requests & ops,
+        Coordination::Requests & ops,
         MergeTreeData::MutableDataPartPtr & part,
         const String & block_id_path = "") const;
 
     /// Adds actions to `ops` that remove a part from ZooKeeper.
-    void removePartFromZooKeeper(const String & part_name, zkutil::Requests & ops);
+    void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops);
 
     /// Quickly removes big set of parts from ZooKeeper (using async multi queries)
     void removePartsFromZooKeeper(zkutil::ZooKeeperPtr & zookeeper, const Strings & part_names,
@@ -399,6 +400,14 @@ private:
     void queueUpdatingTask();
 
     void mutationsUpdatingTask();
+
+    /** Clone data from another replica.
+      * If replica can not be cloned throw Exception.
+      */
+    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Clone replica if it is lost.
+    void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
     /** Performs actions from the queue.
       */

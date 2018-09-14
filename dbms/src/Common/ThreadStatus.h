@@ -1,7 +1,11 @@
 #pragma once
+
 #include <Common/ProfileEvents.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ObjectPool.h>
+
 #include <IO/Progress.h>
+
 #include <memory>
 #include <map>
 #include <mutex>
@@ -30,10 +34,17 @@ using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
 
+/** Thread group is a collection of threads dedicated to single task
+  * (query or other process like background merge).
+  *
+  * ProfileEvents (counters) from a thread are propagated to thread group.
+  *
+  * Create via CurrentThread::initializeQuery (for queries) or directly (for various background tasks).
+  * Use via CurrentThread::getGroup.
+  */
 class ThreadGroupStatus
 {
 public:
-
     mutable std::shared_mutex mutex;
 
     ProfileEvents::Counters performance_counters{VariableContext::Process};
@@ -57,10 +68,14 @@ public:
 using ThreadGroupStatusPtr = std::shared_ptr<ThreadGroupStatus>;
 
 
+/** Encapsulates all per-thread info (ProfileEvents, MemoryTracker, query_id, query context, etc.).
+  * Used inside thread-local variable. See variables in CurrentThread.cpp
+  *
+  * This object should be used only via "CurrentThread", see CurrentThread.h
+  */
 class ThreadStatus : public std::enable_shared_from_this<ThreadStatus>
 {
 public:
-
     /// Poco's thread number (the same number is used in logs)
     UInt32 thread_number = 0;
     /// Linux's PID (or TGID) (the same id is shown by ps util)
@@ -75,7 +90,6 @@ public:
     Progress progress_out;
 
 public:
-
     static ThreadStatusPtr create();
 
     ThreadGroupStatusPtr getThreadGroup() const
@@ -126,7 +140,6 @@ public:
     ~ThreadStatus();
 
 protected:
-
     ThreadStatus();
 
     void initPerformanceCounters();
@@ -160,38 +173,10 @@ protected:
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
     std::unique_ptr<TasksStatsCounters> last_taskstats;
-    std::unique_ptr<TaskStatsInfoGetter> taskstats_getter;
-    bool has_permissions_for_taskstats = false;
 
-public:
-
-    /// Implicitly finalizes current thread in the destructor
-    class CurrentThreadScope
-    {
-    public:
-        void (*deleter)() = nullptr;
-
-        CurrentThreadScope() = default;
-        ~CurrentThreadScope()
-        {
-            try
-            {
-                if (deleter)
-                    deleter();
-            }
-            catch (...)
-            {
-                std::terminate();
-            }
-        }
-    };
-
-private:
-    static void defaultThreadDeleter();
+    /// Set to non-nullptr only if we have enough capabilities.
+    /// We use pool because creation and destruction of TaskStatsInfoGetter objects are expensive.
+    SimpleObjectPool<TaskStatsInfoGetter>::Pointer taskstats_getter;
 };
-
-
-extern thread_local ThreadStatusPtr current_thread;
-extern thread_local ThreadStatus::CurrentThreadScope current_thread_scope;
 
 }

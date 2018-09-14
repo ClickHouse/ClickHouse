@@ -56,8 +56,8 @@ namespace
             case Poco::MongoDB::ElementTraits<Int32>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int32> &>(value).value());
                 break;
-            case Poco::MongoDB::ElementTraits<Int64>::TypeId:
-                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Int64> &>(value).value());
+            case Poco::MongoDB::ElementTraits<Poco::Int64>::TypeId:
+                static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Poco::Int64> &>(value).value());
                 break;
             case Poco::MongoDB::ElementTraits<Float64>::TypeId:
                 static_cast<ColumnVector<T> &>(column).getData().push_back(static_cast<const Poco::MongoDB::ConcreteElement<Float64> &>(value).value());
@@ -133,6 +133,18 @@ namespace
 
                 static_cast<ColumnUInt32 &>(column).getData().push_back(
                     static_cast<const Poco::MongoDB::ConcreteElement<Poco::Timestamp> &>(value).value().epochTime());
+                break;
+            }
+            case ValueType::UUID:
+            {
+                if (value.type() == Poco::MongoDB::ElementTraits<String>::TypeId)
+                {
+                    String string = static_cast<const Poco::MongoDB::ConcreteElement<String> &>(value).value();
+                    static_cast<ColumnUInt128 &>(column).getData().push_back(parse<UUID>(string));
+                }
+                else
+                    throw Exception{"Type mismatch, expected String (UUID), got type id = " + toString(value.type()) +
+                              " for column " + name, ErrorCodes::TYPE_MISMATCH};
                 break;
             }
         }

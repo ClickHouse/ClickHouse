@@ -50,19 +50,24 @@ public:
         /// Schedule for execution after specified delay.
         bool scheduleAfter(size_t ms);
 
-        /// Further attempts to schedule become no-op.
+        /// Further attempts to schedule become no-op. Will wait till the end of the current execution of the task.
         void deactivate();
 
         void activate();
 
-        /// get zkutil::WatchCallback needed for notifications from ZooKeeper watches.
-        zkutil::WatchCallback getWatchCallback();
+        /// Atomically activate task and schedule it for execution.
+        bool activateAndSchedule();
+
+        /// get Coordination::WatchCallback needed for notifications from ZooKeeper watches.
+        Coordination::WatchCallback getWatchCallback();
 
     private:
         friend class TaskNotification;
         friend class BackgroundSchedulePool;
 
         void execute();
+
+        void scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
 
         BackgroundSchedulePool & pool;
         std::string log_name;
@@ -142,6 +147,8 @@ private:
 
     /// Thread group used for profiling purposes
     ThreadGroupStatusPtr thread_group;
+
+    void attachToThreadGroup();
 };
 
 using BackgroundSchedulePoolPtr = std::shared_ptr<BackgroundSchedulePool>;

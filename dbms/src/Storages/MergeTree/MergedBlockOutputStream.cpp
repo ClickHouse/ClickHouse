@@ -298,16 +298,19 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
     /// Finish columns serialization.
-    auto & settings = storage.context.getSettingsRef();
-    IDataType::SerializeBinaryBulkSettings serialize_settings;
-    serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
-    serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
-    OffsetColumns offset_columns;
-    auto it = columns_list.begin();
-    for (size_t i = 0; i < columns_list.size(); ++i, ++it)
+    if (!serialization_states.empty())
     {
-        serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
-        it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+        auto & settings = storage.context.getSettingsRef();
+        IDataType::SerializeBinaryBulkSettings serialize_settings;
+        serialize_settings.low_cardinality_max_dictionary_size = settings.low_cardinality_max_dictionary_size;
+        serialize_settings.low_cardinality_use_single_dictionary_for_part = settings.low_cardinality_use_single_dictionary_for_part != 0;
+        OffsetColumns offset_columns;
+        auto it = columns_list.begin();
+        for (size_t i = 0; i < columns_list.size(); ++i, ++it)
+        {
+            serialize_settings.getter = createStreamGetter(it->name, offset_columns, false);
+            it->type->serializeBinaryBulkStateSuffix(serialize_settings, serialization_states[i]);
+        }
     }
 
     if (!total_column_list)

@@ -43,17 +43,7 @@ bool BackgroundSchedulePool::TaskInfo::schedule()
     if (deactivated || scheduled)
         return false;
 
-    scheduled = true;
-
-    if (delayed)
-        pool.cancelDelayedTask(shared_from_this(), lock);
-
-    /// If the task is not executing at the moment, enqueue it for immediate execution.
-    /// But if it is currently executing, do nothing because it will be enqueued
-    /// at the end of the execute() method.
-    if (!executing)
-        pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
-
+    scheduleImpl(lock);
     return true;
 }
 
@@ -87,6 +77,18 @@ void BackgroundSchedulePool::TaskInfo::activate()
 {
     std::lock_guard lock(schedule_mutex);
     deactivated = false;
+}
+
+bool BackgroundSchedulePool::TaskInfo::activateAndSchedule()
+{
+    std::lock_guard lock(schedule_mutex);
+
+    deactivated = false;
+    if (scheduled)
+        return false;
+
+    scheduleImpl(lock);
+    return true;
 }
 
 void BackgroundSchedulePool::TaskInfo::execute()
@@ -129,9 +131,23 @@ void BackgroundSchedulePool::TaskInfo::execute()
     }
 }
 
-zkutil::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
+void BackgroundSchedulePool::TaskInfo::scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock)
 {
-     return [t = shared_from_this()](const ZooKeeperImpl::ZooKeeper::WatchResponse &)
+    scheduled = true;
+
+    if (delayed)
+        pool.cancelDelayedTask(shared_from_this(), schedule_mutex_lock);
+
+    /// If the task is not executing at the moment, enqueue it for immediate execution.
+    /// But if it is currently executing, do nothing because it will be enqueued
+    /// at the end of the execute() method.
+    if (!executing)
+        pool.queue.enqueueNotification(new TaskNotification(shared_from_this()));
+}
+
+Coordination::WatchCallback BackgroundSchedulePool::TaskInfo::getWatchCallback()
+{
+     return [t = shared_from_this()](const Coordination::WatchResponse &)
      {
          t->schedule();
      };
@@ -142,12 +158,6 @@ BackgroundSchedulePool::BackgroundSchedulePool(size_t size)
     : size(size)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
-
-    /// Put all threads of both thread pools to one thread group
-    /// The master thread exits immediately
-    CurrentThread::initializeQuery();
-    thread_group = CurrentThread::getGroup();
-    CurrentThread::detachQuery();
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -217,14 +227,29 @@ void BackgroundSchedulePool::cancelDelayedTask(const TaskInfoPtr & task, std::lo
 }
 
 
+void BackgroundSchedulePool::attachToThreadGroup()
+{
+    std::lock_guard lock(delayed_tasks_mutex);
+
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachTo(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
+
 void BackgroundSchedulePool::threadFunction()
 {
     setThreadName("BackgrSchedPool");
 
-    /// Put all threads to one thread pool
-    CurrentThread::attachTo(thread_group);
+    attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-
     CurrentThread::getMemoryTracker().setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
 
     while (!shutdown)
@@ -242,8 +267,7 @@ void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
     setThreadName("BckSchPoolDelay");
 
-    /// Put all threads to one thread pool
-    CurrentThread::attachTo(thread_group);
+    attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
 
     while (!shutdown)

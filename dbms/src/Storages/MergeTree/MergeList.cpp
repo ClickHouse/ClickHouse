@@ -21,6 +21,9 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
     for (const auto & source_part : source_parts)
         source_part_names.emplace_back(source_part->name);
 
+    if (!source_parts.empty())
+        partition_id = source_parts[0]->info.partition_id;
+
     /// Each merge is executed into separate background processing pool thread
     background_thread_memory_tracker = &CurrentThread::getMemoryTracker();
     if (background_thread_memory_tracker)
@@ -37,6 +40,7 @@ MergeInfo MergeListElement::getInfo() const
     res.database = database;
     res.table = table;
     res.result_part_name = result_part_name;
+    res.partition_id = partition_id;
     res.elapsed = watch.elapsedSeconds();
     res.progress = progress.load(std::memory_order_relaxed);
     res.num_parts = num_parts;

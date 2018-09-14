@@ -623,7 +623,7 @@ class FunctionDateOrDateTimeToSomething : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeToSomething>(); }
 
     String getName() const override
     {
@@ -637,14 +637,14 @@ public:
     {
         if (arguments.size() == 1)
         {
-            if (!arguments[0].type->isDateOrDateTime())
+            if (!isDateOrDateTime(arguments[0].type))
                 throw Exception("Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
         else if (arguments.size() == 2)
         {
-            if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
-                || !checkDataType<DataTypeString>(arguments[1].type.get()))
+            if (!WhichDataType(arguments[0].type).isDateTime()
+                || !WhichDataType(arguments[1].type).isString())
                 throw Exception(
                     "Function " + getName() + " supports 1 or 2 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument (optional) must be "
@@ -670,10 +670,11 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        WhichDataType which(from_type);
 
-        if (checkDataType<DataTypeDate>(from_type))
+        if (which.isDate())
             DateTimeTransformImpl<DataTypeDate::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
-        else if (checkDataType<DataTypeDateTime>(from_type))
+        else if (which.isDateTime())
             DateTimeTransformImpl<DataTypeDateTime::FieldType, typename ToDataType::FieldType, Transform>::execute(block, arguments, result, input_rows_count);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
@@ -928,7 +929,7 @@ class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateOrDateTimeAddInterval>(); }
 
     String getName() const override
     {
@@ -945,20 +946,20 @@ public:
                 + toString(arguments.size()) + ", should be 2 or 3",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[1].type->isNumber())
+        if (!isNumber(arguments[1].type))
             throw Exception("Second argument for function " + getName() + " (delta) must be number",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (arguments.size() == 2)
         {
-            if (!arguments[0].type->isDateOrDateTime())
+            if (!isDateOrDateTime(arguments[0].type))
                 throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
         else
         {
-            if (!checkDataType<DataTypeDateTime>(arguments[0].type.get())
-                || !checkDataType<DataTypeString>(arguments[2].type.get()))
+            if (!WhichDataType(arguments[0].type).isDateTime()
+                || !WhichDataType(arguments[2].type).isString())
                 throw Exception(
                     "Function " + getName() + " supports 2 or 3 arguments. The 1st argument "
                     "must be of type Date or DateTime. The 2nd argument must be number. "
@@ -968,7 +969,7 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
-        if (checkDataType<DataTypeDate>(arguments[0].type.get()))
+        if (WhichDataType(arguments[0].type).isDate())
         {
             if (std::is_same_v<decltype(Transform::execute(DataTypeDate::FieldType(), 0, std::declval<DateLUTImpl>())), UInt16>)
                 return std::make_shared<DataTypeDate>();
@@ -990,10 +991,11 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        WhichDataType which(from_type);
 
-        if (checkDataType<DataTypeDate>(from_type))
+        if (which.isDate())
             DateTimeAddIntervalImpl<DataTypeDate::FieldType, Transform>::execute(block, arguments, result);
-        else if (checkDataType<DataTypeDateTime>(from_type))
+        else if (which.isDateTime())
             DateTimeAddIntervalImpl<DataTypeDateTime::FieldType, Transform>::execute(block, arguments, result);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
@@ -1015,7 +1017,7 @@ class FunctionDateDiff : public IFunction
 {
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateDiff>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {
@@ -1032,19 +1034,19 @@ public:
                 + toString(arguments.size()) + ", should be 3 or 4",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("First argument for function " + getName() + " (unit) must be String",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isDateOrDateTime())
+        if (!isDateOrDateTime(arguments[1]))
             throw Exception("Second argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[2]->isDateOrDateTime())
+        if (!isDateOrDateTime(arguments[2]))
             throw Exception("Third argument for function " + getName() + " must be Date or DateTime",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (arguments.size() == 4 && !arguments[3]->isString())
+        if (arguments.size() == 4 && !isString(arguments[3]))
             throw Exception("Fourth argument for function " + getName() + " (timezone) must be String",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1192,7 +1194,7 @@ class FunctionNow : public IFunction
 {
 public:
     static constexpr auto name = "now";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNow>(); }
 
     String getName() const override
     {
@@ -1221,7 +1223,7 @@ class FunctionToday : public IFunction
 {
 public:
     static constexpr auto name = "today";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToday>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToday>(); }
 
     String getName() const override
     {
@@ -1250,7 +1252,7 @@ class FunctionYesterday : public IFunction
 {
 public:
     static constexpr auto name = "yesterday";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionYesterday>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionYesterday>(); }
 
     String getName() const override
     {
@@ -1280,7 +1282,7 @@ class FunctionToTimeZone : public IFunction
 {
 public:
     static constexpr auto name = "toTimeZone";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionToTimeZone>(); }
 
     String getName() const override
     {
@@ -1296,7 +1298,7 @@ public:
                 + toString(arguments.size()) + ", should be 2",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!checkDataType<DataTypeDateTime>(arguments[0].type.get()))
+        if (!WhichDataType(arguments[0].type).isDateTime())
             throw Exception{"Illegal type " + arguments[0].type->getName() + " of argument of function " + getName() +
                 ". Should be DateTime", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
@@ -1315,7 +1317,7 @@ class FunctionTimeSlot : public IFunction
 {
 public:
     static constexpr auto name = "timeSlot";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlot>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlot>(); }
 
     String getName() const override
     {
@@ -1326,7 +1328,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
+        if (!WhichDataType(arguments[0]).isDateTime())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1442,7 +1444,7 @@ class FunctionTimeSlots : public IFunction
 {
 public:
     static constexpr auto name = "timeSlots";
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionTimeSlots>(); }
 
     String getName() const override
     {
@@ -1453,11 +1455,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
+        if (!WhichDataType(arguments[0]).isDateTime())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!checkDataType<DataTypeUInt32>(arguments[1].get()))
+        if (!WhichDataType(arguments[1]).isUInt32())
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be UInt32.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

@@ -366,13 +366,13 @@ void MergeTreeRangeReader::ReadResult::setFilter(const ColumnPtr & new_filter)
 
 
 MergeTreeRangeReader::MergeTreeRangeReader(
-        MergeTreeReader * merge_tree_reader, size_t index_granularity,
-        MergeTreeRangeReader * prev_reader, ExpressionActionsPtr prewhere_actions,
+        MergeTreeReader * merge_tree_reader, size_t index_granularity, MergeTreeRangeReader * prev_reader,
+        ExpressionActionsPtr alias_actions, ExpressionActionsPtr prewhere_actions,
         const String * prewhere_column_name, const Names * ordered_names,
         bool always_reorder, bool remove_prewhere_column, bool last_reader_in_chain)
         : index_granularity(index_granularity), merge_tree_reader(merge_tree_reader)
         , prev_reader(prev_reader), prewhere_column_name(prewhere_column_name)
-        , ordered_names(ordered_names), prewhere_actions(std::move(prewhere_actions))
+        , ordered_names(ordered_names), alias_actions(alias_actions), prewhere_actions(std::move(prewhere_actions))
         , always_reorder(always_reorder), remove_prewhere_column(remove_prewhere_column)
         , last_reader_in_chain(last_reader_in_chain), is_initialized(true)
 {
@@ -409,6 +409,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     ReadResult read_result;
     size_t prev_bytes = 0;
+    bool should_reorder = false;
 
     if (prev_reader)
     {
@@ -416,7 +417,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         prev_bytes = read_result.block.bytes();
         Block block = continueReadingChain(read_result);
 
-        bool should_reorder = false;
         bool should_evaluate_missing_defaults = false;
         if (block)
         {
@@ -436,9 +436,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         {
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
-
-            if (should_reorder || always_reorder || block.columns())
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
         }
     }
     else
@@ -446,15 +443,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result = startReadingChain(max_rows, ranges);
         if (read_result.block)
         {
-            bool should_reorder;
             bool should_evaluate_missing_defaults;
             merge_tree_reader->fillMissingColumns(read_result.block, should_reorder, should_evaluate_missing_defaults);
 
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
-
-            if (should_reorder || always_reorder)
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
         }
     }
 
@@ -464,6 +457,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     read_result.addNumBytesRead(read_result.block.bytes() - prev_bytes);
 
     executePrewhereActionsAndFilterColumns(read_result);
+
+    if (last_reader_in_chain && (should_reorder || always_reorder))
+        merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
+
     return read_result;
 }
 
@@ -570,6 +567,9 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
 {
     if (!prewhere_actions)
         return;
+
+    if (alias_actions)
+        alias_actions->execute(result.block);
 
     prewhere_actions->execute(result.block);
     auto & prewhere_column = result.block.getByName(*prewhere_column_name);

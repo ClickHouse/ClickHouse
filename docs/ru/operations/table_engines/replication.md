@@ -152,6 +152,8 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Отсутствует ограничение на использование сетевой полосы при восстановлении. Имейте это ввиду, если восстанавливаете сразу много реплик.
 
+<a name="convert-mergetree-to-replicated"></a>
+
 ## Преобразование из MergeTree в ReplicatedMergeTree
 
 Здесь и далее, под `MergeTree` подразумеваются все движки таблиц семейства `MergeTree`, так же для `ReplicatedMergeTree`.

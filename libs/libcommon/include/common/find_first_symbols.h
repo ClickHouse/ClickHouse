@@ -131,16 +131,30 @@ inline const char * find_first_symbols_sse42(const char * begin, const char * en
     return find_first_symbols_sse42_impl<sizeof...(symbols), symbols...>(begin, end);
 }
 
+template <char... symbols>
+inline const char * find_first_symbols_dispatch(const char * begin, const char * end)
+{
+#if __SSE4_2__
+    if (sizeof...(symbols) >= 5)
+        return find_first_symbols_sse42<symbols...>(begin, end);
+    else
+#endif
+        return find_first_symbols_sse2<symbols...>(begin, end);
+}
+
 }
 
 
 template <char... symbols>
 inline const char * find_first_symbols(const char * begin, const char * end)
 {
-#if __SSE4_2__
-    if (sizeof...(symbols) >= 5)
-        return detail::find_first_symbols_sse42<symbols...>(begin, end);
-    else
-#endif
-        return detail::find_first_symbols_sse2<symbols...>(begin, end);
+    return detail::find_first_symbols_dispatch<symbols...>(begin, end);
+}
+
+/// Returning non const result for non const arguments.
+/// It is convenient when you are using this function to iterate through non-const buffer.
+template <char... symbols>
+inline char * find_first_symbols(char * begin, char * end)
+{
+    return const_cast<char *>(detail::find_first_symbols_dispatch<symbols...>(begin, end));
 }

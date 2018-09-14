@@ -1,3 +1,5 @@
+<a name="table_engine-summingmergetree"></a>
+
 # SummingMergeTree
 
 Отличается от `MergeTree` тем, что суммирует данные при слиянии.

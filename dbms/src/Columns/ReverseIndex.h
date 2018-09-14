@@ -3,8 +3,8 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
-
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <ext/range.h>
 
 namespace DB

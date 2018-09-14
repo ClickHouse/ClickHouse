@@ -4,6 +4,7 @@
 #include <Interpreters/Settings.h>
 #include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/evaluateQualified.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Parsers/StringRange.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
@@ -76,9 +77,10 @@ struct ScopeStack
     using Levels = std::vector<Level>;
 
     Levels stack;
-    Settings settings;
 
-    ScopeStack(const ExpressionActionsPtr & actions, const Settings & settings_);
+    const Context & context;
+
+    ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
 
@@ -89,19 +91,6 @@ struct ScopeStack
     ExpressionActionsPtr popLevel();
 
     const Block & getSampleBlock() const;
-};
-
-struct DatabaseAndTableWithAlias
-{
-    String database;
-    String table;
-    String alias;
-
-    /// "alias." or "database.table." if alias is empty
-    String getQualifiedNamePrefix() const;
-
-    /// If ast is ASTIdentifier, prepend getQualifiedNamePrefix() to it's name.
-    void makeQualifiedName(const ASTPtr & ast) const;
 };
 
 /** Transforms an expression from a syntax tree into a sequence of actions to execute it.
@@ -115,7 +104,7 @@ private:
 
 public:
     ExpressionAnalyzer(
-        const ASTPtr & ast_,
+        const ASTPtr & query_,
         const Context & context_,
         const StoragePtr & storage_,
         const NamesAndTypesList & source_columns_ = {},
@@ -153,7 +142,8 @@ public:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     /// remove_filter is set in ExpressionActionsChain::finalize();
-    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    /// sampling_expression is needed if sampling is used in order to not remove columns are used in it.
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const ASTPtr & sampling_expression);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -166,10 +156,13 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
 
+    void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
+
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
-    /// If project_result, only the calculated values in the desired order, renamed to aliases, remain in the output block.
+    /// If add_aliases, only the calculated values in the desired order and add aliases.
+    ///     If also project_result, than only aliases remain in the output block.
     /// Otherwise, only temporary columns will be deleted from the block.
-    ExpressionActionsPtr getActions(bool project_result);
+    ExpressionActionsPtr getActions(bool add_aliases, bool project_result = true);
 
     /// Actions that can be performed on an empty block: adding constants and applying functions that depend only on constants.
     /// Does not execute subqueries.
@@ -180,9 +173,9 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
+    const SubqueriesForSets & getSubqueriesForSets() const { return subqueries_for_sets; }
 
-    PreparedSets getPreparedSets() { return prepared_sets; }
+    const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /** Tables that will need to be sent to remote servers for distributed query processing.
       */
@@ -194,10 +187,10 @@ public:
     bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
 private:
-    ASTPtr ast;
+    ASTPtr query;
     ASTSelectQuery * select_query;
     const Context & context;
-    Settings settings;
+    const Settings settings;
     size_t subquery_depth;
 
     /** Original columns.
@@ -273,11 +266,11 @@ private:
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions;
 
-        void createJoinedBlockActions(const ASTSelectQuery * select_query, const Context & context);
+        void createJoinedBlockActions(const ASTSelectQuery * select_query_with_join, const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
 
-        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query);
+        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query_with_join);
     };
 
     AnalyzedJoin analyzed_join;
@@ -319,15 +312,10 @@ private:
     /// Parse JOIN ON expression and collect ASTs for joined columns.
     void collectJoinedColumnsFromJoinOnExpr();
 
-    /** Create a dictionary of aliases.
-      */
-    void addASTAliases(ASTPtr & ast, int ignore_levels = 0);
-
     /** For star nodes(`*`), expand them to a list of all columns.
       * For literal nodes, substitute aliases.
       */
     void normalizeTree();
-    void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
 
     ///    Eliminates injective function calls and constant expressions from group by statement
     void optimizeGroupBy();
@@ -337,9 +325,12 @@ private:
 
     void optimizeLimitBy();
 
+    /// Remove duplicated columns from USING(...).
+    void optimizeUsing();
+
     /// remove Function_if AST if condition is constant
     void optimizeIfWithConstantCondition();
-    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast, Aliases & aliases) const;
+    void optimizeIfWithConstantConditionImpl(ASTPtr & current_ast);
     bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & value) const;
 
     void makeSet(const ASTFunction * node, const Block & sample_block);

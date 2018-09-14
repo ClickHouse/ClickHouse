@@ -862,9 +862,9 @@ class ModelFactory
 public:
     ModelPtr get(const IDataType & data_type, UInt64 seed, MarkovModelParameters markov_model_params) const
     {
-        if (data_type.isInteger())
+        if (isInteger(data_type))
         {
-            if (data_type.isUnsignedInteger())
+            if (isUnsignedInteger(data_type))
                 return std::make_unique<UnsignedIntegerModel>(seed);
             else
                 return std::make_unique<SignedIntegerModel>(seed);

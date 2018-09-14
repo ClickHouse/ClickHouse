@@ -10,6 +10,7 @@
 #include <common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ZooKeeper/IKeeper.h>
 #include <port/unistd.h>
 
 
@@ -28,6 +29,7 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -51,7 +53,9 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const std::string & hosts, const std::string & identity = "",
-              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, const std::string & chroot = "");
+              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT,
+              int32_t operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT,
+              const std::string & chroot = "");
 
     /** Config of the form:
         <zookeeper>
@@ -64,6 +68,7 @@ public:
                 <port>2181</port>
             </node>
             <session_timeout_ms>30000</session_timeout_ms>
+            <operation_timeout_ms>10000</operation_timeout_ms>
             <!-- Optional. Chroot suffix. Should exist. -->
             <root>/path/to/zookeeper/node</root>
             <!-- Optional. Zookeeper digest ACL string. -->
@@ -109,20 +114,20 @@ public:
     /// * The node has children.
     int32_t tryRemove(const std::string & path, int32_t version = -1);
 
-    bool exists(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    bool existsWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
+    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    bool existsWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
-    std::string get(const std::string & path, Stat * stat = nullptr, const EventPtr & watch = nullptr);
-    std::string getWatch(const std::string & path, Stat * stat, WatchCallback watch_callback);
+    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr);
+    std::string getWatch(const std::string & path, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist. Returns false in this case.
-    bool tryGet(const std::string & path, std::string & res, Stat * stat = nullptr, const EventPtr & watch = nullptr, int * code = nullptr);
+    bool tryGet(const std::string & path, std::string & res, Coordination::Stat * stat = nullptr, const EventPtr & watch = nullptr, int * code = nullptr);
 
-    bool tryGetWatch(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback, int * code = nullptr);
+    bool tryGetWatch(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback, int * code = nullptr);
 
     void set(const std::string & path, const std::string & data,
-            int32_t version = -1, Stat * stat = nullptr);
+            int32_t version = -1, Coordination::Stat * stat = nullptr);
 
     /// Creates the node if it doesn't exist. Updates its contents otherwise.
     void createOrUpdate(const std::string & path, const std::string & data, int32_t mode);
@@ -131,34 +136,34 @@ public:
     /// * The node doesn't exist.
     /// * Versions do not match.
     int32_t trySet(const std::string & path, const std::string & data,
-                            int32_t version = -1, Stat * stat = nullptr);
+                            int32_t version = -1, Coordination::Stat * stat = nullptr);
 
     Strings getChildren(const std::string & path,
-                        Stat * stat = nullptr,
+                        Coordination::Stat * stat = nullptr,
                         const EventPtr & watch = nullptr);
 
     Strings getChildrenWatch(const std::string & path,
-                             Stat * stat,
-                             WatchCallback watch_callback);
+                             Coordination::Stat * stat,
+                             Coordination::WatchCallback watch_callback);
 
     /// Doesn't not throw in the following cases:
     /// * The node doesn't exist.
     int32_t tryGetChildren(const std::string & path, Strings & res,
-                        Stat * stat = nullptr,
+                        Coordination::Stat * stat = nullptr,
                         const EventPtr & watch = nullptr);
 
     int32_t tryGetChildrenWatch(const std::string & path, Strings & res,
-                        Stat * stat,
-                        WatchCallback watch_callback);
+                        Coordination::Stat * stat,
+                        Coordination::WatchCallback watch_callback);
 
     /// Performs several operations in a transaction.
     /// Throws on every error.
-    Responses multi(const Requests & requests);
+    Coordination::Responses multi(const Coordination::Requests & requests);
     /// Throws only if some operation has returned an "unexpected" error
     /// - an error that would cause the corresponding try- method to throw.
-    int32_t tryMulti(const Requests & requests, Responses & responses);
+    int32_t tryMulti(const Coordination::Requests & requests, Coordination::Responses & responses);
     /// Throws nothing (even session expired errors)
-    int32_t tryMultiNoThrow(const Requests & requests, Responses & responses);
+    int32_t tryMultiNoThrow(const Coordination::Requests & requests, Coordination::Responses & responses);
 
     Int64 getClientID();
 
@@ -190,24 +195,24 @@ public:
     ///
     /// Future should not be destroyed before the result is gotten.
 
-    using FutureCreate = std::future<ZooKeeperImpl::ZooKeeper::CreateResponse>;
+    using FutureCreate = std::future<Coordination::CreateResponse>;
     FutureCreate asyncCreate(const std::string & path, const std::string & data, int32_t mode);
 
-    using FutureGet = std::future<ZooKeeperImpl::ZooKeeper::GetResponse>;
+    using FutureGet = std::future<Coordination::GetResponse>;
     FutureGet asyncGet(const std::string & path);
 
     FutureGet asyncTryGet(const std::string & path);
 
-    using FutureExists = std::future<ZooKeeperImpl::ZooKeeper::ExistsResponse>;
+    using FutureExists = std::future<Coordination::ExistsResponse>;
     FutureExists asyncExists(const std::string & path);
 
-    using FutureGetChildren = std::future<ZooKeeperImpl::ZooKeeper::ListResponse>;
+    using FutureGetChildren = std::future<Coordination::ListResponse>;
     FutureGetChildren asyncGetChildren(const std::string & path);
 
-    using FutureSet = std::future<ZooKeeperImpl::ZooKeeper::SetResponse>;
+    using FutureSet = std::future<Coordination::SetResponse>;
     FutureSet asyncSet(const std::string & path, const std::string & data, int32_t version = -1);
 
-    using FutureRemove = std::future<ZooKeeperImpl::ZooKeeper::RemoveResponse>;
+    using FutureRemove = std::future<Coordination::RemoveResponse>;
     FutureRemove asyncRemove(const std::string & path, int32_t version = -1);
 
     /// Doesn't throw in the following cases:
@@ -216,18 +221,19 @@ public:
     /// * The node has children
     FutureRemove asyncTryRemove(const std::string & path, int32_t version = -1);
 
-    using FutureMulti = std::future<ZooKeeperImpl::ZooKeeper::MultiResponse>;
-    FutureMulti asyncMulti(const Requests & ops);
+    using FutureMulti = std::future<Coordination::MultiResponse>;
+    FutureMulti asyncMulti(const Coordination::Requests & ops);
 
     /// Like the previous one but don't throw any exceptions on future.get()
-    FutureMulti tryAsyncMulti(const Requests & ops);
+    FutureMulti tryAsyncMulti(const Coordination::Requests & ops);
 
     static std::string error2string(int32_t code);
 
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_, const std::string & chroot_);
+    void init(const std::string & hosts_, const std::string & identity_,
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
@@ -235,17 +241,18 @@ private:
     /// The following methods don't throw exceptions but return error codes.
     int32_t createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
     int32_t removeImpl(const std::string & path, int32_t version);
-    int32_t getImpl(const std::string & path, std::string & res, Stat * stat, WatchCallback watch_callback);
-    int32_t setImpl(const std::string & path, const std::string & data, int32_t version, Stat * stat);
-    int32_t getChildrenImpl(const std::string & path, Strings & res, Stat * stat, WatchCallback watch_callback);
-    int32_t multiImpl(const Requests & requests, Responses & responses);
-    int32_t existsImpl(const std::string & path, Stat * stat_, WatchCallback watch_callback);
+    int32_t getImpl(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    int32_t setImpl(const std::string & path, const std::string & data, int32_t version, Coordination::Stat * stat);
+    int32_t getChildrenImpl(const std::string & path, Strings & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback);
+    int32_t multiImpl(const Coordination::Requests & requests, Coordination::Responses & responses);
+    int32_t existsImpl(const std::string & path, Coordination::Stat * stat_, Coordination::WatchCallback watch_callback);
 
-    std::unique_ptr<ZooKeeperImpl::ZooKeeper> impl;
+    std::unique_ptr<Coordination::IKeeper> impl;
 
     std::string hosts;
     std::string identity;
     int32_t session_timeout_ms;
+    int32_t operation_timeout_ms;
     std::string chroot;
 
     std::mutex mutex;

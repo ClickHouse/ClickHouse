@@ -126,7 +126,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         String nested_name = name.substr(0, name.size() - combinator->getName().size());
         DataTypes nested_types = combinator->transformArguments(argument_types);
-        AggregateFunctionPtr nested_function = getImpl(nested_name, nested_types, parameters, recursion_level + 1);
+        AggregateFunctionPtr nested_function = get(nested_name, nested_types, parameters, recursion_level + 1);
         return combinator->transformAggregateFunction(nested_function, argument_types, parameters);
     }
 
