@@ -8,9 +8,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/Net/HTMLForm.h>
 #include <Poco/Net/MessageHeader.h>
-#include <Common/HTMLForm.h>
 
 #include <Core/ExternalTable.h>
 

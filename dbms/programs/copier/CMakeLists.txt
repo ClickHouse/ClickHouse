@@ -1,4 +1,4 @@
-add_library (clickhouse-copier-lib ClusterCopier.cpp)
+add_library (clickhouse-copier-lib ${LINK_MODE} ClusterCopier.cpp)
 target_link_libraries (clickhouse-copier-lib clickhouse-server-lib clickhouse_functions clickhouse_aggregate_functions)
 
 if (CLICKHOUSE_SPLIT_BINARY)
