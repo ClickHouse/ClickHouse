@@ -10,7 +10,7 @@ namespace
 
 using RangeStorageType = DB::RangeHashedDictionary::RangeStorageType;
 
-// NUll values mean that specified boundary, either min or max is not set on range.
+// Null values mean that specified boundary, either min or max is not set on range.
 // To simplify comparison, null value of min bound should be bigger than any other value,
 // and null value of maxbound - less than any value.
 const RangeStorageType RANGE_MIN_NULL_VALUE = std::numeric_limits<RangeStorageType>::max();
