@@ -110,7 +110,7 @@ private:
           * This feature is controversial and implemented specially
           *  for backward compatibility with the case in Yandex Banner System.
           */
-        if (input_rows_count== 0)
+        if (input_rows_count == 0)
         {
             auto & elem = block.getByPosition(result);
             elem.column = elem.type->createColumn();
@@ -702,7 +702,8 @@ private:
             throw Exception{"Illegal type " + arguments[2]->getName() + " of third argument of function " + getName()
                 + ", must be UInt64 or tuple(...).", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (arguments.size() == 4 ) {
+        if (arguments.size() == 4 )
+        {
             const auto range_argument = arguments[3].get();
             if (!(range_argument->isValueRepresentedByInteger() &&
                    range_argument->getSizeOfValueInMemory() <= sizeof(Int64)))
