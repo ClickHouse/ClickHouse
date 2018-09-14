@@ -113,4 +113,9 @@ extern "C"
 
       return 0;
   }
+
+  int __cxa_thread_atexit(Dtor dtor, void* obj, void* dso_symbol) throw()
+  {
+      return __cxa_thread_atexit_impl(dtor, obj, dso_symbol);
+  }
 } // extern "C"
