@@ -4,10 +4,8 @@ if (COMPILER_CLANG)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-builtin-requires-header")
 endif ()
 
-add_library (glibc-compatibility
-
+set (GLIBC_COMPATIBILITY_SOURCES
 glibc-compatibility.c
-
 musl/pipe2.c
 musl/fallocate.c
 musl/longjmp.s
@@ -19,12 +17,16 @@ musl/syscall.s
 musl/syscall_ret.c
 musl/sched_cpucount.c
 musl/glob.c
-musl/exp2f.c
+musl/exp2f.c)
 
-libcxxabi/cxa_thread_atexit.cpp
-libcxxabi/abort_message.cpp
-libcxxabi/cxa_thread_atexit_impl.c
-)
+if (MAKE_STATIC_LIBRARIES)
+    set (GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}
+        libcxxabi/cxa_thread_atexit.cpp
+        libcxxabi/abort_message.cpp
+        libcxxabi/cxa_thread_atexit_impl.c)
+endif ()
+
+add_library (glibc-compatibility ${GLIBC_COMPATIBILITY_SOURCES})
 
 target_include_directories(glibc-compatibility PRIVATE libcxxabi)
 
