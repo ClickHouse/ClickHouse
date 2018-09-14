@@ -2,8 +2,6 @@
 #include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/writeParenthesisedString.h>
 #include <Client/ConnectionPool.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/executeQuery.h>
