@@ -7,6 +7,8 @@
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/QueryNormalizer.h>
+#include <Interpreters/getQueryAliases.h>
 
 namespace DB
 {
@@ -50,6 +52,9 @@ bool PredicateExpressionsOptimizer::optimizeImpl(
     bool is_rewrite_subquery = false;
     for (const auto & outer_predicate : outer_predicate_expressions)
     {
+        if (isArrayJoinFunction(outer_predicate))
+            continue;
+
         IdentifiersWithQualifiedNameSet outer_predicate_dependencies;
         getDependenciesAndQualifiedOfExpression(outer_predicate, outer_predicate_dependencies, database_and_table_with_aliases);
 
@@ -181,6 +186,21 @@ bool PredicateExpressionsOptimizer::cannotPushDownOuterPredicate(
     return false;
 }
 
+bool PredicateExpressionsOptimizer::isArrayJoinFunction(const ASTPtr & node)
+{
+    if (auto function = typeid_cast<ASTFunction *>(node.get()))
+    {
+        if (function->name == "arrayJoin")
+            return true;
+    }
+
+    for (auto & child : node->children)
+        if (isArrayJoinFunction(child))
+            return true;
+
+    return false;
+}
+
 bool PredicateExpressionsOptimizer::isAggregateFunction(ASTPtr & node)
 {
     if (auto function = typeid_cast<ASTFunction *>(node.get()))
@@ -210,7 +230,12 @@ void PredicateExpressionsOptimizer::cloneOuterPredicateForInnerPredicate(
         for (auto projection : projection_columns)
         {
             if (require.second == projection.second)
-                require.first->name = projection.first->getAliasOrColumnName();
+            {
+                ASTPtr & ast = projection.first;
+                if (!typeid_cast<ASTIdentifier *>(ast.get()) && ast->tryGetAlias().empty())
+                    ast->setAlias(ast->getColumnName());
+                require.first->name = ast->getAliasOrColumnName();
+            }
         }
     }
 }
@@ -275,6 +300,11 @@ void PredicateExpressionsOptimizer::getSubqueryProjectionColumns(SubqueriesProje
 
 ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast)
 {
+    /// first should normalize query tree.
+    std::unordered_map<String, ASTPtr> aliases;
+    getQueryAliases(ast, aliases, 0);
+    QueryNormalizer(ast, aliases, settings, {}).perform();
+
     ASTs projection_columns;
     auto select_query = static_cast<ASTSelectQuery *>(ast.get());
 

@@ -20,6 +20,14 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
+/** Y_IGNORE marker means that this header is not analyzed by Arcadia build system.
+  * "Arcadia" is the name of internal Yandex source code repository.
+  * ClickHouse have limited support for build in Arcadia
+  * (ClickHouse source code is used in another Yandex products as a library).
+  * Some libraries are not enabled when build inside Arcadia is used,
+  *  that what does Y_IGNORE indicate.
+  */
+
 #include <llvm/Analysis/TargetTransformInfo.h> // Y_IGNORE
 #include <llvm/Config/llvm-config.h> // Y_IGNORE
 #include <llvm/IR/BasicBlock.h> // Y_IGNORE
