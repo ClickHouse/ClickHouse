@@ -22,7 +22,6 @@ musl/exp2f.c)
 if (MAKE_STATIC_LIBRARIES)
     set (GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}
         libcxxabi/cxa_thread_atexit.cpp
-        libcxxabi/abort_message.cpp
         libcxxabi/cxa_thread_atexit_impl.c)
 endif ()
 
