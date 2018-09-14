@@ -847,8 +847,8 @@ private:
 
         PaddedPODArray<UInt64> id_col_values_storage;
         PaddedPODArray<Int64> range_col_values_storage;
-        const auto* id_col_values = getColumnDataAsPaddedPODArray(id_col_untyped, &id_col_values_storage);
-        const auto* range_col_values = getColumnDataAsPaddedPODArray(range_col_untyped, &range_col_values_storage);
+        const auto * id_col_values = getColumnDataAsPaddedPODArray(id_col_untyped, &id_col_values_storage);
+        const auto * range_col_values = getColumnDataAsPaddedPODArray(range_col_untyped, &range_col_values_storage);
 
         auto out = ColumnVector<Type>::create(id_col_untyped->size());
         auto & data = out->getData();
