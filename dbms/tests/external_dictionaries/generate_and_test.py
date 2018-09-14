@@ -182,19 +182,28 @@ range_hashed_range_types = [
     'Date', 'DateTime'
 ]
 
-# values for 4th argument of dictGetX on range_hashed dictionary according to range_min/range_max type.
+# values for range_hashed dictionary according to range_min/range_max type.
 range_hashed_dictGet_values = {
-    '': "toDate('2015-11-25')", # default type (Date) for compatibility with older versions
-    'UInt8': '1',
-    'UInt16': '1',
-    'UInt32': '1',
-    'UInt64': '1',
-    'Int8': '-1',
-    'Int16': '-1',
-    'Int32': '-1',
-    'Int64': '-1',
-    'Date': "toDate('2015-11-25')",
-    'DateTime': "toDateTime('2015-11-25 00:00:00')"
+    # [(range_min, range_max), (hit, ...), (miss, ...)]
+    # due to the nature of reference results, there should be equal number of hit and miss cases.
+    'UInt8':  [('1', '10'), ('1', '5', '10'), ('0', '11', '255')],
+    'UInt16': [('1', '10'), ('1', '5', '10'), ('0', '11', '65535')],
+    'UInt32': [('1', '10'), ('1', '5', '10'), ('0', '11', '4294967295')],
+    'UInt64': [('1', '10'), ('1', '5', '10'), ('0', '11', '18446744073709551605')],
+    'Int8':   [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '255')],
+    'Int16':  [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '65535')],
+    'Int32':  [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '4294967295')],
+    'Int64':  [('-10', '10'), ('-10', '0', '10'), ('-11', '11', '18446744073709551605')],
+    # default type (Date) for compatibility with older versions:
+    '':         [("toDate('2015-11-20')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-20')", "toDate('2015-11-22')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-19')", "toDate('2015-11-26')", "toDate('2018-09-14')")],
+    'Date':     [("toDate('2015-11-20')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-20')", "toDate('2015-11-22')", "toDate('2015-11-25')"),
+                 ("toDate('2015-11-19')", "toDate('2015-11-26')", "toDate('2018-09-14')")],
+    'DateTime': [("toDateTime('2015-11-20 00:00:00')", "toDateTime('2015-11-25 00:00:00')"),
+                 ("toDateTime('2015-11-20 00:00:00')", "toDateTime('2015-11-22 00:00:00')", "toDateTime('2015-11-25 00:00:00')"),
+                 ("toDateTime('2015-11-19 23:59:59')", "toDateTime('2015-10-26 00:00:01')", "toDateTime('2018-09-14 00:00:00')")],
 }
 
 
@@ -255,8 +264,7 @@ def generate_data(args):
 
     for range_hashed_range_type in range_hashed_range_types:
         file = files[3].format(range_hashed_range_type=range_hashed_range_type)
-        t = range_hashed_dictGet_values[range_hashed_range_type]
-        keys = [ 'id', t, t ]
+        keys = list(chain(['id'], range_hashed_dictGet_values[range_hashed_range_type][0]))
         query = file_source_query % comma_separated(chain(keys, columns(), ['Parent'] if 1 == len(keys) else []))
         call([args.client, '--port', args.port, '--query', query], 'generated/' + file)
 
@@ -649,6 +657,13 @@ def run_tests(args):
     dict_has_query_skeleton = "select dictHas('{name}', {key}) from system.one array join range(8) as n;"
     dict_get_or_default_query_skeleton = "select dictGet{type}OrDefault('{name}', '{type}_', {key}, to{type}({default})) from system.one array join range(8) as n;"
     dict_hierarchy_query_skeleton = "select dictGetHierarchy('{name}' as d, key), dictIsIn(d, key, toUInt64(1)), dictIsIn(d, key, key) from system.one array join range(toUInt64(8)) as key;"
+    # Designed to match 4 rows hit, 4 rows miss pattern of reference file
+    dict_get_query_range_hashed_skeleton = """
+            select dictGet{type}('{name}', '{type}_', {key}, r)
+            from system.one
+                array join range(4) as n
+                cross join (select r from system.one array join array({hit}, {miss}) as r);
+    """
 
     def test_query(dict, query, reference, name):
         global failures
@@ -767,22 +782,26 @@ def run_tests(args):
         print 'Testing dictionary', name
 
         if key_idx == 3:
-            # for range_hashed dictGetX takes 4 arguments, its value depends on range_min/max type.
             t = name.split('_')[-1] # get range_min/max type from dictionary name
-            key += ', ' + range_hashed_dictGet_values[t]
+            for type, default in zip(types, explicit_defaults):
+                if SERVER_DIED and not args.no_break:
+                    break
+                for hit, miss in zip(*range_hashed_dictGet_values[t][1:]):
+                    test_query(name,
+                        dict_get_query_range_hashed_skeleton.format(**locals()),
+                            type, 'dictGet' + type)
+
         else:
             # query dictHas is not supported for range_hashed dictionaries
             test_query(name, dict_has_query_skeleton.format(**locals()), 'has', 'dictHas')
 
-
-        # query dictGet*
-        for type, default in zip(types, explicit_defaults):
-            if SERVER_DIED and not args.no_break:
-                break
-            test_query(name,
-                dict_get_query_skeleton.format(**locals()),
-                type, 'dictGet' + type)
-            if key_idx != 3:
+            # query dictGet*
+            for type, default in zip(types, explicit_defaults):
+                if SERVER_DIED and not args.no_break:
+                    break
+                test_query(name,
+                    dict_get_query_skeleton.format(**locals()),
+                    type, 'dictGet' + type)
                 test_query(name,
                     dict_get_or_default_query_skeleton.format(**locals()),
                     type + 'OrDefault', 'dictGet' + type + 'OrDefault')
