@@ -199,7 +199,7 @@ static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries
 }
 
 template <typename T>
-const PaddedPODArray<T>* getColumnDataAsPaddedPODArray(const IColumn* column, PaddedPODArray<T>* backup_storage);
+const PaddedPODArray<T> * getColumnDataAsPaddedPODArray(const IColumn * column, PaddedPODArray<T> * backup_storage);
 
 class FunctionDictGetString final : public IFunction
 {
@@ -385,8 +385,8 @@ private:
 
         PaddedPODArray<UInt64> id_col_values_storage;
         PaddedPODArray<Int64> range_col_values_storage;
-        const auto* id_col_values = getColumnDataAsPaddedPODArray(id_col_untyped, &id_col_values_storage);
-        const auto* range_col_values = getColumnDataAsPaddedPODArray(range_col_untyped, &range_col_values_storage);
+        const auto * id_col_values = getColumnDataAsPaddedPODArray(id_col_untyped, &id_col_values_storage);
+        const auto * range_col_values = getColumnDataAsPaddedPODArray(range_col_untyped, &range_col_values_storage);
 
         auto out = ColumnString::create();
         dict->getString(attr_name, *id_col_values, *range_col_values, out.get());
