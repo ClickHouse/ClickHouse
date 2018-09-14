@@ -199,8 +199,11 @@ static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries
 }
 
 
+/** For ColumnVector. Either returns a reference to internal data,
+  *  or convert it to T type, stores the result in backup_storage and returns a reference to it.
+  */
 template <typename T>
-const PaddedPODArray<T> * getColumnDataAsPaddedPODArray(const IColumn * column, PaddedPODArray<T> * backup_storage);
+const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage);
 
 
 class FunctionDictGetString final : public IFunction
@@ -382,16 +385,16 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-        const auto range_col_untyped = block.getByPosition(arguments[3]).column.get();
+        const auto & id_col_untyped = block.getByPosition(arguments[2]).column;
+        const auto & range_col_untyped = block.getByPosition(arguments[3]).column;
 
         PaddedPODArray<UInt64> id_col_values_storage;
         PaddedPODArray<Int64> range_col_values_storage;
-        const auto * id_col_values = getColumnDataAsPaddedPODArray(id_col_untyped, &id_col_values_storage);
-        const auto * range_col_values = getColumnDataAsPaddedPODArray(range_col_untyped, &range_col_values_storage);
+        const auto & id_col_values = getColumnDataAsPaddedPODArray(*id_col_untyped, id_col_values_storage);
+        const auto & range_col_values = getColumnDataAsPaddedPODArray(*range_col_untyped, range_col_values_storage);
 
         auto out = ColumnString::create();
-        dict->getString(attr_name, *id_col_values, *range_col_values, out.get());
+        dict->getString(attr_name, id_col_values, range_col_values, out.get());
         block.getByPosition(result).column = std::move(out);
 
         return true;
@@ -844,17 +847,17 @@ private:
 
         String attr_name = attr_name_col->getValue<String>();
 
-        const auto id_col_untyped = block.getByPosition(arguments[2]).column.get();
-        const auto range_col_untyped = block.getByPosition(arguments[3]).column.get();
+        const auto & id_col_untyped = block.getByPosition(arguments[2]).column;
+        const auto & range_col_untyped = block.getByPosition(arguments[3]).column;
 
         PaddedPODArray<UInt64> id_col_values_storage;
         PaddedPODArray<Int64> range_col_values_storage;
-        const auto * id_col_values = getColumnDataAsPaddedPODArray(id_col_untyped, &id_col_values_storage);
-        const auto * range_col_values = getColumnDataAsPaddedPODArray(range_col_untyped, &range_col_values_storage);
+        const auto & id_col_values = getColumnDataAsPaddedPODArray(*id_col_untyped, id_col_values_storage);
+        const auto & range_col_values = getColumnDataAsPaddedPODArray(*range_col_untyped, range_col_values_storage);
 
         auto out = ColumnVector<Type>::create(id_col_untyped->size());
         auto & data = out->getData();
-        DictGetTraits<DataType>::get(dict, attr_name, *id_col_values, *range_col_values, data);
+        DictGetTraits<DataType>::get(dict, attr_name, id_col_values, range_col_values, data);
         block.getByPosition(result).column = std::move(out);
 
         return true;
@@ -1456,38 +1459,22 @@ private:
 
 
 template <typename T>
-auto getColumnData(const IColumn * column, size_t index) ->
-    std::enable_if_t<std::is_signed_v<T> && std::is_integral_v<T>, Int64>
+const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage)
 {
-    return column->getInt(index);
-}
-
-template <typename T>
-auto getColumnData(const IColumn * column, size_t index) ->
-    std::enable_if_t<std::is_unsigned_v<T> && std::is_integral_v<T>, UInt64>
-{
-    return column->getUInt(index);
-}
-
-template <typename T>
-const PaddedPODArray<T> * getColumnDataAsPaddedPODArray(const IColumn * column, PaddedPODArray<T> * backup_storage)
-{
-    if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(column))
+    if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(&column))
     {
-        return &vector_col->getData();
+        return vector_col->getData();
     }
-    if (const auto const_col = checkAndGetColumnConstData<ColumnVector<T>>(column))
+    if (const auto const_col = checkAndGetColumnConstData<ColumnVector<T>>(&column))
     {
-        return &const_col->getData();
+        return const_col->getData();
     }
 
     // With type conversion, need to use backup storage here
-    const auto size = column->size();
-    backup_storage->resize(size);
+    const auto size = column.size();
+    backup_storage.resize(size);
     for (size_t i = 0; i < size; ++i)
-    {
-        (*backup_storage)[i] = getColumnData<T>(column, i);
-    }
+        backup_storage[i] = column.getUInt(i);
 
     return backup_storage;
 }
