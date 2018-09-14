@@ -45,7 +45,7 @@ public:
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
-    /// Unique type number or zero
+    /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
