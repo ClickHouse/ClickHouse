@@ -147,8 +147,22 @@ public:
     /// IColumn & getIndexes() { return idx.getPositions()->assumeMutableRef(); }
     const IColumn & getIndexes() const { return *idx.getPositions(); }
     const ColumnPtr & getIndexesPtr() const { return idx.getPositions(); }
-    size_t getIndexAt(size_t row) const { return idx.getPositionAt(row); }
+    /// size_t getIndexAt(size_t row) const { return idx.getPositionAt(row); }
     size_t getSizeOfIndexType() const { return idx.getSizeOfIndexType(); }
+
+    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    {
+        const IColumn * indexes = &getIndexes();
+
+        switch (idx.getSizeOfIndexType())
+        {
+            case sizeof(UInt8): return static_cast<const ColumnUInt8 *>(indexes)->getElement(row);
+            case sizeof(UInt16): return static_cast<const ColumnUInt16 *>(indexes)->getElement(row);
+            case sizeof(UInt32): return static_cast<const ColumnUInt32 *>(indexes)->getElement(row);
+            case sizeof(UInt64): return static_cast<const ColumnUInt64 *>(indexes)->getElement(row);
+            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
 
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 

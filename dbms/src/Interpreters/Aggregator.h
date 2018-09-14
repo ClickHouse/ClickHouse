@@ -684,8 +684,20 @@ protected:
 
 }
 
+// Oprional mask for low cardinality columns.
+template <bool has_low_cardinality>
+struct LowCardinalityKeys
+{
+    ColumnRawPtrs nested_columns;
+    ColumnRawPtrs positions;
+    Sizes position_sizes;
+};
+
+template <>
+struct LowCardinalityKeys<false> {};
+
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename TData, bool has_nullable_keys_ = false>
+template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false>
 struct AggregationMethodKeysFixed
 {
     using Data = TData;
@@ -694,6 +706,7 @@ struct AggregationMethodKeysFixed
     using iterator = typename Data::iterator;
     using const_iterator = typename Data::const_iterator;
     static constexpr bool has_nullable_keys = has_nullable_keys_;
+    static constexpr bool has_low_cardinality = has_low_cardinality_;
 
     Data data;
 
@@ -704,11 +717,31 @@ struct AggregationMethodKeysFixed
 
     class State final : private aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>
     {
+        LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
+
     public:
         using Base = aggregator_impl::BaseStateKeysFixed<Key, has_nullable_keys>;
 
         void init(ColumnRawPtrs & key_columns)
         {
+            if constexpr (has_low_cardinality)
+            {
+                low_cardinality_keys.nested_columns.resize(key_columns.size());
+                low_cardinality_keys.positions.assign(key_columns.size(), nullptr);
+                low_cardinality_keys.position_sizes.resize(key_columns.size());
+                for (size_t i = 0; i < key_columns.size(); ++i)
+                {
+                    if (auto * low_cardinality_col = typeid_cast<const ColumnWithDictionary *>(key_columns[i]))
+                    {
+                        low_cardinality_keys.nested_columns[i] = low_cardinality_col->getDictionary().getNestedColumn().get();
+                        low_cardinality_keys.positions[i] = &low_cardinality_col->getIndexes();
+                        low_cardinality_keys.position_sizes[i] = low_cardinality_col->getSizeOfIndexType();
+                    }
+                    else
+                        low_cardinality_keys.nested_columns[i] = key_columns[i];
+                }
+            }
+
             if (has_nullable_keys)
                 Base::init(key_columns);
         }
@@ -727,7 +760,13 @@ struct AggregationMethodKeysFixed
                 return packFixed<Key>(i, keys_size, Base::getActualColumns(), key_sizes, bitmap);
             }
             else
+            {
+                if constexpr (has_low_cardinality)
+                    return packFixed<Key, true>(i, keys_size, low_cardinality_keys.nested_columns, key_sizes,
+                                                &low_cardinality_keys.positions, &low_cardinality_keys.position_sizes);
+
                 return packFixed<Key>(i, keys_size, key_columns, key_sizes);
+            }
         }
     };
 
@@ -941,6 +980,11 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodString<AggregatedDataWithStringKeyTwoLevel>>> low_cardinality_key_string_two_level;
     std::unique_ptr<AggregationMethodSingleLowCardinalityColumn<AggregationMethodFixedString<AggregatedDataWithStringKeyTwoLevel>>> low_cardinality_key_fixed_string_two_level;
 
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128, false, true>>      low_cardinality_keys128;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256, false, true>>      low_cardinality_keys256;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel, false, true>> low_cardinality_keys128_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel, false, true>> low_cardinality_keys256_two_level;
+
     /// In this and similar macros, the option without_key is not considered.
     #define APPLY_FOR_AGGREGATED_VARIANTS(M) \
         M(key8,                       false) \
@@ -973,10 +1017,14 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key16, false) \
         M(low_cardinality_key32, false) \
         M(low_cardinality_key64, false) \
+        M(low_cardinality_keys128, false) \
+        M(low_cardinality_keys256, false) \
         M(low_cardinality_key_string, false) \
         M(low_cardinality_key_fixed_string, false) \
         M(low_cardinality_key32_two_level, true) \
         M(low_cardinality_key64_two_level, true) \
+        M(low_cardinality_keys128_two_level, true) \
+        M(low_cardinality_keys256_two_level, true) \
         M(low_cardinality_key_string_two_level, true) \
         M(low_cardinality_key_fixed_string_two_level, true) \
 
@@ -1098,6 +1146,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_keys256) \
         M(low_cardinality_key32) \
         M(low_cardinality_key64) \
+        M(low_cardinality_keys128) \
+        M(low_cardinality_keys256) \
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
 
@@ -1146,6 +1196,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_keys256_two_level) \
         M(low_cardinality_key32_two_level) \
         M(low_cardinality_key64_two_level) \
+        M(low_cardinality_keys128_two_level) \
+        M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level) \
 
@@ -1154,10 +1206,14 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(low_cardinality_key16) \
         M(low_cardinality_key32) \
         M(low_cardinality_key64) \
+        M(low_cardinality_keys128) \
+        M(low_cardinality_keys256) \
         M(low_cardinality_key_string) \
         M(low_cardinality_key_fixed_string) \
         M(low_cardinality_key32_two_level) \
         M(low_cardinality_key64_two_level) \
+        M(low_cardinality_keys128_two_level) \
+        M(low_cardinality_keys256_two_level) \
         M(low_cardinality_key_string_two_level) \
         M(low_cardinality_key_fixed_string_two_level) \
 
@@ -1179,6 +1235,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     {
         switch (type)
         {
+            case Type::without_key: return nullptr;
+
             #define M(NAME, IS_TWO_LEVEL) \
             case Type::NAME: \
             { \
@@ -1189,6 +1247,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
             APPLY_FOR_AGGREGATED_VARIANTS(M)
             #undef M
+
             default:
                 throw Exception("Unknown aggregated data variant.", ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT);
         }
