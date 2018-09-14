@@ -198,8 +198,10 @@ static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries
     return dictionaries.getDictionary(dict_name_col->getValue<String>())->isInjective(attr_name_col->getValue<String>());
 }
 
+
 template <typename T>
 const PaddedPODArray<T> * getColumnDataAsPaddedPODArray(const IColumn * column, PaddedPODArray<T> * backup_storage);
+
 
 class FunctionDictGetString final : public IFunction
 {

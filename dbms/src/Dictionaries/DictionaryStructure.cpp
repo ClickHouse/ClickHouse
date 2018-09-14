@@ -165,10 +165,10 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
         const auto range_default_type = "Date";
         if (config.has(config_prefix + ".range_min"))
-            range_min.emplace(std::move(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type)));
+            range_min.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_min", range_default_type));
 
         if (config.has(config_prefix + ".range_max"))
-            range_max.emplace(std::move(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_max", range_default_type)));
+            range_max.emplace(makeDictionaryTypedSpecialAttribute(config, config_prefix + ".range_max", range_default_type));
 
         if (range_min.has_value() != range_max.has_value())
         {
