@@ -1109,7 +1109,7 @@ void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath());
+        context.getTemporaryPath(), settings.max_threads);
 
     pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
 }
