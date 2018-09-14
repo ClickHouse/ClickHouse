@@ -350,6 +350,8 @@ public:
                 case StatisticsFunctionKind::varSamp: dst.push_back(data.getSample(src_scale * 2)); break;
                 case StatisticsFunctionKind::stddevPop: dst.push_back(sqrt(data.getPopulation(src_scale * 2))); break;
                 case StatisticsFunctionKind::stddevSamp: dst.push_back(sqrt(data.getSample(src_scale * 2))); break;
+                default:
+                    __builtin_unreachable();
             }
         }
         else
