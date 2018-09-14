@@ -1,18 +1,27 @@
 #include "ColumnInfoHandler.h"
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+
+#if USE_POCO_SQLODBC
+#include <Poco/SQL/ODBC/ODBCException.h>
+#include <Poco/SQL/ODBC/SessionImpl.h>
+#include <Poco/SQL/ODBC/Utility.h>
+#define POCO_SQL_ODBC_CLASS Poco::SQL::ODBC
+#endif
+#if USE_POCO_DATAODBC
 #include <Poco/Data/ODBC/ODBCException.h>
 #include <Poco/Data/ODBC/SessionImpl.h>
 #include <Poco/Data/ODBC/Utility.h>
+#define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
+#endif
+
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
-
+#include <Poco/Net/HTMLForm.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
-#include <Common/HTMLForm.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
-
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include "validateODBCConnectionString.h"
@@ -85,13 +94,13 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
     try
     {
-        Poco::Data::ODBC::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
+        POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
         SQLHDBC hdbc = session.dbc().handle();
 
         SQLHSTMT hstmt = nullptr;
 
-        if (Poco::Data::ODBC::Utility::isError(SQLAllocStmt(hdbc, &hstmt)))
-            throw Poco::Data::ODBC::ODBCException("Could not allocate connection handle.");
+        if (POCO_SQL_ODBC_CLASS::Utility::isError(SQLAllocStmt(hdbc, &hstmt)))
+            throw POCO_SQL_ODBC_CLASS::ODBCException("Could not allocate connection handle.");
 
         SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
 
@@ -108,15 +117,15 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         select->format(settings);
         std::string query = ss.str();
 
-        if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
-            throw Poco::Data::ODBC::DescriptorException(session.dbc());
+        if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
+            throw POCO_SQL_ODBC_CLASS::DescriptorException(session.dbc());
 
-        if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
-            throw Poco::Data::ODBC::StatementException(hstmt);
+        if (POCO_SQL_ODBC_CLASS::Utility::isError(SQLExecute(hstmt)))
+            throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
 
         SQLSMALLINT cols = 0;
-        if (Poco::Data::ODBC::Utility::isError(SQLNumResultCols(hstmt, &cols)))
-            throw Poco::Data::ODBC::StatementException(hstmt);
+        if (POCO_SQL_ODBC_CLASS::Utility::isError(SQLNumResultCols(hstmt, &cols)))
+            throw POCO_SQL_ODBC_CLASS::StatementException(hstmt);
 
         /// TODO cols not checked
 
@@ -127,7 +136,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
             /// TODO Why 301?
             SQLCHAR column_name[301];
             /// TODO Result is not checked.
-            Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, nullptr);
+            POCO_SQL_ODBC_CLASS::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), nullptr, &type, nullptr, nullptr, nullptr);
             columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
         }
 
