@@ -443,7 +443,7 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
 
     if (has_nullable_key)
     {
-        if (params.keys_size == num_fixed_contiguous_keys)
+        if (params.keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
         {
             /// Pack if possible all the keys along with information about which key values are nulls
             /// into a fixed 16- or 32-byte blob.
@@ -490,8 +490,16 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
     }
 
     /// If all keys fits in N bits, will use hash table with all keys packed (placed contiguously) to single N-bit key.
-    if (params.keys_size == num_fixed_contiguous_keys && !has_low_cardinality)
+    if (params.keys_size == num_fixed_contiguous_keys)
     {
+        if (has_low_cardinality)
+        {
+            if (keys_bytes <= 16)
+                return AggregatedDataVariants::Type::low_cardinality_keys128;
+            if (keys_bytes <= 32)
+                return AggregatedDataVariants::Type::low_cardinality_keys256;
+        }
+
         if (keys_bytes <= 16)
             return AggregatedDataVariants::Type::keys128;
         if (keys_bytes <= 32)

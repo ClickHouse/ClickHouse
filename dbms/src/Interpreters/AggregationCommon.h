@@ -12,6 +12,7 @@
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnWithDictionary.h>
 
 
 template <>
@@ -65,9 +66,11 @@ using KeysNullMap = std::array<UInt8, getBitmapSize<T>()>;
 
 /// Pack into a binary blob of type T a set of fixed-size keys. Granted that all the keys fit into the
 /// binary blob, they are disposed in it consecutively.
-template <typename T>
+template <typename T, bool has_low_cardinality = false>
 static inline T ALWAYS_INLINE packFixed(
-    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes)
+    size_t i, size_t keys_size, const ColumnRawPtrs & key_columns, const Sizes & key_sizes,
+    const ColumnRawPtrs * low_cardinality_positions [[maybe_unused]] = nullptr,
+    const Sizes * low_cardinality_sizes [[maybe_unused]] = nullptr)
 {
     union
     {
@@ -79,26 +82,43 @@ static inline T ALWAYS_INLINE packFixed(
 
     for (size_t j = 0; j < keys_size; ++j)
     {
+        size_t index = i;
+        const IColumn * column = key_columns[j];
+        if constexpr (has_low_cardinality)
+        {
+            if (const IColumn * positions = (*low_cardinality_positions)[j])
+            {
+                switch ((*low_cardinality_sizes)[j])
+                {
+                    case sizeof(UInt8): index = static_cast<const ColumnUInt8 *>(positions)->getElement(i); break;
+                    case sizeof(UInt16): index = static_cast<const ColumnUInt16 *>(positions)->getElement(i); break;
+                    case sizeof(UInt32): index = static_cast<const ColumnUInt32 *>(positions)->getElement(i); break;
+                    case sizeof(UInt64): index = static_cast<const ColumnUInt64 *>(positions)->getElement(i); break;
+                    default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+                }
+            }
+        }
+
         switch (key_sizes[j])
         {
             case 1:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(key_columns[j])->getData()[i], 1);
+                memcpy(bytes + offset, &static_cast<const ColumnUInt8 *>(column)->getData()[index], 1);
                 offset += 1;
                 break;
             case 2:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(key_columns[j])->getData()[i], 2);
+                memcpy(bytes + offset, &static_cast<const ColumnUInt16 *>(column)->getData()[index], 2);
                 offset += 2;
                 break;
             case 4:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(key_columns[j])->getData()[i], 4);
+                memcpy(bytes + offset, &static_cast<const ColumnUInt32 *>(column)->getData()[index], 4);
                 offset += 4;
                 break;
             case 8:
-                memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(key_columns[j])->getData()[i], 8);
+                memcpy(bytes + offset, &static_cast<const ColumnUInt64 *>(column)->getData()[index], 8);
                 offset += 8;
                 break;
             default:
-                memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(key_columns[j])->getChars()[i * key_sizes[j]], key_sizes[j]);
+                memcpy(bytes + offset, &static_cast<const ColumnFixedString *>(column)->getChars()[index * key_sizes[j]], key_sizes[j]);
                 offset += key_sizes[j];
         }
     }
