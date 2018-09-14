@@ -1,6 +1,8 @@
 #pragma once
 
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
+
+#include <boost/noncopyable.hpp>
 
 /// https://stackoverflow.com/questions/20759750/resolving-redefinition-of-timespec-in-time-h
 #define timespec linux_timespec

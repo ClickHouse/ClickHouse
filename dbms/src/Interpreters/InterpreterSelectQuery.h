@@ -8,6 +8,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataStreams/IBlockInputStream.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace Poco { class Logger; }
@@ -125,7 +126,7 @@ private:
         }
     };
 
-    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
+    void executeImpl(Pipeline & pipeline, const BlockInputStreamPtr & prepared_input, bool dry_run);
 
 
     struct AnalysisResult
@@ -136,6 +137,8 @@ private:
         bool has_having     = false;
         bool has_order_by   = false;
         bool has_limit_by   = false;
+
+        bool remove_where_filter = false;
 
         ExpressionActionsPtr before_join;   /// including JOIN
         ExpressionActionsPtr before_where;
@@ -154,6 +157,7 @@ private:
         bool second_stage = false;
 
         SubqueriesForSets subqueries_for_sets;
+        PrewhereInfoPtr prewhere_info;
     };
 
     AnalysisResult analyzeExpressions(QueryProcessingStage::Enum from_stage, bool dry_run);
@@ -168,13 +172,12 @@ private:
     /// dry_run - don't read from table, use empty header block instead.
     void executeWithMultipleStreamsImpl(Pipeline & pipeline, const BlockInputStreamPtr & input, bool dry_run);
 
-    /// Fetch data from the table. Returns the stage to which the query was processed in Storage.
-    QueryProcessingStage::Enum executeFetchColumns(Pipeline & pipeline);
+    void executeFetchColumns(QueryProcessingStage::Enum processing_stage, Pipeline & pipeline, const PrewhereInfoPtr & prewhere_info);
 
-    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    void executeWhere(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
-    void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row);
+    void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(Pipeline & pipeline);
@@ -187,6 +190,7 @@ private:
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeRollup(Pipeline & pipeline);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *

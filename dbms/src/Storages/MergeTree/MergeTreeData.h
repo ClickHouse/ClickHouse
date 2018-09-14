@@ -333,6 +333,8 @@ public:
             return NameAndTypePair("_part", std::make_shared<DataTypeString>());
         if (column_name == "_part_index")
             return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
+        if (column_name == "_partition_id")
+            return NameAndTypePair("_partition_id", std::make_shared<DataTypeString>());
         if (column_name == "_sample_factor")
             return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
@@ -344,6 +346,7 @@ public:
         return getColumns().hasPhysical(column_name)
             || column_name == "_part"
             || column_name == "_part_index"
+            || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
 
@@ -370,6 +373,7 @@ public:
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
 
     /// Returns all parts in specified partition
@@ -384,9 +388,13 @@ public:
 
     size_t getMaxPartsCountForPartition() const;
 
+    /// Get min value of part->info.getDataVersion() for all active parts.
+    /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
+    std::optional<Int64> getMinPartDataVersion() const;
+
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
-    void delayInsertOrThrowIfNeeded(Poco::Event *until = nullptr) const;
+    void delayInsertOrThrowIfNeeded(Poco::Event * until = nullptr) const;
     void throwInsertIfNeeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.

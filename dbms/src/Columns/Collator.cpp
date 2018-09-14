@@ -3,10 +3,7 @@
 #include <Common/config.h>
 
 #if USE_ICU
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wold-style-cast"
     #include <unicode/ucol.h>
-    #pragma GCC diagnostic pop
 #else
     #ifdef __clang__
         #pragma clang diagnostic push

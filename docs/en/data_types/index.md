@@ -1,6 +1,6 @@
 <a name="data_types"></a>
 
-# Data types
+# Data Types
 
 ClickHouse can store various types of data in table cells.
 

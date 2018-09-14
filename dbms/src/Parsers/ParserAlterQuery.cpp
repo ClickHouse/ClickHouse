@@ -1,11 +1,13 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTAssignment.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
 
@@ -38,12 +40,17 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_name("NAME");
 
     ParserKeyword s_delete_where("DELETE WHERE");
+    ParserKeyword s_update("UPDATE");
+    ParserKeyword s_where("WHERE");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
     ParserCompoundColumnDeclaration parser_col_decl;
     ParserPartition parser_partition;
-    ParserExpression exp_elem;
+    ParserExpression parser_exp_elem;
+    ParserList parser_assignment_list(
+        std::make_unique<ParserAssignment>(), std::make_unique<ParserToken>(TokenType::Comma),
+        /* allow_empty = */ false);
 
     if (s_add_column.ignore(pos, expected))
     {
@@ -195,10 +202,23 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     }
     else if (s_delete_where.ignore(pos, expected))
     {
-        if (!exp_elem.parse(pos, command->predicate, expected))
+        if (!parser_exp_elem.parse(pos, command->predicate, expected))
             return false;
 
         command->type = ASTAlterCommand::DELETE;
+    }
+    else if (s_update.ignore(pos, expected))
+    {
+        if (!parser_assignment_list.parse(pos, command->update_assignments, expected))
+            return false;
+
+        if (!s_where.ignore(pos, expected))
+            return false;
+
+        if (!parser_exp_elem.parse(pos, command->predicate, expected))
+            return false;
+
+        command->type = ASTAlterCommand::UPDATE;
     }
     else
         return false;
@@ -213,6 +233,8 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->partition);
     if (command->predicate)
         command->children.push_back(command->predicate);
+    if (command->update_assignments)
+        command->children.push_back(command->update_assignments);
 
     return true;
 }
@@ -235,6 +257,33 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         command_list->add(command);
     }
     while (s_comma.ignore(pos, expected));
+
+    return true;
+}
+
+
+bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto assignment = std::make_shared<ASTAssignment>();
+    node = assignment;
+
+    ParserIdentifier p_identifier;
+    ParserToken s_equals(TokenType::Equals);
+    ParserExpression p_expression;
+
+    ASTPtr column;
+    if (!p_identifier.parse(pos, column, expected))
+        return false;
+
+    if (!s_equals.ignore(pos, expected))
+        return false;
+
+    if (!p_expression.parse(pos, assignment->expression, expected))
+        return false;
+
+    assignment->column_name = typeid_cast<const ASTIdentifier &>(*column).name;
+    if (assignment->expression)
+        assignment->children.push_back(assignment->expression);
 
     return true;
 }
@@ -269,4 +318,5 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
+
 }

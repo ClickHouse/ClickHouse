@@ -22,6 +22,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTDropQuery.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterAlterQuery.h>
@@ -30,7 +32,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
-#include <Interpreters/ClusterProxy/DescribeStreamFactory.h>
 #include <Interpreters/getClusterName.h>
 
 #include <Core/Field.h>
@@ -40,10 +41,7 @@
 #include <Poco/DirectoryIterator.h>
 
 #include <memory>
-
 #include <boost/filesystem.hpp>
-#include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTDropQuery.h>
 
 
 namespace DB
@@ -65,12 +63,15 @@ namespace ErrorCodes
 namespace
 {
 
-/// select query has database and table names as AST pointers
-/// Creates a copy of query, changes database and table names.
-ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table)
+/// select query has database, table and table function names as AST pointers
+/// Creates a copy of query, changes database, table and table function names.
+ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, const std::string & table, ASTPtr table_function_ptr = nullptr)
 {
     auto modified_query_ast = query->clone();
-    typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
+    if (table_function_ptr)
+        typeid_cast<ASTSelectQuery &>(*modified_query_ast).addTableFunction(table_function_ptr);
+    else
+        typeid_cast<ASTSelectQuery &>(*modified_query_ast).replaceDatabaseAndTable(database, table);
     return modified_query_ast;
 }
 
@@ -170,16 +171,32 @@ StorageDistributed::StorageDistributed(
 }
 
 
-StoragePtr StorageDistributed::createWithOwnCluster(
-    const std::string & name_,
+StorageDistributed::StorageDistributed(
+    const String & database_name,
+    const String & table_name_,
     const ColumnsDescription & columns_,
-    const String & remote_database_,
-    const String & remote_table_,
-    ClusterPtr & owned_cluster_,
+    ASTPtr remote_table_function_ptr_,
+    const String & cluster_name_,
+    const Context & context_,
+    const ASTPtr & sharding_key_,
+    const String & data_path_,
+    bool attach)
+    : StorageDistributed(database_name, table_name_, columns_, String{}, String{}, cluster_name_, context_, sharding_key_, data_path_, attach)
+{
+        remote_table_function_ptr = remote_table_function_ptr_;
+}
+
+
+StoragePtr StorageDistributed::createWithOwnCluster(
+    const std::string & table_name_,
+    const ColumnsDescription & columns_,
+    const String & remote_database_,       /// database on remote servers.
+    const String & remote_table_,          /// The name of the table on the remote servers.
+    ClusterPtr owned_cluster_,
     const Context & context_)
 {
     auto res = ext::shared_ptr_helper<StorageDistributed>::create(
-        String{}, name_, columns_, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
+        String{}, table_name_, columns_, remote_database_, remote_table_, String{}, context_, ASTPtr(), String(), false);
 
     res->owned_cluster = owned_cluster_;
 
@@ -187,16 +204,29 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 }
 
 
-BlockInputStreams StorageDistributed::read(
-    const Names & /*column_names*/,
-    const SelectQueryInfo & query_info,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+StoragePtr StorageDistributed::createWithOwnCluster(
+    const std::string & table_name_,
+    const ColumnsDescription & columns_,
+    ASTPtr & remote_table_function_ptr_,
+    ClusterPtr & owned_cluster_,
+    const Context & context_)
+{
+    auto res = ext::shared_ptr_helper<StorageDistributed>::create(
+        String{}, table_name_, columns_, remote_table_function_ptr_, String{}, context_, ASTPtr(), String(), false);
+
+    res->owned_cluster = owned_cluster_;
+
+    return res;
+}
+
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
 {
     auto cluster = getCluster();
+    return getQueryProcessingStage(context, cluster);
+}
 
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+{
     const Settings & settings = context.getSettingsRef();
 
     size_t num_local_shards = cluster->getLocalShardCount();
@@ -204,19 +234,35 @@ BlockInputStreams StorageDistributed::read(
     size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
 
     if (settings.distributed_group_by_no_merge)
-        processed_stage = QueryProcessingStage::Complete;
+        return QueryProcessingStage::Complete;
     else    /// Normal mode.
-        processed_stage = result_size == 1
-            ? QueryProcessingStage::Complete
-            : QueryProcessingStage::WithMergeableState;
+        return result_size == 1 ? QueryProcessingStage::Complete
+                                : QueryProcessingStage::WithMergeableState;
+}
+
+BlockInputStreams StorageDistributed::read(
+    const Names & /*column_names*/,
+    const SelectQueryInfo & query_info,
+    const Context & context,
+    QueryProcessingStage::Enum processed_stage,
+    const size_t /*max_block_size*/,
+    const unsigned /*num_streams*/)
+{
+    auto cluster = getCluster();
+    checkQueryProcessingStage(processed_stage, getQueryProcessingStage(context, cluster));
+
+    const Settings & settings = context.getSettingsRef();
 
     const auto & modified_query_ast = rewriteSelectQuery(
-        query_info.query, remote_database, remote_table);
+        query_info.query, remote_database, remote_table, remote_table_function_ptr);
 
     Block header = materializeBlock(InterpreterSelectQuery(query_info.query, context, Names{}, processed_stage).getSampleBlock());
 
-    ClusterProxy::SelectStreamFactory select_stream_factory(
-        header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
+    ClusterProxy::SelectStreamFactory select_stream_factory = remote_table_function_ptr
+        ? ClusterProxy::SelectStreamFactory(
+            header, processed_stage, remote_table_function_ptr, context.getExternalTables())
+        : ClusterProxy::SelectStreamFactory(
+            header, processed_stage, QualifiedTableName{remote_database, remote_table}, context.getExternalTables());
 
     return ClusterProxy::executeQuery(
         select_stream_factory, cluster, modified_query_ast, context, settings);
@@ -279,34 +325,6 @@ void StorageDistributed::shutdown()
 }
 
 
-BlockInputStreams StorageDistributed::describe(const Context & context, const Settings & settings)
-{
-    /// Create DESCRIBE TABLE query.
-    auto cluster = getCluster();
-
-    auto describe_query = std::make_shared<ASTDescribeQuery>();
-
-    std::string name = remote_database + '.' + remote_table;
-
-    auto id = std::make_shared<ASTIdentifier>(name);
-
-    auto desc_database = std::make_shared<ASTIdentifier>(remote_database);
-    auto desc_table = std::make_shared<ASTIdentifier>(remote_table);
-
-    id->children.push_back(desc_database);
-    id->children.push_back(desc_table);
-
-    auto table_expression = std::make_shared<ASTTableExpression>();
-    table_expression->database_and_table_name = id;
-
-    describe_query->table_expression = table_expression;
-
-    ClusterProxy::DescribeStreamFactory describe_stream_factory;
-
-    return ClusterProxy::executeQuery(
-            describe_stream_factory, cluster, describe_query, context, settings);
-}
-
 void StorageDistributed::truncate(const ASTPtr &)
 {
     std::lock_guard lock(cluster_nodes_mutex);
@@ -327,6 +345,7 @@ namespace
         {"_table", "String"},
         {"_part", "String"},
         {"_part_index", "UInt64"},
+        {"_partition_id", "String"},
         {"_sample_factor", "Float64"},
     };
 }
@@ -383,7 +402,6 @@ size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();
 }
-
 
 ClusterPtr StorageDistributed::getCluster() const
 {

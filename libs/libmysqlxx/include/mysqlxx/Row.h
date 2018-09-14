@@ -77,7 +77,7 @@ public:
     /** Преобразование в bool.
       * (Точнее - в тип, который преобразуется в bool, и с которым больше почти ничего нельзя сделать.)
       */
-    operator private_bool_type() const    { return row == nullptr ? NULL : &Row::row; }
+    operator private_bool_type() const { return row == nullptr ? nullptr : &Row::row; }
 
 private:
     MYSQL_ROW row = nullptr;

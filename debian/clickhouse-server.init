@@ -156,12 +156,12 @@ start()
     EXIT_STATUS=0
 
     echo -n "Start $PROGRAM service: "
-    ulimit -n 262144
 
     if is_running; then
         echo -n "already running "
         EXIT_STATUS=1
     else
+        ulimit -n 262144
         mkdir -p $CLICKHOUSE_PIDDIR
         chown -R $CLICKHOUSE_USER:$CLICKHOUSE_GROUP $CLICKHOUSE_PIDDIR
         initdb

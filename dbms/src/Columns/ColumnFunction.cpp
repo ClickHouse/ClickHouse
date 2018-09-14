@@ -88,6 +88,15 @@ ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
     return ColumnFunction::create(limit, function, capture);
 }
 
+ColumnPtr ColumnFunction::index(const IColumn & indexes, size_t limit) const
+{
+    ColumnsWithTypeAndName capture = captured_columns;
+    for (auto & column : capture)
+        column.column = column.column->index(indexes, limit);
+
+    return ColumnFunction::create(limit, function, capture);
+}
+
 std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_columns,
                                                       const IColumn::Selector & selector) const
 {

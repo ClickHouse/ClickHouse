@@ -42,7 +42,7 @@ MergeTreeReader::MergeTreeReader(const String & path,
     clockid_t clock_type)
     : avg_value_size_hints(avg_value_size_hints), path(path), data_part(data_part), columns(columns)
     , uncompressed_cache(uncompressed_cache), mark_cache(mark_cache), save_marks_in_cache(save_marks_in_cache), storage(storage)
-    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size)
+    , all_mark_ranges(all_mark_ranges), aio_threshold(aio_threshold), max_read_buffer_size(max_read_buffer_size), index_granularity(storage.index_granularity)
 {
     try
     {
@@ -200,6 +200,11 @@ MergeTreeReader::Stream::Stream(
             getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
     }
 
+    /// Avoid empty buffer. May happen while reading dictionary for DataTypeWithDictionary.
+    /// For example: part has single dictionary and all marks point to the same position.
+    if (max_mark_range == 0)
+        max_mark_range = max_read_buffer_size;
+
     size_t buffer_size = std::min(max_read_buffer_size, max_mark_range);
 
     /// Estimate size of the data to be read.
@@ -262,7 +267,7 @@ void MergeTreeReader::Stream::loadMarks()
     auto load = [&]() -> MarkCache::MappedPtr
     {
         /// Memory for marks must not be accounted as memory usage for query, because they are stored in shared cache.
-        TemporarilyDisableMemoryTracker temporarily_disable_memory_tracker;
+        auto temporarily_disable_memory_tracker = getCurrentMemoryTrackerActionLock();
 
         size_t file_size = Poco::File(path).getSize();
         size_t expected_file_size = sizeof(MarkInCompressedFile) * marks_count;
@@ -329,6 +334,26 @@ void MergeTreeReader::Stream::seekToMark(size_t index)
 }
 
 
+void MergeTreeReader::Stream::seekToStart()
+{
+    try
+    {
+        if (cached_buffer)
+            cached_buffer->seek(0, 0);
+        if (non_cached_buffer)
+            non_cached_buffer->seek(0, 0);
+    }
+    catch (Exception & e)
+    {
+        /// Better diagnostics.
+        if (e.code() == ErrorCodes::ARGUMENT_OUT_OF_BOUND)
+            e.addMessage("(while seeking to start of column " + path_prefix + ")");
+
+        throw;
+    }
+}
+
+
 void MergeTreeReader::addStreams(const String & name, const IDataType & type, const MarkRanges & all_mark_ranges,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
 {
@@ -353,7 +378,8 @@ void MergeTreeReader::addStreams(const String & name, const IDataType & type, co
             uncompressed_cache, aio_threshold, max_read_buffer_size, profile_callback, clock_type));
     };
 
-    type.enumerateStreams(callback, {});
+    IDataType::SubstreamPath path;
+    type.enumerateStreams(callback, path);
 }
 
 
@@ -362,28 +388,48 @@ void MergeTreeReader::readData(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
     bool with_offsets)
 {
-    IDataType::InputStreamGetter stream_getter = [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+    auto get_stream_getter = [&](bool stream_for_prefix) -> IDataType::InputStreamGetter
     {
-        /// If offsets for arrays have already been read.
-        if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
-            return nullptr;
+        return [&, stream_for_prefix](const IDataType::SubstreamPath & path) -> ReadBuffer *
+        {
+            /// If offsets for arrays have already been read.
+            if (!with_offsets && path.size() == 1 && path[0].type == IDataType::Substream::ArraySizes)
+                return nullptr;
 
-        String stream_name = IDataType::getFileNameForStream(name, path);
+            String stream_name = IDataType::getFileNameForStream(name, path);
 
-        auto it = streams.find(stream_name);
-        if (it == streams.end())
-            return nullptr;
+            auto it = streams.find(stream_name);
+            if (it == streams.end())
+                return nullptr;
 
-        Stream & stream = *it->second;
+            Stream & stream = *it->second;
 
-        if (!continue_reading)
-            stream.seekToMark(from_mark);
+            if (stream_for_prefix)
+            {
+                stream.seekToStart();
+                continue_reading = false;
+            }
+            else if (!continue_reading)
+                stream.seekToMark(from_mark);
 
-        return stream.data_buffer;
+            return stream.data_buffer;
+        };
     };
 
     double & avg_value_size_hint = avg_value_size_hints[name];
-    type.deserializeBinaryBulkWithMultipleStreams(column, stream_getter, max_rows_to_read, avg_value_size_hint, true, {});
+    IDataType::DeserializeBinaryBulkSettings settings;
+    settings.avg_value_size_hint = avg_value_size_hint;
+
+    if (deserialize_binary_bulk_state_map.count(name) == 0)
+    {
+        settings.getter = get_stream_getter(true);
+        type.deserializeBinaryBulkStatePrefix(settings, deserialize_binary_bulk_state_map[name]);
+    }
+
+    settings.getter = get_stream_getter(false);
+    settings.continuous_reading = continue_reading;
+    auto & deserialize_state = deserialize_binary_bulk_state_map[name];
+    type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_state);
     IDataType::updateAvgValueSizeHint(column, avg_value_size_hint);
 }
 
@@ -497,7 +543,7 @@ void MergeTreeReader::fillMissingColumns(Block & res, bool & should_reorder, boo
     }
 }
 
-void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
+void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names, const String * filter_name)
 {
     try
     {
@@ -506,6 +552,9 @@ void MergeTreeReader::reorderColumns(Block & res, const Names & ordered_names)
         for (const auto & name : ordered_names)
             if (res.has(name))
                 ordered_block.insert(res.getByName(name));
+
+        if (filter_name && !ordered_block.has(*filter_name) && res.has(*filter_name))
+            ordered_block.insert(res.getByName(*filter_name));
 
         std::swap(res, ordered_block);
     }

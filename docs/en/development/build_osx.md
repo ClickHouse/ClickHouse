@@ -1,4 +1,4 @@
-# How to build ClickHouse on Mac OS X
+# How to Build ClickHouse on Mac OS X
 
 Build should work on Mac OS X 10.12. If you're using earlier version, you can try to build ClickHouse using Gentoo Prefix and clang sl in this instruction.
 With appropriate changes, it should also work on any other Linux distribution.
@@ -9,25 +9,22 @@ With appropriate changes, it should also work on any other Linux distribution.
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Install required compilers, tools, and libraries
+## Install Required Compilers, Tools, and Libraries
 
 ```bash
-brew install cmake ninja gcc icu4c mysql openssl unixodbc libtool gettext readline
+brew install cmake ninja gcc icu4c mariadb-connector-c openssl libtool gettext readline
 ```
 
-## Checkout ClickHouse sources
-
-To get the latest stable version:
+## Checkout ClickHouse Sources
 
 ```bash
-git clone -b stable --recursive --depth=10 git@github.com:yandex/ClickHouse.git
-# or: git clone -b stable --recursive --depth=10 https://github.com/yandex/ClickHouse.git
+git clone --recursive --depth=10 git@github.com:yandex/ClickHouse.git
+# or: git clone --recursive --depth=10 https://github.com/yandex/ClickHouse.git
 
 cd ClickHouse
 ```
 
-For development, switch to the `master` branch.
-For the latest release candidate, switch to the `testing` branch.
+For the latest stable version, switch to the `stable` branch.
 
 ## Build ClickHouse
 

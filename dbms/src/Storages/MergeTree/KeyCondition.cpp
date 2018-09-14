@@ -3,10 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -712,7 +708,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (key_expr_type->isNumber() && const_type->isNumber()); /// Numbers are accurately compared without cast.
+            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);

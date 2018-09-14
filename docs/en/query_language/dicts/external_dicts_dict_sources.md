@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_sources"></a>
 
-# Sources of external dictionaries
+# Sources of External Dictionaries
 
 An external dictionary can be connected from many different sources.
 
@@ -30,13 +30,13 @@ Types of sources (`source_type`):
 - [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 - [ODBC](#dicts-external_dicts_dict_sources-odbc)
 - DBMS
-   - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-   - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-   - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
 
 <a name="dicts-external_dicts_dict_sources-local_file"></a>
 
-## Local file
+## Local File
 
 Example of settings:
 
@@ -56,7 +56,7 @@ Setting fields:
 
 <a name="dicts-external_dicts_dict_sources-executable"></a>
 
-## Executable file
+## Executable File
 
 Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file's `STDIN`.
 
@@ -124,7 +124,7 @@ Setting fields:
 - `connection_string` – Connection string.
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-## Example of connecting PostgreSQL
+### Example of Connecting PostgreSQL
 
 Ubuntu OS.
 
@@ -156,39 +156,41 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
 The dictionary configuration in ClickHouse:
 
 ```xml
-<dictionary>
-    <name>table_name</name>
-    <source>
-    <odbc>
-        <!-- You can specifiy the following parameters in connection_string: -->
-        <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
-            <connection_string>DSN=myconnection</connection_string>
-            <table>postgresql_table</table>
-        </odbc>
-    </source>
-    <lifetime>
-        <min>300</min>
-        <max>360</max>
-    </lifetime>
-    <layout>
-        <hashed/>
-    </layout>
-    <structure>
-        <id>
-            <name>id</name>
-        </id>
-        <attribute>
-            <name>some_column</name>
-            <type>UInt64</type>
-            <null_value>0</null_value>
-        </attribute>
-    </structure>
-</dictionary>
+<yandex>
+    <dictionary>
+        <name>table_name</name>
+        <source>
+            <odbc>
+                <!-- You can specify the following parameters in connection_string: -->
+                <!-- DSN=myconnection;UID=username;PWD=password;HOST=127.0.0.1;PORT=5432;DATABASE=my_db -->
+                <connection_string>DSN=myconnection</connection_string>
+                <table>postgresql_table</table>
+            </odbc>
+        </source>
+        <lifetime>
+            <min>300</min>
+            <max>360</max>
+        </lifetime>
+        <layout>
+            <hashed/>
+        </layout>
+        <structure>
+            <id>
+                <name>id</name>
+            </id>
+            <attribute>
+                <name>some_column</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</yandex>
 ```
 
 You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example of connecting MS SQL Server
+### Example of Connecting MS SQL Server
 
 Ubuntu OS.
 
@@ -201,7 +203,7 @@ Installing the driver: :
 Configuring the driver: :
 
 ```
-    $ cat /etc/freetds/freetds.conf 
+    $ cat /etc/freetds/freetds.conf
     ...
 
     [MSSQL]
@@ -210,7 +212,7 @@ Configuring the driver: :
     tds version = 7.0
     client charset = UTF-8
 
-    $ cat /etc/odbcinst.ini 
+    $ cat /etc/odbcinst.ini
     ...
 
     [FreeTDS]
@@ -220,7 +222,7 @@ Configuring the driver: :
     FileUsage       = 1
     UsageCount      = 5
 
-    $ cat ~/.odbc.ini 
+    $ cat ~/.odbc.ini
     ...
 
     [MSSQL]
@@ -308,9 +310,9 @@ Setting fields:
 - `password` – Password of the MySQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
 - `replica` – Section of replica configurations. There can be multiple sections.
-   - `replica/host` – The MySQL host.
+    - `replica/host` – The MySQL host.
 
-   \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+    \* `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 
 - `db` – Name of the database.
 
@@ -396,4 +398,3 @@ Setting fields:
 - `password` – Password of the MongoDB user.
 - `db` – Name of the database.
 - `collection` – Name of the collection.
-

@@ -16,6 +16,7 @@ struct ReplicatedMergeTreeAddress
     UInt16 queries_port;
     String database;
     String table;
+    String scheme;
 
     ReplicatedMergeTreeAddress() = default;
     explicit ReplicatedMergeTreeAddress(const String & str)

@@ -75,7 +75,7 @@ struct PerformanceStatistics
                 sum += seconds / bytes;
         }
 
-        double sample(pcg64 & rng) const
+        double sample(pcg64 & stat_rng) const
         {
             /// If there is a variant with not enough statistics, always choose it.
             /// And in that case prefer variant with less number of invocations.
@@ -83,7 +83,7 @@ struct PerformanceStatistics
             if (adjustedCount() < 2)
                 return adjustedCount() - 1;
             else
-                return std::normal_distribution<>(mean(), sigma())(rng);
+                return std::normal_distribution<>(mean(), sigma())(stat_rng);
         }
     };
 

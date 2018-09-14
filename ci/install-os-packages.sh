@@ -43,20 +43,11 @@ case $PACKAGE_MANAGER in
             jq)
                 $SUDO apt-get install -y jq
                 ;;
-            libssl-dev)
-                $SUDO apt-get install -y libssl-dev
-                ;;
             libicu-dev)
                 $SUDO apt-get install -y libicu-dev
                 ;;
             libreadline-dev)
                 $SUDO apt-get install -y libreadline-dev
-                ;;
-            libunixodbc-dev)
-                $SUDO apt-get install -y unixodbc-dev
-                ;;
-            libmariadbclient-dev)
-                $SUDO apt-get install -y libmariadbclient-dev
                 ;;
             llvm-libs*)
                 $SUDO apt-get install -y ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
@@ -97,21 +88,11 @@ case $PACKAGE_MANAGER in
             jq)
                 $SUDO yum install -y jq
                 ;;
-            libssl-dev)
-                $SUDO yum install -y openssl-devel
-                ;;
             libicu-dev)
                 $SUDO yum install -y libicu-devel
                 ;;
             libreadline-dev)
                 $SUDO yum install -y readline-devel
-                ;;
-            libunixodbc-dev)
-                $SUDO yum install -y unixODBC-devel libtool-ltdl-devel
-                ;;
-            libmariadbclient-dev)
-                echo "There is no package with static mysqlclient library"; echo 1;
-                #$SUDO yum install -y mariadb-connector-c-devel
                 ;;
             *)
                 echo "Unknown package"; exit 1;
@@ -146,20 +127,11 @@ case $PACKAGE_MANAGER in
             jq)
                 $SUDO pkg install -y jq
                 ;;
-            libssl-dev)
-                $SUDO pkg install -y openssl
-                ;;
             libicu-dev)
                 $SUDO pkg install -y icu
                 ;;
             libreadline-dev)
                 $SUDO pkg install -y readline
-                ;;
-            libunixodbc-dev)
-                $SUDO pkg install -y unixODBC libltdl
-                ;;
-            libmariadbclient-dev)
-                $SUDO pkg install -y mariadb102-client
                 ;;
             *)
                 echo "Unknown package"; exit 1;

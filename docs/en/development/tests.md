@@ -32,8 +32,6 @@ See `dbms/tests/integration/README.md` on how to run these tests.
 
 Note that integration of ClickHouse with third-party drivers is not tested. Also we currently don't have integration tests with our JDBC and ODBC drivers.
 
-We don't have integration tests for `Kafka` table engine that is developed by community - this is one of the most anticipated tests (otherwise there is almost no way to be confident with `Kafka` tables).
-
 
 ## Unit Tests
 

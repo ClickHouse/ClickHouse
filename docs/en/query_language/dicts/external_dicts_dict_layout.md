@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_layout"></a>
 
-# Storing dictionaries in memory
+# Storing Dictionaries in Memory
 
 There are a [variety of ways](#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
 
@@ -38,7 +38,7 @@ The configuration looks like this:
 
 <a name="dicts-external_dicts_dict_layout-manner"></a>
 
-## Ways to store dictionaries in memory
+## Ways to Store Dictionaries in Memory
 
 - [flat](#dicts-external_dicts_dict_layout-flat)
 - [hashed](#dicts-external_dicts_dict_layout-hashed)

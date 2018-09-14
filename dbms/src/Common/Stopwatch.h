@@ -32,9 +32,11 @@ public:
     void stop()                         { stop_ns = nanoseconds(); is_running = false; }
     void reset()                        { start_ns = 0; stop_ns = 0; is_running = false; }
     void restart()                      { start(); }
-    UInt64 elapsed() const              { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
-    UInt64 elapsedMilliseconds() const  { return elapsed() / 1000000UL; }
-    double elapsedSeconds() const       { return static_cast<double>(elapsed()) / 1000000000ULL; }
+    UInt64 elapsed() const              { return elapsedNanoseconds(); }
+    UInt64 elapsedNanoseconds() const   { return is_running ? nanoseconds() - start_ns : stop_ns - start_ns; }
+    UInt64 elapsedMicroseconds() const  { return elapsedNanoseconds() / 1000U; }
+    UInt64 elapsedMilliseconds() const  { return elapsedNanoseconds() / 1000000UL; }
+    double elapsedSeconds() const       { return static_cast<double>(elapsedNanoseconds()) / 1000000000ULL; }
 
 private:
     UInt64 start_ns = 0;
@@ -130,4 +132,60 @@ private:
 
     /// Most significant bit is a lock. When it is set, compareAndRestartDeferred method will return false.
     UInt64 nanoseconds() const { return StopWatchDetail::nanoseconds(clock_type) & 0x7FFFFFFFFFFFFFFFULL; }
+};
+
+
+/// Like ordinary StopWatch, but uses getrusage() system call
+struct StopwatchRUsage
+{
+    StopwatchRUsage() = default;
+
+    void start()    { start_ts = Timestamp::current(); is_running = true; }
+    void stop()     { stop_ts = Timestamp::current(); is_running = false; }
+    void reset()    { start_ts = Timestamp(); stop_ts = Timestamp(); is_running = false; }
+    void restart()  { start(); }
+
+    UInt64 elapsed(bool count_user = true, bool count_sys = true) const
+    {
+        return elapsedNanoseconds(count_user, count_sys);
+    }
+
+    UInt64 elapsedNanoseconds(bool count_user = true, bool count_sys = true) const
+    {
+        return (is_running ? Timestamp::current() : stop_ts).nanoseconds(count_user, count_sys) - start_ts.nanoseconds(count_user, count_sys);
+    }
+
+    UInt64 elapsedMicroseconds(bool count_user = true, bool count_sys = true) const
+    {
+        return elapsedNanoseconds(count_user, count_sys) / 1000UL;
+    }
+
+    UInt64 elapsedMilliseconds(bool count_user = true, bool count_sys = true) const
+    {
+        return elapsedNanoseconds(count_user, count_sys) / 1000000UL;
+    }
+
+    double elapsedSeconds(bool count_user = true, bool count_sys = true) const
+    {
+        return static_cast<double>(elapsedNanoseconds(count_user, count_sys)) / 1000000000.0;
+    }
+
+private:
+
+    struct Timestamp
+    {
+        UInt64 user_ns = 0;
+        UInt64 sys_ns = 0;
+
+        static Timestamp current();
+
+        UInt64 nanoseconds(bool count_user = true, bool count_sys = true) const
+        {
+            return (count_user ? user_ns : 0) + (count_sys ? sys_ns : 0);
+        }
+    };
+
+    Timestamp start_ts;
+    Timestamp stop_ts;
+    bool is_running = false;
 };

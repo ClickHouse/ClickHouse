@@ -18,6 +18,7 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
     const std::string & method_,
     OutStreamCallback out_stream_callback,
     const ConnectionTimeouts & timeouts,
+    const Poco::Net::HTTPBasicCredentials & credentials,
     size_t buffer_size_)
     : ReadBuffer(nullptr, 0),
       uri{uri},
@@ -29,6 +30,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(const Poco::URI & uri,
 
     if (out_stream_callback)
         request.setChunkedTransferEncoding(true);
+
+    if (!credentials.getUsername().empty())
+        credentials.authenticate(request);
 
     Poco::Net::HTTPResponse response;
 

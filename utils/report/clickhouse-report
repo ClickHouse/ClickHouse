@@ -27,7 +27,7 @@ done
 
 tail -n200 /var/log/clickhouse-server/clickhouse-server.err.log
 tail -n200 /var/log/clickhouse-server/clickhouse-server.log
-tail -n100 /var/log/clickhouse-server/stderr
+tail -n100 /var/log/clickhouse-server/stderr.log
 
 clickhouse-client -q 'SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'
 clickhouse-client -q 'SELECT * FROM system.metrics FORMAT PrettyCompactNoEscapes'

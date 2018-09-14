@@ -38,7 +38,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
     field = String();
     String & s = get<String &>(field);
     s.resize(size);
-    istr.readStrict(&s[0], size);
+    istr.readStrict(s.data(), size);
 }
 
 
@@ -96,7 +96,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
     {
         UInt64 str_size = offsets[0] - 1;
         writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(&data[0]), str_size);
+        ostr.write(reinterpret_cast<const char *>(data.data()), str_size);
 
         ++offset;
     }
@@ -262,9 +262,9 @@ void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, 
 }
 
 
-void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
