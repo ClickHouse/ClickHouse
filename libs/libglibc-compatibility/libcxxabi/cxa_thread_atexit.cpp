@@ -10,9 +10,7 @@
 #include <cstdlib>
 #include <pthread.h>
 
-namespace __cxxabiv1 {
-
-  using Dtor = void(*)(void*);
+using Dtor = void(*)(void*);
 
 namespace {
   // This implementation is used if the C library does not provide
@@ -88,9 +86,10 @@ namespace {
 } // namespace
 
 
-extern "C" {
-
-  int __cxa_thread_atexit(Dtor dtor, void* obj, void* dso_symbol) throw() {
+extern "C"
+{
+  int __cxa_thread_atexit_impl(Dtor dtor, void* obj, void* dso_symbol) throw()
+  {
       // Initialize the dtors std::__libcpp_tls_key (uses __cxa_guard_*() for
       // one-time initialization and __cxa_atexit() for destruction)
       static DtorsManager manager;
@@ -114,6 +113,4 @@ extern "C" {
 
       return 0;
   }
-
 } // extern "C"
-} // namespace __cxxabiv1
