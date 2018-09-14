@@ -23,7 +23,12 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
 
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
-        name_map[header.safeGetByPosition(i).name] = i;        /// NOTE You could place names more cache-locally.
+        name_map[column_name(i)] = i;        /// NOTE You could place names more cache-locally.
+}
+
+const String& JSONEachRowRowInputStream::column_name(size_t i) const
+{
+    return header.safeGetByPosition(i).name;
 }
 
 
@@ -60,6 +65,32 @@ static void skipColonDelimeter(ReadBuffer & istr)
     skipWhitespaceIfAny(istr);
 }
 
+void JSONEachRowRowInputStream::skipUnknownField(const StringRef& name_ref)
+{
+    if (!format_settings.skip_unknown_fields)
+        throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
+
+    skipColonDelimeter(istr);
+    skipJSONField(istr, name_ref);
+}
+
+void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns)
+{
+    if (read_columns[index])
+        throw Exception("Duplicate field found while parsing JSONEachRow format: " + column_name(index), ErrorCodes::INCORRECT_DATA);
+
+    read_columns[index] = true;
+
+    try
+    {
+        header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr, format_settings);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage("(while read the value of key " + column_name(index) + ")");
+        throw;
+    }
+}
 
 bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 {
@@ -84,8 +115,7 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
 
     /// Set of columns for which the values were read. The rest will be filled with default values.
     /// TODO Ability to provide your DEFAULTs.
-    bool read_columns[num_columns];
-    memset(read_columns, 0, num_columns);
+    read_columns.assign(num_columns, false);
 
     bool first = true;
     while (true)
@@ -116,32 +146,13 @@ bool JSONEachRowRowInputStream::read(MutableColumns & columns)
         auto it = name_map.find(name_ref);
         if (name_map.end() == it)
         {
-            if (!format_settings.skip_unknown_fields)
-                throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
-
-            skipColonDelimeter(istr);
-            skipJSONField(istr, name_ref);
+            skipUnknownField(name_ref);
             continue;
         }
 
-        size_t index = it->second;
-
-        if (read_columns[index])
-            throw Exception("Duplicate field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
-
         skipColonDelimeter(istr);
 
-        read_columns[index] = true;
-
-        try
-        {
-            header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr, format_settings);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("(while read the value of key " + name_ref.toString() + ")");
-            throw;
-        }
+        readField(it->second, columns);
     }
 
     /// Fill non-visited columns with the default values.
