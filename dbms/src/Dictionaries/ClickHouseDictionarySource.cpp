@@ -168,6 +168,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
     }
     else
     {
+        /// We pass empty block to RemoteBlockInputStream, because we don't know the structure of the result.
         Block invalidate_sample_block;
         RemoteBlockInputStream invalidate_stream(pool, request, invalidate_sample_block, context);
         return readInvalidateQuery(invalidate_stream);
