@@ -17,7 +17,8 @@ musl/syscall.s
 musl/syscall_ret.c
 musl/sched_cpucount.c
 musl/glob.c
-musl/exp2f.c)
+musl/exp2f.c
+musl/pwritev.c)
 
 if (MAKE_STATIC_LIBRARIES)
     set (GLIBC_COMPATIBILITY_SOURCES ${GLIBC_COMPATIBILITY_SOURCES}
