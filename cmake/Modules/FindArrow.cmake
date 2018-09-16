@@ -1,4 +1,4 @@
-# https://github.com/apache/parquet-cpp/blob/master/cmake_modules/FindArrow.cmake
+# https://github.com/apache/arrow/blob/master/cpp/cmake_modules/FindArrow.cmake
 
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -20,48 +20,39 @@
 # - Find ARROW (arrow/api.h, libarrow.a, libarrow.so)
 # This module defines
 #  ARROW_INCLUDE_DIR, directory containing headers
+#  ARROW_LIBS, directory containing arrow libraries
 #  ARROW_STATIC_LIB, path to libarrow.a
 #  ARROW_SHARED_LIB, path to libarrow's shared library
+#  ARROW_SHARED_IMP_LIB, path to libarrow's import library (MSVC only)
 #  ARROW_FOUND, whether arrow has been found
 
-if (DEFINED ENV{ARROW_HOME})
-  set(ARROW_HOME "$ENV{ARROW_HOME}")
-endif()
+include(FindPkgConfig)
+include(GNUInstallDirs)
 
-if ("${ARROW_HOME}" STREQUAL "")
-  # PARQUET-955. If the user has set $ARROW_HOME in the environment, we respect
-  # this, otherwise try to locate the pkgconfig in the system environment
+if ("$ENV{ARROW_HOME}" STREQUAL "")
   pkg_check_modules(ARROW arrow)
   if (ARROW_FOUND)
-    # We found the pkgconfig
+    pkg_get_variable(ARROW_SO_VERSION arrow so_version)
+    set(ARROW_ABI_VERSION ${ARROW_SO_VERSION})
+    message(STATUS "Arrow SO and ABI version: ${ARROW_SO_VERSION}")
+    pkg_get_variable(ARROW_FULL_SO_VERSION arrow full_so_version)
+    message(STATUS "Arrow full SO version: ${ARROW_FULL_SO_VERSION}")
+    if ("${ARROW_INCLUDE_DIRS}" STREQUAL "")
+      set(ARROW_INCLUDE_DIRS "/usr/${CMAKE_INSTALL_INCLUDEDIR}")
+    endif()
+    if ("${ARROW_LIBRARY_DIRS}" STREQUAL "")
+      set(ARROW_LIBRARY_DIRS "/usr/${CMAKE_INSTALL_LIBDIR}")
+      if (EXISTS "/etc/debian_version" AND CMAKE_LIBRARY_ARCHITECTURE)
+        set(ARROW_LIBRARY_DIRS
+          "${ARROW_LIBRARY_DIRS}/${CMAKE_LIBRARY_ARCHITECTURE}")
+      endif()
+    endif()
     set(ARROW_INCLUDE_DIR ${ARROW_INCLUDE_DIRS})
-
-    if (COMMAND pkg_get_variable)
-      pkg_get_variable(ARROW_ABI_VERSION arrow abi_version)
-    else()
-      set(ARROW_ABI_VERSION "")
-    endif()
-    if (ARROW_ABI_VERSION STREQUAL "")
-      set(ARROW_SHARED_LIB_SUFFIX "")
-    else()
-      set(ARROW_SHARED_LIB_SUFFIX ".${ARROW_ABI_VERSION}")
-    endif()
-
-    set(ARROW_LIB_NAME ${CMAKE_SHARED_LIBRARY_PREFIX}arrow)
-
-    if (APPLE)
-      set(ARROW_SHARED_LIB ${ARROW_LIBDIR}/${ARROW_LIB_NAME}${ARROW_SHARED_LIB_SUFFIX}${CMAKE_SHARED_LIBRARY_SUFFIX})
-    else()
-      set(ARROW_SHARED_LIB ${ARROW_LIBDIR}/${ARROW_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX}${ARROW_SHARED_LIB_SUFFIX})
-    endif()
-    set(ARROW_STATIC_LIB ${ARROW_LIBDIR}/${ARROW_LIB_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX})
+    set(ARROW_LIBS ${ARROW_LIBRARY_DIRS})
+    set(ARROW_SEARCH_LIB_PATH ${ARROW_LIBRARY_DIRS})
   endif()
 else()
-  set(ARROW_HOME "${ARROW_HOME}")
-
-  if (MSVC AND NOT ARROW_MSVC_STATIC_LIB_SUFFIX)
-    set(ARROW_MSVC_STATIC_LIB_SUFFIX _static)
-  endif()
+  set(ARROW_HOME "$ENV{ARROW_HOME}")
 
   set(ARROW_SEARCH_HEADER_PATHS
     ${ARROW_HOME}/include
@@ -76,35 +67,64 @@ else()
     # make sure we don't accidentally pick up a different version
     NO_DEFAULT_PATH
     )
+endif()
 
-  find_library(ARROW_LIB_PATH NAMES arrow arrow${ARROW_MSVC_STATIC_LIB_SUFFIX}
-    PATHS
-    ${ARROW_SEARCH_LIB_PATH}
-    NO_DEFAULT_PATH)
+find_library(ARROW_LIB_PATH NAMES arrow
+  PATHS
+  ${ARROW_SEARCH_LIB_PATH}
+  NO_DEFAULT_PATH)
+get_filename_component(ARROW_LIBS ${ARROW_LIB_PATH} DIRECTORY)
 
-  if (ARROW_INCLUDE_DIR AND (PARQUET_MINIMAL_DEPENDENCY OR ARROW_LIB_PATH))
-    set(ARROW_FOUND TRUE)
-    set(ARROW_HEADER_NAME arrow/api.h)
-    set(ARROW_HEADER ${ARROW_INCLUDE_DIR}/${ARROW_HEADER_NAME})
-    set(ARROW_LIB_NAME arrow)
+find_library(ARROW_PYTHON_LIB_PATH NAMES arrow_python
+  PATHS
+  ${ARROW_SEARCH_LIB_PATH}
+  NO_DEFAULT_PATH)
+get_filename_component(ARROW_PYTHON_LIBS ${ARROW_PYTHON_LIB_PATH} DIRECTORY)
 
-    get_filename_component(ARROW_LIBS ${ARROW_LIB_PATH} DIRECTORY)
-    set(ARROW_STATIC_LIB ${ARROW_LIBS}/${CMAKE_STATIC_LIBRARY_PREFIX}${ARROW_LIB_NAME}${ARROW_MSVC_STATIC_LIB_SUFFIX}${CMAKE_STATIC_LIBRARY_SUFFIX})
-    set(ARROW_SHARED_LIB ${ARROW_LIBS}/${CMAKE_SHARED_LIBRARY_PREFIX}${ARROW_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set(ARROW_SHARED_IMPLIB ${ARROW_LIBS}/${ARROW_LIB_NAME}.lib)
-  endif ()
+if (MSVC)
+  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib" ".dll")
+
+  if (MSVC AND NOT DEFINED ARROW_MSVC_STATIC_LIB_SUFFIX)
+    set(ARROW_MSVC_STATIC_LIB_SUFFIX "_static")
+  endif()
+
+  find_library(ARROW_SHARED_LIBRARIES NAMES arrow
+    PATHS ${ARROW_HOME} NO_DEFAULT_PATH
+    PATH_SUFFIXES "bin" )
+
+  find_library(ARROW_PYTHON_SHARED_LIBRARIES NAMES arrow_python
+    PATHS ${ARROW_HOME} NO_DEFAULT_PATH
+    PATH_SUFFIXES "bin" )
+  get_filename_component(ARROW_SHARED_LIBS ${ARROW_SHARED_LIBRARIES} PATH )
+  get_filename_component(ARROW_PYTHON_SHARED_LIBS ${ARROW_PYTHON_SHARED_LIBRARIES} PATH )
+endif ()
+
+if (ARROW_INCLUDE_DIR AND ARROW_LIBS)
+  set(ARROW_FOUND TRUE)
+  set(ARROW_LIB_NAME arrow)
+  set(ARROW_PYTHON_LIB_NAME arrow_python)
+  if (MSVC)
+    set(ARROW_STATIC_LIB ${ARROW_LIBS}/${ARROW_LIB_NAME}${ARROW_MSVC_STATIC_LIB_SUFFIX}${CMAKE_STATIC_LIBRARY_SUFFIX})
+    set(ARROW_PYTHON_STATIC_LIB ${ARROW_PYTHON_LIBS}/${ARROW_PYTHON_LIB_NAME}${ARROW_MSVC_STATIC_LIB_SUFFIX}${CMAKE_STATIC_LIBRARY_SUFFIX})
+    set(ARROW_SHARED_LIB ${ARROW_SHARED_LIBS}/${ARROW_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(ARROW_PYTHON_SHARED_LIB ${ARROW_PYTHON_SHARED_LIBS}/${ARROW_PYTHON_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(ARROW_SHARED_IMP_LIB ${ARROW_LIBS}/${ARROW_LIB_NAME}.lib)
+    set(ARROW_PYTHON_SHARED_IMP_LIB ${ARROW_PYTHON_LIBS}/${ARROW_PYTHON_LIB_NAME}.lib)
+  else()
+    set(ARROW_STATIC_LIB ${ARROW_LIBS}/lib${ARROW_LIB_NAME}.a)
+    set(ARROW_PYTHON_STATIC_LIB ${ARROW_LIBS}/lib${ARROW_PYTHON_LIB_NAME}.a)
+
+    set(ARROW_SHARED_LIB ${ARROW_LIBS}/lib${ARROW_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+    set(ARROW_PYTHON_SHARED_LIB ${ARROW_LIBS}/lib${ARROW_PYTHON_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+  endif()
 endif()
 
 if (ARROW_FOUND)
   if (NOT Arrow_FIND_QUIETLY)
-    message(STATUS "Arrow include path: ${ARROW_INCLUDE_DIR}")
-    if (PARQUET_MINIMAL_DEPENDENCY)
-      message(STATUS "Found the Arrow header: ${ARROW_HEADER}")
-    else ()
-      message(STATUS "Found the Arrow library: ${ARROW_LIB_PATH}")
-    endif ()
+    message(STATUS "Found the Arrow core library: ${ARROW_LIB_PATH}")
+    message(STATUS "Found the Arrow Python library: ${ARROW_PYTHON_LIB_PATH}")
   endif ()
-else()
+else ()
   if (NOT Arrow_FIND_QUIETLY)
     set(ARROW_ERR_MSG "Could not find the Arrow library. Looked for headers")
     set(ARROW_ERR_MSG "${ARROW_ERR_MSG} in ${ARROW_SEARCH_HEADER_PATHS}, and for libs")
@@ -115,11 +135,25 @@ else()
       message(STATUS "${ARROW_ERR_MSG}")
     endif (Arrow_FIND_REQUIRED)
   endif ()
-endif()
+  set(ARROW_FOUND FALSE)
+endif ()
 
-mark_as_advanced(
-  ARROW_FOUND
-  ARROW_INCLUDE_DIR
-  ARROW_STATIC_LIB
-  ARROW_SHARED_LIB
-)
+if (MSVC)
+  mark_as_advanced(
+    ARROW_INCLUDE_DIR
+    ARROW_STATIC_LIB
+    ARROW_SHARED_LIB
+    ARROW_SHARED_IMP_LIB
+    ARROW_PYTHON_STATIC_LIB
+    ARROW_PYTHON_SHARED_LIB
+    ARROW_PYTHON_SHARED_IMP_LIB
+  )
+else()
+  mark_as_advanced(
+    ARROW_INCLUDE_DIR
+    ARROW_STATIC_LIB
+    ARROW_SHARED_LIB
+    ARROW_PYTHON_STATIC_LIB
+    ARROW_PYTHON_SHARED_LIB
+  )
+endif()

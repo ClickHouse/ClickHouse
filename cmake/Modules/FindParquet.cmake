@@ -1,4 +1,4 @@
-# https://github.com/apache/parquet-cpp/blob/master/examples/parquet-arrow/cmake_modules/FindParquet.cmake
+# https://github.com/apache/arrow/blob/master/cpp/cmake_modules/FindParquet.cmake
 
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
@@ -35,7 +35,7 @@ endif()
 if (MSVC)
   SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib" ".dll")
 
-  if (MSVC AND NOT PARQUET_MSVC_STATIC_LIB_SUFFIX)
+  if (MSVC AND NOT DEFINED PARQUET_MSVC_STATIC_LIB_SUFFIX)
     set(PARQUET_MSVC_STATIC_LIB_SUFFIX "_static")
   endif()
 

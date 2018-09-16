@@ -37,6 +37,6 @@
 [submodule "contrib/llvm"]
 	path = contrib/llvm
 	url = https://github.com/ClickHouse-Extras/llvm
-[submodule "contrib/parquet-cpp"]
-	path = contrib/parquet-cpp
-	url = https://github.com/apache/parquet-cpp/
+[submodule "contrib/arrow"]
+	path = contrib/arrow
+	url = https://github.com/apache/arrow
