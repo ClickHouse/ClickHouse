@@ -29,6 +29,7 @@ struct ReplicatedMergeTreeQuorumWriter
 		read(old_added_parts);
 	}
 
+    /// Write new parts in string with added parts.
 	std::string write(const std::string & part_name)
 	{
 		WriteBufferFromOwnString out;
@@ -72,6 +73,7 @@ struct ReplicatedMergeTreeQuorumWriter
 			added_parts = read_v3(in);
 	}
 
+    /// Read blocks when node in ZooKeeper suppors multiple partitions.
 	PartitonIdToPartName read_v2(ReadBufferFromString & in)
 	{
 		PartitonIdToPartName parts_in_quorum;
@@ -95,6 +97,7 @@ struct ReplicatedMergeTreeQuorumWriter
 		return parts_in_quorum;
 	}
 
+    /// Read added bloks when node in ZooKeeper supports only one partition.
 	PartitonIdToPartName read_v3(ReadBufferFromString & in)
 	{
 		PartitonIdToPartName parts_in_quorum;
