@@ -15,7 +15,7 @@ using RangeStorageType = DB::RangeHashedDictionary::RangeStorageType;
 // To simplify comparison, null value of min bound should be bigger than any other value,
 // and null value of maxbound - less than any value.
 const RangeStorageType RANGE_MIN_NULL_VALUE = std::numeric_limits<RangeStorageType>::max();
-const RangeStorageType RANGE_MAX_NULL_VALUE = std::numeric_limits<RangeStorageType>::min();
+const RangeStorageType RANGE_MAX_NULL_VALUE = std::numeric_limits<RangeStorageType>::lowest();
 
 // Handle both kinds of null values: explicit nulls of NullableColumn and 'implicit' nulls of Date type.
 RangeStorageType getColumnIntValueOrDefault(const DB::IColumn & column, size_t index, bool isDate, const RangeStorageType & default_value)
@@ -171,7 +171,7 @@ void RangeHashedDictionary::loadData()
         const auto & id_column = *block.safeGetByPosition(0).column;
 
         // Support old behaviour, where invalid date means 'open range'.
-        const bool is_date = isDate(block.safeGetByPosition(1).type);
+        const bool is_date = isDate(dict_struct.range_min->type);
 
         const auto & min_range_column = unwrapNullableColumn(*block.safeGetByPosition(1).column);
         const auto & max_range_column = unwrapNullableColumn(*block.safeGetByPosition(2).column);
@@ -185,11 +185,22 @@ void RangeHashedDictionary::loadData()
 
             for (const auto row_idx : ext::range(0, id_column.size()))
             {
-                const auto min = getColumnIntValueOrDefault(min_range_column, row_idx, is_date, RANGE_MIN_NULL_VALUE);
-                const auto max = getColumnIntValueOrDefault(max_range_column, row_idx, is_date, RANGE_MAX_NULL_VALUE);
+                RangeStorageType lower_bound;
+                RangeStorageType upper_bound;
+
+                if (is_date)
+                {
+                    lower_bound = getColumnIntValueOrDefault(min_range_column, row_idx, is_date, 0);
+                    upper_bound = getColumnIntValueOrDefault(max_range_column, row_idx, is_date, DATE_LUT_MAX_DAY_NUM + 1);
+                }
+                else
+                {
+                    lower_bound = getColumnIntValueOrDefault(min_range_column, row_idx, is_date, RANGE_MIN_NULL_VALUE);
+                    upper_bound = getColumnIntValueOrDefault(max_range_column, row_idx, is_date, RANGE_MAX_NULL_VALUE);
+                }
 
                 setAttributeValue(attribute, id_column.getUInt(row_idx),
-                    Range{min, max},
+                    Range{lower_bound, upper_bound},
                     attribute_column[row_idx]);
             }
         }
@@ -452,6 +463,8 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute & attribute, PaddedPO
     start_dates.reserve(attr.size());
     end_dates.reserve(attr.size());
 
+    const bool is_date = isDate(dict_struct.range_min->type);
+
     for (const auto & key : attr)
     {
         for (const auto & value : key.second)
@@ -459,6 +472,9 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute & attribute, PaddedPO
             ids.push_back(key.first);
             start_dates.push_back(value.range.left);
             end_dates.push_back(value.range.right);
+
+            if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
+                end_dates.back() = 0;
         }
     }
 }
