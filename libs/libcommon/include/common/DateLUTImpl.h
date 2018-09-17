@@ -309,6 +309,9 @@ public:
     inline unsigned toYear(DayNum d) const { return lut[d].year; }
     inline unsigned toDayOfWeek(DayNum d) const { return lut[d].day_of_week; }
     inline unsigned toDayOfMonth(DayNum d) const { return lut[d].day_of_month; }
+    inline unsigned toDayOfYear(DayNum d) const { return d + 1 - toFirstDayNumOfYear(d); }
+
+    inline unsigned toDayOfYear(time_t t) const { return toDayOfYear(toDayNum(t)); }
 
     /// Number of week from some fixed moment in the past. Week begins at monday.
     /// (round down to monday and divide DayNum by 7; we made an assumption,
