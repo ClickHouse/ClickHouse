@@ -29,6 +29,7 @@ namespace zkutil
 {
 
 const UInt32 DEFAULT_SESSION_TIMEOUT = 30000;
+const UInt32 DEFAULT_OPERATION_TIMEOUT = 10000;
 
 /// Preferred size of multi() command (in number of ops)
 constexpr size_t MULTI_BATCH_SIZE = 100;
@@ -52,7 +53,9 @@ public:
     using Ptr = std::shared_ptr<ZooKeeper>;
 
     ZooKeeper(const std::string & hosts, const std::string & identity = "",
-              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT, const std::string & chroot = "");
+              int32_t session_timeout_ms = DEFAULT_SESSION_TIMEOUT,
+              int32_t operation_timeout_ms = DEFAULT_OPERATION_TIMEOUT,
+              const std::string & chroot = "");
 
     /** Config of the form:
         <zookeeper>
@@ -65,6 +68,7 @@ public:
                 <port>2181</port>
             </node>
             <session_timeout_ms>30000</session_timeout_ms>
+            <operation_timeout_ms>10000</operation_timeout_ms>
             <!-- Optional. Chroot suffix. Should exist. -->
             <root>/path/to/zookeeper/node</root>
             <!-- Optional. Zookeeper digest ACL string. -->
@@ -228,7 +232,8 @@ public:
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_, const std::string & chroot_);
+    void init(const std::string & hosts_, const std::string & identity_,
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
 
     void removeChildrenRecursive(const std::string & path);
     void tryRemoveChildrenRecursive(const std::string & path);
@@ -247,6 +252,7 @@ private:
     std::string hosts;
     std::string identity;
     int32_t session_timeout_ms;
+    int32_t operation_timeout_ms;
     std::string chroot;
 
     std::mutex mutex;

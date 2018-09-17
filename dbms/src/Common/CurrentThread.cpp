@@ -1,6 +1,10 @@
+#include <memory>
+
 #include "CurrentThread.h"
 #include <common/logger_useful.h>
 #include <Common/ThreadStatus.h>
+#include <Common/ObjectPool.h>
+#include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
 #include <Poco/Ext/ThreadNumber.h>
@@ -14,6 +18,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
+
+/// Order of current_thread and current_thread_scope matters
+thread_local ThreadStatusPtr current_thread = ThreadStatus::create();
+thread_local CurrentThread::ThreadScopePtr current_thread_scope = std::make_shared<CurrentThread::ThreadScope>();
+
 
 void CurrentThread::updatePerformanceCounters()
 {
@@ -31,6 +42,11 @@ ThreadStatusPtr CurrentThread::get()
 #endif
 
     return current_thread;
+}
+
+CurrentThread::ThreadScopePtr CurrentThread::getScope()
+{
+    return current_thread_scope;
 }
 
 ProfileEvents::Counters & CurrentThread::getProfileEvents()

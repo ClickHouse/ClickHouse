@@ -38,11 +38,10 @@ BlockInputStreams StorageDictionary::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*threads*/)
 {
-    checkQueryProcessingStage(processed_stage, context);
     auto dictionary = context.getExternalDictionaries().getDictionary(dictionary_name);
     return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
 }
@@ -54,9 +53,9 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
     if (dictionary_structure.id)
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
     if (dictionary_structure.range_min)
-        dictionary_names_and_types.emplace_back(dictionary_structure.range_min->name, std::make_shared<DataTypeDate>());
+        dictionary_names_and_types.emplace_back(dictionary_structure.range_min->name, dictionary_structure.range_min->type);
     if (dictionary_structure.range_max)
-        dictionary_names_and_types.emplace_back(dictionary_structure.range_max->name, std::make_shared<DataTypeDate>());
+        dictionary_names_and_types.emplace_back(dictionary_structure.range_max->name, dictionary_structure.range_max->type);
     if (dictionary_structure.key)
         for (const auto & attribute : *dictionary_structure.key)
             dictionary_names_and_types.emplace_back(attribute.name, attribute.type);

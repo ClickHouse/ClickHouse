@@ -53,7 +53,7 @@ struct QuantileExact
     {
         size_t size = array.size();
         writeVarUInt(size, buf);
-        buf.write(reinterpret_cast<const char *>(&array[0]), size * sizeof(array[0]));
+        buf.write(reinterpret_cast<const char *>(array.data()), size * sizeof(array[0]));
     }
 
     void deserialize(ReadBuffer & buf)
@@ -61,7 +61,7 @@ struct QuantileExact
         size_t size = 0;
         readVarUInt(size, buf);
         array.resize(size);
-        buf.read(reinterpret_cast<char *>(&array[0]), size * sizeof(array[0]));
+        buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.

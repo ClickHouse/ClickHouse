@@ -200,7 +200,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -240,6 +240,12 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
     }
 };
+
+
+inline bool allowIntHash(const IDataType * data_type)
+{
+    return data_type->isValueRepresentedByNumber();
+}
 
 
 template <typename Impl, typename Name>
@@ -285,7 +291,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isValueRepresentedByNumber())
+        if (!allowIntHash(arguments[0].get()))
             throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -297,17 +303,18 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         const IDataType * from_type = block.getByPosition(arguments[0]).type.get();
+        WhichDataType which(from_type);
 
-        if      (checkDataType<DataTypeUInt8>(from_type)) executeType<UInt8>(block, arguments, result);
-        else if (checkDataType<DataTypeUInt16>(from_type)) executeType<UInt16>(block, arguments, result);
-        else if (checkDataType<DataTypeUInt32>(from_type)) executeType<UInt32>(block, arguments, result);
-        else if (checkDataType<DataTypeUInt64>(from_type)) executeType<UInt64>(block, arguments, result);
-        else if (checkDataType<DataTypeInt8>(from_type)) executeType<Int8>(block, arguments, result);
-        else if (checkDataType<DataTypeInt16>(from_type)) executeType<Int16>(block, arguments, result);
-        else if (checkDataType<DataTypeInt32>(from_type)) executeType<Int32>(block, arguments, result);
-        else if (checkDataType<DataTypeInt64>(from_type)) executeType<Int64>(block, arguments, result);
-        else if (checkDataType<DataTypeDate>(from_type)) executeType<UInt16>(block, arguments, result);
-        else if (checkDataType<DataTypeDateTime>(from_type)) executeType<UInt32>(block, arguments, result);
+        if      (which.isUInt8()) executeType<UInt8>(block, arguments, result);
+        else if (which.isUInt16()) executeType<UInt16>(block, arguments, result);
+        else if (which.isUInt32()) executeType<UInt32>(block, arguments, result);
+        else if (which.isUInt64()) executeType<UInt64>(block, arguments, result);
+        else if (which.isInt8()) executeType<Int8>(block, arguments, result);
+        else if (which.isInt16()) executeType<Int16>(block, arguments, result);
+        else if (which.isInt32()) executeType<Int32>(block, arguments, result);
+        else if (which.isInt64()) executeType<Int64>(block, arguments, result);
+        else if (which.isDate()) executeType<UInt16>(block, arguments, result);
+        else if (which.isDateTime()) executeType<UInt32>(block, arguments, result);
         else
             throw Exception("Illegal type " + block.getByPosition(arguments[0]).type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -473,23 +480,25 @@ private:
     template <bool first>
     void executeAny(const IDataType * from_type, const IColumn * icolumn, ColumnUInt64::Container & vec_to)
     {
-        if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeUInt32>(from_type)) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeUInt64>(from_type)) executeIntType<UInt64, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt8>(from_type)) executeIntType<Int8, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt16>(from_type)) executeIntType<Int16, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt32>(from_type)) executeIntType<Int32, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt64>(from_type)) executeIntType<Int64, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeEnum8>(from_type)) executeIntType<Int8, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeEnum16>(from_type)) executeIntType<Int16, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeDate>(from_type)) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeDateTime>(from_type)) executeIntType<UInt32, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeFloat32>(from_type)) executeIntType<Float32, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeFloat64>(from_type)) executeIntType<Float64, first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeString>(from_type)) executeString<first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeFixedString>(from_type)) executeString<first>(icolumn, vec_to);
-        else if (checkDataType<DataTypeArray>(from_type)) executeArray<first>(from_type, icolumn, vec_to);
+        WhichDataType which(from_type);
+
+        if      (which.isUInt8()) executeIntType<UInt8, first>(icolumn, vec_to);
+        else if (which.isUInt16()) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isUInt32()) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (which.isUInt64()) executeIntType<UInt64, first>(icolumn, vec_to);
+        else if (which.isInt8()) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (which.isInt16()) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (which.isInt32()) executeIntType<Int32, first>(icolumn, vec_to);
+        else if (which.isInt64()) executeIntType<Int64, first>(icolumn, vec_to);
+        else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
+        else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
+        else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
+        else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
+        else if (which.isFloat32()) executeIntType<Float32, first>(icolumn, vec_to);
+        else if (which.isFloat64()) executeIntType<Float64, first>(icolumn, vec_to);
+        else if (which.isString()) executeString<first>(icolumn, vec_to);
+        else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
+        else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -596,23 +605,23 @@ public:
         const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
         const IDataType * from_type = col.type.get();
         const IColumn * icolumn = col.column.get();
+        WhichDataType which(from_type);
 
-        if      (checkDataType<DataTypeUInt8>(from_type)) executeIntType<UInt8>(icolumn, vec_to);
-        else if (checkDataType<DataTypeUInt16>(from_type)) executeIntType<UInt16>(icolumn, vec_to);
-        else if (checkDataType<DataTypeUInt32>(from_type)) executeIntType<UInt32>(icolumn, vec_to);
-        else if (checkDataType<DataTypeUInt64>(from_type)) executeIntType<UInt64>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt8>(from_type)) executeIntType<Int8>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt16>(from_type)) executeIntType<Int16>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt32>(from_type)) executeIntType<Int32>(icolumn, vec_to);
-        else if (checkDataType<DataTypeInt64>(from_type)) executeIntType<Int64>(icolumn, vec_to);
-        else if (checkDataType<DataTypeEnum8>(from_type)) executeIntType<Int8>(icolumn, vec_to);
-        else if (checkDataType<DataTypeEnum16>(from_type)) executeIntType<Int16>(icolumn, vec_to);
-        else if (checkDataType<DataTypeDate>(from_type)) executeIntType<UInt16>(icolumn, vec_to);
-        else if (checkDataType<DataTypeDateTime>(from_type)) executeIntType<UInt32>(icolumn, vec_to);
-        else if (checkDataType<DataTypeFloat32>(from_type)) executeIntType<Float32>(icolumn, vec_to);
-        else if (checkDataType<DataTypeFloat64>(from_type)) executeIntType<Float64>(icolumn, vec_to);
-        else if (checkDataType<DataTypeString>(from_type)) executeString(icolumn, vec_to);
-        else if (checkDataType<DataTypeFixedString>(from_type)) executeString(icolumn, vec_to);
+        if      (which.isUInt8()) executeIntType<UInt8>(icolumn, vec_to);
+        else if (which.isUInt16()) executeIntType<UInt16>(icolumn, vec_to);
+        else if (which.isUInt32()) executeIntType<UInt32>(icolumn, vec_to);
+        else if (which.isUInt64()) executeIntType<UInt64>(icolumn, vec_to);
+        else if (which.isInt8()) executeIntType<Int8>(icolumn, vec_to);
+        else if (which.isInt16()) executeIntType<Int16>(icolumn, vec_to);
+        else if (which.isInt32()) executeIntType<Int32>(icolumn, vec_to);
+        else if (which.isInt64()) executeIntType<Int64>(icolumn, vec_to);
+        else if (which.isEnum8()) executeIntType<Int8>(icolumn, vec_to);
+        else if (which.isEnum16()) executeIntType<Int16>(icolumn, vec_to);
+        else if (which.isDate()) executeIntType<UInt16>(icolumn, vec_to);
+        else if (which.isDateTime()) executeIntType<UInt32>(icolumn, vec_to);
+        else if (which.isFloat32()) executeIntType<Float32>(icolumn, vec_to);
+        else if (which.isFloat64()) executeIntType<Float64>(icolumn, vec_to);
+        else if (which.isStringOrFixedString()) executeString(icolumn, vec_to);
         else
             throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -837,13 +846,13 @@ public:
                 toString(arg_count) + ", should be 1 or 2.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
         const auto first_arg = arguments.front().get();
-        if (!checkDataType<DataTypeString>(first_arg))
+        if (!WhichDataType(first_arg).isString())
             throw Exception{"Illegal type " + first_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (arg_count == 2)
         {
-            const auto second_arg = arguments.back().get();
-            if (!second_arg->isInteger())
+            const auto & second_arg = arguments.back();
+            if (!isInteger(second_arg))
                 throw Exception{"Illegal type " + second_arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
 

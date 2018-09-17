@@ -22,6 +22,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYNTAX_ERROR;
     extern const int UNKNOWN_TABLE;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -69,7 +70,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
         {
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            auto table_lock = database_and_table.second->lockForAlter(__PRETTY_FUNCTION__);
             /// Drop table from memory, don't touch data and metadata
             database_and_table.first->detachTable(database_and_table.second->getTableName());
         }
@@ -78,7 +79,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
             database_and_table.second->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            auto table_lock = database_and_table.second->lockForAlter(__PRETTY_FUNCTION__);
             /// Drop table data, don't touch metadata
             database_and_table.second->truncate(query_ptr);
         }
@@ -88,7 +89,7 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
             database_and_table.second->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = database_and_table.second->lockDataForAlter(__PRETTY_FUNCTION__);
+            auto table_lock = database_and_table.second->lockForAlter(__PRETTY_FUNCTION__);
             /// Delete table metdata and table itself from memory
             database_and_table.first->removeTable(context, database_and_table.second->getTableName());
             /// Delete table data
@@ -124,7 +125,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockDataForAlter(__PRETTY_FUNCTION__);
+                auto table_lock = table->lockForAlter(__PRETTY_FUNCTION__);
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr);
             }
@@ -208,7 +209,7 @@ DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(String & database_
             throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
                             ErrorCodes::UNKNOWN_TABLE);
 
-        return std::make_pair<DatabasePtr, StoragePtr>(std::move(database), std::move(table));
+        return {std::move(database), std::move(table)};
     }
     return {};
 }
@@ -217,14 +218,16 @@ void InterpreterDropQuery::checkAccess(const ASTDropQuery & drop)
 {
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.readonly;
+    bool allow_ddl = settings.allow_ddl;
 
     /// It's allowed to drop temporary tables.
-    if (!readonly || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
-    {
+    if ((!readonly && allow_ddl) || (drop.database.empty() && context.tryGetExternalTable(drop.table) && readonly >= 2))
         return;
-    }
 
-    throw Exception("Cannot drop table in readonly mode", ErrorCodes::READONLY);
+    if (readonly)
+        throw Exception("Cannot drop table in readonly mode", ErrorCodes::READONLY);
+
+    throw Exception("Cannot drop table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 
 }

@@ -30,13 +30,13 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.at(0)).children;
 
     if (args.size() != 3)
-        throw Exception("Table function '" + getName() + "' requires exactly 3 arguments: source, format and structure.",
+        throw Exception("Table function '" + getName() + "' requires exactly 3 arguments: filename, format and structure.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     for (size_t i = 0; i < 3; ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string source = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+    std::string filename = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
     std::string format = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
     std::string structure = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
 
@@ -60,7 +60,7 @@ StoragePtr ITableFunctionFileLike::executeImpl(const ASTPtr & ast_function, cons
     }
 
     // Create table
-    StoragePtr storage = getStorage(source, format, sample_block, const_cast<Context &>(context));
+    StoragePtr storage = getStorage(filename, format, sample_block, const_cast<Context &>(context));
 
     storage->startup();
 

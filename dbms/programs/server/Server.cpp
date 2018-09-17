@@ -24,6 +24,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <IO/HTTPCommon.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
@@ -93,6 +94,8 @@ std::string Server::getDefaultCorePath() const
 int Server::main(const std::vector<std::string> & /*args*/)
 {
     Logger * log = &logger();
+
+    UseSSL use_ssl;
 
     registerFunctions();
     registerAggregateFunctions();
@@ -319,6 +322,12 @@ int Server::main(const std::vector<std::string> & /*args*/)
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
 
+#if USE_EMBEDDED_COMPILER
+    size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", std::numeric_limits<UInt64>::max());
+    if (compiled_expression_cache_size)
+        global_context->setCompiledExpressionCache(compiled_expression_cache_size);
+#endif
+
     /// Set path for format schema files
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path() + "/");
@@ -369,9 +378,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
 #if defined(__linux__)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
-        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, some performance statistics will be disabled."
+        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
                       " It could happen due to incorrect ClickHouse package installation."
-                      " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'");
+                      " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep /usr/bin/clickhouse'."
+                      " Note that it will not work on 'nosuid' mounted filesystems."
+                      " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
 #else
     LOG_INFO(log, "TaskStats is not implemented for this OS. IO accounting will be disabled.");
@@ -471,7 +482,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("https_port"))
                 {
 #if USE_POCO_NETSSL
-                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -509,7 +519,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("tcp_port_secure"))
                 {
 #if USE_POCO_NETSSL
-                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("tcp_port_secure"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.receive_timeout);
@@ -549,7 +558,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 if (config().has("interserver_https_port"))
                 {
 #if USE_POCO_NETSSL
-                    initSSL();
                     Poco::Net::SecureServerSocket socket;
                     auto address = socket_bind_listen(socket, listen_host, config().getInt("interserver_https_port"), /* secure = */ true);
                     socket.setReceiveTimeout(settings.http_receive_timeout);

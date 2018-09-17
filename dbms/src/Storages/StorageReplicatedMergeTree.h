@@ -193,6 +193,8 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
@@ -400,6 +402,14 @@ private:
     void queueUpdatingTask();
 
     void mutationsUpdatingTask();
+
+    /** Clone data from another replica.
+      * If replica can not be cloned throw Exception.
+      */
+    void cloneReplica(const String & source_replica, Coordination::Stat source_is_lost_stat, zkutil::ZooKeeperPtr & zookeeper);
+
+    /// Clone replica if it is lost.
+    void cloneReplicaIfNeeded(zkutil::ZooKeeperPtr zookeeper);
 
     /** Performs actions from the queue.
       */

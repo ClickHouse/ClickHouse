@@ -26,6 +26,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/RemoteBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Client/Connection.h>
@@ -403,6 +404,10 @@ public:
 }
 
 
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 int mainEntryClickHouseBenchmark(int argc, char ** argv)
 {
     using namespace DB;
@@ -454,6 +459,8 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             settings.set(#NAME, options[#NAME].as<std::string>());
         APPLY_FOR_SETTINGS(EXTRACT_SETTING)
         #undef EXTRACT_SETTING
+
+        UseSSL use_ssl;
 
         Benchmark benchmark(
             options["concurrency"].as<unsigned>(),

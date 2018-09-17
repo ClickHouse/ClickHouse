@@ -30,7 +30,6 @@ public:
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     bool isCategorial() const override { return true; }
-    bool isEnum() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
     bool isComparable() const override { return true; }
 };
@@ -64,6 +63,8 @@ public:
     const Values & getValues() const { return values; }
     std::string getName() const override { return type_name; }
     const char * getFamilyName() const override;
+
+    TypeIndex getTypeId() const override { return sizeof(FieldType) == 1 ? TypeIndex::Enum8 : TypeIndex::Enum16; }
 
     const StringRef & getNameForValue(const FieldType & value) const
     {

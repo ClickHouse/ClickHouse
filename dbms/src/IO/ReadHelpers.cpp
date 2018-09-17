@@ -9,6 +9,11 @@
 #include <IO/Operators.h>
 #include <common/find_first_symbols.h>
 #include <stdlib.h>
+#include <Common/memcpySmall.h>
+
+#if __SSE2__
+    #include <emmintrin.h>
+#endif
 
 namespace DB
 {
@@ -59,6 +64,11 @@ void parseUUID(const UInt8 * src36, std::reverse_iterator<UInt8 *> dst16)
     parseHex(&src36[14], dst16 + 14, 2);
     parseHex(&src36[19], dst16, 2);
     parseHex(&src36[24], dst16 + 2, 6);
+}
+
+UInt128 stringToUUID(const String & str)
+{
+    return parseFromString<UUID>(str);
 }
 
 static void __attribute__((__noinline__)) throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -158,17 +168,19 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 
 
 template <typename T>
-static void appendToStringOrVector(T & s, const char * begin, const char * end)
+static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
-    s.append(begin, end - begin);
+    s.append(rb.position(), end - rb.position());
 }
 
 template <>
-inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, const char * begin, const char * end)
+inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
-    s.insert(begin, end);    /// TODO memcpySmall
+    if (rb.isPadded())
+        s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
+    else
+        s.insert(rb.position(), end);
 }
-
 
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
@@ -177,7 +189,7 @@ void readStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\t', '\n'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (buf.hasPendingData())
@@ -199,7 +211,7 @@ void readStringUntilEOFInto(Vector & s, ReadBuffer & buf)
 {
     while (!buf.eof())
     {
-        appendToStringOrVector(s, buf.position(), buf.buffer().end());
+        appendToStringOrVector(s, buf, buf.buffer().end());
         buf.position() = buf.buffer().end();
 
         if (buf.hasPendingData())
@@ -370,7 +382,7 @@ void readEscapedStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\t', '\n', '\\'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
@@ -412,7 +424,7 @@ static void readAnyQuotedStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\\', quote>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
@@ -525,7 +537,7 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
             if (nullptr == next_pos)
                 next_pos = buf.buffer().end();
 
-            appendToStringOrVector(s, buf.position(), next_pos);
+            appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
 
             if (!buf.hasPendingData())
@@ -552,11 +564,32 @@ void readCSVStringInto(Vector & s, ReadBuffer & buf, const FormatSettings::CSV &
         while (!buf.eof())
         {
             char * next_pos = buf.position();
-            while (next_pos < buf.buffer().end()
-                && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')    /// NOTE You can make a SIMD version.
-                ++next_pos;
 
-            appendToStringOrVector(s, buf.position(), next_pos);
+            [&]()
+            {
+#if __SSE2__
+                auto rc = _mm_set1_epi8('\r');
+                auto nc = _mm_set1_epi8('\n');
+                auto dc = _mm_set1_epi8(delimiter);
+                for (; next_pos + 15 < buf.buffer().end(); next_pos += 16)
+                {
+                    __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(next_pos));
+                    auto eq = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(bytes, rc), _mm_cmpeq_epi8(bytes, nc)), _mm_cmpeq_epi8(bytes, dc));
+                    uint16_t bit_mask = _mm_movemask_epi8(eq);
+                    if (bit_mask)
+                    {
+                        next_pos += __builtin_ctz(bit_mask);
+                        return;
+                    }
+                }
+#endif
+                while (next_pos < buf.buffer().end()
+                    && *next_pos != delimiter && *next_pos != '\r' && *next_pos != '\n')
+                    ++next_pos;
+            }();
+
+
+            appendToStringOrVector(s, buf, next_pos);
             buf.position() = next_pos;
 
             if (!buf.hasPendingData())
@@ -606,7 +639,7 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf)
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
 
-        appendToStringOrVector(s, buf.position(), next_pos);
+        appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
         if (!buf.hasPendingData())
@@ -775,10 +808,10 @@ template void readDateTimeTextFallback<void>(time_t &, ReadBuffer &, const DateL
 template bool readDateTimeTextFallback<bool>(time_t &, ReadBuffer &, const DateLUTImpl &);
 
 
-void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
+void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 {
     if (buf.eof())
-        throw Exception("Unexpected EOF for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     else if (*buf.position() == '"') /// skip double-quoted string
     {
         NullSink sink;
@@ -791,7 +824,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
 
         double v;
         if (!tryReadFloatText(v, buf))
-            throw Exception("Expected a number field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            throw Exception("Expected a number field for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     }
     else if (*buf.position() == 'n') /// skip null
     {
@@ -818,7 +851,7 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
 
         while (true)
         {
-            skipJSONFieldPlain(buf, name_of_filed);
+            skipJSONField(buf, name_of_field);
             skipWhitespaceIfAny(buf);
 
             if (!buf.eof() && *buf.position() == ',')
@@ -832,16 +865,50 @@ void skipJSONFieldPlain(ReadBuffer & buf, const StringRef & name_of_filed)
                 break;
             }
             else
-                throw Exception("Unexpected symbol for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
         }
     }
-    else if (*buf.position() == '{') /// fail on objects
+    else if (*buf.position() == '{') /// skip whole object
     {
-        throw Exception("Unexpected nested field for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        ++buf.position();
+        skipWhitespaceIfAny(buf);
+
+        while (!buf.eof() && *buf.position() != '}')
+        {
+            // field name
+            if (*buf.position() == '"')
+            {
+                NullSink sink;
+                readJSONStringInto(sink, buf);
+            }
+            else
+                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+
+            // ':'
+            skipWhitespaceIfAny(buf);
+            if (buf.eof() || !(*buf.position() == ':'))
+                throw Exception("Unexpected symbol for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+            ++buf.position();
+            skipWhitespaceIfAny(buf);
+
+            skipJSONField(buf, name_of_field);
+            skipWhitespaceIfAny(buf);
+
+            // optional ','
+            if (!buf.eof() && *buf.position() == ',')
+            {
+                ++buf.position();
+                skipWhitespaceIfAny(buf);
+            }
+        }
+
+        if (buf.eof())
+            throw Exception("Unexpected EOF for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        ++buf.position();
     }
     else
     {
-        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_filed.toString() + "'", ErrorCodes::INCORRECT_DATA);
+        throw Exception("Unexpected symbol '" + std::string(*buf.position(), 1) + "' for key '" + name_of_field.toString() + "'", ErrorCodes::INCORRECT_DATA);
     }
 }
 

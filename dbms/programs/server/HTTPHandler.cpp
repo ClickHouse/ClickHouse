@@ -14,6 +14,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ZlibInflatingReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
@@ -212,9 +213,7 @@ void HTTPHandler::processQuery(
     Context context = server.context();
     context.setGlobalContext(server.context());
 
-    /// It will forcibly detach query even if unexpected error ocurred and detachQuery() was not called
-    /// Normal detaching is happen in BlockIO callbacks
-    CurrentThread::QueryScope query_scope_holder(context);
+    CurrentThread::QueryScope query_scope(context);
 
     LOG_TRACE(log, "Request URI: " << request.getURI());
 
@@ -644,6 +643,8 @@ void HTTPHandler::trySendExceptionToClient(const std::string & s, int exception_
 
 void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
+    setThreadName("HTTPHandler");
+
     Output used_output;
 
     /// In case of exception, send stack trace to client.

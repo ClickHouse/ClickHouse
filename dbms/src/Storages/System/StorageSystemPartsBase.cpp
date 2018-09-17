@@ -237,12 +237,11 @@ BlockInputStreams StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum processed_stage,
+        QueryProcessingStage::Enum /*processed_stage*/,
         const size_t /*max_block_size*/,
         const unsigned /*num_streams*/)
 {
     bool has_state_column = hasStateColumn(column_names);
-    checkQueryProcessingStage(processed_stage, context);
 
     StoragesInfoStream stream(query_info, context, has_state_column);
 

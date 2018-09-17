@@ -1,5 +1,5 @@
+#include <Common/config.h>
 #include <Functions/registerFunctions.h>
-
 #include <Functions/FunctionFactory.h>
 
 
@@ -38,10 +38,13 @@ void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsTransform(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
-void registerFunctionsCharset(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
 void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsProjection(FunctionFactory &);
+
+#if USE_ICU
+void registerFunctionConvertCharset(FunctionFactory &);
+#endif
 
 void registerFunctions()
 {
@@ -75,10 +78,13 @@ void registerFunctions()
     registerFunctionsMath(factory);
     registerFunctionsTransform(factory);
     registerFunctionsGeo(factory);
-    registerFunctionsCharset(factory);
     registerFunctionsNull(factory);
     registerFunctionsFindCluster(factory);
     registerFunctionsProjection(factory);
+
+#if USE_ICU
+    registerFunctionConvertCharset(factory);
+#endif
 }
 
 }

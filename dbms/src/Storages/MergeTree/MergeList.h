@@ -29,6 +29,7 @@ struct MergeInfo
     std::string table;
     std::string result_part_name;
     Array source_part_names;
+    std::string partition_id;
     Float64 elapsed;
     Float64 progress;
     UInt64 num_parts;
@@ -49,6 +50,7 @@ struct MergeListElement : boost::noncopyable
     const std::string database;
     const std::string table;
     const std::string result_part_name;
+    std::string partition_id;
     Stopwatch watch;
     std::atomic<Float64> progress{};
     UInt64 num_parts{};

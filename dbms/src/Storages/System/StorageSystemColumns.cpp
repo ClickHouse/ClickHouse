@@ -56,10 +56,9 @@ public:
         size_t max_block_size,
         ColumnPtr databases,
         ColumnPtr tables,
-        Storages storages,
-        const Context & context)
+        Storages storages)
         : columns_mask(columns_mask), header(header), max_block_size(max_block_size),
-        databases(databases), tables(tables), storages(std::move(storages)), total_tables(tables->size()), context(context) {}
+        databases(databases), tables(tables), storages(std::move(storages)), total_tables(tables->size()) {}
 
     String getName() const override { return "Columns"; }
     Block getHeader() const override { return header; }
@@ -192,7 +191,6 @@ private:
     Storages storages;
     size_t db_table_num = 0;
     size_t total_tables;
-    const Context context;
 };
 
 
@@ -200,11 +198,10 @@ BlockInputStreams StorageSystemColumns::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
 {
-    checkQueryProcessingStage(processed_stage, context);
     check(column_names);
 
     /// Create a mask of what columns are needed in the result.
@@ -222,18 +219,6 @@ BlockInputStreams StorageSystemColumns::read(
             columns_mask[i] = 1;
             res_block.insert(sample_block.getByPosition(i));
         }
-    }
-
-    /// Whe should exit quickly in case of LIMIT. This helps when we have extraordinarily huge number of tables.
-    std::optional<UInt64> limit;
-    {
-        const ASTSelectQuery * select = typeid_cast<const ASTSelectQuery *>(query_info.query.get());
-        if (!select)
-            throw Exception("Logical error: not a SELECT query in StorageSystemColumns::read method", ErrorCodes::LOGICAL_ERROR);
-        if (select->limit_length)
-            limit = typeid_cast<const ASTLiteral &>(*select->limit_length).value.get<UInt64>();
-        if (select->limit_offset)
-            *limit += typeid_cast<const ASTLiteral &>(*select->limit_offset).value.get<UInt64>();
     }
 
     Block block_to_filter;
@@ -278,16 +263,6 @@ BlockInputStreams StorageSystemColumns::read(
                     std::forward_as_tuple(iterator->table()));
                 table_column_mut->insert(table_name);
                 ++offsets[i];
-
-                if (limit && offsets[i] >= *limit)
-                    break;
-            }
-
-            if (limit && offsets[i] >= *limit)
-            {
-                offsets.resize(i);
-                database_column = database_column->cut(0, i);
-                break;
             }
         }
 
@@ -306,7 +281,7 @@ BlockInputStreams StorageSystemColumns::read(
 
     return {std::make_shared<ColumnsBlockInputStream>(
         std::move(columns_mask), std::move(res_block), max_block_size,
-        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages), context)};
+        std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages))};
 }
 
 }

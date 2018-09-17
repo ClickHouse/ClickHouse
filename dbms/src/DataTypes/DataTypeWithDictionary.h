@@ -20,6 +20,7 @@ public:
         return "LowCardinality(" + dictionary_type->getName() + ")";
     }
     const char * getFamilyName() const override { return "LowCardinality"; }
+    TypeIndex getTypeId() const override { return TypeIndex::LowCardinality; }
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
@@ -123,23 +124,16 @@ public:
     bool isComparable() const override { return dictionary_type->isComparable(); }
     bool canBeComparedWithCollation() const override { return dictionary_type->canBeComparedWithCollation(); }
     bool canBeUsedAsVersion() const override { return dictionary_type->canBeUsedAsVersion(); }
-    bool isSummable() const override { return dictionary_type->isSummable(); };
-    bool canBeUsedInBitOperations() const override { return dictionary_type->canBeUsedInBitOperations(); };
-    bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); };
-    bool isNumber() const override { return false; }
-    bool isInteger() const override { return false; }
-    bool isUnsignedInteger() const override { return false; }
-    bool isDateOrDateTime() const override { return false; }
+    bool isSummable() const override { return dictionary_type->isSummable(); }
+    bool canBeUsedInBitOperations() const override { return dictionary_type->canBeUsedInBitOperations(); }
+    bool canBeUsedInBooleanContext() const override { return dictionary_type->canBeUsedInBooleanContext(); }
     bool isValueRepresentedByNumber() const override { return dictionary_type->isValueRepresentedByNumber(); }
     bool isValueRepresentedByInteger() const override { return dictionary_type->isValueRepresentedByInteger(); }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool isString() const override { return false; }
-    bool isFixedString() const override { return false; }
     bool haveMaximumSizeOfValue() const override { return dictionary_type->haveMaximumSizeOfValue(); }
     size_t getMaximumSizeOfValueInMemory() const override { return dictionary_type->getMaximumSizeOfValueInMemory(); }
     size_t getSizeOfValueInMemory() const override { return dictionary_type->getSizeOfValueInMemory(); }
     bool isCategorial() const override { return false; }
-    bool isEnum() const override { return false; }
     bool isNullable() const override { return false; }
     bool onlyNull() const override { return false; }
     bool withDictionary() const override { return true; }

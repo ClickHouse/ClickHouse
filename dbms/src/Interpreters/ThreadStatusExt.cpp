@@ -34,7 +34,7 @@ String ThreadStatus::getQueryID()
     return {};
 }
 
-void ThreadStatus::defaultThreadDeleter()
+void CurrentThread::defaultThreadDeleter()
 {
     ThreadStatus & thread = *CurrentThread::get();
     LOG_TRACE(thread.log, "Thread " << thread.thread_number << " exited");
@@ -56,7 +56,6 @@ void ThreadStatus::initializeQuery()
 
     initPerformanceCounters();
     thread_state = ThreadState::AttachedToQuery;
-    current_thread_scope.deleter = ThreadStatus::defaultThreadDeleter;
 }
 
 void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool check_detached)
@@ -94,7 +93,6 @@ void ThreadStatus::attachQuery(const ThreadGroupStatusPtr & thread_group_, bool 
 
     initPerformanceCounters();
     thread_state = ThreadState::AttachedToQuery;
-    current_thread_scope.deleter = ThreadStatus::defaultThreadDeleter;
 }
 
 void ThreadStatus::finalizePerformanceCounters()
@@ -190,28 +188,30 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log)
     thread_log.add(elem);
 }
 
-
 void CurrentThread::initializeQuery()
 {
     get()->initializeQuery();
+    getScope()->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachTo(const ThreadGroupStatusPtr & thread_group)
 {
     get()->attachQuery(thread_group, true);
+    getScope()->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 void CurrentThread::attachToIfDetached(const ThreadGroupStatusPtr & thread_group)
 {
     get()->attachQuery(thread_group, false);
+    getScope()->deleter = CurrentThread::defaultThreadDeleter;
 }
 
 std::string CurrentThread::getCurrentQueryID()
 {
-    if (!current_thread || current_thread.use_count() <= 0)
+    if (!get() || get().use_count() <= 0)
         return {};
 
-    return current_thread->getQueryID();
+    return get()->getQueryID();
 }
 
 void CurrentThread::attachQueryContext(Context & query_context)

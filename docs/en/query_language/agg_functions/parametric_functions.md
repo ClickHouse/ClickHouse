@@ -52,19 +52,39 @@ Chains are searched for without overlapping. In other words, the next chain can 
 
 ## windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
 
-Window funnel matching for event chains, calculates the max event level in a sliding window.
+Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
-`window` is the timestamp window value, such as 3600.
+```
+windowFunnel(window)(timestamp, cond1, cond2, cond3, ...)
+```
 
-`timestamp` is the time of the event with the DateTime type or UInt32 type.
+**Parameters:**
 
-`cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event
+- `window` — Length of the sliding window in seconds.
+- `timestamp` — Name of the column containing the timestamp. Data type: [DateTime](../../data_types/datetime.md#data_type-datetime) or [UInt32](../../data_types/int_uint.md#data_type-int).
+- `cond1`, `cond2`... — Conditions or data describing the chain of events. Data type: `UInt8`. Values can be 0 or 1.
 
-Example: 
+**Algorithm**
 
-Consider you are doing a website analytics, intend to find out the user counts clicked login button (event = 1001), then the user counts followed by searched the phones( event = 1003 and product = 'phone'), then the user counts followed by made an order (event = 1009). And all event chains must be in a 3600 seconds sliding window. 
+- The function searches for data that triggers the first condition in the chain and sets the event counter to 1. This is the moment when the sliding window starts.
+- If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn't incremented.
+- If the data has multiple event chains at varying points of completion, the function will only output the size of the longest chain.
 
-This could be easily calculate by `windowFunnel`
+**Returned value**
+
+- Integer. The maximum number of consecutive triggered conditions from the chain within the sliding time window. All the chains in the selection are analyzed.
+
+**Example**
+
+Determine if one hour is enough for the user to select a phone and purchase it in the online store.
+
+Set the following chain of events:
+
+1. The user logged in to their account on the store (`eventID=1001`).
+2. The user searches for a phone (`eventID = 1003, product = 'phone'`).
+3. The user placed an order (`eventID = 1009`).
+
+To find out how far the user `user_id` could get through the chain in an hour in January of 2017, make the query:
 
 ```
 SELECT
@@ -74,7 +94,7 @@ FROM
 (
     SELECT
         user_id,
-        windowFunnel(3600)(timestamp, event_id = 1001, event_id = 1003 AND product = 'phone', event_id = 1009) AS level
+        windowFunnel(3600)(timestamp, eventID = 1001, eventID = 1003 AND product = 'phone', eventID = 1009) AS level
     FROM trend_event
     WHERE (event_date >= '2017-01-01') AND (event_date <= '2017-01-31')
     GROUP BY user_id
@@ -91,26 +111,26 @@ Retention refers to the ability of a company or product to retain its customers 
 
 `cond1`, `cond2` ... is from one to 32 arguments of type UInt8 that indicate whether a certain condition was met for the event
 
-Example: 
+Example:
 
 Consider you are doing a website analytics, intend to calculate the retention of customers
 
 This could be easily calculate by `retention`
 
 ```
-SELECT 
-    sum(r[1]) AS r1, 
-    sum(r[2]) AS r2, 
+SELECT
+    sum(r[1]) AS r1,
+    sum(r[2]) AS r2,
     sum(r[3]) AS r3
-FROM 
+FROM
 (
-    SELECT 
+    SELECT
         uid, 
         retention(date = '2018-08-10', date = '2018-08-11', date = '2018-08-12') AS r
-    FROM events 
+    FROM events
     WHERE date IN ('2018-08-10', '2018-08-11', '2018-08-12')
     GROUP BY uid
-) 
+)
 ```
 
 Simply, `r1` means the number of unique visitors who met the `cond1` condition, `r2` means the number of unique visitors who met `cond1` and `cond2` conditions, `r3` means the number of unique visitors who met `cond1` and `cond3` conditions.
@@ -135,4 +155,3 @@ Usage example:
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
-
