@@ -27,14 +27,14 @@ public:
     void syncAfterError() override;
 
 private:
-    const String& columnName(size_t i) const;
-    size_t columnIndex(const StringRef& name) const;
+    const String & columnName(size_t i) const;
+    size_t columnIndex(const StringRef & name) const;
     bool advanceToNextKey(size_t key_index);
-    void skipUnknownField(const StringRef& name_ref);
+    void skipUnknownField(const StringRef & name_ref);
     StringRef readColumnName(ReadBuffer & buf);
     void readField(size_t index, MutableColumns & columns);
     void readJSONObject(MutableColumns & columns);
-    void readNestedData(const String& name, MutableColumns & columns);
+    void readNestedData(const String & name, MutableColumns & columns);
 
 private:
     ReadBuffer & istr;
@@ -55,7 +55,7 @@ private:
     /// the nested column names are 'n.i' and 'n.s' and the nested prefix is 'n.'
     size_t nested_prefix_length = 0;
 
-    std::vector<bool> read_columns;
+    std::vector<UInt8> read_columns;
 
     /// Hash table match `field name -> position in the block`. NOTE You can use perfect hash map.
     using NameMap = HashMap<StringRef, size_t, StringRefHash>;
