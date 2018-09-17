@@ -1,5 +1,8 @@
 #pragma once
 
+#include <Interpreters/Context.h>
+#include <Common/config.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Settings.h>
 #include <Core/Names.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -61,6 +64,8 @@ public:
 
         /// Reorder and rename the columns, delete the extra ones. The same column names are allowed in the result.
         PROJECT,
+        /// Add columns with alias names. This columns are the same as non-aliased. PROJECT columns if you need to modify them.
+        ADD_ALIASES,
     };
 
     Type type;
@@ -69,6 +74,9 @@ public:
     std::string source_name;
     std::string result_name;
     DataTypePtr result_type;
+
+    /// If COPY_COLUMN can replace the result column.
+    bool can_replace = false;
 
     /// For conditional projections (projections on subset of rows)
     std::string row_projection_column;
@@ -81,6 +89,7 @@ public:
     FunctionBuilderPtr function_builder;
     FunctionBasePtr function;
     Names argument_names;
+    bool is_function_compiled = false;
 
     /// For ARRAY_JOIN
     NameSet array_joined_columns;
@@ -103,9 +112,10 @@ public:
                                       const std::string & row_projection_column,
                                       bool is_row_projection_complementary);
     static ExpressionAction removeColumn(const std::string & removed_name);
-    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
+    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace = false);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
+    static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
     static ExpressionAction ordinaryJoin(std::shared_ptr<const Join> join_, const Names & join_key_names_left,
                                          const NamesAndTypesList & columns_added_by_join_);
@@ -114,6 +124,13 @@ public:
     Names getNeededColumns() const;
 
     std::string toString() const;
+
+    bool operator==(const ExpressionAction & other) const;
+
+    struct ActionHash
+    {
+        UInt128 operator()(const ExpressionAction & action) const;
+    };
 
 private:
     friend class ExpressionActions;
@@ -132,16 +149,20 @@ class ExpressionActions
 public:
     using Actions = std::vector<ExpressionAction>;
 
-    ExpressionActions(const NamesAndTypesList & input_columns_, const Settings & settings_)
-        : input_columns(input_columns_), settings(settings_)
+    ExpressionActions(const NamesAndTypesList & input_columns_, const Context & context_)
+        : input_columns(input_columns_), settings(context_.getSettingsRef())
     {
         for (const auto & input_elem : input_columns)
             sample_block.insert(ColumnWithTypeAndName(nullptr, input_elem.type, input_elem.name));
+
+#if USE_EMBEDDED_COMPILER
+    compilation_cache = context_.getCompiledExpressionCache();
+#endif
     }
 
     /// For constant columns the columns themselves can be contained in `input_columns_`.
-    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Settings & settings_)
-        : settings(settings_)
+    ExpressionActions(const ColumnsWithTypeAndName & input_columns_, const Context & context_)
+        : settings(context_.getSettingsRef())
     {
         for (const auto & input_elem : input_columns_)
         {
@@ -166,7 +187,7 @@ public:
 
     /// Add the specified ARRAY JOIN action to the beginning. Change the appropriate input types to arrays.
     /// If there are unknown columns in the ARRAY JOIN list, take their types from sample_block, and immediately after ARRAY JOIN remove them.
-    void prependArrayJoin(const ExpressionAction & action, const Block & sample_block);
+    void prependArrayJoin(const ExpressionAction & action, const Block & sample_block_before);
 
     /// If the last action is ARRAY JOIN, and it does not affect the columns from required_columns, discard and return it.
     /// Change the corresponding output types to arrays.
@@ -210,11 +231,30 @@ public:
 
     BlockInputStreamPtr createStreamWithNonJoinedDataIfFullOrRightJoin(const Block & source_header, size_t max_block_size) const;
 
+    const Settings & getSettings() const { return settings; }
+
+
+    struct ActionsHash
+    {
+        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        {
+            SipHash hash;
+            for (const ExpressionAction & act : actions)
+                hash.update(ExpressionAction::ActionHash{}(act));
+            UInt128 result;
+            hash.get128(result.low, result.high);
+            return result;
+        }
+    };
+
 private:
     NamesAndTypesList input_columns;
     Actions actions;
     Block sample_block;
     Settings settings;
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compilation_cache;
+#endif
 
     void checkLimits(Block & block) const;
 
@@ -238,6 +278,8 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   */
 struct ExpressionActionsChain
 {
+    ExpressionActionsChain(const Context & context_)
+        : context(context_) {}
     struct Step
     {
         ExpressionActionsPtr actions;
@@ -256,7 +298,7 @@ struct ExpressionActionsChain
 
     using Steps = std::vector<Step>;
 
-    Settings settings;
+    const Context & context;
     Steps steps;
 
     void addStep();

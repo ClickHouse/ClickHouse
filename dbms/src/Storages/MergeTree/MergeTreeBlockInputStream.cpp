@@ -77,8 +77,8 @@ MergeTreeBlockInputStream::MergeTreeBlockInputStream(
         }
     }
 
-    injectVirtualColumns(header);
     executePrewhereActions(header, prewhere_info);
+    injectVirtualColumns(header);
 
     ordered_names = getHeader().getNames();
 }
@@ -109,7 +109,10 @@ try
 
     if (prewhere_info)
     {
-        pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
+        if (prewhere_info->alias_actions)
+            pre_column_names = prewhere_info->alias_actions->getRequiredColumns();
+        else
+            pre_column_names = prewhere_info->prewhere_actions->getRequiredColumns();
 
         if (pre_column_names.empty())
             pre_column_names.push_back(column_names[0]);
@@ -155,12 +158,13 @@ try
     MarkRanges remaining_mark_ranges = all_mark_ranges;
     std::reverse(remaining_mark_ranges.begin(), remaining_mark_ranges.end());
 
-    auto size_predictor = (preferred_block_size_bytes == 0) ? nullptr
-                          : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
+    auto size_predictor = (preferred_block_size_bytes == 0)
+        ? nullptr
+        : std::make_unique<MergeTreeBlockSizePredictor>(data_part, ordered_names, data_part->storage.getSampleBlock());
 
     task = std::make_unique<MergeTreeReadTask>(
-            data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, columns, pre_columns,
-            prewhere_info && prewhere_info->remove_prewhere_column, should_reorder, std::move(size_predictor));
+        data_part, remaining_mark_ranges, part_index_in_query, ordered_names, column_name_set, columns, pre_columns,
+        prewhere_info && prewhere_info->remove_prewhere_column, should_reorder, std::move(size_predictor));
 
     if (!reader)
     {

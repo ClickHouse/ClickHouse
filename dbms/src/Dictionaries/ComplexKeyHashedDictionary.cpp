@@ -244,8 +244,8 @@ void ComplexKeyHashedDictionary::blockToAttributes(const Block & block)
 
         for (const auto attribute_idx : ext::range(0, attributes_size))
         {
-            const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
-            auto &attribute = attributes[attribute_idx];
+            const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+            auto & attribute = attributes[attribute_idx];
             const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
             if (!inserted)
                 should_rollback = true;
@@ -289,7 +289,7 @@ void ComplexKeyHashedDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
 
         stream->readPrefix();
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
             {

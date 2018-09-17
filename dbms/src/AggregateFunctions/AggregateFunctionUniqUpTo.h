@@ -82,7 +82,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
 
         /// Write values only if the state is not overflowed. Otherwise, they are not needed, and only the fact that the state is overflowed is important.
         if (count <= threshold)
-            wb.write(reinterpret_cast<const char *>(&data[0]), count * sizeof(data[0]));
+            wb.write(reinterpret_cast<const char *>(data), count * sizeof(data[0]));
     }
 
     void read(ReadBuffer & rb, UInt8 threshold)
@@ -90,7 +90,7 @@ struct __attribute__((__packed__)) AggregateFunctionUniqUpToData
         readBinary(count, rb);
 
         if (count <= threshold)
-            rb.read(reinterpret_cast<char *>(&data[0]), count * sizeof(data[0]));
+            rb.read(reinterpret_cast<char *>(data), count * sizeof(data[0]));
     }
 
     void add(const IColumn & column, size_t row_num, UInt8 threshold)

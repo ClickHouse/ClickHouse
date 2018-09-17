@@ -52,7 +52,7 @@ void DataTypeFixedString::deserializeBinary(Field & field, ReadBuffer & istr) co
     field = String();
     String & s = get<String &>(field);
     s.resize(n);
-    istr.readStrict(&s[0], n);
+    istr.readStrict(s.data(), n);
 }
 
 
@@ -88,7 +88,8 @@ void DataTypeFixedString::serializeBinaryBulk(const IColumn & column, WriteBuffe
     if (limit == 0 || offset + limit > size)
         limit = size - offset;
 
-    ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
+    if (limit)
+        ostr.write(reinterpret_cast<const char *>(&data[n * offset]), n * limit);
 }
 
 

@@ -37,8 +37,9 @@ class AggregateFunctionTopKDateTime : public AggregateFunctionTopK<DataTypeDateT
 
 static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type, UInt64 threshold)
 {
-    if (typeid_cast<const DataTypeDate *>(argument_type.get())) return new AggregateFunctionTopKDate(threshold);
-    if (typeid_cast<const DataTypeDateTime *>(argument_type.get())) return new AggregateFunctionTopKDateTime(threshold);
+    WhichDataType which(argument_type);
+    if (which.idx == TypeIndex::Date) return new AggregateFunctionTopKDate(threshold);
+    if (which.idx == TypeIndex::DateTime) return new AggregateFunctionTopKDateTime(threshold);
 
     /// Check that we can use plain version of AggregateFunctionTopKGeneric
     if (argument_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion())

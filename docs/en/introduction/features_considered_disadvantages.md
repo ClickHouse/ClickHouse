@@ -1,6 +1,5 @@
 # ClickHouse Features that Can be Considered Disadvantages
 
 1. No full-fledged transactions.
-2. Lack of ability to modify or delete already inserted data with high rate and low latency. There are batch deletes available to clean up data that is not needed anymore or to comply with [GDPR](https://gdpr-info.eu). Batch updates are currently in development as of July 2018.
-3. Sparse index makes ClickHouse not really suitable for point queries retrieving single rows by their keys.
-
+2. Lack of ability to modify or delete already inserted data with high rate and low latency. There are batch deletes and updates available to clean up or modify data, for example to comply with [GDPR](https://gdpr-info.eu).
+3. The sparse index makes ClickHouse not really suitable for point queries retrieving single rows by their keys.

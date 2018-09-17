@@ -47,7 +47,7 @@
       {% endif %}
     {% endblock %}
     {% block styles %}
-      <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application.ac64251e.css">
+      <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application.2a88008a.css">
       {% if palette.primary or palette.accent %}
         <link rel="stylesheet" href="{{ base_url }}/assets/stylesheets/application-palette.792431c1.css">
       {% endif %}
@@ -67,18 +67,13 @@
     {% endfor %}
     {% block extrahead %}{% endblock %}
   </head>
+  {% set direction = config.theme.direction %}
   {% if palette.primary or palette.accent %}
     {% set primary = palette.primary | replace(" ", "-") | lower %}
     {% set accent  = palette.accent  | replace(" ", "-") | lower %}
-    {% if palette.primary and palette.accent %}
-      <body data-md-color-primary="{{ primary }}" data-md-color-accent="{{ accent }}">
-    {% elif palette.primary %}
-      <body data-md-color-primary="{{ primary }}">
-    {% elif palette.accent %}
-      <body data-md-color-accent="{{ accent }}">
-    {% endif %}
+    <body dir="{{ direction }}" data-md-color-primary="{{ primary }}" data-md-color-accent="{{ accent }}">
   {% else %}
-    <body>
+    <body dir="{{ direction }}">
   {% endif %}
     <svg class="md-svg">
       <defs>

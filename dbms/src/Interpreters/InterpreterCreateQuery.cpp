@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -365,15 +366,15 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
         {
             if (!allow_low_cardinality && column.type && column.type->withDictionary())
             {
-                String message = "Cannot create table with column " + column.name + " which type is "
-                                 + column.type->getName() + " because LowCardinality type is not allowed. "
+                String message = "Cannot create table with column '" + column.name + "' which type is '"
+                                 + column.type->getName() + "' because LowCardinality type is not allowed. "
                                  + "Set setting allow_experimental_low_cardinality_type = 1 in order to allow it.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
-            if (!allow_decimal && column.type && isDecimal(*column.type))
+            if (!allow_decimal && column.type && isDecimal(column.type))
             {
-                String message = "Cannot create table with column " + column.name + " which type is " + column.type->getName()
-                                 + ". Set setting allow_experimental_decimal_type = 1 in order to allow it.";
+                String message = "Cannot create table with column '" + column.name + "' which type is '" + column.type->getName()
+                                 + "'. Set setting allow_experimental_decimal_type = 1 in order to allow it.";
                 throw Exception(message, ErrorCodes::ILLEGAL_COLUMN);
             }
         }
@@ -576,9 +577,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             context.getSessionContext().addExternalTable(table_name, res, query_ptr);
         else
             database->createTable(context, table_name, res, query_ptr);
-    }
 
-    res->startup();
+        /// We must call "startup" and "shutdown" while holding DDLGuard.
+        /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup
+        /// (in case when table was created and instantly dropped before started up)
+        ///
+        /// Method "startup" may create background tasks and method "shutdown" will wait for them.
+        /// But if "shutdown" is called before "startup", it will exit early, because there are no background tasks to wait.
+        /// Then background task is created by "startup" method. And when destructor of a table object is called, background task is still active,
+        /// and the task will use references to freed data.
+
+        res->startup();
+    }
 
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
@@ -591,6 +601,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
         insert->table = table_name;
         insert->select = create.select->clone();
+
+        if (create.is_temporary && !context.getSessionContext().hasQueryContext())
+            context.getSessionContext().setQueryContext(context.getSessionContext());
 
         return InterpreterInsertQuery(insert,
             create.is_temporary ? context.getSessionContext() : context,
@@ -625,23 +638,26 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.readonly;
+    auto allow_ddl = settings.allow_ddl;
 
-    if (!readonly)
-    {
+    if (!readonly && allow_ddl)
         return;
-    }
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
     {
-        throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+        if (readonly)
+            throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+
+        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
 
     if (create.is_temporary && readonly >= 2)
-    {
         return;
-    }
 
-    throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+    if (readonly)
+        throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+
+    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 }

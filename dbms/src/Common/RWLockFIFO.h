@@ -40,7 +40,7 @@ private:
         int thread_number = 0;
         std::time_t enqueue_time = 0;
         std::time_t start_time = 0;
-        Type type;
+        Type type = Read;
     };
 
 public:

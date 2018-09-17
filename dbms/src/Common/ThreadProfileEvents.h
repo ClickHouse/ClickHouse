@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/Types.h>
 #include <Common/ProfileEvents.h>
-
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <pthread.h>
@@ -12,6 +12,9 @@
 struct taskstats {};
 #endif
 
+
+/** Implement ProfileEvents with statistics about resource consumption of the current thread.
+  */
 
 namespace ProfileEvents
 {

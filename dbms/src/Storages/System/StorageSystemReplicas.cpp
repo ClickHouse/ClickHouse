@@ -55,12 +55,11 @@ BlockInputStreams StorageSystemReplicas::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     check(column_names);
-    checkQueryProcessingStage(processed_stage, context);
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
@@ -75,14 +74,14 @@ BlockInputStreams StorageSystemReplicas::read(
     }
 
 
-    /// Do you need columns that require a walkthrough in ZooKeeper to compute.
+    /// Do you need columns that require a ZooKeeper request to compute.
     bool with_zk_fields = false;
-    for (const auto & name : column_names)
+    for (const auto & column_name : column_names)
     {
-        if (   name == "log_max_index"
-            || name == "log_pointer"
-            || name == "total_replicas"
-            || name == "active_replicas")
+        if (   column_name == "log_max_index"
+            || column_name == "log_pointer"
+            || column_name == "total_replicas"
+            || column_name == "active_replicas")
         {
             with_zk_fields = true;
             break;

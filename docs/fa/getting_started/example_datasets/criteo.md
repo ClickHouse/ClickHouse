@@ -1,4 +1,4 @@
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 # ترابایت از لاگ های کلیک از سرویس Criteo
 
@@ -12,7 +12,7 @@
 CREATE TABLE criteo_log (date Date, clicked UInt8, int1 Int32, int2 Int32, int3 Int32, int4 Int32, int5 Int32, int6 Int32, int7 Int32, int8 Int32, int9 Int32, int10 Int32, int11 Int32, int12 Int32, int13 Int32, cat1 String, cat2 String, cat3 String, cat4 String, cat5 String, cat6 String, cat7 String, cat8 String, cat9 String, cat10 String, cat11 String, cat12 String, cat13 String, cat14 String, cat15 String, cat16 String, cat17 String, cat18 String, cat19 String, cat20 String, cat21 String, cat22 String, cat23 String, cat24 String, cat25 String, cat26 String) ENGINE = Log
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 داده ها را دانلود کنید:
 
@@ -22,7 +22,7 @@ CREATE TABLE criteo_log (date Date, clicked UInt8, int1 Int32, int2 Int32, int3 
 for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=example-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 یک جدول برای داده های تبدیل شده ایجاد کنید:
 
@@ -75,7 +75,7 @@ CREATE TABLE criteo
 ) ENGINE = MergeTree(date, intHash32(icat1), (date, intHash32(icat1)), 8192)
 ```
 
-<div dir="rtl">
+<div dir="rtl" markdown="1">
 
 داده ها را از لاگ raw انتقال و به جدول دوم وارد کنید:
 

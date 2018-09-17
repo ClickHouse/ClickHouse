@@ -19,6 +19,8 @@ public:
         return "String";
     }
 
+    TypeIndex getTypeId() const override { return TypeIndex::String; }
+
     void serializeBinary(const Field & field, WriteBuffer & ostr) const override;
     void deserializeBinary(Field & field, ReadBuffer & istr) const override;
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
@@ -57,7 +59,6 @@ public:
     bool isComparable() const override { return true; }
     bool canBeComparedWithCollation() const override { return true; }
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
-    bool isString() const override { return true; }
     bool isCategorial() const override { return true; }
     bool canBeInsideNullable() const override { return true; }
 };

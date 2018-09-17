@@ -21,6 +21,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/UseSSL.h>
 #include <Interpreters/Settings.h>
 #include <common/ThreadPool.h>
 #include <common/getMemoryAmount.h>
@@ -30,6 +31,11 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/XML/XMLStream.h>
 #include <Common/InterruptListener.h>
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
+#endif
+
 
 /** Tests launcher for ClickHouse.
   * The tool walks through given or default folder in order to find files with
@@ -1387,6 +1393,7 @@ static void getFilesFromDir(const fs::path & dir, std::vector<String> & input_fi
     }
 }
 
+
 int mainEntryClickHousePerformanceTest(int argc, char ** argv)
 try
 {
@@ -1482,6 +1489,8 @@ try
     Strings skip_names_regexp = options.count("skip-names-regexp") ? options["skip-names-regexp"].as<Strings>() : Strings({});
 
     auto timeouts = DB::ConnectionTimeouts::getTCPTimeoutsWithoutFailover(DB::Settings());
+
+    DB::UseSSL use_ssl;
 
     DB::PerformanceTest performanceTest(options["host"].as<String>(),
         options["port"].as<UInt16>(),

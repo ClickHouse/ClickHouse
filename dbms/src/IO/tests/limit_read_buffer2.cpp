@@ -18,7 +18,7 @@ try
 
         std::string dst;
 
-        ReadBuffer in(&src[0], src.size(), 0);
+        ReadBuffer in(src.data(), src.size(), 0);
 
         LimitReadBuffer limit_in(in, 1, false);
 
@@ -47,7 +47,7 @@ try
     }
     {
         std::string src = "abc";
-        ReadBuffer in(&src[0], src.size(), 0);
+        ReadBuffer in(src.data(), src.size(), 0);
 
         std::string dst;
 
@@ -99,7 +99,7 @@ try
 
     {
         std::string src = "abc";
-        ReadBuffer in(&src[0], src.size(), 0);
+        ReadBuffer in(src.data(), src.size(), 0);
 
         {
             LimitReadBuffer limit_in(in, 1, false);

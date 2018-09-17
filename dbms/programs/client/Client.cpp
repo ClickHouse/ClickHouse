@@ -41,6 +41,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/UseSSL.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataStreams/InternalTextLogsRowOutputStream.h>
 #include <Parsers/ParserQuery.h>
@@ -61,6 +62,10 @@
 
 #if USE_READLINE
 #include "Suggest.h"
+#endif
+
+#ifndef __clang__
+#pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
 
 
@@ -291,6 +296,8 @@ private:
 
     int mainImpl()
     {
+        UseSSL use_ssl;
+
         registerFunctions();
         registerAggregateFunctions();
 
@@ -420,9 +427,8 @@ private:
                 rl_completion_entry_function = Suggest::generator;
             }
             else
-#else
-            /// Turn tab completion off.
-            rl_bind_key('\t', rl_insert);
+                /// Turn tab completion off.
+                rl_bind_key('\t', rl_insert);
 #endif
             /// Load command history if present.
             if (config().has("history_file"))
@@ -554,7 +560,7 @@ private:
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(STDIN_FILENO, &fds);
-        return select(1, &fds, 0, 0, &timeout) == 1;
+        return select(1, &fds, nullptr, nullptr, &timeout) == 1;
     }
 
     inline const String prompt() const

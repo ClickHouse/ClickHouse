@@ -241,7 +241,7 @@ void LogBlockInputStream::readData(const String & name, const IDataType & type, 
 
     auto createStringGetter = [&](bool stream_for_prefix)
     {
-        return [&] (const IDataType::SubstreamPath & path) -> ReadBuffer *
+        return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
             String stream_name = IDataType::getFileNameForStream(name, path);
 
@@ -572,11 +572,10 @@ BlockInputStreams StorageLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     check(column_names);
     loadMarks();
 

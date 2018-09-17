@@ -76,6 +76,12 @@ class ClickHouseCluster:
         self.is_up = False
 
 
+    def get_client_cmd(self):
+        cmd = self.client_bin_path
+        if p.basename(cmd) == 'clickhouse':
+            cmd += " client"
+        return cmd
+
     def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, hostname=None, env_variables={}, image="ubuntu:14.04"):
         """Add an instance to the cluster.
 
@@ -147,7 +153,7 @@ class ClickHouseCluster:
                 print "Mysql Started"
                 return
             except Exception as ex:
-                print "Can't connecto to MySQL " + str(ex)
+                print "Can't connect to MySQL " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait MySQL container")
@@ -162,7 +168,7 @@ class ClickHouseCluster:
                 print "All instances of ZooKeeper started"
                 return
             except Exception as ex:
-                print "Can't connec to to ZooKeeper " + str(ex)
+                print "Can't connect to ZooKeeper " + str(ex)
                 time.sleep(0.5)
 
         raise Exception("Cannot wait ZooKeeper container")
@@ -188,23 +194,23 @@ class ClickHouseCluster:
         self.docker_client = docker.from_env(version=self.docker_api_version)
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
-            subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
+            subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
-            self.wait_zookeeper_to_start()
+            self.wait_zookeeper_to_start(120)
 
         if self.with_mysql and self.base_mysql_cmd:
-            subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
+            subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.wait_mysql_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
-            subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
+            subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
         # Uncomment for debugging
         #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
 
-        subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
+        subprocess.check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -322,8 +328,24 @@ class ClickHouseInstance:
         self.image = image
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, *args, **kwargs):
-        return self.client.query(*args, **kwargs)
+    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False):
+        return self.client.query(sql, stdin, timeout, settings, user, ignore_error)
+
+    def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, ignore_error=False, retry_count=20, sleep_time=0.5, check_callback=lambda x: True):
+        result = None
+        for i in range(retry_count):
+            try:
+                result = self.query(sql, stdin, timeout, settings, user, ignore_error)
+                if check_callback(result):
+                    return result
+                time.sleep(sleep_time)
+            except Exception as ex:
+                print "Retry {} got exception {}".format(i + 1, ex)
+                time.sleep(sleep_time)
+
+        if result is not None:
+            return result
+        raise Exception("Can't execute query {}".format(sql))
 
     # As query() but doesn't wait response and returns response handler
     def get_query_request(self, *args, **kwargs):

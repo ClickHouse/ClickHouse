@@ -11,13 +11,34 @@ namespace
 {
 
 template <typename T>
-using AggregateFunctionSumSimple = AggregateFunctionSum<T, typename NearestFieldType<T>::Type, AggregateFunctionSumData<typename NearestFieldType<T>::Type>>;
+struct SumSimple
+{
+    /// @note It uses slow Decimal128 (cause we need such a variant). sumWithOverflow is faster for Decimal32/64
+    using ResultType = std::conditional_t<IsDecimalNumber<T>, Decimal128, typename NearestFieldType<T>::Type>;
+    using AggregateDataType = AggregateFunctionSumData<ResultType>;
+    using Function = AggregateFunctionSum<T, ResultType, AggregateDataType>;
+};
 
 template <typename T>
-using AggregateFunctionSumWithOverflow = AggregateFunctionSum<T, T, AggregateFunctionSumData<T>>;
+struct SumSameType
+{
+    using ResultType = T;
+    using AggregateDataType = AggregateFunctionSumData<ResultType>;
+    using Function = AggregateFunctionSum<T, ResultType, AggregateDataType>;
+};
 
 template <typename T>
-using AggregateFunctionSumKahan = AggregateFunctionSum<T, Float64, AggregateFunctionSumKahanData<Float64>>;
+struct SumKahan
+{
+    using ResultType = Float64;
+    using AggregateDataType = AggregateFunctionSumKahanData<ResultType>;
+    using Function = AggregateFunctionSum<T, ResultType, AggregateDataType>;
+};
+
+template <typename T> using AggregateFunctionSumSimple = typename SumSimple<T>::Function;
+template <typename T> using AggregateFunctionSumWithOverflow = typename SumSameType<T>::Function;
+template <typename T> using AggregateFunctionSumKahan =
+    std::conditional_t<IsDecimalNumber<T>, typename SumSimple<T>::Function, typename SumKahan<T>::Function>;
 
 
 template <template <typename> class Function>
@@ -26,11 +47,16 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
 
-    AggregateFunctionPtr res(createWithNumericType<Function>(*argument_types[0]));
+    AggregateFunctionPtr res;
+    DataTypePtr data_type = argument_types[0];
+    if (isDecimal(data_type))
+        res.reset(createWithDecimalType<Function>(*data_type));
+    else
+        res.reset(createWithNumericType<Function>(*data_type));
 
     if (!res)
-        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
+        throw Exception("Illegal type " + argument_types[0]->getName() + " of argument for aggregate function " + name,
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     return res;
 }
 

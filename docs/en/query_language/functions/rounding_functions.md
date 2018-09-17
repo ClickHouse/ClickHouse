@@ -18,9 +18,41 @@ Returns the smallest round number that is greater than or equal to 'x'. In every
 
 ## round(x\[, N\])
 
-Returns the round number nearest to 'num', which may be less than, greater than, or equal to 'x'.If 'x' is exactly in the middle between the nearest round numbers, one of them is returned (implementation-specific).
-The number '-0.' may or may not be considered round (implementation-specific).
-In every other way, this function is the same as 'floor' and 'ceil' described above.
+Implements [banker's rounding](https://en.wikipedia.org/wiki/Rounding#Round_half_to_even), i.e., rounding to the nearest even integer.
+
+**Function arguments:**
+
+- `x` — the number to be rounded. [Type](../../data_types/index.md#data_types) —  any number.
+- `N`—  the position of the number after the decimal point to round the number to.
+
+**Returned value:**
+
+The rounded number of the same type as the input number `x`
+
+**Example:**
+
+```sql
+SELECT
+    number / 2 AS x,
+    round(x)
+FROM system.numbers
+LIMIT 10
+```
+
+```
+┌───x─┬─round(divide(number, 2))─┐
+│   0 │                        0 │
+│ 0.5 │                        0 │
+│   1 │                        1 │
+│ 1.5 │                        2 │
+│   2 │                        2 │
+│ 2.5 │                        2 │
+│   3 │                        3 │
+│ 3.5 │                        4 │
+│   4 │                        4 │
+│ 4.5 │                        4 │
+└─────┴──────────────────────────┘
+```
 
 ## roundToExp2(num)
 

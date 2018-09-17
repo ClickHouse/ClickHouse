@@ -2,6 +2,7 @@
 
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/AlignedBuffer.h>
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -74,7 +75,7 @@ private:
         IAggregateFunction::AddFunc add_function = nullptr;
         std::vector<size_t> column_numbers;
         MutableColumnPtr merged_column;
-        std::vector<char> state;
+        AlignedBuffer state;
         bool created = false;
 
         /// In case when column has type AggregateFunction: use the aggregate function from itself instead of 'function' above.
@@ -84,7 +85,7 @@ private:
         {
             function = AggregateFunctionFactory::instance().get(function_name, argument_types);
             add_function = function->getAddressOfAddFunction();
-            state.resize(function->sizeOfData());
+            state.reset(function->sizeOfData(), function->alignOfData());
         }
 
         void createState()

@@ -7,7 +7,7 @@
 #include <common/find_first_symbols.h>
 #include <common/StringRef.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsString.h>
+#include <Functions/FunctionStringToString.h>
 #include <Functions/FunctionsStringArray.h>
 #include <port/memrchr.h>
 
@@ -584,7 +584,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -669,7 +669,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -746,7 +746,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -841,7 +841,7 @@ public:
 
     static void checkArguments(const DataTypes & arguments)
     {
-        if (!arguments[0]->isString())
+        if (!isString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
@@ -989,7 +989,7 @@ struct CutSubstringImpl
         {
             const char * current = reinterpret_cast<const char *>(&data[prev_offset]);
             Extractor::execute(current, offsets[i] - prev_offset - 1, start, length);
-            size_t start_index = start - reinterpret_cast<const char *>(&data[0]);
+            size_t start_index = start - reinterpret_cast<const char *>(data.data());
 
             res_data.resize(res_data.size() + offsets[i] - prev_offset - length);
             memcpySmallAllowReadWriteOverflow15(

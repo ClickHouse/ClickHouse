@@ -1,5 +1,6 @@
 #include <Common/config.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/Join.h>
@@ -17,6 +18,7 @@
 namespace ProfileEvents
 {
     extern const Event FunctionExecute;
+    extern const Event CompiledFunctionExecute;
 }
 
 namespace DB
@@ -58,7 +60,8 @@ Names ExpressionAction::getNeededColumns() const
 }
 
 
-ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & function_,
+ExpressionAction ExpressionAction::applyFunction(
+    const FunctionBuilderPtr & function_,
     const std::vector<std::string> & argument_names_,
     std::string result_name_,
     const std::string & row_projection_column)
@@ -84,9 +87,10 @@ ExpressionAction ExpressionAction::applyFunction(const FunctionBuilderPtr & func
     return a;
 }
 
-ExpressionAction ExpressionAction::addColumn(const ColumnWithTypeAndName & added_column_,
-                                             const std::string & row_projection_column,
-                                             bool is_row_projection_complementary)
+ExpressionAction ExpressionAction::addColumn(
+    const ColumnWithTypeAndName & added_column_,
+    const std::string & row_projection_column,
+    bool is_row_projection_complementary)
 {
     ExpressionAction a;
     a.type = ADD_COLUMN;
@@ -106,12 +110,13 @@ ExpressionAction ExpressionAction::removeColumn(const std::string & removed_name
     return a;
 }
 
-ExpressionAction ExpressionAction::copyColumn(const std::string & from_name, const std::string & to_name)
+ExpressionAction ExpressionAction::copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace)
 {
     ExpressionAction a;
     a.type = COPY_COLUMN;
     a.source_name = from_name;
     a.result_name = to_name;
+    a.can_replace = can_replace;
     return a;
 }
 
@@ -130,6 +135,14 @@ ExpressionAction ExpressionAction::project(const Names & projected_columns_)
     a.projection.resize(projected_columns_.size());
     for (size_t i = 0; i < projected_columns_.size(); ++i)
         a.projection[i] = NameWithAlias(projected_columns_[i], "");
+    return a;
+}
+
+ExpressionAction ExpressionAction::addAliases(const NamesWithAliases & aliased_columns_)
+{
+    ExpressionAction a;
+    a.type = ADD_ALIASES;
+    a.projection = aliased_columns_;
     return a;
 }
 
@@ -185,8 +198,6 @@ void ExpressionAction::prepare(Block & sample_block)
                 if (!col || !col->isColumnConst())
                     all_const = false;
             }
-
-            ColumnPtr new_column;
 
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
             if (all_const && function->isSuitableForConstantFolding())
@@ -258,12 +269,27 @@ void ExpressionAction::prepare(Block & sample_block)
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = sample_block.getByName(name);
+                if (column.column)
+                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
             }
 
             sample_block.swap(new_block);
+            break;
+        }
+
+        case ADD_ALIASES:
+        {
+            for (size_t i = 0; i < projection.size(); ++i)
+            {
+                const std::string & name = projection[i].first;
+                const std::string & alias = projection[i].second;
+                const ColumnWithTypeAndName & column = sample_block.getByName(name);
+                if (alias != "" && !sample_block.has(alias))
+                    sample_block.insert({column.column, column.type, alias});
+            }
             break;
         }
 
@@ -284,8 +310,23 @@ void ExpressionAction::prepare(Block & sample_block)
 
         case COPY_COLUMN:
         {
-            result_type = sample_block.getByName(source_name).type;
-            sample_block.insert(ColumnWithTypeAndName(sample_block.getByName(source_name).column, result_type, result_name));
+            const auto & source = sample_block.getByName(source_name);
+            result_type = source.type;
+
+            if (sample_block.has(result_name))
+            {
+                if (can_replace)
+                {
+                    auto & result = sample_block.getByName(result_name);
+                    result.type = result_type;
+                    result.column = source.column;
+                }
+                else
+                    throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+            }
+            else
+                sample_block.insert(ColumnWithTypeAndName(source.column, result_type, result_name));
+
             break;
         }
 
@@ -333,7 +374,7 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
         if (!block.has(source_name))
             throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION)
+    if (type == ADD_COLUMN || (type == COPY_COLUMN && !can_replace) || type == APPLY_FUNCTION)
         if (block.has(result_name))
             throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
@@ -353,6 +394,8 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
             block.insert({ nullptr, result_type, result_name});
 
             ProfileEvents::increment(ProfileEvents::FunctionExecute);
+            if (is_function_compiled)
+                ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
             function->execute(block, arguments, num_columns_without_result, input_rows_count);
 
             break;
@@ -440,6 +483,8 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
                 const std::string & name = projection[i].first;
                 const std::string & alias = projection[i].second;
                 ColumnWithTypeAndName column = block.getByName(name);
+                if (column.column)
+                    column.column = (*std::move(column.column)).mutate();
                 if (alias != "")
                     column.name = alias;
                 new_block.insert(std::move(column));
@@ -447,6 +492,19 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
 
             block.swap(new_block);
 
+            break;
+        }
+
+        case ADD_ALIASES:
+        {
+            for (size_t i = 0; i < projection.size(); ++i)
+            {
+                const std::string & name = projection[i].first;
+                const std::string & alias = projection[i].second;
+                const ColumnWithTypeAndName & column = block.getByName(name);
+                if (alias != "" && !block.has(alias))
+                    block.insert({column.column, column.type, alias});
+            }
             break;
         }
 
@@ -459,7 +517,15 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
             break;
 
         case COPY_COLUMN:
-            block.insert({ block.getByName(source_name).column, result_type, result_name });
+            if (can_replace && block.has(result_name))
+            {
+                auto & result = block.getByName(result_name);
+                result.type = result_type;
+                result.column = block.getByName(source_name).column;
+            }
+            else
+                block.insert({ block.getByName(source_name).column, result_type, result_name });
+
             break;
 
         default:
@@ -496,10 +562,12 @@ std::string ExpressionAction::toString() const
 
         case COPY_COLUMN:
             ss << "COPY " << result_name << " = " << source_name;
+            if (can_replace)
+                ss << " (can replace)";
             break;
 
         case APPLY_FUNCTION:
-            ss << "FUNCTION " << result_name << " "
+            ss << "FUNCTION " << result_name << " " << (is_function_compiled ? "[compiled] " : "")
                 << (result_type ? result_type->getName() : "(no type)") << " = "
                 << (function ? function->getName() : "(no function)") << "(";
             for (size_t i = 0; i < argument_names.size(); ++i)
@@ -531,8 +599,9 @@ std::string ExpressionAction::toString() const
             }
             break;
 
-        case PROJECT:
-            ss << "PROJECT ";
+        case PROJECT: [[fallthrough]];
+        case ADD_ALIASES:
+            ss << (type == PROJECT ? "PROJECT " : "ADD_ALIASES ");
             for (size_t i = 0; i < projection.size(); ++i)
             {
                 if (i)
@@ -602,9 +671,6 @@ void ExpressionActions::add(const ExpressionAction & action)
 
 void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
-    if (sample_block.has(action.result_name))
-        return;
-
     if (action.result_name != "")
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());
@@ -635,7 +701,7 @@ void ExpressionActions::prependProjectInput()
     actions.insert(actions.begin(), ExpressionAction::project(getRequiredColumns()));
 }
 
-void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const Block & sample_block)
+void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const Block & sample_block_before)
 {
     if (action.type != ExpressionAction::ARRAY_JOIN)
         throw Exception("ARRAY_JOIN action expected", ErrorCodes::LOGICAL_ERROR);
@@ -651,7 +717,7 @@ void ExpressionActions::prependArrayJoin(const ExpressionAction & action, const 
     }
     for (const std::string & name : array_join_set)
     {
-        input_columns.emplace_back(name, sample_block.getByName(name).type);
+        input_columns.emplace_back(name, sample_block_before.getByName(name).type);
         actions.insert(actions.begin(), ExpressionAction::removeColumn(name));
     }
 
@@ -762,7 +828,7 @@ void ExpressionActions::finalize(const Names & output_columns)
     /// This has to be done before removing redundant actions and inserting REMOVE_COLUMNs
     /// because inlining may change dependency sets.
     if (settings.compile_expressions)
-        compileFunctions(actions, output_columns, sample_block);
+        compileFunctions(actions, output_columns, sample_block, compilation_cache, settings.min_count_to_compile);
 #endif
 
     /// Which columns are needed to perform actions from the current to the last.
@@ -787,6 +853,16 @@ void ExpressionActions::finalize(const Names & output_columns)
         {
             needed_columns = NameSet(in.begin(), in.end());
             unmodified_columns.clear();
+        }
+        else if (action.type == ExpressionAction::ADD_ALIASES)
+        {
+            needed_columns.insert(in.begin(), in.end());
+            for (auto & name_wit_alias : action.projection)
+            {
+                auto it = unmodified_columns.find(name_wit_alias.second);
+                if (it != unmodified_columns.end())
+                    unmodified_columns.erase(it);
+            }
         }
         else if (action.type == ExpressionAction::ARRAY_JOIN)
         {
@@ -1064,13 +1140,121 @@ BlockInputStreamPtr ExpressionActions::createStreamWithNonJoinedDataIfFullOrRigh
 }
 
 
+/// It is not important to calculate the hash of individual strings or their concatenation
+UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action) const
+{
+    SipHash hash;
+    hash.update(action.type);
+    hash.update(action.is_function_compiled);
+    switch(action.type)
+    {
+        case ADD_COLUMN:
+            hash.update(action.result_name);
+            if (action.result_type)
+                hash.update(action.result_type->getName());
+            if (action.added_column)
+                hash.update(action.added_column->getName());
+            break;
+        case REMOVE_COLUMN:
+            hash.update(action.source_name);
+            break;
+        case COPY_COLUMN:
+            hash.update(action.result_name);
+            hash.update(action.source_name);
+            break;
+        case APPLY_FUNCTION:
+            hash.update(action.result_name);
+            if (action.result_type)
+                hash.update(action.result_type->getName());
+            if (action.function)
+            {
+                hash.update(action.function->getName());
+                for (const auto & arg_type : action.function->getArgumentTypes())
+                    hash.update(arg_type->getName());
+            }
+            for (const auto & arg_name : action.argument_names)
+                hash.update(arg_name);
+            break;
+        case ARRAY_JOIN:
+            hash.update(action.array_join_is_left);
+            for (const auto & col : action.array_joined_columns)
+                hash.update(col);
+            break;
+        case JOIN:
+            for (const auto & col : action.columns_added_by_join)
+                hash.update(col.name);
+            break;
+        case PROJECT:
+            for (const auto & pair_of_strs : action.projection)
+            {
+                hash.update(pair_of_strs.first);
+                hash.update(pair_of_strs.second);
+            }
+            break;
+        case ADD_ALIASES:
+            break;
+    }
+    UInt128 result;
+    hash.get128(result.low, result.high);
+    return result;
+}
+
+bool ExpressionAction::operator==(const ExpressionAction & other) const
+{
+    if (result_type != other.result_type)
+    {
+        if (result_type == nullptr || other.result_type == nullptr)
+            return false;
+        else if (!result_type->equals(*other.result_type))
+            return false;
+    }
+
+    if (function != other.function)
+    {
+        if (function == nullptr || other.function == nullptr)
+            return false;
+        else if (function->getName() != other.function->getName())
+            return false;
+
+        const auto & my_arg_types = function->getArgumentTypes();
+        const auto & other_arg_types = other.function->getArgumentTypes();
+        if (my_arg_types.size() != other_arg_types.size())
+            return false;
+
+        for (size_t i = 0; i < my_arg_types.size(); ++i)
+            if (!my_arg_types[i]->equals(*other_arg_types[i]))
+                return false;
+    }
+
+    if (added_column != other.added_column)
+    {
+        if (added_column == nullptr || other.added_column == nullptr)
+            return false;
+        else if (added_column->getName() != other.added_column->getName())
+            return false;
+    }
+
+    return source_name == other.source_name
+        && result_name == other.result_name
+        && row_projection_column == other.row_projection_column
+        && is_row_projection_complementary == other.is_row_projection_complementary
+        && argument_names == other.argument_names
+        && array_joined_columns == other.array_joined_columns
+        && array_join_is_left == other.array_join_is_left
+        && join == other.join
+        && join_key_names_left == other.join_key_names_left
+        && columns_added_by_join == other.columns_added_by_join
+        && projection == other.projection
+        && is_function_compiled == other.is_function_compiled;
+}
+
 void ExpressionActionsChain::addStep()
 {
     if (steps.empty())
         throw Exception("Cannot add action to empty ExpressionActionsChain", ErrorCodes::LOGICAL_ERROR);
 
     ColumnsWithTypeAndName columns = steps.back().actions->getSampleBlock().getColumnsWithTypeAndName();
-    steps.push_back(Step(std::make_shared<ExpressionActions>(columns, settings)));
+    steps.push_back(Step(std::make_shared<ExpressionActions>(columns, context)));
 }
 
 void ExpressionActionsChain::finalize()

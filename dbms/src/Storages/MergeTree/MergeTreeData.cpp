@@ -78,6 +78,7 @@ namespace ErrorCodes
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
+    extern const int CANNOT_UPDATE_COLUMN;
 }
 
 
@@ -272,7 +273,7 @@ void MergeTreeData::initPartitionKey()
 
     /// Add all columns used in the partition key to the min-max index.
     const NamesAndTypesList & minmax_idx_columns_with_types = partition_expr->getRequiredColumnsWithTypes();
-    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context.getSettingsRef());
+    minmax_idx_expr = std::make_shared<ExpressionActions>(minmax_idx_columns_with_types, context);
     for (const NameAndTypePair & column : minmax_idx_columns_with_types)
     {
         minmax_idx_columns.emplace_back(column.name);
@@ -996,7 +997,7 @@ void MergeTreeData::createConvertExpression(const DataPartPtr & part, const Name
 
                 /// Need to modify column type.
                 if (!out_expression)
-                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context.getSettingsRef());
+                    out_expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), context);
 
                 out_expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
 
@@ -1866,12 +1867,16 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(
     return nullptr;
 }
 
+MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const MergeTreePartInfo & part_info)
+{
+    DataPartsLock data_parts_lock(data_parts_mutex);
+    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+}
+
 MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String & part_name)
 {
     auto part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
-
-    DataPartsLock data_parts_lock(data_parts_mutex);
-    return getActiveContainingPart(part_info, DataPartState::Committed, data_parts_lock);
+    return getActiveContainingPart(part_info);
 }
 
 

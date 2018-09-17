@@ -12,7 +12,6 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event FileOpenFailed;
     extern const Event WriteBufferAIOWrite;
     extern const Event WriteBufferAIOWriteBytes;
 }
@@ -48,13 +47,13 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
     filename(filename_)
 {
+    ProfileEvents::increment(ProfileEvents::FileOpen);
+
     /// Correct the buffer size information so that additional pages do not touch the base class `BufferBase`.
     this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     this->internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     flush_buffer.buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     flush_buffer.internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
-
-    ProfileEvents::increment(ProfileEvents::FileOpen);
 
     int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
     open_flags |= O_DIRECT;
@@ -62,7 +61,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     fd = ::open(filename.c_str(), open_flags, mode_);
     if (fd == -1)
     {
-        ProfileEvents::increment(ProfileEvents::FileOpenFailed);
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
         throwFromErrno("Cannot open file " + filename, error_code);
     }
@@ -182,7 +180,7 @@ bool WriteBufferAIO::waitForAIOCompletion()
     if (!is_pending_write)
         return false;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
+    CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
 
     io_event event;
     while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)

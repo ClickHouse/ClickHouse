@@ -145,10 +145,16 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 }
 
 
-/// Returning non const result is the same as in "strstr" function.
+template <char... symbols>
+inline const char * find_first_symbols(const char * begin, const char * end)
+{
+    return detail::find_first_symbols_dispatch<symbols...>(begin, end);
+}
+
+/// Returning non const result for non const arguments.
 /// It is convenient when you are using this function to iterate through non-const buffer.
 template <char... symbols>
-inline char * find_first_symbols(const char * begin, const char * end)
+inline char * find_first_symbols(char * begin, char * end)
 {
     return const_cast<char *>(detail::find_first_symbols_dispatch<symbols...>(begin, end));
 }

@@ -27,6 +27,33 @@ if (NOT NO_WERROR)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
 endif ()
 
+# Add some warnings that are not available even with -Wall -Wextra.
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra-semi -Wcomma -Winconsistent-missing-destructor-override -Wunused-exception-parameter -Wshadow-uncaptured-local")
+
+    if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 6)
+        set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wredundant-parens -Wzero-as-null-pointer-constant")
+    endif ()
+endif ()
+
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-include ${ClickHouse_SOURCE_DIR}/libs/libcommon/include/common/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
+endif ()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # If we leave this optimization enabled, gcc-7 replaces a pair of SSE intrinsics (16 byte load, store) with a call to memcpy.
+    # It leads to slow code. This is compiler bug. It looks like this:
+    #
+    # (gdb) bt
+    #0  memcpy (destination=0x7faa6e9f1638, source=0x7faa81d9e9a8, size=16) at ../libs/libmemcpy/memcpy.h:11
+    #1  0x0000000005341c5f in _mm_storeu_si128 (__B=..., __P=<optimized out>) at /usr/lib/gcc/x86_64-linux-gnu/7/include/emmintrin.h:720
+    #2  memcpySmallAllowReadWriteOverflow15Impl (n=<optimized out>, src=<optimized out>, dst=<optimized out>) at ../dbms/src/Common/memcpySmall.h:37
+
+    add_definitions ("-fno-tree-loop-distribute-patterns")
+endif ()
+
 find_package (Threads)
 
 add_subdirectory (src)
@@ -140,7 +167,8 @@ target_link_libraries (clickhouse_common_io
     ${ZSTD_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
-    ${Poco_Data_LIBRARY}
+    ${Poco_Util_LIBRARY}
+    ${Poco_Foundation_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
     ${ELF_LIBRARY}
@@ -168,25 +196,31 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
+if (Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
+endif()
+
 if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
     target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} PUBLIC ${Poco_SQL_INCLUDE_DIR})
     endif()
 endif()
 
-if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
-    target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
+#if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+if (Poco_Data_FOUND)
+    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
 endif()
 
 if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
     endif()
 endif()
 
@@ -196,6 +230,7 @@ endif()
 
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+    target_link_libraries (dbms ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
@@ -238,7 +273,6 @@ endif ()
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:
@@ -248,15 +282,7 @@ add_subdirectory (programs)
 add_subdirectory (tests)
 
 if (ENABLE_TESTS)
-    if (USE_INTERNAL_GTEST_LIBRARY)
-        # Google Test from sources
-        add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-        # avoid problems with <regexp.h>
-        target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
-        target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
-    endif ()
-
-    macro(grep_gtest_sources BASE_DIR DST_VAR)
+    macro (grep_gtest_sources BASE_DIR DST_VAR)
         # Cold match files that are not in tests/ directories
         file(GLOB_RECURSE "${DST_VAR}" RELATIVE "${BASE_DIR}" "gtest*.cpp")
     endmacro()

@@ -176,6 +176,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
         {
             virt_column_names.push_back(name);
         }
+        else if (name == "_partition_id")
+        {
+            virt_column_names.push_back(name);
+        }
         else if (name == "_sample_factor")
         {
             sample_factor_column_queried = true;
@@ -594,6 +598,10 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             stream = std::make_shared<AddingConstColumnBlockInputStream<Float64>>(
                 stream, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
 
+    if (query_info.prewhere_info && query_info.prewhere_info->after_sampling_actions)
+        for (auto & stream : res)
+            stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->after_sampling_actions);
+
     return res;
 }
 
@@ -890,7 +898,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
 
                 may_be_true = key_condition.mayBeTrueAfter(
-                    used_key_size, &index_left[0], data.primary_key_data_types);
+                    used_key_size, index_left.data(), data.primary_key_data_types);
             }
             else
             {
@@ -901,7 +909,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 }
 
                 may_be_true = key_condition.mayBeTrueInRange(
-                    used_key_size, &index_left[0], &index_right[0], data.primary_key_data_types);
+                    used_key_size, index_left.data(), index_right.data(), data.primary_key_data_types);
             }
 
             if (!may_be_true)

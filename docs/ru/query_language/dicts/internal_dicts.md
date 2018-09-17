@@ -17,7 +17,6 @@ ClickHouse содержит встроенную возможность рабо
 Для включения, раскомментируйте параметры `path_to_regions_hierarchy_file` и `path_to_regions_names_files` в конфигурационном файле сервера.
 
 Геобаза загружается из текстовых файлов.
-Если вы работаете в Яндексе, то для их создания вы можете воспользоваться [соответствующей инструкцией](https://github.yandex-team.ru/raw/Metrika/ClickHouse_private/master/doc/create_embedded_geobase_dictionaries.txt).
 
 Положите файлы `regions_hierarchy*.txt` в директорию `path_to_regions_hierarchy_file`. Этот конфигурационный параметр должен содержать путь к файлу `regions_hierarchy.txt` (иерархия регионов по умолчанию), а другие файлы (`regions_hierarchy_ua.txt`) должны находиться рядом в той же директории.
 

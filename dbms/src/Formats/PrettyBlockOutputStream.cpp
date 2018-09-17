@@ -60,13 +60,15 @@ void PrettyBlockOutputStream::calculateWidths(
                 elem.type->serializeText(*elem.column, j, out, format_settings);
             }
 
-            widths[i][j] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size());
+            widths[i][j] = std::min(format_settings.pretty.max_column_pad_width,
+                UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(serialized_value.data()), serialized_value.size()));
             max_widths[i] = std::max(max_widths[i], widths[i][j]);
         }
 
         /// And also calculate widths for names of columns.
         {
-            name_widths[i] = UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size());
+            name_widths[i] = std::min(format_settings.pretty.max_column_pad_width,
+                UTF8::countCodePoints(reinterpret_cast<const UInt8 *>(elem.name.data()), elem.name.size()));
             max_widths[i] = std::max(max_widths[i], name_widths[i]);
         }
     }

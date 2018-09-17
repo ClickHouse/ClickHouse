@@ -50,3 +50,7 @@ target_include_directories(jemalloc PRIVATE
     ${JEMALLOC_SOURCE_DIR}/include)
 
 target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_NO_PRIVATE_NAMESPACE)
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    target_compile_definitions(jemalloc PRIVATE -DJEMALLOC_DEBUG=1)
+endif ()
