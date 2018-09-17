@@ -271,8 +271,8 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
                     part->minmax_idx.parallelogram, data.minmax_idx_column_types))
                 continue;
 
-            if (!max_blocks_number_to_read.empty() &&  max_blocks_number_to_read.find(part->info.partition_id) != max_blocks_number_to_read.end()
-                && part->info.max_block > max_blocks_number_to_read.at(part->info.partition_id))
+            auto blocks_iterator = max_blocks_number_to_read.find(part->info.partition_id);
+            if (blocks_iterator != max_blocks_number_to_read.end() && part->info.max_block > blocks_iterator->second)
                 continue;
 
             parts.push_back(part);
