@@ -27,7 +27,7 @@ struct ReplicatedMergeTreeQuorumWriter
 		read(old_added_parts);
 	}
 
-    /// Write new parts in string with added parts.
+	/// Write new parts in string with added parts.
 	std::string write(const std::string & part_name)
 	{
 		WriteBufferFromOwnString out;
@@ -64,14 +64,12 @@ struct ReplicatedMergeTreeQuorumWriter
 	{
 		ReadBufferFromString in(str);
 		if (checkString("parts_count ", in))
-		{
 			added_parts = read_v2(in);
-		}
 		else
 			added_parts = read_v3(in);
 	}
 
-    /// Read blocks when node in ZooKeeper suppors multiple partitions.
+	/// Read blocks when node in ZooKeeper suppors multiple partitions.
 	PartitonIdToPartName read_v2(ReadBufferFromString & in)
 	{
 		PartitonIdToPartName parts_in_quorum;
@@ -95,7 +93,7 @@ struct ReplicatedMergeTreeQuorumWriter
 		return parts_in_quorum;
 	}
 
-    /// Read added bloks when node in ZooKeeper supports only one partition.
+	/// Read added bloks when node in ZooKeeper supports only one partition.
 	PartitonIdToPartName read_v3(ReadBufferFromString & in)
 	{
 		PartitonIdToPartName parts_in_quorum;
@@ -105,7 +103,7 @@ struct ReplicatedMergeTreeQuorumWriter
 		readText(partition_name, in);
 
 		auto partition_info = MergeTreePartInfo::fromPartName(partition_name, format_version);
-        parts_in_quorum[partition_info.partition_id] = partition_name;
+		parts_in_quorum[partition_info.partition_id] = partition_name;
 
 		return parts_in_quorum;
 	}
