@@ -149,6 +149,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->kind = ASTTableJoin::Kind::Cross;
             else
             {
+                /// Use INNER by default as in another DBMS.
                 table_join->kind = ASTTableJoin::Kind::Inner;
             }
 
