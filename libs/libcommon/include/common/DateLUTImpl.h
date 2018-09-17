@@ -1,8 +1,8 @@
 #pragma once
 
 #include <common/Types.h>
+#include <common/DayNum.h>
 #include <common/likely.h>
-#include <common/strong_typedef.h>
 #include <ctime>
 #include <string>
 
@@ -13,9 +13,6 @@
 #define DATE_LUT_MIN_YEAR 1970
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
-
-
-STRONG_TYPEDEF(UInt16, DayNum)
 
 
 /** Lookup table to conversion of time to date, and to month / year / day of week / day of month and so on.
@@ -339,11 +336,14 @@ public:
         return toISOYear(toDayNum(t));
     }
 
-    /// If first week of year contains four days or more within this year - return it's monday (that may be located in previous year).
-    /// Otherwise return monday of the next week.
+    /// ISO year begins with a monday of the week that is contained more than by half in the corresponding calendar year.
+    /// Example: ISO year 2019 begins at 2018-12-31. And ISO year 2017 begins at 2017-01-02.
+    /// https://en.wikipedia.org/wiki/ISO_week_date
     inline DayNum toFirstDayNumOfISOYear(DayNum d) const
     {
-        DayNum first_day_of_year = toFirstDayNumOfYear(d);
+        auto iso_year = toISOYear(d);
+
+        DayNum first_day_of_year = years_lut[iso_year - DATE_LUT_MIN_YEAR];
         auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
 
         return DayNum(first_day_of_week_of_year <= 4
@@ -365,7 +365,7 @@ public:
     /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
     inline unsigned toISOWeek(DayNum d) const
     {
-        return (toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
+        return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
     }
 
     inline unsigned toISOWeek(time_t t) const
