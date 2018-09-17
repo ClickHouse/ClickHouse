@@ -8,10 +8,18 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_MANY_COLUMNS;
+}
+
 CubeBlockInputStream::CubeBlockInputStream(
     const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : aggregator(params_),
         keys(params_.keys)
 {
+    if (keys.size() > 30)
+        throw Exception("Too many columns for cube", ErrorCodes::TOO_MANY_COLUMNS);
+        
     children.push_back(input_);
     Aggregator::CancellationHook hook = [this]() { return this->isCancelled(); };
     aggregator.setCancellationHook(hook);
