@@ -316,12 +316,58 @@ public:
     inline unsigned toRelativeWeekNum(DayNum d) const
     {
         /// We add 8 to avoid underflow at beginning of unix epoch.
-        return (d + 8 - lut[d].day_of_week) / 7;
+        return (d + 8 - toDayOfWeek(d)) / 7;
     }
 
     inline unsigned toRelativeWeekNum(time_t t) const
     {
         return toRelativeWeekNum(toDayNum(t));
+    }
+
+    /// Get year that contains most of the current week. Week begins at monday.
+    inline unsigned toISOYear(DayNum d) const
+    {
+        /// That's effectively the year of thursday of current week.
+        return toYear(d + 4 - toDayOfWeek(d));
+    }
+
+    inline unsigned toISOYear(time_t t) const
+    {
+        return toISOYear(toDayNum(t));
+    }
+
+    /// If first week of year contains four days or more within this year - return it's monday (that may be located in previous year).
+    /// Otherwise return monday of the next week.
+    inline DayNum toFirstDayNumOfISOYear(DayNum d) const
+    {
+        DayNum first_day_of_year = toFirstDayNumOfYear(d);
+        auto first_day_of_week_of_year = lut[first_day_of_year].day_of_week;
+
+        return DayNum(first_day_of_week_of_year <= 4
+            ? first_day_of_year + 1 - first_day_of_week_of_year
+            : first_day_of_year + 8 - first_day_of_week_of_year);
+    }
+
+    inline DayNum toFirstDayNumOfISOYear(time_t t) const
+    {
+        return toFirstDayNumOfISOYear(toDayNum(t));
+    }
+
+    inline time_t toFirstDayOfISOYear(time_t t) const
+    {
+        return fromDayNum(toFirstDayNumOfISOYear(t));
+    }
+
+    /// ISO 8601 week number. Week begins at monday.
+    /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
+    inline unsigned toISOWeek(DayNum d) const
+    {
+        return (toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
+    }
+
+    inline unsigned toISOWeek(time_t t) const
+    {
+        return toISOWeek(toDayNum(t));
     }
 
     /// Number of month from some fixed moment in the past (year * 12 + month)
