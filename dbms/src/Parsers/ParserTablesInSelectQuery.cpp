@@ -139,7 +139,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
             if (ParserKeyword("INNER").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Inner;
-            if (ParserKeyword("LEFT").ignore(pos))
+            else if (ParserKeyword("LEFT").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Left;
             else if (ParserKeyword("RIGHT").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Right;
