@@ -45,7 +45,7 @@ public:
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
-    /// Unique type number or zero
+    /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
@@ -474,6 +474,7 @@ struct WhichDataType
 
 /// IDataType helpers (alternative for IDataType virtual methods with single point of truth)
 
+inline bool isDate(const DataTypePtr & data_type) { return WhichDataType(data_type).isDate(); }
 inline bool isDateOrDateTime(const DataTypePtr & data_type) { return WhichDataType(data_type).isDateOrDateTime(); }
 inline bool isEnum(const DataTypePtr & data_type) { return WhichDataType(data_type).isEnum(); }
 inline bool isDecimal(const DataTypePtr & data_type) { return WhichDataType(data_type).isDecimal(); }

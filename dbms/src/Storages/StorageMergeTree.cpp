@@ -110,11 +110,10 @@ BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     return reader.read(column_names, query_info, context, max_block_size, num_streams, 0);
 }
 

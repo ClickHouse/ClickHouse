@@ -351,6 +351,22 @@ struct ToDayOfWeekImpl
     using FactorTransform = ToMondayImpl;
 };
 
+struct ToDayOfYearImpl
+{
+    static constexpr auto name = "toDayOfYear";
+
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(t);
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(DayNum(d));
+    }
+
+    using FactorTransform = ToStartOfYearImpl;
+};
+
 struct ToHourImpl
 {
     static constexpr auto name = "toHour";
@@ -398,6 +414,54 @@ struct ToSecondImpl
     }
 
     using FactorTransform = ToStartOfMinuteImpl;
+};
+
+struct ToISOYearImpl
+{
+    static constexpr auto name = "toISOYear";
+
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOYear(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOYear(DayNum(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToStartOfISOYearImpl
+{
+    static constexpr auto name = "toStartOfISOYear";
+
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfISOYear(time_zone.toDayNum(t));
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toFirstDayNumOfISOYear(DayNum(d));
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToISOWeekImpl
+{
+    static constexpr auto name = "toISOWeek";
+
+    static inline UInt8 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(time_zone.toDayNum(t));
+    }
+    static inline UInt8 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toISOWeek(DayNum(d));
+    }
+
+    using FactorTransform = ToISOYearImpl;
 };
 
 struct ToRelativeYearNumImpl
@@ -1992,11 +2056,14 @@ using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQua
 using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonthImpl>;
 using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfMonthImpl>;
 using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfWeekImpl>;
+using FunctionToDayOfYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToDayOfYearImpl>;
 using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToHourImpl>;
 using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMinuteImpl>;
 using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSecondImpl>;
 using FunctionToStartOfDay = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfDayImpl>;
 using FunctionToMonday = FunctionDateOrDateTimeToSomething<DataTypeDate, ToMondayImpl>;
+using FunctionToISOWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToISOWeekImpl>;
+using FunctionToISOYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToISOYearImpl>;
 using FunctionToStartOfMonth = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfMonthImpl>;
 using FunctionToStartOfQuarter = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfQuarterImpl>;
 using FunctionToStartOfYear = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfYearImpl>;
@@ -2004,6 +2071,7 @@ using FunctionToStartOfMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTi
 using FunctionToStartOfFiveMinute = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFiveMinuteImpl>;
 using FunctionToStartOfFifteenMinutes = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfFifteenMinutesImpl>;
 using FunctionToStartOfHour = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToStartOfHourImpl>;
+using FunctionToStartOfISOYear = FunctionDateOrDateTimeToSomething<DataTypeDate, ToStartOfISOYearImpl>;
 using FunctionToTime = FunctionDateOrDateTimeToSomething<DataTypeDateTime, ToTimeImpl>;
 
 using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToRelativeYearNumImpl>;
