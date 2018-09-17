@@ -351,6 +351,22 @@ struct ToDayOfWeekImpl
     using FactorTransform = ToMondayImpl;
 };
 
+struct ToDayOfYearImpl
+{
+    static constexpr auto name = "toDayOfYear";
+
+    static inline UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(t);
+    }
+    static inline UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toDayOfYear(DayNum(d));
+    }
+
+    using FactorTransform = ToStartOfYearImpl;
+};
+
 struct ToHourImpl
 {
     static constexpr auto name = "toHour";
@@ -1560,6 +1576,7 @@ using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQua
 using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonthImpl>;
 using FunctionToDayOfMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfMonthImpl>;
 using FunctionToDayOfWeek = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToDayOfWeekImpl>;
+using FunctionToDayOfYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToDayOfYearImpl>;
 using FunctionToHour = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToHourImpl>;
 using FunctionToMinute = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMinuteImpl>;
 using FunctionToSecond = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToSecondImpl>;
