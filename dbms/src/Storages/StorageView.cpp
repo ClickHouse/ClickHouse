@@ -47,7 +47,7 @@ BlockInputStreams StorageView::read(
 {
     BlockInputStreams res;
 
-    ASTPtr & current_inner_query = inner_query;
+    ASTPtr current_inner_query = inner_query;
 
     if (context.getSettings().enable_optimize_predicate_expression)
     {
