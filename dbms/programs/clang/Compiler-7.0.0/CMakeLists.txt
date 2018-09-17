@@ -1,12 +1,14 @@
 add_definitions(-Wno-error -Wno-unused-parameter -Wno-non-virtual-dtor -U_LIBCPP_DEBUG)
 
-add_library(clickhouse-compiler-lib
+add_library(clickhouse-compiler-lib ${LINK_MODE}
     driver.cpp
     cc1_main.cpp
     cc1as_main.cpp
     lld.cpp)
 
 target_compile_options(clickhouse-compiler-lib PRIVATE -fno-rtti -fno-exceptions -g0)
+
+string(REPLACE "${INCLUDE_DEBUG_HELPERS}" "" CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS}) # cant compile with -fno-rtti
 
 llvm_libs_all(REQUIRED_LLVM_LIBRARIES)
 

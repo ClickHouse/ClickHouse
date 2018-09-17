@@ -160,8 +160,6 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
-    checkQueryProcessingStage(processed_stage, context);
-
     auto request_uri = uri;
     auto params = getReadURIParams(column_names, query_info, context, processed_stage, max_block_size);
     for (const auto & [param, value] : params)

@@ -572,11 +572,10 @@ BlockInputStreams StorageLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     check(column_names);
     loadMarks();
 

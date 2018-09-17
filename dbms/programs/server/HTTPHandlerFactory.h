@@ -38,7 +38,13 @@ public:
                                 << ", Address: "
                                 << request.clientAddress().toString()
                                 << ", User-Agent: "
-                                << (request.has("User-Agent") ? request.get("User-Agent") : "none"));
+                                << (request.has("User-Agent") ? request.get("User-Agent") : "none")
+                                << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
+#if !NDEBUG
+                                << ", Content Type: " << request.getContentType()
+                                << ", Transfer Encoding: " << request.getTransferEncoding()
+#endif
+                 );
 
         const auto & uri = request.getURI();
 

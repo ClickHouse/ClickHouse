@@ -1,8 +1,7 @@
 #include "HandlerFactory.h"
 #include "PingHandler.h"
 #include "ColumnInfoHandler.h"
-#include <Common/HTMLForm.h>
-
+#include <Poco/URI.h>
 #include <Poco/Ext/SessionPoolHelpers.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <common/logger_useful.h>

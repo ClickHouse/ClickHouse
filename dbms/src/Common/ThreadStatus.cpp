@@ -20,6 +20,10 @@ namespace ErrorCodes
     extern const int PTHREAD_ERROR;
 }
 
+
+extern SimpleObjectPool<TaskStatsInfoGetter> task_stats_info_getter_pool;
+
+
 TasksStatsCounters TasksStatsCounters::current()
 {
     TasksStatsCounters res;
@@ -70,10 +74,7 @@ void ThreadStatus::initPerformanceCounters()
         if (TaskStatsInfoGetter::checkPermissions())
         {
             if (!taskstats_getter)
-            {
-                static SimpleObjectPool<TaskStatsInfoGetter> pool;
-                taskstats_getter = pool.getDefault();
-            }
+                taskstats_getter = task_stats_info_getter_pool.getDefault();
 
             *last_taskstats = TasksStatsCounters::current();
         }

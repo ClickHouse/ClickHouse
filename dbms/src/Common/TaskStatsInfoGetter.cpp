@@ -142,7 +142,7 @@ NetlinkMessage query(
     const void * attribute_data,
     int attribute_size)
 {
-    NetlinkMessage request;
+    NetlinkMessage request{};
 
     request.header.nlmsg_len = NLMSG_LENGTH(GENL_HDRLEN);   /// Length of both headers.
     request.header.nlmsg_type = type;
