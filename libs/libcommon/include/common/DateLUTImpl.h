@@ -328,7 +328,7 @@ public:
     inline unsigned toISOYear(DayNum d) const
     {
         /// That's effectively the year of thursday of current week.
-        return toYear(d + 4 - toDayOfWeek(d));
+        return toYear(DayNum(d + 4 - toDayOfWeek(d)));
     }
 
     inline unsigned toISOYear(time_t t) const
