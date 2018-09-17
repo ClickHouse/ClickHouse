@@ -37,10 +37,10 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
     {
         const String& colname = columnName(i);
         name_map[colname] = i;        /// NOTE You could place names more cache-locally.
-        if ( format_settings.import_nested_json )
+        if (format_settings.import_nested_json)
         {
             const auto splitted = Nested::splitName(colname);
-            if ( ! splitted.second.empty() )
+            if (!splitted.second.empty())
             {
                 const StringRef table_name(colname.data(), splitted.first.size());
                 name_map[table_name] = NESTED_FIELD;
@@ -64,7 +64,7 @@ size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
 }
 
 /** Read the field name and convert it to column name
- *  (taking into account the current nested name prefix)
+  *  (taking into account the current nested name prefix)
   */
 StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 {
@@ -97,7 +97,7 @@ static void skipColonDelimeter(ReadBuffer & istr)
     skipWhitespaceIfAny(istr);
 }
 
-void JSONEachRowRowInputStream::skipUnknownField(const StringRef& name_ref)
+void JSONEachRowRowInputStream::skipUnknownField(const StringRef & name_ref)
 {
     if (!format_settings.skip_unknown_fields)
         throw Exception("Unknown field found while parsing JSONEachRow format: " + name_ref.toString(), ErrorCodes::INCORRECT_DATA);
@@ -110,8 +110,6 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
     if (read_columns[index])
         throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
 
-    read_columns[index] = true;
-
     try
     {
         header.getByPosition(index).type->deserializeTextJSON(*columns[index], istr, format_settings);
@@ -121,6 +119,8 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
         e.addMessage("(while read the value of key " + columnName(index) + ")");
         throw;
     }
+
+    read_columns[index] = true;
 }
 
 bool JSONEachRowRowInputStream::advanceToNextKey(size_t key_index)
@@ -147,23 +147,23 @@ void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
 {
     assertChar('{', istr);
 
-    for ( size_t key_index = 0 ; advanceToNextKey(key_index) ; ++key_index )
+    for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(istr);
 
         skipColonDelimeter(istr);
 
         const size_t column_index = columnIndex(name_ref);
-        if ( column_index == UNKNOWN_FIELD )
+        if (column_index == UNKNOWN_FIELD)
             skipUnknownField(name_ref);
-        else if ( column_index == NESTED_FIELD )
+        else if (column_index == NESTED_FIELD)
             readNestedData(name_ref.toString(), columns);
         else
             readField(column_index, columns);
     }
 }
 
-void JSONEachRowRowInputStream::readNestedData(const String& name, MutableColumns & columns)
+void JSONEachRowRowInputStream::readNestedData(const String & name, MutableColumns & columns)
 {
     current_column_name = name;
     current_column_name.push_back('.');
