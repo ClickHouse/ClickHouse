@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <common/shift10.h>
 #include <common/likely.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
 
@@ -274,7 +275,7 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
     {
         for (size_t i = 0; i < N; ++i)
         {
-            if ((*buf.position() & 0xF0) == 0x30)
+            if (isNumericASCII(*buf.position()))
             {
                 x *= 10;
                 x += *buf.position() & 0x0F;
@@ -284,14 +285,14 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
                 return;
         }
 
-        while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+        while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
     }
     else
     {
         for (size_t i = 0; i < N; ++i)
         {
-            if (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+            if (!buf.eof() && isNumericASCII(*buf.position()))
             {
                 x *= 10;
                 x += *buf.position() & 0x0F;
@@ -301,7 +302,7 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
                 return;
         }
 
-        while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+        while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
     }
 }
