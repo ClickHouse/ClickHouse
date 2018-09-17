@@ -363,6 +363,7 @@ public:
 
     /// ISO 8601 week number. Week begins at monday.
     /// The week number 1 is the first week in year that contains 4 or more days (that's more than half).
+    /// NOTE: the method described here https://en.wikipedia.org/wiki/ISO_week_date#Calculation may be more efficient (not tested).
     inline unsigned toISOWeek(DayNum d) const
     {
         return 1 + (toFirstDayNumOfWeek(d) - toFirstDayNumOfISOYear(d)) / 7;
