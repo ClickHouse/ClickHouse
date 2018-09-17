@@ -387,7 +387,7 @@ ColumnUInt64::MutablePtr ReverseIndex<IndexType, ColumnType>::calcHashes() const
         hash->getElement(row) = getHash(column->getDataAt(row));
 
     return std::move(hash);
-};
+}
 
 template <typename IndexType, typename ColumnType>
 UInt64 ReverseIndex<IndexType, ColumnType>::insert(UInt64 from_position)
