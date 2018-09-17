@@ -34,7 +34,7 @@ protected:
 private:
     Aggregator aggregator;
     ColumnNumbers keys;
-    size_t mask = 0;
+    UInt32 mask = 0;
     Block source_block;
 };
 
