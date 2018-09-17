@@ -5,7 +5,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/ColumnString.h>
-#include <ext/range.h>
+
 #include <atomic>
 #include <memory>
 #include <tuple>
@@ -59,9 +59,13 @@ public:
         return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
     }
 
+    typedef Int64 RangeStorageType;
+
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
     void get##TYPE(\
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,\
+        const std::string & attribute_name,\
+        const PaddedPODArray<Key> & ids,\
+        const PaddedPODArray<RangeStorageType> & dates,\
         PaddedPODArray<TYPE> & out) const;
     DECLARE_MULTIPLE_GETTER(UInt8)
     DECLARE_MULTIPLE_GETTER(UInt16)
@@ -77,33 +81,18 @@ public:
 #undef DECLARE_MULTIPLE_GETTER
 
     void getString(
-        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
+        const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<RangeStorageType> & dates,
         ColumnString * out) const;
 
     BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
 
-    struct Range : std::pair<UInt16, UInt16>
+    struct Range
     {
-        using std::pair<UInt16, UInt16>::pair;
+        RangeStorageType left;
+        RangeStorageType right;
 
-        static bool isCorrectDate(const UInt16 date) { return 0 < date && date <= DATE_LUT_MAX_DAY_NUM; }
-
-        bool contains(const UInt16 date) const
-        {
-            const auto & left = first;
-            const auto & right = second;
-
-            if (left <= date && date <= right)
-                return true;
-
-            const auto has_left_bound = isCorrectDate(left);
-            const auto has_right_bound = isCorrectDate(right);
-
-            if ((!has_left_bound || left <= date) && (!has_right_bound || date <= right))
-                return true;
-
-            return false;
-        }
+        static bool isCorrectDate(const RangeStorageType & date);
+        bool contains(const RangeStorageType& value) const;
     };
 
 private:
@@ -153,14 +142,14 @@ private:
     void getItems(
         const Attribute & attribute,
         const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<UInt16> & dates,
+        const PaddedPODArray<RangeStorageType> & dates,
         PaddedPODArray<OutputType> & out) const;
 
     template <typename AttributeType, typename OutputType>
     void getItemsImpl(
         const Attribute & attribute,
         const PaddedPODArray<Key> & ids,
-        const PaddedPODArray<UInt16> & dates,
+        const PaddedPODArray<RangeStorageType> & dates,
         PaddedPODArray<OutputType> & out) const;
 
 
@@ -174,11 +163,11 @@ private:
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
     void getIdsAndDates(PaddedPODArray<Key> & ids,
-                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+                        PaddedPODArray<RangeStorageType> & start_dates, PaddedPODArray<RangeStorageType> & end_dates) const;
 
     template <typename T>
     void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
-                        PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const;
+                        PaddedPODArray<RangeStorageType> & start_dates, PaddedPODArray<RangeStorageType> & end_dates) const;
 
     const std::string dictionary_name;
     const DictionaryStructure dict_struct;
