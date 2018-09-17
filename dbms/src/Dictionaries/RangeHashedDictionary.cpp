@@ -2,6 +2,7 @@
 #include <Dictionaries/RangeDictionaryBlockInputStream.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnNullable.h>
+#include <Common/TypeList.h>
 #include <ext/range.h>
 
 
@@ -416,9 +417,10 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWith
     return attribute;
 }
 
+template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids,
-    PaddedPODArray<RangeStorageType> & start_dates,
-    PaddedPODArray<RangeStorageType> & end_dates) const
+    PaddedPODArray<RangeType> & start_dates,
+    PaddedPODArray<RangeType> & end_dates) const
 {
     const auto & attribute = attributes.front();
 
@@ -439,10 +441,10 @@ void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids,
     }
 }
 
-template <typename T>
+template <typename T, typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
-                                           PaddedPODArray<RangeStorageType> & start_dates,
-                                           PaddedPODArray<RangeStorageType> & end_dates) const
+                                           PaddedPODArray<RangeType> & start_dates,
+                                           PaddedPODArray<RangeType> & end_dates) const
 {
     const HashMap<UInt64, Values<T>> & attr = *std::get<Ptr<T>>(attribute.maps);
 
@@ -461,18 +463,53 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute & attribute, PaddedPO
     }
 }
 
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+
+template <typename RangeType>
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<Key> ids;
-    PaddedPODArray<RangeStorageType> start_dates;
-    PaddedPODArray<RangeStorageType> end_dates;
+    PaddedPODArray<RangeType> start_dates;
+    PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
 
-    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, Key>;
+    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, RangeType, Key>;
     auto dict_ptr = std::static_pointer_cast<const RangeHashedDictionary>(shared_from_this());
     return std::make_shared<BlockInputStreamType>(
         dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
 }
 
+struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
+{
+    BlockInputStreamPtr stream;
+    const RangeHashedDictionary * dict;
+    const Names * column_names;
+    size_t max_block_size;
+
+    template <typename RangeType, size_t>
+    void operator()()
+    {
+        auto & type = dict->dict_struct.range_min->type;
+        if (!stream && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
+            stream = dict->getBlockInputStreamImpl<RangeType>(*column_names, max_block_size);
+    }
+};
+
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+
+    RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
+    callable.dict = this;
+    callable.column_names = &column_names;
+    callable.max_block_size = max_block_size;
+
+    ListType::forEach(callable);
+
+    if (!callable.stream)
+        throw Exception("Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
+
+    return callable.stream;
+}
 
 }
