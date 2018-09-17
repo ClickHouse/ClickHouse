@@ -74,6 +74,9 @@ inline bool isAlphaASCII(char c)
 
 inline bool isNumericASCII(char c)
 {
+    /// This is faster than
+    /// return UInt8(UInt8(c) - UInt8('0')) < UInt8(10);
+    /// on Intel CPUs when compiled by gcc 8.
     return (c >= '0' && c <= '9');
 }
 
