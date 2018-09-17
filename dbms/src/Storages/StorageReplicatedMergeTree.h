@@ -210,6 +210,8 @@ private:
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
+    using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+
     Context & context;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.
@@ -402,20 +404,6 @@ private:
     /** Performs actions from the queue.
       */
     bool queueTask();
-
-    using MaxAddedBlocks = std::unordered_map<String, Int64>;
-    using PartsNames = std::unordered_map<String, String>;
-
-    /// Return map with partition_id and max added block in this partition.
-    /// This is used to filter the added blocks in read().
-    MaxAddedBlocks getMaxAddedBlocksWithQuorum(const PartsNames & parts);
-    
-    /// Return map with partition_id and the last added part_name in this partition.
-    PartsNames getAddedPartsWithQuorum(const String & parts_str);
-    
-    /// Rewrite data with inserted partiton with quorum.
-    /// This is added new partition name in data for ZooKeeper.
-    String rewriteAddedParts(const String & old_added_parts_str, const String & new_added_part_name);
 
     /// Postcondition:
     /// either leader_election is fully initialized (node in ZK is created and the watching thread is launched)

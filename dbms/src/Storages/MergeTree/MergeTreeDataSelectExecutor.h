@@ -22,15 +22,15 @@ public:
     /** When reading, selects a set of parts that covers the desired range of the index.
       * max_blocks_number_to_read - if not empty, do not read all the parts whose right border is greater than max_block in partition.
       */
-    using MaxAddedBlocks = std::unordered_map<String, Int64>;
-
+    using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
+    
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         size_t max_block_size,
         unsigned num_streams,
-        const MaxAddedBlocks & max_blocks_number_to_read) const;
+        const PartitionIdToMaxBlock & max_blocks_number_to_read) const;
 
     BlockInputStreams readFromParts(
         MergeTreeData::DataPartsVector parts,
@@ -39,7 +39,7 @@ public:
         const Context & context,
         size_t max_block_size,
         unsigned num_streams,
-        const MaxAddedBlocks & max_blocks_number_to_read) const;
+        const PartitionIdToMaxBlock & max_blocks_number_to_read) const;
 
 private:
     MergeTreeData & data;
