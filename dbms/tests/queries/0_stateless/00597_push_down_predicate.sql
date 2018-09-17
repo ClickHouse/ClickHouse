@@ -57,6 +57,7 @@ SELECT * FROM (SELECT 1 AS id, toDate('2000-01-01') AS date FROM system.numbers 
 
 -- Optimize predicate expression with view
 SELECT * FROM test.test_view WHERE id = 1;
+SELECT * FROM test.test_view WHERE id = 2;
 SELECT id FROM test.test_view WHERE id  = 1;
 SELECT s.id FROM test.test_view AS s WHERE id = 1;
 
