@@ -139,7 +139,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
 
             if (ParserKeyword("INNER").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Inner;
-            else if (ParserKeyword("LEFT").ignore(pos))
+            if (ParserKeyword("LEFT").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Left;
             else if (ParserKeyword("RIGHT").ignore(pos))
                 table_join->kind = ASTTableJoin::Kind::Right;
@@ -149,8 +149,7 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->kind = ASTTableJoin::Kind::Cross;
             else
             {
-                /// Maybe need use INNER by default as in another DBMS.
-                return false;
+                table_join->kind = ASTTableJoin::Kind::Inner;
             }
 
             if (table_join->strictness != ASTTableJoin::Strictness::Unspecified
