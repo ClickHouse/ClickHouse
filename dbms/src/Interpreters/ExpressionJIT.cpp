@@ -683,7 +683,6 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
 
     static LLVMTargetInitializer initializer;
 
-
     auto dependents = getActionsDependents(actions, output_columns);
     /// Initialize context as late as possible and only if needed
     std::shared_ptr<LLVMContext> context;
@@ -700,13 +699,13 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             if (fused[i].size() == 1)
                 continue;
 
-
             auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
             {
                 std::lock_guard<std::mutex> lock(mutex);
                 if (counter[hash_key]++ < min_count_to_compile)
                     continue;
             }
+
             std::shared_ptr<LLVMFunction> fn;
             if (compilation_cache)
             {
