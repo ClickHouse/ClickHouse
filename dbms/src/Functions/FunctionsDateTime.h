@@ -1595,13 +1595,13 @@ private:
         size_t source_length_to_copy = 0;
 
         template <typename T>
-        static void writeNumber2(char *& ep, T v)
+        static inline void writeNumber2(char *& ep, T v)
         {
             writeNumberWidth(ep, v, 2);
         }
 
         template <typename T>
-        static void writeNumberWidth(char *& ep, T v, int width)
+        static inline void writeNumberWidth(char *& ep, T v, int width)
         {
             auto width_copy = width;
             ep += width_copy;
@@ -1669,7 +1669,7 @@ private:
                 writeNumber2(target, day);
         }
 
-        static void format_F(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        static inline void format_F(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             auto year = ToYearImpl::execute(source, timezone);
             auto month = ToMonthImpl::execute(source, timezone);
@@ -1689,11 +1689,17 @@ private:
 
         static void format_I(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
-            auto x = (ToHourImpl::execute(source, timezone) % 12) + 1;
-            writeNumber2(target, x);
+            auto x = ToHourImpl::execute(source, timezone);
+            auto mod = x % 12;
+            writeNumber2(target, mod == 0 ? 12 : mod);
         }
 
-        // @todo format j
+        static void format_j(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto today = timezone.toDayNum(source);
+            auto first_year_day = ToStartOfYearImpl::execute(source, timezone);
+            writeNumberWidth(target, today - first_year_day + 1, 3);
+        }
 
         static void format_m(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
@@ -1744,7 +1750,7 @@ private:
         }
 
         // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
-        static void format_T(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        static inline void format_T(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             writeNumber2(target, ToHourImpl::execute(source, timezone));
             *target++ = ':';
@@ -1759,12 +1765,38 @@ private:
             *target++ = '0' + ToDayOfWeekImpl::execute(source, timezone);
         }
 
+        // Week number with the first Sunday as the first day of week one (00-53)
+        static void format_U(char *& , UInt32 , const DateLUTImpl & )
+        {
+            throw Exception("Handler %U is not implemented", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        // ISO 8601 week number (01-53)
+        static void format_V(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
+        }
+
+        // Week number with the first Monday as the first day of week one (00-53)
+        static void format_W(char *& , UInt32 , const DateLUTImpl & )
+        {
+            throw Exception("Handler %W is not implemented", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        // Weekday as a decimal number with Sunday as 0 (0-6)
         static void format_w(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             auto day = ToDayOfWeekImpl::execute(source, timezone);
             *target++ = '0' + (day == 7 ? 0 : day);
         }
 
+        // Year, last two digits (00-99)
+        static void format_y(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToYearImpl::execute(source, timezone) % 100);
+        }
+
+        // Year, 4 digits
         static void format_Y(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             writeNumberWidth(target, ToYearImpl::execute(source, timezone), 4);
@@ -1800,7 +1832,7 @@ public:
                             + toString(arguments.size()) + ", should be 2 or 3",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!WhichDataType(arguments[0].type).isDateOrDateTime())
+        if (!WhichDataType(arguments[0].type).isDateTime())
             throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
                             ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1891,7 +1923,7 @@ public:
                 void (*operation)(char *&, UInt32, const DateLUTImpl &) = nullptr;
 
                 if (++s == pattern.length())
-                    throw Exception("Sign '%' is last in pattern, if you need it, use '%%'");
+                    throw Exception("Sign '%' is last in pattern, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
 
                 switch(pattern[s])
                 {
@@ -1937,19 +1969,11 @@ public:
                         result_size += 2;
                         break;
 
-//                    // Day of the year (001-366)   235
-//                    case 'j':
-//                        instructions.push_back(
-//                                [](auto & receiver, auto date_or_ts, const auto & time_zone) {
-//
-//                                    auto x = (ToHourImpl::execute(date_or_ts, time_zone) % 12) + 1;
-//                                    if (x < 10)
-//                                        receiver.append("0");
-//
-//                                    receiver.append(toString(x));
-//                                }
-//                        );
-//                        break;
+                    // Day of the year (001-366)   235
+                    case 'j':
+                        operation = &FormattingOperation::format_j;
+                        result_size += 3;
+                        break;
 
                     // Month as a decimal number (01-12)
                     case 'm':
@@ -2005,10 +2029,35 @@ public:
                         result_size += 1;
                         break;
 
+                    // Week number with the first Sunday as the first day of week one (00-53)
+                    case 'U':
+                        operation = &FormattingOperation::format_U;
+                        result_size += 2;
+                        break;
+
+                    // ISO 8601 week number (01-53)
+                    case 'V':
+                        operation = &FormattingOperation::format_V;
+                        result_size += 2;
+                        break;
+
                     // Weekday as a decimal number with Sunday as 0 (0-6)  4
                     case 'w':
                         operation = &FormattingOperation::format_w;
                         result_size += 1;
+                        break;
+
+                    // Week number with the first Monday as the first day of week one (00-53)
+                    case 'W':
+                        operation = &FormattingOperation::format_W;
+                        result_size += 2;
+                        break;
+
+                        // Four digits year
+                    case 'y':
+                        operation = &FormattingOperation::format_y;
+                        result_size += 2;
+
                         break;
 
                     // Four digits year
