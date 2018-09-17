@@ -727,7 +727,7 @@ void registerStorageKafka(StorageFactory & factory)
         String schema;
         if (args_count >= 6)
         {
-            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
+            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
             auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
             if (ast && ast->value.getType() == Field::Types::String)
