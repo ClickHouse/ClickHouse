@@ -91,6 +91,7 @@
     M(CompileFunction, "Number of times a compilation of generated LLVM code (to create fused function for complex expressions) was initiated.") \
     M(CompiledFunctionExecute, "Number of times a compiled function was executed.") \
     M(CompileExpressionsMicroseconds, "Total time spent for compilation of expressions to LLVM code.") \
+    M(CompileExpressionsBytes, "Number of bytes used for expressions compilation.") \
     \
     M(ExternalSortWritePart, "") \
     M(ExternalSortMerge, "") \
