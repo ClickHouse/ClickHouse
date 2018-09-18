@@ -75,9 +75,9 @@ protected:
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const size_t max_block_size, const Names &real_column_names, const Context & modified_context,
+                                          const size_t max_block_size, const Context & modified_context,
                                           const Block & header, const StoragePtr & storage, const TableStructureReadLockPtr & struct_lock,
-                                          size_t current_streams, bool has_table_virtual_column) const;
+                                          Names & real_column_names, size_t current_streams, bool has_table_virtual_column);
 };
 
 }
