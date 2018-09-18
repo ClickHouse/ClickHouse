@@ -1,21 +1,20 @@
-#include "localBackup.h"
-#include <sys/stat.h>
-#include <string>
-#include <iostream>
+#include <Common/localBackup.h>
+#include <Common/createHardLink.h>
+#include <Common/Exception.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Common/Exception.h>
-#include <port/unistd.h>
+#include <string>
+#include <iostream>
 #include <errno.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
     extern const int DIRECTORY_ALREADY_EXISTS;
-}
 }
 
 
@@ -41,33 +40,7 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
         {
             dir_it->setReadOnly();
 
-            std::string source_str = source.toString();
-            std::string destination_str = destination.toString();
-
-            /** We are trying to create a hard link.
-              * If it already exists, we check that source and destination point to the same inode.
-              */
-            if (0 != link(source_str.c_str(), destination_str.c_str()))
-            {
-                if (errno == EEXIST)
-                {
-                    auto link_errno = errno;
-
-                    struct stat source_descr;
-                    struct stat destination_descr;
-
-                    if (0 != lstat(source_str.c_str(), &source_descr))
-                        DB::throwFromErrno("Cannot stat " + source_str);
-
-                    if (0 != lstat(destination_str.c_str(), &destination_descr))
-                        DB::throwFromErrno("Cannot stat " + destination_str);
-
-                    if (source_descr.st_ino != destination_descr.st_ino)
-                        DB::throwFromErrno("Destination file " + destination_str + " is already exist and have different inode.", 0, link_errno);
-                }
-                else
-                    DB::throwFromErrno("Cannot link " + source_str + " to " + destination_str);
-            }
+            createHardLink(source.toString(), destination.toString());
         }
         else
         {
@@ -119,4 +92,6 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
 
         break;
     }
+}
+
 }

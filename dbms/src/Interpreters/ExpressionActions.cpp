@@ -110,12 +110,13 @@ ExpressionAction ExpressionAction::removeColumn(const std::string & removed_name
     return a;
 }
 
-ExpressionAction ExpressionAction::copyColumn(const std::string & from_name, const std::string & to_name)
+ExpressionAction ExpressionAction::copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace)
 {
     ExpressionAction a;
     a.type = COPY_COLUMN;
     a.source_name = from_name;
     a.result_name = to_name;
+    a.can_replace = can_replace;
     return a;
 }
 
@@ -309,8 +310,23 @@ void ExpressionAction::prepare(Block & sample_block)
 
         case COPY_COLUMN:
         {
-            result_type = sample_block.getByName(source_name).type;
-            sample_block.insert(ColumnWithTypeAndName(sample_block.getByName(source_name).column, result_type, result_name));
+            const auto & source = sample_block.getByName(source_name);
+            result_type = source.type;
+
+            if (sample_block.has(result_name))
+            {
+                if (can_replace)
+                {
+                    auto & result = sample_block.getByName(result_name);
+                    result.type = result_type;
+                    result.column = source.column;
+                }
+                else
+                    throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
+            }
+            else
+                sample_block.insert(ColumnWithTypeAndName(source.column, result_type, result_name));
+
             break;
         }
 
@@ -358,7 +374,7 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
         if (!block.has(source_name))
             throw Exception("Not found column '" + source_name + "'. There are columns: " + block.dumpNames(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    if (type == ADD_COLUMN || type == COPY_COLUMN || type == APPLY_FUNCTION)
+    if (type == ADD_COLUMN || (type == COPY_COLUMN && !can_replace) || type == APPLY_FUNCTION)
         if (block.has(result_name))
             throw Exception("Column '" + result_name + "' already exists", ErrorCodes::DUPLICATE_COLUMN);
 
@@ -501,7 +517,15 @@ void ExpressionAction::execute(Block & block, std::unordered_map<std::string, si
             break;
 
         case COPY_COLUMN:
-            block.insert({ block.getByName(source_name).column, result_type, result_name });
+            if (can_replace && block.has(result_name))
+            {
+                auto & result = block.getByName(result_name);
+                result.type = result_type;
+                result.column = block.getByName(source_name).column;
+            }
+            else
+                block.insert({ block.getByName(source_name).column, result_type, result_name });
+
             break;
 
         default:
@@ -538,6 +562,8 @@ std::string ExpressionAction::toString() const
 
         case COPY_COLUMN:
             ss << "COPY " << result_name << " = " << source_name;
+            if (can_replace)
+                ss << " (can replace)";
             break;
 
         case APPLY_FUNCTION:
@@ -645,9 +671,6 @@ void ExpressionActions::add(const ExpressionAction & action)
 
 void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
-    if (sample_block.has(action.result_name))
-        return;
-
     if (action.result_name != "")
         new_names.push_back(action.result_name);
     new_names.insert(new_names.end(), action.array_joined_columns.begin(), action.array_joined_columns.end());

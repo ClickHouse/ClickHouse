@@ -17,12 +17,13 @@ namespace DB
   *     [FETCH PARTITION partition FROM ...]
   *     [FREEZE PARTITION]
   *     [DELETE WHERE ...]
+  *     [UPDATE col_name = expr, ... WHERE ...]
   */
 
-class ParserAlterCommand : public IParserBase
+class ParserAlterQuery : public IParserBase
 {
 protected:
-    const char * getName() const { return "ALTER command"; }
+    const char * getName() const { return "ALTER query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 
@@ -35,10 +36,19 @@ protected:
 };
 
 
-class ParserAlterQuery : public IParserBase
+class ParserAlterCommand : public IParserBase
 {
 protected:
-    const char * getName() const { return "ALTER query"; }
+    const char * getName() const { return "ALTER command"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+};
+
+
+/// Part of the UPDATE command of the form: col_name = expr
+class ParserAssignment : public IParserBase
+{
+protected:
+    const char * getName() const { return "column assignment"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
 };
 

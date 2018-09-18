@@ -76,7 +76,7 @@ class SystemLog : private boost::noncopyable
 {
 public:
 
-    using Self = SystemLog<SystemLog>;
+    using Self = SystemLog;
 
     /** Parameter: table name where to write log.
       * If table is not exists, then it get created with specified engine.

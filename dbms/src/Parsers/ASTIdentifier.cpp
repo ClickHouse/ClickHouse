@@ -11,11 +11,7 @@ void ASTIdentifier::formatImplWithoutAlias(const FormatSettings & settings, Form
     auto format_element = [&](const String & elem_name)
     {
         settings.ostr << (settings.hilite ? hilite_identifier : "");
-
-        WriteBufferFromOStream wb(settings.ostr, 32);
-        settings.writeIdentifier(elem_name, wb);
-        wb.next();
-
+        settings.writeIdentifier(elem_name);
         settings.ostr << (settings.hilite ? hilite_none : "");
     };
 
