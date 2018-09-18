@@ -19,14 +19,7 @@ void DataTypeNumberBase<T>::serializeText(const IColumn & column, size_t row_num
 }
 
 template <typename T>
-void DataTypeNumberBase<T>::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-
-template <typename T>
-static void deserializeText(IColumn & column, ReadBuffer & istr)
+void DataTypeNumberBase<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     T x;
 
@@ -37,26 +30,6 @@ static void deserializeText(IColumn & column, ReadBuffer & istr)
 
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
-
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    deserializeText<T>(column, istr);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
-{
-    deserializeText<T>(column, istr);
-}
-
 
 template <typename T>
 static inline void writeDenormalNumber(T x, WriteBuffer & ostr)
@@ -158,12 +131,6 @@ void DataTypeNumberBase<T>::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
 
     static_cast<ColumnVector<T> &>(column).getData().push_back(x);
-}
-
-template <typename T>
-void DataTypeNumberBase<T>::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
 }
 
 template <typename T>
