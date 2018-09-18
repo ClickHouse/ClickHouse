@@ -908,19 +908,32 @@ void ZooKeeper::connect(
                 in.emplace(socket);
                 out.emplace(socket);
 
-                sendHandshake();
-                receiveHandshake();
+                try
+                {
+                    sendHandshake();
+                }
+                catch (DB::Exception & e)
+                {
+                    e.addMessage("while sending handshake to ZooKeeper");
+                    throw;
+                }
+
+                try
+                {
+                    receiveHandshake();
+                }
+                catch (DB::Exception & e)
+                {
+                    e.addMessage("while receiving handshake from ZooKeeper");
+                    throw;
+                }
 
                 connected = true;
                 break;
             }
-            catch (const Poco::Net::NetException &)
+            catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
-            }
-            catch (const Poco::TimeoutException &)
-            {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false);
             }
         }
 

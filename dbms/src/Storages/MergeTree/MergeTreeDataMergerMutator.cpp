@@ -19,9 +19,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/ApplyingMutationsBlockInputStream.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/CompressedReadBufferFromFile.h>
 #include <DataTypes/NestedUtils.h>
@@ -30,8 +28,10 @@
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
 #include <Common/localBackup.h>
+#include <Common/createHardLink.h>
 
 #include <Poco/File.h>
+#include <Poco/DirectoryIterator.h>
 
 #include <cmath>
 #include <numeric>
@@ -521,7 +521,7 @@ public:
 /// parts should be sorted.
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const FuturePart & future_part, MergeList::Entry & merge_entry,
-    size_t aio_threshold, time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
+    time_t time_of_merge, DiskSpaceMonitor::Reservation * disk_reservation, bool deduplicate)
 {
     static const String TMP_PREFIX = "tmp_merge_";
 
@@ -608,11 +608,32 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     BlockInputStreams src_streams;
     UInt64 watch_prev_elapsed = 0;
 
+    /// Note: this is dirty hack. MergeTreeBlockInputStream expects minimal amount of bytes after which it will
+    /// use DIRECT_IO for every peace of data it reads.
+    /// When we send `min_bytes_when_use_direct_io = 1 (byte)`, it will use O_DIRECT in any case
+    /// because stream can't read less then single byte
+    size_t min_bytes_when_use_direct_io = 0;
+    if (data.settings.min_merge_bytes_to_use_direct_io != 0)
+    {
+        size_t total_size = 0;
+        for (const auto & part : parts)
+        {
+            total_size += part->bytes_on_disk;
+            if (total_size >= data.settings.min_merge_bytes_to_use_direct_io)
+            {
+                LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
+                min_bytes_when_use_direct_io = 1;
+                break;
+            }
+        }
+    }
+
+
     for (const auto & part : parts)
     {
         auto input = std::make_unique<MergeTreeBlockInputStream>(
             data, part, DEFAULT_MERGE_BLOCK_SIZE, 0, 0, merging_column_names, MarkRanges(1, MarkRange(0, part->marks_count)),
-            false, nullptr, true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false);
+            false, nullptr, true, min_bytes_when_use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false);
 
         input->setProgressCallback(MergeProgressCallback(
                 merge_entry, sum_input_rows_upper_bound, column_sizes, watch_prev_elapsed, merge_alg));
@@ -684,7 +705,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
 
     MergedBlockOutputStream to{
-        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, aio_threshold};
+        data, new_part_tmp_path, merging_columns, compression_settings, merged_column_to_size, min_bytes_when_use_direct_io};
 
     merged_stream->readPrefix();
     to.writePrefix();
@@ -762,7 +783,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             {
                 auto column_part_stream = std::make_shared<MergeTreeBlockInputStream>(
                     data, parts[part_num], DEFAULT_MERGE_BLOCK_SIZE, 0, 0, column_name_, MarkRanges{MarkRange(0, parts[part_num]->marks_count)},
-                    false, nullptr, true, aio_threshold, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
+                    false, nullptr, true, min_bytes_when_use_direct_io, DBMS_DEFAULT_BUFFER_SIZE, false, Names{}, 0, true);
 
                 column_part_stream->setProgressCallback(MergeProgressCallbackVerticalStep(
                         merge_entry, sum_input_rows_exact, column_sizes, column_name, watch_prev_elapsed));
@@ -830,132 +851,20 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 }
 
 
-static bool isStorageTouchedByMutation(
-    const StoragePtr & storage, const std::vector<MutationCommand> & commands, const Context & context)
-{
-    if (commands.empty())
-        return false;
-
-    for (const MutationCommand & command : commands)
-    {
-        if (!command.predicate) /// The command touches all rows.
-            return true;
-    }
-
-    /// Execute `SELECT count() FROM storage WHERE predicate1 OR predicate2 OR ...` query.
-    /// The result is tne number of affected rows.
-
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
-    auto count_func = std::make_shared<ASTFunction>();
-    count_func->name = "count";
-    count_func->arguments = std::make_shared<ASTExpressionList>();
-    select->select_expression_list->children.push_back(count_func);
-
-    if (commands.size() == 1)
-        select->where_expression = commands[0].predicate;
-    else
-    {
-        auto coalesced_predicates = std::make_shared<ASTFunction>();
-        coalesced_predicates->name = "or";
-        coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-        coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-
-        for (const MutationCommand & command : commands)
-            coalesced_predicates->arguments->children.push_back(command.predicate);
-
-        select->where_expression = std::move(coalesced_predicates);
-    }
-    select->children.push_back(select->where_expression);
-
-    auto context_copy = context;
-    context_copy.getSettingsRef().merge_tree_uniform_read_distribution = 0;
-    context_copy.getSettingsRef().max_threads = 1;
-
-    InterpreterSelectQuery interpreter_select(select, context_copy, storage, QueryProcessingStage::Complete);
-    BlockInputStreamPtr in = interpreter_select.execute().in;
-
-    Block block = in->read();
-    if (!block.rows())
-        return false;
-    else if (block.rows() != 1)
-        throw Exception("count() expression returned " + toString(block.rows()) + " rows, not 1",
-            ErrorCodes::LOGICAL_ERROR);
-
-    auto count = (*block.getByName("count()").column)[0].get<UInt64>();
-    return count != 0;
-}
-
-static BlockInputStreamPtr createInputStreamWithMutatedData(
-    const StoragePtr & storage, std::vector<MutationCommand> commands, const Context & context)
-{
-    auto select = std::make_shared<ASTSelectQuery>();
-
-    select->select_expression_list = std::make_shared<ASTExpressionList>();
-    select->children.push_back(select->select_expression_list);
-    for (const auto & column : storage->getColumns().getAllPhysical())
-        select->select_expression_list->children.push_back(std::make_shared<ASTIdentifier>(column.name));
-
-    /// For all commands that are in front of the list and are DELETE commands, we can push them down
-    /// to the SELECT statement and remove them from commands.
-
-    auto deletes_end = commands.begin();
-    for (; deletes_end != commands.end(); ++deletes_end)
-    {
-        if (deletes_end->type != MutationCommand::DELETE)
-            break;
-    }
-
-    std::vector<ASTPtr> predicates;
-    for (auto it = commands.begin(); it != deletes_end; ++it)
-    {
-        auto predicate = std::make_shared<ASTFunction>();
-        predicate->name = "not";
-        predicate->arguments = std::make_shared<ASTExpressionList>();
-        predicate->arguments->children.push_back(it->predicate);
-        predicate->children.push_back(predicate->arguments);
-        predicates.push_back(predicate);
-    }
-
-    commands.erase(commands.begin(), deletes_end);
-
-    if (!predicates.empty())
-    {
-        ASTPtr where_expression;
-        if (predicates.size() == 1)
-            where_expression = predicates[0];
-        else
-        {
-            auto coalesced_predicates = std::make_shared<ASTFunction>();
-            coalesced_predicates->name = "and";
-            coalesced_predicates->arguments = std::make_shared<ASTExpressionList>();
-            coalesced_predicates->children.push_back(coalesced_predicates->arguments);
-            coalesced_predicates->arguments->children = predicates;
-
-            where_expression = std::move(coalesced_predicates);
-        }
-        select->where_expression = where_expression;
-        select->children.push_back(where_expression);
-    }
-
-    InterpreterSelectQuery interpreter_select(select, context, storage);
-    BlockInputStreamPtr in = interpreter_select.execute().in;
-
-    if (!commands.empty())
-        in = std::make_shared<ApplyingMutationsBlockInputStream>(in, commands, context);
-
-    return in;
-}
-
 MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     const FuturePart & future_part,
     const std::vector<MutationCommand> & commands,
     const Context & context)
 {
-    if (actions_blocker.isCancelled())
-        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+    auto check_not_cancelled = [&]()
+    {
+        if (actions_blocker.isCancelled())
+            throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+
+        return true;
+    };
+
+    check_not_cancelled();
 
     if (future_part.parts.size() != 1)
         throw Exception("Trying to mutate " + toString(future_part.parts.size()) + " parts, not one. "
@@ -970,7 +879,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     context_for_reading.getSettingsRef().merge_tree_uniform_read_distribution = 0;
     context_for_reading.getSettingsRef().max_threads = 1;
 
-    if (!isStorageTouchedByMutation(storage_from_source_part, commands, context_for_reading))
+    MutationsInterpreter mutations_interpreter(storage_from_source_part, commands, context_for_reading);
+
+    if (!mutations_interpreter.isStorageTouchedByMutations())
     {
         LOG_TRACE(log, "Part " << source_part->name << " doesn't change up to mutation version " << future_part.part_info.mutation);
         return data.cloneAndLoadDataPart(source_part, "tmp_clone_", future_part.part_info);
@@ -994,38 +905,105 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         source_part->bytes_on_disk,
         static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
 
-    auto in = createInputStreamWithMutatedData(storage_from_source_part, commands, context_for_reading);
-
-    if (data.hasPrimaryKey())
-        in = std::make_shared<MaterializingBlockInputStream>(
-            std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
-
     Poco::File(new_part_tmp_path).createDirectories();
 
+    auto in = mutations_interpreter.execute();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
-    MergedBlockOutputStream out(data, new_part_tmp_path, all_columns, compression_settings);
-
-    MergeTreeDataPart::MinMaxIndex minmax_idx;
-
-    in->readPrefix();
-    out.writePrefix();
-
-    Block block;
-    while (!actions_blocker.isCancelled() && (block = in->read()))
+    if (in->getHeader().columns() == all_columns.size())
     {
-        minmax_idx.update(block, data.minmax_idx_columns);
-        out.write(block);
+        /// All columns are modified, proceed to write a new part from scratch.
+
+        if (data.hasPrimaryKey())
+            in = std::make_shared<MaterializingBlockInputStream>(
+                std::make_shared<ExpressionBlockInputStream>(in, data.getPrimaryExpression()));
+
+        MergeTreeDataPart::MinMaxIndex minmax_idx;
+
+        MergedBlockOutputStream out(data, new_part_tmp_path, all_columns, compression_settings);
+
+        in->readPrefix();
+        out.writePrefix();
+
+        Block block;
+        while (check_not_cancelled() && (block = in->read()))
+        {
+            minmax_idx.update(block, data.minmax_idx_columns);
+            out.write(block);
+        }
+
+        new_data_part->partition.assign(source_part->partition);
+        new_data_part->minmax_idx = std::move(minmax_idx);
+
+        in->readSuffix();
+        out.writeSuffixAndFinalizePart(new_data_part);
     }
+    else
+    {
+        /// We will modify only some of the columns. Other columns and key values can be copied as-is.
+        /// TODO: check that we modify only non-key columns in this case.
 
-    if (actions_blocker.isCancelled())
-        throw Exception("Cancelled mutating parts", ErrorCodes::ABORTED);
+        NameSet files_to_skip = {"checksums.txt", "columns.txt"};
+        for (const auto & entry : in->getHeader())
+        {
+            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+            {
+                String stream_name = IDataType::getFileNameForStream(entry.name, substream_path);
+                files_to_skip.insert(stream_name + ".bin");
+                files_to_skip.insert(stream_name + ".mrk");
+            };
 
-    new_data_part->partition.assign(source_part->partition);
-    new_data_part->minmax_idx = std::move(minmax_idx);
+            IDataType::SubstreamPath stream_path;
+            entry.type->enumerateStreams(callback, stream_path);
+        }
 
-    in->readSuffix();
-    out.writeSuffixAndFinalizePart(new_data_part);
+        Poco::DirectoryIterator dir_end;
+        for (Poco::DirectoryIterator dir_it(source_part->getFullPath()); dir_it != dir_end; ++dir_it)
+        {
+            if (files_to_skip.count(dir_it.name()))
+                continue;
+
+            Poco::Path destination(new_part_tmp_path);
+            destination.append(dir_it.name());
+
+            createHardLink(dir_it.path().toString(), destination.toString());
+        }
+
+        MergedColumnOnlyOutputStream out(data, in->getHeader(), new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false);
+
+        in->readPrefix();
+        out.writePrefix();
+
+        Block block;
+        while (check_not_cancelled() && (block = in->read()))
+            out.write(block);
+
+        in->readSuffix();
+        auto changed_checksums = out.writeSuffixAndGetChecksums();
+
+        new_data_part->checksums = source_part->checksums;
+        new_data_part->checksums.add(std::move(changed_checksums));
+        {
+            /// Write file with checksums.
+            WriteBufferFromFile out(new_part_tmp_path + "checksums.txt", 4096);
+            new_data_part->checksums.write(out);
+        }
+
+        new_data_part->columns = all_columns;
+        {
+            /// Write a file with a description of columns.
+            WriteBufferFromFile out(new_part_tmp_path + "columns.txt", 4096);
+            all_columns.writeText(out);
+        }
+
+        new_data_part->rows_count = source_part->rows_count;
+        new_data_part->marks_count = source_part->marks_count;
+        new_data_part->index = source_part->index;
+        new_data_part->partition.assign(source_part->partition);
+        new_data_part->minmax_idx = source_part->minmax_idx;
+        new_data_part->modification_time = time(nullptr);
+        new_data_part->bytes_on_disk = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->getFullPath());
+    }
 
     return new_data_part;
 }

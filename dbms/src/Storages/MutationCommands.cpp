@@ -1,12 +1,11 @@
 #include <Storages/MutationCommands.h>
-#include <Storages/IStorage.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Columns/FilterDescription.h>
 #include <IO/Operators.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTAssignment.h>
 #include <Common/typeid_cast.h>
 
 
@@ -16,6 +15,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_MUTATION_COMMAND;
+    extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN;
 }
 
 std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
@@ -26,6 +26,22 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command)
         res.ast = command->ptr();
         res.type = DELETE;
         res.predicate = command->predicate;
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::UPDATE)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = UPDATE;
+        res.predicate = command->predicate;
+        for (const ASTPtr & assignment_ast : command->update_assignments->children)
+        {
+            const auto & assignment = typeid_cast<const ASTAssignment &>(*assignment_ast);
+            auto insertion = res.column_to_update_expression.emplace(assignment.column_name, assignment.expression);
+            if (!insertion.second)
+                throw Exception("Multiple assignments in the single statement to column `" + assignment.column_name + "`",
+                    ErrorCodes::MULTIPLE_ASSIGNMENTS_TO_COLUMN);
+        }
         return res;
     }
     else
@@ -39,33 +55,6 @@ std::shared_ptr<ASTAlterCommandList> MutationCommands::ast() const
     for (const MutationCommand & command : *this)
         res->add(command.ast->clone());
     return res;
-}
-
-void MutationCommands::validate(const IStorage & table, const Context & context) const
-{
-    auto all_columns = table.getColumns().getAll();
-
-    for (const MutationCommand & command : *this)
-    {
-        switch (command.type)
-        {
-            case MutationCommand::DELETE:
-            {
-                auto actions = ExpressionAnalyzer(command.predicate, context, {}, all_columns).getActions(true);
-
-                /// Try executing the resulting actions on the table sample block to detect malformed queries.
-                auto table_sample_block = table.getSampleBlock();
-                actions->execute(table_sample_block);
-
-                const ColumnWithTypeAndName & predicate_column = actions->getSampleBlock().getByName(
-                    command.predicate->getColumnName());
-                checkColumnCanBeUsedAsFilter(predicate_column);
-                break;
-            }
-            default:
-                throw Exception("Bad mutation type: " + toString<int>(command.type), ErrorCodes::LOGICAL_ERROR);
-        }
-    }
 }
 
 void MutationCommands::writeText(WriteBuffer & out) const

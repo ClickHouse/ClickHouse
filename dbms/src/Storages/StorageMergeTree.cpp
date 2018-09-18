@@ -110,11 +110,10 @@ BlockInputStreams StorageMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     return reader.read(column_names, query_info, context, max_block_size, num_streams, 0);
 }
 
@@ -305,15 +304,17 @@ struct CurrentlyMergingPartsTagger
 void StorageMergeTree::mutate(const MutationCommands & commands, const Context &)
 {
     MergeTreeMutationEntry entry(commands, full_path, data.insert_increment.get());
+    String file_name;
     {
         std::lock_guard lock(currently_merging_mutex);
 
         Int64 version = increment.get();
         entry.commit(version);
+        file_name = entry.file_name;
         current_mutations_by_version.emplace(version, std::move(entry));
     }
 
-    LOG_INFO(log, "Added mutation: " << entry.file_name);
+    LOG_INFO(log, "Added mutation: " << file_name);
     background_task_handle->wake();
 }
 
@@ -383,7 +384,6 @@ void StorageMergeTree::loadMutations()
 
 
 bool StorageMergeTree::merge(
-    size_t aio_threshold,
     bool aggressive,
     const String & partition_id,
     bool final,
@@ -477,7 +477,7 @@ bool StorageMergeTree::merge(
     try
     {
         new_part = merger_mutator.mergePartsToTemporaryPart(
-            future_part, *merge_entry, aio_threshold, time(nullptr),
+            future_part, *merge_entry, time(nullptr),
             merging_tagger->reserved_space.get(), deduplicate);
         merger_mutator.renameMergedTemporaryPart(new_part, future_part.parts, nullptr);
 
@@ -618,9 +618,8 @@ bool StorageMergeTree::backgroundTask()
             clearOldMutations();
         }
 
-        size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
         ///TODO: read deduplicate option from table config
-        if (merge(aio_threshold, false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
+        if (merge(false /*aggressive*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/))
             return true;
 
         return tryMutatePart();
@@ -751,7 +750,7 @@ bool StorageMergeTree::optimize(
 
         for (const String & partition_id : partition_ids)
         {
-            if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, true, deduplicate, &disable_reason))
+            if (!merge(true, partition_id, true, deduplicate, &disable_reason))
             {
                 if (context.getSettingsRef().optimize_throw_if_noop)
                     throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);
@@ -761,7 +760,7 @@ bool StorageMergeTree::optimize(
     }
     else
     {
-        if (!merge(context.getSettingsRef().min_bytes_to_use_direct_io, true, partition_id, final, deduplicate, &disable_reason))
+        if (!merge(true, partition_id, final, deduplicate, &disable_reason))
         {
             if (context.getSettingsRef().optimize_throw_if_noop)
                 throw Exception(disable_reason.empty() ? "Can't OPTIMIZE by some reason" : disable_reason, ErrorCodes::CANNOT_ASSIGN_OPTIMIZE);

@@ -167,7 +167,8 @@ target_link_libraries (clickhouse_common_io
     ${ZSTD_LIBRARY}
     ${DOUBLE_CONVERSION_LIBRARIES}
     ${Poco_Net_LIBRARY}
-    ${Poco_Data_LIBRARY}
+    ${Poco_Util_LIBRARY}
+    ${Poco_Foundation_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARY}
     ${ELF_LIBRARY}
@@ -195,25 +196,31 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
 
+if (Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
+endif()
+
 if (USE_POCO_SQLODBC)
     target_link_libraries (clickhouse_common_io ${Poco_SQL_LIBRARY})
     target_link_libraries (dbms ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIRS})
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIRS} PUBLIC ${Poco_SQL_INCLUDE_DIRS})
+        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQL_INCLUDE_DIR})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_SQLODBC_INCLUDE_DIR} PUBLIC ${Poco_SQL_INCLUDE_DIR})
     endif()
 endif()
 
-if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
-    target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIRS})
+#if (Poco_Data_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
+if (Poco_Data_FOUND)
+    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
+    target_include_directories (dbms SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
 endif()
 
 if (USE_POCO_DATAODBC)
     target_link_libraries (clickhouse_common_io ${Poco_Data_LIBRARY})
     target_link_libraries (dbms ${Poco_DataODBC_LIBRARY})
     if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIRS})
+        target_include_directories (dbms SYSTEM PRIVATE ${ODBC_INCLUDE_DIRECTORIES} ${Poco_DataODBC_INCLUDE_DIR})
     endif()
 endif()
 
@@ -223,6 +230,7 @@ endif()
 
 if (USE_POCO_NETSSL)
     target_link_libraries (clickhouse_common_io ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+    target_link_libraries (dbms ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif()
 
 target_link_libraries (dbms ${Poco_Foundation_LIBRARY})
@@ -265,7 +273,6 @@ endif ()
 target_include_directories (dbms PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${PCG_RANDOM_INCLUDE_DIR})
-target_include_directories (clickhouse_common_io SYSTEM PUBLIC ${Poco_DataODBC_INCLUDE_DIRS})
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
 
 # also for copy_headers.sh:

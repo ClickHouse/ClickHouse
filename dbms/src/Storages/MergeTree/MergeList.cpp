@@ -20,7 +20,7 @@ MergeListElement::MergeListElement(const std::string & database, const std::stri
 {
     for (const auto & source_part : source_parts)
         source_part_names.emplace_back(source_part->name);
-    
+
     if (!source_parts.empty())
         partition_id = source_parts[0]->info.partition_id;
 
