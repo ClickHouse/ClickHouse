@@ -1586,7 +1586,6 @@ private:
         void (*operation)(char *&, UInt32, const DateLUTImpl &) = nullptr;
 
     private:
-        static constexpr char digits[] = "0123456789";
         const char * source;
         size_t source_position_to_copy = 0;
         size_t source_length_to_copy = 0;
@@ -1606,7 +1605,7 @@ private:
             do
             {
                 --width;
-                *--ep = digits[v % 10];    /// TODO v % 10 + '0' should be better (one arithmetic op vs. load from L1 cache)
+                *--ep = '0' + v % 10;
             } while (v /= 10);
 
             while (--width >= 0)
