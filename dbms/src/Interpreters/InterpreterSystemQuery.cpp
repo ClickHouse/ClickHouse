@@ -226,7 +226,6 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_nam
 {
     auto database = system_context.getDatabase(database_name);
     auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
-    LOG_DEBUG(&Logger::get("System"), "trying restart replica");
     ASTPtr create_ast;
 
     /// Detach actions

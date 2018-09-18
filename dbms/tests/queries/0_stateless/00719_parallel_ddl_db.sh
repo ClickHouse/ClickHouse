@@ -4,13 +4,13 @@ set -e
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS d_create_race"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
 
 function query()
 {
     for i in {1..100}; do
-        ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS d_create_race"
-        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS d_create_race"  
+        ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE IF NOT EXISTS parallel_ddl"
+        ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"  
     done
 }
 
@@ -20,4 +20,4 @@ done
 
 wait
 
-${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS d_create_race"
+${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS parallel_ddl"
