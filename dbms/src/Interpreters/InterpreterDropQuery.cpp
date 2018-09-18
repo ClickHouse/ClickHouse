@@ -58,13 +58,12 @@ BlockIO InterpreterDropQuery::executeToTable(String & database_name_, String & t
 
     String database_name = database_name_.empty() ? context.getCurrentDatabase() : database_name_;
 
+    auto ddl_guard = context.getDDLGuard(database_name, table_name);
+
     DatabaseAndTable database_and_table = tryGetDatabaseAndTable(database_name, table_name, if_exists);
 
     if (database_and_table.first && database_and_table.second)
     {
-        auto ddl_guard = context.getDDLGuard(
-            database_name, table_name, "Table " + database_name + "." + table_name + " is dropping or detaching right now");
-
         if (kind == ASTDropQuery::Kind::Detach)
         {
             database_and_table.second->shutdown();
@@ -146,6 +145,8 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(String & table_name, ASTDr
 
 BlockIO InterpreterDropQuery::executeToDatabase(String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
+    auto ddl_guard = context.getDDLGuard(database_name, "");
+
     if (auto database = tryGetDatabase(database_name, if_exists))
     {
         if (kind == ASTDropQuery::Kind::Truncate)

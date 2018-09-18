@@ -225,7 +225,8 @@ BlockIO InterpreterSystemQuery::execute()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
     auto database = system_context.getDatabase(database_name);
-    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
+    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
+    LOG_DEBUG(&Logger::get("System"), "trying restart replica");
     ASTPtr create_ast;
 
     /// Detach actions
