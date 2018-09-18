@@ -47,7 +47,12 @@ else
 endif
 endif
 
-CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)` -DCMAKE_C_COMPILER=`which $(CC)`
+ifdef CXX
+    CMAKE_FLAGS += -DCMAKE_CXX_COMPILER=`which $(CXX)`
+endif
+ifdef CC
+    CMAKE_FLAGS += -DCMAKE_C_COMPILER=`which $(CC)`
+endif
 
 ifndef DISABLE_NINJA
     NINJA=$(shell which ninja)
