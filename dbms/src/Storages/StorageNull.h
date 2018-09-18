@@ -23,12 +23,11 @@ public:
     BlockInputStreams read(
         const Names & column_names,
         const SelectQueryInfo &,
-        const Context & context,
-        QueryProcessingStage::Enum processing_stage,
+        const Context & /*context*/,
+        QueryProcessingStage::Enum /*processing_stage*/,
         size_t,
         unsigned) override
     {
-        checkQueryProcessingStage(processing_stage, context);
         return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
     }
 

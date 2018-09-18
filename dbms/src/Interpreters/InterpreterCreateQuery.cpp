@@ -56,6 +56,7 @@ namespace ErrorCodes
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
@@ -608,6 +609,9 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         insert->table = table_name;
         insert->select = create.select->clone();
 
+        if (create.is_temporary && !context.getSessionContext().hasQueryContext())
+            context.getSessionContext().setQueryContext(context.getSessionContext());
+
         return InterpreterInsertQuery(insert,
             create.is_temporary ? context.getSessionContext() : context,
             context.getSettingsRef().insert_allow_materialized_columns).execute();
@@ -641,23 +645,26 @@ void InterpreterCreateQuery::checkAccess(const ASTCreateQuery & create)
 
     const Settings & settings = context.getSettingsRef();
     auto readonly = settings.readonly;
+    auto allow_ddl = settings.allow_ddl;
 
-    if (!readonly)
-    {
+    if (!readonly && allow_ddl)
         return;
-    }
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
     {
-        throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+        if (readonly)
+            throw Exception("Cannot create database in readonly mode", ErrorCodes::READONLY);
+
+        throw Exception("Cannot create database. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
     }
 
     if (create.is_temporary && readonly >= 2)
-    {
         return;
-    }
 
-    throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+    if (readonly)
+        throw Exception("Cannot create table in readonly mode", ErrorCodes::READONLY);
+
+    throw Exception("Cannot create table. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 }

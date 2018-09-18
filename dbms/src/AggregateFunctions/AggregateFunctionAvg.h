@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -22,20 +23,39 @@ struct AggregateFunctionAvgData
 
 
 /// Calculates arithmetic mean of numbers.
-template <typename T>
-class AggregateFunctionAvg final : public IAggregateFunctionDataHelper<AggregateFunctionAvgData<typename NearestFieldType<T>::Type>, AggregateFunctionAvg<T>>
+template <typename T, typename Data>
+class AggregateFunctionAvg final : public IAggregateFunctionDataHelper<Data, AggregateFunctionAvg<T, Data>>
 {
 public:
+    using ResultType = std::conditional_t<IsDecimalNumber<T>, Decimal128, Float64>;
+    using ResultDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<Decimal128>, DataTypeNumber<Float64>>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+    using ColVecResult = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<Decimal128>, ColumnVector<Float64>>;
+
+    /// ctor for native types
+    AggregateFunctionAvg()
+        : scale(0)
+    {}
+
+    /// ctor for Decimals
+    AggregateFunctionAvg(const IDataType & data_type)
+        : scale(getDecimalScale(data_type))
+    {}
+
     String getName() const override { return "avg"; }
 
     DataTypePtr getReturnType() const override
     {
-        return std::make_shared<DataTypeFloat64>();
+        if constexpr (IsDecimalNumber<T>)
+            return std::make_shared<ResultDataType>(ResultDataType::maxPrecision(), scale);
+        else
+            return std::make_shared<ResultDataType>();
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        this->data(place).sum += static_cast<const ColumnVector<T> &>(*columns[0]).getData()[row_num];
+        const auto & column = static_cast<const ColVecType &>(*columns[0]);
+        this->data(place).sum += column.getData()[row_num];
         ++this->data(place).count;
     }
 
@@ -59,11 +79,14 @@ public:
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
-        static_cast<ColumnFloat64 &>(to).getData().push_back(
-            static_cast<Float64>(this->data(place).sum) / this->data(place).count);
+        auto & column = static_cast<ColVecResult &>(to);
+        column.getData().push_back(static_cast<ResultType>(this->data(place).sum) / this->data(place).count);
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
+
+private:
+    UInt32 scale;
 };
 
 

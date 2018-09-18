@@ -249,7 +249,6 @@ BlockInputStreams StorageDistributed::read(
     const unsigned /*num_streams*/)
 {
     auto cluster = getCluster();
-    checkQueryProcessingStage(processed_stage, getQueryProcessingStage(context, cluster));
 
     const Settings & settings = context.getSettingsRef();
 
@@ -345,6 +344,7 @@ namespace
         {"_table", "String"},
         {"_part", "String"},
         {"_part_index", "UInt64"},
+        {"_partition_id", "String"},
         {"_sample_factor", "Float64"},
     };
 }
@@ -401,7 +401,6 @@ size_t StorageDistributed::getShardCount() const
 {
     return getCluster()->getShardCount();
 }
-
 
 ClusterPtr StorageDistributed::getCluster() const
 {

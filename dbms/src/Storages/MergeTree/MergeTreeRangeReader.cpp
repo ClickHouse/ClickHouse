@@ -409,6 +409,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
 
     ReadResult read_result;
     size_t prev_bytes = 0;
+    bool should_reorder = false;
 
     if (prev_reader)
     {
@@ -416,7 +417,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         prev_bytes = read_result.block.bytes();
         Block block = continueReadingChain(read_result);
 
-        bool should_reorder = false;
         bool should_evaluate_missing_defaults = false;
         if (block)
         {
@@ -436,9 +436,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         {
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
-
-            if (should_reorder || always_reorder || block.columns())
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
         }
     }
     else
@@ -446,15 +443,11 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         read_result = startReadingChain(max_rows, ranges);
         if (read_result.block)
         {
-            bool should_reorder;
             bool should_evaluate_missing_defaults;
             merge_tree_reader->fillMissingColumns(read_result.block, should_reorder, should_evaluate_missing_defaults);
 
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
-
-            if (should_reorder || always_reorder)
-                merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
         }
     }
 
@@ -464,6 +457,10 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
     read_result.addNumBytesRead(read_result.block.bytes() - prev_bytes);
 
     executePrewhereActionsAndFilterColumns(read_result);
+
+    if (last_reader_in_chain && (should_reorder || always_reorder))
+        merge_tree_reader->reorderColumns(read_result.block, *ordered_names, prewhere_column_name);
+
     return read_result;
 }
 

@@ -3,6 +3,7 @@
 #include <Core/Defines.h>
 #include <common/shift10.h>
 #include <common/likely.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <double-conversion/double-conversion.h>
 
 
@@ -274,7 +275,7 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
     {
         for (size_t i = 0; i < N; ++i)
         {
-            if ((*buf.position() & 0xF0) == 0x30)
+            if (isNumericASCII(*buf.position()))
             {
                 x *= 10;
                 x += *buf.position() & 0x0F;
@@ -284,14 +285,14 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
                 return;
         }
 
-        while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+        while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
     }
     else
     {
         for (size_t i = 0; i < N; ++i)
         {
-            if (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+            if (!buf.eof() && isNumericASCII(*buf.position()))
             {
                 x *= 10;
                 x += *buf.position() & 0x0F;
@@ -301,7 +302,7 @@ static inline void readUIntTextUpToNSignificantDigits(T & x, ReadBuffer & buf)
                 return;
         }
 
-        while (!buf.eof() && (*buf.position() & 0xF0) == 0x30)
+        while (!buf.eof() && isNumericASCII(*buf.position()))
             ++buf.position();
     }
 }
@@ -554,12 +555,15 @@ ReturnType readFloatTextSimpleImpl(T & x, ReadBuffer & buf)
 
 
 template <typename T>
-inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale, bool digits_only = false)
+inline void readDigits(ReadBuffer & buf, T & x, unsigned int & digits, int & exponent, bool digits_only = false)
 {
     x = 0;
+    exponent = 0;
+    unsigned int max_digits = digits;
+    digits = 0;
+    unsigned int places = 0;
     typename T::NativeType sign = 1;
-    bool leading_zeores = true;
-    bool trailing_zeores = false;
+    bool leading_zeroes = true;
     bool after_point = false;
 
     if (buf.eof())
@@ -578,16 +582,28 @@ inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, uns
         }
     }
 
-    while (!buf.eof())
+    bool stop = false;
+    while (!buf.eof() && !stop)
     {
         const char & byte = *buf.position();
         switch (byte)
         {
             case '.':
                 after_point = true;
-                if (scale == 0)
-                    trailing_zeores = true;
+                leading_zeroes = false;
                 break;
+            case '0':
+            {
+                if (leading_zeroes)
+                    break;
+
+                if (after_point)
+                {
+                    ++places; /// Count trailing zeroes. They would be used only if there's some other digit after them.
+                    break;
+                }
+                [[fallthrough]];
+            }
             case '1': [[fallthrough]];
             case '2': [[fallthrough]];
             case '3': [[fallthrough]];
@@ -597,38 +613,59 @@ inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, uns
             case '7': [[fallthrough]];
             case '8': [[fallthrough]];
             case '9':
-                leading_zeores = false;
-                if (trailing_zeores || precision == 0)
-                    throw Exception("Cannot read decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-                [[fallthrough]];
-            case '0':
             {
-                /// ignore leading and trailing zeroes
-                if (likely(!leading_zeores && !trailing_zeores))
-                {
-                    if (precision == 0 || precision < scale || ((precision == scale) && !after_point))
-                        throw Exception("Cannot read decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
-                    --precision;
-                    x = x * 10 + (byte - '0');
-                }
-                if (after_point && scale)
-                {
-                    --scale;
-                    if (!scale)
-                        trailing_zeores = true;
-                }
+                leading_zeroes = false;
+
+                ++places; // num zeroes before + current digit
+                if (digits + places > max_digits)
+                    throw Exception("Too many digits in decimal value", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+                digits += places;
+                if (after_point)
+                    exponent -= places;
+
+                // TODO: accurate shift10 for big integers
+                for (; places; --places)
+                    x *= 10;
+                x += (byte - '0');
                 break;
+            }
+            case 'e': [[fallthrough]];
+            case 'E':
+            {
+                ++buf.position();
+                Int32 addition_exp = 0;
+                readIntText(addition_exp, buf);
+                exponent += addition_exp;
+                stop = true;
+                continue;
             }
 
             default:
                 if (digits_only)
                     throw Exception("Unexpected symbol while reading decimal", ErrorCodes::CANNOT_PARSE_NUMBER);
-                x *= sign;
-                return;
+                stop = true;
+                continue;
         }
         ++buf.position();
     }
+
     x *= sign;
+}
+
+template <typename T>
+inline void readDecimalText(ReadBuffer & buf, T & x, unsigned int precision, unsigned int & scale, bool digits_only = false)
+{
+    unsigned int digits = precision;
+    int exponent;
+    readDigits(buf, x, digits, exponent, digits_only);
+
+    if (static_cast<int>(digits) + exponent > static_cast<int>(precision - scale))
+        throw Exception("Decimal value is too big", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+    if (static_cast<int>(scale) + exponent < 0)
+        throw Exception("Decimal value is too small", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    scale += exponent;
 }
 
 

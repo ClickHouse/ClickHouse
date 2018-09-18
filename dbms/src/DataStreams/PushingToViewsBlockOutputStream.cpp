@@ -1,5 +1,6 @@
 #include <DataStreams/PushingToViewsBlockOutputStream.h>
 #include <DataStreams/SquashingBlockInputStream.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 
@@ -58,6 +59,13 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
 
 void PushingToViewsBlockOutputStream::write(const Block & block)
 {
+    /** Throw an exception if the sizes of arrays - elements of nested data structures doesn't match.
+      * We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
+      * NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
+      * but currently we don't have methods for serialization of nested structures "as a whole".
+      */
+    Nested::validateArraySizes(block);
+
     if (output)
         output->write(block);
 
@@ -82,7 +90,10 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
             in->readPrefix();
 
             while (Block result_block = in->read())
+            {
+                Nested::validateArraySizes(result_block);
                 view.out->write(result_block);
+            }
 
             in->readSuffix();
         }

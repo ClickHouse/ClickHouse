@@ -58,6 +58,8 @@ Here a cluster is defined with the name 'logs' that consists of two shards, each
 Shards refer to the servers that contain different parts of the data (in order to read all the data, you must access all the shards).
 Replicas are duplicating servers (in order to read all the data, you can access the data on any one of the replicas).
 
+Cluster names must not contain dots.
+
 The parameters `host`, `port`, and optionally `user` and `password` are specified for each server:
 
 :   -   `host` – The address of the remote server. You can use either the domain or the IPv4 or IPv6 address. If you specify the domain, the server makes a DNS request when it starts, and the result is stored as long as the server is running. If the DNS request fails, the server doesn't start. If you change the DNS record, restart the server.

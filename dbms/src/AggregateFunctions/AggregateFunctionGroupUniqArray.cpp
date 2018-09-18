@@ -26,8 +26,9 @@ class AggregateFunctionGroupUniqArrayDateTime : public AggregateFunctionGroupUni
 
 static IAggregateFunction * createWithExtraTypes(const DataTypePtr & argument_type)
 {
-         if (typeid_cast<const DataTypeDate *>(argument_type.get())) return new AggregateFunctionGroupUniqArrayDate;
-    else if (typeid_cast<const DataTypeDateTime *>(argument_type.get())) return new AggregateFunctionGroupUniqArrayDateTime;
+    WhichDataType which(argument_type);
+         if (which.idx == TypeIndex::Date) return new AggregateFunctionGroupUniqArrayDate;
+    else if (which.idx == TypeIndex::DateTime) return new AggregateFunctionGroupUniqArrayDateTime;
     else
     {
         /// Check that we can use plain version of AggreagteFunctionGroupUniqArrayGeneric

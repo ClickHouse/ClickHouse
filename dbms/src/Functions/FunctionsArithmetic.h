@@ -96,8 +96,10 @@ template <typename A, typename Op>
 struct UnaryOperationImpl
 {
     using ResultType = typename Op::ResultType;
-    using ArrayA = typename ColumnVector<A>::Container;
-    using ArrayC = typename ColumnVector<ResultType>::Container;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecC = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayC = typename ColVecC::Container;
 
     static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
     {
@@ -740,8 +742,10 @@ struct DecimalBinaryOperation
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
     using Op = Operation<NativeResultType, NativeResultType>;
-    using ArrayA = std::conditional_t<IsDecimalNumber<A>, typename ColumnDecimal<A>::Container, typename ColumnVector<A>::Container>;
-    using ArrayB = std::conditional_t<IsDecimalNumber<B>, typename ColumnDecimal<B>::Container, typename ColumnVector<B>::Container>;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayB = typename ColVecB::Container;
     using ArrayC = typename ColumnDecimal<ResultType>::Container;
     using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
@@ -1020,14 +1024,14 @@ public:
     /// DateTime, but if both operands are Dates, their type must be the same (e.g. Date - DateTime is invalid).
     using ResultDataType = Switch<
         /// Decimal cases
-        Case<!allow_decimal && (IsDecimal<LeftDataType> || IsDecimal<RightDataType>), InvalidType>,
-        Case<IsDecimal<LeftDataType> && IsDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
-        Case<IsDecimal<LeftDataType> && IsDecimal<RightDataType>, RightDataType>,
-        Case<IsDecimal<LeftDataType> && !IsDecimal<RightDataType> && IsIntegral<RightDataType>, LeftDataType>,
-        Case<!IsDecimal<LeftDataType> && IsDecimal<RightDataType> && IsIntegral<LeftDataType>, RightDataType>,
+        Case<!allow_decimal && (IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>), InvalidType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && UseLeftDecimal<LeftDataType, RightDataType>, LeftDataType>,
+        Case<IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>, RightDataType>,
+        Case<IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && IsIntegral<RightDataType>, LeftDataType>,
+        Case<!IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && IsIntegral<LeftDataType>, RightDataType>,
         /// Decimal <op> Real is not supported (traditional DBs convert Decimal <op> Real to Real)
-        Case<IsDecimal<LeftDataType> && !IsDecimal<RightDataType> && !IsIntegral<RightDataType>, InvalidType>,
-        Case<!IsDecimal<LeftDataType> && IsDecimal<RightDataType> && !IsIntegral<LeftDataType>, InvalidType>,
+        Case<IsDataTypeDecimal<LeftDataType> && !IsDataTypeDecimal<RightDataType> && !IsIntegral<RightDataType>, InvalidType>,
+        Case<!IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType> && !IsIntegral<LeftDataType>, InvalidType>,
         /// number <op> number -> see corresponding impl
         Case<!IsDateOrDateTime<LeftDataType> && !IsDateOrDateTime<RightDataType>,
             DataTypeFromFieldType<typename Op::ResultType>>,
@@ -1311,16 +1315,16 @@ public:
             using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
             if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
             {
-                if constexpr (IsDecimal<LeftDataType> && IsDecimal<RightDataType>)
+                if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
                     constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
                     constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>>;
                     ResultDataType result_type = decimalResultType(left, right, is_multiply, is_division);
                     type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                 }
-                else if constexpr (IsDecimal<LeftDataType>)
+                else if constexpr (IsDataTypeDecimal<LeftDataType>)
                     type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
-                else if constexpr (IsDecimal<RightDataType>)
+                else if constexpr (IsDataTypeDecimal<RightDataType>)
                     type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
                 else
                     type_res = std::make_shared<ResultDataType>();
@@ -1366,7 +1370,7 @@ public:
             using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
             if constexpr (!std::is_same_v<ResultDataType, InvalidType>)
             {
-                constexpr bool result_is_decimal = IsDecimal<LeftDataType> || IsDecimal<RightDataType>;
+                constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
                 constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
                 constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>>;
 
@@ -1378,7 +1382,7 @@ public:
                 using ColVecResult = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
                 /// Decimal operations need scale. Operations are on result type.
-                using OpImpl = std::conditional_t<IsDecimal<ResultDataType>,
+                using OpImpl = std::conditional_t<IsDataTypeDecimal<ResultDataType>,
                     DecimalBinaryOperation<T0, T1, Op, ResultType>,
                     BinaryOperationImpl<T0, T1, Op<T0, T1>, ResultType>>;
 
@@ -1394,7 +1398,7 @@ public:
                             ResultDataType type = decimalResultType(left, right, is_multiply, is_division);
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                            if constexpr (IsDecimal<RightDataType> && is_division)
+                            if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
 
                             auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
@@ -1435,7 +1439,7 @@ public:
 
                             typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                             typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                            if constexpr (IsDecimal<RightDataType> && is_division)
+                            if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                                 scale_a = right.getScaleMultiplier();
 
                             OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
@@ -1455,7 +1459,7 @@ public:
 
                         typename ResultDataType::FieldType scale_a = type.scaleFactorFor(left, is_multiply);
                         typename ResultDataType::FieldType scale_b = type.scaleFactorFor(right, is_multiply || is_division);
-                        if constexpr (IsDecimal<RightDataType> && is_division)
+                        if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                             scale_a = right.getScaleMultiplier();
                         if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                         {
@@ -1501,7 +1505,7 @@ public:
             using RightDataType = std::decay_t<decltype(right)>;
             using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
             using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-            return !std::is_same_v<ResultDataType, InvalidType> && !IsDecimal<ResultDataType> && OpSpec::compilable;
+            return !std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable;
         });
     }
 
@@ -1514,7 +1518,7 @@ public:
             using RightDataType = std::decay_t<decltype(right)>;
             using ResultDataType = typename BinaryOperationTraits<Op, LeftDataType, RightDataType>::ResultDataType;
             using OpSpec = Op<typename LeftDataType::FieldType, typename RightDataType::FieldType>;
-            if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDecimal<ResultDataType> && OpSpec::compilable)
+            if constexpr (!std::is_same_v<ResultDataType, InvalidType> && !IsDataTypeDecimal<ResultDataType> && OpSpec::compilable)
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                 auto type = std::make_shared<ResultDataType>();
@@ -1584,7 +1588,7 @@ public:
             using DataType = std::decay_t<decltype(type)>;
             using T0 = typename DataType::FieldType;
 
-            if constexpr (IsDecimal<DataType>)
+            if constexpr (IsDataTypeDecimal<DataType>)
             {
                 if constexpr (!allow_decimal)
                     return false;
@@ -1607,7 +1611,7 @@ public:
             using DataType = std::decay_t<decltype(type)>;
             using T0 = typename DataType::FieldType;
 
-            if constexpr (IsDecimal<DataType>)
+            if constexpr (IsDataTypeDecimal<DataType>)
             {
                 if constexpr (allow_decimal)
                 {
@@ -1647,7 +1651,7 @@ public:
         return castType(arguments[0].get(), [&](const auto & type)
         {
             using DataType = std::decay_t<decltype(type)>;
-            return !IsDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
+            return !IsDataTypeDecimal<DataType> && Op<typename DataType::FieldType>::compilable;
         });
     }
 
@@ -1659,7 +1663,7 @@ public:
             using DataType = std::decay_t<decltype(type)>;
             using T0 = typename DataType::FieldType;
             using T1 = typename Op<T0>::ResultType;
-            if constexpr (!std::is_same_v<T1, InvalidType> && !IsDecimal<DataType> && Op<T0>::compilable)
+            if constexpr (!std::is_same_v<T1, InvalidType> && !IsDataTypeDecimal<DataType> && Op<T0>::compilable)
             {
                 auto & b = static_cast<llvm::IRBuilder<> &>(builder);
                 auto * v = nativeCast(b, types[0], values[0](), std::make_shared<DataTypeNumber<T1>>());
