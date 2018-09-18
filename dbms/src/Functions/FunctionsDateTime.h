@@ -1580,16 +1580,14 @@ private:
     {
     public:
         FormattingOperation(const char * source, size_t copy_source, size_t copy_length)
-        : source(source), source_position_to_copy(copy_source), source_length_to_copy(copy_length) {
-            operation = nullptr;
-        }
+            : source(source), source_position_to_copy(copy_source), source_length_to_copy(copy_length) {}
 
         FormattingOperation(const char * source) : source(source) {}
 
-        void (*operation)(char *&, UInt32, const DateLUTImpl &);
-    private:
+        void (*operation)(char *&, UInt32, const DateLUTImpl &) = nullptr;
 
-        static constexpr char kDigits[] = "0123456789";
+    private:
+        static constexpr char digits[] = "0123456789";
         const char * source;
         size_t source_position_to_copy = 0;
         size_t source_length_to_copy = 0;
@@ -1606,22 +1604,23 @@ private:
             auto width_copy = width;
             ep += width_copy;
 
-            do {
+            do
+            {
                 --width;
-                *--ep = kDigits[v % 10];
+                *--ep = digits[v % 10];    /// TODO v % 10 + '0' should be better (one arithmetic op vs. load from L1 cache)
             } while (v /= 10);
 
-            while (--width >= 0) *--ep = '0';
+            while (--width >= 0)
+                *--ep = '0';
 
             ep += width_copy;
         }
 
     public:
-
         // format DateTime
         void action(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
-            if(operation)
+            if (operation)
                 operation(target, source, timezone);
             else
                 copy(target, source, timezone);
@@ -1630,22 +1629,22 @@ private:
         // format Date (convert to DateTime implicitly)
         void action(char *& target, UInt16 date, const DateLUTImpl & timezone)
         {
+            /// TODO This is not efficient.
             const UInt32 datetime = timezone.fromDayNum(DayNum(date));
             action(target, datetime, timezone);
         }
 
-        void copy(char *& target, UInt32 , const DateLUTImpl & )
+        void copy(char *& target, UInt32, const DateLUTImpl &)
         {
-            auto tmp = source + source_position_to_copy;
-            memcpy(target, tmp, source_length_to_copy);
-            target += source_length_to_copy * sizeof(char);
+            memcpy(target, source + source_position_to_copy, source_length_to_copy);
+            target += source_length_to_copy;
         }
 
         static void format_C(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             auto year = ToYearImpl::execute(source, timezone);
-            int s = static_cast<int>(floor(year/100));
-            writeNumber2(target, s);
+            auto century = year / 100;
+            writeNumber2(target, century);
         }
 
         static void format_d(char *& target, UInt32 source, const DateLUTImpl & timezone)
@@ -1657,7 +1656,7 @@ private:
         {
             auto month = ToMonthImpl::execute(source, timezone);
             auto day = ToDayOfMonthImpl::execute(source, timezone);
-            auto year = ToYearImpl::execute(source, timezone) % 1000;
+            auto year = ToYearImpl::execute(source, timezone) % 100;
             writeNumber2(target, month);
             *target++ = '/';
             writeNumber2(target, day);
@@ -1669,7 +1668,8 @@ private:
         {
             auto day = ToDayOfMonthImpl::execute(source, timezone);
 
-            if (day < 10) {
+            if (day < 10)
+            {
                 *target++ = ' ';
                 *target++ = '0' + day;
             }
@@ -1698,8 +1698,7 @@ private:
         static void format_I(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             auto x = ToHourImpl::execute(source, timezone);
-            auto mod = x % 12;
-            writeNumber2(target, mod == 0 ? 12 : mod);
+            writeNumber2(target, x > 12 ? x - 12 : x);
         }
 
         static void format_j(char *& target, UInt32 source, const DateLUTImpl & timezone)
@@ -1726,11 +1725,7 @@ private:
 
         static void format_p(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
-            if (ToHourImpl::execute(source, timezone) < 12)
-                *target++ = 'A';
-            else
-                *target++ = 'P';
-
+            *target++ = ToHourImpl::execute(source, timezone) < 12 ? 'A' : 'P';
             *target++ = 'M';
         }
 
@@ -1817,7 +1812,7 @@ private:
 public:
     static constexpr auto name = "formatDateTime";
 
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); }
 
     String getName() const override
     {
@@ -1903,16 +1898,15 @@ public:
 
             for (size_t i = 0; i < vec.size(); ++i)
             {
-                for(auto & instruction : instructions) {
+                for(auto & instruction : instructions)
                     instruction.action(pos, vec[i], time_zone);
-                }
+
                 *pos++ = '\0';
                 dst_offsets[i] = pos - begin;
             }
+
             dst_data.resize(pos - begin);
-
             block.getByPosition(result).column = std::move(col_res);
-
             return true;
         }
 
@@ -1924,24 +1918,26 @@ public:
         char * begin_of_pattern = pattern.data();
         size_t result_size = 0;
         size_t last_pos = 0;
-        for (size_t s = 0; s < pattern.length(); s++) {
-            if(pattern[s] == '%')
+
+        for (size_t s = 0; s < pattern.length(); ++s)
+        {
+            if (pattern[s] == '%')
             {
                 if (last_pos > 0)
                 {
                     auto length = 1 + s - last_pos;
-                    instructions.push_back(FormattingOperation(begin_of_pattern, last_pos - 1, length));
+                    instructions.emplace_back(begin_of_pattern, last_pos - 1, length);
                     last_pos = 0;
                     result_size += length;
                 }
 
-                auto formatting_operation = new FormattingOperation(begin_of_pattern, 0,0);
-                void (*operation)(char *&, UInt32, const DateLUTImpl &) = nullptr;
+                FormattingOperation formatting_operation(begin_of_pattern, 0, 0);
+                auto & operation = formatting_operation.operation;
 
                 if (++s == pattern.length())
                     throw Exception("Sign '%' is last in pattern, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
 
-                switch(pattern[s])
+                switch (pattern[s])
                 {
                     // Year, divided by 100, zero-padded
                     case 'C':
@@ -2090,27 +2086,25 @@ public:
 
                     default:
                         throw Exception(
-                                "Wrong pattern '" + pattern + "', unexpected symbol '" + pattern[s] + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                            "Wrong pattern '" + pattern + "', unexpected symbol '" + pattern[s] + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
                 }
 
-                if(operation)
-                    formatting_operation->operation = operation;
-
-                instructions.push_back(*formatting_operation);
+                instructions.emplace_back(std::move(formatting_operation));
             }
-            else {
-                if (last_pos == 0) {
+            else
+            {
+                if (last_pos == 0)
                     last_pos = s + 1;
-                }
             }
         }
 
         if (last_pos > 0)
         {
             auto length = 1 + pattern.length() - last_pos;
-            instructions.push_back(FormattingOperation(begin_of_pattern, last_pos - 1, length));
+            instructions.emplace_back(begin_of_pattern, last_pos - 1, length);
             result_size += length;
         }
+
         return result_size;
     }
 };
