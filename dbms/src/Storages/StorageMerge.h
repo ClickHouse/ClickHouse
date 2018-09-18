@@ -58,7 +58,7 @@ private:
 
     StorageListWithLocks getSelectedTables() const;
 
-    Block getBlockWithVirtualColumns(const StorageListWithLocks & selected_tables) const;
+    StorageMerge::StorageListWithLocks getSelectedTables(const ASTPtr & query, bool has_virtual_column, bool get_lock) const;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
@@ -70,6 +70,14 @@ protected:
         const String & source_database_,
         const String & table_name_regexp_,
         const Context & context_);
+
+    Block getQueryHeader(const Names & column_names, const SelectQueryInfo & query_info,
+                         const Context & context, QueryProcessingStage::Enum processed_stage);
+
+    BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
+                                          const size_t max_block_size, const Names &real_column_names, const Context & modified_context,
+                                          const Block & header, const StoragePtr & storage, const TableStructureReadLockPtr & struct_lock,
+                                          size_t current_streams, bool has_table_virtual_column) const;
 };
 
 }
