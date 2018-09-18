@@ -151,3 +151,18 @@ For a time interval starting at 'StartTime' and continuing for 'Duration' second
 For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 This is necessary for searching for pageviews in the corresponding session.
 
+## formatDateTime(datetime, format)
+Formats the given datetime according to the provided format string. Uses strftime() formatting options. The time zone is detected automatically from the first argument, to convert datetime into another time zone use toTimeZone() function. To format date use type conversions functions such as toDateTime().
+
+```sql
+SELECT
+    formatDateTime(toDateTime('2018-01-02 04:05:30'), '%Y-%m-%d %H:%M:%S') AS as_is,
+    formatDateTime(toTimeZone(toDateTime('2018-01-02 04:05:30'), 'America/Los_Angeles'), '%c %Z %z') AS la_time,
+    formatDateTime(toDateTime(today()), '%A') AS day_of_week
+```
+
+```text
+┌─as_is───────────────┬─la_time────────────────────────────┬─day_of_week─┐
+│ 2018-01-02 04:05:30 │ Mon Jan  1 20:05:30 2018 PST -0800 │ Tuesday     │
+└─────────────────────┴────────────────────────────────────┴─────────────┘
+```

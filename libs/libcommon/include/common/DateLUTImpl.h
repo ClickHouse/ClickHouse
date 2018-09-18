@@ -65,6 +65,10 @@ private:
 
     /// Time zone name.
     std::string time_zone;
+    /// Time zone abbreviation
+    const char * time_zone_abbr;
+    /// Day Light Saving time
+    bool is_dst;
 
 
     /// We can correctly process only timestamps that less DATE_LUT_MAX (i.e. up to 2105 year inclusively)
@@ -445,6 +449,22 @@ public:
             time_offset -= lut[index].amount_of_offset_change;
 
         return lut[index].date + time_offset;
+    }
+
+    inline void makeTM(time_t t, tm & tp) const
+    {
+        const Values & values = find(t);
+        tp.tm_year = values.year - 1900;
+        tp.tm_mon = values.month - 1;
+        tp.tm_mday = values.day_of_month;
+        tp.tm_wday = values.day_of_week % 7;
+        tp.tm_yday = toDayNum(t) - toFirstDayOfYear(t);
+        tp.tm_hour = toHour(t);
+        tp.tm_min = toMinute(t);
+        tp.tm_sec = toSecond(t);
+        tp.tm_isdst = is_dst;
+        tp.tm_gmtoff = offset_at_start_of_epoch;
+        tp.tm_zone = time_zone_abbr;
     }
 
     inline const Values & getValues(DayNum d) const { return lut[d]; }

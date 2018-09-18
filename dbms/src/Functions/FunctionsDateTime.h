@@ -15,6 +15,7 @@
 #include <Common/typeid_cast.h>
 
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromVector.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
@@ -24,6 +25,7 @@
 #include <Poco/String.h>
 
 #include <type_traits>
+#include <cctz/time_zone.h>
 
 
 namespace DB
@@ -1567,6 +1569,106 @@ public:
                     + ", " + block.getByPosition(arguments[1]).column->getName()
                     + " of arguments of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN);
+    }
+};
+
+
+/**
+ * Function to format DateTime in desired format.
+ *
+ * Uses cctz::format, which format options are superset of strftime().
+ * It attempts to detect timezone from its first argument DateTime:
+ *
+ *    formatDateTime(now(), '%c %Z %z')
+ *    Tue Aug  7 11:35:39 2018 BST +0100
+ *
+ *    formatDateTime(toTimeZone(now(), 'America/Los_Angeles'), '%c %Z %z')
+ *    Tue Aug  7 03:35:39 2018 PDT -0700
+ *
+ * To format Date column just use toDateTime() conversion function:
+ *
+ *    formatDateTime(toTimeZone(toDateTime(today()), 'Asia/Calcutta'), '%c %Z %z')
+ *    Tue Aug  7 04:30:00 2018 IST +0530
+ */
+class FunctionFormatDateTime : public IFunction
+{
+public:
+    static constexpr auto name = "formatDateTime";
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); };
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!checkDataType<DataTypeDateTime>(arguments[0].get()))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be DateTime.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!checkDataType<DataTypeString>(arguments[1].get()))
+            throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName() + ". Must be String.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        if (const ColumnUInt32 * times = typeid_cast<const ColumnUInt32 *>(block.getByPosition(arguments[0]).column.get()))
+        {
+            const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(block.getByPosition(arguments[0]).type.get());
+            const DateLUTImpl & time_zone = type->getTimeZone();
+            cctz::time_zone tz;
+            cctz::load_time_zone(time_zone.getTimeZone(), &tz);
+
+            const ColumnConst * column_format = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+
+            if (!column_format)
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                                + " of argument of function " + getName()
+                                + ". Must be constant string.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+
+            String format = column_format->getValue<String>();
+            auto format_str = format.data();
+
+            auto col_to = ColumnString::create();
+
+            const typename ColumnUInt32::Container & vec_from = times->getData();
+            ColumnString::Chars_t & data_to = col_to->getChars();
+            ColumnString::Offsets & offsets_to = col_to->getOffsets();
+            size_t size = vec_from.size();
+            data_to.resize(size * format.length());
+            offsets_to.resize(size);
+
+            WriteBufferFromVector<ColumnString::Chars_t> buf_to(data_to);
+
+            char buf[64];
+            tm tp{};
+            for (size_t i = 0; i < size; ++i)
+            {
+                time_t t = vec_from[i];
+                time_zone.makeTM(t, tp);
+                auto written = strftime(buf, sizeof(buf), format_str, &tp);
+
+                writeString(buf, written + 1, buf_to);
+                offsets_to[i] = buf_to.count();
+            }
+            data_to.resize(buf_to.count());
+
+            block.getByPosition(result).column = std::move(col_to);
+        }
+        else
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                            + " of argument of function " + getName(),
+                            ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 
