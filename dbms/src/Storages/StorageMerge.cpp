@@ -21,6 +21,7 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
+#include <Interpreters/SettingsCommon.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 
 
@@ -203,6 +204,12 @@ BlockInputStreams StorageMerge::read(
       */
     StorageListWithLocks selected_tables = getSelectedTables(query_info.query, has_table_virtual_column, true);
 
+    if (selected_tables.empty())
+    {
+        BlockInputStreams streams{std::make_shared<NullBlockInputStream>(header)};
+        return streams;
+    }
+
     size_t remaining_streams = num_streams;
     size_t tables_count = selected_tables.size();
 
@@ -220,16 +227,16 @@ BlockInputStreams StorageMerge::read(
         if (current_streams)
         {
             source_streams = createSourceStreams(
-                query_info, processed_stage, max_block_size, real_column_names, modified_context, header, storage,
-                struct_lock, current_streams, has_table_virtual_column);
+                query_info, processed_stage, max_block_size, modified_context, header, storage,
+                struct_lock, real_column_names, current_streams, has_table_virtual_column);
         }
         else
         {
-            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(header, [=]() -> BlockInputStreamPtr
+            source_streams.emplace_back(std::make_shared<LazyBlockInputStream>(header, [=, &real_column_names]() -> BlockInputStreamPtr
             {
-                BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size, real_column_names,
+                BlockInputStreams streams = createSourceStreams(query_info, processed_stage, max_block_size,
                                                                 modified_context, header, storage,
-                                                                struct_lock, current_streams, has_table_virtual_column);
+                                                                struct_lock, real_column_names, current_streams, has_table_virtual_column);
 
                 if (streams.size() != 1)
                     throw Exception("LogicalError: the lazy stream size must to be one.", ErrorCodes::LOGICAL_ERROR);
@@ -249,10 +256,10 @@ BlockInputStreams StorageMerge::read(
 }
 
 BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                                    const size_t max_block_size, const Names & real_column_names,
-                                                    const Context & modified_context, const Block & header, const StoragePtr & storage,
-                                                    const TableStructureReadLockPtr & struct_lock, size_t current_streams,
-                                                    bool has_table_virtual_column) const
+                                                    const size_t max_block_size, const Context & modified_context,
+                                                    const Block & header, const StoragePtr & storage,
+                                                    const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
+                                                    size_t current_streams, bool has_table_virtual_column)
 {
     SelectQueryInfo modified_query_info;
     modified_query_info.query = query_info.query->clone();
@@ -264,6 +271,10 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
 
     if (processed_stage <= storage->getQueryProcessingStage(modified_context))
     {
+        /// If there are only virtual columns in query, you must request at least one other column.
+        if (real_column_names.size() ==0)
+            real_column_names.push_back(ExpressionActions::getSmallestColumn(storage->getColumns().getAllPhysical()));
+
         source_streams = storage->read(real_column_names, modified_query_info, modified_context, processed_stage, max_block_size,
                                          current_streams);
     }
@@ -280,6 +291,12 @@ BlockInputStreams StorageMerge::createSourceStreams(const SelectQueryInfo & quer
           * And this is not allowed, since all code is based on the assumption that in the block stream all types are the same.
           */
         source_streams.emplace_back(std::make_shared<MaterializingBlockInputStream>(interpreter_stream));
+    }
+
+    if (source_streams.empty())
+    {
+        source_streams.emplace_back(std::make_shared<OneBlockInputStream>(header));
+        return source_streams;
     }
 
     if (!current_streams)
