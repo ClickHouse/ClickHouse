@@ -1618,12 +1618,20 @@ private:
 
     public:
 
+        // format DateTime
         void action(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             if(operation)
                 operation(target, source, timezone);
             else
                 copy(target, source, timezone);
+        }
+
+        // format Date (convert to DateTime implicitly)
+        void action(char *& target, UInt16 date, const DateLUTImpl & timezone)
+        {
+            const UInt32 datetime = timezone.fromDayNum(DayNum(date));
+            action(target, datetime, timezone);
         }
 
         void copy(char *& target, UInt32 , const DateLUTImpl & )
@@ -1696,9 +1704,7 @@ private:
 
         static void format_j(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
-            auto today = timezone.toDayNum(source);
-            auto first_year_day = ToStartOfYearImpl::execute(source, timezone);
-            writeNumberWidth(target, today - first_year_day + 1, 3);
+            writeNumberWidth(target, ToDayOfYearImpl::execute(source, timezone), 3);
         }
 
         static void format_m(char *& target, UInt32 source, const DateLUTImpl & timezone)
@@ -1832,7 +1838,7 @@ public:
                             + toString(arguments.size()) + ", should be 2 or 3",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!WhichDataType(arguments[0].type).isDateTime())
+        if (!WhichDataType(arguments[0].type).isDateOrDateTime())
             throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
                             ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1852,55 +1858,65 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        auto times = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
-        auto const_times = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
-
-        if (const_times)
-            throw Exception("Constant times are not supported yet");
-
-        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
-
-        if (!pattern_column)
-            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                            + " of second ('format') argument of function " + getName()
-                            + ". Must be constant string.",
+        if (!executeType<UInt32>(block, arguments, result) && !executeType<UInt16>(block, arguments, result))
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                            + "  of function " + getName() + ", must be Date or DateTime",
                             ErrorCodes::ILLEGAL_COLUMN);
+    }
 
-        String pattern = pattern_column->getValue<String>();
-
-        std::vector<FormattingOperation> instructions = {};
-        size_t result_length = parsePattern(pattern, instructions);
-
-        const DateLUTImpl * time_zone_tmp = nullptr;
-        if (arguments.size() == 3)
-            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
-        else
-            time_zone_tmp = &DateLUT::instance();
-
-        const DateLUTImpl & time_zone = *time_zone_tmp;
-
-        const ColumnUInt32::Container & vec = times->getData();
-
-        auto col_res = ColumnString::create();
-        auto & dst_data = col_res->getChars();
-        auto & dst_offsets = col_res->getOffsets();
-        dst_data.resize(vec.size() * (result_length + 1));
-        dst_offsets.resize(vec.size());
-
-        auto begin = reinterpret_cast<char *>(dst_data.data());
-        auto pos = begin;
-
-        for (size_t i = 0; i < vec.size(); ++i)
+    template <typename T>
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    {
+        if (auto * times = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
         {
-            for(auto & instruction : instructions) {
-                instruction.action(pos, vec[i], time_zone);
+            const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+
+            if (!pattern_column)
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                                + " of second ('format') argument of function " + getName()
+                                + ". Must be constant string.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+
+            String pattern = pattern_column->getValue<String>();
+
+            std::vector<FormattingOperation> instructions = {};
+            size_t result_length = parsePattern(pattern, instructions);
+
+            const DateLUTImpl * time_zone_tmp = nullptr;
+            if (arguments.size() == 3)
+                time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+            else
+                time_zone_tmp = &DateLUT::instance();
+
+            const DateLUTImpl & time_zone = *time_zone_tmp;
+
+            const typename ColumnVector<T>::Container & vec = times->getData();
+
+            auto col_res = ColumnString::create();
+            auto & dst_data = col_res->getChars();
+            auto & dst_offsets = col_res->getOffsets();
+            dst_data.resize(vec.size() * (result_length + 1));
+            dst_offsets.resize(vec.size());
+
+            auto begin = reinterpret_cast<char *>(dst_data.data());
+            auto pos = begin;
+
+            for (size_t i = 0; i < vec.size(); ++i)
+            {
+                for(auto & instruction : instructions) {
+                    instruction.action(pos, vec[i], time_zone);
+                }
+                *pos++ = '\0';
+                dst_offsets[i] = pos - begin;
             }
-            *pos++ = '\0';
-            dst_offsets[i] = pos - begin;
+            dst_data.resize(pos - begin);
+
+            block.getByPosition(result).column = std::move(col_res);
+
+            return true;
         }
 
-        block.getByPosition(result).column = std::move(col_res);
-
+        return false;
     }
 
     size_t parsePattern(String & pattern, std::vector<FormattingOperation> & instructions)

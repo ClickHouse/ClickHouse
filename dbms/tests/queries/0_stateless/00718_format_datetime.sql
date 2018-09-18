@@ -3,7 +3,8 @@ SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError 43 }
 SELECT formatDateTime(now(), now()); -- { serverError 43 }
 SELECT formatDateTime(now(), 'good format pattern', now()); -- { serverError 43 }
 SELECT formatDateTime(now(), 'unescaped %'); -- { serverError 36 }
-
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError 43 }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%W'); -- { serverError 43 }
 
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%C');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%d');
@@ -30,10 +31,13 @@ SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%T');
 SELECT formatDateTime(toDateTime('2018-01-01 22:33:44'), '%u'), formatDateTime(toDateTime('2018-01-07 22:33:44'), '%u');
 SELECT formatDateTime(toDateTime('1996-01-01 22:33:44'), '%V'), formatDateTime(toDateTime('1996-12-31 22:33:44'), '%V'),
        formatDateTime(toDateTime('1999-01-01 22:33:44'), '%V'), formatDateTime(toDateTime('1999-12-31 22:33:44'), '%V');
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError 43 }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%W'); -- { serverError 43 }
 SELECT formatDateTime(toDateTime('2018-01-01 22:33:44'), '%w'), formatDateTime(toDateTime('2018-01-07 22:33:44'), '%w');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%y');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%Y');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%%');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), 'no formatting pattern');
+
+SELECT formatDateTime(toDate('2018-01-01'), '%F %T');
+SELECT
+    formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'UTC'),
+    formatDateTime(toDateTime('2018-01-01 01:00:00', 'UTC'), '%F %T', 'Europe/Moscow')
