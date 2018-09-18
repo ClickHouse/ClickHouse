@@ -1,3 +1,5 @@
+SET send_logs_level = 'none';
+
 SELECT formatDateTime(); -- { serverError 42 }
 SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError 43 }
 SELECT formatDateTime(now(), now()); -- { serverError 43 }

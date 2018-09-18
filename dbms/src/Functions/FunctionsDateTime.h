@@ -1570,6 +1570,7 @@ public:
     }
 };
 
+
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern
   */
@@ -1581,8 +1582,6 @@ private:
     public:
         FormattingOperation(const char * source, size_t copy_source, size_t copy_length)
             : source(source), source_position_to_copy(copy_source), source_length_to_copy(copy_length) {}
-
-        FormattingOperation(const char * source) : source(source) {}
 
         void (*operation)(char *&, UInt32, const DateLUTImpl &) = nullptr;
 
@@ -1698,8 +1697,10 @@ private:
         static void format_I(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
             auto x = ToHourImpl::execute(source, timezone);
-            writeNumber2(target, x > 12 ? x - 12 : x);
+            writeNumber2(target, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
+
+        /// TODO format_l
 
         static void format_j(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
