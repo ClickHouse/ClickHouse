@@ -203,7 +203,7 @@ static bool isDictGetFunctionInjective(const ExternalDictionaries & dictionaries
   *  or convert it to T type, stores the result in backup_storage and returns a reference to it.
   */
 template <typename T>
-const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage);
+static const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage);
 
 
 class FunctionDictGetString final : public IFunction
@@ -1459,7 +1459,7 @@ private:
 
 
 template <typename T>
-const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage)
+static const PaddedPODArray<T> & getColumnDataAsPaddedPODArray(const IColumn & column, PaddedPODArray<T> & backup_storage)
 {
     if (const auto vector_col = checkAndGetColumn<ColumnVector<T>>(&column))
     {
