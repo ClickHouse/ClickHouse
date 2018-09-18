@@ -55,13 +55,15 @@ struct ArrayCumSumNonNegativeImpl
             // skip empty arrays
             if (pos < offsets[i])
             {
-                accum_sum = data[pos];
-                res_values[pos] = accum_sum > 0 ? accum_sum : 0;
+                accum_sum = data[pos] > 0 ? data[pos] : 0;
+                res_values[pos] = accum_sum;
                 for (++pos; pos < offsets[i]; ++pos)
                 {
                     accum_sum = accum_sum + data[pos];
-
-                    res_values[pos] = accum_sum > 0 ? accum_sum : 0;
+                    if (accum_sum < 0)
+                        accum_sum = 0;
+                    
+                    res_values[pos] = accum_sum;
                 }
             }
         }
