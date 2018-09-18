@@ -1591,27 +1591,37 @@ private:
         size_t source_length_to_copy = 0;
 
         template <typename T>
-        static inline void writeNumber2(char *& ep, T v)
+        static inline void writeNumber2(char *& p, T v)
         {
-            writeNumberWidth(ep, v, 2);
+            static const char digits[201] =
+                "00010203040506070809"
+                "10111213141516171819"
+                "20212223242526272829"
+                "30313233343536373839"
+                "40414243444546474849"
+                "50515253545556575859"
+                "60616263646566676869"
+                "70717273747576777879"
+                "80818283848586878889"
+                "90919293949596979899";
+
+            memcpy(p, &digits[v * 2], 2);
+            p += 2;
         }
 
         template <typename T>
-        static inline void writeNumberWidth(char *& ep, T v, int width)
+        static inline void writeNumber3(char *& p, T v)
         {
-            auto width_copy = width;
-            ep += width_copy;
+            writeNumber2(p, v / 10);
+            *p = '0' + v % 10;
+            ++p;
+        }
 
-            do
-            {
-                --width;
-                *--ep = '0' + v % 10;
-            } while (v /= 10);
-
-            while (--width >= 0)
-                *--ep = '0';
-
-            ep += width_copy;
+        template <typename T>
+        static inline void writeNumber4(char *& p, T v)
+        {
+            writeNumber2(p, v / 100);
+            writeNumber2(p, v % 100);
         }
 
     public:
@@ -1680,7 +1690,7 @@ private:
             auto year = ToYearImpl::execute(source, timezone);
             auto month = ToMonthImpl::execute(source, timezone);
             auto day = ToDayOfMonthImpl::execute(source, timezone);
-            writeNumberWidth(target, year, 4);
+            writeNumber4(target, year);
             *target++ = '-';
             writeNumber2(target, month);
             *target++ = '-';
@@ -1703,7 +1713,7 @@ private:
 
         static void format_j(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
-            writeNumberWidth(target, ToDayOfYearImpl::execute(source, timezone), 3);
+            writeNumber3(target, ToDayOfYearImpl::execute(source, timezone));
         }
 
         static void format_m(char *& target, UInt32 source, const DateLUTImpl & timezone)
@@ -1800,7 +1810,7 @@ private:
         // Year, 4 digits
         static void format_Y(char *& target, UInt32 source, const DateLUTImpl & timezone)
         {
-            writeNumberWidth(target, ToYearImpl::execute(source, timezone), 4);
+            writeNumber4(target, ToYearImpl::execute(source, timezone));
         }
 
         static void format_Percent(char *& target, UInt32 , const DateLUTImpl & )
