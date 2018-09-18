@@ -60,9 +60,9 @@ struct ArrayCumSumNonNegativeImpl
                 for (++pos; pos < offsets[i]; ++pos)
                 {
                     accum_sum = accum_sum + data[pos];
-                    if(accum_sum < 0){
+                    if (accum_sum < 0)
                         accum_sum = 0;
-                    }
+                    
                     res_values[pos] = accum_sum;
                 }
             }
