@@ -62,11 +62,14 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionToMonth>();
     factory.registerFunction<FunctionToDayOfMonth>();
     factory.registerFunction<FunctionToDayOfWeek>();
+    factory.registerFunction<FunctionToDayOfYear>();
     factory.registerFunction<FunctionToHour>();
     factory.registerFunction<FunctionToMinute>();
     factory.registerFunction<FunctionToSecond>();
     factory.registerFunction<FunctionToStartOfDay>();
     factory.registerFunction<FunctionToMonday>();
+    factory.registerFunction<FunctionToISOWeek>();
+    factory.registerFunction<FunctionToISOYear>();
     factory.registerFunction<FunctionToStartOfMonth>();
     factory.registerFunction<FunctionToStartOfQuarter>();
     factory.registerFunction<FunctionToStartOfYear>();
@@ -74,6 +77,7 @@ void registerFunctionsDateTime(FunctionFactory & factory)
     factory.registerFunction<FunctionToStartOfFiveMinute>();
     factory.registerFunction<FunctionToStartOfFifteenMinutes>();
     factory.registerFunction<FunctionToStartOfHour>();
+    factory.registerFunction<FunctionToStartOfISOYear>();
     factory.registerFunction<FunctionToRelativeYearNum>();
     factory.registerFunction<FunctionToRelativeQuarterNum>();
     factory.registerFunction<FunctionToRelativeMonthNum>();

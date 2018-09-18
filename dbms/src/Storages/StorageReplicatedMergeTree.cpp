@@ -1147,7 +1147,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeList::EntryPtr merge_entry = context.getMergeList().insert(database_name, table_name, entry.new_part_name, parts);
-    size_t aio_threshold = context.getSettings().min_bytes_to_use_direct_io;
 
     MergeTreeDataMergerMutator::FuturePart future_merged_part(parts);
     if (future_merged_part.name != entry.new_part_name)
@@ -1171,7 +1170,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
     try
     {
         part = merger_mutator.mergePartsToTemporaryPart(
-            future_merged_part, *merge_entry, aio_threshold, entry.create_time, reserved_space.get(), entry.deduplicate);
+            future_merged_part, *merge_entry, entry.create_time, reserved_space.get(), entry.deduplicate);
 
         merger_mutator.renameMergedTemporaryPart(part, parts, &transaction);
 
@@ -1987,8 +1986,8 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
     {
         /// We check that it was not suddenly upgraded to new version.
         /// Otherwise it can be upgraded and instantly become lost, but we cannot notice that.
-        ops.push_back(zkutil::makeCreateRequest(replica_path + "/is_lost", "0", zkutil::CreateMode::Persistent));
-        ops.push_back(zkutil::makeRemoveRequest(replica_path + "/is_lost", -1));
+        ops.push_back(zkutil::makeCreateRequest(source_path + "/is_lost", "0", zkutil::CreateMode::Persistent));
+        ops.push_back(zkutil::makeRemoveRequest(source_path + "/is_lost", -1));
     }
     else    /// The replica we clone should not suddenly become lost.
         ops.push_back(zkutil::makeCheckRequest(source_path + "/is_lost", source_is_lost_stat.version));
@@ -2714,7 +2713,9 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 
 bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const String & replica_path, bool to_detached, size_t quorum)
 {
-    if (auto part = data.getPartIfExists(part_name, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
+    const auto part_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+
+    if (auto part = data.getPartIfExists(part_info, {MergeTreeDataPart::State::Outdated, MergeTreeDataPart::State::Deleting}))
     {
         LOG_DEBUG(log, "Part " << part->getNameWithState() << " should be deleted after previous attempt before fetch");
         /// Force immediate parts cleanup to delete the part that was left from the previous fetch attempt.
@@ -2755,17 +2756,64 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
             part_name, part, replaced_parts, nullptr);
     };
 
-    ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
-    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
-    auto [user, password] = context.getInterserverCredentials();
-    String interserver_scheme = context.getInterserverScheme();
+    MergeTreeData::DataPartPtr part_to_clone;
+    {
+        /// If the desired part is a result of a part mutation, try to find the source part and compare
+        /// its checksums to the checksums of the desired part. If they match, we can just clone the local part.
+
+        /// If we have the source part, its part_info will contain covered_part_info.
+        auto covered_part_info = part_info;
+        covered_part_info.mutation = 0;
+        auto source_part = data.getActiveContainingPart(covered_part_info);
+
+        if (source_part)
+        {
+            MinimalisticDataPartChecksums source_part_checksums;
+            source_part_checksums.computeTotalChecksums(source_part->checksums);
+
+            String desired_checksums_str = getZooKeeper()->get(replica_path + "/parts/" + part_name + "/checksums");
+            auto desired_checksums = MinimalisticDataPartChecksums::deserializeFrom(desired_checksums_str);
+            if (source_part_checksums == desired_checksums)
+            {
+                LOG_TRACE(log, "Found local part " << source_part->name << " with the same checksums as " << part_name);
+                part_to_clone = source_part;
+            }
+        }
+
+    }
+
+    std::function<MergeTreeData::MutableDataPartPtr()> get_part;
+    if (part_to_clone)
+    {
+        get_part = [&, part_to_clone]()
+        {
+            return data.cloneAndLoadDataPart(part_to_clone, "tmp_clone_", part_info);
+        };
+    }
+    else
+    {
+        ReplicatedMergeTreeAddress address(getZooKeeper()->get(replica_path + "/host"));
+        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef());
+        auto user_password = context.getInterserverCredentials();
+        String interserver_scheme = context.getInterserverScheme();
+
+        get_part = [&, address, timeouts, user_password, interserver_scheme]()
+        {
+            if (interserver_scheme != address.scheme)
+                throw Exception("Interserver schemes are different: '" + interserver_scheme
+                    + "' != '" + address.scheme + "', can't fetch part from " + address.host,
+                    ErrorCodes::LOGICAL_ERROR);
+
+            return fetcher.fetchPart(
+                part_name, replica_path,
+                address.host, address.replication_port,
+                timeouts, user_password.first, user_password.second, interserver_scheme, to_detached);
+        };
+    }
 
     try
     {
-        if (interserver_scheme != address.scheme)
-            throw Exception("Interserver schemes are different '" + interserver_scheme + "' != '" + address.scheme + "', can't fetch part from " + address.host, ErrorCodes::LOGICAL_ERROR);
-
-        part = fetcher.fetchPart(part_name, replica_path, address.host, address.replication_port, timeouts, user, password, interserver_scheme, to_detached);
+        part = get_part();
 
         if (!to_detached)
         {
@@ -2810,7 +2858,11 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
     ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
-    LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
+    if (part_to_clone)
+        LOG_DEBUG(log, "Cloned part " << part_name << " from " << part_to_clone->name << (to_detached ? " (to 'detached' directory)" : ""));
+    else
+        LOG_DEBUG(log, "Fetched part " << part_name << " from " << replica_path << (to_detached ? " (to 'detached' directory)" : ""));
+
     return true;
 }
 
@@ -2877,11 +2929,10 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     const Settings & settings = context.getSettingsRef();
 
     /** The `select_sequential_consistency` setting has two meanings:
@@ -4114,7 +4165,6 @@ void StorageReplicatedMergeTree::mutate(const MutationCommands & commands, const
     ///
     /// After all needed parts are mutated (i.e. all active parts have the mutation version greater than
     /// the version of this mutation), the mutation is considered done and can be deleted.
-    /// TODO: add a way to track the progress of mutations and a process to clean old mutations.
 
     ReplicatedMergeTreeMutationEntry entry;
     entry.source_replica = replica_name;

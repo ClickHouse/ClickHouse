@@ -156,6 +156,8 @@ double Value::readFloatText(const char * buf, size_t length) const
 
 void Value::throwException(const char * text) const
 {
+    static constexpr size_t MYSQLXX_QUERY_PREVIEW_LENGTH = 1000;
+
     std::stringstream info;
     info << text;
 

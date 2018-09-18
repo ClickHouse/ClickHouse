@@ -667,6 +667,7 @@ void readJSONString(String & s, ReadBuffer & buf)
 template void readJSONStringInto<PaddedPODArray<UInt8>, void>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template bool readJSONStringInto<PaddedPODArray<UInt8>, bool>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readJSONStringInto<NullSink>(NullSink & s, ReadBuffer & buf);
+template void readJSONStringInto<String>(String & s, ReadBuffer & buf);
 
 
 template <typename ReturnType>

@@ -235,11 +235,10 @@ BlockInputStreams StorageStripeLog::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     std::shared_lock<std::shared_mutex> lock(rwlock);
 
     check(column_names);
