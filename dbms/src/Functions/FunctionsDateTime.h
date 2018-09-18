@@ -1813,7 +1813,7 @@ private:
             writeNumber4(target, ToYearImpl::execute(source, timezone));
         }
 
-        static void format_Percent(char *& target, UInt32 , const DateLUTImpl & )
+        static void format_Percent(char *& target, UInt32 , const DateLUTImpl &)
         {
             *target++ = '%';
         }
@@ -1831,7 +1831,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1,2}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
