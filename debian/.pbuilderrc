@@ -160,7 +160,7 @@ case "$DIST" in
 esac
 
 if [ "$ARCH" != arm64 ]; then
-   case "$DIST" in
+    case "$DIST" in
     "cosmic" | "bionic" | "experimental" | "unstable" | "testing")
         EXTRAPACKAGES+=" liblld-6.0-dev libclang-6.0-dev liblld-6.0 "
         export CMAKE_FLAGS="-DLLVM_VERSION_POSTFIX=-6.0 $CMAKE_FLAGS"
@@ -168,7 +168,7 @@ if [ "$ARCH" != arm64 ]; then
     "artful" )
         EXTRAPACKAGES+=" liblld-5.0-dev libclang-5.0-dev liblld-5.0 "
         ;;
-   esac
+    esac
 else
     export CMAKE_FLAGS="-DENABLE_EMBEDDED_COMPILER=0 $CMAKE_FLAGS"
 fi
