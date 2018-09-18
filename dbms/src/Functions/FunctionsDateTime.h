@@ -1580,15 +1580,15 @@ private:
     class FormattingOperation
     {
     public:
-        FormattingOperation(const char * source, size_t copy_source, size_t copy_length)
-            : source(source), source_position_to_copy(copy_source), source_length_to_copy(copy_length) {}
+        using Func = void (*)(char *&, UInt32, const DateLUTImpl &);
 
-        void (*operation)(char *&, UInt32, const DateLUTImpl &) = nullptr;
+        FormattingOperation(Func operation) : operation(operation) {}
+        FormattingOperation(StringRef string_to_copy) : string_to_copy(string_to_copy) {}
+
+        Func operation = nullptr;
 
     private:
-        const char * source;
-        size_t source_position_to_copy = 0;
-        size_t source_length_to_copy = 0;
+        StringRef string_to_copy;
 
         template <typename T>
         static inline void writeNumber2(char *& p, T v)
@@ -1631,7 +1631,7 @@ private:
             if (operation)
                 operation(target, source, timezone);
             else
-                copy(target, source, timezone);
+                copy(target);
         }
 
         // format Date (convert to DateTime implicitly)
@@ -1642,10 +1642,10 @@ private:
             action(target, datetime, timezone);
         }
 
-        void copy(char *& target, UInt32, const DateLUTImpl &)
+        void copy(char *& target)
         {
-            memcpy(target, source + source_position_to_copy, source_length_to_copy);
-            target += source_length_to_copy;
+            memcpy(target, string_to_copy.data, string_to_copy.size);
+            target += string_to_copy.size;
         }
 
         static void format_C(char *& target, UInt32 source, const DateLUTImpl & timezone)
@@ -1936,13 +1936,12 @@ public:
                 if (last_pos > 0)
                 {
                     auto length = 1 + s - last_pos;
-                    instructions.emplace_back(begin_of_pattern, last_pos - 1, length);
+                    instructions.emplace_back(StringRef(begin_of_pattern + last_pos - 1, length));
                     last_pos = 0;
                     result_size += length;
                 }
 
-                FormattingOperation formatting_operation(begin_of_pattern, 0, 0);
-                auto & operation = formatting_operation.operation;
+                FormattingOperation::Func operation;
 
                 if (++s == pattern.length())
                     throw Exception("Sign '%' is last in pattern, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
@@ -2099,7 +2098,7 @@ public:
                             "Wrong pattern '" + pattern + "', unexpected symbol '" + pattern[s] + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
                 }
 
-                instructions.emplace_back(std::move(formatting_operation));
+                instructions.emplace_back(operation);
             }
             else
             {
@@ -2111,7 +2110,7 @@ public:
         if (last_pos > 0)
         {
             auto length = 1 + pattern.length() - last_pos;
-            instructions.emplace_back(begin_of_pattern, last_pos - 1, length);
+            instructions.emplace_back(StringRef(begin_of_pattern + last_pos - 1, length));
             result_size += length;
         }
 
