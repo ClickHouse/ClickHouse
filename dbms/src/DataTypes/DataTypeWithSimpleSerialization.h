@@ -4,6 +4,8 @@
 namespace DB
 {
 
+/// Helper class to define same IDataType text (de)serialization for all the variants (escaped, quoted, JSON, CSV).
+/// You need to define serializeText() and deserializeText() in derived class.
 class DataTypeWithSimpleSerialization : public IDataType
 {
 protected:
