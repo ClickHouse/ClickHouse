@@ -290,8 +290,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 
     if (!stream)
-        throw Exception("Got empty stream in DataTypeWithDictionary::deserializeBinaryBulkStatePrefix",
-                        ErrorCodes::LOGICAL_ERROR);
+        return;
 
     UInt64 keys_version;
     readIntBinary(keys_version, *stream);
@@ -576,9 +575,6 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 {
     ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
 
-    auto * state_with_dictionary = checkAndGetWithDictionaryDeserializeState(state);
-    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
-
     settings.path.push_back(Substream::DictionaryKeys);
     auto * keys_stream = settings.getter(settings.path);
     settings.path.back() = Substream::DictionaryIndexes;
@@ -593,6 +589,9 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
     if (!indexes_stream)
         throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
+
+    auto * state_with_dictionary = checkAndGetWithDictionaryDeserializeState(state);
+    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
     auto readDictionary = [this, state_with_dictionary, keys_stream]()
     {
