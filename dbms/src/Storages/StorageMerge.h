@@ -78,6 +78,10 @@ protected:
                                           const size_t max_block_size, const Context & modified_context,
                                           const Block & header, const StoragePtr & storage, const TableStructureReadLockPtr & struct_lock,
                                           Names & real_column_names, size_t current_streams, bool has_table_virtual_column);
+
+    void convertingSourceStream(const Block & header, const Context & context, const StoragePtr & storage,
+                                const SelectQueryInfo & query_info, BlockInputStreamPtr & source_stream,
+                                QueryProcessingStage::Enum processed_stage);
 };
 
 }
