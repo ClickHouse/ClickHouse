@@ -5,8 +5,8 @@ SELECT formatDateTime('not a datetime', 'IGNORED'); -- { serverError 43 }
 SELECT formatDateTime(now(), now()); -- { serverError 43 }
 SELECT formatDateTime(now(), 'good format pattern', now()); -- { serverError 43 }
 SELECT formatDateTime(now(), 'unescaped %'); -- { serverError 36 }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError 43 }
-SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%W'); -- { serverError 43 }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%U'); -- { serverError 48 }
+SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%W'); -- { serverError 48 }
 
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%C');
 SELECT formatDateTime(toDateTime('2018-01-02 22:33:44'), '%d');
