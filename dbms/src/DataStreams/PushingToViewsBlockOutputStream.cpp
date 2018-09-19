@@ -9,9 +9,9 @@ namespace DB
 {
 
 PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
-    const String & database, const String & table, const StoragePtr & storage,
+    const String & database, const String & table, const StoragePtr & storage_,
     const Context & context_, const ASTPtr & query_ptr_, bool no_destination)
-    : context(context_), query_ptr(query_ptr_)
+    : storage(storage_), context(context_), query_ptr(query_ptr_)
 {
     /** TODO This is a very important line. At any insertion into the table one of streams should own lock.
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
