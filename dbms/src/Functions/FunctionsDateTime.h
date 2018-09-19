@@ -1571,6 +1571,554 @@ public:
 };
 
 
+/** formatDateTime(time, 'pattern')
+  * Performs formatting of time, according to provided pattern
+  */
+class FunctionFormatDateTime : public IFunction
+{
+private:
+    class FormattingOperation
+    {
+    public:
+        using Func = void (*)(char *&, UInt32, const DateLUTImpl &);
+
+        FormattingOperation(Func operation) : operation(operation) {}
+        FormattingOperation(StringRef string_to_copy) : string_to_copy(string_to_copy) {}
+
+        Func operation = nullptr;
+
+    private:
+        StringRef string_to_copy;
+
+        template <typename T>
+        static inline void writeNumber2(char *& p, T v)
+        {
+            static const char digits[201] =
+                "00010203040506070809"
+                "10111213141516171819"
+                "20212223242526272829"
+                "30313233343536373839"
+                "40414243444546474849"
+                "50515253545556575859"
+                "60616263646566676869"
+                "70717273747576777879"
+                "80818283848586878889"
+                "90919293949596979899";
+
+            memcpy(p, &digits[v * 2], 2);
+            p += 2;
+        }
+
+        template <typename T>
+        static inline void writeNumber3(char *& p, T v)
+        {
+            writeNumber2(p, v / 10);
+            *p = '0' + v % 10;
+            ++p;
+        }
+
+        template <typename T>
+        static inline void writeNumber4(char *& p, T v)
+        {
+            writeNumber2(p, v / 100);
+            writeNumber2(p, v % 100);
+        }
+
+    public:
+        // format DateTime
+        void action(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            if (operation)
+                operation(target, source, timezone);
+            else
+                copy(target);
+        }
+
+        // format Date (convert to DateTime implicitly)
+        void action(char *& target, UInt16 date, const DateLUTImpl & timezone)
+        {
+            /// TODO This is not efficient.
+            const UInt32 datetime = timezone.fromDayNum(DayNum(date));
+            action(target, datetime, timezone);
+        }
+
+        void copy(char *& target)
+        {
+            memcpy(target, string_to_copy.data, string_to_copy.size);
+            target += string_to_copy.size;
+        }
+
+        static void format_C(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto year = ToYearImpl::execute(source, timezone);
+            auto century = year / 100;
+            writeNumber2(target, century);
+        }
+
+        static void format_d(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToDayOfMonthImpl::execute(source, timezone));
+        }
+
+        static void format_D(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto month = ToMonthImpl::execute(source, timezone);
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            auto year = ToYearImpl::execute(source, timezone) % 100;
+            writeNumber2(target, month);
+            *target++ = '/';
+            writeNumber2(target, day);
+            *target++ = '/';
+            writeNumber2(target, year);
+        }
+
+        static void format_e(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+
+            if (day < 10)
+            {
+                *target++ = ' ';
+                *target++ = '0' + day;
+            }
+            else
+                writeNumber2(target, day);
+        }
+
+        static inline void format_F(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto year = ToYearImpl::execute(source, timezone);
+            auto month = ToMonthImpl::execute(source, timezone);
+            auto day = ToDayOfMonthImpl::execute(source, timezone);
+            writeNumber4(target, year);
+            *target++ = '-';
+            writeNumber2(target, month);
+            *target++ = '-';
+            writeNumber2(target, day);
+        }
+
+        static void format_H(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto x = ToHourImpl::execute(source, timezone);
+            writeNumber2(target, x);
+        }
+
+        static void format_I(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto x = ToHourImpl::execute(source, timezone);
+            writeNumber2(target, x == 0 ? 12 : (x > 12 ? x - 12 : x));
+        }
+
+        /// TODO format_l
+
+        static void format_j(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber3(target, ToDayOfYearImpl::execute(source, timezone));
+        }
+
+        static void format_m(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto x = ToMonthImpl::execute(source, timezone);
+            writeNumber2(target, x);
+        }
+
+        static void format_M(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto x = ToMinuteImpl::execute(source, timezone);
+            writeNumber2(target, x);
+        }
+
+        static void format_n(char *& target, UInt32 , const DateLUTImpl & )
+        {
+            *target++ = '\n';
+        }
+
+        static void format_p(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            *target++ = ToHourImpl::execute(source, timezone) < 12 ? 'A' : 'P';
+            *target++ = 'M';
+        }
+
+        // 24-hour HH:MM time, equivalent to %H:%M 14:55
+        static void format_R(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto hour = ToHourImpl::execute(source, timezone);
+            auto minute = ToMinuteImpl::execute(source, timezone);
+
+            writeNumber2(target, hour);
+            *target++ = ':';
+            writeNumber2(target, minute);
+        }
+
+        static void format_S(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToSecondImpl::execute(source, timezone));
+        }
+
+        static void format_t(char *& target, UInt32 , const DateLUTImpl & )
+        {
+            *target++ = '\t';
+        }
+
+        // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
+        static inline void format_T(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToHourImpl::execute(source, timezone));
+            *target++ = ':';
+            writeNumber2(target, ToMinuteImpl::execute(source, timezone));
+            *target++ = ':';
+            writeNumber2(target, ToSecondImpl::execute(source, timezone));
+        }
+
+        // ISO 8601 weekday as number with Monday as 1 (1-7)
+        static void format_u(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            *target++ = '0' + ToDayOfWeekImpl::execute(source, timezone);
+        }
+
+        // Week number with the first Sunday as the first day of week one (00-53)
+        static void format_U(char *& , UInt32 , const DateLUTImpl & )
+        {
+            throw Exception("Handler %U is not implemented", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        // ISO 8601 week number (01-53)
+        static void format_V(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
+        }
+
+        // Week number with the first Monday as the first day of week one (00-53)
+        static void format_W(char *& , UInt32 , const DateLUTImpl & )
+        {
+            throw Exception("Handler %W is not implemented", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        // Weekday as a decimal number with Sunday as 0 (0-6)
+        static void format_w(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            auto day = ToDayOfWeekImpl::execute(source, timezone);
+            *target++ = '0' + (day == 7 ? 0 : day);
+        }
+
+        // Year, last two digits (00-99)
+        static void format_y(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber2(target, ToYearImpl::execute(source, timezone) % 100);
+        }
+
+        // Year, 4 digits
+        static void format_Y(char *& target, UInt32 source, const DateLUTImpl & timezone)
+        {
+            writeNumber4(target, ToYearImpl::execute(source, timezone));
+        }
+
+        static void format_Percent(char *& target, UInt32 , const DateLUTImpl &)
+        {
+            *target++ = '%';
+        }
+    };
+
+public:
+    static constexpr auto name = "formatDateTime";
+
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatDateTime>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
+
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 2 && arguments.size() != 3)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                            + toString(arguments.size()) + ", should be 2 or 3",
+                            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (!WhichDataType(arguments[0].type).isDateOrDateTime())
+            throw Exception("Illegal type " + arguments[0].type->getName() + " of 1 argument of function " + getName() +
+                            ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!WhichDataType(arguments[1].type).isString())
+            throw Exception("Illegal type " + arguments[1].type->getName() + " of 2 argument of function " + getName() + ". Must be String.",
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 3)
+        {
+            if (!WhichDataType(arguments[2].type).isString())
+                throw Exception("Illegal type " + arguments[2].type->getName() + " of 3 argument of function " + getName() + ". Must be String.",
+                                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+        }
+
+        return std::make_shared<DataTypeString>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
+    {
+        if (!executeType<UInt32>(block, arguments, result) && !executeType<UInt16>(block, arguments, result))
+            throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
+                            + "  of function " + getName() + ", must be Date or DateTime",
+                            ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    template <typename T>
+    bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
+    {
+        if (auto * times = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        {
+            const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+
+            if (!pattern_column)
+                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                                + " of second ('format') argument of function " + getName()
+                                + ". Must be constant string.",
+                                ErrorCodes::ILLEGAL_COLUMN);
+
+            String pattern = pattern_column->getValue<String>();
+
+            std::vector<FormattingOperation> instructions = {};
+            size_t result_length = parsePattern(pattern, instructions);
+
+            const DateLUTImpl * time_zone_tmp = nullptr;
+            if (arguments.size() == 3)
+                time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+            else
+                time_zone_tmp = &DateLUT::instance();
+
+            const DateLUTImpl & time_zone = *time_zone_tmp;
+
+            const typename ColumnVector<T>::Container & vec = times->getData();
+
+            auto col_res = ColumnString::create();
+            auto & dst_data = col_res->getChars();
+            auto & dst_offsets = col_res->getOffsets();
+            dst_data.resize(vec.size() * (result_length + 1));
+            dst_offsets.resize(vec.size());
+
+            auto begin = reinterpret_cast<char *>(dst_data.data());
+            auto pos = begin;
+
+            for (size_t i = 0; i < vec.size(); ++i)
+            {
+                for(auto & instruction : instructions)
+                    instruction.action(pos, vec[i], time_zone);
+
+                *pos++ = '\0';
+                dst_offsets[i] = pos - begin;
+            }
+
+            dst_data.resize(pos - begin);
+            block.getByPosition(result).column = std::move(col_res);
+            return true;
+        }
+
+        return false;
+    }
+
+    size_t parsePattern(String & pattern, std::vector<FormattingOperation> & instructions)
+    {
+        char * begin_of_pattern = pattern.data();
+        size_t result_size = 0;
+        size_t last_pos = 0;
+
+        for (size_t s = 0; s < pattern.length(); ++s)
+        {
+            if (pattern[s] == '%')
+            {
+                if (last_pos > 0)
+                {
+                    auto length = 1 + s - last_pos;
+                    instructions.emplace_back(StringRef(begin_of_pattern + last_pos - 1, length));
+                    last_pos = 0;
+                    result_size += length;
+                }
+
+                FormattingOperation::Func operation;
+
+                if (++s == pattern.length())
+                    throw Exception("Sign '%' is last in pattern, if you need it, use '%%'", ErrorCodes::BAD_ARGUMENTS);
+
+                switch (pattern[s])
+                {
+                    // Year, divided by 100, zero-padded
+                    case 'C':
+                        operation = &FormattingOperation::format_C;
+                        result_size += 2;
+                        break;
+
+                    // Day of the month, zero-padded (01-31)
+                    case 'd':
+                        operation = &FormattingOperation::format_d;
+                        result_size += 2;
+                        break;
+
+                    // Short MM/DD/YY date, equivalent to %m/%d/%y
+                    case 'D':
+                        operation = &FormattingOperation::format_D;
+                        result_size += 8;
+                        break;
+
+                    // Day of the month, space-padded ( 1-31)  23
+                    case 'e':
+                        operation = &FormattingOperation::format_e;
+                        result_size += 2;
+                    break;
+
+                    // Short YYYY-MM-DD date, equivalent to %Y-%m-%d   2001-08-23
+                    case 'F':
+                        operation = &FormattingOperation::format_F;
+                        result_size += 10;
+                    break;
+
+                    // Hour in 24h format (00-23)
+                    case 'H':
+                        operation = &FormattingOperation::format_H;
+                        result_size += 2;
+                        break;
+
+                    // Hour in 12h format (01-12)
+                    case 'I':
+                        operation = &FormattingOperation::format_I;
+                        result_size += 2;
+                        break;
+
+                    // Day of the year (001-366)   235
+                    case 'j':
+                        operation = &FormattingOperation::format_j;
+                        result_size += 3;
+                        break;
+
+                    // Month as a decimal number (01-12)
+                    case 'm':
+                        operation = &FormattingOperation::format_m;
+                        result_size += 2;
+                        break;
+
+                    // Minute (00-59)
+                    case 'M':
+                        operation = &FormattingOperation::format_M;
+                        result_size += 2;
+                        break;
+
+                    // New line character "\n"
+                    case 'n':
+                        operation = &FormattingOperation::format_n;
+                        result_size += 1;
+                        break;
+
+                    // AM or PM
+                    case 'p':
+                        operation = &FormattingOperation::format_p;
+                        result_size += 2;
+                        break;
+
+                    // 24-hour HH:MM time, equivalent to %H:%M 14:55
+                    case 'R':
+                        operation = &FormattingOperation::format_R;
+                        result_size += 5;
+                        break;
+
+                    // Seconds
+                    case 'S':
+                        operation = &FormattingOperation::format_S;
+                        result_size += 2;
+                        break;
+
+                    // Horizontal-tab character ('\t')
+                    case 't':
+                        operation = &FormattingOperation::format_t;
+                        result_size += 1;
+                        break;
+
+                    // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
+                    case 'T':
+                        operation = &FormattingOperation::format_T;
+                        result_size += 8;
+                        break;
+
+                    // ISO 8601 weekday as number with Monday as 1 (1-7)
+                    case 'u':
+                        operation = &FormattingOperation::format_u;
+                        result_size += 1;
+                        break;
+
+                    // Week number with the first Sunday as the first day of week one (00-53)
+                    case 'U':
+                        operation = &FormattingOperation::format_U;
+                        result_size += 2;
+                        break;
+
+                    // ISO 8601 week number (01-53)
+                    case 'V':
+                        operation = &FormattingOperation::format_V;
+                        result_size += 2;
+                        break;
+
+                    // Weekday as a decimal number with Sunday as 0 (0-6)  4
+                    case 'w':
+                        operation = &FormattingOperation::format_w;
+                        result_size += 1;
+                        break;
+
+                    // Week number with the first Monday as the first day of week one (00-53)
+                    case 'W':
+                        operation = &FormattingOperation::format_W;
+                        result_size += 2;
+                        break;
+
+                        // Four digits year
+                    case 'y':
+                        operation = &FormattingOperation::format_y;
+                        result_size += 2;
+
+                        break;
+
+                    // Four digits year
+                    case 'Y':
+                        operation = &FormattingOperation::format_Y;
+                        result_size += 4;
+
+                        break;
+
+                    case '%':
+                        operation = &FormattingOperation::format_Percent;
+                        result_size += 1;
+                        break;
+
+                    default:
+                        throw Exception(
+                            "Wrong pattern '" + pattern + "', unexpected symbol '" + pattern[s] + "' for function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
+                }
+
+                instructions.emplace_back(operation);
+            }
+            else
+            {
+                if (last_pos == 0)
+                    last_pos = s + 1;
+            }
+        }
+
+        if (last_pos > 0)
+        {
+            auto length = 1 + pattern.length() - last_pos;
+            instructions.emplace_back(StringRef(begin_of_pattern + last_pos - 1, length));
+            result_size += length;
+        }
+
+        return result_size;
+    }
+};
+
+
 using FunctionToYear = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearImpl>;
 using FunctionToQuarter = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToQuarterImpl>;
 using FunctionToMonth = FunctionDateOrDateTimeToSomething<DataTypeUInt8, ToMonthImpl>;
