@@ -50,6 +50,8 @@
 #include <thread>
 #include <future>
 
+#include <iostream>
+
 
 namespace ProfileEvents
 {
@@ -2952,10 +2954,27 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    DB::ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks_with_quorum;
+    DB::ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
     if (settings.select_sequential_consistency)
     {
+        max_added_blocks = data.getMaxBlocksForPartition();
+
         auto zookeeper = getZooKeeper();
+
+        const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
+
+        String value;
+        Coordination::Stat stat;
+
+        if (zookeeper->tryGet(quorum_last_part_path, value, &stat))
+        {
+            ReplicatedMergeTreeQuorumEntry quorum_entry;
+            quorum_entry.fromString(value);
+
+            auto partition_info = MergeTreePartInfo::fromPartName(quorum_entry.part_name, data.format_version);
+
+            max_added_blocks[partition_info.partition_id] = partition_info.max_block - 1;
+        }
 
         String added_parts_str;
         zookeeper->tryGet(zookeeper_path + "/quorum/last_part", added_parts_str);
@@ -2970,11 +2989,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
                     throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
                         " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
 
-            max_added_blocks_with_quorum = part_with_quorum.getMaxInsertedBlocks();
+            for (const auto & max_block : part_with_quorum.getMaxInsertedBlocks())
+                max_added_blocks[max_block.first] = max_block.second;
         }
     }
 
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_added_blocks_with_quorum);
+    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_added_blocks);
 }
 
 
