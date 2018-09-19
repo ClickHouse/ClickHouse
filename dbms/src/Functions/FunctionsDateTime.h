@@ -1594,7 +1594,7 @@ public:
   *
   * Possible further optimization options:
   * - slightly interleave first and second step for better cache locality
-  *   (but it have no sense when character array fits L1d cache);
+  *   (but it has no sense when character array fits in L1d cache);
   * - avoid indirect function calls and inline functions with JIT compilation.
   *
   * Performance on Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz:
