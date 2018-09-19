@@ -184,9 +184,10 @@ struct ContextShared
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> table -> exception_message
-    /// For the duration of the operation, an element is placed here, and an object is returned, which deletes the element in the destructor.
-    /// In case the element already exists, an exception is thrown. See class DDLGuard below.
+    /// database -> table -> (mutex, counter), counter: how much threads run query on the table at the same time
+    /// For the duration of the operation, an element is placed here, and an object is returned, 
+    /// which deletes the element in the destructor when counter becomes zero.
+    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
     using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.

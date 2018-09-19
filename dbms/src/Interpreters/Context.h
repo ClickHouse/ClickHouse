@@ -224,7 +224,6 @@ public:
     DatabasePtr detachDatabase(const String & database_name);
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    /// If such an object already exists, an exception is thrown.
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table) const;
 
     String getCurrentDatabase() const;
@@ -465,8 +464,10 @@ private:
 };
 
 
-/// Puts an element into the map, erases it in the destructor.
-/// If the element already exists in the map, throws an exception containing provided message.
+/// Allows executing DDL query only in one thread. 
+/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table, 
+/// when counter is 0 erases element in the destructor. 
+/// If the element already exists in the map, waits, when ddl query will be finished in other thread.
 class DDLGuard
 {
 public:
@@ -475,7 +476,7 @@ public:
         UInt32 counter;
     };
 
-    /// Element name -> message.
+    /// Element name -> (mutex, counter).
     /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
     using Map = std::map<String, Entry>;
 
