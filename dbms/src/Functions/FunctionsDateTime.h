@@ -1592,6 +1592,11 @@ public:
   * - low number of arithmetic ops due to pre-filled pattern;
   * - for somewhat reason, function by pointer call is faster than switch/case.
   *
+  * Possible further optimization options:
+  * - slightly interleave first and second step for better cache locality
+  *   (but it have no sense when character array fits L1d cache);
+  * - avoid indirect function calls and inline functions with JIT compilation.
+  *
   * Performance on Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz:
   *
   * WITH formatDateTime(now() + number, '%H:%M:%S') AS x SELECT count() FROM system.numbers WHERE NOT ignore(x);
