@@ -96,6 +96,9 @@ BlockIO InterpreterInsertQuery::execute()
 
     out = std::make_shared<PushingToViewsBlockOutputStream>(query.database, query.table, table, context, query_ptr, query.no_destination);
 
+    out = std::make_shared<AddingDefaultBlockOutputStream>(
+        out, getSampleBlock(query, table), required_columns, table->getColumns().defaults, context);
+
     /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
     if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()))
@@ -103,9 +106,6 @@ BlockIO InterpreterInsertQuery::execute()
         out = std::make_shared<SquashingBlockOutputStream>(
             out, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
-
-    out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), required_columns, table->getColumns().defaults, context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
