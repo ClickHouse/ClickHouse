@@ -1576,7 +1576,37 @@ public:
 
 
 /** formatDateTime(time, 'pattern')
-  * Performs formatting of time, according to provided pattern
+  * Performs formatting of time, according to provided pattern.
+  *
+  * This function is optimized with an assumption, that the resulting strings are fixed width.
+  * (This assumption is fulfilled for currently supported formatting options).
+  *
+  * It is implemented in two steps.
+  * At first step, it creates a pattern of zeros, literal characters, whitespaces, etc.
+  *  and quickly fills resulting charater array (string column) with this pattern.
+  * At second step, it walks across the resulting character array and modifies/replaces specific charaters,
+  *  by calling some functions by pointers and shifting cursor by specified amount.
+  *
+  * Advantages:
+  * - memcpy is mostly unrolled;
+  * - low number of arithmetic ops due to pre-filled pattern;
+  * - for somewhat reason, function by pointer call is faster than switch/case.
+  *
+  * Performance on Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz:
+  *
+  * WITH formatDateTime(now() + number, '%H:%M:%S') AS x SELECT count() FROM system.numbers WHERE NOT ignore(x);
+  * - 97 million rows per second per core;
+  *
+  * WITH formatDateTime(toDateTime('2018-01-01 00:00:00') + number, '%F %T') AS x SELECT count() FROM system.numbers WHERE NOT ignore(x)
+  * - 71 million rows per second per core;
+  *
+  * select count() from (select formatDateTime(t, '%m/%d/%Y %H:%M:%S') from (select toDateTime('2018-01-01 00:00:00')+number as t from numbers(100000000)));
+  * - 53 million rows per second per core;
+  *
+  * select count() from (select formatDateTime(t, 'Hello %Y World') from (select toDateTime('2018-01-01 00:00:00')+number as t from numbers(100000000)));
+  * - 138 million rows per second per core;
+  *
+  * PS. We can make this function to return FixedString. Currently it returns String.
   */
 class FunctionFormatDateTime : public IFunction
 {
