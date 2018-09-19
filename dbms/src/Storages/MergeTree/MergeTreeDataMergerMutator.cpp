@@ -989,11 +989,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             new_data_part->checksums.write(out);
         }
 
-        new_data_part->columns = all_columns;
+        new_data_part->columns = source_part->columns;
+        for (const auto & new_column : in->getHeader().getColumnsWithTypeAndName())
+        {
+            if (!new_data_part->columns.contains(new_column.name))
+                new_data_part->columns.emplace_back(new_column.name, new_column.type);
+        }
         {
             /// Write a file with a description of columns.
             WriteBufferFromFile out(new_part_tmp_path + "columns.txt", 4096);
-            all_columns.writeText(out);
+            new_data_part->columns.writeText(out);
         }
 
         new_data_part->rows_count = source_part->rows_count;

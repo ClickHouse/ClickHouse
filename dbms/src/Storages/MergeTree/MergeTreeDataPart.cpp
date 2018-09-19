@@ -645,10 +645,10 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
                     String mrk_file_name = file_name + ".mrk";
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
-                        throw Exception("No " + mrk_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                     if (!checksums.files.count(bin_file_name))
-                        throw Exception("No " + bin_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                 }, stream_path);
             }
