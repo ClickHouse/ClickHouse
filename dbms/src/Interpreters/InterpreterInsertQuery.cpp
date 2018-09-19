@@ -108,7 +108,6 @@ BlockIO InterpreterInsertQuery::execute()
     out = std::make_shared<AddingDefaultBlockOutputStream>(
         out, header, required_columns, table->getColumns().defaults, context);
 
-
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
     out = std::move(out_wrapper);
