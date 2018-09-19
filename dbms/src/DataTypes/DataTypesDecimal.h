@@ -4,6 +4,7 @@
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeWithSimpleSerialization.h>
 
 
 namespace DB
@@ -15,53 +16,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_CONVERT_TYPE;
 }
-
-///
-class DataTypeSimpleSerialization : public IDataType
-{
-    void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeText(column, row_num, ostr, settings);
-    }
-
-    void serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeText(column, row_num, ostr, settings);
-    }
-
-    void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeText(column, row_num, ostr, settings);
-    }
-
-    void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override
-    {
-        serializeText(column, row_num, ostr, settings);
-    }
-
-    void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeText(column, istr, settings);
-    }
-
-    void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeText(column, istr, settings);
-    }
-
-    void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeText(column, istr, settings);
-    }
-
-    void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
-    {
-        deserializeText(column, istr, settings);
-    }
-
-    virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
-};
-
 
 class Context;
 bool decimalCheckComparisonOverflow(const Context & context);
@@ -89,7 +43,7 @@ DataTypePtr createDecimal(UInt64 precision, UInt64 scale);
 ///
 /// NOTE: It's possible to set scale as a template parameter then most of functions become static.
 template <typename T>
-class DataTypeDecimal final : public DataTypeSimpleSerialization
+class DataTypeDecimal final : public DataTypeWithSimpleSerialization
 {
     static_assert(IsDecimalNumber<T>);
 
