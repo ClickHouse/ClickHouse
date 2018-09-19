@@ -13,12 +13,28 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 template <typename T>
 struct AggregateFunctionAvgData
 {
     T sum = 0;
     UInt64 count = 0;
+
+    template <typename ResultT>
+    ResultT result() const
+    {
+        if constexpr (std::is_floating_point_v<ResultT>)
+            if constexpr (std::numeric_limits<ResultT>::is_iec559)
+                return static_cast<ResultT>(sum) / count; /// allow division by zero
+
+        if (!count)
+            throw Exception("AggregateFunctionAvg with zero values", ErrorCodes::LOGICAL_ERROR);
+        return static_cast<ResultT>(sum) / count;
+    }
 };
 
 
@@ -80,7 +96,7 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         auto & column = static_cast<ColVecResult &>(to);
-        column.getData().push_back(static_cast<ResultType>(this->data(place).sum) / this->data(place).count);
+        column.getData().push_back(this->data(place).template result<ResultType>());
     }
 
     const char * getHeaderFilePath() const override { return __FILE__; }
