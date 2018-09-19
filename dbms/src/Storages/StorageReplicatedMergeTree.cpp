@@ -2961,12 +2961,12 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
         auto zookeeper = getZooKeeper();
 
-        const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
+        const String quorum_status_path = zookeeper_path + "/quorum/status";
 
         String value;
         Coordination::Stat stat;
 
-        if (zookeeper->tryGet(quorum_last_part_path, value, &stat))
+        if (zookeeper->tryGet(quorum_status_path, value, &stat))
         {
             ReplicatedMergeTreeQuorumEntry quorum_entry;
             quorum_entry.fromString(value);
