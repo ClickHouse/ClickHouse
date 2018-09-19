@@ -46,8 +46,9 @@ public:
     size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) override;
     size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) override;
 
-    size_t getDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
+    size_t getDefaultValueIndex() const override { return 0; }
     size_t getNullValueIndex() const override;
+    size_t getNestedTypeDefaultValueIndex() const override { return is_nullable ? 1 : 0; }
     bool canContainNulls() const override { return is_nullable; }
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
@@ -206,8 +207,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
     auto column = getRawColumnPtr();
     auto prev_size = static_cast<UInt64>(column->size());
 
-    if ((*column)[getDefaultValueIndex()] == x)
-        return getDefaultValueIndex();
+    if ((*column)[getNestedTypeDefaultValueIndex()] == x)
+        return getNestedTypeDefaultValueIndex();
 
     column->insert(x);
     auto pos = index.insert(prev_size);
@@ -235,8 +236,8 @@ size_t ColumnUnique<ColumnType>::uniqueInsertData(const char * pos, size_t lengt
 {
     auto column = getRawColumnPtr();
 
-    if (column->getDataAt(getDefaultValueIndex()) == StringRef(pos, length))
-        return getDefaultValueIndex();
+    if (column->getDataAt(getNestedTypeDefaultValueIndex()) == StringRef(pos, length))
+        return getNestedTypeDefaultValueIndex();
 
     UInt64 size = column->size();
     UInt64 insertion_point = index.getInsertionPoint(StringRef(pos, length));
@@ -265,10 +266,10 @@ size_t ColumnUnique<ColumnType>::uniqueInsertDataWithTerminatingZero(const char 
     size_t prev_size = column->size();
     column->insertDataWithTerminatingZero(pos, length);
 
-    if (column->compareAt(getDefaultValueIndex(), prev_size, *column, 1) == 0)
+    if (column->compareAt(getNestedTypeDefaultValueIndex(), prev_size, *column, 1) == 0)
     {
         column->popBack(1);
-        return getDefaultValueIndex();
+        return getNestedTypeDefaultValueIndex();
     }
 
     auto position = index.insert(prev_size);
@@ -285,10 +286,10 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertFromArena(const char 
     size_t prev_size = column->size();
     new_pos = column->deserializeAndInsertFromArena(pos);
 
-    if (column->compareAt(getDefaultValueIndex(), prev_size, *column, 1) == 0)
+    if (column->compareAt(getNestedTypeDefaultValueIndex(), prev_size, *column, 1) == 0)
     {
         column->popBack(1);
-        return getDefaultValueIndex();
+        return getNestedTypeDefaultValueIndex();
     }
 
     auto index_pos = index.insert(prev_size);
@@ -399,8 +400,8 @@ MutableColumnPtr ColumnUnique<ColumnType>::uniqueInsertRangeImpl(
 
         if (null_map && (*null_map)[row])
             positions[num_added_rows] = getNullValueIndex();
-        else if (column->compareAt(getDefaultValueIndex(), row, *src_column, 1) == 0)
-            positions[num_added_rows] = getDefaultValueIndex();
+        else if (column->compareAt(getNestedTypeDefaultValueIndex(), row, *src_column, 1) == 0)
+            positions[num_added_rows] = getNestedTypeDefaultValueIndex();
         else
         {
             auto ref = src_column->getDataAt(row);

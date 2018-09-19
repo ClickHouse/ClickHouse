@@ -44,8 +44,9 @@ public:
     virtual size_t uniqueInsertData(const char * pos, size_t length) = 0;
     virtual size_t uniqueInsertDataWithTerminatingZero(const char * pos, size_t length) = 0;
 
-    virtual size_t getDefaultValueIndex() const = 0;
-    virtual size_t getNullValueIndex() const = 0;
+    virtual size_t getDefaultValueIndex() const = 0;  /// Nullable ? getNullValueIndex : getNestedTypeDefaultValueIndex
+    virtual size_t getNullValueIndex() const = 0;  /// Throws if not nullable.
+    virtual size_t getNestedTypeDefaultValueIndex() const = 0;  /// removeNullable()->getDefault() value index
     virtual bool canContainNulls() const = 0;
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
