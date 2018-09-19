@@ -18,7 +18,9 @@ set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
     #include <smmintrin.h>
     int main() {
-        _mm_insert_epi8(__m128i(), 0, 0);
+        auto a = _mm_insert_epi8(__m128i(), 0, 0);
+        ++a;
+        (void)a;
         return 0;
     }
 " HAVE_SSE41)
@@ -35,7 +37,10 @@ set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
     #include <nmmintrin.h>
     int main() {
-        _mm_crc32_u64(0, 0);
+        auto a = _mm_crc32_u64(0, 0);
+        if (a)
+            ++a;
+        (void)a;
         return 0;
     }
 " HAVE_SSE42)
@@ -52,7 +57,10 @@ set (TEST_FLAG "-mpopcnt")
 set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
     int main() {
-        __builtin_popcountll(0);
+        auto a = __builtin_popcountll(0);
+        if (a)
+            ++a;
+        (void)a;
         return 0;
     }
 " HAVE_POPCNT)
