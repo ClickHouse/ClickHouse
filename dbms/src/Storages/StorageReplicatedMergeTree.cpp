@@ -2674,7 +2674,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(old_added_parts, data.format_version);
 
             auto partition_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
-            parts_with_quorum.added_parts[partition_info.partition_id] = partition_info.max_block;
+            parts_with_quorum.added_parts[partition_info.partition_id] = part_name;
             
             String new_added_parts = parts_with_quorum.toString();
 
