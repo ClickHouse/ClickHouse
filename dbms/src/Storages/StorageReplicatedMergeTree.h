@@ -212,8 +212,6 @@ private:
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
 
-    using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
     Context & context;
 
     zkutil::ZooKeeperPtr current_zookeeper;        /// Use only the methods below.

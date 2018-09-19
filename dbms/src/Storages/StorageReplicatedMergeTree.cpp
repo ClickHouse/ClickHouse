@@ -11,7 +11,7 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeQuorumWriter.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 
 #include <Databases/IDatabase.h>
 
@@ -2669,9 +2669,12 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             Coordination::Stat added_parts_stat;
             String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
 
-            ReplicatedMergeTreeQuorumWriter writer(old_added_parts, data.format_version);
+            ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(old_added_parts, data.format_version);
+
+            auto partition_info = MergeTreePartInfo::fromPartName(part_name, data.format_version);
+            parts_with_quorum.added_parts[partition_info.partition_id] = partition_info.max_block;
             
-            String new_added_parts = writer.write(part_name);
+            String new_added_parts = parts_with_quorum.toString();
 
             ops.emplace_back(zkutil::makeRemoveRequest(quorum_status_path, stat.version));
             ops.emplace_back(zkutil::makeSetRequest(quorum_last_part_path, new_added_parts, added_parts_stat.version));
@@ -2949,7 +2952,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    PartitionIdToMaxBlock max_added_blocks_with_quorum;
+    DB::ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks_with_quorum;
     if (settings.select_sequential_consistency)
     {
         auto zookeeper = getZooKeeper();
@@ -2959,15 +2962,15 @@ BlockInputStreams StorageReplicatedMergeTree::read(
 
         if (!added_parts_str.empty())
         {
-            ReplicatedMergeTreeQuorumWriter writer(added_parts_str, data.format_version);
-            auto added_parts = writer.readParts();
+            ReplicatedMergeTreeQuorumAddedParts part_with_quorum(added_parts_str, data.format_version);
+            auto added_parts = part_with_quorum.added_parts;
 
             for (auto & added_part : added_parts)
                 if (!data.getActiveContainingPart(added_part.second))
                     throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
                         " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
 
-            max_added_blocks_with_quorum = writer.readBlocks();
+            max_added_blocks_with_quorum = part_with_quorum.getMaxInsertedBlocks();
         }
     }
 
