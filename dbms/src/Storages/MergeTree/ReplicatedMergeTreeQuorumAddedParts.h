@@ -15,7 +15,7 @@ namespace DB
 struct ReplicatedMergeTreeQuorumAddedParts
 {
 	using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-	using PartitonIdToPartName= std::unordered_map<String, String>;
+	using PartitonIdToPartName = std::unordered_map<String, String>;
 
 	PartitonIdToPartName added_parts;
 
