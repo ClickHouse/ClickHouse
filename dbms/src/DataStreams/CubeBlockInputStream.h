@@ -13,7 +13,7 @@ class ExpressionActions;
 
 
 /** Takes blocks after grouping, with non-finalized aggregate functions.
-  * Calculates subtotals and grand totals values for a set of columns.
+  * Calculates all subsets of columns and aggreagetes over them.
   */
 class CubeBlockInputStream : public IProfilingBlockInputStream
 {

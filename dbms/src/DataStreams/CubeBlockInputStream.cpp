@@ -37,8 +37,8 @@ Block CubeBlockInputStream::getHeader() const
 Block CubeBlockInputStream::readImpl()
 {
     /** After reading a block from input stream,
-      * we will subsequently roll it up on next iterations of 'readImpl'
-      * by zeroing out every column one-by-one and re-merging a block.
+      * we will calculate all subsets of columns on next iterations of readImpl
+      * by zeroing columns at positions, where bits are zero in current bitmask.
       */
 
     if (mask) 

@@ -131,11 +131,13 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
-    /// WITH ROLLUP or TOTALS
+    /// WITH ROLLUP, CUBE or TOTALS
     if (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
             select_query->group_by_with_rollup = true;
+        else if (s_cube.ignore(pos, expected))
+            select_query->group_by_with_cube = true;
         else if (s_totals.ignore(pos, expected))
             select_query->group_by_with_totals = true;
         else
