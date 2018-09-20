@@ -162,12 +162,18 @@ private:
 
     const Attribute & getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const;
 
+    template <typename RangeType>
     void getIdsAndDates(PaddedPODArray<Key> & ids,
-                        PaddedPODArray<RangeStorageType> & start_dates, PaddedPODArray<RangeStorageType> & end_dates) const;
+                        PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
 
-    template <typename T>
+    template <typename T, typename RangeType>
     void getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
-                        PaddedPODArray<RangeStorageType> & start_dates, PaddedPODArray<RangeStorageType> & end_dates) const;
+                        PaddedPODArray<RangeType> & start_dates, PaddedPODArray<RangeType> & end_dates) const;
+
+    template <typename RangeType>
+    BlockInputStreamPtr getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const;
+
+    friend struct RangeHashedDIctionaryCallGetBlockInputStreamImpl;
 
     const std::string dictionary_name;
     const DictionaryStructure dict_struct;

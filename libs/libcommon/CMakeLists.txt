@@ -23,6 +23,7 @@ add_library (common ${LINK_MODE}
     src/SetTerminalEcho.cpp
 
     include/common/Types.h
+    include/common/DayNum.h
     include/common/DateLUT.h
     include/common/DateLUTImpl.h
     include/common/LocalDate.h

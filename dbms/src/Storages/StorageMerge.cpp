@@ -259,8 +259,19 @@ BlockInputStreams StorageMerge::read(
                 switch (processed_stage)
                 {
                     case QueryProcessingStage::FetchColumns:
+                    {
                         header = getSampleBlockForColumns(column_names);
+
+                        if (query_info.prewhere_info)
+                        {
+                            query_info.prewhere_info->prewhere_actions->execute(header);
+                            header = materializeBlock(header);
+                            if (query_info.prewhere_info->remove_prewhere_column)
+                                header.erase(query_info.prewhere_info->prewhere_column_name);
+                        }
+
                         break;
+                    }
                     case QueryProcessingStage::WithMergeableState:
                     case QueryProcessingStage::Complete:
                         header = materializeBlock(InterpreterSelectQuery(
