@@ -17,10 +17,12 @@ void AddingDefaultBlockOutputStream::write(const Block & block)
     /// We take given columns from input block
     /// and missed columns without default value (default and meterialized will be computed later)
     for (const auto & column : output_block)
+    {
         if (block.has(column.name))
             res.insert(block.getByName(column.name));
         else if (!column_defaults.count(column.name))
             res.insert(column);
+    }
 
     /// Adds not specified default values.
     size_t rows = block.rows();
