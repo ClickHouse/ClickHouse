@@ -196,7 +196,7 @@ private:
         ROLLUP = 0,
         CUBE = 1
     };
-    
+
     void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
