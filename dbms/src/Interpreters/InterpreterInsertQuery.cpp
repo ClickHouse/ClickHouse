@@ -112,7 +112,7 @@ BlockIO InterpreterInsertQuery::execute()
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
     out = std::make_shared<AddingDefaultBlockOutputStream>(
-        out, getSampleBlock(query, table), table->getColumns().getAllPhysical(), table->getColumns().defaults, context);
+        out, getSampleBlock(query, table), table->getSampleBlock(), table->getColumns().defaults, context);
 
     auto out_wrapper = std::make_shared<CountingBlockOutputStream>(out);
     out_wrapper->setProcessListElement(context.getProcessListElement());
