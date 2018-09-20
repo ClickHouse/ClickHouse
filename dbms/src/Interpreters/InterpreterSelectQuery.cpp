@@ -564,9 +564,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                     }
 
                     if (query.group_by_with_rollup)
-                        executeRollupOrCube(pipeline, true);
+                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
                     else if(query.group_by_with_cube)
-                        executeRollupOrCube(pipeline, false);
+                        executeRollupOrCube(pipeline, Modificator::CUBE);
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -587,9 +587,9 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 }
 
                 if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollupOrCube(pipeline, true);
+                    executeRollupOrCube(pipeline, Modificator::ROLLUP);
                 else if (query.group_by_with_cube && !aggregate_final)
-                    executeRollupOrCube(pipeline, false);
+                    executeRollupOrCube(pipeline, Modificator::CUBE);
             }
 
             if (expressions.has_order_by)
@@ -1098,7 +1098,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
         has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold, final);
 }
 
-void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, bool is_rollup)
+void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificator modificator)
 {
     executeUnion(pipeline);
 
@@ -1122,7 +1122,7 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, bool is_ro
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
         context.getTemporaryPath());
 
-    if (is_rollup)
+    if (modificator == Modificator::ROLLUP)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
     else
         pipeline.firstStream() = std::make_shared<CubeBlockInputStream>(pipeline.firstStream(), params);
