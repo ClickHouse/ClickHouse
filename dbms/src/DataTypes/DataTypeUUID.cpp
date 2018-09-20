@@ -1,5 +1,8 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Columns/ColumnsNumber.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 
 namespace DB
