@@ -1313,7 +1313,7 @@ public:
 
         const std::string tmp_path;
 
-        /// Settings is used to determine cache size. No threads is created.
+        /// Settings is used to determine cache size. No threads are created.
         size_t max_threads;
 
         Params(
