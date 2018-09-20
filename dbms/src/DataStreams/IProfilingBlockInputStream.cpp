@@ -81,16 +81,14 @@ Block IProfilingBlockInputStream::read()
 
     progress(Progress(res.rows(), res.bytes()));
 
-/// This code commented, because some streams (for example Native) break this
-/// protocol. This must be fixed.
-//#ifndef NDEBUG
-//    if (res)
-//    {
-//        Block header = getHeader();
-//        if (header)
-//            assertBlocksHaveEqualStructure(res, header, getName());
-//    }
-//#endif
+#ifndef NDEBUG
+    if (res)
+    {
+        Block header = getHeader();
+        if (header)
+            assertBlocksHaveEqualStructure(res, header, getName());
+    }
+#endif
 
     return res;
 }

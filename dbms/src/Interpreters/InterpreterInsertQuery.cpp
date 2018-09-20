@@ -54,13 +54,20 @@ StoragePtr InterpreterInsertQuery::getTable(const ASTInsertQuery & query)
 
 Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const StoragePtr & table)
 {
-    Block table_sample = table->getSampleBlock();
 
-    /// If the query does not include information about columns
-    if (!query.columns)
-        return table_sample;
 
     Block table_sample_non_materialized = table->getSampleBlockNonMaterialized();
+    /// If the query does not include information about columns
+    if (!query.columns)
+    {
+        /// Fromat Native ignores header and write blocks as is.
+        if (query.format == "Native")
+            return {};
+        else
+            return table_sample_non_materialized;
+    }
+
+    Block table_sample = table->getSampleBlock();
     /// Form the block based on the column names from the query
     Block res;
     for (const auto & identifier : query.columns->children)
