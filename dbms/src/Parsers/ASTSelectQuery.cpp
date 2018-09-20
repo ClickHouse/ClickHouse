@@ -345,11 +345,11 @@ void ASTSelectQuery::setDatabaseIfNeeded(const String & database_name)
 
     if (table_expression->database_and_table_name->children.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
+        ASTPtr database = ASTIdentifier::createSpecial(database_name);
         ASTPtr table = table_expression->database_and_table_name;
 
         const String & old_name = static_cast<ASTIdentifier &>(*table_expression->database_and_table_name).name;
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + old_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = ASTIdentifier::createSpecial(database_name + "." + old_name);
         table_expression->database_and_table_name->children = {database, table};
     }
     else if (table_expression->database_and_table_name->children.size() != 2)
@@ -376,18 +376,18 @@ void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const
         table_expression = table_expr.get();
     }
 
-    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+    ASTPtr table = ASTIdentifier::createSpecial(table_name);
 
     if (!database_name.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
+        ASTPtr database = ASTIdentifier::createSpecial(database_name);
 
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = ASTIdentifier::createSpecial(database_name + "." + table_name);
         table_expression->database_and_table_name->children = {database, table};
     }
     else
     {
-        table_expression->database_and_table_name = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+        table_expression->database_and_table_name = ASTIdentifier::createSpecial(table_name);
     }
 }
 
