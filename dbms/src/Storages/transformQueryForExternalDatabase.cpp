@@ -9,6 +9,8 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 
+#include <iostream>
+
 
 namespace DB
 {
@@ -24,6 +26,9 @@ static bool isCompatible(const IAST & node)
             || name == "not"
             || name == "equals"
             || name == "notEquals"
+            || name == "like"
+            || name == "notLike"
+            || name == "in" 
             || name == "greater"
             || name == "less"
             || name == "lessOrEquals"
@@ -112,6 +117,8 @@ String transformQueryForExternalDatabase(
     settings.identifier_quoting_style = identifier_quoting_style;
 
     select->format(settings);
+
+    std::cout << (out.str());
     return out.str();
 }
 
