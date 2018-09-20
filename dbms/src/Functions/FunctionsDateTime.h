@@ -1745,58 +1745,43 @@ private:
 
         static void hour24(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-                writeNumber2(target, ToHourImpl::execute(source, timezone));
+            writeNumber2(target, ToHourImpl::execute(source, timezone));
         }
 
         static void hour12(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-            {
-                auto x = ToHourImpl::execute(source, timezone);
-                writeNumber2(target, x == 0 ? 12 : (x > 12 ? x - 12 : x));
-            }
+            auto x = ToHourImpl::execute(source, timezone);
+            writeNumber2(target, x == 0 ? 12 : (x > 12 ? x - 12 : x));
         }
 
         static void minute(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-                writeNumber2(target, ToMinuteImpl::execute(source, timezone));
+            writeNumber2(target, ToMinuteImpl::execute(source, timezone));
         }
 
         static void AMPM(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-            {
-                auto hour = ToHourImpl::execute(source, timezone);
-                if (hour >= 12)
-                    *target = 'P';
-            }
+            auto hour = ToHourImpl::execute(source, timezone);
+            if (hour >= 12)
+                *target = 'P';
         }
 
         static void hhmm24(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-            {
-                writeNumber2(target, ToHourImpl::execute(source, timezone));
-                writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
-            }
+            writeNumber2(target, ToHourImpl::execute(source, timezone));
+            writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
         }
 
         static void second(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-                writeNumber2(target, ToSecondImpl::execute(source, timezone));
+            writeNumber2(target, ToSecondImpl::execute(source, timezone));
         }
 
         static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone)
         {
-            if constexpr (std::is_same_v<Time, UInt32>)
-            {
-                writeNumber2(target, ToHourImpl::execute(source, timezone));
-                writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
-                writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
-            }
+            writeNumber2(target, ToHourImpl::execute(source, timezone));
+            writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
+            writeNumber2(target + 6, ToSecondImpl::execute(source, timezone));
         }
     };
 
@@ -1934,6 +1919,23 @@ public:
         const char * pos = pattern.data();
         const char * end = pos + pattern.size();
 
+        /// Add shift to previous action; or if there were none, add noop action with shift.
+        auto addShift = [&](size_t amount)
+        {
+            if (instructions.empty())
+                instructions.emplace_back(&Action<T>::noop);
+            instructions.back().shift += amount;
+        };
+
+        /// If the argument was DateTime, add instruction for printing. If it was date, just shift (the buffer is pre-filled with default values).
+        auto addInstructionOrShift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
+        {
+            if constexpr (std::is_same_v<T, UInt32>)
+                instructions.emplace_back(func, shift);
+            else
+                addShift(shift);
+        };
+
         while (true)
         {
             const char * percent_pos = find_first_symbols<'%'>(pos, end);
@@ -1943,10 +1945,7 @@ public:
                 if (pos < percent_pos)
                 {
                     result.append(pos, percent_pos);
-
-                    if (instructions.empty())
-                        instructions.emplace_back(&Action<T>::noop);
-                    instructions.back().shift += percent_pos - pos;
+                    addShift(percent_pos - pos);
                 }
 
                 pos = percent_pos + 1;
@@ -1986,18 +1985,6 @@ public:
                         result.append("0000-00-00");
                         break;
 
-                    // Hour in 24h format (00-23)
-                    case 'H':
-                        instructions.emplace_back(&Action<T>::hour24, 2);
-                        result.append("00");
-                        break;
-
-                    // Hour in 12h format (01-12)
-                    case 'I':
-                        instructions.emplace_back(&Action<T>::hour12, 2);
-                        result.append("12");
-                        break;
-
                     // Day of the year (001-366)   235
                     case 'j':
                         instructions.emplace_back(&Action<T>::dayOfYear, 3);
@@ -2008,36 +1995,6 @@ public:
                     case 'm':
                         instructions.emplace_back(&Action<T>::month, 2);
                         result.append("00");
-                        break;
-
-                    // Minute (00-59)
-                    case 'M':
-                        instructions.emplace_back(&Action<T>::minute, 2);
-                        result.append("00");
-                        break;
-
-                    // AM or PM
-                    case 'p':
-                        instructions.emplace_back(&Action<T>::AMPM, 2);
-                        result.append("AM");
-                        break;
-
-                    // 24-hour HH:MM time, equivalent to %H:%M 14:55
-                    case 'R':
-                        instructions.emplace_back(&Action<T>::hhmm24, 5);
-                        result.append("00:00");
-                        break;
-
-                    // Seconds
-                    case 'S':
-                        instructions.emplace_back(&Action<T>::second, 2);
-                        result.append("00");
-                        break;
-
-                    // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
-                    case 'T':
-                        instructions.emplace_back(&Action<T>::ISO8601Time, 8);
-                        result.append("00:00:00");
                         break;
 
                     // ISO 8601 weekday as number with Monday as 1 (1-7)
@@ -2070,31 +2027,69 @@ public:
                         result.append("0000");
                         break;
 
+                    /// Time components. If the argument is Date, not a DateTime, then this components will have default value.
+
+                    // Minute (00-59)
+                    case 'M':
+                        addInstructionOrShift(&Action<T>::minute, 2);
+                        result.append("00");
+                        break;
+
+                    // AM or PM
+                    case 'p':
+                        addInstructionOrShift(&Action<T>::AMPM, 2);
+                        result.append("AM");
+                        break;
+
+                    // 24-hour HH:MM time, equivalent to %H:%M 14:55
+                    case 'R':
+                        addInstructionOrShift(&Action<T>::hhmm24, 5);
+                        result.append("00:00");
+                        break;
+
+                    // Seconds
+                    case 'S':
+                        addInstructionOrShift(&Action<T>::second, 2);
+                        result.append("00");
+                        break;
+
+                    // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
+                    case 'T':
+                        addInstructionOrShift(&Action<T>::ISO8601Time, 8);
+                        result.append("00:00:00");
+                        break;
+
+                    // Hour in 24h format (00-23)
+                    case 'H':
+                        addInstructionOrShift(&Action<T>::hour24, 2);
+                        result.append("00");
+                        break;
+
+                    // Hour in 12h format (01-12)
+                    case 'I':
+                        addInstructionOrShift(&Action<T>::hour12, 2);
+                        result.append("12");
+                        break;
+
+                    /// Escaped literal characters.
+                    case '%':
+                        result += '%';
+                        addShift(1);
+                        break;
+                    case 't':
+                        result += '\t';
+                        addShift(1);
+                        break;
+                    case 'n':
+                        result += '\n';
+                        addShift(1);
+                        break;
+
                     // Unimplemented
                     case 'U': [[fallthrough]];
                     case 'W':
                         throw Exception("Wrong pattern '" + pattern + "', symbol '" + *pos + " is not implemented ' for function " + getName(),
                             ErrorCodes::NOT_IMPLEMENTED);
-
-                    /// Escaped literal characters.
-                    case '%':
-                        result += '%';
-                        if (instructions.empty())
-                            instructions.emplace_back(&Action<T>::noop);
-                        ++instructions.back().shift;
-                        break;
-                    case 't':
-                        result += '\t';
-                        if (instructions.empty())
-                            instructions.emplace_back(&Action<T>::noop);
-                        ++instructions.back().shift;
-                        break;
-                    case 'n':
-                        result += '\n';
-                        if (instructions.empty())
-                            instructions.emplace_back(&Action<T>::noop);
-                        ++instructions.back().shift;
-                        break;
 
                     default:
                         throw Exception(
@@ -2106,11 +2101,7 @@ public:
             else
             {
                 result.append(pos, end);
-
-                if (instructions.empty())
-                    instructions.emplace_back(&Action<T>::noop);
-                instructions.back().shift += end + 1 - pos;  /// including zero terminator
-
+                addShift(end + 1 - pos); /// including zero terminator
                 break;
             }
         }
