@@ -75,13 +75,13 @@ protected:
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
     BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const size_t max_block_size, const Context & modified_context,
-                                          const Block & header, const StoragePtr & storage, const TableStructureReadLockPtr & struct_lock,
-                                          Names & real_column_names, size_t current_streams, bool has_table_virtual_column);
+                                          const size_t max_block_size, const Block & header, const StoragePtr & storage,
+                                          const TableStructureReadLockPtr & struct_lock, Names & real_column_names,
+                                          Context & modified_context, size_t streams_num, bool has_table_virtual_column,
+                                          bool concat_streams = false);
 
-    void convertingSourceStream(const Block & header, const Context & context, const StoragePtr & storage,
-                                const SelectQueryInfo & query_info, BlockInputStreamPtr & source_stream,
-                                QueryProcessingStage::Enum processed_stage);
+    void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
+                                BlockInputStreamPtr & source_stream, QueryProcessingStage::Enum processed_stage);
 };
 
 }
