@@ -30,6 +30,10 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
+def check_call(args):
+    # print('run:', ' ' . join(args))
+    subprocess.check_call(args)
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -82,7 +86,7 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, hostname=None, env_variables={}, image="ubuntu:14.04"):
+    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, hostname=None, env_variables={}, image="ubuntu:18.04"):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -194,23 +198,25 @@ class ClickHouseCluster:
         self.docker_client = docker.from_env(version=self.docker_api_version)
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
-            subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+            check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
             self.wait_zookeeper_to_start(120)
 
         if self.with_mysql and self.base_mysql_cmd:
-            subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+            check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.wait_mysql_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
-            subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+            check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
         # Uncomment for debugging
         #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
 
-        subprocess.check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+        print ' '.join(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+        #print(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+        check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -226,8 +232,8 @@ class ClickHouseCluster:
 
     def shutdown(self, kill=True):
         if kill:
-            subprocess.check_call(self.base_cmd + ['kill'])
-        subprocess.check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+            check_call(self.base_cmd + ['kill'])
+        check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
         self.is_up = False
 
         self.docker_client = None
@@ -290,7 +296,7 @@ class ClickHouseInstance:
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, base_configs_dir, server_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="ubuntu:14.04"):
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={}, image="ubuntu:18.04"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd[:]
