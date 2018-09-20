@@ -9,8 +9,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 
-#include <iostream>
-
 
 namespace DB
 {
@@ -118,7 +116,6 @@ String transformQueryForExternalDatabase(
 
     select->format(settings);
 
-    std::cout << (out.str());
     return out.str();
 }
 
