@@ -275,7 +275,7 @@ public:
 
 
     iterator ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
-    iterator ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
+    const_iterator ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
 
     void write(DB::WriteBuffer & wb) const
