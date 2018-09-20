@@ -14,8 +14,6 @@ SELECT a, b, sum(s), count() from test.rollup GROUP BY CUBE(a, b) ORDER BY a, b;
 
 SELECT a, b, sum(s), count() from test.rollup GROUP BY CUBE(a, b) WITH TOTALS ORDER BY a, b;
 
-SELECT a, sum(s), count() from test.rollup GROUP BY CUBE(a) ORDER BY a;
+SELECT a, b, sum(s), count() from test.rollup GROUP BY a, b WITH CUBE ORDER BY a;
 
-SELECT a, b, sum(s), count() from test.rollup GROUP BY a, b WITH ROLLUP ORDER BY a;
-
-SELECT a, b, sum(s), count() from test.rollup GROUP BY a, b WITH ROLLUP WITH TOTALS ORDER BY a;
+SELECT a, b, sum(s), count() from test.rollup GROUP BY a, b WITH CUBE WITH TOTALS ORDER BY a;
