@@ -46,7 +46,7 @@ void AddingDefaultBlockOutputStream::write(const Block & block)
         }
     }
 
-    /// In this loop we feel missed columns
+    /// In this loop we fill missed columns
     for (auto & column : res)
     {
         if (block.has(column.name))
