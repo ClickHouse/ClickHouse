@@ -31,6 +31,7 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
     return full_path
 
 def check_call(args):
+    # Uncomment for debugging
     # print('run:', ' ' . join(args))
     subprocess.check_call(args)
 
@@ -211,11 +212,6 @@ class ClickHouseCluster:
             check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
-        # Uncomment for debugging
-        #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
-
-        print ' '.join(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
-        #print(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
         check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
 
         start_deadline = time.time() + 20.0 # seconds
