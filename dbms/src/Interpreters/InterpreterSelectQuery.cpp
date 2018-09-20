@@ -1124,7 +1124,7 @@ void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, bool is_ro
 
     if (is_rollup)
         pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
-    else    
+    else
         pipeline.firstStream() = std::make_shared<CubeBlockInputStream>(pipeline.firstStream(), params);
 }
 
