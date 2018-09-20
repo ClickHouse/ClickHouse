@@ -40,6 +40,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_settings("SETTINGS");
     ParserKeyword s_by("BY");
     ParserKeyword s_rollup("ROLLUP");
+    ParserKeyword s_cube("CUBE");
     ParserKeyword s_top("TOP");
     ParserKeyword s_offset("OFFSET");
 
@@ -116,24 +117,27 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_group_by.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
-        {
             select_query->group_by_with_rollup = true;
-            if (!open_bracket.ignore(pos, expected))
-                return false;
-        }
+        else if (s_cube.ignore(pos, expected))
+            select_query->group_by_with_cube = true;
+
+        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !open_bracket.ignore(pos, expected))
+            return false;
 
         if (!exp_list.parse(pos, select_query->group_expression_list, expected))
             return false;
 
-        if (select_query->group_by_with_rollup && !close_bracket.ignore(pos, expected))
+        if ((select_query->group_by_with_rollup || select_query->group_by_with_cube) && !close_bracket.ignore(pos, expected))
             return false;
     }
 
-    /// WITH ROLLUP
+    /// WITH ROLLUP, CUBE or TOTALS
     if (s_with.ignore(pos, expected))
     {
         if (s_rollup.ignore(pos, expected))
             select_query->group_by_with_rollup = true;
+        else if (s_cube.ignore(pos, expected))
+            select_query->group_by_with_cube = true;
         else if (s_totals.ignore(pos, expected))
             select_query->group_by_with_totals = true;
         else

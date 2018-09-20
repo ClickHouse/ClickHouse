@@ -29,6 +29,7 @@ public:
     ASTPtr group_expression_list;
     bool group_by_with_totals = false;
     bool group_by_with_rollup = false;
+    bool group_by_with_cube = false;
     ASTPtr having_expression;
     ASTPtr order_expression_list;
     ASTPtr limit_by_value;
