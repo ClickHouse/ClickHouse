@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr & dst, const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
     : output(dst), header(header), transform(min_block_size_rows, min_block_size_bytes)
 {
@@ -17,7 +12,6 @@ SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr & ds
 
 void SquashingBlockOutputStream::write(const Block & block)
 {
-    /// Get header from real data
     SquashingTransform::Result result = transform.add(Block(block).mutateColumns());
     if (result.ready)
         output->write(header.cloneWithColumns(std::move(result.columns)));
@@ -30,7 +24,6 @@ void SquashingBlockOutputStream::finalize()
         return;
 
     all_written = true;
-
 
     SquashingTransform::Result result = transform.add({});
     if (result.ready && !result.columns.empty())

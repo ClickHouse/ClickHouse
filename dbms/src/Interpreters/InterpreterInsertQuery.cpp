@@ -60,7 +60,7 @@ Block InterpreterInsertQuery::getSampleBlock(const ASTInsertQuery & query, const
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        /// Fromat Native ignores header and write blocks as is.
+        /// Format Native ignores header and write blocks as is.
         if (query.format == "Native")
             return {};
         else
