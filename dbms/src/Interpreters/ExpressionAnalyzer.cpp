@@ -69,6 +69,7 @@
 #include <Interpreters/evaluateQualified.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getQueryAliases.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 
 namespace DB
@@ -1455,6 +1456,10 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
+
+    for (auto & element_type : set_element_types)
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(element_type.get()))
+            element_type = low_cardinality_type->getDictionaryType();
 
     ASTPtr elements_ast = nullptr;
 
