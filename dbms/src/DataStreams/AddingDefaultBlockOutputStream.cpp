@@ -11,6 +11,7 @@
 namespace DB
 {
 
+
 void AddingDefaultBlockOutputStream::write(const Block & block)
 {
     Block res = block;
@@ -37,14 +38,15 @@ void AddingDefaultBlockOutputStream::write(const Block & block)
         }
     }
 
-    for (const auto & requested_column : required_columns)
+    size_t i = 0;
+    for (auto col = required_columns.begin(); col != required_columns.end(); ++col, ++i)
     {
-        if (res.has(requested_column.name) || column_defaults.count(requested_column.name))
+        if (res.has(col->name) || column_defaults.count(col->name))
             continue;
 
         ColumnWithTypeAndName column_to_add;
-        column_to_add.name = requested_column.name;
-        column_to_add.type = requested_column.type;
+        column_to_add.name = col->name;
+        column_to_add.type = col->type;
 
         String offsets_name = Nested::extractTableName(column_to_add.name);
         if (offset_columns.count(offsets_name))
@@ -64,7 +66,7 @@ void AddingDefaultBlockOutputStream::write(const Block & block)
             column_to_add.column = column_to_add.type->createColumnConstWithDefaultValue(rows)->convertToFullColumnIfConst();
         }
 
-        res.insert(std::move(column_to_add));
+        res.insert(i, std::move(column_to_add));
     }
 
     /// Computes explicitly specified values (in column_defaults) by default.

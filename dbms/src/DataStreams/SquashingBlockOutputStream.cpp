@@ -9,17 +9,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr & dst, size_t min_block_size_rows, size_t min_block_size_bytes)
-    : output(dst), transform(min_block_size_rows, min_block_size_bytes)
+SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr & dst, const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes)
+    : output(dst), header(header), transform(min_block_size_rows, min_block_size_bytes)
 {
 }
 
 
 void SquashingBlockOutputStream::write(const Block & block)
 {
-    if (!header)
-        header = block.cloneEmpty();
-
+    /// Get header from real data
     SquashingTransform::Result result = transform.add(Block(block).mutateColumns());
     if (result.ready)
         output->write(header.cloneWithColumns(std::move(result.columns)));
@@ -33,8 +31,6 @@ void SquashingBlockOutputStream::finalize()
 
     all_written = true;
 
-    if (!header)
-        throw Exception("writeSuffix called without writing data.", ErrorCodes::LOGICAL_ERROR);
 
     SquashingTransform::Result result = transform.add({});
     if (result.ready && !result.columns.empty())
