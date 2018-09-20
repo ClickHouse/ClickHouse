@@ -11,7 +11,6 @@
 namespace DB
 {
 
-
 void AddingDefaultBlockOutputStream::write(const Block & block)
 {
     Block res = block;

@@ -4,7 +4,6 @@
 #include <Columns/ColumnConst.h>
 #include <Storages/ColumnDefault.h>
 #include <Interpreters/Context.h>
-#include <iostream>
 
 
 namespace DB
@@ -37,7 +36,6 @@ public:
     void writeSuffix() override;
 
 private:
-
     BlockOutputStreamPtr output;
     Block header;
     NamesAndTypesList required_columns;
