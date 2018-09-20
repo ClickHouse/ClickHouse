@@ -40,18 +40,17 @@ Block CubeBlockInputStream::readImpl()
       * we will calculate all subsets of columns on next iterations of readImpl
       * by zeroing columns at positions, where bits are zero in current bitmask.
       */
-
-    if (mask) 
+    if (mask)
     {
         --mask;
         Block cube_block = source_block;
-        for (size_t i = 0; i < keys.size(); ++i) 
+        for (size_t i = 0; i < keys.size(); ++i)
         {
-            if (!((mask >> i) & 1)) 
+            if (!((mask >> i) & 1))
             {
                 size_t pos = keys.size() - i - 1;
                 auto & current = cube_block.getByPosition(keys[pos]);
-                current.column = empty_block.getByPosition(pos).column->cloneResized(cube_block.rows()); 
+                current.column = zero_block.getByPosition(pos).column;
             }
         }
 
@@ -61,7 +60,15 @@ Block CubeBlockInputStream::readImpl()
     }
 
     source_block = children[0]->read();
-    empty_block = source_block.cloneEmpty();
+    if (!source_block)
+        return source_block;
+
+    zero_block = source_block.cloneEmpty();
+    for (auto key : keys)
+    {
+        auto & current = zero_block.getByPosition(key);
+        current.column = current.column->cloneResized(source_block.rows());
+    }
     Block finalized = source_block;
     finalizeBlock(finalized);
     mask = (1 << keys.size()) - 1;

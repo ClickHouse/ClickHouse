@@ -36,7 +36,7 @@ private:
     ColumnNumbers keys;
     UInt32 mask = 0;
     Block source_block;
-    Block empty_block;
+    Block zero_block;
 };
 
 }
