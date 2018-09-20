@@ -135,7 +135,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
 {
     ASTPtr database_name_identifier_node;
     if (!table.database_name.empty())
-        database_name_identifier_node =  std::make_shared<ASTIdentifier>(table.database_name, ASTIdentifier::Column);
+        database_name_identifier_node = std::make_shared<ASTIdentifier>(table.database_name);
 
     ASTPtr table_name_identifier_node;
     String table_name_or_alias;
@@ -146,9 +146,9 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
         table_name_or_alias = table.alias;
 
     if (!table_name_or_alias.empty())
-        table_name_identifier_node = std::make_shared<ASTIdentifier>(table_name_or_alias, ASTIdentifier::Column);
+        table_name_identifier_node = std::make_shared<ASTIdentifier>(table_name_or_alias);
 
-    ASTPtr column_identifier_node = std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column);
+    ASTPtr column_identifier_node = std::make_shared<ASTIdentifier>(column);
 
     String compound_name;
     if (database_name_identifier_node)
@@ -157,7 +157,7 @@ ASTPtr createASTIdentifierForColumnInTable(const String & column, const CollectT
         compound_name += table_name_or_alias + ".";
     compound_name += column;
 
-    auto elem = std::make_shared<ASTIdentifier>(compound_name, ASTIdentifier::Column);
+    auto elem = std::make_shared<ASTIdentifier>(compound_name);
 
     if (database_name_identifier_node)
         elem->children.emplace_back(std::move(database_name_identifier_node));
