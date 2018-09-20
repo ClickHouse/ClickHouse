@@ -55,7 +55,10 @@ static DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
         for (auto & element : elements)
             element = recursiveRemoveLowCardinality(element);
 
-        return std::make_shared<DataTypeTuple>(elements);
+        if (tuple_type->haveExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+        else
+            return std::make_shared<DataTypeTuple>(elements);
     }
 
     if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(type.get()))
