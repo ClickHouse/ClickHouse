@@ -49,8 +49,9 @@ Block CubeBlockInputStream::readImpl()
         {
             if (!((mask >> i) & 1)) 
             {
-                auto & current = cube_block.getByPosition(keys[keys.size() - i - 1]);
-                current.column = current.column->cloneEmpty()->cloneResized(cube_block.rows()); 
+                size_t pos = keys.size() - i - 1;
+                auto & current = cube_block.getByPosition(keys[pos]);
+                current.column = empty_block.getByPosition(pos).column->cloneResized(cube_block.rows()); 
             }
         }
 
@@ -60,6 +61,7 @@ Block CubeBlockInputStream::readImpl()
     }
 
     source_block = children[0]->read();
+    empty_block = source_block.cloneEmpty();
     Block finalized = source_block;
     finalizeBlock(finalized);
     mask = (1 << keys.size()) - 1;
