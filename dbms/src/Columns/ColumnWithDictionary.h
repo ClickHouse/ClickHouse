@@ -147,7 +147,6 @@ public:
     /// IColumn & getIndexes() { return idx.getPositions()->assumeMutableRef(); }
     const IColumn & getIndexes() const { return *idx.getPositions(); }
     const ColumnPtr & getIndexesPtr() const { return idx.getPositions(); }
-    /// size_t getIndexAt(size_t row) const { return idx.getPositionAt(row); }
     size_t getSizeOfIndexType() const { return idx.getSizeOfIndexType(); }
 
     ALWAYS_INLINE size_t getIndexAt(size_t row) const
