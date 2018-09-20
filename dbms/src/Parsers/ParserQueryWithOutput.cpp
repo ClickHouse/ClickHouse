@@ -69,7 +69,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
         if (!format_p.parse(pos, query_with_output.format, expected))
             return false;
-        typeid_cast<ASTIdentifier &>(*(query_with_output.format)).kind = ASTIdentifier::Format;
+        typeid_cast<ASTIdentifier &>(*(query_with_output.format)).setSpecial();
 
         query_with_output.children.push_back(query_with_output.format);
     }
