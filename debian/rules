@@ -14,6 +14,9 @@ DESTDIR = $(CURDIR)/debian/tmp
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
+ifeq ($(CCACHE_PREFIX),distcc)
+    THREADS_COUNT=$(shell distcc -j)
+endif
 #TODO: why it not working? (maybe works in debhelper 10+)
 ifndef THREADS_COUNT
     THREADS_COUNT=$(shell nproc || grep -c ^processor /proc/cpuinfo || sysctl -n hw.ncpu || echo 4)
