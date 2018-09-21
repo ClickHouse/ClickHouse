@@ -459,6 +459,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
     {
         bool has_low_cardinality = false;
         size_t num_full_low_cardinality_columns = 0;
+        size_t num_full_ordinary_columns = 0;
 
         ColumnsWithTypeAndName args_without_dictionary(arguments);
 
@@ -476,9 +477,12 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
                 if (!is_const)
                     ++num_full_low_cardinality_columns;
             }
+            else if (!is_const)
+                ++num_full_ordinary_columns;
         }
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1)
+        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0)
             return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
         else
             return getReturnTypeWithoutDictionary(args_without_dictionary);
