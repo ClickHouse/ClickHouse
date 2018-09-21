@@ -30,7 +30,7 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
-def check_call(args):
+def subprocess_check_call(args):
     # Uncomment for debugging
     # print('run:', ' ' . join(args))
     subprocess.check_call(args)
@@ -199,20 +199,20 @@ class ClickHouseCluster:
         self.docker_client = docker.from_env(version=self.docker_api_version)
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
-            check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+            subprocess_check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
             self.wait_zookeeper_to_start(120)
 
         if self.with_mysql and self.base_mysql_cmd:
-            check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+            subprocess_check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.wait_mysql_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
-            check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+            subprocess_check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
-        check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
+        subprocess_check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -228,8 +228,8 @@ class ClickHouseCluster:
 
     def shutdown(self, kill=True):
         if kill:
-            check_call(self.base_cmd + ['kill'])
-        check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+            subprocess_check_call(self.base_cmd + ['kill'])
+        subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
         self.is_up = False
 
         self.docker_client = None
