@@ -161,4 +161,7 @@ private:
     static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
 
+/// Returns dictionary type if type is DataTypeWithDictionary, type otherwise.
+DataTypePtr removeLowCardinality(const DataTypePtr & type);
+
 }
