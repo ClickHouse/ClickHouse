@@ -70,6 +70,11 @@ public:
         return nested_func->alignOfData();
     }
 
+    bool isState() const override
+    {
+        return nested_func->isState();
+    }
+
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         const IColumn * nested[num_arguments];
