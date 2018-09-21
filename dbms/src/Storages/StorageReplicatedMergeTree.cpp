@@ -2954,10 +2954,13 @@ BlockInputStreams StorageReplicatedMergeTree::read(
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    DB::ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
+    ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
     if (settings.select_sequential_consistency)
     {
-        max_added_blocks = data.getMaxBlocksForPartition();
+        for (const auto & data_part : data.getDataParts())
+        {
+            max_added_blocks[data_part->info.partition_id] = data_part->info.max_block;
+        }
 
         auto zookeeper = getZooKeeper();
 

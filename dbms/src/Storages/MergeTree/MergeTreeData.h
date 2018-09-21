@@ -388,10 +388,6 @@ public:
 
     size_t getMaxPartsCountForPartition() const;
 
-    using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
-    PartitionIdToMaxBlock getMaxBlocksForPartition() const;
-
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
