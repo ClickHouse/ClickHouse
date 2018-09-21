@@ -1,5 +1,6 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Common/LRUCache.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -38,6 +39,64 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+}
+
+
+class PreparedFunctionLowCardinalityResultCache
+{
+public:
+    /// Will assume that dictionaries with same hash has the same keys.
+    /// Just in case, check that they have also the same size.
+    struct DictionaryKey
+    {
+        UInt128 hash;
+        UInt64 size;
+
+        bool operator== (const DictionaryKey & other) const { return hash == other.hash && size == other.size; }
+    };
+
+    struct DictionaryKeyHash
+    {
+        size_t operator()(const DictionaryKey & key) const
+        {
+            SipHash hash;
+            hash.update(key.hash.low);
+            hash.update(key.hash.high);
+            hash.update(key.size);
+            return hash.get64();
+        }
+    };
+
+    struct CachedValues
+    {
+        /// Store ptr to dictionary to be sure it won't be deleted.
+        ColumnPtr dictionary_holder;
+        ColumnUniquePtr function_result;
+        /// Remap positions. new_pos = index_mapping->index(old_pos);
+        ColumnPtr index_mapping;
+    };
+
+    using CachedValuesPtr = std::shared_ptr<CachedValues>;
+
+    explicit PreparedFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
+
+    CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
+    void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
+    CachedValuesPtr getOrSet(const DictionaryKey & key, const CachedValuesPtr & mapped)
+    {
+        return cache.getOrSet(key, [&]() { return mapped; }).first;
+    }
+
+private:
+    using Cache = LRUCache<DictionaryKey, CachedValues, DictionaryKeyHash>;
+    Cache cache;
+};
+
+
+void PreparedFunctionImpl::createLowCardinalityResultCache(size_t cache_size)
+{
+    if (!low_cardinality_result_cache)
+        low_cardinality_result_cache = std::make_shared<PreparedFunctionLowCardinalityResultCache>(cache_size);
 }
 
 
@@ -291,6 +350,25 @@ void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, co
     executeImpl(block, args, result, input_rows_count);
 }
 
+static const ColumnWithDictionary * findLowCardinalityArgument(const Block & block, const ColumnNumbers & args)
+{
+    const ColumnWithDictionary * result_column = nullptr;
+
+    for (auto arg : args)
+    {
+        const ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * low_cardinality_column = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        {
+            if (result_column)
+                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+
+            result_column = low_cardinality_column;
+        }
+    }
+
+    return result_column;
+}
+
 static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
     Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments)
 {
@@ -361,28 +439,59 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
         if (auto * res_type_with_dict = typeid_cast<const DataTypeWithDictionary *>(res.type.get()))
         {
+            const auto * low_cardinality_column = findLowCardinalityArgument(block, args);
+            bool use_cache = low_cardinality_result_cache
+                             && low_cardinality_column && low_cardinality_column->isSharedDictionary();
+            PreparedFunctionLowCardinalityResultCache::DictionaryKey key;
+
+            if (use_cache)
+            {
+                const auto & dictionary = low_cardinality_column->getDictionary();
+                key = {dictionary.getHash(), dictionary.size()};
+
+                auto cached_values = low_cardinality_result_cache->get(key);
+                if (cached_values)
+                {
+                    auto indexes = cached_values->index_mapping->index(low_cardinality_column->getIndexes(), 0);
+                    res.column = ColumnWithDictionary::create(cached_values->function_result, indexes, true);
+                    return;
+                }
+            }
+
             block_without_dicts.safeGetByPosition(result).type = res_type_with_dict->getDictionaryType();
             ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
                     block_without_dicts, args, canBeExecutedOnDefaultArguments());
 
             executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
 
-            auto res_column = res.type->createColumn();
-            auto * column_with_dictionary = typeid_cast<ColumnWithDictionary *>(res_column.get());
-
-            if (!column_with_dictionary)
-                throw Exception("Expected LowCardinality column, got " + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
-
             auto & keys = block_without_dicts.safeGetByPosition(result).column;
             if (auto full_column = keys->convertToFullColumnIfConst())
                 keys = full_column;
 
-            if (indexes)
-                column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
-            else
-                column_with_dictionary->insertRangeFromFullColumn(*keys, 0, keys->size());
+            auto res_mut_dictionary = DataTypeWithDictionary::createColumnUnique(*res_type_with_dict->getDictionaryType());
+            ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
+            ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
 
-            res.column = std::move(res_column);
+            if (indexes)
+            {
+                if (use_cache)
+                {
+                    auto cache_values = std::make_shared<PreparedFunctionLowCardinalityResultCache::CachedValues>();
+                    cache_values->dictionary_holder = low_cardinality_column->getDictionaryPtr();
+                    cache_values->function_result = res_dictionary;
+                    cache_values->index_mapping = res_indexes;
+
+                    cache_values = low_cardinality_result_cache->getOrSet(key, cache_values);
+                    res_dictionary = cache_values->function_result;
+                    res_indexes = cache_values->index_mapping;
+                }
+
+                res.column = ColumnWithDictionary::create(res_dictionary, res_indexes->index(*indexes, 0), use_cache);
+            }
+            else
+            {
+                res.column = ColumnWithDictionary::create(res_dictionary, res_indexes);
+            }
         }
         else
         {

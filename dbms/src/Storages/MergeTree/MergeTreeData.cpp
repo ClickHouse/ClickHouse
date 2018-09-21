@@ -194,7 +194,7 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
 
         if (action.type == ExpressionAction::APPLY_FUNCTION)
         {
-            IFunctionBase & func = *action.function;
+            IFunctionBase & func = *action.function_base;
             if (!func.isDeterministic())
                 throw Exception(key_name + " key cannot contain non-deterministic functions, "
                     "but contains function " + func.getName(),

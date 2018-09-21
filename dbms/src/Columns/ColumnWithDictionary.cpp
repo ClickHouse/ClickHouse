@@ -109,8 +109,8 @@ namespace
 }
 
 
-ColumnWithDictionary::ColumnWithDictionary(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_)
-    : dictionary(std::move(column_unique_)), idx(std::move(indexes_))
+ColumnWithDictionary::ColumnWithDictionary(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
+    : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
 {
     idx.check(getDictionary().size());
 }
@@ -621,13 +621,13 @@ void ColumnWithDictionary::Index::countKeys(ColumnUInt64::Container & counts) co
 }
 
 
-ColumnWithDictionary::Dictionary::Dictionary(MutableColumnPtr && column_unique_)
-    : column_unique(std::move(column_unique_))
+ColumnWithDictionary::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
+    : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
 }
-ColumnWithDictionary::Dictionary::Dictionary(ColumnPtr column_unique_)
-    : column_unique(std::move(column_unique_))
+ColumnWithDictionary::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_shared)
+    : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
 }

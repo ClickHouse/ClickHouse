@@ -25,6 +25,9 @@ using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
+class IPreparedFunction;
+using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
+
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -87,7 +90,8 @@ public:
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
     FunctionBuilderPtr function_builder;
-    FunctionBasePtr function;
+    FunctionBasePtr function_base;
+    PreparedFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
 
@@ -135,7 +139,7 @@ public:
 private:
     friend class ExpressionActions;
 
-    void prepare(Block & sample_block);
+    void prepare(Block & sample_block, const Settings & settings);
     size_t getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void executeOnTotals(Block & block) const;
