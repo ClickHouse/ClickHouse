@@ -50,8 +50,6 @@
 #include <thread>
 #include <future>
 
-#include <iostream>
-
 
 namespace ProfileEvents
 {
