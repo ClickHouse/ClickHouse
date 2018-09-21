@@ -15,9 +15,9 @@ namespace DB
 struct ReplicatedMergeTreeQuorumAddedParts
 {
 	using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-	using PartitonIdToPartName = std::unordered_map<String, String>;
+	using PartitionIdToPartName = std::unordered_map<String, String>;
 
-	PartitonIdToPartName added_parts;
+	PartitionIdToPartName added_parts;
 
 	MergeTreeDataFormatVersion format_version;
 
@@ -28,7 +28,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
 	}
 
 	/// Write new parts in buffer with added parts.
-	void write(WriteBufferFromOwnString & out)
+	void write(WriteBuffer & out)
 	{
 		out << "version: " << 2 << '\n';
 		out << "parts count: " << added_parts.size() << '\n';
@@ -50,7 +50,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
 		return max_added_blocks;
 	}
 
-	void read(ReadBufferFromString & in)
+	void read(ReadBuffer & in)
 	{
 		if (checkString("version: ", in))
 		{
@@ -67,9 +67,9 @@ struct ReplicatedMergeTreeQuorumAddedParts
 	}
 
 	/// Read added bloks when node in ZooKeeper supports only one partition.
-	PartitonIdToPartName read_v1(ReadBufferFromString & in)
+	PartitionIdToPartName read_v1(ReadBuffer & in)
 	{
-		PartitonIdToPartName parts_in_quorum;
+		PartitionIdToPartName parts_in_quorum;
 
 		std::string partition_name;
 
@@ -82,11 +82,11 @@ struct ReplicatedMergeTreeQuorumAddedParts
 	}
 
 	/// Read blocks when node in ZooKeeper suppors multiple partitions.
-	PartitonIdToPartName read_v2(ReadBufferFromString & in)
+	PartitionIdToPartName read_v2(ReadBuffer & in)
 	{
 		assertString("parts count: ", in);
 
-		PartitonIdToPartName parts_in_quorum;
+		PartitionIdToPartName parts_in_quorum;
 
 		uint64_t parts_count;
 		readText(parts_count, in);

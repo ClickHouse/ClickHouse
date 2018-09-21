@@ -1785,21 +1785,6 @@ size_t MergeTreeData::getMaxPartsCountForPartition() const
 }
 
 
-using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
-
-PartitionIdToMaxBlock MergeTreeData::getMaxBlocksForPartition() const
-{
-    std::lock_guard<std::mutex> lock(data_parts_mutex);
-
-    PartitionIdToMaxBlock max_blocks;
-
-    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
-        max_blocks[part->info.partition_id] = part->info.max_block;
-
-    return max_blocks;
-}
-
-
 std::optional<Int64> MergeTreeData::getMinPartDataVersion() const
 {
     std::lock_guard lock(data_parts_mutex);
