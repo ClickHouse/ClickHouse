@@ -1155,7 +1155,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                         + entry.new_part_name + "`", ErrorCodes::BAD_DATA_PART_NAME);
     }
 
-    MergeTreeData::Transaction transaction;
+    MergeTreeData::Transaction transaction(data);
     MergeTreeData::MutableDataPartPtr part;
 
     Stopwatch stopwatch;
@@ -1200,6 +1200,10 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
                     "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());
+
+                data.tryRemovePartImmediately(std::move(part));
+                /// No need to delete the part from ZK because we can be sure that the commit transaction
+                /// didn't go through.
 
                 return false;
             }
@@ -1273,7 +1277,7 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
     auto table_lock = lockStructure(false, __PRETTY_FUNCTION__);
 
     MergeTreeData::MutableDataPartPtr new_part;
-    MergeTreeData::Transaction transaction;
+    MergeTreeData::Transaction transaction(data);
 
     MergeTreeDataMergerMutator::FuturePart future_mutated_part;
     future_mutated_part.parts.push_back(source_part);
@@ -1311,6 +1315,10 @@ bool StorageReplicatedMergeTree::tryExecutePartMutation(const StorageReplicatedM
                     "We will download merged part from replica to force byte-identical result.");
 
                 write_part_log(ExecutionStatus::fromCurrentException());
+
+                data.tryRemovePartImmediately(std::move(new_part));
+                /// No need to delete the part from ZK because we can be sure that the commit transaction
+                /// didn't go through.
 
                 return false;
             }
@@ -1907,7 +1915,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     {
         /// Commit parts
         auto zookeeper = getZooKeeper();
-        MergeTreeData::Transaction transaction;
+        MergeTreeData::Transaction transaction(data);
 
         Coordination::Requests ops;
         for (PartDescriptionPtr & part_desc : final_parts)
@@ -2200,6 +2208,7 @@ bool StorageReplicatedMergeTree::queueTask()
             {
                 /// Part cannot be added temporarily
                 LOG_INFO(log, e.displayText());
+                cleanup_thread.wakeup();
             }
             else
                 tryLogCurrentException(log, __PRETTY_FUNCTION__);
@@ -2817,7 +2826,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Strin
 
         if (!to_detached)
         {
-            MergeTreeData::Transaction transaction;
+            MergeTreeData::Transaction transaction(data);
             data.renameTempPartAndReplace(part, nullptr, &transaction);
 
             /** NOTE
@@ -4408,7 +4417,7 @@ void StorageReplicatedMergeTree::removePartsFromZooKeeper(zkutil::ZooKeeperPtr &
             if (code == Coordination::ZNONODE)
             {
                 /// Fallback
-                LOG_DEBUG(log, "There are no some part nodes in ZooKeeper, will remove part nodes sequentially");
+                LOG_DEBUG(log, "ZooKeeper nodes for some parts in the batch are missing, will remove part nodes one by one");
 
                 for (auto it_in_batch = it_first_node_in_batch; it_in_batch != it_next; ++it_in_batch)
                 {
@@ -4622,7 +4631,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
         ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log/log-", entry.toString(), zkutil::CreateMode::PersistentSequential));
 
-        MergeTreeData::Transaction transaction;
+        MergeTreeData::Transaction transaction(data);
         {
             auto data_parts_lock = data.lockParts();
 
