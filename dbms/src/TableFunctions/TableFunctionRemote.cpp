@@ -292,7 +292,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     /// We need to mark them as the name of the database or table, because the default value is column.
     for (auto & arg : args)
         if (ASTIdentifier * id = typeid_cast<ASTIdentifier *>(arg.get()))
-            id->kind = ASTIdentifier::Table;
+            id->setSpecial();
 
     ClusterPtr cluster;
     if (!cluster_name.empty())

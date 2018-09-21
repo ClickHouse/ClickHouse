@@ -85,7 +85,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
         if (functionIsInOrGlobalInOperator(func_node->name))
             if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(func_node->arguments->children.at(1).get()))
                 if (!aliases.count(right->name))
-                    right->kind = ASTIdentifier::Table;
+                    right->setSpecial();
 
         /// Special cases for count function.
         String func_name_lowercase = Poco::toLower(func_node->name);
@@ -108,7 +108,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     }
     else if ((identifier_node = typeid_cast<ASTIdentifier *>(ast.get())))
     {
-        if (identifier_node->kind == ASTIdentifier::Column)
+        if (identifier_node->general())
         {
             /// If it is an alias, but not a parent alias (for constructs like "SELECT column + 1 AS column").
             auto it_alias = aliases.find(identifier_node->name);
@@ -122,7 +122,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                 {
                     /// Avoid infinite recursion here
                     auto replace_to_identifier = typeid_cast<ASTIdentifier *>(it_alias->second.get());
-                    bool is_cycle = replace_to_identifier && replace_to_identifier->kind == ASTIdentifier::Column
+                    bool is_cycle = replace_to_identifier && replace_to_identifier->general()
                         && replace_to_identifier->name == identifier_node->name;
 
                     if (!is_cycle)
@@ -164,9 +164,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
             if (database_and_table_name)
             {
                 if (ASTIdentifier * right = typeid_cast<ASTIdentifier *>(database_and_table_name.get()))
-                {
-                    right->kind = ASTIdentifier::Table;
-                }
+                    right->setSpecial();
             }
         }
     }

@@ -90,7 +90,12 @@ INSERT INTO test.decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-0.0, -0.0, -0.0
 INSERT INTO test.decimal (a, b, g) VALUES ('42.00000', 42.0000000000000000000000000000000, '0.999990');
 INSERT INTO test.decimal (a) VALUES ('-9x'); -- { clientError 72 }
 INSERT INTO test.decimal (a) VALUES ('0x1'); -- { clientError 72 }
-INSERT INTO test.decimal (a) VALUES ('1e2'); -- { clientError 72 }
+
+INSERT INTO test.decimal (a, b, c, d, e, f) VALUES ('0.9e9', '0.9e18', '0.9e38', '9e-9', '9e-18', '9e-38');
+INSERT INTO test.decimal (a, b, c, d, e, f) VALUES ('-0.9e9', '-0.9e18', '-0.9e38', '-9e-9', '-9e-18', '-9e-38');
+
+INSERT INTO test.decimal (a, b, c, d, e, f) VALUES ('1e9', '1e18', '1e38', '1e-10', '1e-19', '1e-39');  -- { clientError 69 }
+INSERT INTO test.decimal (a, b, c, d, e, f) VALUES ('-1e9', '-1e18', '-1e38', '-1e-10', '-1e-19', '-1e-39');  -- { clientError 69 }
 
 SELECT * FROM test.decimal ORDER BY a, b, c, d, e, f, g, h, i, j;
 DROP TABLE IF EXISTS test.decimal;

@@ -19,6 +19,7 @@
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/RollupBlockInputStream.h>
+#include <DataStreams/CubeBlockInputStream.h>
 #include <DataStreams/ConvertColumnWithDictionaryToFullBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
@@ -499,7 +500,7 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
         bool aggregate_final =
             expressions.need_aggregate &&
             to_stage > QueryProcessingStage::WithMergeableState &&
-            !query.group_by_with_totals && !query.group_by_with_rollup;
+            !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
 
         if (expressions.first_stage)
         {
@@ -557,10 +558,15 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 if (!aggregate_final)
                 {
                     if (query.group_by_with_totals)
-                        executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, !query.group_by_with_rollup);
+                    {
+                        bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
+                        executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
+                    }
 
-                     if (query.group_by_with_rollup)
-                        executeRollup(pipeline);
+                    if (query.group_by_with_rollup)
+                        executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                    else if(query.group_by_with_cube)
+                        executeRollupOrCube(pipeline, Modificator::CUBE);
                 }
                 else if (expressions.has_having)
                     executeHaving(pipeline, expressions.before_having);
@@ -575,10 +581,15 @@ void InterpreterSelectQuery::executeImpl(Pipeline & pipeline, const BlockInputSt
                 need_second_distinct_pass = query.distinct && pipeline.hasMoreThanOneStream();
 
                 if (query.group_by_with_totals && !aggregate_final)
-                    executeTotalsAndHaving(pipeline, false, nullptr, aggregate_overflow_row, !query.group_by_with_rollup);
+                {
+                    bool final = !query.group_by_with_rollup && !query.group_by_with_cube;
+                    executeTotalsAndHaving(pipeline, expressions.has_having, expressions.before_having, aggregate_overflow_row, final);
+                }
 
                 if (query.group_by_with_rollup && !aggregate_final)
-                    executeRollup(pipeline);
+                    executeRollupOrCube(pipeline, Modificator::ROLLUP);
+                else if (query.group_by_with_cube && !aggregate_final)
+                    executeRollupOrCube(pipeline, Modificator::CUBE);
             }
 
             if (expressions.has_order_by)
@@ -951,8 +962,8 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = std::make_shared<ConvertColumnWithDictionaryToFullBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(stream, expression));
+        stream = //std::make_shared<ConvertColumnWithDictionaryToFullBlockInputStream>(
+                std::make_shared<ExpressionBlockInputStream>(stream, expression); //);
     });
 
     Names key_names;
@@ -982,7 +993,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold : SettingUInt64(0),
         allow_to_use_two_level_group_by ? settings.group_by_two_level_threshold_bytes : SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath());
+        context.getTemporaryPath(), settings.max_threads);
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.streams.size() > 1)
@@ -1042,9 +1053,9 @@ void InterpreterSelectQuery::executeMergeAggregated(Pipeline & pipeline, bool ov
       *  but it can work more slowly.
       */
 
-    Aggregator::Params params(header, keys, aggregates, overflow_row);
-
     const Settings & settings = context.getSettingsRef();
+
+    Aggregator::Params params(header, keys, aggregates, overflow_row, settings.max_threads);
 
     if (!settings.distributed_aggregation_memory_efficient)
     {
@@ -1087,7 +1098,7 @@ void InterpreterSelectQuery::executeTotalsAndHaving(Pipeline & pipeline, bool ha
         has_having ? query.having_expression->getColumnName() : "", settings.totals_mode, settings.totals_auto_threshold, final);
 }
 
-void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
+void InterpreterSelectQuery::executeRollupOrCube(Pipeline & pipeline, Modificator modificator)
 {
     executeUnion(pipeline);
 
@@ -1109,9 +1120,12 @@ void InterpreterSelectQuery::executeRollup(Pipeline & pipeline)
         settings.compile ? &context.getCompiler() : nullptr, settings.min_count_to_compile,
         SettingUInt64(0), SettingUInt64(0),
         settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
-        context.getTemporaryPath());
+        context.getTemporaryPath(), settings.max_threads);
 
-    pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
+    if (modificator == Modificator::ROLLUP)
+        pipeline.firstStream() = std::make_shared<RollupBlockInputStream>(pipeline.firstStream(), params);
+    else
+        pipeline.firstStream() = std::make_shared<CubeBlockInputStream>(pipeline.firstStream(), params);
 }
 
 

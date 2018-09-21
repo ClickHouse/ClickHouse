@@ -188,26 +188,6 @@ void DataTypeTuple::deserializeText(IColumn & column, ReadBuffer & istr, const F
     assertChar(')', istr);
 }
 
-void DataTypeTuple::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-void DataTypeTuple::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
-void DataTypeTuple::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
-{
-    serializeText(column, row_num, ostr, settings);
-}
-
-void DataTypeTuple::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
-{
-    deserializeText(column, istr, settings);
-}
-
 void DataTypeTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     writeChar('[', ostr);
