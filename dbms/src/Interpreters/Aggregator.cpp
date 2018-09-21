@@ -594,6 +594,7 @@ void NO_INLINE Aggregator::executeImplCase(
     AggregateDataPtr overflow_row) const
 {
     /// NOTE When editing this code, also pay attention to SpecializedAggregator.h.
+    /// TODO for low cardinality optimization.
 
     /// For all rows.
     typename Method::Key prev_key;
@@ -871,7 +872,7 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
         #define M(NAME, IS_TWO_LEVEL) \
             else if (result.type == AggregatedDataVariants::Type::NAME) \
                 executeImpl(*result.NAME, result.aggregates_pool, rows, key_columns, aggregate_functions_instructions.data(), \
-                     key, no_more_keys, overflow_row_ptr);
+                    key, no_more_keys, overflow_row_ptr);
 
             if (false) {}
             APPLY_FOR_AGGREGATED_VARIANTS(M)
