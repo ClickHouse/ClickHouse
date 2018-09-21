@@ -96,6 +96,8 @@ public:
     const Strings & getElementNames() const { return names; }
 
     size_t getPositionByName(const String & name) const;
+
+    bool haveExplicitNames() const { return have_explicit_names; }
 };
 
 }

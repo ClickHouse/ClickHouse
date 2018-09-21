@@ -27,6 +27,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <ext/range.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 
 namespace DB
@@ -128,6 +129,14 @@ void Set::setHeader(const Block & block)
             materialized_columns.emplace_back(converted);
             key_columns.back() = materialized_columns.back().get();
         }
+
+        /// Convert low cardinality column to full.
+        if (auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(data_types.back().get()))
+        {
+            data_types.back() = low_cardinality_type->getDictionaryType();
+            materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfWithDictionary());
+            key_columns.back() = materialized_columns.back().get();
+        }
     }
 
     /// We will insert to the Set only keys, where all components are not NULL.
@@ -171,6 +180,13 @@ bool Set::insertFromBlock(const Block & block)
         if (ColumnPtr converted = key_columns.back()->convertToFullColumnIfConst())
         {
             materialized_columns.emplace_back(converted);
+            key_columns.back() = materialized_columns.back().get();
+        }
+
+        /// Convert low cardinality column to full.
+        if (key_columns.back()->withDictionary())
+        {
+            materialized_columns.emplace_back(key_columns.back()->convertToFullColumnIfWithDictionary());
             key_columns.back() = materialized_columns.back().get();
         }
     }
