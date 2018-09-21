@@ -19,7 +19,6 @@ check_cxx_source_compiles("
     #include <smmintrin.h>
     int main() {
         auto a = _mm_insert_epi8(__m128i(), 0, 0);
-        a = a + a;
         (void)a;
         return 0;
     }
@@ -38,8 +37,6 @@ check_cxx_source_compiles("
     #include <nmmintrin.h>
     int main() {
         auto a = _mm_crc32_u64(0, 0);
-        if (a)
-            a = a + a;
         (void)a;
         return 0;
     }
@@ -58,8 +55,6 @@ set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
 check_cxx_source_compiles("
     int main() {
         auto a = __builtin_popcountll(0);
-        if (a)
-            a = a + a;
         (void)a;
         return 0;
     }
