@@ -275,7 +275,7 @@ void ColumnWithDictionary::getPermutation(bool reverse, size_t limit, int nan_di
     size_t perm_size = std::min(indexes_size, limit);
     res.resize(perm_size);
     size_t perm_index = 0;
-    for (size_t row = 0; row < indexes_size && perm_index < perm_size; ++row)
+    for (size_t row = 0; row < unique_perm.size() && perm_index < perm_size; ++row)
     {
         const auto & row_indexes = indexes_per_row[unique_perm[row]];
         for (auto row_index : row_indexes)
@@ -356,6 +356,17 @@ ColumnWithDictionary::getMinimalDictionaryEncodedColumn(size_t offset, size_t li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
+ColumnPtr ColumnWithDictionary::countKeys() const
+{
+    const auto & nested_column = getDictionary().getNestedColumn();
+    size_t dict_size = nested_column->size();
+
+    auto counter = ColumnUInt64::create(dict_size, 0);
+    idx.countKeys(counter->getData());
+    return std::move(counter);
+}
+
+
 
 ColumnWithDictionary::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
@@ -431,6 +442,18 @@ typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPo
 }
 
 template <typename IndexType>
+const typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPositionsData() const
+{
+    const auto * positions_ptr = typeid_cast<const ColumnVector<IndexType> *>(positions.get());
+    if (!positions_ptr)
+        throw Exception("Invalid indexes type for ColumnWithDictionary."
+                        " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
+
+    return positions_ptr->getData();
+}
+
+template <typename IndexType>
 void ColumnWithDictionary::Index::convertPositions()
 {
     auto convert = [&](auto x)
@@ -484,6 +507,19 @@ UInt64 ColumnWithDictionary::Index::getMaxPositionForCurrentType() const
     UInt64 value = 0;
     callForType([&](auto type) { value = std::numeric_limits<decltype(type)>::max(); }, size_of_type);
     return value;
+}
+
+size_t ColumnWithDictionary::Index::getPositionAt(size_t row) const
+{
+    size_t pos;
+    auto getPosition = [&](auto type)
+    {
+        using CurIndexType = decltype(type);
+        pos = getPositionsData<CurIndexType>()[row];
+    };
+
+    callForType(std::move(getPosition), size_of_type);
+    return pos;
 }
 
 void ColumnWithDictionary::Index::insertPosition(UInt64 position)
@@ -570,6 +606,18 @@ void ColumnWithDictionary::Index::checkSizeOfType()
     if (size_of_type != getSizeOfIndexType(*positions, size_of_type))
         throw Exception("Invalid size of type. Expected "  + toString(8 * size_of_type) +
                         ", but positions are " + positions->getName(), ErrorCodes::LOGICAL_ERROR);
+}
+
+void ColumnWithDictionary::Index::countKeys(ColumnUInt64::Container & counts) const
+{
+    auto counter = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        for (auto pos : data)
+            ++counts[pos];
+    };
+    callForType(std::move(counter), size_of_type);
 }
 
 

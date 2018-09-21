@@ -2,11 +2,16 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeWithDictionary.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnWithDictionary.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -33,6 +38,58 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+}
+
+
+static DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
+{
+    if (!type)
+        return type;
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple_type->getElements();
+        for (auto & element : elements)
+            element = recursiveRemoveLowCardinality(element);
+
+        if (tuple_type->haveExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+        else
+            return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(type.get()))
+        return low_cardinality_type->getDictionaryType();
+
+    return type;
+}
+
+static ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
+        return ColumnArray::create(recursiveRemoveLowCardinality(column_array->getDataPtr()), column_array->getOffsetsPtr());
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        return ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), column_const->size());
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        Columns columns = column_tuple->getColumns();
+        for (auto & element : columns)
+            element = recursiveRemoveLowCardinality(element);
+        return ColumnTuple::create(columns);
+    }
+
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnWithDictionary *>(column.get()))
+        return column_low_cardinality->convertToFullColumn();
+
+    return column;
 }
 
 
@@ -286,19 +343,9 @@ static void convertColumnsWithDictionaryToFull(Block & block, const ColumnNumber
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
-            column.column = column_const->removeLowCardinality();
-        else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
-        {
-            auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
 
-            if (!type_with_dict)
-                throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            column.column = column_with_dict->convertToFullColumn();
-            column.type = type_with_dict->getDictionaryType();
-        }
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
 
@@ -327,14 +374,13 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
                 throw Exception("Expected LowCardinality column, got " + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
 
             auto & keys = block_without_dicts.safeGetByPosition(result).column;
+            if (auto full_column = keys->convertToFullColumnIfConst())
+                keys = full_column;
+
             if (indexes)
                 column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
             else
-            {
-                if (auto full_column = keys->convertToFullColumnIfConst())
-                    keys = full_column;
                 column_with_dictionary->insertRangeFromFullColumn(*keys, 0, keys->size());
-            }
 
             res.column = std::move(res_column);
         }
@@ -452,13 +498,13 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
 
 #endif
 
-
 DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
         bool has_low_cardinality = false;
         size_t num_full_low_cardinality_columns = 0;
+        size_t num_full_ordinary_columns = 0;
 
         ColumnsWithTypeAndName args_without_dictionary(arguments);
 
@@ -476,9 +522,18 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
                 if (!is_const)
                     ++num_full_low_cardinality_columns;
             }
+            else if (!is_const)
+                ++num_full_ordinary_columns;
         }
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1)
+        for (auto & arg : args_without_dictionary)
+        {
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+        }
+
+        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0)
             return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
         else
             return getReturnTypeWithoutDictionary(args_without_dictionary);

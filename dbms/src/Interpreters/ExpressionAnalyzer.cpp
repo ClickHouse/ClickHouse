@@ -69,6 +69,7 @@
 #include <Interpreters/evaluateQualified.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getQueryAliases.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 
 namespace DB
@@ -308,7 +309,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
 {
     if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (identifier->kind == ASTIdentifier::Column)
+        if (identifier->general())
         {
             /// Select first table name with max number of qualifiers which can be stripped.
             size_t max_num_qualifiers_to_strip = 0;
@@ -646,7 +647,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
     StoragePtr external_storage;
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
-        if (node->kind == ASTIdentifier::Table)
+        if (node->special())
             if ((external_storage = context.tryGetExternalTable(node->name)))
                 external_tables[node->name] = external_storage;
 }
@@ -830,7 +831,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
         *  instead of doing a subquery, you just need to read it.
         */
 
-    auto database_and_table_name = std::make_shared<ASTIdentifier>(external_table_name, ASTIdentifier::Table);
+    auto database_and_table_name = ASTIdentifier::createSpecial(external_table_name);
 
     if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
     {
@@ -1456,6 +1457,10 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
+    for (auto & element_type : set_element_types)
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(element_type.get()))
+            element_type = low_cardinality_type->getDictionaryType();
+
     ASTPtr elements_ast = nullptr;
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
@@ -1659,7 +1664,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (node->kind == ASTIdentifier::Column)
+        if (node->general())
         {
             auto splitted = Nested::splitName(node->name);  /// ParsedParams, Key1
 
@@ -2884,7 +2889,7 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
         auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
         if (identifier)
         {
-            if (identifier->kind == ASTIdentifier::Column)
+            if (identifier->general())
             {
                 auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
                 auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
@@ -2923,7 +2928,7 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
         auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
         if (identifier)
         {
-            if (identifier->kind == ASTIdentifier::Column)
+            if (identifier->general())
             {
                 auto num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, source_names);
                 stripIdentifier(ast, num_components);
@@ -3091,7 +3096,7 @@ void ExpressionAnalyzer::getRequiredSourceColumnsImpl(const ASTPtr & ast,
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (node->kind == ASTIdentifier::Column
+        if (node->general()
             && !ignored_names.count(node->name)
             && !ignored_names.count(Nested::extractTableName(node->name)))
         {
