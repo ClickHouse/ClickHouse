@@ -4,6 +4,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/InterpreterOptimizeQuery.h>
 #include <Common/typeid_cast.h>
+#include <Common/Macros.h>
 
 
 namespace DB
@@ -17,7 +18,10 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const ASTOptimizeQuery & ast = typeid_cast<const ASTOptimizeQuery &>(*query_ptr);
+    ASTOptimizeQuery & ast = typeid_cast<ASTOptimizeQuery &>(*query_ptr);
+
+    ast.database = context.getMacros()->expand(ast.database);
+    ast.table = context.getMacros()->expand(ast.table);
 
     if (!ast.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {ast.database});
