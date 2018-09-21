@@ -26,7 +26,7 @@ static bool isCompatible(const IAST & node)
             || name == "notEquals"
             || name == "like"
             || name == "notLike"
-            || name == "in" 
+            || name == "in"
             || name == "greater"
             || name == "less"
             || name == "lessOrEquals"
