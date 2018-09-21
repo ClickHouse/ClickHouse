@@ -21,6 +21,8 @@
 #include <DataStreams/RollupBlockInputStream.h>
 #include <DataStreams/ConvertColumnWithDictionaryToFullBlockInputStream.h>
 
+#include <Common/Macros.h>
+
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -238,6 +240,9 @@ void InterpreterSelectQuery::getDatabaseAndTableNames(String & database_name, St
         database_name = typeid_cast<ASTIdentifier &>(*query_database).name;
     if (query_table)
         table_name = typeid_cast<ASTIdentifier &>(*query_table).name;
+
+    database_name = context.getMacros()->expand(database_name);
+    table_name = context.getMacros()->expand(table_name);
 
     if (!query_table)
     {

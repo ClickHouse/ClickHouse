@@ -5,6 +5,7 @@
 #include <Poco/File.h>
 #include <Poco/FileStream.h>
 
+#include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -619,6 +620,9 @@ BlockIO InterpreterCreateQuery::execute()
     ASTCreateQuery & create = typeid_cast<ASTCreateQuery &>(*query_ptr);
     checkAccess(create);
     ASTQueryWithOutput::resetOutputASTIfExist(create);
+
+    create.database = context.getMacros()->expand(create.database);
+    create.table = context.getMacros()->expand(create.table);
 
     /// CREATE|ATTACH DATABASE
     if (!create.database.empty() && create.table.empty())
