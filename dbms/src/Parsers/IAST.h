@@ -3,6 +3,7 @@
 #include <set>
 #include <memory>
 #include <ostream>
+#include <algorithm>
 
 #include <Core/Types.h>
 #include <Common/Exception.h>
@@ -85,6 +86,26 @@ public:
         ostr << indent_str << getID() << ", " << this << std::endl;
         for (const auto & child : children)
             child->dumpTree(ostr, indent + 1);
+    }
+
+    void dumpSExpressions(std::ostream & ostr, size_t indent = 0) const
+    {
+        String indent_str(indent, ' ');
+        String id = getID();
+        std::replace(id.begin(), id.end(), '_', ' ');
+        ostr << indent_str << '(' << id;
+        id = tryGetAlias();
+        if (!id.empty())
+             ostr << " (Alias " << id << ')';
+        if (!children.empty())
+        {
+            ostr << std::endl;
+            for (const auto & child : children)
+                child->dumpSExpressions(ostr, indent + 1);
+            ostr << indent_str << ')' << std::endl;
+        }
+        else
+            ostr << ')' << std::endl;
     }
 
     /** Check the depth of the tree.
