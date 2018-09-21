@@ -16,6 +16,8 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>

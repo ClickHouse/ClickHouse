@@ -1,5 +1,7 @@
 #pragma once
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/UInt128.h>
 
 namespace DB
 {
@@ -15,6 +17,11 @@ public:
     virtual const ColumnPtr & getNestedColumn() const = 0;
     /// The same as getNestedColumn, but removes null map if nested column is nullable.
     virtual const ColumnPtr & getNestedNotNullableColumn() const = 0;
+
+    /// Returns array with StringRefHash calculated for each row of getNestedNotNullableColumn() column.
+    /// Returns nullptr if nested column doesn't contain strings. Otherwise calculates hash (if it wasn't).
+    /// Uses thread-safe cache.
+    virtual const UInt64 * tryGetSavedHash() const = 0;
 
     size_t size() const override { return getNestedColumn()->size(); }
 
@@ -50,6 +57,9 @@ public:
     virtual bool canContainNulls() const = 0;
 
     virtual size_t uniqueDeserializeAndInsertFromArena(const char * pos, const char *& new_pos) = 0;
+
+    /// Returns dictionary hash which is sipHash is applied to each row of nested column.
+    virtual UInt128 getHash() const = 0;
 
     const char * getFamilyName() const override { return "ColumnUnique"; }
 

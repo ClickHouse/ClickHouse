@@ -910,7 +910,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto in = mutations_interpreter.execute();
     NamesAndTypesList all_columns = data.getColumns().getAllPhysical();
 
-    if (in->getHeader().columns() == all_columns.size())
+    Block in_header = in->getHeader();
+
+    if (in_header.columns() == all_columns.size())
     {
         /// All columns are modified, proceed to write a new part from scratch.
 
@@ -944,7 +946,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// TODO: check that we modify only non-key columns in this case.
 
         NameSet files_to_skip = {"checksums.txt", "columns.txt"};
-        for (const auto & entry : in->getHeader())
+        for (const auto & entry : in_header)
         {
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
@@ -969,7 +971,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             createHardLink(dir_it.path().toString(), destination.toString());
         }
 
-        MergedColumnOnlyOutputStream out(data, in->getHeader(), new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false);
+        MergedColumnOnlyOutputStream out(data, in_header, new_part_tmp_path, /* sync = */ false, compression_settings, /* skip_offsets = */ false);
 
         in->readPrefix();
         out.writePrefix();
@@ -989,11 +991,16 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             new_data_part->checksums.write(out);
         }
 
-        new_data_part->columns = all_columns;
+        new_data_part->columns = source_part->columns;
+        for (const auto & new_column : in_header.getColumnsWithTypeAndName())
+        {
+            if (!new_data_part->columns.contains(new_column.name))
+                new_data_part->columns.emplace_back(new_column.name, new_column.type);
+        }
         {
             /// Write a file with a description of columns.
             WriteBufferFromFile out(new_part_tmp_path + "columns.txt", 4096);
-            all_columns.writeText(out);
+            new_data_part->columns.writeText(out);
         }
 
         new_data_part->rows_count = source_part->rows_count;

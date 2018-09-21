@@ -96,6 +96,10 @@ public:
         index.setColumn(getRawColumnPtr());
     }
 
+    const UInt64 * tryGetSavedHash() const override { return index.tryGetSavedHash(); }
+
+    UInt128 getHash() const override { return hash.getHash(*getRawColumnPtr()); }
+
 private:
 
     ColumnPtr column_holder;
@@ -105,6 +109,21 @@ private:
     /// For DataTypeNullable, stores null map.
     mutable ColumnPtr cached_null_mask;
     mutable ColumnPtr cached_column_nullable;
+
+    class IncrementalHash
+    {
+    private:
+        UInt128 hash;
+        std::atomic<size_t> num_added_rows;
+
+        std::mutex mutex;
+    public:
+        IncrementalHash() : num_added_rows(0) {}
+
+        UInt128 getHash(const ColumnType & column);
+    };
+
+    mutable IncrementalHash hash;
 
     static size_t numSpecialValues(bool is_nullable) { return is_nullable ? 2 : 1; }
     size_t numSpecialValues() const { return numSpecialValues(is_nullable); }
@@ -512,6 +531,32 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     indexes_with_overflow.indexes = std::move(positions_column);
     indexes_with_overflow.overflowed_keys = std::move(overflowed_keys);
     return indexes_with_overflow;
+}
+
+template <typename ColumnType>
+UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & column)
+{
+    size_t column_size = column.size();
+    UInt128 cur_hash;
+
+    if (column_size != num_added_rows.load())
+    {
+        SipHash sip_hash;
+        for (size_t i = 0; i < column_size; ++i)
+            column.updateHashWithValue(i, sip_hash);
+
+        std::lock_guard lock(mutex);
+        sip_hash.get128(hash.low, hash.high);
+        cur_hash = hash;
+        num_added_rows.store(column_size);
+    }
+    else
+    {
+        std::lock_guard lock(mutex);
+        cur_hash = hash;
+    }
+
+    return cur_hash;
 }
 
 }
