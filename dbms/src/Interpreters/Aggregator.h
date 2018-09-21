@@ -160,9 +160,9 @@ struct AggregationMethodOneNumber
 
     /** Do not use optimization for consecutive keys.
       */
-    static const bool no_consecutive_keys_optimization = true;
+    static const bool no_consecutive_keys_optimization = false;
     /// Use optimization for low cardinality.
-    static constexpr bool low_cardinality_optimization = false;
+    static const bool low_cardinality_optimization = false;
 
     /** Insert the key from the hash table into columns.
       */
@@ -171,7 +171,8 @@ struct AggregationMethodOneNumber
         static_cast<ColumnVector<FieldType> *>(key_columns[0].get())->insertData(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
 
-    static StringRef getRef(const typename Data::value_type & value)
+    /// Get StringRef from value which can be inserted into column.
+    static StringRef getValueRef(const typename Data::value_type & value)
     {
         return StringRef(reinterpret_cast<const char *>(&value.first), sizeof(value.first));
     }
@@ -235,9 +236,9 @@ struct AggregationMethodString
     static ALWAYS_INLINE void onExistingKey(const Key & /*key*/, StringRefs & /*keys*/, Arena & /*pool*/) {}
 
     static const bool no_consecutive_keys_optimization = false;
-    static constexpr bool low_cardinality_optimization = false;
+    static const bool low_cardinality_optimization = false;
 
-    static StringRef getRef(const typename Data::value_type & value)
+    static StringRef getValueRef(const typename Data::value_type & value)
     {
         return StringRef(value.first.data, value.first.size);
     }
@@ -304,9 +305,9 @@ struct AggregationMethodFixedString
     static ALWAYS_INLINE void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
-    static constexpr bool low_cardinality_optimization = false;
+    static const bool low_cardinality_optimization = false;
 
-    static StringRef getRef(const typename Data::value_type & value)
+    static StringRef getValueRef(const typename Data::value_type & value)
     {
         return StringRef(value.first.data, value.first.size);
     }
@@ -581,7 +582,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
     {
-        auto ref = Base::getRef(value);
+        auto ref = Base::getValueRef(value);
         static_cast<ColumnWithDictionary *>(key_columns[0].get())->insertData(ref.data, ref.size);
     }
 };
@@ -780,7 +781,7 @@ struct AggregationMethodKeysFixed
     static ALWAYS_INLINE void onExistingKey(const Key &, StringRefs &, Arena &) {}
 
     static const bool no_consecutive_keys_optimization = false;
-    static constexpr bool low_cardinality_optimization = false;
+    static const bool low_cardinality_optimization = false;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes & key_sizes)
     {
@@ -888,7 +889,7 @@ struct AggregationMethodSerialized
 
     /// If the key already was, it is removed from the pool (overwritten), and the next key can not be compared with it.
     static const bool no_consecutive_keys_optimization = true;
-    static constexpr bool low_cardinality_optimization = false;
+    static const bool low_cardinality_optimization = false;
 
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t keys_size, const Sizes &)
     {
