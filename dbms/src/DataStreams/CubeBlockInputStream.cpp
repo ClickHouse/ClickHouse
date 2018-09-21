@@ -50,7 +50,7 @@ Block CubeBlockInputStream::readImpl()
             {
                 size_t pos = keys.size() - i - 1;
                 auto & current = cube_block.getByPosition(keys[pos]);
-                current.column = zero_block.getByPosition(pos).column;
+                current.column = zero_block.getByPosition(keys[pos]).column;
             }
         }
 

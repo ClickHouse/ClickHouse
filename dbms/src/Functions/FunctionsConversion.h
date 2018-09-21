@@ -1740,9 +1740,14 @@ private:
 
     WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
+        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
+        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
+        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
+        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
+
         if (from_type->onlyNull())
         {
-            if (!to_type->isNullable())
+            if (!to_nested->isNullable())
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
@@ -1751,11 +1756,6 @@ private:
                 res.column = res.type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
             };
         }
-
-        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
-        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
-        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
-        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
 
         auto wrapper = prepareRemoveNullable(from_nested, to_nested);
         if (!from_with_dict && !to_with_dict)
