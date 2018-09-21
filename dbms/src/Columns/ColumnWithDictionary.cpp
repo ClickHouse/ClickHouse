@@ -275,7 +275,7 @@ void ColumnWithDictionary::getPermutation(bool reverse, size_t limit, int nan_di
     size_t perm_size = std::min(indexes_size, limit);
     res.resize(perm_size);
     size_t perm_index = 0;
-    for (size_t row = 0; row < indexes_size && perm_index < perm_size; ++row)
+    for (size_t row = 0; row < unique_perm.size() && perm_index < perm_size; ++row)
     {
         const auto & row_indexes = indexes_per_row[unique_perm[row]];
         for (auto row_index : row_indexes)
