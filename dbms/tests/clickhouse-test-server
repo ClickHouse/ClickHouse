@@ -129,6 +129,6 @@ else
     fi
     ( [ "$TEST_RUN" ] && $CLICKHOUSE_TEST ) || ${TEST_TRUE:=false}
     ( [ "$TEST_PERF" ] && $CLICKHOUSE_PERFORMANCE_TEST $* ) || true
-    $CLICKHOUSE_CLIENT_QUERY "SELECT * FROM system.events; SELECT * FROM system.metrics; SELECT * FROM asynchronous_metrics;"
+    $CLICKHOUSE_CLIENT_QUERY "SELECT event, value FROM system.events; SELECT metric, value FROM system.metrics; SELECT metric, value FROM system.asynchronous_metrics;"
     $CLICKHOUSE_CLIENT_QUERY "SELECT 'Still alive'"
 fi
