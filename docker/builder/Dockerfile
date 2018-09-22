@@ -13,9 +13,7 @@ RUN apt-get update -y \
             libclang-6.0-dev \
             libicu-dev \
             liblld-6.0-dev \
-            libmysqlclient-dev \
             libreadline-dev \
-            libssl-dev \
             ninja-build \
             perl \
             pkg-config \
@@ -24,8 +22,7 @@ RUN apt-get update -y \
             python-requests \
             python-termcolor \
             sudo \
-            tzdata \
-            unixodbc-dev
+            tzdata
 
 COPY build.sh /
 
