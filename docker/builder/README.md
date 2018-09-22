@@ -24,10 +24,10 @@ It builds only binaries, not packages.
 For example, run server:
 ```
 cd $(git rev-parse --show-toplevel)/dbms/src/Server
-$(git rev-parse --show-toplevel)/build_docker/dbms/src/Server/clickhouse server
+$(git rev-parse --show-toplevel)/docker/builder/dbms/programs/clickhouse server --config-file $(git rev-parse --show-toplevel)/dbms/programs/server/config.xml
 ```
 
 Run client:
 ```
-$(git rev-parse --show-toplevel)/build_docker/dbms/src/Server/clickhouse client
+$(git rev-parse --show-toplevel)/docker/builder/dbms/programs/clickhouse client
 ```
