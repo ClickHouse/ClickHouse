@@ -248,7 +248,11 @@ Block ParquetBlockInputStream::readImpl()
 
         if (arrow_type_to_internal_type.find(arrow_type) == arrow_type_to_internal_type.end())
         {
-            throw Exception("Unsupported type " + arrow_column->type()->name() + " of a column " + arrow_column->name()/*, ErrorCodes::TODO*/);
+            throw Exception(
+                "The type \"" + arrow_column->type()->name() + "\" of an input column \"" + arrow_column->name() + "\""
+                " is not supported for conversion from a Parquet data format"
+                /*, ErrorCodes::TODO*/
+            );
         }
 
         // TODO: check if a column is const?
@@ -263,9 +267,12 @@ Block ParquetBlockInputStream::readImpl()
         const DataTypePtr internal_type = target_column_is_nullable ? makeNullable(internal_nested_type) : internal_nested_type;
         const std::string internal_nested_type_name = internal_nested_type->getName();
 
-        const DataTypePtr column_nested_type = header_column.type->isNullable()
-            ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
-            : header_column.type;
+        const DataTypePtr column_nested_type =
+            header_column.type->isNullable()
+                ? static_cast<const DataTypeNullable *>(header_column.type.get())->getNestedType()
+                : header_column.type;
+
+
         const DataTypePtr column_type = header_column.type;
         const std::string column_nested_type_name = column_nested_type->getName();
 
@@ -273,8 +280,8 @@ Block ParquetBlockInputStream::readImpl()
         if (internal_nested_type_name != column_nested_type_name)
         {
             throw Exception(
-                "Input data type " + internal_nested_type_name + " for column \"" + header_column.name + "\" "
-                "is not compatible with a column type " + column_nested_type_name/*, ErrorCodes::TODO*/
+                "Input data type \"" + internal_nested_type_name + "\" for a column \"" + header_column.name + "\""
+                " is not compatible with a column type \"" + column_nested_type_name + "\""/*, ErrorCodes::TODO*/
             );
         }
 
@@ -307,7 +314,7 @@ Block ParquetBlockInputStream::readImpl()
             // TODO: read JSON as a string?
             // TODO: read UUID as a string?
             default:
-                throw Exception("Unsupported parquet type " + arrow_column->type()->name()/*, ErrorCodes::TODO*/);
+                throw Exception("Unsupported parquet type \"" + arrow_column->type()->name() + "\""/*, ErrorCodes::TODO*/);
         }
 
         if (column.type->isNullable())
