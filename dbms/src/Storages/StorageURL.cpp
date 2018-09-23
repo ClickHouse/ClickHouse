@@ -170,7 +170,7 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
         getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
         getName(),
-        getSampleBlock(),
+        getHeaderBlock(column_names),
         context,
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef()))};

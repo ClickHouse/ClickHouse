@@ -325,7 +325,7 @@ Differs from Pretty in that ANSI-escape sequences aren't used. This is necessary
 Example:
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'"
+watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 You can use the HTTP interface for displaying in the browser.
