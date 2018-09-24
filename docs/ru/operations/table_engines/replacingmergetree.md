@@ -21,7 +21,7 @@ ENGINE [=] ReplacingMergeTree([ver]) [PARTITION BY expr] [ORDER BY expr] [SAMPLE
     - Последнюю в выборке, если `ver` не задан.
     - С максимальной версией, если `ver` задан.
 
-**Секции ENGINE**
+**Подчиненные секции ENGINE**
 
 `ReplacingMergeTree` использует те же [секции ENGINE](mergetree.md#table_engines-mergetree-configuring), что и `MergeTree`.
 
@@ -32,7 +32,7 @@ ENGINE [=] ReplacingMergeTree([ver]) [PARTITION BY expr] [ORDER BY expr] [SAMPLE
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```sql
-ReplacingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, [ver])
+ReplacingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [ver])
 ```
 
 Все параметры, кроме `ver` имеют то же значение, что в и `MergeTree`.
