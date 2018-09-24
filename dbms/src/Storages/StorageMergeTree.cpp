@@ -114,7 +114,7 @@ BlockInputStreams StorageMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, {});
+    return reader.read(column_names, query_info, context, max_block_size, num_streams);
 }
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Settings & /*settings*/)
