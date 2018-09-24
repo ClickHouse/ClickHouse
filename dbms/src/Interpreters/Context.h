@@ -224,10 +224,7 @@ public:
     DatabasePtr detachDatabase(const String & database_name);
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    /// If such an object already exists, an exception is thrown.
-    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table, const String & message) const;
-    /// If the table already exists, it returns nullptr, otherwise guard is created.
-    std::unique_ptr<DDLGuard> getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const;
+    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table) const;
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
@@ -467,22 +464,30 @@ private:
 };
 
 
-/// Puts an element into the map, erases it in the destructor.
-/// If the element already exists in the map, throws an exception containing provided message.
+/// Allows executing DDL query only in one thread. 
+/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table, 
+/// when counter is 0 erases element in the destructor. 
+/// If the element already exists in the map, waits, when ddl query will be finished in other thread.
 class DDLGuard
 {
 public:
-    /// Element name -> message.
-    /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
-    using Map = std::map<String, String>;
+    struct Entry {
+        std::unique_ptr<std::mutex> mutex;
+        UInt32 counter;
+    };
 
-    DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
+    /// Element name -> (mutex, counter).
+    /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
+    using Map = std::map<String, Entry>;
+
+    DDLGuard(Map & map_, std::mutex & guards_mutex_, std::unique_lock<std::mutex> && guards_lock, const String & elem);
     ~DDLGuard();
 
 private:
     Map & map;
     Map::iterator it;
-    std::mutex & mutex;
+    std::mutex & guards_mutex;
+    std::unique_lock<std::mutex> table_lock;
 };
 
 
