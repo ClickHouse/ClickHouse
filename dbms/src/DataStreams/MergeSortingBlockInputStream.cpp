@@ -264,8 +264,13 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
 
 void MergeSortingBlockInputStream::remerge()
 {
-    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data to save memory consumption");
+    size_t num_rows = 0;
+    for (const auto & block : blocks)
+        num_rows += block.rows();
 
+    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << blocks.size() << " blocks with " << num_rows << " rows) to save memory consumption");
+
+    /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
     MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);
 
     Blocks new_blocks;
