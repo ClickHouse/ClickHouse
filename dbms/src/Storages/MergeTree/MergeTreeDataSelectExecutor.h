@@ -30,7 +30,7 @@ public:
         const Context & context,
         size_t max_block_size,
         unsigned num_streams,
-        const PartitionIdToMaxBlock & max_blocks_number_to_read) const;
+        const PartitionIdToMaxBlock* max_blocks_number_to_read = nullptr) const;
 
     BlockInputStreams readFromParts(
         MergeTreeData::DataPartsVector parts,
@@ -39,7 +39,7 @@ public:
         const Context & context,
         size_t max_block_size,
         unsigned num_streams,
-        const PartitionIdToMaxBlock & max_blocks_number_to_read) const;
+        const PartitionIdToMaxBlock* max_blocks_number_to_read = nullptr) const;
 
 private:
     MergeTreeData & data;

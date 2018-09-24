@@ -2995,7 +2995,10 @@ BlockInputStreams StorageReplicatedMergeTree::read(
         }
     }
 
-    return reader.read(column_names, query_info, context, max_block_size, num_streams, max_added_blocks);
+    if (max_added_blocks.empty())
+        return reader.read(column_names, query_info, context, max_block_size, num_streams);
+    else
+        return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
 }
 
 
