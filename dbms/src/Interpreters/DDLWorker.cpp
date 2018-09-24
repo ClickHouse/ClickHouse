@@ -867,6 +867,7 @@ void DDLWorker::run()
             {
                 if (!Coordination::isHardwareError(e.code))
                     throw;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
         catch (...)
