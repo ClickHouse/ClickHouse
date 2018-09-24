@@ -358,10 +358,11 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
                     && ((!table_names.table.empty() && ident->name == table_names.table)
                         || (!table_names.alias.empty() && ident->name == table_names.alias))))
             {
-                /// Replace to plain asterisk.
-                ast = std::make_shared<ASTAsterisk>();
+                return;
             }
         }
+
+        throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
     else if (auto * join = typeid_cast<ASTTableJoin *>(ast.get()))
     {
@@ -862,6 +863,43 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
+static void getTableExpressions(const ASTPtr & node, std::vector<ASTTableExpression> & table_expressions)
+{
+    if (ASTTableExpression * table_expression = typeid_cast<ASTTableExpression *>(node.get()))
+    {
+        table_expressions.emplace_back(*table_expression);
+        return;
+    }
+
+    for (const auto & child : node->children)
+        getTableExpressions(child, table_expressions);
+}
+
+static NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
+{
+    NamesAndTypesList names_and_type_list;
+    if (table_expression.subquery)
+    {
+        const auto & subquery = table_expression.subquery->children.at(0);
+        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context).getNamesAndTypesList();
+    }
+    else if (table_expression.table_function)
+    {
+        const auto table_function = table_expression.table_function;
+        auto query_context = const_cast<Context *>(&context.getQueryContext());
+        const auto & function_storage = query_context->executeTableFunction(table_function);
+        names_and_type_list = function_storage->getSampleBlockNonMaterialized().getNamesAndTypesList();
+    }
+    else if (table_expression.database_and_table_name)
+    {
+        const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
+        auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
+        const auto & table = context.getTable(database_table.first, database_table.second);
+        names_and_type_list = table->getSampleBlockNonMaterialized().getNamesAndTypesList();
+    }
+
+    return names_and_type_list;
+}
 
 void ExpressionAnalyzer::normalizeTree()
 {
@@ -879,7 +917,21 @@ void ExpressionAnalyzer::normalizeTree()
     if (all_columns_name.empty())
         throw Exception("Logical error: an asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    QueryNormalizer(query, aliases, settings, all_columns_name).perform();
+    TableNamesAndColumnsName table_names_nad_columns_name;
+    if (select_query && select_query->tables && !select_query->tables->children.empty())
+    {
+        std::vector<ASTTableExpression> tables_expression;
+        getTableExpressions(select_query->tables, tables_expression);
+
+        for (const auto & table_expression : tables_expression)
+        {
+            const auto table_name = getTableNameWithAliasFromTableExpression(table_expression, context);
+            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(table_expression, context);
+            table_names_nad_columns_name.emplace_back(std::pair(table_name, names_and_types.getNames()));
+        }
+    }
+
+    QueryNormalizer(query, aliases, settings, all_columns_name, table_names_nad_columns_name).perform();
 }
 
 
@@ -2274,30 +2326,9 @@ NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(co
     {
         if (const ASTTablesInSelectQueryElement * node = select_query_with_join->join())
         {
-            Block nested_result_sample;
             const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
 
-            if (table_expression.subquery)
-            {
-                const auto & subquery = table_expression.subquery->children.at(0);
-                nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
-            }
-            else if (table_expression.table_function)
-            {
-                const auto table_function = table_expression.table_function;
-                auto query_context = const_cast<Context *>(&context.getQueryContext());
-                const auto & join_storage = query_context->executeTableFunction(table_function);
-                nested_result_sample = join_storage->getSampleBlockNonMaterialized();
-            }
-            else if (table_expression.database_and_table_name)
-            {
-                const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
-                auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
-                const auto & table = context.getTable(database_table.first, database_table.second);
-                nested_result_sample = table->getSampleBlockNonMaterialized();
-            }
-
-            columns_from_joined_table = nested_result_sample.getNamesAndTypesList();
+            columns_from_joined_table = getNamesAndTypeListFromTableExpression(table_expression, context);
         }
     }
 

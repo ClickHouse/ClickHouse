@@ -303,7 +303,7 @@ ASTs PredicateExpressionsOptimizer::getSelectQueryProjectionColumns(ASTPtr & ast
     /// first should normalize query tree.
     std::unordered_map<String, ASTPtr> aliases;
     getQueryAliases(ast, aliases, 0);
-    QueryNormalizer(ast, aliases, settings, {}).perform();
+    QueryNormalizer(ast, aliases, settings, {}, {}).perform();
 
     ASTs projection_columns;
     auto select_query = static_cast<ASTSelectQuery *>(ast.get());
