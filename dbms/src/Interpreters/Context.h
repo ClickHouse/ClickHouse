@@ -464,14 +464,15 @@ private:
 };
 
 
-/// Allows executing DDL query only in one thread. 
-/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table, 
-/// when counter is 0 erases element in the destructor. 
+/// Allows executing DDL query only in one thread.
+/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
+/// when counter is 0 erases element in the destructor.
 /// If the element already exists in the map, waits, when ddl query will be finished in other thread.
 class DDLGuard
 {
 public:
-    struct Entry {
+    struct Entry
+    {
         std::unique_ptr<std::mutex> mutex;
         UInt32 counter;
     };
