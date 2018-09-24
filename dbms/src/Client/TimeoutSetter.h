@@ -30,8 +30,16 @@ struct TimeoutSetter
 
     ~TimeoutSetter()
     {
-        socket.setSendTimeout(old_send_timeout);
-        socket.setReceiveTimeout(old_receive_timeout);
+        try
+        {
+            socket.setSendTimeout(old_send_timeout);
+            socket.setReceiveTimeout(old_receive_timeout);
+        }
+        catch (...)
+        {
+            // Sometimes catched on macos
+        }
+
     }
 
     Poco::Net::StreamSocket & socket;
