@@ -906,7 +906,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
         {
             /// Here we use the transaction just like RAII since rare errors in renameTempPartAndReplace() are possible
             ///  and we should be able to rollback already added (Precomitted) parts
-            MergeTreeData::Transaction transaction;
+            MergeTreeData::Transaction transaction(data);
 
             auto data_parts_lock = data.lockParts();
 

@@ -325,7 +325,7 @@ Extremes:
 Пример:
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'"
+watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 Для отображения в браузере, вы можете использовать HTTP интерфейс.

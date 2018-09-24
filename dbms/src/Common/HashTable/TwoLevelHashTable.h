@@ -252,9 +252,8 @@ public:
     }
 
 
-    iterator ALWAYS_INLINE find(Key x)
+    iterator ALWAYS_INLINE find(Key x, size_t hash_value)
     {
-        size_t hash_value = hash(x);
         size_t buck = getBucketFromHash(hash_value);
 
         typename Impl::iterator found = impls[buck].find(x, hash_value);
@@ -264,9 +263,8 @@ public:
     }
 
 
-    const_iterator ALWAYS_INLINE find(Key x) const
+    const_iterator ALWAYS_INLINE find(Key x, size_t hash_value) const
     {
-        size_t hash_value = hash(x);
         size_t buck = getBucketFromHash(hash_value);
 
         typename Impl::const_iterator found = impls[buck].find(x, hash_value);
@@ -274,6 +272,10 @@ public:
             ? const_iterator(this, buck, found)
             : end();
     }
+
+
+    iterator ALWAYS_INLINE find(Key x) { return find(x, hash(x)); }
+    const_iterator ALWAYS_INLINE find(Key x) const { return find(x, hash(x)); }
 
 
     void write(DB::WriteBuffer & wb) const
