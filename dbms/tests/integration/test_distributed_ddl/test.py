@@ -303,6 +303,9 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
 
 
 def test_macro(started_cluster):
+    # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
+    firewall_drops_rules = cluster.pm_random_drops.pop_rules()
+
     instance = cluster.instances['ch2']
     ddl_check_query(instance, "CREATE DATABASE `{database}` ON CLUSTER '{cluster}'")
 
@@ -325,6 +328,9 @@ ENGINE = Distributed('{cluster}', '{database}', '{table}', value % 4)
 
     ddl_check_query(instance, "DROP TABLE IF EXISTS `{database}`.`{distributed}` ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
+
+    # Enable random ZK packet drops
+    cluster.pm_random_drops.push_rules(firewall_drops_rules)
 
 
 def test_allowed_databases(started_cluster):
