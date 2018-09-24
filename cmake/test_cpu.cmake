@@ -14,7 +14,7 @@ cmake_push_check_state ()
 #define __SSE4_1__ 1
 
 set (TEST_FLAG "-msse4.1")
-set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
 check_cxx_source_compiles("
     #include <smmintrin.h>
     int main() {
@@ -32,7 +32,7 @@ endif ()
 #define __SSE4_2__ 1
 
 set (TEST_FLAG "-msse4.2")
-set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
 check_cxx_source_compiles("
     #include <nmmintrin.h>
     int main() {
@@ -51,7 +51,7 @@ endif ()
 
 set (TEST_FLAG "-mpopcnt")
 
-set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG}")
+set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
 check_cxx_source_compiles("
     int main() {
         auto a = __builtin_popcountll(0);
