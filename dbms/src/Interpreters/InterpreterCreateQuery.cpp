@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int READONLY;
     extern const int ILLEGAL_COLUMN;
+    extern const int DATABASE_ALREADY_EXISTS;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -72,8 +73,16 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     String database_name = create.database;
 
-    if (create.if_not_exists && context.isDatabaseExist(database_name))
-        return {};
+    auto guard = context.getDDLGuard(database_name, "");
+
+    /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
+    if (context.isDatabaseExist(database_name))
+    {
+        if (create.if_not_exists)
+            return {};
+        else
+            throw Exception("Database " + database_name + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+    }
 
     String database_engine_name;
     if (!create.storage)
@@ -544,15 +553,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             database = context.getDatabase(database_name);
             data_path = database->getDataPath();
 
-            /** If the table already exists, and the request specifies IF NOT EXISTS,
-              *  then we allow concurrent CREATE queries (which do nothing).
-              * Otherwise, concurrent queries for creating a table, if the table does not exist,
-              *  can throw an exception, even if IF NOT EXISTS is specified.
+            /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
+              * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
               */
-            guard = context.getDDLGuardIfTableDoesntExist(database_name, table_name,
-                "Table " + database_name + "." + table_name + " is creating or attaching right now");
+            guard = context.getDDLGuard(database_name, table_name);
 
-            if (!guard)
+            /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
+            if (database->isTableExist(context, table_name))
             {
                 if (create.if_not_exists)
                     return {};
