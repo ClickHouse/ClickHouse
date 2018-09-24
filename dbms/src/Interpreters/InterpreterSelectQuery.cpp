@@ -1199,6 +1199,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
     /// Merge the sorted blocks.
     pipeline.firstStream() = std::make_shared<MergeSortingBlockInputStream>(
         pipeline.firstStream(), order_descr, settings.max_block_size, limit,
+        settings.max_bytes_before_remerge_sort,
         settings.max_bytes_before_external_sort, context.getTemporaryPath());
 }
 
