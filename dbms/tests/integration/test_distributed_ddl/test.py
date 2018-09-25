@@ -322,7 +322,7 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replic
 ENGINE = Distributed('{cluster}', '{database}', '{table}', value % 4)
 """)
 
-    assert TSV(instance.query("SELECT value FROM db.distr ORDER BY value")) == TSV('1\n4\n')
+    assert TSV(instance.query("SELECT value FROM db.distr ORDER BY value")) == TSV('1\n2\n')
     assert TSV(instance.query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('1\n2\n')
     assert TSV(cluster.instances['ch3'].query("SELECT value FROM db.distr ORDER BY value")) == TSV('1\n2\n')
     assert TSV(cluster.instances['ch3'].query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('1\n2\n')
