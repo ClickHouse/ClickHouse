@@ -37,7 +37,7 @@ namespace DB
 
         ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
         if (args.size() != 2 && args.size() != 3)
-            throw Exception("Table function '" + getName() + "' requires 2 or 3 arguments: ODBC('DSN', table) or ODBC('DSN', schema, table)",
+            throw Exception("Table function '" + getName() + "' requires 2 or 3 arguments: " + getName() + "('DSN', table) or "+getName()+"('DSN', schema, table)",
                             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto i = 0u; i < args.size(); ++i)
@@ -75,13 +75,22 @@ namespace DB
         readStringBinary(columns_info, buf);
         NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
-        auto result = createStorage(table_name, connection_string, schema_name, table_name, ColumnsDescription{columns}, context);
+        auto result = createStorage(table_name, schema_name, table_name, ColumnsDescription{columns}, context, helper);
 
         if(!result)
-            throw Exception("Failed to instantiate storage from table function " + getName())
+            throw Exception("Failed to instantiate storage from table function " + getName());
 
         result->startup();
         return result;
     }
 
+    void registerTableFunctionJDBC(TableFunctionFactory & factory)
+    {
+        factory.registerFunction<TableFunctionJDBC>();
+    }
+
+    void registerTableFunctionIDBC(TableFunctionFactory & factory)
+    {
+        factory.registerFunction<TableFunctionIDBC>();
+    }
 }
