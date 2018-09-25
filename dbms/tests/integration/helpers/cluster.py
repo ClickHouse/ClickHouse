@@ -35,6 +35,11 @@ def subprocess_check_call(args):
     # print('run:', ' ' . join(args))
     subprocess.check_call(args)
 
+def subprocess_call(args):
+    # Uncomment for debugging
+    # print('run:', ' ' . join(args))
+    subprocess.call(args)
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -184,8 +189,8 @@ class ClickHouseCluster:
 
         # Just in case kill unstopped containers from previous launch
         try:
-            if not subprocess.call(['docker-compose', 'kill']):
-                subprocess.call(['docker-compose', 'down', '--volumes'])
+            if not subprocess_call(['docker-compose', 'kill']):
+                subprocess_call(['docker-compose', 'down', '--volumes'])
         except:
             pass
 
