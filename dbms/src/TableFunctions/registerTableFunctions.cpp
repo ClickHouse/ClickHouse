@@ -16,7 +16,10 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
+void registerTableFunctionIDBC(TableFunctionFactory & factory);
 #endif
+
+void registerTableFunctionJDBC(TableFunctionFactory & factory);
 
 #if USE_MYSQL
 void registerTableFunctionMySQL(TableFunctionFactory & factory);
@@ -37,7 +40,9 @@ void registerTableFunctions()
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
+    registerTableFunctionIDBC(factory);
 #endif
+    registerTableFunctionJDBC(factory);
 
 #if USE_MYSQL
     registerTableFunctionMySQL(factory);
