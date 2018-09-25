@@ -475,8 +475,12 @@ class ClickHouseInstance:
         shutil.copy(p.join(self.base_configs_dir, 'config.xml'), configs_dir)
         shutil.copy(p.join(self.base_configs_dir, 'users.xml'), configs_dir)
 
+        # used by all utils with any config
+        conf_d_dir = p.abspath(p.join(configs_dir, 'conf.d'))
+        # used by server with main config.xml
         config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
         users_d_dir = p.abspath(p.join(configs_dir, 'users.d'))
+        os.mkdir(conf_d_dir)
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
@@ -490,7 +494,7 @@ class ClickHouseInstance:
 
         # Put ZooKeeper config
         if self.with_zookeeper:
-            shutil.copy(self.zookeeper_config_path, config_d_dir)
+            shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
         # Copy config dir
         if self.custom_config_dir:
