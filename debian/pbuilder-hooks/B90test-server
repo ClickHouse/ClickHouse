@@ -63,7 +63,6 @@ if [ "${TEST_CONNECT}" ]; then
         tail -n 100 /var/log/clickhouse-server/*.log || true
         sleep 1
         killall -9 clickhouse-server || true
-        exit 1
     }
     trap finish EXIT SIGINT SIGQUIT SIGTERM
 
