@@ -281,26 +281,36 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
+static std::vector<ASTTableExpression> getTableExpressions(const ASTPtr & query)
+{
+    ASTSelectQuery * select_query = typeid_cast<ASTSelectQuery *>(query.get());
+
+    std::vector<ASTTableExpression> tables_expression;
+
+    if (select_query && select_query->tables)
+    {
+        for (const auto & element : select_query->tables->children)
+        {
+            ASTTablesInSelectQueryElement & select_element = static_cast<ASTTablesInSelectQueryElement &>(*element);
+
+            if (select_element.table_expression)
+                tables_expression.emplace_back(static_cast<ASTTableExpression &>(*select_element.table_expression));
+        }
+    }
+
+    return tables_expression;
+}
+
 void ExpressionAnalyzer::translateQualifiedNames()
 {
     if (!select_query || !select_query->tables || select_query->tables->children.empty())
         return;
 
-    auto & element = static_cast<ASTTablesInSelectQueryElement &>(*select_query->tables->children[0]);
+    std::vector<DatabaseAndTableWithAlias> tables;
+    std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
 
-    if (!element.table_expression)        /// This is ARRAY JOIN without a table at the left side.
-        return;
-
-    auto & table_expression = static_cast<ASTTableExpression &>(*element.table_expression);
-    auto * join = select_query->join();
-
-    std::vector<DatabaseAndTableWithAlias> tables = {getTableNameWithAliasFromTableExpression(table_expression, context)};
-
-    if (join)
-    {
-        const auto & join_table_expression = static_cast<const ASTTableExpression &>(*join->table_expression);
-        tables.emplace_back(getTableNameWithAliasFromTableExpression(join_table_expression, context));
-    }
+    for (const auto & table_expression : tables_expression)
+        tables.emplace_back(getTableNameWithAliasFromTableExpression(table_expression, context));
 
     translateQualifiedNamesImpl(query, tables);
 }
@@ -863,18 +873,6 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
-static void getTableExpressions(const ASTPtr & node, std::vector<ASTTableExpression> & table_expressions)
-{
-    if (ASTTableExpression * table_expression = typeid_cast<ASTTableExpression *>(node.get()))
-    {
-        table_expressions.emplace_back(*table_expression);
-        return;
-    }
-
-    for (const auto & child : node->children)
-        getTableExpressions(child, table_expressions);
-}
-
 static NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
 {
     NamesAndTypesList names_and_type_list;
@@ -920,8 +918,7 @@ void ExpressionAnalyzer::normalizeTree()
     TableNamesAndColumnsName table_names_nad_columns_name;
     if (select_query && select_query->tables && !select_query->tables->children.empty())
     {
-        std::vector<ASTTableExpression> tables_expression;
-        getTableExpressions(select_query->tables, tables_expression);
+        std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
 
         for (const auto & table_expression : tables_expression)
         {

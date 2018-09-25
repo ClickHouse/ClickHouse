@@ -147,7 +147,7 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     }
     else if (ASTExpressionList * expr_list = typeid_cast<ASTExpressionList *>(ast.get()))
     {
-        /// Replace * with a list of columns.
+        /// Replace *, alias.*, database.table.* with a list of columns.
         ASTs & asts = expr_list->children;
         for (int i = static_cast<int>(asts.size()) - 1; i >= 0; --i)
         {
@@ -164,10 +164,10 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                 ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(qualified_asterisk->children[0].get());
                 size_t num_components = identifier->children.size();
 
-                for (const auto table_name_and_names : table_names_and_columns_name)
+                for (const auto table_name_and_columns_name : table_names_and_columns_name)
                 {
-                    const auto table_name = table_name_and_names.first;
-                    const auto table_all_columns_name = table_name_and_names.second;
+                    const auto table_name = table_name_and_columns_name.first;
+                    const auto table_all_columns_name = table_name_and_columns_name.second;
 
                     if ((num_components == 2
                          && !table_name.database.empty()
