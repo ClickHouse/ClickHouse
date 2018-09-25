@@ -315,16 +315,16 @@ ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replic
 """)
 
     for i in xrange(4):
-        insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO `{database}`.`{table}` VALUES (toDate('1000-01-01'), %d)" % (i + 1))
+        cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO `{database}`.`{table}` VALUES (toDate('1000-01-01'), %d)" % (i))
 
     ddl_check_query(instance, """CREATE TABLE `{database}`.`{distributed}` ON CLUSTER '{cluster}' (value UInt8) 
-ENGINE = Distributed('{cluster}', '{database}', '{table}', value % 2)
+ENGINE = Distributed('{cluster}', '{database}', '{table}', value % 4)
 """)
 
-    assert TSV(instance.query("SELECT value FROM db.distr ORDER BY value")) == TSV('1\n2\n3\n4\n')
-    assert TSV(instance.query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('1\n2\n3\n4\n')
-    assert TSV(cluster.instances['ch3'].query("SELECT value FROM db.distr ORDER BY value")) == TSV('1\n2\n3\n4\n')
-    assert TSV(cluster.instances['ch3'].query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('1\n2\n3\n4\n')
+    assert TSV(instance.query("SELECT value FROM db.distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(instance.query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(cluster.instances['ch3'].query("SELECT value FROM db.distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(cluster.instances['ch3'].query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('0\n1\n2\n3\n')
 
     ddl_check_query(instance, "DROP TABLE IF EXISTS `{database}`.`{distributed}` ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
