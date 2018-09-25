@@ -2,8 +2,11 @@
 #include <DataStreams/SquashingBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Common/CurrentThread.h>
+#include <Common/setThreadName.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <common/ThreadPool.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
-
 
 namespace DB
 {
@@ -73,35 +76,26 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     if (replicated_output && replicated_output->lastBlockIsDuplicate())
         return;
 
-    /// Insert data into materialized views only after successful insert into main table
-    for (auto & view : views)
-    {
-        try
+    // Insert data into materialized views only after successful insert into main table
+    bool allow_concurrent_view_processing = context.getSettingsRef().allow_concurrent_view_processing;
+    if (allow_concurrent_view_processing && views.size() > 1) {
+        // Push to views concurrently if enabled, and more than one view is attached
+        ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), views.size()));
+        for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
-            BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
-            InterpreterSelectQuery select(view.query, *views_context, from);
-            BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
-            /// Squashing is needed here because the materialized view query can generate a lot of blocks
-            /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
-            /// and two-level aggregation is triggered).
-            in = std::make_shared<SquashingBlockInputStream>(
-                in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
-
-            in->readPrefix();
-
-            while (Block result_block = in->read())
-            {
-                Nested::validateArraySizes(result_block);
-                view.out->write(result_block);
-            }
-
-            in->readSuffix();
+            auto thread_group = CurrentThread::getGroup();
+            pool.schedule([=] () {
+                setThreadName("PushingToViewsBlockOutputStream");
+                CurrentThread::attachToIfDetached(thread_group);
+                process(block, view_num);
+            });
         }
-        catch (Exception & ex)
-        {
-            ex.addMessage("while pushing to view " + view.database + "." + view.table);
-            throw;
-        }
+        // Wait for concurrent view processing
+        pool.wait();
+    } else {
+        // Process sequentially
+        for (size_t view_num = 0; view_num < views.size(); ++view_num)
+            process(block, view_num);
     }
 }
 
@@ -150,6 +144,38 @@ void PushingToViewsBlockOutputStream::flush()
 
     for (auto & view : views)
         view.out->flush();
+}
+
+void PushingToViewsBlockOutputStream::process(const Block & block, size_t view_num)
+{
+    auto & view = views[view_num];
+
+    try
+    {
+        BlockInputStreamPtr from = std::make_shared<OneBlockInputStream>(block);
+        InterpreterSelectQuery select(view.query, *views_context, from);
+        BlockInputStreamPtr in = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
+        /// Squashing is needed here because the materialized view query can generate a lot of blocks
+        /// even when only one block is inserted into the parent table (e.g. if the query is a GROUP BY
+        /// and two-level aggregation is triggered).
+        in = std::make_shared<SquashingBlockInputStream>(
+            in, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
+
+        in->readPrefix();
+
+        while (Block result_block = in->read())
+        {
+            Nested::validateArraySizes(result_block);
+            view.out->write(result_block);
+        }
+
+        in->readSuffix();
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("while pushing to view " + backQuoteIfNeed(view.database) + "." + backQuoteIfNeed(view.table));
+        throw;
+    }
 }
 
 }
