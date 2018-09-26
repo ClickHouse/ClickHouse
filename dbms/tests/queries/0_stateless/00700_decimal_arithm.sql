@@ -66,4 +66,15 @@ SELECT (i * i) != 0, (i / i) = 1 FROM test.decimal WHERE i > 0;
 SELECT e + 1 > e, e + 10 > e, 1 + e > e, 10 + e > e FROM test.decimal WHERE e > 0;
 SELECT f + 1 > f, f + 10 > f, 1 + f > f, 10 + f > f FROM test.decimal WHERE f > 0;
 
+SELECT 1 / toDecimal32(0, 0); -- { serverError 153 }
+SELECT 1 / toDecimal64(0, 1); -- { serverError 153 }
+SELECT 1 / toDecimal128(0, 2); -- { serverError 153 }
+SELECT 0 / toDecimal32(0, 3); -- { serverError 153 }
+SELECT 0 / toDecimal64(0, 4); -- { serverError 153 }
+SELECT 0 / toDecimal128(0, 5); -- { serverError 153 }
+
+SELECT toDecimal32(0, 0) / toInt8(0); -- { serverError 153 }
+SELECT toDecimal64(0, 1) / toInt32(0); -- { serverError 153 }
+SELECT toDecimal128(0, 2) / toInt64(0); -- { serverError 153 }
+
 DROP TABLE IF EXISTS test.decimal;
