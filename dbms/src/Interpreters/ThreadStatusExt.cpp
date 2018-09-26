@@ -127,10 +127,6 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     assertState({ThreadState::AttachedToQuery}, __PRETTY_FUNCTION__);
     finalizePerformanceCounters();
 
-    /// For better logging ({query_id} will be shown here)
-    if (thread_group && thread_group.use_count() == 1)
-        thread_group->memory_tracker.logPeakMemoryUsage();
-
     /// Detach from thread group
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
