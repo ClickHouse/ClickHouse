@@ -112,4 +112,42 @@ SELECT toDecimal64(-123456789.123456789, 9) AS x, countEqual([x+1, x, x], x), co
 SELECT toDecimal128(0.123456789123456789, 18) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x-0);
 SELECT toDecimal128(-0.1234567891123456789, 18) AS x, countEqual([x+1, x, x], x), countEqual([x, x-1, x], x), countEqual([x, x], x+0);
 
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.0', 4) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.0', 4) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12.345', 7) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12.345', 7) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('1234.5', 5) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toUInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345.00', 4) AS x UNION ALL SELECT toUInt64(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345.00', 4) AS x UNION ALL SELECT toUInt64(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt8(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt16(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt16(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal128('12345.00', 4) AS x UNION ALL SELECT toUInt64(0) AS x) WHERE x = 0;
+
+SELECT toTypeName(x) FROM (SELECT toDecimal32('12345', 0) AS x UNION ALL SELECT toInt32(0) AS x) WHERE x = 0;
+SELECT toTypeName(x) FROM (SELECT toDecimal64('12345', 0) AS x UNION ALL SELECT toInt64(0) AS x) WHERE x = 0;
+
 DROP TABLE IF EXISTS test.decimal;
