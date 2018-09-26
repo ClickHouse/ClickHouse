@@ -739,16 +739,6 @@ template <> struct NativeType<Decimal128> { using Type = Int128; };
 template <typename A, typename B, template <typename, typename> typename Operation, typename ResultType_, bool _check_overflow = true>
 struct DecimalBinaryOperation
 {
-    using ResultType = ResultType_;
-    using NativeResultType = typename NativeType<ResultType>::Type;
-    using Op = Operation<NativeResultType, NativeResultType>;
-    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
-    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
-    using ArrayA = typename ColVecA::Container;
-    using ArrayB = typename ColVecB::Container;
-    using ArrayC = typename ColumnDecimal<ResultType>::Container;
-    using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
-
     static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
                                             std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
     static constexpr bool is_multiply =     std::is_same_v<Operation<Int32, Int32>, MultiplyImpl<Int32, Int32>>;
@@ -757,6 +747,18 @@ struct DecimalBinaryOperation
                                             std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
     static constexpr bool can_overflow = is_plus_minus || is_multiply;
+
+    using ResultType = ResultType_;
+    using NativeResultType = typename NativeType<ResultType>::Type;
+    using Op = std::conditional_t<is_division,
+        DivideIntegralImpl<NativeResultType, NativeResultType>, /// substitute divide by intDiv (throw on division by zero)
+        Operation<NativeResultType, NativeResultType>>;
+    using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
+    using ColVecB = std::conditional_t<IsDecimalNumber<B>, ColumnDecimal<B>, ColumnVector<B>>;
+    using ArrayA = typename ColVecA::Container;
+    using ArrayB = typename ColVecB::Container;
+    using ArrayC = typename ColumnDecimal<ResultType>::Container;
+    using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
     static void vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
     {
