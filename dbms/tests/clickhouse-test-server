@@ -118,7 +118,7 @@ else
     CLICKHOUSE_CLIENT_QUERY="${BIN_DIR}clickhouse-client --config ${CLICKHOUSE_CONFIG_CLIENT} --port $CLICKHOUSE_PORT_TCP -m -n -q"
     $CLICKHOUSE_CLIENT_QUERY 'SELECT * from system.build_options; SELECT * FROM system.clusters;'
     CLICKHOUSE_TEST="env PATH=$PATH:$BIN_DIR ${TEST_DIR}clickhouse-test --binary ${BIN_DIR}clickhouse --configclient $CLICKHOUSE_CONFIG_CLIENT --configserver $CLICKHOUSE_CONFIG --tmp $DATA_DIR/tmp --queries $QUERIES_DIR $TEST_OPT0 $TEST_OPT"
-    CLICKHOUSE_PERFORMANCE_TEST="${BIN_DIR}clickhouse-performance-test --port $CLICKHOUSE_PORT_TCP --r $CUR_DIR/performance --skip-tags=long"
+    CLICKHOUSE_PERFORMANCE_TEST="${BIN_DIR}clickhouse-performance-test --port $CLICKHOUSE_PORT_TCP --recursive $CUR_DIR/performance --skip-tags=long"
     if [ "${TEST_RUN_STRESS}" ]; then
         # Running test in parallel will fail some results (tests can create/fill/drop same tables)
         TEST_NPROC=${TEST_NPROC:=$(( `nproc || sysctl -n hw.ncpu || echo 2` * 2))}
@@ -129,6 +129,6 @@ else
     fi
     ( [ "$TEST_RUN" ] && $CLICKHOUSE_TEST ) || ${TEST_TRUE:=false}
     ( [ "$TEST_PERF" ] && $CLICKHOUSE_PERFORMANCE_TEST $* ) || true
-    $CLICKHOUSE_CLIENT_QUERY "SELECT * FROM system.events; SELECT * FROM system.metrics; SELECT * FROM asynchronous_metrics;"
+    $CLICKHOUSE_CLIENT_QUERY "SELECT event, value FROM system.events; SELECT metric, value FROM system.metrics; SELECT metric, value FROM system.asynchronous_metrics;"
     $CLICKHOUSE_CLIENT_QUERY "SELECT 'Still alive'"
 fi

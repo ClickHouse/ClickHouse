@@ -86,6 +86,11 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
 }
 
 
+Block StorageODBC::getHeaderBlock(const Names & column_names) const
+{
+    return getSampleBlockForColumns(column_names);
+}
+
 void registerStorageODBC(StorageFactory & factory)
 {
     factory.registerStorage("ODBC", [](const StorageFactory::Arguments & args)

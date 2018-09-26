@@ -55,5 +55,7 @@ private:
         const Context & context,
         QueryProcessingStage::Enum & processed_stage,
         size_t max_block_size) const override;
+
+    Block getHeaderBlock(const Names & column_names) const override;
 };
 }

@@ -867,6 +867,7 @@ void DDLWorker::run()
             {
                 if (!Coordination::isHardwareError(e.code))
                     throw;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
         catch (...)
@@ -891,7 +892,7 @@ void DDLWorker::run()
             /// TODO: it might delay the execution, move it to separate thread.
             cleanupQueue();
         }
-        catch (Coordination::Exception & e)
+        catch (const Coordination::Exception & e)
         {
             if (Coordination::isHardwareError(e.code))
             {

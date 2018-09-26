@@ -63,6 +63,21 @@ Calculates the maximum.
 
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
 
+**Example:**
+```
+┌─user─────┬─salary─┐
+│ director │   5000 │
+│ manager  │   3000 │
+│ worker   │   1000 │
+└──────────┴────────┘
+
+SELECT argMin(user, salary) FROM salary
+
+┌─argMin(user, salary)─┐
+│ worker               │
+└──────────────────────┘
+```
+
 ## argMax(arg, val)
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
