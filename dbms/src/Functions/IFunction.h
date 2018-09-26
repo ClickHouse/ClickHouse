@@ -56,6 +56,7 @@ public:
 
     /// Create cache which will be used to store result of function executed on LowCardinality column.
     /// Only for default LowCardinality implementation.
+    /// Cannot be called concurrently for the same object.
     void createLowCardinalityResultCache(size_t cache_size);
 
 protected:
