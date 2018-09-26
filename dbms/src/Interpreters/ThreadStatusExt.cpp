@@ -237,12 +237,18 @@ CurrentThread::QueryScope::QueryScope(Context & query_context)
     CurrentThread::attachQueryContext(query_context);
 }
 
+void CurrentThread::QueryScope::logPeakMemoryUsage()
+{
+    log_peak_memory_usage_in_destructor = false;
+    CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+}
+
 CurrentThread::QueryScope::~QueryScope()
 {
     try
     {
-        /// For better logging ({query_id} will be shown here)
-        CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+        if (log_peak_memory_usage_in_destructor)
+            logPeakMemoryUsage();
 
         CurrentThread::detachQueryIfNotDetached();
     }

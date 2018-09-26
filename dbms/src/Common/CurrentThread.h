@@ -80,6 +80,9 @@ public:
     {
         explicit QueryScope(Context & query_context);
         ~QueryScope();
+
+        void logPeakMemoryUsage();
+        bool log_peak_memory_usage_in_destructor = true;
     };
 
     /// Implicitly finalizes current thread in the destructor
