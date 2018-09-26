@@ -40,6 +40,7 @@ def started_cluster():
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t1(x INTEGER PRIMARY KEY ASC, y, z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t2(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t3(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
+        node1.exec_in_container(["bash", "-c", "echo 'CREATE TABLE t4(X INTEGER PRIMARY KEY ASC, Y, Z);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
         conn = get_mysql_conn()
         ## create mysql db and table
         create_mysql_db(conn, 'clickhouse')
@@ -72,12 +73,35 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
 
     conn.close()
 
-def test_sqlite_simple_select_works(started_cluster):
+
+def test_sqlite_simple_select_function_works(started_cluster):
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
 
     node1.exec_in_container(["bash", "-c", "echo 'INSERT INTO t1 values(1, 2, 3);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
     assert node1.query("select * from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "1\t2\t3\n"
+
+    assert node1.query("select y from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "2\n"
+    assert node1.query("select z from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "3\n"
+    assert node1.query("select x from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "1\n"
+    assert node1.query("select x, y from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "1\t2\n"
+    assert node1.query("select z, x, y from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "3\t1\t2\n"
+    assert node1.query("select count(), sum(x) from odbc('DSN={}', '{}') group by x".format(sqlite_setup["DSN"], 't1')) == "1\t1\n"
+
+def test_sqlite_simple_select_storage_works(started_cluster):
+    sqlite_setup = node1.odbc_drivers["SQLite3"]
+    sqlite_db = sqlite_setup["Database"]
+
+    node1.exec_in_container(["bash", "-c", "echo 'INSERT INTO t4 values(1, 2, 3);' | sqlite3 {}".format(sqlite_db)], privileged=True, user='root')
+    node1.query("create table SqliteODBC (x Int32, y String, z String) engine = ODBC('DSN={}', '', 't4')".format(sqlite_setup["DSN"]))
+
+    assert node1.query("select * from SqliteODBC") == "1\t2\t3\n"
+    assert node1.query("select y from SqliteODBC") == "2\n"
+    assert node1.query("select z from SqliteODBC") == "3\n"
+    assert node1.query("select x from SqliteODBC") == "1\n"
+    assert node1.query("select x, y from SqliteODBC") == "1\t2\n"
+    assert node1.query("select z, x, y from SqliteODBC") == "3\t1\t2\n"
+    assert node1.query("select count(), sum(x) from SqliteODBC group by x") == "1\t1\n"
 
 def test_sqlite_odbc_hashed_dictionary(started_cluster):
     sqlite_db =  node1.odbc_drivers["SQLite3"]["Database"]
