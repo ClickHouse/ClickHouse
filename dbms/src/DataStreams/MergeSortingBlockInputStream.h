@@ -97,6 +97,7 @@ private:
     Logger * log = &Logger::get("MergeSortingBlockInputStream");
 
     Blocks blocks;
+    size_t sum_rows_in_blocks = 0;
     size_t sum_bytes_in_blocks = 0;
     std::unique_ptr<IBlockInputStream> impl;
 
