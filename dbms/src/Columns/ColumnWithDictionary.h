@@ -17,7 +17,7 @@ class ColumnWithDictionary final : public COWPtrHelper<IColumn, ColumnWithDictio
 {
     friend class COWPtrHelper<IColumn, ColumnWithDictionary>;
 
-    ColumnWithDictionary(MutableColumnPtr && column_unique, MutableColumnPtr && indexes);
+    ColumnWithDictionary(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
     ColumnWithDictionary(const ColumnWithDictionary & other) = default;
 
 public:
@@ -25,14 +25,15 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWPtrHelper<IColumn, ColumnWithDictionary>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
     {
-        return ColumnWithDictionary::create(column_unique_->assumeMutable(), indexes_->assumeMutable());
+        return ColumnWithDictionary::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
     }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
-    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
-
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false)
+    {
+        return Base::create(std::move(column_unique), std::move(indexes), is_shared);
+    }
 
     std::string getName() const override { return "ColumnWithDictionary"; }
     const char * getFamilyName() const override { return "ColumnWithDictionary"; }
@@ -240,8 +241,8 @@ private:
     {
     public:
         Dictionary(const Dictionary & other) = default;
-        explicit Dictionary(MutableColumnPtr && column_unique);
-        explicit Dictionary(ColumnPtr column_unique);
+        explicit Dictionary(MutableColumnPtr && column_unique, bool is_shared);
+        explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
         const ColumnPtr & getColumnUniquePtr() const { return column_unique; }
         ColumnPtr & getColumnUniquePtr() { return column_unique; }

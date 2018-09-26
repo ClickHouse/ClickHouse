@@ -492,7 +492,7 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shar
     for (const auto & action : actions)
     {
         const auto & names = action.argument_names;
-        const auto & types = action.function->getArgumentTypes();
+        const auto & types = action.function_base->getArgumentTypes();
         std::vector<CompilableExpression> args;
         for (size_t i = 0; i < names.size(); ++i)
         {
@@ -504,13 +504,13 @@ LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shar
             }
             args.push_back(inserted.first->second);
         }
-        subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
-        originals.push_back(action.function);
+        subexpressions[action.result_name] = subexpression(*action.function_base, std::move(args));
+        originals.push_back(action.function_base);
     }
     compileFunctionToLLVMByteCode(context, *this);
 }
 
-PreparedFunctionPtr LLVMFunction::prepare(const Block &) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
+PreparedFunctionPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
 
 bool LLVMFunction::isDeterministic() const
 {
@@ -658,7 +658,7 @@ std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(cons
             case ExpressionAction::APPLY_FUNCTION:
             {
                 dependents[i] = current_dependents[actions[i].result_name];
-                const bool compilable = isCompilable(*actions[i].function);
+                const bool compilable = isCompilable(*actions[i].function_base);
                 for (const auto & name : actions[i].argument_names)
                 {
                     if (compilable)
@@ -696,7 +696,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
     std::vector<ExpressionActions::Actions> fused(actions.size());
     for (size_t i = 0; i < actions.size(); ++i)
     {
-        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function))
+        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function_base))
             continue;
 
         fused[i].push_back(actions[i]);
@@ -739,7 +739,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                 ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
             }
 
-            actions[i].function = fn;
+            actions[i].function_base = fn;
             actions[i].argument_names = fn->getArgumentNames();
             actions[i].is_function_compiled = true;
 
@@ -757,6 +757,14 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
         std::lock_guard<std::mutex> lock(mutex);
         size_t used_memory = context->compileAllFunctionsToNativeCode();
         ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, used_memory);
+    }
+
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        if (actions[i].type == ExpressionAction::APPLY_FUNCTION && actions[i].is_function_compiled)
+        {
+            actions[i].function = actions[i].function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
+        }
     }
 }
 

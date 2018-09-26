@@ -1401,7 +1401,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
         return std::make_shared<PreparedFunctionCast>(
                 prepareUnpackDictionaries(getArgumentTypes()[0], getReturnType()), name);
