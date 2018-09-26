@@ -742,7 +742,10 @@ struct DecimalBinaryOperation
     static constexpr bool is_plus_minus =   std::is_same_v<Operation<Int32, Int32>, PlusImpl<Int32, Int32>> ||
                                             std::is_same_v<Operation<Int32, Int32>, MinusImpl<Int32, Int32>>;
     static constexpr bool is_multiply =     std::is_same_v<Operation<Int32, Int32>, MultiplyImpl<Int32, Int32>>;
-    static constexpr bool is_division =     std::is_same_v<Operation<Int32, Int32>, DivideFloatingImpl<Int32, Int32>>;
+    static constexpr bool is_float_division = std::is_same_v<Operation<Int32, Int32>, DivideFloatingImpl<Int32, Int32>>;
+    static constexpr bool is_int_division = std::is_same_v<Operation<Int32, Int32>, DivideIntegralImpl<Int32, Int32>> ||
+                                            std::is_same_v<Operation<Int32, Int32>, DivideIntegralOrZeroImpl<Int32, Int32>>;
+    static constexpr bool is_division = is_float_division || is_int_division;
     static constexpr bool is_compare =      std::is_same_v<Operation<Int32, Int32>, LeastBaseImpl<Int32, Int32>> ||
                                             std::is_same_v<Operation<Int32, Int32>, GreatestBaseImpl<Int32, Int32>>;
     static constexpr bool is_plus_minus_compare = is_plus_minus || is_compare;
@@ -750,7 +753,7 @@ struct DecimalBinaryOperation
 
     using ResultType = ResultType_;
     using NativeResultType = typename NativeType<ResultType>::Type;
-    using Op = std::conditional_t<is_division,
+    using Op = std::conditional_t<is_float_division,
         DivideIntegralImpl<NativeResultType, NativeResultType>, /// substitute divide by intDiv (throw on division by zero)
         Operation<NativeResultType, NativeResultType>>;
     using ColVecA = std::conditional_t<IsDecimalNumber<A>, ColumnDecimal<A>, ColumnVector<A>>;
@@ -1019,6 +1022,8 @@ public:
         std::is_same_v<Operation<T0, T0>, MinusImpl<T0, T0>> ||
         std::is_same_v<Operation<T0, T0>, MultiplyImpl<T0, T0>> ||
         std::is_same_v<Operation<T0, T0>, DivideFloatingImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, DivideIntegralImpl<T0, T0>> ||
+        std::is_same_v<Operation<T0, T0>, DivideIntegralOrZeroImpl<T0, T0>> ||
         std::is_same_v<Operation<T0, T0>, LeastBaseImpl<T0, T0>> ||
         std::is_same_v<Operation<T0, T0>, GreatestBaseImpl<T0, T0>>;
 
@@ -1320,7 +1325,10 @@ public:
                 if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeDecimal<RightDataType>)
                 {
                     constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
-                    constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>>;
+                    constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
+                                                std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
+                                                std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
+
                     ResultDataType result_type = decimalResultType(left, right, is_multiply, is_division);
                     type_res = std::make_shared<ResultDataType>(result_type.getPrecision(), result_type.getScale());
                 }
@@ -1374,7 +1382,9 @@ public:
             {
                 constexpr bool result_is_decimal = IsDataTypeDecimal<LeftDataType> || IsDataTypeDecimal<RightDataType>;
                 constexpr bool is_multiply = std::is_same_v<Op<UInt8, UInt8>, MultiplyImpl<UInt8, UInt8>>;
-                constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>>;
+                constexpr bool is_division = std::is_same_v<Op<UInt8, UInt8>, DivideFloatingImpl<UInt8, UInt8>> ||
+                                                std::is_same_v<Op<UInt8, UInt8>, DivideIntegralImpl<UInt8, UInt8>> ||
+                                                std::is_same_v<Op<UInt8, UInt8>, DivideIntegralOrZeroImpl<UInt8, UInt8>>;
 
                 using T0 = typename LeftDataType::FieldType;
                 using T1 = typename RightDataType::FieldType;
