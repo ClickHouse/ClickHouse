@@ -204,9 +204,8 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const MergeTreeData::MergingParams & merging_params_,
     const MergeTreeSettings & settings_,
     bool has_force_restore_data_flag)
-    : context(context_),
-    database_name(database_name_),
-    table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
+    : context(context_), database_name(database_name_), table_name(name_),
+    full_path(path_ + escapeForFileName(table_name) + '/'),
     zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
     replica_name(context.getMacros()->expand(replica_name_)),
     data(database_name, table_name,

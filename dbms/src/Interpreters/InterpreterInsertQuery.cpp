@@ -1,6 +1,7 @@
 #include <IO/ConcatReadBuffer.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/Macros.h>
 
 #include <DataStreams/AddingDefaultBlockOutputStream.h>
 #include <DataStreams/CountingBlockOutputStream.h>
@@ -91,6 +92,10 @@ BlockIO InterpreterInsertQuery::execute()
 {
     ASTInsertQuery & query = typeid_cast<ASTInsertQuery &>(*query_ptr);
     checkAccess(query);
+
+    query.database = context.getMacros()->expand(query.database);
+    query.table = context.getMacros()->expand(query.table);
+
     StoragePtr table = getTable(query);
 
     auto table_lock = table->lockStructure(true, __PRETTY_FUNCTION__);

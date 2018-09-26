@@ -8,6 +8,7 @@
 #include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/Macros.h>
 
 
 namespace DB
@@ -34,6 +35,9 @@ BlockIO InterpreterDropQuery::execute()
     ASTDropQuery & drop = typeid_cast<ASTDropQuery &>(*query_ptr);
 
     checkAccess(drop);
+
+    drop.database = context.getMacros()->expand(drop.database);
+    drop.table = context.getMacros()->expand(drop.table);
 
     if (!drop.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, context, {drop.database});

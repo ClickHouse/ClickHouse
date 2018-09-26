@@ -105,13 +105,13 @@ public:
 
     ClusterPtr getCluster() const;
 
+    const Context & context;
 
     String table_name;
     String remote_database;
     String remote_table;
     ASTPtr remote_table_function_ptr;
 
-    const Context & context;
     Logger * log = &Logger::get("StorageDistributed");
 
     /// Used to implement TableFunctionRemote.

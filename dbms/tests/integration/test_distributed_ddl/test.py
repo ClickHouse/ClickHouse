@@ -72,7 +72,7 @@ def init_cluster(cluster):
             cluster.add_instance(
                 'ch{}'.format(i+1),
                 config_dir="configs",
-                macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1},
+                macros={"layer": 0, "shard": i/2 + 1, "replica": i%2 + 1, "table": "tab", "database": "db", "distributed": "distr"},
                 with_zookeeper=True)
 
         cluster.start()
@@ -303,19 +303,35 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
 
 
 def test_macro(started_cluster):
+    # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
+    firewall_drops_rules = cluster.pm_random_drops.pop_rules()
+
     instance = cluster.instances['ch2']
-    ddl_check_query(instance, "CREATE TABLE tab ON CLUSTER '{cluster}' (value UInt8) ENGINE = Memory")
+    ddl_check_query(instance, "CREATE DATABASE `{database}` ON CLUSTER '{cluster}'")
+
+    ddl_check_query(instance, """
+CREATE TABLE `{database}`.`{table}` ON CLUSTER '{cluster}' (p Date, value UInt8)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{layer}-{shard}/hits', '{replica}', p, p, 1)
+""")
 
     for i in xrange(4):
-        insert_reliable(cluster.instances['ch{}'.format(i + 1)], "INSERT INTO tab VALUES ({})".format(i))
+        cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO `{database}`.`{table}` VALUES (toDate('1000-01-01'), %d)" % (i))
 
-    ddl_check_query(instance, "CREATE TABLE distr ON CLUSTER '{cluster}' (value UInt8) ENGINE = Distributed('{cluster}', 'default', 'tab', value % 4)")
+    ddl_check_query(instance, """CREATE TABLE `{database}`.`{distributed}` ON CLUSTER '{cluster}' (value UInt8) 
+ENGINE = Distributed('{cluster}', '{database}', '{table}', value % 4)
+""")
 
-    assert TSV(instance.query("SELECT value FROM distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
-    assert TSV( cluster.instances['ch3'].query("SELECT value FROM distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(instance.query("SELECT value FROM db.distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(instance.query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(cluster.instances['ch3'].query("SELECT value FROM db.distr ORDER BY value")) == TSV('0\n1\n2\n3\n')
+    assert TSV(cluster.instances['ch3'].query("SELECT value FROM `{database}`.`{distributed}` ORDER BY value")) == TSV('0\n1\n2\n3\n')
 
-    ddl_check_query(instance, "DROP TABLE IF EXISTS distr ON CLUSTER '{cluster}'")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS `{database}`.`{distributed}` ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
+    ddl_check_query(instance, "DROP DATABASE IF EXISTS `{database}` ON CLUSTER '{cluster}'")
+
+    # Enable random ZK packet drops
+    cluster.pm_random_drops.push_rules(firewall_drops_rules)
 
 
 def test_allowed_databases(started_cluster):
