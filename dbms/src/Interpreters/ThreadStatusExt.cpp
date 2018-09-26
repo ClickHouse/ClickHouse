@@ -241,6 +241,9 @@ CurrentThread::QueryScope::~QueryScope()
 {
     try
     {
+        /// For better logging ({query_id} will be shown here)
+        CurrentThread::getGroup()->memory_tracker.logPeakMemoryUsage();
+
         CurrentThread::detachQueryIfNotDetached();
     }
     catch (...)

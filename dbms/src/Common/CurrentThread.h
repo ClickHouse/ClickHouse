@@ -75,7 +75,7 @@ public:
     static void detachQuery();
     static void detachQueryIfNotDetached();
 
-    /// Initializes query with current thread as master thread in constructor, and detaches it in desstructor
+    /// Initializes query with current thread as master thread in constructor, and detaches it in destructor
     struct QueryScope
     {
         explicit QueryScope(Context & query_context);
