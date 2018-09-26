@@ -1,11 +1,31 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Poco/Util/Application.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <Core/FieldVisitors.h>
+#include <Common/StringUtils.h>
+#include <Common/typeid_cast.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 
+#include <Storages/StorageLiveView.h>
+#include <Storages/StorageLiveChannel.h>
 
 namespace DB
 {
@@ -61,6 +81,26 @@ StoragePtr StorageFactory::get(
 
         name = "View";
     }
+    else if (query.is_live_view)
+    {
+
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a LiveView", ErrorCodes::INCORRECT_QUERY);
+
+        return StorageLiveView::create(
+            table_name, database_name, local_context, query, columns,
+            materialized_columns, alias_columns, column_defaults);
+    }
+    else if (query.is_live_channel)
+    {
+
+        if (query.storage)
+            throw Exception("Specifying ENGINE is not allowed for a LiveChannel", ErrorCodes::INCORRECT_QUERY);
+
+        return StorageLiveChannel::create(
+            table_name, database_name, local_context, query, columns,
+            materialized_columns, alias_columns, column_defaults);
+    }
     else
     {
         /// Check for some special types, that are not allowed to be stored in tables. Example: NULL data type.
@@ -113,6 +153,18 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(
                     "Direct creation of tables with ENGINE MaterializedView is not supported, use CREATE MATERIALIZED VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
+            else if (name == "LiveView")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
+            else if (name == "LiveChannel")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE LiveChannel is not supported, use CREATE LIVE CHANNEL statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
         }

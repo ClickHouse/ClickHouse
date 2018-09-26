@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <vector>
@@ -102,6 +113,7 @@ public:
 
      /** List of names, types and lengths of columns. Designed for debugging. */
     std::string dumpStructure() const;
+    std::string dump() const;
 
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
@@ -140,7 +152,8 @@ private:
 
 using Blocks = std::vector<Block>;
 using BlocksList = std::list<Block>;
-
+using BlocksPtr = std::shared_ptr<Blocks>;
+using BlocksPtrs = std::shared_ptr<std::vector<BlocksPtr>>;
 
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);

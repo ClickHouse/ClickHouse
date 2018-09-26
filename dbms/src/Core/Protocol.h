@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <Core/Types.h>
@@ -69,7 +80,8 @@ namespace Protocol
             Totals = 7,               /// A block with totals (compressed or not).
             Extremes = 8,             /// A block with minimums and maximums (compressed or not).
             TablesStatusResponse = 9, /// A response to TablesStatus request.
-            Log = 10                  /// System logs of the query execution
+            Log = 10,                 /// System logs of the query execution
+            Heartbeat = 11,           /// Heartbeat
         };
 
         /// NOTE: If the type of packet argument would be Enum, the comparison packet >= 0 && packet < 10
@@ -78,8 +90,8 @@ namespace Protocol
         /// See https://www.securecoding.cert.org/confluence/display/cplusplus/INT36-CPP.+Do+not+use+out-of-range+enumeration+values
         inline const char * toString(UInt64 packet)
         {
-            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes", "TablesStatusResponse", "Log" };
-            return packet < 11
+            static const char * data[] = { "Hello", "Data", "Exception", "Progress", "Pong", "EndOfStream", "ProfileInfo", "Totals", "Extremes", "TablesStatusResponse", "Log", "Heartbeat" };
+            return packet < 12
                 ? data[packet]
                 : "Unknown packet";
         }

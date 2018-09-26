@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -78,15 +89,24 @@ bool ParserIdentifierWithOptionalParameters::parseImpl(Pos & pos, ASTPtr & node,
     return false;
 }
 
+
 bool ParserNameTypePairList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserNameTypePair>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
+
 bool ParserColumnDeclarationList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserColumnDeclaration>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
+
+bool ParserNameList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -175,7 +195,10 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
+    ParserKeyword s_with("WITH");
     ParserKeyword s_materialized("MATERIALIZED");
+    ParserKeyword s_live("LIVE");
+    ParserKeyword s_channel("CHANNEL");
     ParserKeyword s_populate("POPULATE");
     ParserToken s_dot(TokenType::Dot);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -184,6 +207,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserIdentifier name_p;
     ParserColumnDeclarationList columns_p;
     ParserSelectWithUnionQuery select_p;
+    ParserNameList names_p;
 
     ASTPtr database;
     ASTPtr table;
@@ -194,11 +218,15 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr as_database;
     ASTPtr as_table;
     ASTPtr select;
+    ASTPtr tables;
+
     String cluster_str;
     bool attach = false;
     bool if_not_exists = false;
     bool is_view = false;
     bool is_materialized_view = false;
+    bool is_live_view = false;
+    bool is_live_channel = false;
     bool is_populate = false;
     bool is_temporary = false;
 
@@ -291,6 +319,80 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         }
     }
+    else if (s_live.ignore(pos, expected))
+    {
+        if (s_channel.ignore(pos, expected))
+           is_live_channel = true;
+        else if (s_view.ignore(pos, expected))
+           is_live_view = true;
+        else
+           return false;
+
+        if (s_if_not_exists.ignore(pos, expected))
+           if_not_exists = true;
+
+        if (!name_p.parse(pos, table, expected))
+            return false;
+
+        if (s_dot.ignore(pos, expected))
+        {
+            database = table;
+            if (!name_p.parse(pos, table, expected))
+                return false;
+        }
+
+        if (ParserKeyword{"ON"}.ignore(pos, expected))
+        {
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+                return false;
+        }
+
+        if (!is_live_channel)
+        {
+            // TO [db.]table
+            if (ParserKeyword{"TO"}.ignore(pos, expected))
+            {
+                if (!name_p.parse(pos, to_table, expected))
+                    return false;
+
+                if (s_dot.ignore(pos, expected))
+                {
+                    to_database = to_table;
+                    if (!name_p.parse(pos, to_table, expected))
+                        return false;
+                }
+            }
+        }
+
+        /// Optional - a list of columns can be specified. It must fully comply with SELECT.
+        if (s_lparen.ignore(pos, expected))
+        {
+            if (!columns_p.parse(pos, columns, expected))
+                return false;
+
+            if (!s_rparen.ignore(pos, expected))
+                return false;
+        }
+
+        if (is_live_channel)
+        {
+            if (s_with.ignore(pos, expected))
+            {
+                if (!names_p.parse(pos, tables, expected))
+                    return false;
+            }
+        }
+        else
+        {
+            /// AS SELECT ...
+            if (!s_as.ignore(pos, expected))
+                return false;
+
+            ParserSelectQuery select_p;
+            if (!select_p.parse(pos, select, expected))
+                return false;
+        }
+    }
     else if (is_temporary)
         return false;
     else if (s_database.ignore(pos, expected))
@@ -313,9 +415,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     {
         /// VIEW or MATERIALIZED VIEW
         if (s_materialized.ignore(pos, expected))
-        {
             is_materialized_view = true;
-        }
         else
             is_view = true;
 
@@ -341,20 +441,6 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
         }
 
-        // TO [db.]table
-        if (ParserKeyword{"TO"}.ignore(pos, expected))
-        {
-            if (!name_p.parse(pos, to_table, expected))
-                return false;
-
-            if (s_dot.ignore(pos, expected))
-            {
-                to_database = to_table;
-                if (!name_p.parse(pos, to_table, expected))
-                    return false;
-            }
-        }
-
         /// Optional - a list of columns can be specified. It must fully comply with SELECT.
         if (s_lparen.ignore(pos, expected))
         {
@@ -364,6 +450,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_rparen.ignore(pos, expected))
                 return false;
         }
+
 
         if (is_materialized_view && !to_table)
         {
@@ -390,6 +477,8 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->if_not_exists = if_not_exists;
     query->is_view = is_view;
     query->is_materialized_view = is_materialized_view;
+    query->is_live_view = is_live_view;
+    query->is_live_channel = is_live_channel;
     query->is_populate = is_populate;
     query->is_temporary = is_temporary;
 
@@ -406,10 +495,13 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->set(query->columns, columns);
     query->set(query->storage, storage);
+    query->set(query->tables, tables);
+
     if (as_database)
         query->as_database = typeid_cast<ASTIdentifier &>(*as_database).name;
     if (as_table)
         query->as_table = typeid_cast<ASTIdentifier &>(*as_table).name;
+
     query->set(query->select, select);
 
     return true;

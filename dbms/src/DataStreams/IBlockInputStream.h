@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <vector>
@@ -7,6 +18,7 @@
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Core/Block.h>
+#include <Core/Heartbeat.h>
 #include <Core/SortDescription.h>
 
 
@@ -41,6 +53,11 @@ namespace ErrorCodes
   */
 using ProgressCallback = std::function<void(const Progress & progress)>;
 
+/**
+ * Callback to track the hearteat of the live query.
+ * Used in LiveBlockInputStream and Context.
+ */
+using HeartbeatCallback = std::function<void(const Heartbeat & heartbeat)>;
 
 /** The stream interface for reading data by blocks from the database.
   * Relational operations are supposed to be done also as implementations of this interface.

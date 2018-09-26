@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <Parsers/IAST.h>
@@ -13,7 +24,17 @@ namespace DB
  *      ADD COLUMN col_name type [AFTER col_after],
  *      DROP COLUMN col_drop [FROM PARTITION partition],
  *      MODIFY COLUMN col_name type,
+ *      ADD TO PARAMETER param_name value,
+ *      DROP FROM PARAMETER param_name value,
+ *      MODIFY PARAMETER param_name value
  *      DROP PARTITION partition,
+ * ALTER CHANNEL [dn.]name_type
+ *      ADD live_view,...
+ *      DROP live_view,...
+ *      SUSPEND live_view,...
+ *      RESUME live_view,...
+ *      REFRESH live_view,...
+ *      MODIFY live_view,...
  */
 
 class ASTAlterCommand : public IAST
@@ -36,6 +57,17 @@ public:
         UPDATE,
 
         NO_TYPE,
+
+        ADD_TO_PARAMETER,
+        DROP_FROM_PARAMETER,
+        MODIFY_PARAMETER,
+
+        CHANNEL_ADD,
+        CHANNEL_DROP,
+        CHANNEL_SUSPEND,
+        CHANNEL_RESUME,
+        CHANNEL_REFRESH,
+        CHANNEL_MODIFY
     };
 
     Type type = NO_TYPE;
@@ -65,6 +97,15 @@ public:
 
     /// A list of expressions of the form `column = expr` for the UPDATE command.
     ASTPtr update_assignments;
+
+    /** In ADD TO PARAMETER, DROP FROM PARAMETER, and MODIFY PARAMETER queries, the value of the parameter name is stored here.
+      */
+    ASTPtr parameter;
+
+    /** In ADD TO PARAMETER, DROP FROM PARAMETER, and MODIFY PARAMETER queries, the values of the parameter is stored here.
+     *  IN ALTER CHANNEL, ADD, DROP, SUSPEND, RESUME, REFRESH, MODIFY queries, the list of live view is tored here
+     */
+    ASTPtr values;
 
     bool detach = false;        /// true for DETACH PARTITION
 
@@ -118,6 +159,7 @@ class ASTAlterQuery : public ASTQueryWithOutput, public ASTQueryWithOnCluster
 public:
     String database;
     String table;
+    bool is_channel{false}; /// true for ALTER CHANNEL
 
     ASTAlterCommandList * command_list = nullptr;
 

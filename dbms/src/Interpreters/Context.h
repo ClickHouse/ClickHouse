@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <chrono>
@@ -55,6 +66,7 @@ class ProcessList;
 class QueryStatus;
 class Macros;
 struct Progress;
+struct Heartbeat;
 class Clusters;
 class QueryLog;
 class QueryThreadLog;
@@ -121,6 +133,8 @@ private:
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    using HeartbeatCallback = std::function<void(const Heartbeat & heartbeat)>;
+    HeartbeatCallback heartbeat_callback;                /// Callback for tracking heartbeat of live query execution.
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -325,6 +339,10 @@ public:
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IProfilingBlockInputStream.
     ProgressCallback getProgressCallback() const;
+
+    void setHeartbeatCallback(HeartbeatCallback callback);
+    /// Used in InterpreterSelectQuery to pass it to the IProfilingBlockInputStream.
+    HeartbeatCallback getHeartbeatCallback() const;
 
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.

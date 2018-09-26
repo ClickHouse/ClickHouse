@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <Parsers/ASTExpressionList.h>
@@ -81,10 +92,13 @@ public:
     bool if_not_exists{false};
     bool is_view{false};
     bool is_materialized_view{false};
+    bool is_live_view{false};
+    bool is_live_channel{false};
     bool is_populate{false};
     bool is_temporary{false};
     String database;
     String table;
+    ASTExpressionList * tables = nullptr;
     ASTExpressionList * columns = nullptr;
     String to_database;   /// For CREATE MATERIALIZED VIEW mv TO table.
     String to_table;
@@ -107,6 +121,8 @@ public:
             res->set(res->storage, storage->clone());
         if (select)
             res->set(res->select, select->clone());
+        if (tables)
+            res->set(res->tables, tables->clone());
 
         cloneOutputOptions(*res);
 
@@ -151,6 +167,10 @@ protected:
                 what = "VIEW";
             if (is_materialized_view)
                 what = "MATERIALIZED VIEW";
+            if (is_live_view)
+                what = "LIVE VIEW";
+            if (is_live_channel)
+                what = "LIVE CHANNEL";
 
             settings.ostr
                 << (settings.hilite ? hilite_keyword : "")
@@ -198,6 +218,12 @@ protected:
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS" << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
             select->formatImpl(settings, state, frame);
+        }
+
+        if (tables)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
+            tables->formatImpl(settings, state, frame);
         }
     }
 };

@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <memory>
@@ -34,6 +45,8 @@ public:
      * to_stage
      * - the stage to which the query is to be executed. By default - till to the end.
      *   You can perform till the intermediate aggregation state, which are combined from different servers for distributed query processing.
+     * input_stage
+     * - input processed stage
      *
      * subquery_depth
      * - to control the limit on the depth of nesting of subqueries. For subqueries, a value that is incremented by one is passed;
@@ -52,6 +65,9 @@ public:
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         size_t subquery_depth_ = 0,
         bool only_analyze_ = false);
+//        BlockInputStreamPtr input = nullptr,
+//        BlockInputStreams inputs = {},
+//        QueryProcessingStage::Enum input_stage_ = QueryProcessingStage::FetchColumns);
 
     /// Read data not from the table specified in the query, but from the prepared source `input`.
     InterpreterSelectQuery(
@@ -60,6 +76,10 @@ public:
         const BlockInputStreamPtr & input_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         bool only_analyze_ = false);
+//        size_t subquery_depth_ = 0,
+//        BlockInputStreamPtr input = nullptr,
+//        BlockInputStreams inputs = {},
+//        QueryProcessingStage::Enum input_stage_ = QueryProcessingStage::FetchColumns);
 
     /// Read data not from the table specified in the query, but from the specified `storage_`.
     InterpreterSelectQuery(
@@ -68,6 +88,10 @@ public:
         const StoragePtr & storage_,
         QueryProcessingStage::Enum to_stage_ = QueryProcessingStage::Complete,
         bool only_analyze_ = false);
+//        size_t subquery_depth_ = 0,
+//        BlockInputStreamPtr input = nullptr,
+//        BlockInputStreams inputs = {},
+//        QueryProcessingStage::Enum input_stage_ = QueryProcessingStage::FetchColumns);
 
     ~InterpreterSelectQuery() override;
 
@@ -212,6 +236,7 @@ private:
     Context context;
     QueryProcessingStage::Enum to_stage;
     size_t subquery_depth = 0;
+    QueryProcessingStage::Enum input_stage;
     std::unique_ptr<ExpressionAnalyzer> query_analyzer;
 
     /// How many streams we ask for storage to produce, and in how many threads we will do further processing.

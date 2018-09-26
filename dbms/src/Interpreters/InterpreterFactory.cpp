@@ -1,5 +1,18 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -13,6 +26,7 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
+#include <Parsers/ASTWatchQuery.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
@@ -33,6 +47,7 @@
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -166,6 +181,10 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     {
         throwIfNoAccess(context);
         return std::make_unique<InterpreterSystemQuery>(query, context);
+    }
+    else if (typeid_cast<ASTWatchQuery *>(query.get()))
+    {
+        return std::make_unique<InterpreterWatchQuery>(query, context);
     }
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

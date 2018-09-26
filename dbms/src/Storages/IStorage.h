@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #include <Core/Names.h>
@@ -92,6 +103,9 @@ public:
       */
     virtual std::string getTableName() const = 0;
 
+    /** Returns true if the storage outputs multiplexed blocks. */
+    virtual bool isMultiplexer() const { return false; }
+
     /** Returns true if the storage receives data from a remote server or servers. */
     virtual bool isRemote() const { return false; }
 
@@ -162,6 +176,36 @@ public:
       *  for example, the request can be partially processed on a remote server.)
       */
     virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
+
+    /** Watch live changes to the table.
+     * Accepts a list of columns to read, as well as a description of the query,
+     *  from which information can be extracted about how to retrieve data
+     *  (indexes, locks, etc.)
+     * Returns a stream with which you can read data sequentially
+     *  or multiple streams for parallel data reading.
+     * The `processed_stage` info is also written to what stage the request was processed.
+     * (Normally, the function only reads the columns from the list, but in other cases,
+     *  for example, the request can be partially processed on a remote server.)
+     *
+     * context contains settings for one query.
+     * Usually Storage does not care about these settings, since they are used in the interpreter.
+     * But, for example, for distributed query processing, the settings are passed to the remote server.
+     *
+     * num_streams - a recommendation, how many streams to return,
+     *  if the storage can return a different number of streams.
+     *
+     * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
+     */
+    virtual BlockInputStreams watch(
+        const Names & column_names,
+        const SelectQueryInfo & query_info,
+        const Context & context,
+        QueryProcessingStage::Enum & processed_stage,
+        size_t max_block_size,
+        unsigned num_streams)
+    {
+        throw Exception("Method watch is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
 
     /** Read a set of columns from the table.
       * Accepts a list of columns to read, as well as a description of the query,
@@ -276,6 +320,27 @@ public:
     virtual void freezePartition(const ASTPtr & /*partition*/, const String & /*with_name*/, const Context & /*context*/)
     {
         throw Exception("Method freezePartition is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** Run the ADD TO PARAMETER request. That is, add values to table's list parameter
+      */
+    virtual void addToParameter(const ASTPtr & parameter, const ASTPtr & values, const Context & context)
+    {
+        throw Exception("Method addToParameter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** Run the DROP FROM PARAMETER request. That is, remove values from table's list parameter
+      */
+    virtual void dropFromParameter(const ASTPtr & parameter, const ASTPtr & values, const Context & context)
+    {
+        throw Exception("Method dropFromParameter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /** Run the MODIFY PARAMETER request. That is, modify table parameter value
+      */
+    virtual void modifyParameter(const ASTPtr & parameter, const ASTPtr & values, const Context & context)
+    {
+        throw Exception("Method modifyParameter is not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** Perform any background work. For example, combining parts in a MergeTree type table.

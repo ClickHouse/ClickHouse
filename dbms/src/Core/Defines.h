@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #pragma once
 
 #define DBMS_DEFAULT_HOST "localhost"
@@ -32,7 +43,11 @@
   */
 #define DEFAULT_MERGE_BLOCK_SIZE 8192
 
+#define DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC 5
+#define DEFAULT_TEMPORARY_LIVE_CHANNEL_TIMEOUT_SEC 15
+#define DEFAULT_ALTER_CHANNEL_WAIT_MS 10000
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
+#define DEFAULT_HEARTBEAT_DELAY 15000000
 #define DBMS_DEFAULT_DISTRIBUTED_CONNECTIONS_POOL_SIZE 1024
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times

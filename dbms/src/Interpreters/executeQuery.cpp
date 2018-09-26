@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Common/formatReadable.h>
 #include <Common/typeid_cast.h>
 
@@ -7,6 +18,8 @@
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <DataStreams/LiveChannelBlockInputStream.h>
+#include <DataStreams/LiveBlockInputStream.h>
 #include <DataStreams/InputStreamFromASTInsertQuery.h>
 #include <DataStreams/CountingBlockOutputStream.h>
 
@@ -229,6 +242,16 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     stream->setLimits(limits);
                     stream->setQuota(quota);
                 }
+            }
+            if (auto stream = dynamic_cast<LiveBlockInputStream *>(res.in.get()))
+            {
+                stream->setHeartbeatCallback(context.getHeartbeatCallback());
+                stream->setHeartbeatDelay(context.getSettingsRef().heartbeat_delay);
+            }
+            if (auto stream = dynamic_cast<LiveChannelBlockInputStream *>(res.in.get()))
+            {
+                stream->setHeartbeatCallback(context.getHeartbeatCallback());
+                stream->setHeartbeatDelay(context.getSettingsRef().heartbeat_delay);
             }
         }
 
@@ -490,6 +513,34 @@ void executeQuery(
                     if (previous_progress_callback)
                         previous_progress_callback(progress);
                     out->onProgress(progress);
+                });
+            }
+
+            if (auto stream = dynamic_cast<LiveBlockInputStream *>(streams.in.get()))
+            {
+                /// Save previous heartbeat callback if any. TODO Do it more conveniently.
+                auto previous_heartbeat_callback = context.getHeartbeatCallback();
+
+                /// NOTE Heartbeat callback takes shared ownership of 'out'.
+                stream->setHeartbeatCallback([out, previous_heartbeat_callback] (const Heartbeat & heartbeat)
+                {
+                    if (previous_heartbeat_callback)
+                        previous_heartbeat_callback(heartbeat);
+                    out->onHeartbeat(heartbeat);
+                });
+            }
+
+            if (auto stream = dynamic_cast<LiveChannelBlockInputStream *>(streams.in.get()))
+            {
+                /// Save previous heartbeat callback if any. TODO Do it more conveniently.
+                auto previous_heartbeat_callback = context.getHeartbeatCallback();
+
+                /// NOTE Heartbeat callback takes shared ownership of 'out'.
+                stream->setHeartbeatCallback([out, previous_heartbeat_callback] (const Heartbeat & heartbeat)
+                {
+                    if (previous_heartbeat_callback)
+                        previous_heartbeat_callback(heartbeat);
+                    out->onHeartbeat(heartbeat);
                 });
             }
 

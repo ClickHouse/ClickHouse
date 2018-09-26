@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Parsers/ASTAlterQuery.h>
 #include <iomanip>
 
@@ -39,6 +50,16 @@ ASTPtr ASTAlterCommand::clone() const
     {
         res->predicate = predicate->clone();
         res->children.push_back(res->predicate);
+    }
+    if (parameter)
+    {
+        res->parameter = parameter->clone();
+        res->children.push_back(res->parameter);
+    }
+    if (values)
+    {
+        res->values = values->clone();
+        res->children.push_back(res->values);
     }
 
     return res;
@@ -141,6 +162,69 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
+    else if (p.type == ASTAlterQuery::ADD_TO_PARAMETER)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD TO PARAMETER " << (settings.hilite ? hilite_none : "");
+        p.parameter->formatImpl(settings, state, frame);
+
+        settings.ostr << settings.nl_or_ws;
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::DROP_FROM_PARAMETER)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP FROM PARAMETER " << (settings.hilite ? hilite_none : "");
+        p.parameter->formatImpl(settings, state, frame);
+
+        settings.ostr << settings.nl_or_ws;
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::MODIFY_PARAMETER)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PARAMETER " << (settings.hilite ? hilite_none : "");
+        p.parameter->formatImpl(settings, state, frame);
+
+        settings.ostr << settings.nl_or_ws;
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::CHANNEL_ADD)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD " << (settings.hilite ? hilite_none : "");
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::CHANNEL_DROP)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP " << (settings.hilite ? hilite_none : "");
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::CHANNEL_MODIFY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY " << (settings.hilite ? hilite_none : "");
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::CHANNEL_SUSPEND)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "SUSPEND " << (settings.hilite ? hilite_none : "");
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::CHANNEL_RESUME)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESUME " << (settings.hilite ? hilite_none : "");
+
+        p.values->formatImpl(settings, state, frame);
+    }
+    else if (p.type == ASTAlterQuery::CHANNEL_REFRESH)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
+
+        p.values->formatImpl(settings, state, frame);
+    }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 }
@@ -205,7 +289,10 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     std::string indent_str = settings.one_line ? "" : std::string(4u * frame.indent, ' ');
 
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
+    if (is_channel)
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER CHANNEL " << (settings.hilite ? hilite_none : "");
+    else
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ALTER TABLE " << (settings.hilite ? hilite_none : "");
 
     if (!table.empty())
     {

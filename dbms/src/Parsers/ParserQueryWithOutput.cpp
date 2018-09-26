@@ -1,3 +1,14 @@
+/* Some modifications Copyright (c) 2018 BlackBerry Limited
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License. */
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
@@ -11,6 +22,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserWatchQuery.h>
 
 
 namespace DB
@@ -30,6 +42,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserCheckQuery check_p;
     ParserOptimizeQuery optimize_p;
     ParserKillQueryQuery kill_query_p;
+    ParserWatchQuery watch_p;
 
     ASTPtr query;
 
@@ -44,7 +57,8 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         || drop_p.parse(pos, query, expected)
         || check_p.parse(pos, query, expected)
         || kill_query_p.parse(pos, query, expected)
-        || optimize_p.parse(pos, query, expected);
+        || optimize_p.parse(pos, query, expected)
+        || watch_p.parse(pos, query, expected);
 
     if (!parsed)
         return false;
