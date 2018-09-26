@@ -40,7 +40,7 @@ public:
 
     const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
 
-    PreparedFunctionPtr prepare(const Block &) const override;
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override;
 
     bool isDeterministic() const override;
 

@@ -45,10 +45,19 @@ public:
 
 using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
 
+/// Cache for functions result if it was executed on low cardinality column.
+class PreparedFunctionLowCardinalityResultCache;
+using PreparedFunctionLowCardinalityResultCachePtr = std::shared_ptr<PreparedFunctionLowCardinalityResultCache>;
+
 class PreparedFunctionImpl : public IPreparedFunction
 {
 public:
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final;
+
+    /// Create cache which will be used to store result of function executed on LowCardinality column.
+    /// Only for default LowCardinality implementation.
+    /// Cannot be called concurrently for the same object.
+    void createLowCardinalityResultCache(size_t cache_size);
 
 protected:
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
@@ -85,11 +94,14 @@ protected:
 
 private:
     bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
-                                           size_t input_rows_count);
+                                       size_t input_rows_count);
     bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
-                                                       size_t input_rows_count);
+                                                   size_t input_rows_count);
     void executeWithoutColumnsWithDictionary(Block & block, const ColumnNumbers & arguments, size_t result,
                                              size_t input_rows_count);
+
+    /// Cache is created by function createLowCardinalityResultCache()
+    PreparedFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
 };
 
 using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
@@ -108,12 +120,12 @@ public:
 
     /// Do preparations and return executable.
     /// sample_block should contain data types of arguments and values of constants, if relevant.
-    virtual PreparedFunctionPtr prepare(const Block & sample_block) const = 0;
+    virtual PreparedFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
     /// TODO: make const
     virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
-        return prepare(block)->execute(block, arguments, result, input_rows_count);
+        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -322,7 +334,7 @@ public:
     using FunctionBuilderImpl::getLambdaArgumentTypesImpl;
     using FunctionBuilderImpl::getReturnType;
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const final
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const final
     {
         throw Exception("prepare is not implemented for IFunction", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -421,7 +433,10 @@ public:
 
 #endif
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override { return std::make_shared<DefaultExecutable>(function); }
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
+    {
+        return std::make_shared<DefaultExecutable>(function);
+    }
 
     bool isSuitableForConstantFolding() const override { return function->isSuitableForConstantFolding(); }
 

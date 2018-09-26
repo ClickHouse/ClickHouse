@@ -174,7 +174,7 @@ ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<const Join> join
 }
 
 
-void ExpressionAction::prepare(Block & sample_block)
+void ExpressionAction::prepare(Block & sample_block, const Settings & settings)
 {
     // std::cerr << "preparing: " << toString() << std::endl;
 
@@ -199,16 +199,16 @@ void ExpressionAction::prepare(Block & sample_block)
                     all_const = false;
             }
 
+            size_t result_position = sample_block.columns();
+            sample_block.insert({nullptr, result_type, result_name});
+            function = function_base->prepare(sample_block, arguments, result_position);
+
+            if (auto * prepared_function = dynamic_cast<PreparedFunctionImpl *>(function.get()))
+                prepared_function->createLowCardinalityResultCache(settings.max_threads);
+
             /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-            if (all_const && function->isSuitableForConstantFolding())
+            if (all_const && function_base->isSuitableForConstantFolding())
             {
-                size_t result_position = sample_block.columns();
-
-                ColumnWithTypeAndName new_column;
-                new_column.name = result_name;
-                new_column.type = result_type;
-                sample_block.insert(std::move(new_column));
-
                 function->execute(sample_block, arguments, result_position, sample_block.rows());
 
                 /// If the result is not a constant, just in case, we will consider the result as unknown.
@@ -226,10 +226,6 @@ void ExpressionAction::prepare(Block & sample_block)
                     if (col.column->empty())
                         col.column = col.column->cloneResized(1);
                 }
-            }
-            else
-            {
-                sample_block.insert({nullptr, result_type, result_name});
             }
 
             break;
@@ -569,7 +565,7 @@ std::string ExpressionAction::toString() const
         case APPLY_FUNCTION:
             ss << "FUNCTION " << result_name << " " << (is_function_compiled ? "[compiled] " : "")
                 << (result_type ? result_type->getName() : "(no type)") << " = "
-                << (function ? function->getName() : "(no function)") << "(";
+                << (function_base ? function_base->getName() : "(no function)") << "(";
             for (size_t i = 0; i < argument_names.size(); ++i)
             {
                 if (i)
@@ -688,11 +684,11 @@ void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
             arguments[i] = sample_block.getByName(action.argument_names[i]);
         }
 
-        action.function = action.function_builder->build(arguments);
-        action.result_type = action.function->getReturnType();
+        action.function_base = action.function_builder->build(arguments);
+        action.result_type = action.function_base->getReturnType();
     }
 
-    action.prepare(sample_block);
+    action.prepare(sample_block, settings);
     actions.push_back(action);
 }
 
@@ -927,6 +923,7 @@ void ExpressionActions::finalize(const Names & output_columns)
                         action.result_type = result.type;
                         action.added_column = result.column;
                         action.function_builder = nullptr;
+                        action.function_base = nullptr;
                         action.function = nullptr;
                         action.argument_names.clear();
                         in.clear();
@@ -1166,10 +1163,10 @@ UInt128 ExpressionAction::ActionHash::operator()(const ExpressionAction & action
             hash.update(action.result_name);
             if (action.result_type)
                 hash.update(action.result_type->getName());
-            if (action.function)
+            if (action.function_base)
             {
-                hash.update(action.function->getName());
-                for (const auto & arg_type : action.function->getArgumentTypes())
+                hash.update(action.function_base->getName());
+                for (const auto & arg_type : action.function_base->getArgumentTypes())
                     hash.update(arg_type->getName());
             }
             for (const auto & arg_name : action.argument_names)
@@ -1209,15 +1206,15 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
             return false;
     }
 
-    if (function != other.function)
+    if (function_base != other.function_base)
     {
-        if (function == nullptr || other.function == nullptr)
+        if (function_base == nullptr || other.function_base == nullptr)
             return false;
-        else if (function->getName() != other.function->getName())
+        else if (function_base->getName() != other.function_base->getName())
             return false;
 
-        const auto & my_arg_types = function->getArgumentTypes();
-        const auto & other_arg_types = other.function->getArgumentTypes();
+        const auto & my_arg_types = function_base->getArgumentTypes();
+        const auto & other_arg_types = other.function_base->getArgumentTypes();
         if (my_arg_types.size() != other_arg_types.size())
             return false;
 
