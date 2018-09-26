@@ -118,6 +118,7 @@ void TCPHandler::runImpl()
     sendHello();
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+    connection_context.setHeartbeatCallback([this] (const Heartbeat & value) { return this->sendHeartbeat(value); });
 
     while (1)
     {
@@ -846,6 +847,14 @@ void TCPHandler::sendException(const Exception & e, bool with_stack_trace)
 {
     writeVarUInt(Protocol::Server::Exception, *out);
     writeException(e, *out, with_stack_trace);
+    out->next();
+}
+
+
+void TCPHandler::sendHeartbeat(const Heartbeat & heartbeat)
+{
+    writeVarUInt(Protocol::Server::Heartbeat, *out);
+    heartbeat.write(*out, client_revision);
     out->next();
 }
 

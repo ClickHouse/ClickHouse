@@ -46,7 +46,7 @@ void TabSeparatedRowOutputStream::writePrefix()
 }
 
 
-void TabSeparatedRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void TabSeparatedRowOutputStream::writeField(const String & /*name*/, const IColumn & column, const IDataType & type, size_t row_num)
 {
     type.serializeTextEscaped(column, row_num, ostr, format_settings);
 }
@@ -68,6 +68,7 @@ void TabSeparatedRowOutputStream::writeSuffix()
 {
     writeTotals();
     writeExtremes();
+    flush();
 }
 
 
@@ -84,7 +85,7 @@ void TabSeparatedRowOutputStream::writeTotals()
         {
             if (j != 0)
                 writeFieldDelimiter();
-            writeField(*totals.getByPosition(j).column.get(), *totals.getByPosition(j).type.get(), 0);
+            writeField(totals.getByPosition(j).name, *totals.getByPosition(j).column.get(), *totals.getByPosition(j).type.get(), 0);
         }
 
         writeRowEndDelimiter();
@@ -112,7 +113,7 @@ void TabSeparatedRowOutputStream::writeExtremes()
             {
                 if (j != 0)
                     writeFieldDelimiter();
-                writeField(*extremes.getByPosition(j).column.get(), *extremes.getByPosition(j).type.get(), i);
+                writeField(extremes.getByPosition(j).name, *extremes.getByPosition(j).column.get(), *extremes.getByPosition(j).type.get(), i);
             }
 
             writeRowEndDelimiter();

@@ -225,6 +225,7 @@ void PrettyBlockOutputStream::writeSuffix()
     total_rows = 0;
     writeTotals();
     writeExtremes();
+    flush();
 }
 
 

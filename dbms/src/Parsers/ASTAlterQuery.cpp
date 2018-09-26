@@ -162,68 +162,68 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
         predicate->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::ADD_TO_PARAMETER)
+    else if (type == ASTAlterCommand::ADD_TO_PARAMETER)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD TO PARAMETER " << (settings.hilite ? hilite_none : "");
-        p.parameter->formatImpl(settings, state, frame);
+        parameter->formatImpl(settings, state, frame);
 
         settings.ostr << settings.nl_or_ws;
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::DROP_FROM_PARAMETER)
+    else if (type == ASTAlterCommand::DROP_FROM_PARAMETER)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP FROM PARAMETER " << (settings.hilite ? hilite_none : "");
-        p.parameter->formatImpl(settings, state, frame);
+        parameter->formatImpl(settings, state, frame);
 
         settings.ostr << settings.nl_or_ws;
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::MODIFY_PARAMETER)
+    else if (type == ASTAlterCommand::MODIFY_PARAMETER)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY PARAMETER " << (settings.hilite ? hilite_none : "");
-        p.parameter->formatImpl(settings, state, frame);
+        parameter->formatImpl(settings, state, frame);
 
         settings.ostr << settings.nl_or_ws;
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::CHANNEL_ADD)
+    else if (type == ASTAlterCommand::CHANNEL_ADD)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "ADD " << (settings.hilite ? hilite_none : "");
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::CHANNEL_DROP)
+    else if (type == ASTAlterCommand::CHANNEL_DROP)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "DROP " << (settings.hilite ? hilite_none : "");
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::CHANNEL_MODIFY)
+    else if (type == ASTAlterCommand::CHANNEL_MODIFY)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY " << (settings.hilite ? hilite_none : "");
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::CHANNEL_SUSPEND)
+    else if (type == ASTAlterCommand::CHANNEL_SUSPEND)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "SUSPEND " << (settings.hilite ? hilite_none : "");
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::CHANNEL_RESUME)
+    else if (type == ASTAlterCommand::CHANNEL_RESUME)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "RESUME " << (settings.hilite ? hilite_none : "");
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
-    else if (p.type == ASTAlterQuery::CHANNEL_REFRESH)
+    else if (type == ASTAlterCommand::CHANNEL_REFRESH)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "REFRESH " << (settings.hilite ? hilite_none : "");
 
-        p.values->formatImpl(settings, state, frame);
+        values->formatImpl(settings, state, frame);
     }
     else
         throw Exception("Unexpected type of ALTER", ErrorCodes::UNEXPECTED_AST_STRUCTURE);

@@ -22,7 +22,7 @@ public:
       */
     CSVRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool with_names_, const FormatSettings & format_settings);
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowEndDelimiter() override;
     void writePrefix() override;

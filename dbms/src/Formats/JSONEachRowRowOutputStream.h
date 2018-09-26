@@ -4,6 +4,7 @@
 #include <IO/WriteBuffer.h>
 #include <Formats/IRowOutputStream.h>
 #include <Formats/FormatSettings.h>
+#include <Core/Heartbeat.h>
 
 
 namespace DB
@@ -17,10 +18,11 @@ class JSONEachRowRowOutputStream : public IRowOutputStream
 public:
     JSONEachRowRowOutputStream(WriteBuffer & ostr_, const Block & sample, const FormatSettings & settings);
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
+    void onHeartbeat(const Heartbeat & heartbeat) override;
 
     void flush() override
     {

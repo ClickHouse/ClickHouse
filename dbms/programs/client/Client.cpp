@@ -139,6 +139,7 @@ private:
     size_t max_client_network_bandwidth = 0; /// The maximum speed of data exchange over the network for the client in bytes per second.
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
+    bool open_frame = false;             /// Stream open frame flag
 
     Context context = Context::createGlobal();
 
@@ -1086,6 +1087,10 @@ private:
                 onExtremes(packet.block);
                 return true;
 
+            case Protocol::Server::Heartbeat:
+                onHeartbeat(packet.heartbeat);
+                return true;
+
             case Protocol::Server::Exception:
                 onException(*packet.exception);
                 last_exception = std::move(packet.exception);
@@ -1212,6 +1217,7 @@ private:
 
             block_out_stream = context.getOutputFormat(current_format, *out_buf, block);
             block_out_stream->writePrefix();
+            open_frame = false;
         }
     }
 
@@ -1260,10 +1266,22 @@ private:
         initBlockOutputStream(block);
 
         /// The header block containing zero rows was used to initialize block_out_stream, do not output it.
-        if (block.rows() != 0)
+        if (block.rows() != 0 || block.info.is_start_frame)
         {
+            if (!open_frame || block.info.is_start_frame)
+            {
+                block_out_stream->setSampleBlock(block);
+                block_out_stream->writePrefix();
+                open_frame = true;
+            }
             block_out_stream->write(block);
             written_first_block = true;
+        }
+
+        if (block.info.is_end_frame)
+        {
+            block_out_stream->writeSuffix();
+            open_frame = false;
         }
 
         /// Received data block is immediately displayed to the user.
@@ -1291,6 +1309,10 @@ private:
         block_out_stream->setExtremes(block);
     }
 
+    void onHeartbeat(const Heartbeat & heartbeat)
+    {
+        block_out_stream->onHeartbeat(heartbeat);
+    }
 
     void onProgress(const Progress & value)
     {
@@ -1436,8 +1458,16 @@ private:
 
     void onEndOfStream()
     {
-        if (block_out_stream)
+        if (block_out_stream && !processed_rows)
+        {
+            block_out_stream->writePrefix();
+            open_frame = true;
+        }
+        if (block_out_stream && open_frame)
+        {
             block_out_stream->writeSuffix();
+            open_frame = false;
+        }
 
         if (logs_out_stream)
             logs_out_stream->writeSuffix();

@@ -17,7 +17,7 @@ class ValuesRowOutputStream : public IRowOutputStream
 public:
     ValuesRowOutputStream(WriteBuffer & ostr_, const FormatSettings & format_settings);
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;

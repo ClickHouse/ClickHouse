@@ -147,6 +147,7 @@ private:
     void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
     void sendLogs();
+    void sendHeartbeat(const Heartbeat & heartbeat);
     void sendEndOfStream();
     void sendProfileInfo();
     void sendTotals();

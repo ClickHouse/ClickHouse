@@ -28,13 +28,17 @@ void BlockOutputStreamFromRowOutputStream::write(const Block & block)
                 row_output->writeFieldDelimiter();
 
             auto & col = block.getByPosition(j);
-            row_output->writeField(*col.column, *col.type, i);
+            row_output->writeField(col.name, *col.column, *col.type, i);
         }
 
         row_output->writeRowEndDelimiter();
     }
 }
 
+void BlockOutputStreamFromRowOutputStream::setSampleBlock(const Block & sample)
+{
+    row_output->setSampleBlock(sample);
+}
 
 void BlockOutputStreamFromRowOutputStream::setRowsBeforeLimit(size_t rows_before_limit)
 {
@@ -54,6 +58,11 @@ void BlockOutputStreamFromRowOutputStream::setExtremes(const Block & extremes)
 void BlockOutputStreamFromRowOutputStream::onProgress(const Progress & progress)
 {
     row_output->onProgress(progress);
+}
+
+void BlockOutputStreamFromRowOutputStream::onHeartbeat(const Heartbeat & heartbeat)
+{
+    row_output->onHeartbeat(heartbeat);
 }
 
 }

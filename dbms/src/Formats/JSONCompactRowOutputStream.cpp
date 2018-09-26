@@ -14,7 +14,7 @@ JSONCompactRowOutputStream::JSONCompactRowOutputStream(WriteBuffer & ostr_, cons
 }
 
 
-void JSONCompactRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void JSONCompactRowOutputStream::writeField(const String & /*name*/, const IColumn & column, const IDataType & type, size_t row_num)
 {
     type.serializeTextJSON(column, row_num, *ostr, settings);
     ++field_number;

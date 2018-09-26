@@ -18,7 +18,7 @@ class BinaryRowOutputStream : public IRowOutputStream
 public:
     BinaryRowOutputStream(WriteBuffer & ostr_);
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
 
     void flush() override;
 

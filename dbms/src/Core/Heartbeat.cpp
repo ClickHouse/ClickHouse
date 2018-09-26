@@ -15,12 +15,13 @@ limitations under the License. */
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
 {
 
-void Heartbeat::read(ReadBuffer & in, UInt64 server_revision)
+void Heartbeat::read(ReadBuffer & in, UInt64 /*server_revision*/)
 {
     size_t size = 0;
     UInt64 new_timestamp = 0;
@@ -47,7 +48,7 @@ void Heartbeat::read(ReadBuffer & in, UInt64 server_revision)
 }
 
 
-void Heartbeat::write(WriteBuffer & out, UInt64 client_revision) const
+void Heartbeat::write(WriteBuffer & out, UInt64 /*client_revision*/) const
 {
     writeVarUInt(timestamp.load(), out);
 
@@ -63,6 +64,8 @@ void Heartbeat::write(WriteBuffer & out, UInt64 client_revision) const
 
 void Heartbeat::writeJSON(WriteBuffer & out) const
 {
+    FormatSettings format_settings;
+
     /// Numbers are written in double quotes (as strings) to avoid loss of precision
     ///  of 64-bit integers after interpretation by JavaScript.
     writeCString("{\"timestamp\":\"", out);
@@ -72,9 +75,9 @@ void Heartbeat::writeJSON(WriteBuffer & out) const
     for (auto it = hashmap.begin(); it != hashmap.end();)
     {
         writeCString("{", out);
-        writeJSONString(it->first, out);
+        writeJSONString(it->first, out, format_settings);
         writeCString(":", out);
-        writeJSONString(it->second, out);
+        writeJSONString(it->second, out, format_settings);
         writeCString("}", out);
         ++it;
         if (it != hashmap.end())

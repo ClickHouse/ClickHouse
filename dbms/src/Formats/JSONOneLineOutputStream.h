@@ -1,4 +1,4 @@
-/* Some modifications Copyright (c) 2018 BlackBerry Limited
+/* Copyright (c) 2018 BlackBerry Limited
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,28 +14,25 @@ limitations under the License. */
 #include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <DataStreams/JSONRowOutputStream.h>
+#include <Formats/JSONRowOutputStream.h>
 
 namespace DB
 {
 
 struct FormatSettingsJSON;
 
-/** The stream for outputting data in the JSONCompact format.
-  */
-class JSONCompactRowOutputStream : public JSONRowOutputStream
+/** The stream for outputting data in the JSONOneLine format.
+ **/
+class JSONOneLineOutputStream : public JSONRowOutputStream
 {
 public:
-    JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, bool write_statistics_, const FormatSettingsJSON & settings);
-
-    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
-    void writeFieldDelimiter() override;
-    void writeRowStartDelimiter() override;
-    void writeRowEndDelimiter() override;
+    JSONOneLineOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings_) : JSONRowOutputStream(ostr_, sample_, settings_) {}
 
 protected:
-    void writeTotals() override;
-    void writeExtremes() override;
+    inline virtual const char * getNewlineChar() final { return ""; }
+    inline virtual const char * getIndentChar() final { return ""; }
+    inline virtual const char * getSuffixChar() final { return "\n"; }
+    inline virtual const char * getSpaceChar() final { return ""; }
 };
 
 }

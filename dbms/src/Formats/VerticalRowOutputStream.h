@@ -20,7 +20,7 @@ class VerticalRowOutputStream : public IRowOutputStream
 public:
     VerticalRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & format_settings);
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeRowStartDelimiter() override;
     void writeRowBetweenDelimiter() override;
     void writeSuffix() override;

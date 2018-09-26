@@ -25,9 +25,9 @@ TSKVRowOutputStream::TSKVRowOutputStream(WriteBuffer & ostr_, const Block & samp
 }
 
 
-void TSKVRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void TSKVRowOutputStream::writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num)
 {
-    writeString(fields[field_number].name, ostr);
+    writeString(name, ostr);
     type.serializeTextEscaped(column, row_num, ostr, format_settings);
     ++field_number;
 }

@@ -11,6 +11,7 @@
 #include "PingRequestHandler.h"
 #include "ReplicasStatusHandler.h"
 #include "RootRequestHandler.h"
+#include "LiveRequestHandler.h"
 
 
 namespace DB
@@ -56,6 +57,11 @@ public:
                 return new PingRequestHandler(server);
             else if (startsWith(uri, "/replicas_status"))
                 return new ReplicasStatusHandler(server.context());
+        }
+
+        if (uri.size() >= 5 && uri.substr(0, 5) == "/live")
+        {
+            return new LiveRequestHandler(server);
         }
 
         if (uri.find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)

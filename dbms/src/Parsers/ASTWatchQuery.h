@@ -24,7 +24,6 @@ public:
     ASTPtr limit_length;
 
     ASTWatchQuery() = default;
-    ASTWatchQuery(const StringRange range_) : ASTQueryWithTableAndOutput(range_) {}
     String getID() const override { return "WatchQuery_" + database + "_" + table; };
 
     ASTPtr clone() const override

@@ -93,13 +93,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_add_to_parameter.ignore(pos, expected))
         {
-            if (!parser_identifier.parse(pos, params.parameter, expected))
+            if (!parser_identifier.parse(pos, command->parameter, expected))
                 return false;
 
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::ADD_TO_PARAMETER;
+            command->type = ASTAlterCommand::ADD_TO_PARAMETER;
         }
         else if (s_drop_partition.ignore(pos, expected))
         {
@@ -118,13 +118,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_drop_from_parameter.ignore(pos, expected))
         {
-            if (!parser_identifier.parse(pos, params.parameter, expected))
+            if (!parser_identifier.parse(pos, command->parameter, expected))
                 return false;
 
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::DROP_FROM_PARAMETER;
+            command->type = ASTAlterCommand::DROP_FROM_PARAMETER;
         }
         else if (s_clear_column.ignore(pos, expected))
         {
@@ -233,13 +233,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_modify_parameter.ignore(pos, expected))
         {
-            if (!parser_identifier.parse(pos, params.parameter, expected))
+            if (!parser_identifier.parse(pos, command->parameter, expected))
                 return false;
 
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::MODIFY_PARAMETER;
+            command->type = ASTAlterCommand::MODIFY_PARAMETER;
         }
         else if (s_modify_primary_key.ignore(pos, expected))
         {
@@ -283,45 +283,45 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     {
         if (s_add.ignore(pos, expected))
         {
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::CHANNEL_ADD;
+            command->type = ASTAlterCommand::CHANNEL_ADD;
         }
         else if (s_drop.ignore(pos, expected))
         {
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::CHANNEL_DROP;
+            command->type = ASTAlterCommand::CHANNEL_DROP;
         }
         else if (s_suspend.ignore(pos, expected))
         {
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::CHANNEL_SUSPEND;
+            command->type = ASTAlterCommand::CHANNEL_SUSPEND;
         }
         else if (s_resume.ignore(pos, expected))
         {
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::CHANNEL_RESUME;
+            command->type = ASTAlterCommand::CHANNEL_RESUME;
         }
         else if (s_refresh.ignore(pos, expected))
         {
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::CHANNEL_REFRESH;
+            command->type = ASTAlterCommand::CHANNEL_REFRESH;
         }
         else if (s_modify.ignore(pos, expected))
         {
-            if (!values_p.parse(pos, params.values, expected))
+            if (!values_p.parse(pos, command->values, expected))
                 return false;
 
-            params.type = ASTAlterQuery::CHANNEL_MODIFY;
+            command->type = ASTAlterCommand::CHANNEL_MODIFY;
         }
         else
             return false;
@@ -339,6 +339,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->predicate);
     if (command->update_assignments)
         command->children.push_back(command->update_assignments);
+    if (command->parameter)
+        command->children.push_back(command->parameter);
+    if (command->values)
+        command->children.push_back(command->values);
 
     return true;
 }
@@ -350,7 +354,7 @@ bool ParserAlterCommandList::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     node = command_list;
 
     ParserToken s_comma(TokenType::Comma);
-    ParserAlterCommand p_command;
+    ParserAlterCommand p_command(is_channel);
 
     do
     {

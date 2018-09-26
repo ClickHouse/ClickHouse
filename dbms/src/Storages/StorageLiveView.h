@@ -35,7 +35,7 @@ public:
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const { return database_name; }
 
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
     ASTPtr getInnerQuery() const { return inner_query->clone(); };
 
     /// It is passed inside the query and solved at its level.

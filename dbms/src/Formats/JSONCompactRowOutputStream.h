@@ -18,7 +18,7 @@ class JSONCompactRowOutputStream : public JSONRowOutputStream
 public:
     JSONCompactRowOutputStream(WriteBuffer & ostr_, const Block & sample_, const FormatSettings & settings);
 
-    void writeField(const IColumn & column, const IDataType & type, size_t row_num) override;
+    void writeField(const String & name, const IColumn & column, const IDataType & type, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;

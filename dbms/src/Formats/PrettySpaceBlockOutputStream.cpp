@@ -94,6 +94,7 @@ void PrettySpaceBlockOutputStream::writeSuffix()
     total_rows = 0;
     writeTotals();
     writeExtremes();
+    flush();
 }
 
 

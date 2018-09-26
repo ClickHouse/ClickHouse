@@ -54,6 +54,11 @@ class ParserAlterCommandList : public IParserBase
 protected:
     const char * getName() const { return "a list of ALTER commands"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+public:
+    bool is_channel;
+
+    ParserAlterCommandList(bool is_channel) : is_channel(is_channel) {}
 };
 
 
@@ -62,6 +67,11 @@ class ParserAlterCommand : public IParserBase
 protected:
     const char * getName() const { return "ALTER command"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected);
+
+public:
+    bool is_channel;
+
+    ParserAlterCommand(bool is_channel) : is_channel(is_channel) {}
 };
 
 

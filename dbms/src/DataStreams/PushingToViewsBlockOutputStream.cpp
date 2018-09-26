@@ -14,6 +14,9 @@ limitations under the License. */
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageLiveView.h>
+#include <Storages/StorageLiveChannel.h>
 #include <DataStreams/SquashingBlockInputStream.h>
 
 namespace DB

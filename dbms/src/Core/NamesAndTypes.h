@@ -5,6 +5,7 @@
 #include <string>
 #include <set>
 #include <initializer_list>
+#include <memory>
 
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
@@ -72,5 +73,7 @@ public:
 
     bool contains(const String & name) const;
 };
+
+using NamesAndTypesListPtr = std::shared_ptr<NamesAndTypesList>;
 
 }

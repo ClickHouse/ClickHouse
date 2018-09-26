@@ -35,7 +35,7 @@ public:
     std::string getName() const override { return "LiveChannel"; }
     std::string getTableName() const override { return table_name; }
     std::string getDatabaseName() const { return database_name; }
-    const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
+    // const NamesAndTypesList & getColumnsListImpl() const override { return *columns; }
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }

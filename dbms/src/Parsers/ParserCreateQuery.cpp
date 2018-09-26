@@ -388,7 +388,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (!s_as.ignore(pos, expected))
                 return false;
 
-            ParserSelectQuery select_p;
+            ParserSelectWithUnionQuery select_p;
             if (!select_p.parse(pos, select, expected))
                 return false;
         }

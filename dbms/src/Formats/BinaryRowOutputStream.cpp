@@ -19,7 +19,7 @@ void BinaryRowOutputStream::flush()
     ostr.next();
 }
 
-void BinaryRowOutputStream::writeField(const IColumn & column, const IDataType & type, size_t row_num)
+void BinaryRowOutputStream::writeField(const String & /*name*/, const IColumn & column, const IDataType & type, size_t row_num)
 {
     type.serializeBinary(column, row_num, ostr);
 }
