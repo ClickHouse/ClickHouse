@@ -6,9 +6,9 @@ namespace DB
 {
 TimeoutSetter::TimeoutSetter(Poco::Net::StreamSocket & socket_,
     const Poco::Timespan & send_timeout_,
-    const Poco::Timespan & recieve_timeout_,
+    const Poco::Timespan & receive_timeout_,
     bool limit_max_timeout)
-    : socket(socket_), send_timeout(send_timeout_), recieve_timeout(recieve_timeout_)
+    : socket(socket_), send_timeout(send_timeout_), receive_timeout(receive_timeout_)
 {
     old_send_timeout = socket.getSendTimeout();
     old_receive_timeout = socket.getReceiveTimeout();
@@ -16,8 +16,8 @@ TimeoutSetter::TimeoutSetter(Poco::Net::StreamSocket & socket_,
     if (!limit_max_timeout || old_send_timeout > send_timeout)
         socket.setSendTimeout(send_timeout);
 
-    if (!limit_max_timeout || old_receive_timeout > recieve_timeout)
-        socket.setReceiveTimeout(recieve_timeout);
+    if (!limit_max_timeout || old_receive_timeout > receive_timeout)
+        socket.setReceiveTimeout(receive_timeout);
 }
 
 TimeoutSetter::TimeoutSetter(Poco::Net::StreamSocket & socket_, const Poco::Timespan & timeout_, bool limit_max_timeout)
