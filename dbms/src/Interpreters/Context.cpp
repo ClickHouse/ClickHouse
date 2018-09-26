@@ -897,18 +897,18 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::mutex & guards_mutex_, std::unique_lock<std::mutex> && lock, const String & elem)
-    : map(map_), guards_mutex(guards_mutex_)
+DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+    : map(map_), guards_lock(std::move(guards_lock_))
 {
     it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
     ++it->second.counter;
-    lock.unlock();
+    guards_lock.unlock();
     table_lock = std::unique_lock<std::mutex>(*it->second.mutex);
 }
 
 DDLGuard::~DDLGuard()
 {
-    std::lock_guard<std::mutex> lock(guards_mutex);
+    guards_lock.lock();
     --it->second.counter;
     if (!it->second.counter)
     {
@@ -920,7 +920,7 @@ DDLGuard::~DDLGuard()
 std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
 {
     std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(shared->ddl_guards[database], shared->ddl_guards_mutex, std::move(lock), table);
+    return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
 }
 
 
