@@ -35,13 +35,13 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
 {
     switch (int_type)
     {
-        case TypeIndex::Int8:
+        case TypeIndex::Int8: [[fallthrough]];
         case TypeIndex::UInt8:
             return 3;
-        case TypeIndex::Int16:
+        case TypeIndex::Int16: [[fallthrough]];
         case TypeIndex::UInt16:
             return 5;
-        case TypeIndex::Int32:
+        case TypeIndex::Int32: [[fallthrough]];
         case TypeIndex::UInt32:
             return 10;
         case TypeIndex::Int64:
