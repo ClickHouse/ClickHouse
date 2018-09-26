@@ -31,6 +31,28 @@ template <> constexpr size_t maxDecimalPrecision<Decimal128>() { return 38; }
 
 DataTypePtr createDecimal(UInt64 precision, UInt64 scale);
 
+inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
+{
+    switch (int_type)
+    {
+        case TypeIndex::Int8: [[fallthrough]];
+        case TypeIndex::UInt8:
+            return 3;
+        case TypeIndex::Int16: [[fallthrough]];
+        case TypeIndex::UInt16:
+            return 5;
+        case TypeIndex::Int32: [[fallthrough]];
+        case TypeIndex::UInt32:
+            return 10;
+        case TypeIndex::Int64:
+            return 19;
+        case TypeIndex::UInt64:
+            return 20;
+        default:
+            break;
+    };
+    return 0;
+}
 
 /// Implements Decimal(P, S), where P is precision, S is scale.
 /// Maximum precisions for underlying types are:
@@ -201,7 +223,7 @@ inline const DataTypeDecimal<T> * checkDecimal(const IDataType & data_type)
     return typeid_cast<const DataTypeDecimal<T> *>(&data_type);
 }
 
-inline UInt32 getDecimalScale(const IDataType & data_type)
+inline UInt32 getDecimalScale(const IDataType & data_type, UInt32 default_value = std::numeric_limits<UInt32>::max())
 {
     if (auto * decimal_type = checkDecimal<Decimal32>(data_type))
         return decimal_type->getScale();
@@ -209,7 +231,7 @@ inline UInt32 getDecimalScale(const IDataType & data_type)
         return decimal_type->getScale();
     if (auto * decimal_type = checkDecimal<Decimal128>(data_type))
         return decimal_type->getScale();
-    return std::numeric_limits<UInt32>::max();
+    return default_value;
 }
 
 ///
