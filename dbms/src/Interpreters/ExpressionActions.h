@@ -89,8 +89,11 @@ public:
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
+    /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
+    /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
     FunctionBasePtr function_base;
+    /// Prepared function which is used in function execution.
     PreparedFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
