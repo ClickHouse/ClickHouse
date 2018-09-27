@@ -37,6 +37,7 @@ Binary operations on Decimal result in wider result type (with any order of argu
 - Decimal128(S1) <op> Decimal64(S2) -> Decimal128(S)
 
 Rules for scale:
+
 - add, subtract: S = max(S1, S2).
 - multuply: S = S1 + S2.
 - divide: S = S1.
