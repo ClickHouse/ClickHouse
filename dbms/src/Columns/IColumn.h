@@ -47,9 +47,9 @@ public:
       */
     virtual Ptr convertToFullColumnIfConst() const { return {}; }
 
-    /// If column isn't ColumnWithDictionary, return itself.
-    /// If column is ColumnWithDictionary, transforms is to full column.
-    virtual Ptr convertToFullColumnIfWithDictionary() const { return getPtr(); }
+    /// If column isn't ColumnLowCardinality, return itself.
+    /// If column is ColumnLowCardinality, transforms is to full column.
+    virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
@@ -333,7 +333,7 @@ public:
     /// Can be inside ColumnNullable.
     virtual bool canBeInsideNullable() const { return false; }
 
-    virtual bool withDictionary() const { return false; }
+    virtual bool lowCardinality() const { return false; }
 
 
     virtual ~IColumn() {}
