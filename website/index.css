@@ -215,15 +215,15 @@ a:hover, a:active {
 #announcement {
     margin: 0 0 60px 0;
     padding: 20px 0;
-    font: 400 150%/133% 'Yandex Sans Display Web',Arial,sans-serif;
+    font: 400 140%/133% 'Yandex Sans Display Web',Arial,sans-serif;
 }
 .announcement-link {
-    color: #000;
-    text-decoration: underline;
+    color: #000!important;
+    text-decoration: underline!important;
     margin: 1em 0;
 }
 .announcement-link:hover {
-    color: #000;
+    color: #000!important;
 }
 
 #call_to_action, #benchmark_learn_more {
