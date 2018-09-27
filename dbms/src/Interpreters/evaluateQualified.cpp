@@ -2,6 +2,10 @@
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 
+#include <Parsers/IAST.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
+
 namespace DB
 {
 

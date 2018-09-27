@@ -39,7 +39,7 @@ BlockInputStreamPtr InterpreterExplainQuery::executeImpl()
     const ASTExplainQuery & ast = typeid_cast<const ASTExplainQuery &>(*query);
 
     std::stringstream ss;
-    ast.dumpSExpressions(ss);
+    dumpAST(ast, ss);
 
     Block sample_block = getSampleBlock();
     MutableColumns res_columns = sample_block.cloneEmptyColumns();

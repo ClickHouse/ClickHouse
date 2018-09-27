@@ -35,6 +35,7 @@
 #include <Interpreters/Join.h>
 #include <Interpreters/ProjectionManipulation.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
@@ -229,7 +230,8 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     LogicalExpressionsOptimizer(select_query, settings).perform();
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
-    getQueryAliases(query, aliases);
+    QueryAliasesVisitor queryAliasesVisitor;
+    queryAliasesVisitor.visit(query, aliases);
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
@@ -312,97 +314,8 @@ void ExpressionAnalyzer::translateQualifiedNames()
     for (const auto & table_expression : tables_expression)
         tables.emplace_back(getTableNameWithAliasFromTableExpression(table_expression, context));
 
-    translateQualifiedNamesImpl(query, tables);
-}
-
-void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::vector<DatabaseAndTableWithAlias> & tables)
-{
-    if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
-    {
-        if (identifier->general())
-        {
-            /// Select first table name with max number of qualifiers which can be stripped.
-            size_t max_num_qualifiers_to_strip = 0;
-            size_t best_table_pos = 0;
-
-            for (size_t table_pos = 0; table_pos < tables.size(); ++table_pos)
-            {
-                const auto & table = tables[table_pos];
-                auto num_qualifiers_to_strip = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, table);
-
-                if (num_qualifiers_to_strip > max_num_qualifiers_to_strip)
-                {
-                    max_num_qualifiers_to_strip = num_qualifiers_to_strip;
-                    best_table_pos = table_pos;
-                }
-            }
-
-            stripIdentifier(ast, max_num_qualifiers_to_strip);
-
-            /// In case if column from the joined table are in source columns, change it's name to qualified.
-            if (best_table_pos && source_columns.contains(ast->getColumnName()))
-                tables[best_table_pos].makeQualifiedName(ast);
-        }
-    }
-    else if (typeid_cast<ASTQualifiedAsterisk *>(ast.get()))
-    {
-        if (ast->children.size() != 1)
-            throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
-
-        ASTIdentifier * ident = typeid_cast<ASTIdentifier *>(ast->children[0].get());
-        if (!ident)
-            throw Exception("Logical error: qualified asterisk must have identifier as its child", ErrorCodes::LOGICAL_ERROR);
-
-        size_t num_components = ident->children.size();
-        if (num_components > 2)
-            throw Exception("Qualified asterisk cannot have more than two qualifiers", ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
-
-        for (const auto & table_names : tables)
-        {
-            /// database.table.*, table.* or alias.*
-            if ((num_components == 2
-                 && !table_names.database.empty()
-                 && static_cast<const ASTIdentifier &>(*ident->children[0]).name == table_names.database
-                 && static_cast<const ASTIdentifier &>(*ident->children[1]).name == table_names.table)
-                || (num_components == 0
-                    && ((!table_names.table.empty() && ident->name == table_names.table)
-                        || (!table_names.alias.empty() && ident->name == table_names.alias))))
-            {
-                return;
-            }
-        }
-
-        throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
-    }
-    else if (auto * join = typeid_cast<ASTTableJoin *>(ast.get()))
-    {
-        /// Don't translate on_expression here in order to resolve equation parts later.
-        if (join->using_expression_list)
-            translateQualifiedNamesImpl(join->using_expression_list, tables);
-    }
-    else
-    {
-        /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children, but also in where_expression and having_expression.
-        if (ASTSelectQuery * select = typeid_cast<ASTSelectQuery *>(ast.get()))
-        {
-            if (select->prewhere_expression)
-                translateQualifiedNamesImpl(select->prewhere_expression, tables);
-            if (select->where_expression)
-                translateQualifiedNamesImpl(select->where_expression, tables);
-            if (select->having_expression)
-                translateQualifiedNamesImpl(select->having_expression, tables);
-        }
-
-        for (auto & child : ast->children)
-        {
-            /// Do not go to FROM, JOIN, subqueries.
-            if (!typeid_cast<const ASTTableExpression *>(child.get())
-                && !typeid_cast<const ASTSelectWithUnionQuery *>(child.get()))
-            {
-                translateQualifiedNamesImpl(child, tables);
-            }
-        }
-    }
+    TranslateQualifiedNamesVisitor visitor(source_columns, tables);
+    visitor.visit(query);
 }
 
 void ExpressionAnalyzer::optimizeIfWithConstantCondition()
@@ -2953,8 +2866,7 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
     std::function<void(ASTPtr &, const DatabaseAndTableWithAlias &)> translate_qualified_names;
     translate_qualified_names = [&](ASTPtr & ast, const DatabaseAndTableWithAlias & source_names)
     {
-        auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
-        if (identifier)
+        if (auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get()))
         {
             if (identifier->general())
             {

@@ -1,12 +1,16 @@
 #pragma once
 
-#include <Parsers/IAST.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/Context.h>
 
 namespace DB
 {
+
+class IAST;
+using ASTPtr = std::shared_ptr<IAST>;
+
+class ASTIdentifier;
+struct ASTTableExpression;
+
 
 struct DatabaseAndTableWithAlias
 {
