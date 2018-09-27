@@ -28,7 +28,7 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnWithDictionary.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
@@ -413,7 +413,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
         void init(ColumnRawPtrs & key_columns, const AggregationStateCachePtr & cache_ptr)
         {
-            auto column = typeid_cast<const ColumnWithDictionary *>(key_columns[0]);
+            auto column = typeid_cast<const ColumnLowCardinality *>(key_columns[0]);
             if (!column)
                 throw Exception("Invalid aggregation key type for AggregationMethodSingleLowCardinalityColumn method. "
                                 "Excepted LowCardinality, got " + key_columns[0]->getName(), ErrorCodes::LOGICAL_ERROR);
@@ -583,7 +583,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
     static void insertKeyIntoColumns(const typename Data::value_type & value, MutableColumns & key_columns, size_t /*keys_size*/, const Sizes & /*key_sizes*/)
     {
         auto ref = Base::getValueRef(value);
-        static_cast<ColumnWithDictionary *>(key_columns[0].get())->insertData(ref.data, ref.size);
+        static_cast<ColumnLowCardinality *>(key_columns[0].get())->insertData(ref.data, ref.size);
     }
 };
 
@@ -732,7 +732,7 @@ struct AggregationMethodKeysFixed
                 low_cardinality_keys.position_sizes.resize(key_columns.size());
                 for (size_t i = 0; i < key_columns.size(); ++i)
                 {
-                    if (auto * low_cardinality_col = typeid_cast<const ColumnWithDictionary *>(key_columns[i]))
+                    if (auto * low_cardinality_col = typeid_cast<const ColumnLowCardinality *>(key_columns[i]))
                     {
                         low_cardinality_keys.nested_columns[i] = low_cardinality_col->getDictionary().getNestedColumn().get();
                         low_cardinality_keys.positions[i] = &low_cardinality_col->getIndexes();
