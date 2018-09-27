@@ -2,6 +2,9 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 
+#include <Poco/Logger.h>
+#include <common/logger_useful.h>
+
 
 namespace DB
 {
@@ -11,7 +14,10 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-Macros::Macros() {}
+Macros::Macros() 
+{
+    LOG_DEBUG(&Logger::get("Macros"), "creating in empty contructor");
+}
 
 Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key)
 {
@@ -21,9 +27,10 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     {
         macros[key] = config.getString(root_key + "." + key);
     }
+
 }
 
-String Macros::expand(const String & s, size_t level) const
+String Macros::expand(const String & s, size_t level, const String & database_name, const String & table_name) const
 {
     if (s.find('{') == String::npos)
         return s;
@@ -57,16 +64,23 @@ String Macros::expand(const String & s, size_t level) const
 
         String macro_name = s.substr(begin, end - begin);
 
-        auto it = macros.find(macro_name);
-        if (it == macros.end())
-            throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
+        if (macro_name == "database")
+            res += database_name;
+        else if (macro_name == "table")
+            res += table_name;
+        else
+        {
+            auto it = macros.find(macro_name);
+            if (it == macros.end())
+                throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
 
-        res += it->second;
+            res += it->second;
+        }
 
         pos = end + 1;
     }
 
-    return expand(res, level + 1);
+    return expand(res, level + 1, database_name, table_name);
 }
 
 Names Macros::expand(const Names & source_names, size_t level) const

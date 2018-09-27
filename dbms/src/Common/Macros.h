@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Core/Names.h>
+#include <Interpreters/Context.h>
 #include <map>
 
 
@@ -29,7 +30,7 @@ public:
     /** Replace the substring of the form {macro_name} with the value for macro_name, obtained from the config file.
       * level - the level of recursion.
       */
-    String expand(const String & s, size_t level = 0) const;
+    String expand(const String & s, size_t level = 0, const String & database_name = "", const String & table_name = "") const;
 
     /** Apply expand for the list.
       */

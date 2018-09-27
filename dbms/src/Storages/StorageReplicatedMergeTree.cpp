@@ -207,7 +207,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     : context(context_),
     database_name(database_name_),
     table_name(name_), full_path(path_ + escapeForFileName(table_name) + '/'),
-    zookeeper_path(context.getMacros()->expand(zookeeper_path_)),
+    zookeeper_path(context.getMacros()->expand(zookeeper_path_, 0, database_name, table_name)),
     replica_name(context.getMacros()->expand(replica_name_)),
     data(database_name, table_name,
         full_path, columns_,
