@@ -69,6 +69,7 @@
 #include <Interpreters/evaluateQualified.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/getQueryAliases.h>
+#include <DataTypes/DataTypeWithDictionary.h>
 
 
 namespace DB
@@ -280,26 +281,36 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     analyzeAggregation();
 }
 
+static std::vector<ASTTableExpression> getTableExpressions(const ASTPtr & query)
+{
+    ASTSelectQuery * select_query = typeid_cast<ASTSelectQuery *>(query.get());
+
+    std::vector<ASTTableExpression> tables_expression;
+
+    if (select_query && select_query->tables)
+    {
+        for (const auto & element : select_query->tables->children)
+        {
+            ASTTablesInSelectQueryElement & select_element = static_cast<ASTTablesInSelectQueryElement &>(*element);
+
+            if (select_element.table_expression)
+                tables_expression.emplace_back(static_cast<ASTTableExpression &>(*select_element.table_expression));
+        }
+    }
+
+    return tables_expression;
+}
+
 void ExpressionAnalyzer::translateQualifiedNames()
 {
     if (!select_query || !select_query->tables || select_query->tables->children.empty())
         return;
 
-    auto & element = static_cast<ASTTablesInSelectQueryElement &>(*select_query->tables->children[0]);
+    std::vector<DatabaseAndTableWithAlias> tables;
+    std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
 
-    if (!element.table_expression)        /// This is ARRAY JOIN without a table at the left side.
-        return;
-
-    auto & table_expression = static_cast<ASTTableExpression &>(*element.table_expression);
-    auto * join = select_query->join();
-
-    std::vector<DatabaseAndTableWithAlias> tables = {getTableNameWithAliasFromTableExpression(table_expression, context)};
-
-    if (join)
-    {
-        const auto & join_table_expression = static_cast<const ASTTableExpression &>(*join->table_expression);
-        tables.emplace_back(getTableNameWithAliasFromTableExpression(join_table_expression, context));
-    }
+    for (const auto & table_expression : tables_expression)
+        tables.emplace_back(getTableNameWithAliasFromTableExpression(table_expression, context));
 
     translateQualifiedNamesImpl(query, tables);
 }
@@ -308,7 +319,7 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
 {
     if (auto * identifier = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (identifier->kind == ASTIdentifier::Column)
+        if (identifier->general())
         {
             /// Select first table name with max number of qualifiers which can be stripped.
             size_t max_num_qualifiers_to_strip = 0;
@@ -357,10 +368,11 @@ void ExpressionAnalyzer::translateQualifiedNamesImpl(ASTPtr & ast, const std::ve
                     && ((!table_names.table.empty() && ident->name == table_names.table)
                         || (!table_names.alias.empty() && ident->name == table_names.alias))))
             {
-                /// Replace to plain asterisk.
-                ast = std::make_shared<ASTAsterisk>();
+                return;
             }
         }
+
+        throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
     }
     else if (auto * join = typeid_cast<ASTTableJoin *>(ast.get()))
     {
@@ -646,7 +658,7 @@ void ExpressionAnalyzer::findExternalTables(ASTPtr & ast)
     StoragePtr external_storage;
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
-        if (node->kind == ASTIdentifier::Table)
+        if (node->special())
             if ((external_storage = context.tryGetExternalTable(node->name)))
                 external_tables[node->name] = external_storage;
 }
@@ -830,7 +842,7 @@ void ExpressionAnalyzer::addExternalStorage(ASTPtr & subquery_or_table_name_or_t
         *  instead of doing a subquery, you just need to read it.
         */
 
-    auto database_and_table_name = std::make_shared<ASTIdentifier>(external_table_name, ASTIdentifier::Table);
+    auto database_and_table_name = ASTIdentifier::createSpecial(external_table_name);
 
     if (auto ast_table_expr = typeid_cast<ASTTableExpression *>(subquery_or_table_name_or_table_expression.get()))
     {
@@ -861,6 +873,31 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
         [&](const NamesAndTypesList::value_type & val) { return val.name == name; });
 }
 
+static NamesAndTypesList getNamesAndTypeListFromTableExpression(const ASTTableExpression & table_expression, const Context & context)
+{
+    NamesAndTypesList names_and_type_list;
+    if (table_expression.subquery)
+    {
+        const auto & subquery = table_expression.subquery->children.at(0);
+        names_and_type_list = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context).getNamesAndTypesList();
+    }
+    else if (table_expression.table_function)
+    {
+        const auto table_function = table_expression.table_function;
+        auto query_context = const_cast<Context *>(&context.getQueryContext());
+        const auto & function_storage = query_context->executeTableFunction(table_function);
+        names_and_type_list = function_storage->getSampleBlockNonMaterialized().getNamesAndTypesList();
+    }
+    else if (table_expression.database_and_table_name)
+    {
+        const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
+        auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
+        const auto & table = context.getTable(database_table.first, database_table.second);
+        names_and_type_list = table->getSampleBlockNonMaterialized().getNamesAndTypesList();
+    }
+
+    return names_and_type_list;
+}
 
 void ExpressionAnalyzer::normalizeTree()
 {
@@ -878,7 +915,20 @@ void ExpressionAnalyzer::normalizeTree()
     if (all_columns_name.empty())
         throw Exception("Logical error: an asterisk cannot be replaced with empty columns.", ErrorCodes::LOGICAL_ERROR);
 
-    QueryNormalizer(query, aliases, settings, all_columns_name).perform();
+    TableNamesAndColumnsName table_names_nad_columns_name;
+    if (select_query && select_query->tables && !select_query->tables->children.empty())
+    {
+        std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
+
+        for (const auto & table_expression : tables_expression)
+        {
+            const auto table_name = getTableNameWithAliasFromTableExpression(table_expression, context);
+            NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(table_expression, context);
+            table_names_nad_columns_name.emplace_back(std::pair(table_name, names_and_types.getNames()));
+        }
+    }
+
+    QueryNormalizer(query, aliases, settings, all_columns_name, table_names_nad_columns_name).perform();
 }
 
 
@@ -1456,6 +1506,10 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
+    for (auto & element_type : set_element_types)
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(element_type.get()))
+            element_type = low_cardinality_type->getDictionaryType();
+
     ASTPtr elements_ast = nullptr;
 
     /// 1 in 1; (1, 2) in (1, 2); identity(tuple(tuple(tuple(1)))) in tuple(tuple(tuple(1))); etc.
@@ -1659,7 +1713,7 @@ void ExpressionAnalyzer::getArrayJoinedColumnsImpl(const ASTPtr & ast)
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (node->kind == ASTIdentifier::Column)
+        if (node->general())
         {
             auto splitted = Nested::splitName(node->name);  /// ParsedParams, Key1
 
@@ -2269,30 +2323,9 @@ NamesAndTypesList ExpressionAnalyzer::AnalyzedJoin::getColumnsFromJoinedTable(co
     {
         if (const ASTTablesInSelectQueryElement * node = select_query_with_join->join())
         {
-            Block nested_result_sample;
             const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
 
-            if (table_expression.subquery)
-            {
-                const auto & subquery = table_expression.subquery->children.at(0);
-                nested_result_sample = InterpreterSelectWithUnionQuery::getSampleBlock(subquery, context);
-            }
-            else if (table_expression.table_function)
-            {
-                const auto table_function = table_expression.table_function;
-                auto query_context = const_cast<Context *>(&context.getQueryContext());
-                const auto & join_storage = query_context->executeTableFunction(table_function);
-                nested_result_sample = join_storage->getSampleBlockNonMaterialized();
-            }
-            else if (table_expression.database_and_table_name)
-            {
-                const auto & identifier = static_cast<const ASTIdentifier &>(*table_expression.database_and_table_name);
-                auto database_table = getDatabaseAndTableNameFromIdentifier(identifier);
-                const auto & table = context.getTable(database_table.first, database_table.second);
-                nested_result_sample = table->getSampleBlockNonMaterialized();
-            }
-
-            columns_from_joined_table = nested_result_sample.getNamesAndTypesList();
+            columns_from_joined_table = getNamesAndTypeListFromTableExpression(table_expression, context);
         }
     }
 
@@ -2884,7 +2917,7 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
         auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
         if (identifier)
         {
-            if (identifier->kind == ASTIdentifier::Column)
+            if (identifier->general())
             {
                 auto left_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, left_source_names);
                 auto right_num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, right_source_names);
@@ -2923,7 +2956,7 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
         auto * identifier = typeid_cast<const ASTIdentifier *>(ast.get());
         if (identifier)
         {
-            if (identifier->kind == ASTIdentifier::Column)
+            if (identifier->general())
             {
                 auto num_components = getNumComponentsToStripInOrderToTranslateQualifiedName(*identifier, source_names);
                 stripIdentifier(ast, num_components);
@@ -3091,7 +3124,7 @@ void ExpressionAnalyzer::getRequiredSourceColumnsImpl(const ASTPtr & ast,
 
     if (ASTIdentifier * node = typeid_cast<ASTIdentifier *>(ast.get()))
     {
-        if (node->kind == ASTIdentifier::Column
+        if (node->general()
             && !ignored_names.count(node->name)
             && !ignored_names.count(Nested::extractTableName(node->name)))
         {

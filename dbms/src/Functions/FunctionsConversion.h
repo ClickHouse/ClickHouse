@@ -35,8 +35,8 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Functions/FunctionsDateTime.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/DateTimeTransforms.h>
 #include <DataTypes/DataTypeWithDictionary.h>
 #include <Columns/ColumnWithDictionary.h>
 
@@ -107,6 +107,13 @@ struct ConvertImpl
         using ColVecFrom = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
         using ColVecTo = std::conditional_t<IsDecimalNumber<ToFieldType>, ColumnDecimal<ToFieldType>, ColumnVector<ToFieldType>>;
 
+        if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+        {
+            if constexpr (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>)
+                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
+
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
@@ -125,12 +132,15 @@ struct ConvertImpl
 
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
-                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                else if constexpr (IsDataTypeDecimal<FromDataType>)
-                    vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                else if constexpr (IsDataTypeDecimal<ToDataType>)
-                    vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                {
+                    if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                        vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
+                    else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                        vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
+                    else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                        vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                }
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
             }
@@ -1391,7 +1401,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
         return std::make_shared<PreparedFunctionCast>(
                 prepareUnpackDictionaries(getArgumentTypes()[0], getReturnType()), name);
@@ -1740,9 +1750,14 @@ private:
 
     WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
+        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
+        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
+        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
+        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
+
         if (from_type->onlyNull())
         {
-            if (!to_type->isNullable())
+            if (!to_nested->isNullable())
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
@@ -1751,11 +1766,6 @@ private:
                 res.column = res.type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
             };
         }
-
-        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
-        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
-        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
-        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
 
         auto wrapper = prepareRemoveNullable(from_nested, to_nested);
         if (!from_with_dict && !to_with_dict)

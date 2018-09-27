@@ -194,6 +194,7 @@ struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkS
 
     IndexesSerializationType index_type;
     ColumnPtr additional_keys;
+    ColumnPtr null_map;
     UInt64 num_pending_rows = 0;
 
     explicit DeserializeStateWithDictionary(UInt64 key_version) : key_version(key_version) {}
@@ -290,8 +291,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 
     if (!stream)
-        throw Exception("Got empty stream in DataTypeWithDictionary::deserializeBinaryBulkStatePrefix",
-                        ErrorCodes::LOGICAL_ERROR);
+        return;
 
     UInt64 keys_version;
     readIntBinary(keys_version, *stream);
@@ -576,9 +576,6 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 {
     ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
 
-    auto * state_with_dictionary = checkAndGetWithDictionaryDeserializeState(state);
-    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
-
     settings.path.push_back(Substream::DictionaryKeys);
     auto * keys_stream = settings.getter(settings.path);
     settings.path.back() = Substream::DictionaryIndexes;
@@ -593,6 +590,9 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
     if (!indexes_stream)
         throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
+
+    auto * state_with_dictionary = checkAndGetWithDictionaryDeserializeState(state);
+    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
 
     auto readDictionary = [this, state_with_dictionary, keys_stream]()
     {
@@ -615,6 +615,15 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         auto additional_keys = keys_type->createColumn();
         keys_type->deserializeBinaryBulk(*additional_keys, *indexes_stream, num_keys, 0);
         state_with_dictionary->additional_keys = std::move(additional_keys);
+
+        if (!state_with_dictionary->index_type.need_global_dictionary && dictionary_type->isNullable())
+        {
+            auto null_map = ColumnUInt8::create(num_keys, 0);
+            if (num_keys)
+                null_map->getElement(0) = 1;
+
+            state_with_dictionary->null_map = std::move(null_map);
+        }
     };
 
     auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows)
@@ -631,7 +640,10 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
 
         if (!state_with_dictionary->index_type.need_global_dictionary)
         {
-            column_with_dictionary.insertRangeFromDictionaryEncodedColumn(*additional_keys, *indexes_column);
+            ColumnPtr keys_column = additional_keys;
+            if (state_with_dictionary->null_map)
+                keys_column = ColumnNullable::create(additional_keys, state_with_dictionary->null_map);
+            column_with_dictionary.insertRangeFromDictionaryEncodedColumn(*keys_column, *indexes_column);
         }
         else if (!has_additional_keys)
         {
@@ -842,6 +854,14 @@ static DataTypePtr create(const ASTPtr & arguments)
 void registerDataTypeWithDictionary(DataTypeFactory & factory)
 {
     factory.registerDataType("LowCardinality", create);
+}
+
+
+DataTypePtr removeLowCardinality(const DataTypePtr & type)
+{
+    if (auto * type_with_dictionary = typeid_cast<const DataTypeWithDictionary *>(type.get()))
+        return type_with_dictionary->getDictionaryType();
+    return type;
 }
 
 }

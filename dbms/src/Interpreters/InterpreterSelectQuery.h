@@ -190,7 +190,14 @@ private:
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
     void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
-    void executeRollup(Pipeline & pipeline);
+
+    enum class Modificator
+    {
+        ROLLUP = 0,
+        CUBE = 1
+    };
+
+    void executeRollupOrCube(Pipeline & pipeline, Modificator modificator);
 
     /** If there is a SETTINGS section in the SELECT query, then apply settings from it.
       *

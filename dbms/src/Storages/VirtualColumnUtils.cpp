@@ -97,7 +97,7 @@ static bool isValidFunction(const ASTPtr & expression, const NameSet & columns)
 
     if (const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(&*expression))
     {
-        if (identifier->kind == ASTIdentifier::Kind::Column)
+        if (identifier->general())
             return columns.count(identifier->name);
     }
     return true;
