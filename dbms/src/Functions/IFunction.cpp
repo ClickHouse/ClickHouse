@@ -42,6 +42,9 @@ namespace ErrorCodes
 }
 
 
+/// Cache for functions result if it was executed on low cardinality column.
+/// It's LRUCache which stores function result executed on dictionary and index mapping.
+/// It's expected that cache_size is a number of reading streams (so, will store single cached value per thread).
 class PreparedFunctionLowCardinalityResultCache
 {
 public:
