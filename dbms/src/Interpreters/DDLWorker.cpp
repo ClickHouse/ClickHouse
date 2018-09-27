@@ -205,6 +205,7 @@ static bool isSupportedAlterType(int type)
         ASTAlterCommand::MODIFY_PRIMARY_KEY,
         ASTAlterCommand::DROP_PARTITION,
         ASTAlterCommand::DELETE,
+        ASTAlterCommand::UPDATE,
     };
 
     return supported_alter_types.count(type) != 0;
@@ -866,6 +867,7 @@ void DDLWorker::run()
             {
                 if (!Coordination::isHardwareError(e.code))
                     throw;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
         catch (...)
@@ -890,7 +892,7 @@ void DDLWorker::run()
             /// TODO: it might delay the execution, move it to separate thread.
             cleanupQueue();
         }
-        catch (Coordination::Exception & e)
+        catch (const Coordination::Exception & e)
         {
             if (Coordination::isHardwareError(e.code))
             {

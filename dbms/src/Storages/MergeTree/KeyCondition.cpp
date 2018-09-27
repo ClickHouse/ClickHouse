@@ -425,17 +425,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         const auto & action = a.argument_names;
         if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
         {
-            if (!a.function->hasInformationAboutMonotonicity())
+            if (!a.function_base->hasInformationAboutMonotonicity())
                 return false;
 
             // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             // Apply the next transformation step
             DataTypePtr new_type;
-            applyFunction(a.function, out_type, out_value, new_type, out_value);
+            applyFunction(a.function_base, out_type, out_value, new_type, out_value);
             if (!new_type)
                 return false;
 

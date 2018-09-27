@@ -12,7 +12,7 @@ namespace DB
 class SquashingBlockOutputStream : public IBlockOutputStream
 {
 public:
-    SquashingBlockOutputStream(BlockOutputStreamPtr & dst, size_t min_block_size_rows, size_t min_block_size_bytes);
+    SquashingBlockOutputStream(BlockOutputStreamPtr & dst, const Block & header, size_t min_block_size_rows, size_t min_block_size_bytes);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;

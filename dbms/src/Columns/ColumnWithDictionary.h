@@ -17,7 +17,7 @@ class ColumnWithDictionary final : public COWPtrHelper<IColumn, ColumnWithDictio
 {
     friend class COWPtrHelper<IColumn, ColumnWithDictionary>;
 
-    ColumnWithDictionary(MutableColumnPtr && column_unique, MutableColumnPtr && indexes);
+    ColumnWithDictionary(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false);
     ColumnWithDictionary(const ColumnWithDictionary & other) = default;
 
 public:
@@ -25,14 +25,15 @@ public:
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
       */
     using Base = COWPtrHelper<IColumn, ColumnWithDictionary>;
-    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_)
+    static Ptr create(const ColumnPtr & column_unique_, const ColumnPtr & indexes_, bool is_shared = false)
     {
-        return ColumnWithDictionary::create(column_unique_->assumeMutable(), indexes_->assumeMutable());
+        return ColumnWithDictionary::create(column_unique_->assumeMutable(), indexes_->assumeMutable(), is_shared);
     }
 
-    template <typename ... Args, typename = typename std::enable_if<IsMutableColumns<Args ...>::value>::type>
-    static MutablePtr create(Args &&... args) { return Base::create(std::forward<Args>(args)...); }
-
+    static MutablePtr create(MutableColumnPtr && column_unique, MutableColumnPtr && indexes, bool is_shared = false)
+    {
+        return Base::create(std::move(column_unique), std::move(indexes), is_shared);
+    }
 
     std::string getName() const override { return "ColumnWithDictionary"; }
     const char * getFamilyName() const override { return "ColumnWithDictionary"; }
@@ -140,17 +141,34 @@ public:
     bool withDictionary() const override { return true; }
 
     const IColumnUnique & getDictionary() const { return dictionary.getColumnUnique(); }
+    const ColumnPtr & getDictionaryPtr() const { return dictionary.getColumnUniquePtr(); }
     /// IColumnUnique & getUnique() { return static_cast<IColumnUnique &>(*column_unique->assumeMutable()); }
     /// ColumnPtr getUniquePtr() const { return column_unique; }
 
     /// IColumn & getIndexes() { return idx.getPositions()->assumeMutableRef(); }
     const IColumn & getIndexes() const { return *idx.getPositions(); }
     const ColumnPtr & getIndexesPtr() const { return idx.getPositions(); }
+    size_t getSizeOfIndexType() const { return idx.getSizeOfIndexType(); }
+
+    ALWAYS_INLINE size_t getIndexAt(size_t row) const
+    {
+        const IColumn * indexes = &getIndexes();
+
+        switch (idx.getSizeOfIndexType())
+        {
+            case sizeof(UInt8): return static_cast<const ColumnUInt8 *>(indexes)->getElement(row);
+            case sizeof(UInt16): return static_cast<const ColumnUInt16 *>(indexes)->getElement(row);
+            case sizeof(UInt32): return static_cast<const ColumnUInt32 *>(indexes)->getElement(row);
+            case sizeof(UInt64): return static_cast<const ColumnUInt64 *>(indexes)->getElement(row);
+            default: throw Exception("Unexpected size of index type for low cardinality column.", ErrorCodes::LOGICAL_ERROR);
+        }
+    }
 
     ///void setIndexes(MutableColumnPtr && indexes_) { indexes = std::move(indexes_); }
 
     /// Set shared ColumnUnique for empty column with dictionary.
     void setSharedDictionary(const ColumnPtr & column_unique);
+    bool isSharedDictionary() const { return dictionary.isShared(); }
 
     /// Create column new dictionary with only keys that are mentioned in index.
     MutablePtr compact();
@@ -166,6 +184,8 @@ public:
 
     DictionaryEncodedColumn getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const;
 
+    ColumnPtr countKeys() const;
+
     class Index
     {
     public:
@@ -176,6 +196,7 @@ public:
 
         const ColumnPtr & getPositions() const { return positions; }
         ColumnPtr & getPositionsPtr() { return positions; }
+        size_t getPositionAt(size_t row) const;
         void insertPosition(UInt64 position);
         void insertPositionsRange(const IColumn & column, size_t offset, size_t limit);
 
@@ -185,12 +206,15 @@ public:
         UInt64 getMaxPositionForCurrentType() const;
 
         static size_t getSizeOfIndexType(const IColumn & column, size_t hint);
+        size_t getSizeOfIndexType() const { return size_of_type; }
 
         void check(size_t max_dictionary_size);
         void checkSizeOfType();
 
         ColumnPtr detachPositions() { return std::move(positions); }
         void attachPositions(ColumnPtr positions_);
+
+        void countKeys(ColumnUInt64::Container & counts) const;
 
     private:
         ColumnPtr positions;
@@ -201,6 +225,9 @@ public:
 
         template <typename IndexType>
         typename ColumnVector<IndexType>::Container & getPositionsData();
+
+        template <typename IndexType>
+        const typename ColumnVector<IndexType>::Container & getPositionsData() const;
 
         template <typename IndexType>
         void convertPositions();
@@ -214,8 +241,8 @@ private:
     {
     public:
         Dictionary(const Dictionary & other) = default;
-        explicit Dictionary(MutableColumnPtr && column_unique);
-        explicit Dictionary(ColumnPtr column_unique);
+        explicit Dictionary(MutableColumnPtr && column_unique, bool is_shared);
+        explicit Dictionary(ColumnPtr column_unique, bool is_shared);
 
         const ColumnPtr & getColumnUniquePtr() const { return column_unique; }
         ColumnPtr & getColumnUniquePtr() { return column_unique; }

@@ -29,7 +29,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &) const override
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionExpression>(shared_from_this());
     }
@@ -113,7 +113,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &) const override
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionCapture>(shared_from_this());
     }

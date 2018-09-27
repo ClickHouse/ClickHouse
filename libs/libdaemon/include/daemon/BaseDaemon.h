@@ -34,7 +34,7 @@ namespace Poco { class TaskManager; }
 /// #    --config-file или --config - имя файла конфигурации. По умолчанию - config.xml
 /// #    --pid-file - имя PID файла. По умолчанию - pid
 /// #    --log-file - имя лог файла
-/// #    --error-file - имя лог файла, в который будут помещаться только ошибки
+/// #    --errorlog-file - имя лог файла, в который будут помещаться только ошибки
 /// #    --daemon - запустить в режиме демона; если не указан - логгирование будет вестись на консоль
 /// <daemon_name> --daemon --config-file=localfile.xml --pid-file=pid.pid --log-file=log.log --errorlog-file=error.log
 /// \endcode

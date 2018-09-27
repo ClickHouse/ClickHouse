@@ -1,12 +1,18 @@
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
+#include <Common/LRUCache.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Native.h>
 #include <DataTypes/DataTypeWithDictionary.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnWithDictionary.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
@@ -33,6 +39,116 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
+}
+
+
+class PreparedFunctionLowCardinalityResultCache
+{
+public:
+    /// Will assume that dictionaries with same hash has the same keys.
+    /// Just in case, check that they have also the same size.
+    struct DictionaryKey
+    {
+        UInt128 hash;
+        UInt64 size;
+
+        bool operator== (const DictionaryKey & other) const { return hash == other.hash && size == other.size; }
+    };
+
+    struct DictionaryKeyHash
+    {
+        size_t operator()(const DictionaryKey & key) const
+        {
+            SipHash hash;
+            hash.update(key.hash.low);
+            hash.update(key.hash.high);
+            hash.update(key.size);
+            return hash.get64();
+        }
+    };
+
+    struct CachedValues
+    {
+        /// Store ptr to dictionary to be sure it won't be deleted.
+        ColumnPtr dictionary_holder;
+        ColumnUniquePtr function_result;
+        /// Remap positions. new_pos = index_mapping->index(old_pos);
+        ColumnPtr index_mapping;
+    };
+
+    using CachedValuesPtr = std::shared_ptr<CachedValues>;
+
+    explicit PreparedFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
+
+    CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
+    void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
+    CachedValuesPtr getOrSet(const DictionaryKey & key, const CachedValuesPtr & mapped)
+    {
+        return cache.getOrSet(key, [&]() { return mapped; }).first;
+    }
+
+private:
+    using Cache = LRUCache<DictionaryKey, CachedValues, DictionaryKeyHash>;
+    Cache cache;
+};
+
+
+void PreparedFunctionImpl::createLowCardinalityResultCache(size_t cache_size)
+{
+    if (!low_cardinality_result_cache)
+        low_cardinality_result_cache = std::make_shared<PreparedFunctionLowCardinalityResultCache>(cache_size);
+}
+
+
+static DataTypePtr recursiveRemoveLowCardinality(const DataTypePtr & type)
+{
+    if (!type)
+        return type;
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        return std::make_shared<DataTypeArray>(recursiveRemoveLowCardinality(array_type->getNestedType()));
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes elements = tuple_type->getElements();
+        for (auto & element : elements)
+            element = recursiveRemoveLowCardinality(element);
+
+        if (tuple_type->haveExplicitNames())
+            return std::make_shared<DataTypeTuple>(elements, tuple_type->getElementNames());
+        else
+            return std::make_shared<DataTypeTuple>(elements);
+    }
+
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(type.get()))
+        return low_cardinality_type->getDictionaryType();
+
+    return type;
+}
+
+static ColumnPtr recursiveRemoveLowCardinality(const ColumnPtr & column)
+{
+    if (!column)
+        return column;
+
+    if (const auto * column_array = typeid_cast<const ColumnArray *>(column.get()))
+        return ColumnArray::create(recursiveRemoveLowCardinality(column_array->getDataPtr()), column_array->getOffsetsPtr());
+
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
+        return ColumnConst::create(recursiveRemoveLowCardinality(column_const->getDataColumnPtr()), column_const->size());
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        Columns columns = column_tuple->getColumns();
+        for (auto & element : columns)
+            element = recursiveRemoveLowCardinality(element);
+        return ColumnTuple::create(columns);
+    }
+
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnWithDictionary *>(column.get()))
+        return column_low_cardinality->convertToFullColumn();
+
+    return column;
 }
 
 
@@ -234,6 +350,25 @@ void PreparedFunctionImpl::executeWithoutColumnsWithDictionary(Block & block, co
     executeImpl(block, args, result, input_rows_count);
 }
 
+static const ColumnWithDictionary * findLowCardinalityArgument(const Block & block, const ColumnNumbers & args)
+{
+    const ColumnWithDictionary * result_column = nullptr;
+
+    for (auto arg : args)
+    {
+        const ColumnWithTypeAndName & column = block.getByPosition(arg);
+        if (auto * low_cardinality_column = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
+        {
+            if (result_column)
+                throw Exception("Expected single dictionary argument for function.", ErrorCodes::LOGICAL_ERROR);
+
+            result_column = low_cardinality_column;
+        }
+    }
+
+    return result_column;
+}
+
 static ColumnPtr replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
     Block & block, const ColumnNumbers & args, bool can_be_executed_on_default_arguments)
 {
@@ -286,19 +421,9 @@ static void convertColumnsWithDictionaryToFull(Block & block, const ColumnNumber
     for (auto arg : args)
     {
         ColumnWithTypeAndName & column = block.getByPosition(arg);
-        if (auto * column_const = checkAndGetColumn<ColumnConst>(column.column.get()))
-            column.column = column_const->removeLowCardinality();
-        else if (auto * column_with_dict = checkAndGetColumn<ColumnWithDictionary>(column.column.get()))
-        {
-            auto * type_with_dict = checkAndGetDataType<DataTypeWithDictionary>(column.type.get());
 
-            if (!type_with_dict)
-                throw Exception("Incompatible type for column with dictionary: " + column.type->getName(),
-                                ErrorCodes::LOGICAL_ERROR);
-
-            column.column = column_with_dict->convertToFullColumn();
-            column.type = type_with_dict->getDictionaryType();
-        }
+        column.column = recursiveRemoveLowCardinality(column.column);
+        column.type = recursiveRemoveLowCardinality(column.type);
     }
 }
 
@@ -314,29 +439,59 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
         if (auto * res_type_with_dict = typeid_cast<const DataTypeWithDictionary *>(res.type.get()))
         {
+            const auto * low_cardinality_column = findLowCardinalityArgument(block, args);
+            bool use_cache = low_cardinality_result_cache
+                             && low_cardinality_column && low_cardinality_column->isSharedDictionary();
+            PreparedFunctionLowCardinalityResultCache::DictionaryKey key;
+
+            if (use_cache)
+            {
+                const auto & dictionary = low_cardinality_column->getDictionary();
+                key = {dictionary.getHash(), dictionary.size()};
+
+                auto cached_values = low_cardinality_result_cache->get(key);
+                if (cached_values)
+                {
+                    auto indexes = cached_values->index_mapping->index(low_cardinality_column->getIndexes(), 0);
+                    res.column = ColumnWithDictionary::create(cached_values->function_result, indexes, true);
+                    return;
+                }
+            }
+
             block_without_dicts.safeGetByPosition(result).type = res_type_with_dict->getDictionaryType();
             ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
                     block_without_dicts, args, canBeExecutedOnDefaultArguments());
 
             executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
 
-            auto res_column = res.type->createColumn();
-            auto * column_with_dictionary = typeid_cast<ColumnWithDictionary *>(res_column.get());
-
-            if (!column_with_dictionary)
-                throw Exception("Expected LowCardinality column, got " + res_column->getName(), ErrorCodes::LOGICAL_ERROR);
-
             auto & keys = block_without_dicts.safeGetByPosition(result).column;
+            if (auto full_column = keys->convertToFullColumnIfConst())
+                keys = full_column;
+
+            auto res_mut_dictionary = DataTypeWithDictionary::createColumnUnique(*res_type_with_dict->getDictionaryType());
+            ColumnPtr res_indexes = res_mut_dictionary->uniqueInsertRangeFrom(*keys, 0, keys->size());
+            ColumnUniquePtr res_dictionary = std::move(res_mut_dictionary);
+
             if (indexes)
-                column_with_dictionary->insertRangeFromDictionaryEncodedColumn(*keys, *indexes);
+            {
+                if (use_cache)
+                {
+                    auto cache_values = std::make_shared<PreparedFunctionLowCardinalityResultCache::CachedValues>();
+                    cache_values->dictionary_holder = low_cardinality_column->getDictionaryPtr();
+                    cache_values->function_result = res_dictionary;
+                    cache_values->index_mapping = res_indexes;
+
+                    cache_values = low_cardinality_result_cache->getOrSet(key, cache_values);
+                    res_dictionary = cache_values->function_result;
+                    res_indexes = cache_values->index_mapping;
+                }
+
+                res.column = ColumnWithDictionary::create(res_dictionary, res_indexes->index(*indexes, 0), use_cache);
+            }
             else
             {
-                if (auto full_column = keys->convertToFullColumnIfConst())
-                    keys = full_column;
-                column_with_dictionary->insertRangeFromFullColumn(*keys, 0, keys->size());
+                res.column = ColumnWithDictionary::create(res_dictionary, res_indexes);
             }
-
-            res.column = std::move(res_column);
         }
         else
         {
@@ -452,13 +607,13 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
 
 #endif
 
-
 DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
     if (useDefaultImplementationForColumnsWithDictionary())
     {
         bool has_low_cardinality = false;
         size_t num_full_low_cardinality_columns = 0;
+        size_t num_full_ordinary_columns = 0;
 
         ColumnsWithTypeAndName args_without_dictionary(arguments);
 
@@ -476,9 +631,18 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
                 if (!is_const)
                     ++num_full_low_cardinality_columns;
             }
+            else if (!is_const)
+                ++num_full_ordinary_columns;
         }
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality && num_full_low_cardinality_columns <= 1)
+        for (auto & arg : args_without_dictionary)
+        {
+            arg.column = recursiveRemoveLowCardinality(arg.column);
+            arg.type = recursiveRemoveLowCardinality(arg.type);
+        }
+
+        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
+            && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0)
             return std::make_shared<DataTypeWithDictionary>(getReturnTypeWithoutDictionary(args_without_dictionary));
         else
             return getReturnTypeWithoutDictionary(args_without_dictionary);

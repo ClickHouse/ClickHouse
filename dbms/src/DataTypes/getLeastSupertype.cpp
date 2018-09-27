@@ -231,22 +231,53 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
         if (have_decimal32 || have_decimal64 || have_decimal128)
         {
-            bool all_are_decimals = type_ids.size() == (have_decimal32 + have_decimal64 + have_decimal128);
-            if (!all_are_decimals)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Decimals and some are not",
+            UInt32 num_supported = have_decimal32 + have_decimal64 + have_decimal128;
+
+            std::vector<TypeIndex> int_ids = {TypeIndex::Int8, TypeIndex::UInt8, TypeIndex::Int16, TypeIndex::UInt16,
+                                            TypeIndex::Int32, TypeIndex::UInt32, TypeIndex::Int64, TypeIndex::UInt64};
+            std::vector<UInt32> num_ints(int_ids.size(), 0);
+
+            TypeIndex max_int = TypeIndex::Nothing;
+            for (size_t i = 0; i < int_ids.size(); ++i)
+            {
+                UInt32 num = type_ids.count(int_ids[i]);
+                num_ints[i] = num;
+                num_supported += num;
+                if (num)
+                    max_int = int_ids[i];
+            }
+
+            if (num_supported != type_ids.size())
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them have no lossless convertion to Decimal",
                                 ErrorCodes::NO_COMMON_TYPE);
 
             UInt32 max_scale = 0;
             for (const auto & type : types)
             {
-                UInt32 scale = getDecimalScale(*type);
+                UInt32 scale = getDecimalScale(*type, 0);
                 if (scale > max_scale)
                     max_scale = scale;
             }
 
-            if (have_decimal128)
+            UInt32 min_precision = max_scale + leastDecimalPrecisionFor(max_int);
+
+            /// special cases Int32 -> Dec32, Int64 -> Dec64
+            if (max_scale == 0)
+            {
+                if (max_int == TypeIndex::Int32)
+                    min_precision = DataTypeDecimal<Decimal32>::maxPrecision();
+                else if (max_int == TypeIndex::Int64)
+                    min_precision = DataTypeDecimal<Decimal64>::maxPrecision();
+            }
+
+            if (min_precision > DataTypeDecimal<Decimal128>::maxPrecision())
+                throw Exception(getExceptionMessagePrefix(types) + " because the least supertype is Decimal("
+                                + toString(min_precision) + ',' + toString(max_scale) + ')',
+                                ErrorCodes::NO_COMMON_TYPE);
+
+            if (have_decimal128 || min_precision > DataTypeDecimal<Decimal64>::maxPrecision())
                 return std::make_shared<DataTypeDecimal<Decimal128>>(DataTypeDecimal<Decimal128>::maxPrecision(), max_scale);
-            if (have_decimal64)
+            if (have_decimal64 || min_precision > DataTypeDecimal<Decimal32>::maxPrecision())
                 return std::make_shared<DataTypeDecimal<Decimal64>>(DataTypeDecimal<Decimal64>::maxPrecision(), max_scale);
             return std::make_shared<DataTypeDecimal<Decimal32>>(DataTypeDecimal<Decimal32>::maxPrecision(), max_scale);
         }
