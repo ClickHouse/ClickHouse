@@ -440,7 +440,8 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         if (auto * res_type_with_dict = typeid_cast<const DataTypeWithDictionary *>(res.type.get()))
         {
             const auto * low_cardinality_column = findLowCardinalityArgument(block, args);
-            bool use_cache = low_cardinality_result_cache
+            bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
+            bool use_cache = low_cardinality_result_cache && can_be_executed_on_default_arguments
                              && low_cardinality_column && low_cardinality_column->isSharedDictionary();
             PreparedFunctionLowCardinalityResultCache::DictionaryKey key;
 
@@ -460,7 +461,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
             block_without_dicts.safeGetByPosition(result).type = res_type_with_dict->getDictionaryType();
             ColumnPtr indexes = replaceColumnsWithDictionaryByNestedAndGetDictionaryIndexes(
-                    block_without_dicts, args, canBeExecutedOnDefaultArguments());
+                    block_without_dicts, args, can_be_executed_on_default_arguments);
 
             executeWithoutColumnsWithDictionary(block_without_dicts, args, result, block_without_dicts.rows());
 
