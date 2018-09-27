@@ -37,7 +37,7 @@ public:
     virtual void startBridgeSync() const = 0;
     virtual Poco::URI getMainURI() const = 0;
     virtual Poco::URI getColumnsInfoURI() const = 0;
-    virtual IdentifierQuotingStyle getQuotingStyle() const = 0;
+    virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
 
     virtual ~IXDBCBridgeHelper() {}
 };
@@ -56,6 +56,8 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get(BridgeHelperMixin::NAME);
 
+    std::optional<IdentifierQuotingStyle> quote_style;
+
 protected:
     auto getConnectionString() const
     {
@@ -73,6 +75,7 @@ public:
     static constexpr inline auto PING_HANDLER = "/ping";
     static constexpr inline auto MAIN_HANDLER = "/";
     static constexpr inline auto COL_INFO_HANDLER = "/columns_info";
+    static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
     XDBCBridgeHelper(
@@ -90,9 +93,32 @@ public:
 
     virtual ~XDBCBridgeHelper() {}
 
-    IdentifierQuotingStyle getQuotingStyle() const override
+    IdentifierQuotingStyle getIdentifierQuotingStyle() override
     {
-        return BridgeHelperMixin::getQuotingStyle();
+        std::cerr << "GETTING QUOTE STYLE " << std::endl;
+        if (!quote_style.has_value())
+        {
+            auto uri = createBaseURI();
+            uri.setPath(IDENTIFIER_QUOTE_HANDLER);
+            uri.addQueryParameter("connection_string", getConnectionString());
+
+            ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
+            std::string character;
+            readStringBinary(character, buf);
+            if (character.length() > 1)
+                throw Exception("Failed to get quoting style from " + BridgeHelperMixin::serviceAlias());
+
+            if(character.length() == 0)
+                quote_style = IdentifierQuotingStyle::None;
+            else if(character[0] == '`')
+                quote_style = IdentifierQuotingStyle::Backticks;
+            else if(character[0] == '"')
+                quote_style = IdentifierQuotingStyle::DoubleQuotes;
+            else
+                throw Exception("Failed to determine quoting style from " + BridgeHelperMixin::serviceAlias() + " response: " + character);
+        }
+
+        return *quote_style;
     }
 
     /**
@@ -202,42 +228,6 @@ struct JDBCBridgeMixin
         throw Exception("jdbc-bridge does not support external auto-start");
     }
 
-    static IdentifierQuotingStyle getQuotingStyle() {
-        throw Exception("This method should not be called directly");
-    }
-};
-
-class JDBCBridgeHelper : public XDBCBridgeHelper<JDBCBridgeMixin>
-{
-    static constexpr inline auto QUOTE_STYLE_HANDLER = "/quote_style";
-
-public:
-
-    JDBCBridgeHelper(
-            const Poco::Util::AbstractConfiguration & config_,
-            const Poco::Timespan & http_timeout_,
-            const std::string & connection_string_)
-            : XDBCBridgeHelper(config_, http_timeout_, connection_string_) {}
-
-    IdentifierQuotingStyle getQuotingStyle() const override {
-
-        auto uri = createBaseURI();
-        uri.setPath(QUOTE_STYLE_HANDLER);
-        uri.addQueryParameter("connection_string", getConnectionString());
-
-        ReadWriteBufferFromHTTP buf(uri, Poco::Net::HTTPRequest::HTTP_GET, nullptr);
-        std::string character;
-        readStringBinary(character, buf);
-        if (character.length() > 1)
-            throw Exception("Failed to get quoting style from jdbc-bridge");
-
-        if(character[0] == '`')
-            return IdentifierQuotingStyle::Backticks;
-        else if(character[0] == '"')
-            return IdentifierQuotingStyle::DoubleQuotes;
-        else
-            throw Exception("Failed to determine quoting style from jdbc-bridge response: " + character);
-    }
 };
 
 struct ODBCBridgeMixin {
@@ -247,8 +237,6 @@ struct ODBCBridgeMixin {
 
     static const String configPrefix() { return "odbc_bridge"; }
     static const String serviceAlias() { return "clickhouse-odbc-bridge"; }
-
-    static IdentifierQuotingStyle getQuotingStyle() { return IdentifierQuotingStyle::DoubleQuotes; }
 
     static void startBridge(const Poco::Util::AbstractConfiguration & config, const Poco::Logger * , const Poco::Timespan & http_timeout)
     {

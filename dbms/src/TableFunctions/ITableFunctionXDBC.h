@@ -52,7 +52,7 @@ private:
     BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
                                        const Poco::Timespan & http_timeout_,
                                        const std::string & connection_string_) const override {
-        return std::make_shared<JDBCBridgeHelper>(config_, http_timeout_, connection_string_);
+        return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config_, http_timeout_, connection_string_);
     }
 };
 
