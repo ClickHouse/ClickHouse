@@ -68,7 +68,7 @@ namespace DB
                                                                              size_t /*max_block_size*/) const
     {
         String query = transformQueryForExternalDatabase(
-                *query_info.query, getColumns().ordinary, bridge_helper->getQuotingStyle(), remote_database_name, remote_table_name, context);
+                *query_info.query, getColumns().ordinary, bridge_helper->getIdentifierQuotingStyle(), remote_database_name, remote_table_name, context);
 
         return [query](std::ostream & os) { os << "query=" << query; };
     }
@@ -105,7 +105,7 @@ namespace DB
             for (size_t i = 0; i < 3; ++i)
                 engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
-            BridgeHelperPtr bridge_helper = std::make_shared<JDBCBridgeHelper>(
+            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(
                     args.context.getConfigRef(),
                     args.context.getSettingsRef().http_receive_timeout.value,
                     static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>()
