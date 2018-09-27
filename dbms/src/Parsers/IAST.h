@@ -88,26 +88,6 @@ public:
             child->dumpTree(ostr, indent + 1);
     }
 
-    void dumpSExpressions(std::ostream & ostr, size_t indent = 0) const
-    {
-        String indent_str(indent, ' ');
-        String id = getID();
-        std::replace(id.begin(), id.end(), '_', ' ');
-        ostr << indent_str << '(' << id;
-        id = tryGetAlias();
-        if (!id.empty())
-             ostr << " (Alias " << id << ')';
-        if (!children.empty())
-        {
-            ostr << std::endl;
-            for (const auto & child : children)
-                child->dumpSExpressions(ostr, indent + 1);
-            ostr << indent_str << ')' << std::endl;
-        }
-        else
-            ostr << ')' << std::endl;
-    }
-
     /** Check the depth of the tree.
       * If max_depth is specified and the depth is greater - throw an exception.
       * Returns the depth of the tree.
@@ -239,5 +219,75 @@ private:
 /// Surrounds an identifier by back quotes if it is necessary.
 String backQuoteIfNeed(const String & x);
 
+
+/// If output stream set dumps node with indents and some additional info. Do nothing otherwise.
+/// Allow to print kay-value pairs inside of tree dump.
+class DumpASTNode
+{
+public:
+    DumpASTNode(const IAST & ast_, std::ostream * ostr_, size_t & depth, const char * label = nullptr)
+        : ast(ast_),
+        ostr(ostr_),
+        indent(depth),
+        visit_depth(depth)
+    {
+        if (!ostr)
+            return;
+        if (visit_depth == 0)
+            (*ostr) << "-- " << (label ? label : "ast")  << std::endl;
+        ++visit_depth;
+
+        String id = ast.getID();
+        std::replace(id.begin(), id.end(), '_', ' ');
+        (*ostr) << String(indent, ' ') << id;
+
+        id = ast.tryGetAlias();
+        if (!id.empty())
+            print("alias", id, " ");
+
+        if (!ast.children.empty())
+            print("/", ast.children.size(), " "); /// slash is just a short name for 'children' here
+
+        (*ostr) << std::endl;
+    }
+
+    ~DumpASTNode()
+    {
+        if (!ostr)
+            return;
+        --visit_depth;
+        if (visit_depth == 0)
+            (*ostr) << "--" << std::endl;
+    }
+
+    template <typename T, typename U>
+    void print(const T & name, const U & value, const char * str_indent = nullptr) const
+    {
+        if (!ostr)
+            return;
+
+        (*ostr) << (str_indent ? String(str_indent) : String(indent, ' '));
+        (*ostr) << '(' << name << ' ' << value << ')';
+        if (!str_indent)
+            (*ostr) << std::endl;
+    }
+
+    size_t & getDepth() { return visit_depth; }
+
+private:
+    const IAST & ast;
+    std::ostream * ostr;
+    size_t indent;
+    size_t & visit_depth; /// shared with children
+};
+
+inline void dumpAST(const IAST & ast, std::ostream & ostr, DumpASTNode * parent = nullptr)
+{
+    size_t depth = 0;
+    DumpASTNode dump(ast, &ostr, (parent ? parent->getDepth() : depth), __FUNCTION__);
+
+    for (const auto & child : ast.children)
+        dumpAST(*child, ostr, &dump);
+}
 
 }
