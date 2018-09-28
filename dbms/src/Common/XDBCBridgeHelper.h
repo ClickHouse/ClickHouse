@@ -38,6 +38,7 @@ public:
     virtual Poco::URI getMainURI() const = 0;
     virtual Poco::URI getColumnsInfoURI() const = 0;
     virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
+    virtual String getName() const = 0;
 
     virtual ~IXDBCBridgeHelper() {}
 };
@@ -54,7 +55,7 @@ private:
 
     Poco::URI ping_url;
 
-    Poco::Logger * log = &Poco::Logger::get(BridgeHelperMixin::NAME);
+    Poco::Logger * log = &Poco::Logger::get(BridgeHelperMixin::getName() + "BridgeHelper");
 
     std::optional<IdentifierQuotingStyle> quote_style;
 
@@ -93,9 +94,13 @@ public:
 
     virtual ~XDBCBridgeHelper() {}
 
+    String getName() const override
+    {
+        return BridgeHelperMixin::getName();
+    }
+
     IdentifierQuotingStyle getIdentifierQuotingStyle() override
     {
-        std::cerr << "GETTING QUOTE STYLE " << std::endl;
         if (!quote_style.has_value())
         {
             auto uri = createBaseURI();
@@ -108,14 +113,14 @@ public:
             if (character.length() > 1)
                 throw Exception("Failed to get quoting style from " + BridgeHelperMixin::serviceAlias());
 
-            if(character.length() == 0)
+            if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
             else if(character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;
             else if(character[0] == '"')
                 quote_style = IdentifierQuotingStyle::DoubleQuotes;
             else
-                throw Exception("Failed to determine quoting style from " + BridgeHelperMixin::serviceAlias() + " response: " + character);
+                throw Exception("Can not map quote identifier '" + character + "' to enum value");
         }
 
         return *quote_style;
@@ -156,7 +161,7 @@ public:
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             if (!started)
-                throw Exception("XDBCBridgeHelper: " + BridgeHelperMixin::serviceAlias() + " is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
+                throw Exception(BridgeHelperMixin::getName() + "BridgeHelper: " + BridgeHelperMixin::serviceAlias() + " is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
         }
     }
 
@@ -219,13 +224,13 @@ private:
 struct JDBCBridgeMixin
 {
     static constexpr inline auto DEFAULT_PORT = 9019;
-    static constexpr inline auto NAME = "JDBCBridgeHelper";
     static const String configPrefix() { return "jdbc_bridge"; }
     static const String serviceAlias() { return "clickhouse-jdbc-bridge"; }
+    static const String getName() { return "JDBC"; }
 
     static void startBridge(const Poco::Util::AbstractConfiguration & , const Poco::Logger * , const Poco::Timespan & )
     {
-        throw Exception("jdbc-bridge does not support external auto-start");
+        throw Exception("jdbc-bridge is not running. Please, start it manually");
     }
 
 };
@@ -233,12 +238,12 @@ struct JDBCBridgeMixin
 struct ODBCBridgeMixin {
 
     static constexpr inline auto DEFAULT_PORT = 9018;
-    static constexpr inline auto NAME = "ODBCBridgeHelper";
 
     static const String configPrefix() { return "odbc_bridge"; }
     static const String serviceAlias() { return "clickhouse-odbc-bridge"; }
+    static const String getName() { return "ODBC"; }
 
-    static void startBridge(const Poco::Util::AbstractConfiguration & config, const Poco::Logger * , const Poco::Timespan & http_timeout)
+    static void startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
         Poco::Path path{config.getString("application.dir", "")};
 
@@ -266,16 +271,19 @@ struct ODBCBridgeMixin {
         command << "--http-port " << config.getUInt(configPrefix() + ".port", DEFAULT_PORT) << ' ';
         command << "--listen-host " << config.getString(configPrefix() + ".listen_host", XDBCBridgeHelper<ODBCBridgeMixin>::DEFAULT_HOST) << ' ';
         command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
-        if (config.has("logger.odbc_bridge_log"))
+        if (config.has("logger." + configPrefix() +"_log"))
             command << "--log-path " << config.getString("logger."+configPrefix()+"_log") << ' ';
-        if (config.has("logger.odbc_bridge_errlog"))
+        if (config.has("logger." + configPrefix() + "_errlog"))
             command << "--err-log-path " << config.getString("logger." + configPrefix() + "_errlog") << ' ';
-        if (config.has("logger.odbc_bridge_level"))
+        if (config.has("logger." + configPrefix() + "_level"))
             command << "--log-level " << config.getString("logger." + configPrefix() + "_level") << ' ';
         command << "&"; /// we don't want to wait this process
 
         auto command_str = command.str();
-//        LOG_TRACE(log, "Starting " + serviceAlias() +" with command: " << command_str);
+
+        std::cerr << command_str << std::endl;
+
+        LOG_TRACE(log, "Starting " + serviceAlias() + " with command: " << command_str);
 
         auto cmd = ShellCommand::execute(command_str);
         cmd->wait();

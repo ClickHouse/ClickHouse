@@ -1,4 +1,5 @@
 #include "ColumnInfoHandler.h"
+#include "getIdentifierQuote.h"
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 
 #if USE_POCO_SQLODBC
@@ -113,9 +114,21 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         IAST::FormatSettings settings(ss, true);
         settings.always_quote_identifiers = true;
-        settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
+
+        auto identifier_quote = getIdentifierQuote(hdbc);
+        if (identifier_quote.length() == 0)
+            settings.identifier_quoting_style = IdentifierQuotingStyle::None;
+        else if(identifier_quote[0] == '`')
+            settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        else if(identifier_quote[0] == '"')
+            settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
+        else
+            throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value");
+
         select->format(settings);
         std::string query = ss.str();
+
+        std::cout << query << std::endl;
 
         if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw POCO_SQL_ODBC_CLASS::DescriptorException(session.dbc());
