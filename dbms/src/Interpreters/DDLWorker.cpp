@@ -178,7 +178,7 @@ struct DDLTask
     Cluster::Address address_in_cluster;
     size_t host_shard_num;
     size_t host_replica_num;
-// 
+    
     /// Stage 3.3: execute query
     ExecutionStatus execution_status;
     bool was_executed = false;
