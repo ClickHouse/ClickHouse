@@ -8,7 +8,7 @@
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/getQueryAliases.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 
 namespace DB
 {
