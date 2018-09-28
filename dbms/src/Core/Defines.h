@@ -47,6 +47,10 @@
 #define DBMS_MIN_REVISION_WITH_SERVER_DISPLAY_NAME 54372
 #define DBMS_MIN_REVISION_WITH_VERSION_PATCH 54401
 #define DBMS_MIN_REVISION_WITH_SERVER_LOGS 54406
+/// Minimum revision with exactly the same set of aggregation methods and rules to select them.
+/// Two-level (bucketed) aggregation is incompatible if servers are inconsistent in these rules
+/// (keys will be placed in different buckets and result will not be fully aggregated).
+#define DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD 54408
 
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
