@@ -25,6 +25,7 @@
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
 #include "validateODBCConnectionString.h"
+#include "getIdentifierQuote.h"
 
 namespace DB
 {
@@ -42,7 +43,7 @@ void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         LOG_WARNING(log, message);
     };
 
-     if (!params.has("connection_string"))
+    if (!params.has("connection_string"))
     {
         process_error("No 'connection_string' in request URL");
         return;
@@ -54,18 +55,7 @@ void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         POCO_SQL_ODBC_CLASS::SessionImpl session(validateODBCConnectionString(connection_string), DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
         SQLHDBC hdbc = session.dbc().handle();
 
-        std::string identifier;
-
-        SQLSMALLINT t;
-        SQLRETURN r = Poco::Data::ODBC::SQLGetInfo(hdbc, SQL_IDENTIFIER_QUOTE_CHAR, NULL, 0, &t);
-        if (!POCO_SQL_ODBC_CLASS::Utility::isError(r) && t > 0)
-        {
-            identifier.resize(static_cast<std::size_t>(t) + 2);
-            r = Poco::Data::ODBC::SQLGetInfo(hdbc, SQL_IDENTIFIER_QUOTE_CHAR, &identifier[0], SQLSMALLINT((identifier.length() - 1) * sizeof(identifier[0])), &t);
-            LOG_TRACE(log, "GOT IDENTIFIER: '" + identifier + "'");
-        }
-
-        LOG_TRACE(log, "FINAL IDENTIFIER: '" + identifier + "'");
+        auto identifier = getIdentifierQuote(hdbc);
 
         WriteBufferFromHTTPServerResponse out(request, response, keep_alive_timeout);
         writeStringBinary(identifier, out);

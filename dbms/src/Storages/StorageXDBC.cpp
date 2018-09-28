@@ -1,4 +1,3 @@
-#include <Dictionaries/ODBCBlockInputStream.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
@@ -20,8 +19,6 @@ namespace DB
     namespace ErrorCodes
     {
         extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-        extern const int EXTERNAL_EXECUTABLE_NOT_FOUND;
-        extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
     }
 
 
@@ -36,8 +33,7 @@ namespace DB
             , remote_database_name(remote_database_name_)
             , remote_table_name(remote_table_name_)
     {
-        // @todo give it appropriate name
-        log = &Poco::Logger::get("StorageXDBC");
+        log = &Poco::Logger::get("Storage" + bridge_helper->getName());
         uri = bridge_helper->getMainURI();
     }
 
@@ -92,62 +88,53 @@ namespace DB
         return getSampleBlockForColumns(column_names);
     }
 
-    void registerStorageJDBC(StorageFactory & factory)
+    std::string StorageXDBC::getName() const
     {
-        factory.registerStorage("JDBC", [](const StorageFactory::Arguments & args)
-        {
-            ASTs & engine_args = args.engine_args;
-
-            if (engine_args.size() != 3)
-                throw Exception(
-                        "Storage JDBC requires exactly 3 parameters: JDBC('DSN', database or schema, table)", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-            for (size_t i = 0; i < 3; ++i)
-                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
-
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(
-                    args.context.getConfigRef(),
-                    args.context.getSettingsRef().http_receive_timeout.value,
-                    static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>()
-            );
-            return std::make_shared<StorageJDBC>(args.table_name,
-                                                 static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>(),
-                                                 static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>(),
-                                                 args.columns,
-                                                 args.context,
-                                                 bridge_helper
-            );
-
-        });
+        return bridge_helper->getName();
     }
 
-    void registerStorageIDBC(StorageFactory & factory)
+    namespace
     {
-        factory.registerStorage("IDBC", [](const StorageFactory::Arguments & args)
+
+        template <typename BridgeHelperMixin>
+        void registerXDBCStorage(StorageFactory & factory, const std::string & name)
         {
-            ASTs & engine_args = args.engine_args;
+            factory.registerStorage(name, [&name](const StorageFactory::Arguments & args)
+            {
+                ASTs & engine_args = args.engine_args;
 
-            if (engine_args.size() != 3)
-                throw Exception(
-                        "Storage IDBC requires exactly 3 parameters: IDBC('DSN', database or schema, table)", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+                if (engine_args.size() != 3)
+                    throw Exception(
+                            "Storage " + name + " requires exactly 3 parameters: " + name + "('DSN', database or schema, table)", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            for (size_t i = 0; i < 3; ++i)
-                engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+                for (size_t i = 0; i < 3; ++i)
+                    engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
 
-            BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
-                    args.context.getConfigRef(),
-                    args.context.getSettingsRef().http_receive_timeout.value,
-                    static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>()
-            );
-            return std::make_shared<StorageIDBC>(args.table_name,
-                                                 static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>(),
-                                                 static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>(),
-                                                 args.columns,
-                                                 args.context,
-                                                 bridge_helper
-            );
+                BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(
+                        args.context.getConfigRef(),
+                        args.context.getSettingsRef().http_receive_timeout.value,
+                        static_cast<const ASTLiteral &>(*engine_args[0]).value.safeGet<String>()
+                );
+                return std::make_shared<StorageXDBC>(args.table_name,
+                                                     static_cast<const ASTLiteral &>(*engine_args[1]).value.safeGet<String>(),
+                                                     static_cast<const ASTLiteral &>(*engine_args[2]).value.safeGet<String>(),
+                                                     args.columns,
+                                                     args.context,
+                                                     bridge_helper
+                );
 
-        });
+            });
+        }
+    }
+
+    void registerStorageJDBC(StorageFactory & factory)
+    {
+        registerXDBCStorage<JDBCBridgeMixin>(factory, "JDBC");
+    }
+
+    void registerStorageODBC(StorageFactory & factory)
+    {
+        registerXDBCStorage<ODBCBridgeMixin>(factory, "ODBC");
     }
 
 }

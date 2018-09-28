@@ -7,10 +7,12 @@
 #include <Dictionaries/ExecutableDictionarySource.h>
 #include <Dictionaries/HTTPDictionarySource.h>
 #include <Dictionaries/LibraryDictionarySource.h>
+#include <Dictionaries/XDBCDictionarySource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitors.h>
+#include <Common/XDBCBridgeHelper.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/HTTPCommon.h>
 #include <memory>
@@ -22,7 +24,6 @@
 #endif
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     #include <Poco/Data/ODBC/Connector.h>
-    #include <Dictionaries/ODBCDictionarySource.h>
 #endif
 #if USE_MYSQL
     #include <Dictionaries/MySQLDictionarySource.h>
@@ -154,11 +155,19 @@ DictionarySourcePtr DictionarySourceFactory::create(
     else if ("odbc" == source_type)
     {
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-        return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context);
+        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(config, context.getSettings().http_connection_timeout, config.getString(config_prefix + ".connection_string"));
+        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
 #else
         throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
             ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
+    }
+    else if ("jdbc" == source_type)
+    {
+        throw Exception{"Dictionary source of type `jdbc` is disabled until consistend dealing with nullable fields.",
+                        ErrorCodes::SUPPORT_IS_DISABLED};
+//        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_connection_timeout, config.getString(config_prefix + ".connection_string"));
+//        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
     }
     else if ("executable" == source_type)
     {

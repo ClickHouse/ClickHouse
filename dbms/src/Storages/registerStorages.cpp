@@ -26,7 +26,6 @@ void registerStorageMaterializedView(StorageFactory & factory);
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerStorageODBC(StorageFactory & factory);
-void registerStorageIDBC(StorageFactory & factory);
 #endif
 
 void registerStorageJDBC(StorageFactory & factory);
@@ -63,7 +62,6 @@ void registerStorages()
 
     #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerStorageODBC(factory);
-    registerStorageIDBC(factory);
     #endif
     registerStorageJDBC(factory);
 

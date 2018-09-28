@@ -16,7 +16,6 @@ void registerTableFunctionURL(TableFunctionFactory & factory);
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 void registerTableFunctionODBC(TableFunctionFactory & factory);
-void registerTableFunctionIDBC(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionJDBC(TableFunctionFactory & factory);
@@ -40,7 +39,6 @@ void registerTableFunctions()
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     registerTableFunctionODBC(factory);
-    registerTableFunctionIDBC(factory);
 #endif
     registerTableFunctionJDBC(factory);
 

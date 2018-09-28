@@ -1,4 +1,3 @@
-#include <TableFunctions/TableFunctionODBC.h>
 #include <type_traits>
 #include <ext/scope_guard.h>
 
@@ -11,13 +10,12 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Storages/StorageODBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/ITableFunctionXDBC.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/StorageXDBC.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <Common/ODBCBridgeHelper.h>
 #include <Core/Defines.h>
 
 
@@ -75,7 +73,7 @@ namespace DB
         readStringBinary(columns_info, buf);
         NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
 
-        auto result = createStorage(table_name, schema_name, table_name, ColumnsDescription{columns}, context, helper);
+        auto result = std::make_shared<StorageXDBC>(table_name, schema_name, table_name, ColumnsDescription{columns}, context, helper);
 
         if(!result)
             throw Exception("Failed to instantiate storage from table function " + getName());
@@ -89,8 +87,8 @@ namespace DB
         factory.registerFunction<TableFunctionJDBC>();
     }
 
-    void registerTableFunctionIDBC(TableFunctionFactory & factory)
+    void registerTableFunctionODBC(TableFunctionFactory & factory)
     {
-        factory.registerFunction<TableFunctionIDBC>();
+        factory.registerFunction<TableFunctionODBC>();
     }
 }

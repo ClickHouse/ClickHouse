@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/StorageURL.h>
-#include <Common/ODBCBridgeHelper.h>
 #include <ext/shared_ptr_helper.h>
 #include <Common/XDBCBridgeHelper.h>
 
@@ -53,38 +52,7 @@ namespace DB
                                                                     size_t max_block_size) const override;
 
         Block getHeaderBlock(const Names & column_names) const override;
-    };
 
-    // Implementations for StorageXDBC
-    class StorageJDBC : public StorageXDBC
-    {
-    public:
-        StorageJDBC(const std::string & table_name_,
-                    const std::string & remote_database_name,
-                    const std::string & remote_table_name,
-                    const ColumnsDescription & columns_,
-                    const Context & context_, BridgeHelperPtr bridge_helper_)
-                    : StorageXDBC(table_name_, remote_database_name, remote_table_name, columns_, context_, bridge_helper_) {}
-
-        std::string getName() const override
-        {
-            return "JDBC";
-        }
-    };
-
-    class StorageIDBC : public StorageXDBC
-    {
-    public:
-        StorageIDBC(const std::string & table_name_,
-                    const std::string & remote_database_name,
-                    const std::string & remote_table_name,
-                    const ColumnsDescription & columns_,
-                    const Context & context_, BridgeHelperPtr bridge_helper_)
-                : StorageXDBC(table_name_, remote_database_name, remote_table_name, columns_, context_, bridge_helper_) {}
-
-        std::string getName() const override
-        {
-            return "IDBC";
-        }
+        std::string getName() const override;
     };
 }
