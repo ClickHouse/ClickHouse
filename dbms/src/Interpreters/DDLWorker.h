@@ -102,7 +102,6 @@ private:
     size_t max_tasks_in_queue = 1000;
 
     ThreadGroupStatusPtr thread_group;
-    std::mutex thread_group_mutex;
 
     friend class DDLQueryStatusInputSream;
     friend struct DDLTask;
