@@ -19,7 +19,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 #include <common/DateLUT.h>
 
@@ -257,8 +257,8 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_type_hint && from_type_hint->equals(to_type))
         return from_value;
 
-    if (auto * with_dict_type = typeid_cast<const DataTypeWithDictionary *>(&to_type))
-        return convertFieldToType(from_value, *with_dict_type->getDictionaryType(), from_type_hint);
+    if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
     else if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
         return convertFieldToTypeImpl(from_value, *nullable_type->getNestedType(), from_type_hint);
     else
