@@ -17,6 +17,7 @@ SELECT 1 AS id WHERE id = 1;
 SELECT arrayJoin([1,2,3]) AS id WHERE id = 1;
 
 SELECT '-------Need push down-------';
+SELECT toString(value) AS value FROM (SELECT 1 AS value) WHERE value = '1';
 SELECT * FROM (SELECT 1 AS id UNION ALL SELECT 2) WHERE id = 1;
 SELECT * FROM (SELECT arrayJoin([1, 2, 3]) AS id) WHERE id = 1;
 SELECT id FROM (SELECT arrayJoin([1, 2, 3]) AS id) WHERE id = 1;

@@ -20,7 +20,7 @@ namespace
 {
 
 template <typename T> using FuncQuantile = AggregateFunctionQuantile<T, QuantileReservoirSampler<T>, NameQuantile, false, Float64, false>;
-template <typename T> using FuncQuantiles = AggregateFunctionQuantile<T, QuantileReservoirSampler<T>, NameQuantile, false, Float64, true>;
+template <typename T> using FuncQuantiles = AggregateFunctionQuantile<T, QuantileReservoirSampler<T>, NameQuantiles, false, Float64, true>;
 
 template <typename T> using FuncQuantileDeterministic = AggregateFunctionQuantile<T, QuantileReservoirSamplerDeterministic<T>, NameQuantileDeterministic, true, Float64, false>;
 template <typename T> using FuncQuantilesDeterministic = AggregateFunctionQuantile<T, QuantileReservoirSamplerDeterministic<T>, NameQuantilesDeterministic, true, Float64, true>;

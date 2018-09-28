@@ -88,6 +88,8 @@ private:
     std::vector<ASTTableExpression *> getSelectTablesExpression(ASTSelectQuery * select_query);
 
     ASTs evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk);
+
+    void cleanExpressionAlias(ASTPtr & expression);
 };
 
 }
