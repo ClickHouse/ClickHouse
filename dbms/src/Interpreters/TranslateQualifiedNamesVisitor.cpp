@@ -1,5 +1,7 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 
+#include <Core/NamesAndTypes.h>
+
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>

@@ -319,7 +319,23 @@ void ExpressionAnalyzer::translateQualifiedNames()
     std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
 
     for (const auto & table_expression : tables_expression)
-        tables.emplace_back(getTableNameWithAliasFromTableExpression(table_expression, context));
+    {
+        auto table = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
+
+        { /// debug print
+            size_t depth = 0;
+            DumpASTNode dump(table_expression, debug_ast_stream, depth, "getTableNames");
+            if (table_expression.database_and_table_name)
+                DumpASTNode(*table_expression.database_and_table_name, debug_ast_stream, depth);
+            if (table_expression.table_function)
+                DumpASTNode(*table_expression.table_function, debug_ast_stream, depth);
+            if (table_expression.subquery)
+                DumpASTNode(*table_expression.subquery, debug_ast_stream, depth);
+            dump.print("getTableNameWithAlias", table.database + '.' + table.table + ' ' + table.alias);
+        }
+
+        tables.emplace_back(table);
+    }
 
     TranslateQualifiedNamesVisitor visitor(source_columns, tables, debug_ast_stream);
     visitor.visit(query);
@@ -842,7 +858,7 @@ void ExpressionAnalyzer::normalizeTree()
 
         for (const auto & table_expression : tables_expression)
         {
-            const auto table_name = getTableNameWithAliasFromTableExpression(table_expression, context);
+            const auto table_name = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
             NamesAndTypesList names_and_types = getNamesAndTypeListFromTableExpression(table_expression, context);
             table_names_nad_columns_name.emplace_back(std::pair(table_name, names_and_types.getNames()));
         }
@@ -2819,8 +2835,8 @@ void ExpressionAnalyzer::collectJoinedColumnsFromJoinOnExpr()
     const auto & left_table_expression = static_cast<const ASTTableExpression &>(*left_tables_element->table_expression);
     const auto & right_table_expression = static_cast<const ASTTableExpression &>(*right_tables_element->table_expression);
 
-    auto left_source_names = getTableNameWithAliasFromTableExpression(left_table_expression, context);
-    auto right_source_names = getTableNameWithAliasFromTableExpression(right_table_expression, context);
+    auto left_source_names = getTableNameWithAliasFromTableExpression(left_table_expression, context.getCurrentDatabase());
+    auto right_source_names = getTableNameWithAliasFromTableExpression(right_table_expression, context.getCurrentDatabase());
 
     /// Stores examples of columns which are only from one table.
     struct TableBelonging
@@ -2969,7 +2985,7 @@ void ExpressionAnalyzer::collectJoinedColumns(NameSet & joined_columns)
 
     const auto & table_join = static_cast<const ASTTableJoin &>(*node->table_join);
     const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-    auto joined_table_name = getTableNameWithAliasFromTableExpression(table_expression, context);
+    auto joined_table_name = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
 
     auto add_name_to_join_keys = [](Names & join_keys, ASTs & join_asts, const String & name, const ASTPtr & ast)
     {

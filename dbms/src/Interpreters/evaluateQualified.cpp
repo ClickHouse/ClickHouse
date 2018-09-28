@@ -48,7 +48,7 @@ void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip)
 
 
 DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const ASTTableExpression & table_expression,
-                                                                   const Context & context)
+                                                                   const String & current_database)
 {
     DatabaseAndTableWithAlias database_and_table_with_alias;
 
@@ -60,7 +60,7 @@ DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const ASTTabl
 
         if (table_expression.database_and_table_name->children.empty())
         {
-            database_and_table_with_alias.database = context.getCurrentDatabase();
+            database_and_table_with_alias.database = current_database;
             database_and_table_with_alias.table = identifier.name;
         }
         else

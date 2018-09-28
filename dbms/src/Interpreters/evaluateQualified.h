@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Interpreters/Context.h>
+#include <memory>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -28,7 +29,7 @@ struct DatabaseAndTableWithAlias
 void stripIdentifier(DB::ASTPtr & ast, size_t num_qualifiers_to_strip);
 
 DatabaseAndTableWithAlias getTableNameWithAliasFromTableExpression(const ASTTableExpression & table_expression,
-                                                                          const Context & context);
+                                                                   const String & current_database);
 
 size_t getNumComponentsToStripInOrderToTranslateQualifiedName(const ASTIdentifier & identifier,
                                                               const DatabaseAndTableWithAlias & names);
