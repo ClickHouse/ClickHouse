@@ -317,6 +317,23 @@ def test_macro(started_cluster):
     ddl_check_query(instance, "DROP TABLE IF EXISTS distr ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
 
+    # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
+    firewall_drops_rules = cluster.pm_random_drops.pop_rules()
+
+    ddl_check_query(instance, "DROP TABLE IF EXISTS some_kek ON CLUSTER '{cluster}'")
+    ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER '{cluster}'")
+    
+    ddl_check_query(instance, """
+CREATE TABLE IF NOT EXISTS test_db.test_macro ON CLUSTER '{cluster}' (p Date, i Int32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{layer}-{shard}/{table}', '{replica}', p, p, 1)
+""")
+
+    # Check that table was created at correct path in zookeeper
+    assert cluster.get_kazoo_client('zoo1').exists('/clickhouse/tables/test_db/0-1/test_macro') is not None
+
+    # Enable random ZK packet drops
+    cluster.pm_random_drops.push_rules(firewall_drops_rules)
+
 
 def test_allowed_databases(started_cluster):
     instance = cluster.instances['ch2']
