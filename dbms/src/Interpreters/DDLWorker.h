@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <DataStreams/BlockIO.h>
+#include <Common/CurrentThread.h>
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -67,6 +68,8 @@ private:
 
     void run();
 
+    void attachToThreadGroup();
+
 private:
     Context & context;
     Logger * log;
@@ -97,6 +100,8 @@ private:
     Int64 task_max_lifetime = 7 * 24 * 60 * 60; // week (in seconds)
     /// How many tasks could be in the queue
     size_t max_tasks_in_queue = 1000;
+
+    ThreadGroupStatusPtr thread_group;
 
     friend class DDLQueryStatusInputSream;
     friend struct DDLTask;

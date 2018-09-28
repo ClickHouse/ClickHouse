@@ -1,9 +1,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnWithDictionary.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
 
 
@@ -22,14 +22,14 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0]->withDictionary())
+        if (arguments[0]->lowCardinality())
             return arguments[0];
 
-        return std::make_shared<DataTypeWithDictionary>(arguments[0]);
+        return std::make_shared<DataTypeLowCardinality>(arguments[0]);
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -38,12 +38,12 @@ public:
         const auto & arg = block.getByPosition(arg_num);
         auto & res = block.getByPosition(result);
 
-        if (arg.type->withDictionary())
+        if (arg.type->lowCardinality())
             res.column = arg.column;
         else
         {
             auto column = res.type->createColumn();
-            typeid_cast<ColumnWithDictionary &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
+            typeid_cast<ColumnLowCardinality &>(*column).insertRangeFromFullColumn(*arg.column, 0, arg.column->size());
             res.column = std::move(column);
         }
     }
