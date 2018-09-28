@@ -237,17 +237,8 @@ public:
             (*ostr) << "-- " << (label ? label : "ast")  << std::endl;
         ++visit_depth;
 
-        String id = ast.getID();
-        std::replace(id.begin(), id.end(), '_', ' ');
-        (*ostr) << String(indent, ' ') << id;
-
-        id = ast.tryGetAlias();
-        if (!id.empty())
-            print("alias", id, " ");
-
-        if (!ast.children.empty())
-            print("/", ast.children.size(), " "); /// slash is just a short name for 'children' here
-
+        (*ostr) << String(indent, ' ');
+        printNode();
         (*ostr) << std::endl;
     }
 
@@ -279,6 +270,25 @@ private:
     std::ostream * ostr;
     size_t indent;
     size_t & visit_depth; /// shared with children
+
+    String nodeId() const
+    {
+        String id = ast.getID();
+        std::replace(id.begin(), id.end(), '_', ' ');
+        return id;
+    }
+
+    void printNode() const
+    {
+        (*ostr) << nodeId();
+
+        String aslias = ast.tryGetAlias();
+        if (!aslias.empty())
+            print("alias", aslias, " ");
+
+        if (!ast.children.empty())
+            print("/", ast.children.size(), " "); /// slash is just a short name for 'children' here
+    }
 };
 
 inline void dumpAST(const IAST & ast, std::ostream & ostr, DumpASTNode * parent = nullptr)
