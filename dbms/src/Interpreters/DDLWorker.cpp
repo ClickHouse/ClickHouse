@@ -178,7 +178,7 @@ struct DDLTask
     Cluster::Address address_in_cluster;
     size_t host_shard_num;
     size_t host_replica_num;
-    
+  
     /// Stage 3.3: execute query
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -539,8 +539,6 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
 void DDLWorker::attachToThreadGroup()
 {
-    std::lock_guard lock(thread_group_mutex);
-
     if (thread_group)
     {
         /// Put all threads to one thread pool
@@ -557,8 +555,6 @@ void DDLWorker::attachToThreadGroup()
 void DDLWorker::processTask(DDLTask & task)
 {
     LOG_DEBUG(log, "Processing task " << task.entry_name << " (" << task.entry.query << ")");
-
-    attachToThreadGroup();
 
     String dummy;
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;
@@ -900,6 +896,8 @@ void DDLWorker::run()
     {
         try
         {
+            attachToThreadGroup();
+
             processTasks();
 
             LOG_DEBUG(log, "Waiting a watch");
