@@ -25,6 +25,9 @@ using NamesWithAliases = std::vector<NameWithAlias>;
 
 class Join;
 
+class IPreparedFunction;
+using PreparedFunctionPtr = std::shared_ptr<IPreparedFunction>;
+
 class IFunctionBase;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -75,6 +78,9 @@ public:
     std::string result_name;
     DataTypePtr result_type;
 
+    /// If COPY_COLUMN can replace the result column.
+    bool can_replace = false;
+
     /// For conditional projections (projections on subset of rows)
     std::string row_projection_column;
     bool is_row_projection_complementary = false;
@@ -83,8 +89,12 @@ public:
     ColumnPtr added_column;
 
     /// For APPLY_FUNCTION and LEFT ARRAY JOIN.
+    /// FunctionBuilder is used before action was added to ExpressionActions (when we don't know types of arguments).
     FunctionBuilderPtr function_builder;
-    FunctionBasePtr function;
+    /// Can be used after action was added to ExpressionActions if we want to get function signature or properties like monotonicity.
+    FunctionBasePtr function_base;
+    /// Prepared function which is used in function execution.
+    PreparedFunctionPtr function;
     Names argument_names;
     bool is_function_compiled = false;
 
@@ -109,7 +119,7 @@ public:
                                       const std::string & row_projection_column,
                                       bool is_row_projection_complementary);
     static ExpressionAction removeColumn(const std::string & removed_name);
-    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name);
+    static ExpressionAction copyColumn(const std::string & from_name, const std::string & to_name, bool can_replace = false);
     static ExpressionAction project(const NamesWithAliases & projected_columns_);
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
@@ -126,13 +136,13 @@ public:
 
     struct ActionHash
     {
-        size_t operator()(const ExpressionAction & action) const;
+        UInt128 operator()(const ExpressionAction & action) const;
     };
 
 private:
     friend class ExpressionActions;
 
-    void prepare(Block & sample_block);
+    void prepare(Block & sample_block, const Settings & settings);
     size_t getInputRowsCount(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void execute(Block & block, std::unordered_map<std::string, size_t> & input_rows_counts) const;
     void executeOnTotals(Block & block) const;
@@ -166,6 +176,9 @@ public:
             input_columns.emplace_back(input_elem.name, input_elem.type);
             sample_block.insert(input_elem);
         }
+#if USE_EMBEDDED_COMPILER
+        compilation_cache = context_.getCompiledExpressionCache();
+#endif
     }
 
     /// Add the input column.
@@ -230,6 +243,20 @@ public:
 
     const Settings & getSettings() const { return settings; }
 
+
+    struct ActionsHash
+    {
+        UInt128 operator()(const ExpressionActions::Actions & actions) const
+        {
+            SipHash hash;
+            for (const ExpressionAction & act : actions)
+                hash.update(ExpressionAction::ActionHash{}(act));
+            UInt128 result;
+            hash.get128(result.low, result.high);
+            return result;
+        }
+    };
+
 private:
     NamesAndTypesList input_columns;
     Actions actions;
@@ -248,18 +275,6 @@ private:
 };
 
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
-
-struct ActionsHash
-{
-    size_t operator()(const ExpressionActions::Actions & actions) const
-    {
-        SipHash hash;
-        for (const ExpressionAction & act : actions)
-            hash.update(ExpressionAction::ActionHash{}(act));
-        return hash.get64();
-    }
-};
-
 
 
 /** The sequence of transformations over the block.

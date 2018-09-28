@@ -16,6 +16,8 @@
 #include <IO/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/WriteBufferFromPocoSocket.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <IO/CompressionSettings.h>
 #include <IO/copyData.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
@@ -130,6 +132,9 @@ void TCPHandler::runImpl()
         Stopwatch watch;
         state.reset();
 
+        /// Initialized later.
+        std::optional<CurrentThread::QueryScope> query_scope;
+
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
@@ -152,7 +157,7 @@ void TCPHandler::runImpl()
             if (!receivePacket())
                 continue;
 
-            CurrentThread::initializeQuery();
+            query_scope.emplace(query_context);
 
             send_exception_with_stack_trace = query_context.getSettingsRef().calculate_text_stack_trace;
 
@@ -197,6 +202,8 @@ void TCPHandler::runImpl()
             sendLogs();
 
             sendEndOfStream();
+
+            query_scope.reset();
             state.reset();
         }
         catch (const Exception & e)
@@ -265,9 +272,7 @@ void TCPHandler::runImpl()
 
         try
         {
-            /// It will forcibly detach query even if unexpected error ocсurred and detachQuery() was not called
-            CurrentThread::detachQueryIfNotDetached();
-
+            query_scope.reset();
             state.reset();
         }
         catch (...)

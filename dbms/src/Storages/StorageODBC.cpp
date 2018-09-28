@@ -80,12 +80,16 @@ BlockInputStreams StorageODBC::read(const Names & column_names,
     unsigned num_streams)
 {
     check(column_names);
-    checkQueryProcessingStage(processed_stage, context);
 
     odbc_bridge_helper.startODBCBridgeSync();
     return IStorageURLBase::read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 }
 
+
+Block StorageODBC::getHeaderBlock(const Names & column_names) const
+{
+    return getSampleBlockForColumns(column_names);
+}
 
 void registerStorageODBC(StorageFactory & factory)
 {

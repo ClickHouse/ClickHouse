@@ -908,19 +908,32 @@ void ZooKeeper::connect(
                 in.emplace(socket);
                 out.emplace(socket);
 
-                sendHandshake();
-                receiveHandshake();
+                try
+                {
+                    sendHandshake();
+                }
+                catch (DB::Exception & e)
+                {
+                    e.addMessage("while sending handshake to ZooKeeper");
+                    throw;
+                }
+
+                try
+                {
+                    receiveHandshake();
+                }
+                catch (DB::Exception & e)
+                {
+                    e.addMessage("while receiving handshake from ZooKeeper");
+                    throw;
+                }
 
                 connected = true;
                 break;
             }
-            catch (const Poco::Net::NetException &)
+            catch (...)
             {
                 fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
-            }
-            catch (const Poco::TimeoutException &)
-            {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false);
             }
         }
 
@@ -1014,7 +1027,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     read(err);
 
     if (read_xid != auth_xid)
-        throw Exception("Unexpected event recieved in reply to auth request: " + toString(read_xid),
+        throw Exception("Unexpected event received in reply to auth request: " + toString(read_xid),
             ZMARSHALLINGERROR);
 
     int32_t actual_length = in->count() - count_before_event;

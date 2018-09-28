@@ -200,7 +200,7 @@ MergeTreeReader::Stream::Stream(
             getMark(right).offset_in_compressed_file - getMark(all_mark_ranges[i].begin).offset_in_compressed_file);
     }
 
-    /// Avoid empty buffer. May happen while reading dictionary for DataTypeWithDictionary.
+    /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     if (max_mark_range == 0)
         max_mark_range = max_read_buffer_size;

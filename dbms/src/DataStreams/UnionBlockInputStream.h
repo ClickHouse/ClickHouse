@@ -69,7 +69,7 @@ public:
     using ExceptionCallback = std::function<void()>;
 
 private:
-    using Self = UnionBlockInputStream<mode>;
+    using Self = UnionBlockInputStream;
 
 public:
     UnionBlockInputStream(BlockInputStreams inputs, BlockInputStreamPtr additional_input_at_end, size_t max_threads,

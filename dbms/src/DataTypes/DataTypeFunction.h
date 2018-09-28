@@ -24,6 +24,7 @@ public:
 
     std::string getName() const override;
     const char * getFamilyName() const override { return "Function"; }
+    TypeIndex getTypeId() const override { return TypeIndex::Function; }
 
     const DataTypes & getArgumentTypes() const
     {

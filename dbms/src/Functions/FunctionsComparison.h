@@ -725,7 +725,7 @@ private:
             return true;
         };
 
-        if (!callOnBasicTypes(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -817,7 +817,7 @@ private:
         const IColumn * column_number = left_is_num ? col_left_untyped : col_right_untyped;
         const IDataType * number_type = left_is_num ? left_type.get() : right_type.get();
 
-        DataTypeExtractor which(number_type);
+        WhichDataType which(number_type);
 
         const bool legal_types = which.isDateOrDateTime() || which.isEnum() || which.isUUID();
 
@@ -1077,8 +1077,8 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        DataTypeExtractor left(arguments[0].get());
-        DataTypeExtractor right(arguments[1].get());
+        WhichDataType left(arguments[0].get());
+        WhichDataType right(arguments[1].get());
 
         const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
@@ -1159,9 +1159,9 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (isDecimal(left_type.get()) || isDecimal(right_type.get()))
+        else if (isDecimal(left_type) || isDecimal(right_type))
         {
-            if (!allowDecimalComparison(left_type.get(), right_type.get()))
+            if (!allowDecimalComparison(left_type, right_type))
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1193,7 +1193,7 @@ public:
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-        return isCompilableType(types[0].get()) && isCompilableType(types[1].get());
+        return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override

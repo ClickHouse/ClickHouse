@@ -18,7 +18,7 @@ endif ()
 # TODO: after new poco release with SQL library rename ENABLE_POCO_ODBC -> ENABLE_POCO_SQLODBC
 if (NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC)
     list (APPEND POCO_COMPONENTS DataODBC)
-    #list (APPEND POCO_COMPONENTS SQLODBC) # future
+    list (APPEND POCO_COMPONENTS SQLODBC)
 endif ()
 
 if (NOT USE_INTERNAL_POCO_LIBRARY)
@@ -60,18 +60,18 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
 
     if (NOT DEFINED ENABLE_POCO_MONGODB OR ENABLE_POCO_MONGODB)
         set (Poco_MongoDB_LIBRARY PocoMongoDB)
-        set (Poco_MongoDB_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/MongoDB/include/")
+        set (Poco_MongoDB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/poco/MongoDB/include/")
     endif ()
 
     if (EXISTS "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/")
         set (Poco_SQL_FOUND 1)
         set (Poco_SQL_LIBRARY PocoSQL)
-        set (Poco_SQL_INCLUDE_DIRS
+        set (Poco_SQL_INCLUDE_DIR
              "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/include"
              "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include"
              )
-        if ((NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC) AND ODBC_FOUND)
-            set (Poco_SQLODBC_INCLUDE_DIRS
+        if ((NOT DEFINED POCO_ENABLE_SQL_ODBC OR POCO_ENABLE_SQL_ODBC) AND ODBC_FOUND)
+            set (Poco_SQLODBC_INCLUDE_DIR
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/SQL/ODBC/include/"
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
                 ${ODBC_INCLUDE_DIRECTORIES}
@@ -80,11 +80,11 @@ elseif (NOT MISSING_INTERNAL_POCO_LIBRARY)
         endif ()
     else ()
         set (Poco_Data_FOUND 1)
-        set (Poco_Data_INCLUDE_DIRS "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
+        set (Poco_Data_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/include")
         set (Poco_Data_LIBRARY PocoData)
-        if ((NOT DEFINED ENABLE_POCO_ODBC OR ENABLE_POCO_ODBC) AND ODBC_FOUND)
+        if ((NOT DEFINED ENABLE_DATA_ODBC OR ENABLE_DATA_ODBC) AND ODBC_FOUND)
             set (USE_POCO_DATAODBC 1)
-            set (Poco_DataODBC_INCLUDE_DIRS
+            set (Poco_DataODBC_INCLUDE_DIR
                 "${ClickHouse_SOURCE_DIR}/contrib/poco/Data/ODBC/include/"
                 ${ODBC_INCLUDE_DIRECTORIES}
             )

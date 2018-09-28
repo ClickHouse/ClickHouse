@@ -177,7 +177,7 @@ public:
     class Transaction : private boost::noncopyable
     {
     public:
-        Transaction() {}
+        Transaction(MergeTreeData & data_) : data(data_) {}
 
         DataPartsVector commit(MergeTreeData::DataPartsLock * acquired_parts_lock = nullptr);
 
@@ -201,14 +201,10 @@ public:
     private:
         friend class MergeTreeData;
 
-        MergeTreeData * data = nullptr;
+        MergeTreeData & data;
         DataParts precommitted_parts;
 
-        void clear()
-        {
-            data = nullptr;
-            precommitted_parts.clear();
-        }
+        void clear() { precommitted_parts.clear(); }
     };
 
     /// An object that stores the names of temporary files created in the part directory during ALTER of its
@@ -333,6 +329,8 @@ public:
             return NameAndTypePair("_part", std::make_shared<DataTypeString>());
         if (column_name == "_part_index")
             return NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>());
+        if (column_name == "_partition_id")
+            return NameAndTypePair("_partition_id", std::make_shared<DataTypeString>());
         if (column_name == "_sample_factor")
             return NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>());
 
@@ -344,6 +342,7 @@ public:
         return getColumns().hasPhysical(column_name)
             || column_name == "_part"
             || column_name == "_part_index"
+            || column_name == "_partition_id"
             || column_name == "_sample_factor";
     }
 
@@ -370,6 +369,7 @@ public:
 
     /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name);
+    DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info);
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock &lock);
 
     /// Returns all parts in specified partition
@@ -434,6 +434,9 @@ public:
     /// If restore_covered is true, adds to the working set inactive parts, which were merged into the deleted part.
     void forgetPartAndMoveToDetached(const DataPartPtr & part, const String & prefix = "", bool restore_covered = false);
 
+    /// If the part is Obsolete and not used by anybody else, immediately delete it from filesystem and remove from memory.
+    void tryRemovePartImmediately(DataPartPtr && part);
+
     /// Returns old inactive parts that can be deleted. At the same time removes them from the list of parts
     /// but not from the disk.
     DataPartsVector grabOldParts();
@@ -447,7 +450,7 @@ public:
     /// Delete irrelevant parts from memory and disk.
     void clearOldPartsFromFilesystem();
 
-    /// Deleate all directories which names begin with "tmp"
+    /// Delete all directories which names begin with "tmp"
     /// Set non-negative parameter value to override MergeTreeSettings temporary_directories_lifetime
     void clearOldTemporaryDirectories(ssize_t custom_directories_lifetime_seconds = -1);
 

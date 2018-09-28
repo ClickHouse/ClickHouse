@@ -1,4 +1,4 @@
-add_library (clickhouse-server-lib
+add_library (clickhouse-server-lib ${LINK_MODE}
     HTTPHandler.cpp
     InterserverIOHTTPHandler.cpp
     MetricsTransmitter.cpp

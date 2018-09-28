@@ -34,8 +34,6 @@ cd $CURDIR
 
 source "./release_lib.sh"
 
-DEB_CC=${DEB_CC:=gcc-7}
-DEB_CXX=${DEB_CXX:=g++-7}
 PBUILDER_AUTOUPDATE=${PBUILDER_AUTOUPDATE=4320}
 
 DEBUILD_NOSIGN_OPTIONS="-us -uc"
@@ -110,6 +108,8 @@ echo -e "\nCurrent version is $VERSION_STRING"
 gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
 
 if [ -z "$USE_PBUILDER" ] ; then
+    DEB_CC=${DEB_CC:=`which gcc-7 gcc-8 gcc | head -n1`}
+    DEB_CXX=${DEB_CXX:=`which g++-7 g++-8 g++ | head -n1`}
     # Build (only binary packages).
     debuild -e PATH -e SSH_AUTH_SOCK \
     -e DEB_CC=$DEB_CC -e DEB_CXX=$DEB_CXX -e CMAKE_FLAGS="$CMAKE_FLAGS" \

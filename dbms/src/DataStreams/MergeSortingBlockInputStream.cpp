@@ -2,6 +2,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -65,9 +66,10 @@ static void enrichBlockWithConstants(Block & block, const Block & header)
 
 MergeSortingBlockInputStream::MergeSortingBlockInputStream(
     const BlockInputStreamPtr & input, SortDescription & description_,
-    size_t max_merged_block_size_, size_t limit_,
+    size_t max_merged_block_size_, size_t limit_, size_t max_bytes_before_remerge_,
     size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
     : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+    max_bytes_before_remerge(max_bytes_before_remerge_),
     max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
 {
     children.push_back(input);
@@ -100,7 +102,20 @@ Block MergeSortingBlockInputStream::readImpl()
             removeConstantsFromBlock(block);
 
             blocks.push_back(block);
-            sum_bytes_in_blocks += block.bytes();
+            sum_rows_in_blocks += block.rows();
+            sum_bytes_in_blocks += block.allocatedBytes();
+
+            /** If significant amount of data was accumulated, perform preliminary merging step.
+              */
+            if (blocks.size() > 1
+                && limit
+                && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+                && remerge_is_useful
+                && max_bytes_before_remerge
+                && sum_bytes_in_blocks > max_bytes_before_remerge)
+            {
+                remerge();
+            }
 
             /** If too many of them and if external sorting is enabled,
               *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
@@ -123,6 +138,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
                 blocks.clear();
                 sum_bytes_in_blocks = 0;
+                sum_rows_in_blocks = 0;
             }
         }
 
@@ -254,5 +270,38 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
     return blocks[0].cloneWithColumns(std::move(merged_columns));
 }
 
+
+void MergeSortingBlockInputStream::remerge()
+{
+    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << blocks.size() << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
+
+    /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
+    MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);
+
+    Blocks new_blocks;
+    size_t new_sum_rows_in_blocks = 0;
+    size_t new_sum_bytes_in_blocks = 0;
+
+    merger.readPrefix();
+    while (Block block = merger.read())
+    {
+        new_sum_rows_in_blocks += block.rows();
+        new_sum_bytes_in_blocks += block.allocatedBytes();
+        new_blocks.emplace_back(std::move(block));
+    }
+    merger.readSuffix();
+
+    LOG_DEBUG(log, "Memory usage is lowered from "
+        << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to "
+        << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+
+    /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
+    if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)
+        remerge_is_useful = false;
+
+    blocks = std::move(new_blocks);
+    sum_rows_in_blocks = new_sum_rows_in_blocks;
+    sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+}
 
 }

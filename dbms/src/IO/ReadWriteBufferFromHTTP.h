@@ -29,7 +29,7 @@ public:
     using OutStreamCallback = std::function<void(std::ostream &)>;
 
     explicit ReadWriteBufferFromHTTP(
-        const Poco::URI & uri,
+        Poco::URI uri,
         const std::string & method = {},
         OutStreamCallback out_stream_callback = {},
         const ConnectionTimeouts & timeouts = {},

@@ -142,7 +142,8 @@ public:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     /// remove_filter is set in ExpressionActionsChain::finalize();
-    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types);
+    /// sampling_expression is needed if sampling is used in order to not remove columns are used in it.
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const ASTPtr & sampling_expression);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -154,6 +155,8 @@ public:
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     void appendProjectResult(ExpressionActionsChain & chain) const;
+
+    void appendExpression(ExpressionActionsChain & chain, const ASTPtr & expr, bool only_types);
 
     /// If `ast` is not a SELECT query, just gets all the actions to evaluate the expression.
     /// If add_aliases, only the calculated values in the desired order and add aliases.
@@ -170,9 +173,9 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    SubqueriesForSets getSubqueriesForSets() const { return subqueries_for_sets; }
+    const SubqueriesForSets & getSubqueriesForSets() const { return subqueries_for_sets; }
 
-    PreparedSets getPreparedSets() { return prepared_sets; }
+    const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /** Tables that will need to be sent to remote servers for distributed query processing.
       */
@@ -309,15 +312,10 @@ private:
     /// Parse JOIN ON expression and collect ASTs for joined columns.
     void collectJoinedColumnsFromJoinOnExpr();
 
-    /** Create a dictionary of aliases.
-      */
-    void addASTAliases(ASTPtr & ast, int ignore_levels = 0);
-
     /** For star nodes(`*`), expand them to a list of all columns.
       * For literal nodes, substitute aliases.
       */
     void normalizeTree();
-    void normalizeTreeImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOfASTs & current_asts, std::string current_alias, size_t level);
 
     ///    Eliminates injective function calls and constant expressions from group by statement
     void optimizeGroupBy();
