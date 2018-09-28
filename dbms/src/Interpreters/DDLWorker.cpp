@@ -536,6 +536,20 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     return true;
 }
 
+void DDLWorker::attachToThreadGroup()
+{
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachToIfDetached(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
 
 void DDLWorker::processTask(DDLTask & task)
 {
@@ -881,6 +895,8 @@ void DDLWorker::run()
     {
         try
         {
+            attachToThreadGroup();
+
             processTasks();
 
             LOG_DEBUG(log, "Waiting a watch");
