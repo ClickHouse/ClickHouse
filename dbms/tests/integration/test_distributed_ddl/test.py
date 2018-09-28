@@ -355,6 +355,14 @@ def test_optimize_query(started_cluster):
     ddl_check_query(instance, "CREATE TABLE test_optimize ON CLUSTER cluster (p Date, i Int32) ENGINE = MergeTree(p, p, 8192)")
     ddl_check_query(instance, "OPTIMIZE TABLE test_optimize ON CLUSTER cluster FORMAT TSV")
 
+
+def test_create_as_select(started_cluster):
+    instance = cluster.instances['ch2']
+    ddl_check_query(instance, "CREATE TABLE test_as_select ON CLUSTER cluster ENGINE = Memory AS (SELECT 1 AS x UNION ALL SELECT 2 AS x)")
+    assert TSV(instance.query("SELECT x FROM test_as_select ORDER BY x")) == TSV("1\n2\n")
+    ddl_check_query(instance, "DROP TABLE IF EXISTS test_as_select ON CLUSTER cluster")
+
+
 if __name__ == '__main__':
     with contextmanager(started_cluster)() as cluster:
        for name, instance in cluster.instances.items():

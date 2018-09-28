@@ -27,7 +27,7 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
     if (column.isColumnConst())
     {
         const ColumnConst & column_const = static_cast<const ColumnConst &>(column);
-        ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfWithDictionary();
+        ColumnPtr column_nested = column_const.getDataColumnPtr()->convertToFullColumnIfLowCardinality();
 
         if (!typeid_cast<const ColumnUInt8 *>(column_nested.get()))
         {
@@ -50,8 +50,8 @@ ConstantFilterDescription::ConstantFilterDescription(const IColumn & column)
 
 FilterDescription::FilterDescription(const IColumn & column_)
 {
-    if (column_.withDictionary())
-        data_holder = column_.convertToFullColumnIfWithDictionary();
+    if (column_.lowCardinality())
+        data_holder = column_.convertToFullColumnIfLowCardinality();
 
     const auto & column = data_holder ? *data_holder : column_;
 
