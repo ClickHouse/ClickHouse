@@ -178,7 +178,7 @@ struct DDLTask
     Cluster::Address address_in_cluster;
     size_t host_shard_num;
     size_t host_replica_num;
-  
+
     /// Stage 3.3: execute query
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -334,7 +334,6 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::processTasks()
 {
     LOG_DEBUG(log, "Processing tasks");
-
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, event_queue_updated);
     filterAndSortQueueNodes(queue_nodes);
