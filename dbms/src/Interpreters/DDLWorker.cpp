@@ -178,7 +178,7 @@ struct DDLTask
     Cluster::Address address_in_cluster;
     size_t host_shard_num;
     size_t host_replica_num;
-
+// 
     /// Stage 3.3: execute query
     ExecutionStatus execution_status;
     bool was_executed = false;
@@ -334,6 +334,7 @@ static void filterAndSortQueueNodes(Strings & all_nodes)
 void DDLWorker::processTasks()
 {
     LOG_DEBUG(log, "Processing tasks");
+
 
     Strings queue_nodes = zookeeper->getChildren(queue_dir, nullptr, event_queue_updated);
     filterAndSortQueueNodes(queue_nodes);
@@ -536,10 +537,28 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     return true;
 }
 
+void DDLWorker::attachToThreadGroup()
+{
+    std::lock_guard lock(thread_group_mutex);
+
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachToIfDetached(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
 
 void DDLWorker::processTask(DDLTask & task)
 {
     LOG_DEBUG(log, "Processing task " << task.entry_name << " (" << task.entry.query << ")");
+
+    attachToThreadGroup();
 
     String dummy;
     String active_node_path = task.entry_path + "/active/" + task.host_id_str;
