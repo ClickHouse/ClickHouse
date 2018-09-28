@@ -275,7 +275,7 @@ struct Settings
     M(SettingDateTimeInputFormat, date_time_input_format, FormatSettings::DateTimeInputFormat::Basic, "Method to read DateTime from text input formats. Possible values: 'basic' and 'best_effort'.") \
     M(SettingBool, log_profile_events, true, "Log query performance statistics into the query_log and query_thread_log.") \
     M(SettingBool, log_query_settings, true, "Log query settings into the query_log.") \
-    M(SettingBool, log_query_threads, true, "Log query threads into system.query_thread_log table.") \
+    M(SettingBool, log_query_threads, true, "Log query threads into system.query_thread_log table. This setting have effect only when 'log_queries' is true.") \
     M(SettingString, send_logs_level, "none", "Send server text logs with specified minumum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'none'") \
     M(SettingBool, enable_optimize_predicate_expression, 1, "If it is set to true, optimize predicates to subqueries.") \
     \
@@ -332,7 +332,7 @@ struct Settings
     /// Write changed settings to buffer. (For example, to be sent to remote server.)
     void serialize(WriteBuffer & buf) const;
 
-    /// Dumps profile events to two column Array(String) and Array(UInt64)
+    /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
 };
 
