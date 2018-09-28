@@ -34,7 +34,11 @@ void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & 
             }
         }
 
-        stripIdentifier(ast, max_num_qualifiers_to_strip);
+        if (max_num_qualifiers_to_strip)
+        {
+            dump.print(String("stripIdentifier ") + identifier->name, max_num_qualifiers_to_strip);
+            stripIdentifier(ast, max_num_qualifiers_to_strip);
+        }
 
         /// In case if column from the joined table are in source columns, change it's name to qualified.
         if (best_table_pos && source_columns.contains(ast->getColumnName()))
