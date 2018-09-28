@@ -15,6 +15,7 @@
 
     <!-- Setting used to insert data -->
     <settings_push>
+        <replication_alter_partitions_sync>1</replication_alter_partitions_sync>
     </settings_push>
 
     <!-- Tasks -->

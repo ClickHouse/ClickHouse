@@ -683,6 +683,11 @@ void DB::TaskCluster::loadTasks(const Poco::Util::AbstractConfiguration & config
     }
 }
 
+auto set_default_value = [] (auto && setting, auto && default_value)
+{
+        setting = setting.changed ? setting.value : default_value;
+};
+
 void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & config, const String & base_key)
 {
     String prefix = base_key.empty() ? "" : base_key + ".";
@@ -700,11 +705,6 @@ void DB::TaskCluster::reloadSettings(const Poco::Util::AbstractConfiguration & c
     settings_push = settings_common;
     if (config.has(prefix + "settings_push"))
         settings_push.loadSettingsFromConfig(prefix + "settings_push", config);
-
-    auto set_default_value = [] (auto && setting, auto && default_value)
-    {
-        setting = setting.changed ? setting.value : default_value;
-    };
 
     /// Override important settings
     settings_pull.readonly = 1;
@@ -1277,7 +1277,7 @@ protected:
         Settings settings_push = task_cluster->settings_push;
 
         /// It is important, DROP PARTITION must be done synchronously
-        settings_push.replication_alter_partitions_sync = 2;
+        set_default_value(settings_push.replication_alter_partitions_sync, 2);
 
         LOG_DEBUG(log, "Execute distributed DROP PARTITION: " << query);
         /// Limit number of max executing replicas to 1
