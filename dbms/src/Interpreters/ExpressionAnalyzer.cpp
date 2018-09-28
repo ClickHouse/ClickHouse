@@ -69,7 +69,7 @@
 #include <Parsers/queryToString.h>
 #include <Interpreters/evaluateQualified.h>
 #include <Interpreters/QueryNormalizer.h>
-#include <Interpreters/getQueryAliases.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <DataTypes/DataTypeWithDictionary.h>
 
 
