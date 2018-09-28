@@ -73,6 +73,13 @@
 #include <DataTypes/DataTypeWithDictionary.h>
 
 
+#if 0
+constexpr std::ostream * debug_ast_stream = &std::cout;
+#else
+constexpr std::ostream * debug_ast_stream = nullptr;
+#endif
+
+
 namespace DB
 {
 
@@ -230,7 +237,7 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     LogicalExpressionsOptimizer(select_query, settings).perform();
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
-    QueryAliasesVisitor queryAliasesVisitor;
+    QueryAliasesVisitor queryAliasesVisitor(debug_ast_stream);
     queryAliasesVisitor.visit(query, aliases);
 
     /// Common subexpression elimination. Rewrite rules.
@@ -314,7 +321,7 @@ void ExpressionAnalyzer::translateQualifiedNames()
     for (const auto & table_expression : tables_expression)
         tables.emplace_back(getTableNameWithAliasFromTableExpression(table_expression, context));
 
-    TranslateQualifiedNamesVisitor visitor(source_columns, tables);
+    TranslateQualifiedNamesVisitor visitor(source_columns, tables, debug_ast_stream);
     visitor.visit(query);
 }
 
