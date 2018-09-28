@@ -2,9 +2,6 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 
-#include <Poco/Logger.h>
-#include <common/logger_useful.h>
-
 
 namespace DB
 {
@@ -14,10 +11,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-Macros::Macros() 
-{
-    LOG_DEBUG(&Logger::get("Macros"), "creating in empty contructor");
-}
+Macros::Macros() {}
 
 Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & root_key)
 {
