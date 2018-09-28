@@ -1,6 +1,5 @@
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 
-#include <Parsers/IAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -15,10 +14,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & ast) const
+void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & ast, const DumpASTNode & dump) const
 {
-    DumpASTNode dump(*identifier, ostr, visit_depth, visitor_label);
-
     if (identifier->general())
     {
         /// Select first table name with max number of qualifiers which can be stripped.
@@ -49,10 +46,8 @@ void TranslateQualifiedNamesVisitor::visit(ASTIdentifier * identifier, ASTPtr & 
     }
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk *, ASTPtr & ast) const
+void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk *, ASTPtr & ast, const DumpASTNode &) const
 {
-    DumpASTNode dump(*ast, ostr, visit_depth, visitor_label);
-
     if (ast->children.size() != 1)
         throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
 
@@ -82,19 +77,15 @@ void TranslateQualifiedNamesVisitor::visit(ASTQualifiedAsterisk *, ASTPtr & ast)
     throw Exception("Unknown qualified identifier: " + ident->getAliasOrColumnName(), ErrorCodes::UNKNOWN_IDENTIFIER);
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTTableJoin * join, ASTPtr &) const
+void TranslateQualifiedNamesVisitor::visit(ASTTableJoin * join, ASTPtr &, const DumpASTNode &) const
 {
-    DumpASTNode dump(*join, ostr, visit_depth, visitor_label);
-
     /// Don't translate on_expression here in order to resolve equation parts later.
     if (join->using_expression_list)
         visit(join->using_expression_list);
 }
 
-void TranslateQualifiedNamesVisitor::visit(ASTSelectQuery * select, ASTPtr & ast) const
+void TranslateQualifiedNamesVisitor::visit(ASTSelectQuery * select, ASTPtr & ast, const DumpASTNode &) const
 {
-    DumpASTNode dump(*select, ostr, visit_depth, visitor_label);
-
     /// If the WHERE clause or HAVING consists of a single quailified column, the reference must be translated not only in children,
     /// but also in where_expression and having_expression.
     if (select->prewhere_expression)
