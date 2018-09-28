@@ -70,7 +70,7 @@
 #include <Interpreters/evaluateQualified.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
-#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 
 
 #if 0
@@ -1443,7 +1443,7 @@ void ExpressionAnalyzer::makeExplicitSet(const ASTFunction * node, const Block &
         set_element_types = left_tuple_type->getElements();
 
     for (auto & element_type : set_element_types)
-        if (const auto * low_cardinality_type = typeid_cast<const DataTypeWithDictionary *>(element_type.get()))
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
             element_type = low_cardinality_type->getDictionaryType();
 
     ASTPtr elements_ast = nullptr;
