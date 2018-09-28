@@ -105,10 +105,13 @@ void ThreadStatus::finalizePerformanceCounters()
 
     try
     {
-        bool log_to_query_thread_log = global_context && query_context && query_context->getSettingsRef().log_query_threads.value != 0;
-        if (log_to_query_thread_log)
-            if (auto thread_log = global_context->getQueryThreadLog())
-                logToQueryThreadLog(*thread_log);
+        if (global_context && query_context)
+        {
+            auto & settings = query_context->getSettingsRef();
+            if (settings.log_queries && settings.log_query_threads)
+                if (auto thread_log = global_context->getQueryThreadLog())
+                    logToQueryThreadLog(*thread_log);
+        }
     }
     catch (...)
     {
