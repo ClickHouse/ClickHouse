@@ -25,15 +25,28 @@
 
     При необходимости можно задать способ сэмплирования данных в таблице.
 
-<a name="table_engines-mergetree-configuring">
+<a name="table_engines-mergetree-configuring"></a>
 
-## Конфигурирование движка при создании таблицы
+## Создание таблицы
 
 ```
-ENGINE [=] MergeTree() [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name=value, ...]
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
 ```
 
-**Подчиненные секции ENGINE**
+Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md#query_language-queries-create_table).
+
+**Секции запроса**
+
+- `ENGINE` — Имя и параметры движка. `ENGINE = MergeTree()`. Движок `MergeTree` не имеет параметров.
 
 - `ORDER BY` — первичный ключ.
 
@@ -44,13 +57,13 @@ ENGINE [=] MergeTree() [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SET
 
     Для партиционирования по месяцам используйте выражение `toYYYYMM(date_column)`, где `date_column` — столбец с датой типа [Date](../../data_types/date.md#data_type-date). В этом случае имена партиций имеют формат `"YYYYMM"`.
 
-- `SAMPLE BY` — выражение для сэмплирования (не обязательно). Пример: `intHash32(UserID))`.
+- `SAMPLE BY` — выражение для сэмплирования. Пример: `intHash32(UserID))`.
 
-- `SETTINGS` — дополнительные параметры, регулирующие поведение `MergeTree` (не обязательно):
+- `SETTINGS` — дополнительные параметры, регулирующие поведение `MergeTree`:
 
     - `index_granularity` — гранулярность индекса. Число строк данных между «засечками» индекса. По умолчанию — 8192.
 
-**Пример**
+**Пример задания секций**
 
 ```
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
@@ -62,13 +75,18 @@ ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDa
 
 `index_granularity` можно было не указывать, поскольку 8192 — это значение по умолчанию.
 
-### Устаревший способ конфигурирования движка
+### Устаревший способ создания таблицы
 
 !!!attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```
-ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
 **Параметры MergeTree()**

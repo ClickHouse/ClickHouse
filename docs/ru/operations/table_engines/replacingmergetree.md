@@ -6,11 +6,22 @@
 
 Таким образом, `ReplacingMergeTree` подходит для фоновой чистки дублирующихся данных в целях экономии места, но не даёт гарантии отсутствия дубликатов.
 
-## Конфигурирование движка при создании таблицы
+## Создание таблицы
 
 ```
-ENGINE [=] ReplacingMergeTree([ver]) [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name=value, ...]
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = ReplacingMergeTree([ver])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
 ```
+
+Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md#query_language-queries-create_table).
 
 **Параметры ReplacingMergeTree**
 
@@ -21,18 +32,22 @@ ENGINE [=] ReplacingMergeTree([ver]) [PARTITION BY expr] [ORDER BY expr] [SAMPLE
     - Последнюю в выборке, если `ver` не задан.
     - С максимальной версией, если `ver` задан.
 
-**Подчиненные секции ENGINE**
+**Секции запроса**
 
-`ReplacingMergeTree` использует те же [секции ENGINE](mergetree.md#table_engines-mergetree-configuring), что и `MergeTree`.
+При создании таблицы `ReplacingMergeTree` используются те же [секции ENGINE](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
 
-
-### Устаревший способ конфигурирования движка
+### Устаревший способ создания таблицы
 
 !!!attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```sql
-ReplacingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [ver])
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] ReplacingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [ver])
 ```
 
 Все параметры, кроме `ver` имеют то же значение, что в и `MergeTree`.

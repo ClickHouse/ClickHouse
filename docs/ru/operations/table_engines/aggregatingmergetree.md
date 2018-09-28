@@ -10,13 +10,24 @@
 
 Использование `AggregatingMergeTree` оправдано только в том случае, когда это уменьшает количество строк на порядки.
 
-## Конфигурирование движка при создании таблицы
+## Создание таблицы
 
 ```
-ENGINE [=] AggregatingMergeTree() [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name=value, ...]
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
 ```
 
-**Подчиненные секции ENGINE**
+Описание параметров запроса смотрите в [описании запроса](../../query_language/create.md#query_language-queries-create_table).
+
+**Секции запроса**
 
 `AggregatingMergeTree` использует те же [секции ENGINE](mergetree.md#table_engines-mergetree-configuring), что и `MergeTree`.
 
@@ -27,7 +38,12 @@ ENGINE [=] AggregatingMergeTree() [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
 ```sql
-AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
 Все параметры имеют то же значение, что в и `MergeTree`.
