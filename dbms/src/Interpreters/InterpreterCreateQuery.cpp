@@ -373,7 +373,7 @@ void InterpreterCreateQuery::checkSupportedTypes(const ColumnsDescription & colu
     {
         for (const auto & column : list)
         {
-            if (!allow_low_cardinality && column.type && column.type->withDictionary())
+            if (!allow_low_cardinality && column.type && column.type->lowCardinality())
             {
                 String message = "Cannot create table with column '" + column.name + "' which type is '"
                                  + column.type->getName() + "' because LowCardinality type is not allowed. "
