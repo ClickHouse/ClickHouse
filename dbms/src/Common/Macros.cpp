@@ -21,7 +21,6 @@ Macros::Macros(const Poco::Util::AbstractConfiguration & config, const String & 
     {
         macros[key] = config.getString(root_key + "." + key);
     }
-
 }
 
 String Macros::expand(const String & s, size_t level, const String & database_name, const String & table_name) const
