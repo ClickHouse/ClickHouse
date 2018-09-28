@@ -2087,7 +2087,7 @@ void Aggregator::mergeStream(const BlockInputStreamPtr & stream, AggregatedDataV
 
     /** `minus one` means the absence of information about the bucket
       * - in the case of single-level aggregation, as well as for blocks with "overflowing" values.
-      * If there is at least one block with a bucket number greater than zero, then there was a two-level aggregation.
+      * If there is at least one block with a bucket number greater or equal than zero, then there was a two-level aggregation.
       */
     auto max_bucket = bucket_to_blocks.rbegin()->first;
     size_t has_two_level = max_bucket >= 0;

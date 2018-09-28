@@ -98,6 +98,15 @@ void MultiplexedConnections::sendQuery(
             if (connection == nullptr)
                 throw Exception("MultiplexedConnections: Internal error", ErrorCodes::LOGICAL_ERROR);
 
+            if (connection->getServerRevision() < DBMS_MIN_REVISION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD)
+            {
+                /// Disable two-level aggregation due to version incompatibility.
+                query_settings.group_by_two_level_threshold = 0;
+                query_settings.group_by_two_level_threshold_bytes = 0;
+
+                /// NOTE: It's ok that we disable it for all following connections (even if it wasn't needed).
+            }
+
             query_settings.parallel_replica_offset = i;
             connection->sendQuery(query, query_id, stage, &query_settings, client_info, with_pending_data);
         }
