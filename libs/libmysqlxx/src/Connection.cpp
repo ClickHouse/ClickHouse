@@ -1,5 +1,5 @@
 #if __has_include(<mariadb/mysql.h>)
-#include <mariadb/mysql.h>
+#include <mariadb/mysql.h> // Y_IGNORE
 #else
 #include <mysql/mysql.h>
 #endif
@@ -49,7 +49,7 @@ Connection::Connection(
     bool enable_local_infile)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile);
 }
 
 Connection::Connection(const std::string & config_name)
