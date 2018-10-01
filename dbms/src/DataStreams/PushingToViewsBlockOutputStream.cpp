@@ -78,13 +78,15 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
 
     // Insert data into materialized views only after successful insert into main table
     bool allow_concurrent_view_processing = context.getSettingsRef().allow_concurrent_view_processing;
-    if (allow_concurrent_view_processing && views.size() > 1) {
+    if (allow_concurrent_view_processing && views.size() > 1)
+    {
         // Push to views concurrently if enabled, and more than one view is attached
         ThreadPool pool(std::min(getNumberOfPhysicalCPUCores(), views.size()));
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
         {
             auto thread_group = CurrentThread::getGroup();
-            pool.schedule([=] () {
+            pool.schedule([=] ()
+            {
                 setThreadName("PushingToViewsBlockOutputStream");
                 CurrentThread::attachToIfDetached(thread_group);
                 process(block, view_num);
@@ -92,7 +94,9 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         }
         // Wait for concurrent view processing
         pool.wait();
-    } else {
+    }
+    else
+    {
         // Process sequentially
         for (size_t view_num = 0; view_num < views.size(); ++view_num)
             process(block, view_num);
