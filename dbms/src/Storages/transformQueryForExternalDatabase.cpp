@@ -1,5 +1,7 @@
 #include <sstream>
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitors.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -13,12 +15,52 @@
 namespace DB
 {
 
+Block getBlockWithConstants(
+    const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
+{
+    Block result
+    {
+        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
+    };
+
+    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}.getConstActions();
+
+    expr_for_constant_folding->execute(result);
+
+    return result;
+}
+
+static void replaceConstFunction(const IAST & node, const Context & context, const NamesAndTypesList & all_columns)
+{
+    for (size_t i = 0; i < node.children.size(); ++i) {
+        auto child = node.children[i];
+        if (const ASTExpressionList * exp_list = typeid_cast<const ASTExpressionList *>(&*child))
+            replaceConstFunction(*exp_list, context, all_columns);
+
+        if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*child))
+        {
+            auto result_block = getBlockWithConstants(function->clone(), context, all_columns);
+            if (!result_block.has(child->getColumnName())) {
+                return;
+            }
+            auto result_column = result_block.getByName(child->getColumnName()).column;
+            auto result_string = applyVisitor(FieldVisitorToString(), (*result_column)[0]);
+
+            Field result_field(result_string);
+            ASTLiteral result_ast(result_field);
+
+            auto new_node = const_cast<IAST *>(&node);
+
+            new_node->children[i] = std::make_shared<ASTLiteral>(result_field);
+        }
+    }
+}
+
 static bool isCompatible(const IAST & node)
 {
     if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&node))
     {
         String name = function->name;
-
         if (!(name == "and"
             || name == "or"
             || name == "not"
@@ -87,6 +129,7 @@ String transformQueryForExternalDatabase(
     const ASTPtr & original_where = typeid_cast<const ASTSelectQuery &>(query).where_expression;
     if (original_where)
     {
+        replaceConstFunction(*original_where, context, available_columns);
         if (isCompatible(*original_where))
         {
             select->where_expression = original_where;
