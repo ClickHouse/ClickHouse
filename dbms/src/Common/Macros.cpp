@@ -56,24 +56,27 @@ String Macros::expand(const String & s, size_t level, const String & database_na
             throw Exception("Unbalanced { and } in string with macros: '" + s + "'", ErrorCodes::SYNTAX_ERROR);
 
         String macro_name = s.substr(begin, end - begin);
+        auto it = macros.find(macro_name);
 
-        if (macro_name == "database")
+        /// Prefer explicit macros over implicit.
+        if (it != macros.end())
+            res += it->second;
+        else if (macro_name == "database" && !database_name.empty())
             res += database_name;
-        else if (macro_name == "table")
+        else if (macro_name == "table" && !table_name.empty())
             res += table_name;
         else
-        {
-            auto it = macros.find(macro_name);
-            if (it == macros.end())
-                throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
-
-            res += it->second;
-        }
+            throw Exception("No macro " + macro_name + " in config", ErrorCodes::SYNTAX_ERROR);
 
         pos = end + 1;
     }
 
     return expand(res, level + 1, database_name, table_name);
+}
+
+String Macros::expand(const String & s, const String & database_name, const String & table_name) const
+{
+    return expand(s, 0, database_name, table_name);
 }
 
 Names Macros::expand(const Names & source_names, size_t level) const

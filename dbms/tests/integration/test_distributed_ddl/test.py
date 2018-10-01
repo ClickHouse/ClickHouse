@@ -317,11 +317,14 @@ def test_macro(started_cluster):
     ddl_check_query(instance, "DROP TABLE IF EXISTS distr ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "DROP TABLE IF EXISTS tab ON CLUSTER '{cluster}'")
 
+
+def test_implicit_macros(started_cluster):
     # Temporarily disable random ZK packet drops, they might broke creation if ReplicatedMergeTree replicas
     firewall_drops_rules = cluster.pm_random_drops.pop_rules()
 
+    instance = cluster.instances['ch2']
+
     ddl_check_query(instance, "DROP DATABASE IF EXISTS test_db ON CLUSTER '{cluster}'")
-    ddl_check_query(instance, "DROP TABLE IF EXISTS test_db.test_macro ON CLUSTER '{cluster}'")
     ddl_check_query(instance, "CREATE DATABASE IF NOT EXISTS test_db ON CLUSTER '{cluster}'")
     
     ddl_check_query(instance, """
