@@ -32,15 +32,17 @@ Block getBlockWithConstants(
 
 static void replaceConstFunction(const IAST & node, const Context & context, const NamesAndTypesList & all_columns)
 {
-    for (size_t i = 0; i < node.children.size(); ++i) {
+    for (size_t i = 0; i < node.children.size(); ++i)
+    {
         auto child = node.children[i];
         if (const ASTExpressionList * exp_list = typeid_cast<const ASTExpressionList *>(&*child))
             replaceConstFunction(*exp_list, context, all_columns);
 
         if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*child))
         {
-            auto result_block = getBlockWithConstants(function->clone(), context, all_columns);
-            if (!result_block.has(child->getColumnName())) {
+_partition_id            auto result_block = getBlockWithConstants(function->clone(), context, all_columns);
+            if (!result_block.has(child->getColumnName()))
+            {
                 return;
             }
             auto result_column = result_block.getByName(child->getColumnName()).column;
