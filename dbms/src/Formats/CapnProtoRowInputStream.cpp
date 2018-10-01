@@ -220,7 +220,8 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns)
             case Action::READ:
             {
                 Field value = convertNodeToField(stack.back().get(action.field));
-                if (action.columns.size() > 1) {
+                if (action.columns.size() > 1)
+                {
                     // Nested columns must be flattened into several arrays
                     // e.g. Array(Tuple(x ..., y ...)) -> Array(x ...), Array(y ...)
                     const Array & collected = DB::get<const Array &>(value);
