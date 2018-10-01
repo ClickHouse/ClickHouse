@@ -41,12 +41,13 @@ private:
     void createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader);
 
     /* Action for state machine for traversing nested structures. */
+    using BlockPositionList = std::vector<size_t>;
     struct Action
     {
         enum Type { POP, PUSH, READ };
         Type type;
         capnp::StructSchema::Field field = {};
-        size_t column = 0;
+        BlockPositionList columns = {};
     };
 
     // Wrapper for classes that could throw in destructor
