@@ -101,6 +101,7 @@ capnp::StructSchema::Field getFieldOrThrow(capnp::StructSchema node, const std::
     else
         throw Exception("Field " + field + " doesn't exist in schema " + node.getShortDisplayName().cStr());
 }
+
 void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields, capnp::StructSchema reader)
 {
     String last;
@@ -121,25 +122,32 @@ void CapnProtoRowInputStream::createActions(const NestedFieldList & sortedFields
         for (; level < field.tokens.size() - 1; ++level)
         {
             auto node = getFieldOrThrow(reader, field.tokens[level]);
-            if (node.getType().isStruct()) {
+            if (node.getType().isStruct())
+            {
                 // Descend to field structure
                 last = field.tokens[level];
                 parent = node;
                 reader = parent.getType().asStruct();
                 actions.push_back({Action::PUSH, parent});
-            } else if (node.getType().isList()) {
+            }
+            else if (node.getType().isList())
+            {
                 break; // Collect list
-            } else
+            }
+            else
                 throw Exception("Field " + field.tokens[level] + "is neither Struct nor List");
         }
 
         // Read field from the structure
         auto node = getFieldOrThrow(reader, field.tokens[level]);
-        if (node.getType().isList() && actions.size() > 0 && actions.back().field == node) {
+        if (node.getType().isList() && actions.size() > 0 && actions.back().field == node)
+        {
             // The field list here flattens Nested elements into multiple arrays
             // In order to map Nested types in Cap'nProto back, they need to be collected
             actions.back().columns.push_back(field.pos);
-        } else {
+        }
+        else
+        {
             actions.push_back({Action::READ, node, {field.pos}});
         }
     }
@@ -219,16 +227,20 @@ bool CapnProtoRowInputStream::read(MutableColumns & columns)
                     size_t size = collected.size();
                     // The flattened array contains an array of a part of the nested tuple
                     Array flattened(size);
-                    for (size_t column_index = 0; column_index < action.columns.size(); ++column_index) {
+                    for (size_t column_index = 0; column_index < action.columns.size(); ++column_index)
+                    {
                         // Populate array with a single tuple elements
-                        for (size_t off = 0; off < size; ++off) {
+                        for (size_t off = 0; off < size; ++off)
+                        {
                             const TupleBackend & tuple = DB::get<const Tuple &>(collected[off]).toUnderType();
                             flattened[off] = tuple[column_index];
                         }
                         auto & col = columns[action.columns[column_index]];
                         col->insert(flattened);
                     }
-                } else {
+                }
+                else
+                {
                     auto & col = columns[action.columns[0]];
                     col->insert(value);
                 }
