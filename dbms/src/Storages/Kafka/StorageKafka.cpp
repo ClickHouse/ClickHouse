@@ -132,9 +132,8 @@ public:
         : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr),
         current_pending(false), log(log_), read_messages(0), row_delimiter(row_delimiter_)
     {
-        if (row_delimiter != '\0') {
+        if (row_delimiter != '\0')
             LOG_TRACE(log, "Row delimiter is: " << row_delimiter);
-        }
     }
 
     ~ReadBufferFromKafkaConsumer() override { reset(); }
@@ -169,9 +168,8 @@ public:
 
     ~KafkaBlockInputStream() override
     {
-        if (!hasClaimed()) {
+        if (!hasClaimed())
             return;
-        }
 
         // An error was thrown during the stream or it did not finish successfully
         // The read offsets weren't comitted, so consumer must rejoin the group from the original starting point
@@ -204,7 +202,8 @@ public:
 
     void readPrefixImpl() override
     {
-        if (!hasClaimed()) {
+        if (!hasClaimed())
+        {
             // Create a formatted reader on Kafka messages
             LOG_TRACE(storage.log, "Creating formatted reader");
             consumer = storage.tryClaimConsumer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
@@ -222,7 +221,8 @@ public:
 
     void readSuffixImpl() override
     {
-        if (hasClaimed()) {
+        if (hasClaimed())
+        {
             reader->readSuffix();
             // Store offsets read in this stream
             read_buf->commit();
