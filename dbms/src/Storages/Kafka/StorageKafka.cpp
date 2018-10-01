@@ -24,7 +24,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/StorageKafka.h> // Y_IGNORE
+#include <Storages/Kafka/StorageKafka.h>
 #include <Storages/StorageFactory.h>
 #include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
@@ -32,7 +32,7 @@
 #if __has_include(<rdkafka.h>) // maybe bundled
 #include <rdkafka.h> // Y_IGNORE
 #else // system
-#include <librdkafka/rdkafka.h> // Y_IGNORE
+#include <librdkafka/rdkafka.h>
 #endif
 
 
