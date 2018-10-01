@@ -3,10 +3,7 @@
 #include <Common/config.h>
 
 #if USE_ICU
-    #pragma GCC diagnostic push
-    #pragma GCC diagnostic ignored "-Wold-style-cast"
     #include <unicode/ucol.h>
-    #pragma GCC diagnostic pop
 #else
     #ifdef __clang__
         #pragma clang diagnostic push
@@ -86,4 +83,15 @@ int Collator::compare(const char * str1, size_t length1, const char * str2, size
 const std::string & Collator::getLocale() const
 {
     return locale;
+}
+
+std::vector<std::string> Collator::getAvailableCollations()
+{
+    std::vector<std::string> result;
+#if USE_ICU
+    size_t available_locales_count = ucol_countAvailable();
+    for (size_t i = 0; i < available_locales_count; ++i)
+        result.push_back(ucol_getAvailable(i));
+#endif
+    return result;
 }

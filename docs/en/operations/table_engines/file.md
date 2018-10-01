@@ -10,7 +10,7 @@ Usage examples:
 - Convert data from one format to another.
 - Updating data in ClickHouse via editing a file on a disk.
 
-## Usage in ClickHouse server
+## Usage in ClickHouse Server
 
 ```
 File(Format)
@@ -24,9 +24,8 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](../../query_language/misc.md#queries-attach) it to table information with matching name, so you can query data from that file.
 
-<div class="admonition warning">
-Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
-</div>
+!!! warning
+    Be careful with this funcionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
 
 **Example:**
 
@@ -59,7 +58,7 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Usage in clickhouse-local
+## Usage in Clickhouse-local
 
 In [clickhouse-local](../utils/clickhouse-local.md#utils-clickhouse-local) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`.
 
@@ -69,7 +68,7 @@ In [clickhouse-local](../utils/clickhouse-local.md#utils-clickhouse-local) File 
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-## Details of implementation
+## Details of Implementation
 
 - Reads can be parallel, but not writes
 - Not supported:

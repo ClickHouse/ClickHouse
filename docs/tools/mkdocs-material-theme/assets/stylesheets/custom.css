@@ -128,3 +128,12 @@ h1, h2, h3, .md-logo {
 .md-hide {
     display: none;
 }
+
+#md-extra-nav {
+	background: #efefef;
+	padding-top: 0.5rem;
+}
+
+.grey {
+	color: #666;
+}

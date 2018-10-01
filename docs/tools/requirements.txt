@@ -6,13 +6,14 @@ chardet==3.0.4
 click==6.7
 CommonMark==0.5.4
 docutils==0.14
+futures==3.2.0
 idna==2.6
 imagesize==0.7.1
 Jinja2==2.10
 livereload==2.5.1
 Markdown==2.6.11
 MarkupSafe==1.0
-mkdocs==0.17.2
+mkdocs==1.0
 Pygments==2.2.0
 pytz==2017.3
 PyYAML==3.12
@@ -23,6 +24,6 @@ six==1.11.0
 snowballstemmer==1.2.1
 Sphinx==1.6.5
 sphinxcontrib-websupport==1.0.1
-tornado==4.5.3
+tornado==5.1
 typing==3.6.2
 urllib3==1.22

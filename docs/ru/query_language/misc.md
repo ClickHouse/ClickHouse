@@ -13,7 +13,7 @@
 Если таблица перед этим была отсоединена (`DETACH`), т.е. её структура известна, то можно использовать сокращенную форму записи без определения структуры.
 
 ```sql
-ATTACH TABLE [IF NOT EXISTS] [db.]name
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Этот запрос используется при старте сервера. Сервер хранит метаданные таблиц в виде файлов с запросами `ATTACH`, которые он просто исполняет при запуске (за исключением системных таблиц, создание которых явно вписано в сервер).
@@ -39,7 +39,7 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Удаляет из сервера информацию о таблице name. Сервер перестаёт знать о существовании таблицы.
 
 ```sql
-DETACH TABLE [IF EXISTS] [db.]name
+DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
 Но ни данные, ни метаданные таблицы не удаляются. При следующем запуске сервера, сервер прочитает метаданные и снова узнает о таблице.
@@ -166,7 +166,7 @@ SET param = value
 ## OPTIMIZE
 
 ```sql
-OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
+OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition] [FINAL]
 ```
 
 Просит движок таблицы сделать что-нибудь, что может привести к более оптимальной работе.
@@ -174,14 +174,13 @@ OPTIMIZE TABLE [db.]name [PARTITION partition] [FINAL]
 Если указан `PARTITION`, то оптимизация будет производиться только для указаной партиции.
 Если указан `FINAL`, то оптимизация будет производиться даже когда все данные уже лежат в одном куске.
 
-<div class="admonition warning">
-Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
-</div>
+!!! warning "Внимание"
+    Запрос OPTIMIZE не может устранить причину появления ошибки "Too many parts".
 
 ## KILL QUERY
 
 ```sql
-KILL QUERY
+KILL QUERY [ON CLUSTER cluster]
   WHERE <where expression to SELECT FROM system.processes query>
   [SYNC|ASYNC|TEST]
   [FORMAT format]
@@ -201,7 +200,7 @@ KILL QUERY WHERE user='username' SYNC
 
 Readonly-пользователи могут останавливать только свои запросы.
 
-По-умолчанию используется асинхронный вариант запроса (`ASYNC`), который не дожидается подтверждения остановки запросов.
+По умолчанию используется асинхронный вариант запроса (`ASYNC`), который не дожидается подтверждения остановки запросов.
 
 Синхронный вариант (`SYNC`) ожидает остановки всех запросов и построчно выводит информацию о процессах по ходу их остановки.
 Ответ содержит колонку `kill_status`, которая может принимать следующие значения:

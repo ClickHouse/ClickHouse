@@ -1,18 +1,11 @@
-# Freebsd: /usr/local/include/libcpuid/libcpuid_types.h:61:29: error: conflicting declaration 'typedef long long int int64_t'
-# TODO: test new libcpuid - maybe already fixed
-
 if (NOT ARCH_ARM)
-    if (ARCH_FREEBSD)
-        set (DEFAULT_USE_INTERNAL_CPUID_LIBRARY 1)
-    else ()
-        set (DEFAULT_USE_INTERNAL_CPUID_LIBRARY ${NOT_UNBUNDLED})
-    endif ()
-    option (USE_INTERNAL_CPUID_LIBRARY "Set to FALSE to use system cpuid library instead of bundled" ${DEFAULT_USE_INTERNAL_CPUID_LIBRARY})
+    option (USE_INTERNAL_CPUID_LIBRARY "Set to FALSE to use system cpuid library instead of bundled" ${NOT_UNBUNDLED})
 endif ()
 
 #if (USE_INTERNAL_CPUID_LIBRARY AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include/cpuid/libcpuid.h")
 #   message (WARNING "submodule contrib/libcpuid is missing. to fix try run: \n git submodule update --init --recursive")
 #   set (USE_INTERNAL_CPUID_LIBRARY 0)
+#   set (MISSING_INTERNAL_CPUID_LIBRARY 1)
 #endif ()
 
 if (NOT USE_INTERNAL_CPUID_LIBRARY)
@@ -21,7 +14,13 @@ if (NOT USE_INTERNAL_CPUID_LIBRARY)
 endif ()
 
 if (CPUID_LIBRARY AND CPUID_INCLUDE_DIR)
-else ()
+    if (OS_FREEBSD)
+        # need in /usr/local/include/libcpuid/libcpuid_types.h
+        # Freebsd: /usr/local/include/libcpuid/libcpuid_types.h:61:29: error: conflicting declaration 'typedef long long int int64_t'
+        add_definitions(-DHAVE_STDINT_H)
+        # TODO: make virtual target cpuid:cpuid with COMPILE_DEFINITIONS property
+    endif ()
+elseif (NOT MISSING_INTERNAL_CPUID_LIBRARY)
     set (CPUID_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libcpuid/include)
     set (USE_INTERNAL_CPUID_LIBRARY 1)
     set (CPUID_LIBRARY cpuid)

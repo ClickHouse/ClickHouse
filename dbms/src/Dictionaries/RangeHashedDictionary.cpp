@@ -1,6 +1,46 @@
 #include <Dictionaries/RangeHashedDictionary.h>
 #include <Dictionaries/RangeDictionaryBlockInputStream.h>
+#include <Functions/FunctionHelpers.h>
+#include <Columns/ColumnNullable.h>
+#include <Common/TypeList.h>
+#include <ext/range.h>
 
+
+namespace
+{
+
+using RangeStorageType = DB::RangeHashedDictionary::RangeStorageType;
+
+// Null values mean that specified boundary, either min or max is not set on range.
+// To simplify comparison, null value of min bound should be bigger than any other value,
+// and null value of maxbound - less than any value.
+const RangeStorageType RANGE_MIN_NULL_VALUE = std::numeric_limits<RangeStorageType>::max();
+const RangeStorageType RANGE_MAX_NULL_VALUE = std::numeric_limits<RangeStorageType>::lowest();
+
+// Handle both kinds of null values: explicit nulls of NullableColumn and 'implicit' nulls of Date type.
+RangeStorageType getColumnIntValueOrDefault(const DB::IColumn & column, size_t index, bool isDate, const RangeStorageType & default_value)
+{
+    if (column.isNullAt(index))
+        return default_value;
+
+    const RangeStorageType result = static_cast<RangeStorageType>(column.getInt(index));
+    if (isDate && !DB::RangeHashedDictionary::Range::isCorrectDate(result))
+        return default_value;
+
+    return result;
+}
+
+const DB::IColumn & unwrapNullableColumn(const DB::IColumn & column)
+{
+    if (const auto * m = DB::checkAndGetColumn<DB::ColumnNullable>(&column))
+    {
+        return m->getNestedColumn();
+    }
+
+    return column;
+}
+
+} // namespace
 
 namespace DB
 {
@@ -12,11 +52,26 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+bool RangeHashedDictionary::Range::isCorrectDate(const RangeStorageType & date)
+{
+    return 0 < date && date <= DATE_LUT_MAX_DAY_NUM;
+}
+
+bool RangeHashedDictionary::Range::contains(const RangeStorageType & value) const
+{
+    return left <= value && value <= right;
+}
+
+bool operator<(const RangeHashedDictionary::Range & left, const RangeHashedDictionary::Range & right)
+{
+    return std::tie(left.left, left.right) < std::tie(right.left, right.right);
+}
+
 
 RangeHashedDictionary::RangeHashedDictionary(
-    const std::string & name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
+    const std::string & dictionary_name, const DictionaryStructure & dict_struct, DictionarySourcePtr source_ptr,
     const DictionaryLifetime dict_lifetime, bool require_nonempty)
-    : name{name}, dict_struct(dict_struct),
+    : dictionary_name{dictionary_name}, dict_struct(dict_struct),
         source_ptr{std::move(source_ptr)}, dict_lifetime(dict_lifetime),
         require_nonempty(require_nonempty)
 {
@@ -36,14 +91,14 @@ RangeHashedDictionary::RangeHashedDictionary(
 }
 
 RangeHashedDictionary::RangeHashedDictionary(const RangeHashedDictionary & other)
-    : RangeHashedDictionary{other.name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
+    : RangeHashedDictionary{other.dictionary_name, other.dict_struct, other.source_ptr->clone(), other.dict_lifetime, other.require_nonempty}
 {
 }
 
 
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
 void RangeHashedDictionary::get##TYPE(\
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,\
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<RangeStorageType> & dates,\
     PaddedPODArray<TYPE> & out) const\
 {\
     const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::TYPE);\
@@ -63,7 +118,7 @@ DECLARE_MULTIPLE_GETTER(Float64)
 #undef DECLARE_MULTIPLE_GETTER
 
 void RangeHashedDictionary::getString(
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<UInt16> & dates,
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<RangeStorageType> & dates,
     ColumnString * out) const
 {
     const auto & attribute = getAttributeWithType(attribute_name, AttributeUnderlyingType::String);
@@ -102,7 +157,7 @@ void RangeHashedDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{name + ": hierarchical attributes not supported by " + getName() + " dictionary.", ErrorCodes::BAD_ARGUMENTS};
+            throw Exception{dictionary_name + ": hierarchical attributes not supported by " + getName() + " dictionary.", ErrorCodes::BAD_ARGUMENTS};
     }
 }
 
@@ -114,8 +169,12 @@ void RangeHashedDictionary::loadData()
     while (const auto block = stream->read())
     {
         const auto & id_column = *block.safeGetByPosition(0).column;
-        const auto & min_range_column = *block.safeGetByPosition(1).column;
-        const auto & max_range_column = *block.safeGetByPosition(2).column;
+
+        // Support old behaviour, where invalid date means 'open range'.
+        const bool is_date = isDate(dict_struct.range_min->type);
+
+        const auto & min_range_column = unwrapNullableColumn(*block.safeGetByPosition(1).column);
+        const auto & max_range_column = unwrapNullableColumn(*block.safeGetByPosition(2).column);
 
         element_count += id_column.size();
 
@@ -125,16 +184,32 @@ void RangeHashedDictionary::loadData()
             auto & attribute = attributes[attribute_idx];
 
             for (const auto row_idx : ext::range(0, id_column.size()))
-                setAttributeValue(attribute, id_column[row_idx].get<UInt64>(),
-                    Range(min_range_column[row_idx].get<UInt64>(), max_range_column[row_idx].get<UInt64>()),
+            {
+                RangeStorageType lower_bound;
+                RangeStorageType upper_bound;
+
+                if (is_date)
+                {
+                    lower_bound = getColumnIntValueOrDefault(min_range_column, row_idx, is_date, 0);
+                    upper_bound = getColumnIntValueOrDefault(max_range_column, row_idx, is_date, DATE_LUT_MAX_DAY_NUM + 1);
+                }
+                else
+                {
+                    lower_bound = getColumnIntValueOrDefault(min_range_column, row_idx, is_date, RANGE_MIN_NULL_VALUE);
+                    upper_bound = getColumnIntValueOrDefault(max_range_column, row_idx, is_date, RANGE_MAX_NULL_VALUE);
+                }
+
+                setAttributeValue(attribute, id_column.getUInt(row_idx),
+                    Range{lower_bound, upper_bound},
                     attribute_column[row_idx]);
+            }
         }
     }
 
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{dictionary_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -216,7 +291,7 @@ template <typename OutputType>
 void RangeHashedDictionary::getItems(
     const Attribute & attribute,
     const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<UInt16> & dates,
+    const PaddedPODArray<RangeStorageType> & dates,
     PaddedPODArray<OutputType> & out) const
 {
     if (false) {}
@@ -243,7 +318,7 @@ template <typename AttributeType, typename OutputType>
 void RangeHashedDictionary::getItemsImpl(
     const Attribute & attribute,
     const PaddedPODArray<Key> & ids,
-    const PaddedPODArray<UInt16> & dates,
+    const PaddedPODArray<RangeStorageType> & dates,
     PaddedPODArray<OutputType> & out) const
 {
     const auto & attr = *std::get<Ptr<AttributeType>>(attribute.maps);
@@ -280,9 +355,9 @@ void RangeHashedDictionary::setAttributeValueImpl(Attribute & attribute, const K
         auto & values = it->second;
 
         const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-            [] (const Value<T> & lhs, const Range & range)
+            [] (const Value<T> & lhs, const Range & rhs_range)
             {
-                return lhs.range < range;
+                return lhs.range < rhs_range;
             });
 
         values.insert(insert_it, Value<T>{ range, value });
@@ -320,9 +395,9 @@ void RangeHashedDictionary::setAttributeValue(Attribute & attribute, const Key i
                 auto & values = it->second;
 
                 const auto insert_it = std::lower_bound(std::begin(values), std::end(values), range,
-                    [] (const Value<StringRef> & lhs, const Range & range)
+                    [] (const Value<StringRef> & lhs, const Range & rhs_range)
                     {
-                        return lhs.range < range;
+                        return lhs.range < rhs_range;
                     });
 
                 values.insert(insert_it, Value<StringRef>{ range, string_ref });
@@ -339,22 +414,24 @@ const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttribute(con
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{dictionary_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
 
-const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWithType(const std::string & name, const AttributeUnderlyingType type) const
+const RangeHashedDictionary::Attribute & RangeHashedDictionary::getAttributeWithType(const std::string & attribute_name, const AttributeUnderlyingType type) const
 {
-    const auto & attribute = getAttribute(name);
+    const auto & attribute = getAttribute(attribute_name);
     if (attribute.type != type)
-        throw Exception{name + ": type mismatch: attribute " + name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
+        throw Exception{attribute_name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     return attribute;
 }
 
+template <typename RangeType>
 void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids,
-                                           PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const
+    PaddedPODArray<RangeType> & start_dates,
+    PaddedPODArray<RangeType> & end_dates) const
 {
     const auto & attribute = attributes.front();
 
@@ -375,9 +452,10 @@ void RangeHashedDictionary::getIdsAndDates(PaddedPODArray<Key> & ids,
     }
 }
 
-template <typename T>
-void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPODArray<Key> & ids,
-                                           PaddedPODArray<UInt16> & start_dates, PaddedPODArray<UInt16> & end_dates) const
+template <typename T, typename RangeType>
+void RangeHashedDictionary::getIdsAndDates(const Attribute & attribute, PaddedPODArray<Key> & ids,
+                                           PaddedPODArray<RangeType> & start_dates,
+                                           PaddedPODArray<RangeType> & end_dates) const
 {
     const HashMap<UInt64, Values<T>> & attr = *std::get<Ptr<T>>(attribute.maps);
 
@@ -385,29 +463,69 @@ void RangeHashedDictionary::getIdsAndDates(const Attribute& attribute, PaddedPOD
     start_dates.reserve(attr.size());
     end_dates.reserve(attr.size());
 
+    const bool is_date = isDate(dict_struct.range_min->type);
+
     for (const auto & key : attr)
     {
         for (const auto & value : key.second)
         {
             ids.push_back(key.first);
-            start_dates.push_back(value.range.first);
-            end_dates.push_back(value.range.second);
+            start_dates.push_back(value.range.left);
+            end_dates.push_back(value.range.right);
+
+            if (is_date && static_cast<UInt64>(end_dates.back()) > DATE_LUT_MAX_DAY_NUM)
+                end_dates.back() = 0;
         }
     }
 }
 
-BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+
+template <typename RangeType>
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStreamImpl(const Names & column_names, size_t max_block_size) const
 {
     PaddedPODArray<Key> ids;
-    PaddedPODArray<UInt16> start_dates;
-    PaddedPODArray<UInt16> end_dates;
+    PaddedPODArray<RangeType> start_dates;
+    PaddedPODArray<RangeType> end_dates;
     getIdsAndDates(ids, start_dates, end_dates);
 
-    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, Key>;
+    using BlockInputStreamType = RangeDictionaryBlockInputStream<RangeHashedDictionary, RangeType, Key>;
     auto dict_ptr = std::static_pointer_cast<const RangeHashedDictionary>(shared_from_this());
     return std::make_shared<BlockInputStreamType>(
         dict_ptr, max_block_size, column_names, std::move(ids), std::move(start_dates), std::move(end_dates));
 }
 
+struct RangeHashedDIctionaryCallGetBlockInputStreamImpl
+{
+    BlockInputStreamPtr stream;
+    const RangeHashedDictionary * dict;
+    const Names * column_names;
+    size_t max_block_size;
+
+    template <typename RangeType, size_t>
+    void operator()()
+    {
+        auto & type = dict->dict_struct.range_min->type;
+        if (!stream && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
+            stream = dict->getBlockInputStreamImpl<RangeType>(*column_names, max_block_size);
+    }
+};
+
+BlockInputStreamPtr RangeHashedDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+{
+    using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64>;
+
+    RangeHashedDIctionaryCallGetBlockInputStreamImpl callable;
+    callable.dict = this;
+    callable.column_names = &column_names;
+    callable.max_block_size = max_block_size;
+
+    ListType::forEach(callable);
+
+    if (!callable.stream)
+        throw Exception("Unexpected range type for RangeHashed dictionary: " + dict_struct.range_min->type->getName(),
+                        ErrorCodes::LOGICAL_ERROR);
+
+    return callable.stream;
+}
 
 }

@@ -1,6 +1,6 @@
 <a name="table_engines-replication"></a>
 
-# Data replication
+# Data Replication
 
 Replication is only supported for tables in the MergeTree family:
 
@@ -15,7 +15,7 @@ Replication works at the level of an individual table, not the entire server. A 
 
 Replication does not depend on sharding. Each shard has its own independent replication.
 
-Compressed data is replicated for `INSERT` and `ALTER` queries (see the description of the [ALTER](../../query_language/alter.md#query_language_queries_alter) query).
+Compressed data for `INSERT` and `ALTER` queries is replicated (for more information, see the documentation for [ALTER](../../query_language/alter.md#query_language_queries_alter)).
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
@@ -70,7 +70,7 @@ The system monitors data synchronicity on replicas and is able to recover after 
 
 <a name="table_engines-replication-creation_of_rep_tables"></a>
 
-## Creating replicated tables
+## Creating Replicated Tables
 
 The `Replicated` prefix is added to the table engine name. For example:`ReplicatedMergeTree`.
 
@@ -113,7 +113,7 @@ If you add a new replica after the table already contains some data on other rep
 
 To delete a replica, run `DROP TABLE`. However, only one replica is deleted – the one that resides on the server where you run the query.
 
-## Recovery after failures
+## Recovery After Failures
 
 If ZooKeeper is unavailable when a server starts, replicated tables switch to read-only mode. The system periodically attempts to connect to ZooKeeper.
 
@@ -137,7 +137,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Then restart the server. On start, the server deletes these flags and starts recovery.
 
-## Recovery after complete data loss
+## Recovery After Complete Data Loss
 
 If all data and metadata disappeared from one of the servers, follow these steps for recovery:
 
@@ -152,9 +152,11 @@ An alternative recovery option is to delete information about the lost replica f
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
+<a name="convert-mergetree-to-replicated"></a>
+
 ## Converting from MergeTree to ReplicatedMergeTree
 
-We use the term `MergeTree` to refer to all table engines in the ` MergeTree family`, the same as for ` ReplicatedMergeTree`.
+We use the term `MergeTree` to refer to all table engines in the ` MergeTree family`, the same as for `ReplicatedMergeTree`.
 
 If you had a `MergeTree` table that was manually replicated, you can convert it to a replicatable table. You might need to do this if you have already collected a large amount of data in a `MergeTree` table and now you want to enable replication.
 
@@ -175,9 +177,6 @@ If you want to get rid of a `ReplicatedMergeTree` table without launching the se
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 
-## Recovery when metadata in the ZooKeeper cluster is lost or damaged
+## Recovery When Metadata in The ZooKeeper Cluster is Lost or Damaged
 
 If the data in ZooKeeper was lost or damaged, you can save data by moving it to an unreplicated table as described above.
-
-If exactly the same parts exist on the other replicas, they are added to the working set on them. If not, the parts are downloaded from the replica that has them.
-

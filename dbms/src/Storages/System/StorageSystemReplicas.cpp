@@ -55,28 +55,33 @@ BlockInputStreams StorageSystemReplicas::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     /// We collect a set of replicated tables.
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
     for (const auto & db : context.getDatabases())
-        for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                replicated_tables[db.first][iterator->name()] = iterator->table();
-
-    /// Do you need columns that require a walkthrough in ZooKeeper to compute.
-    bool with_zk_fields = false;
-    for (const auto & name : column_names)
     {
-        if (   name == "log_max_index"
-            || name == "log_pointer"
-            || name == "total_replicas"
-            || name == "active_replicas")
+        if (context.hasDatabaseAccessRights(db.first))
+        {
+            for (auto iterator = db.second->getIterator(context); iterator->isValid(); iterator->next())
+                if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+                    replicated_tables[db.first][iterator->name()] = iterator->table();
+        }
+    }
+
+
+    /// Do you need columns that require a ZooKeeper request to compute.
+    bool with_zk_fields = false;
+    for (const auto & column_name : column_names)
+    {
+        if (   column_name == "log_max_index"
+            || column_name == "log_pointer"
+            || column_name == "total_replicas"
+            || column_name == "active_replicas")
         {
             with_zk_fields = true;
             break;

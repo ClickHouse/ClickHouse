@@ -1,3 +1,4 @@
+#include <sstream>
 #include <Common/typeid_cast.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -5,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 
@@ -57,6 +57,7 @@ static bool isCompatible(const IAST & node)
 String transformQueryForExternalDatabase(
     const IAST & query,
     const NamesAndTypesList & available_columns,
+    IdentifierQuotingStyle identifier_quoting_style,
     const String & database,
     const String & table,
     const Context & context)
@@ -105,7 +106,13 @@ String transformQueryForExternalDatabase(
         }
     }
 
-    return queryToString(select);
+    std::stringstream out;
+    IAST::FormatSettings settings(out, true);
+    settings.always_quote_identifiers = true;
+    settings.identifier_quoting_style = identifier_quoting_style;
+
+    select->format(settings);
+    return out.str();
 }
 
 }

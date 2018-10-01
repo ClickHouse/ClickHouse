@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_layout"></a>
 
-# Storing dictionaries in memory
+# Storing Dictionaries in Memory
 
 There are a [variety of ways](#dicts-external_dicts_dict_layout-manner) to store dictionaries in memory.
 
@@ -38,7 +38,7 @@ The configuration looks like this:
 
 <a name="dicts-external_dicts_dict_layout-manner"></a>
 
-## Ways to store dictionaries in memory
+## Ways to Store Dictionaries in Memory
 
 - [flat](#dicts-external_dicts_dict_layout-flat)
 - [hashed](#dicts-external_dicts_dict_layout-hashed)
@@ -219,11 +219,8 @@ Set a large enough cache size. You need to experiment to select the number of ce
 3. Assess memory consumption using the `system.dictionaries` table.
 4. Increase or decrease the number of cells until the required memory consumption is reached.
 
-<div class="admonition warning">
-
-Do not use ClickHouse as a source, because it is slow to process queries with random reads.
-
-</div>
+!!! warning
+    Do not use ClickHouse as a source, because it is slow to process queries with random reads.
 
 <a name="dicts-external_dicts_dict_layout-complex_key_cache"></a>
 

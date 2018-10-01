@@ -31,7 +31,7 @@ public:
         const Poco::Timespan & send_timeout = Poco::Timespan(DEFAULT_REMOTE_WRITE_BUFFER_SEND_TIMEOUT, 0),
         const Poco::Timespan & receive_timeout = Poco::Timespan(DEFAULT_REMOTE_WRITE_BUFFER_RECEIVE_TIMEOUT, 0));
 
-    ~InterserverWriteBuffer();
+    ~InterserverWriteBuffer() override;
     void finalize();
     void cancel();
 

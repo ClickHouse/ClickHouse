@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts_dict_structure"></a>
 
-# Dictionary key and fields
+# Dictionary Key and Fields
 
 The `<structure>` clause describes the dictionary key and fields available for queries.
 
@@ -39,13 +39,10 @@ ClickHouse supports the following types of keys:
 
 A structure can contain either `<id>` or `<key>` .
 
-<div class="admonition attention">
+!!! warning
+    The key doesn't need to be defined separately in attributes.
 
-The key doesn't need to be defined separately in attributes.
-
-</div>
-
-### Numeric key
+### Numeric Key
 
 Format: `UInt64`.
 
@@ -61,13 +58,12 @@ Configuration fields:
 
 - name – The name of the column with keys.
 
-### Composite key
+### Composite Key
 
 The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md#dicts-external_dicts_dict_layout) in this case must be `complex_key_hashed` or `complex_key_cache`.
 
-<div class="admonition tip">
-A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
-</div>
+!!! tip
+    A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
 
 The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md#dicts-external_dicts_dict_structure-attributes). Example:
 

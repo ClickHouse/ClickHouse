@@ -187,7 +187,7 @@ private:
     void resize(Attribute & attribute, const Key id);
 
     template <typename T>
-    void setAttributeValueImpl(Attribute & attribute, const Key id, const T& value);
+    void setAttributeValueImpl(Attribute & attribute, const Key id, const T & value);
 
     void setAttributeValue(Attribute & attribute, const Key id, const Field & value);
 

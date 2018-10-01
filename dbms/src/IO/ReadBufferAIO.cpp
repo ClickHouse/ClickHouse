@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
 
 #include <IO/ReadBufferAIO.h>
 #include <IO/AIOContextPool.h>
@@ -16,7 +16,6 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event FileOpenFailed;
     extern const Event ReadBufferAIORead;
     extern const Event ReadBufferAIOReadBytes;
 }
@@ -54,7 +53,6 @@ ReadBufferAIO::ReadBufferAIO(const std::string & filename_, size_t buffer_size_,
     fd = ::open(filename.c_str(), open_flags);
     if (fd == -1)
     {
-        ProfileEvents::increment(ProfileEvents::FileOpenFailed);
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
         throwFromErrno("Cannot open file " + filename, error_code);
     }
@@ -191,7 +189,7 @@ off_t ReadBufferAIO::doSeek(off_t off, int whence)
 
 void ReadBufferAIO::synchronousRead()
 {
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read};
 
     prepare();
     bytes_read = ::pread(fd, buffer_begin, region_aligned_size, region_aligned_begin);
@@ -227,7 +225,7 @@ bool ReadBufferAIO::waitForAIOCompletion()
     if (is_eof || !is_pending_read)
         return false;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::Read};
+    CurrentMetrics::Increment metric_increment_read{CurrentMetrics::Read};
 
     bytes_read = future_bytes_read.get();
     is_pending_read = false;
@@ -293,9 +291,7 @@ void ReadBufferAIO::finalize()
         is_eof = true;
 
     /// Swap the main and duplicate buffers.
-    internalBuffer().swap(fill_buffer.internalBuffer());
-    buffer().swap(fill_buffer.buffer());
-    std::swap(position(), fill_buffer.position());
+    swap(fill_buffer);
 }
 
 }

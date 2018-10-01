@@ -2,6 +2,7 @@
 
 
 #include <Poco/PatternFormatter.h>
+#include <daemon/ExtendedLogChannel.h>
 
 
 /** Форматирует по своему.
@@ -23,6 +24,7 @@ class BaseDaemon;
 class OwnPatternFormatter : public Poco::PatternFormatter
 {
 public:
+
     /// ADD_LAYER_TAG is needed only for Yandex.Metrika, that share part of ClickHouse code.
     enum Options
     {
@@ -30,9 +32,10 @@ public:
         ADD_LAYER_TAG = 1 << 0
     };
 
-    OwnPatternFormatter(const BaseDaemon * daemon_, Options options_ = ADD_NOTHING) : Poco::PatternFormatter(""), daemon(daemon_), options(options_) {}
+    OwnPatternFormatter(const BaseDaemon * daemon_, Options options_ = ADD_NOTHING);
 
     void format(const Poco::Message & msg, std::string & text) override;
+    void formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text);
 
 private:
     const BaseDaemon * daemon;

@@ -7,16 +7,26 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
+#include <Common/LRUCache.h>
+#include <Common/MemoryTracker.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Native.h>
-#include <Functions/IFunction.h>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
+
+/** Y_IGNORE marker means that this header is not analyzed by Arcadia build system.
+  * "Arcadia" is the name of internal Yandex source code repository.
+  * ClickHouse have limited support for build in Arcadia
+  * (ClickHouse source code is used in another Yandex products as a library).
+  * Some libraries are not enabled when build inside Arcadia is used,
+  *  that what does Y_IGNORE indicate.
+  */
 
 #include <llvm/Analysis/TargetTransformInfo.h> // Y_IGNORE
 #include <llvm/Config/llvm-config.h> // Y_IGNORE
@@ -49,6 +59,8 @@
 namespace ProfileEvents
 {
     extern const Event CompileFunction;
+    extern const Event CompileExpressionsMicroseconds;
+    extern const Event CompileExpressionsBytes;
 }
 
 namespace DB
@@ -114,7 +126,7 @@ static llvm::TargetMachine * getNativeMachine()
     llvm::SubtargetFeatures features;
     llvm::StringMap<bool> feature_map;
     if (llvm::sys::getHostCPUFeatures(feature_map))
-        for (auto& f : feature_map)
+        for (auto & f : feature_map)
             features.AddFeature(f.first(), f.second);
     llvm::TargetOptions options;
     return target->createTargetMachine(
@@ -160,8 +172,37 @@ auto wrapJITSymbolResolver(llvm::JITSymbolResolver & jsr)
 }
 #endif
 
+#if LLVM_VERSION_MAJOR >= 6
+struct CountingMMapper final : public llvm::SectionMemoryManager::MemoryMapper
+{
+    MemoryTracker memory_tracker{VariableContext::Global};
+
+    llvm::sys::MemoryBlock allocateMappedMemory(llvm::SectionMemoryManager::AllocationPurpose /*purpose*/,
+        size_t num_bytes,
+        const llvm::sys::MemoryBlock * const near_block,
+        unsigned flags,
+        std::error_code & error_code) override
+    {
+        memory_tracker.alloc(num_bytes);
+        return llvm::sys::Memory::allocateMappedMemory(num_bytes, near_block, flags, error_code);
+    }
+
+    std::error_code protectMappedMemory(const llvm::sys::MemoryBlock & block, unsigned flags) override
+    {
+        return llvm::sys::Memory::protectMappedMemory(block, flags);
+    }
+
+    std::error_code releaseMappedMemory(llvm::sys::MemoryBlock & block) override
+    {
+        memory_tracker.free(block.size());
+        return llvm::sys::Memory::releaseMappedMemory(block);
+    }
+};
+#endif
+
 struct LLVMContext
 {
+    static inline std::atomic<size_t> id_counter{0};
     llvm::LLVMContext context;
 #if LLVM_VERSION_MAJOR >= 7
     llvm::orc::ExecutionSession execution_session;
@@ -170,12 +211,16 @@ struct LLVMContext
     std::shared_ptr<llvm::Module> module;
 #endif
     std::unique_ptr<llvm::TargetMachine> machine;
+#if LLVM_VERSION_MAJOR >= 6
+    std::unique_ptr<CountingMMapper> memory_mapper;
+#endif
     std::shared_ptr<llvm::SectionMemoryManager> memory_manager;
     llvm::orc::RTDyldObjectLinkingLayer object_layer;
     llvm::orc::IRCompileLayer<decltype(object_layer), llvm::orc::SimpleCompiler> compile_layer;
     llvm::DataLayout layout;
     llvm::IRBuilder<> builder;
     std::unordered_map<std::string, void *> symbols;
+    size_t id;
 
     LLVMContext()
 #if LLVM_VERSION_MAJOR >= 7
@@ -184,7 +229,13 @@ struct LLVMContext
         : module(std::make_shared<llvm::Module>("jit", context))
 #endif
         , machine(getNativeMachine())
+
+#if LLVM_VERSION_MAJOR >= 6
+        , memory_mapper(std::make_unique<CountingMMapper>())
+        , memory_manager(std::make_shared<llvm::SectionMemoryManager>(memory_mapper.get()))
+#else
         , memory_manager(std::make_shared<llvm::SectionMemoryManager>())
+#endif
 #if LLVM_VERSION_MAJOR >= 7
         , object_layer(execution_session, [this](llvm::orc::VModuleKey)
         {
@@ -196,15 +247,17 @@ struct LLVMContext
         , compile_layer(object_layer, llvm::orc::SimpleCompiler(*machine))
         , layout(machine->createDataLayout())
         , builder(context)
+        , id(id_counter++)
     {
         module->setDataLayout(layout);
         module->setTargetTriple(machine->getTargetTriple().getTriple());
     }
 
-    void finalize()
+    /// returns used memory
+    size_t compileAllFunctionsToNativeCode()
     {
         if (!module->size())
-            return;
+            return 0;
         llvm::PassManagerBuilder builder;
         llvm::legacy::PassManager mpm;
         llvm::legacy::FunctionPassManager fpm(module.get());
@@ -253,6 +306,11 @@ struct LLVMContext
                 throw Exception("Function " + name + " failed to link", ErrorCodes::CANNOT_COMPILE_CODE);
             symbols[name] = reinterpret_cast<void *>(*address);
         }
+#if LLVM_VERSION_MAJOR >= 6
+        return memory_mapper->memory_tracker.get();
+#else
+        return 0;
+#endif
     }
 };
 
@@ -290,10 +348,10 @@ public:
             reinterpret_cast<void (*) (size_t, ColumnData *)>(function)(block_size, columns.data());
         }
         block.getByPosition(result).column = std::move(col_res);
-    };
+    }
 };
 
-static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
+static void compileFunctionToLLVMByteCode(std::shared_ptr<LLVMContext> & context, const IFunctionBase & f)
 {
     ProfileEvents::increment(ProfileEvents::CompileFunction);
 
@@ -377,7 +435,7 @@ static void compileFunction(std::shared_ptr<LLVMContext> & context, const IFunct
 
 static llvm::Constant * getNativeValue(llvm::Type * type, const IColumn & column, size_t i)
 {
-    if (!type)
+    if (!type || column.size() <= i)
         return nullptr;
     if (auto * constant = typeid_cast<const ColumnConst *>(&column))
         return getNativeValue(type, constant->getDataColumn(), 0);
@@ -424,152 +482,139 @@ static CompilableExpression subexpression(const IFunctionBase & f, std::vector<C
     };
 }
 
-class LLVMFunction : public IFunctionBase
-{
-    std::string name;
-    Names arg_names;
-    DataTypes arg_types;
-    std::shared_ptr<LLVMContext> context;
-    std::vector<FunctionBasePtr> originals;
-    std::unordered_map<StringRef, CompilableExpression> subexpressions;
-
-public:
-    LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block)
+LLVMFunction::LLVMFunction(const ExpressionActions::Actions & actions, std::shared_ptr<LLVMContext> context, const Block & sample_block)
         : name(actions.back().result_name), context(context)
-    {
-        for (const auto & c : sample_block)
-            /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
-            if (c.column && getNativeValue(toNativeType(context->builder, c.type), *c.column, 0))
-                subexpressions[c.name] = subexpression(c.column, c.type);
-        for (const auto & action : actions)
-        {
-            const auto & names = action.argument_names;
-            const auto & types = action.function->getArgumentTypes();
-            std::vector<CompilableExpression> args;
-            for (size_t i = 0; i < names.size(); ++i)
-            {
-                auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
-                if (inserted.second)
-                {
-                    arg_names.push_back(names[i]);
-                    arg_types.push_back(types[i]);
-                }
-                args.push_back(inserted.first->second);
-            }
-            subexpressions[action.result_name] = subexpression(*action.function, std::move(args));
-            originals.push_back(action.function);
-        }
-        compileFunction(context, *this);
-    }
-
-    bool isCompilable() const override { return true; }
-
-    llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override { return subexpressions.at(name)(builder, values); }
-
-    String getName() const override { return name; }
-
-    const Names & getArgumentNames() const { return arg_names; }
-
-    const DataTypes & getArgumentTypes() const override { return arg_types; }
-
-    const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
-
-    PreparedFunctionPtr prepare(const Block &) const override { return std::make_shared<LLVMPreparedFunction>(name, context); }
-
-    bool isDeterministic() override
-    {
-        for (const auto & f : originals)
-            if (!f->isDeterministic())
-                return false;
-        return true;
-    }
-
-    bool isDeterministicInScopeOfQuery() override
-    {
-        for (const auto & f : originals)
-            if (!f->isDeterministicInScopeOfQuery())
-                return false;
-        return true;
-    }
-
-    bool isSuitableForConstantFolding() const override
-    {
-        for (const auto & f : originals)
-            if (!f->isSuitableForConstantFolding())
-                return false;
-        return true;
-    }
-
-    bool isInjective(const Block & sample_block) override
-    {
-        for (const auto & f : originals)
-            if (!f->isInjective(sample_block))
-                return false;
-        return true;
-    }
-
-    bool hasInformationAboutMonotonicity() const override
-    {
-        for (const auto & f : originals)
-            if (!f->hasInformationAboutMonotonicity())
-                return false;
-        return true;
-    }
-
-    Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        const IDataType * type_ = &type;
-        Field left_ = left;
-        Field right_ = right;
-        Monotonicity result(true, true, true);
-        /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
-        for (size_t i = 0; i < originals.size(); ++i)
-        {
-            Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
-            if (!m.is_monotonic)
-                return m;
-            result.is_positive ^= !m.is_positive;
-            result.is_always_monotonic &= m.is_always_monotonic;
-            if (i + 1 < originals.size())
-            {
-                if (left_ != Field())
-                    applyFunction(*originals[i], left_);
-                if (right_ != Field())
-                    applyFunction(*originals[i], right_);
-                if (!m.is_positive)
-                    std::swap(left_, right_);
-                type_ = originals[i]->getReturnType().get();
-            }
-        }
-        return result;
-    }
-};
-
-static bool isCompilable(llvm::IRBuilderBase & builder, const IFunctionBase& function)
 {
-    if (!toNativeType(builder, function.getReturnType()))
+    for (const auto & c : sample_block)
+        /// TODO: implement `getNativeValue` for all types & replace the check with `c.column && toNativeType(...)`
+        if (c.column && getNativeValue(toNativeType(context->builder, c.type), *c.column, 0))
+            subexpressions[c.name] = subexpression(c.column, c.type);
+    for (const auto & action : actions)
+    {
+        const auto & names = action.argument_names;
+        const auto & types = action.function_base->getArgumentTypes();
+        std::vector<CompilableExpression> args;
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            auto inserted = subexpressions.emplace(names[i], subexpression(arg_names.size()));
+            if (inserted.second)
+            {
+                arg_names.push_back(names[i]);
+                arg_types.push_back(types[i]);
+            }
+            args.push_back(inserted.first->second);
+        }
+        subexpressions[action.result_name] = subexpression(*action.function_base, std::move(args));
+        originals.push_back(action.function_base);
+    }
+    compileFunctionToLLVMByteCode(context, *this);
+}
+
+PreparedFunctionPtr LLVMFunction::prepare(const Block &, const ColumnNumbers &, size_t) const { return std::make_shared<LLVMPreparedFunction>(name, context); }
+
+bool LLVMFunction::isDeterministic() const
+{
+    for (const auto & f : originals)
+        if (!f->isDeterministic())
+            return false;
+    return true;
+}
+
+bool LLVMFunction::isDeterministicInScopeOfQuery() const
+{
+    for (const auto & f : originals)
+        if (!f->isDeterministicInScopeOfQuery())
+            return false;
+    return true;
+}
+
+bool LLVMFunction::isSuitableForConstantFolding() const
+{
+    for (const auto & f : originals)
+        if (!f->isSuitableForConstantFolding())
+            return false;
+    return true;
+}
+
+bool LLVMFunction::isInjective(const Block & sample_block)
+{
+    for (const auto & f : originals)
+        if (!f->isInjective(sample_block))
+            return false;
+    return true;
+}
+
+bool LLVMFunction::hasInformationAboutMonotonicity() const
+{
+    for (const auto & f : originals)
+        if (!f->hasInformationAboutMonotonicity())
+            return false;
+    return true;
+}
+
+LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
+{
+    const IDataType * type_ = &type;
+    Field left_ = left;
+    Field right_ = right;
+    Monotonicity result(true, true, true);
+    /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
+    for (size_t i = 0; i < originals.size(); ++i)
+    {
+        Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
+        if (!m.is_monotonic)
+            return m;
+        result.is_positive ^= !m.is_positive;
+        result.is_always_monotonic &= m.is_always_monotonic;
+        if (i + 1 < originals.size())
+        {
+            if (left_ != Field())
+                applyFunction(*originals[i], left_);
+            if (right_ != Field())
+                applyFunction(*originals[i], right_);
+            if (!m.is_positive)
+                std::swap(left_, right_);
+            type_ = originals[i]->getReturnType().get();
+        }
+    }
+    return result;
+}
+
+
+static bool isCompilable(const IFunctionBase & function)
+{
+    if (!canBeNativeType(*function.getReturnType()))
         return false;
     for (const auto & type : function.getArgumentTypes())
-        if (!toNativeType(builder, type))
+        if (!canBeNativeType(*type))
             return false;
     return function.isCompilable();
 }
 
-void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block)
+size_t CompiledExpressionCache::weight() const
 {
-    struct LLVMTargetInitializer
+
+#if LLVM_VERSION_MAJOR >= 6
+    std::lock_guard<std::mutex> lock(mutex);
+    size_t result{0};
+    std::unordered_set<size_t> seen;
+    for (const auto & cell : cells)
     {
-        LLVMTargetInitializer()
+        auto function_context = cell.second.value->getContext();
+        if (!seen.count(function_context->id))
         {
-            llvm::InitializeNativeTarget();
-            llvm::InitializeNativeTargetAsmPrinter();
-            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+            result += function_context->memory_mapper->memory_tracker.get();
+            seen.insert(function_context->id);
         }
-    };
+    }
+    return result;
+#else
+    return Base::weight();
+#endif
+}
 
-    static LLVMTargetInitializer initializer;
-
-    auto context = std::make_shared<LLVMContext>();
+std::vector<std::unordered_set<std::optional<size_t>>> getActionsDependents(const ExpressionActions::Actions & actions, const Names & output_columns)
+{
     /// an empty optional is a poisoned value prohibiting the column's producer from being removed
     /// (which it could be, if it was inlined into every dependent function).
     std::unordered_map<std::string, std::unordered_set<std::optional<size_t>>> current_dependents;
@@ -594,6 +639,11 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
                     current_dependents[proj.first].emplace();
                 break;
 
+            case ExpressionAction::ADD_ALIASES:
+                for (const auto & proj : actions[i].projection)
+                    current_dependents[proj.first].emplace();
+                break;
+
             case ExpressionAction::ADD_COLUMN:
             case ExpressionAction::COPY_COLUMN:
             case ExpressionAction::ARRAY_JOIN:
@@ -608,7 +658,7 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             case ExpressionAction::APPLY_FUNCTION:
             {
                 dependents[i] = current_dependents[actions[i].result_name];
-                const bool compilable = isCompilable(context->builder, *actions[i].function);
+                const bool compilable = isCompilable(*actions[i].function_base);
                 for (const auto & name : actions[i].argument_names)
                 {
                     if (compilable)
@@ -620,11 +670,33 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             }
         }
     }
+    return dependents;
+}
 
+void compileFunctions(ExpressionActions::Actions & actions, const Names & output_columns, const Block & sample_block, std::shared_ptr<CompiledExpressionCache> compilation_cache, size_t min_count_to_compile)
+{
+    static std::unordered_map<UInt128, UInt32, UInt128Hash> counter;
+    static std::mutex mutex;
+
+    struct LLVMTargetInitializer
+    {
+        LLVMTargetInitializer()
+        {
+            llvm::InitializeNativeTarget();
+            llvm::InitializeNativeTargetAsmPrinter();
+            llvm::sys::DynamicLibrary::LoadLibraryPermanently(nullptr);
+        }
+    };
+
+    static LLVMTargetInitializer initializer;
+
+    auto dependents = getActionsDependents(actions, output_columns);
+    /// Initialize context as late as possible and only if needed
+    std::shared_ptr<LLVMContext> context;
     std::vector<ExpressionActions::Actions> fused(actions.size());
     for (size_t i = 0; i < actions.size(); ++i)
     {
-        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(context->builder, *actions[i].function))
+        if (actions[i].type != ExpressionAction::APPLY_FUNCTION || !isCompilable(*actions[i].function_base))
             continue;
 
         fused[i].push_back(actions[i]);
@@ -633,9 +705,44 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             /// the result of compiling one function in isolation is pretty much the same as its `execute` method.
             if (fused[i].size() == 1)
                 continue;
-            auto fn = std::make_shared<LLVMFunction>(std::move(fused[i]), context, sample_block);
-            actions[i].function = fn;
+
+            auto hash_key = ExpressionActions::ActionsHash{}(fused[i]);
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (counter[hash_key]++ < min_count_to_compile)
+                    continue;
+            }
+
+            std::shared_ptr<LLVMFunction> fn;
+            if (compilation_cache)
+            {
+                /// Lock here, to be sure, that all functions will be compiled
+                std::lock_guard<std::mutex> lock(mutex);
+                /// Don't use getOrSet here, because sometimes we need to initialize context
+                fn = compilation_cache->get(hash_key);
+                if (!fn)
+                {
+                    if (!context)
+                        context = std::make_shared<LLVMContext>();
+                    Stopwatch watch;
+                    fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
+                    ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+                    compilation_cache->set(hash_key, fn);
+                }
+            }
+            else
+            {
+                if (!context)
+                    context = std::make_shared<LLVMContext>();
+                Stopwatch watch;
+                fn = std::make_shared<LLVMFunction>(fused[i], context, sample_block);
+                ProfileEvents::increment(ProfileEvents::CompileExpressionsMicroseconds, watch.elapsedMicroseconds());
+            }
+
+            actions[i].function_base = fn;
             actions[i].argument_names = fn->getArgumentNames();
+            actions[i].is_function_compiled = true;
+
             continue;
         }
 
@@ -644,7 +751,21 @@ void compileFunctions(ExpressionActions::Actions & actions, const Names & output
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    context->finalize();
+    if (context)
+    {
+        /// Lock here, because other threads can get uncompilted functions from cache
+        std::lock_guard<std::mutex> lock(mutex);
+        size_t used_memory = context->compileAllFunctionsToNativeCode();
+        ProfileEvents::increment(ProfileEvents::CompileExpressionsBytes, used_memory);
+    }
+
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        if (actions[i].type == ExpressionAction::APPLY_FUNCTION && actions[i].is_function_compiled)
+        {
+            actions[i].function = actions[i].function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
+        }
+    }
 }
 
 }

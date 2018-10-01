@@ -13,11 +13,8 @@ remote('addresses_expr', db.table[, 'user'[, 'password']])
 
 `addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`. The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. The port is the TCP port on the remote server. If the port is omitted, it uses `tcp_port` from the server's config file (by default, 9000).
 
-<div class="admonition important">
-
-The port is required for an IPv6 address.
-
-</div>
+!!! important
+    The port is required for an IPv6 address.
 
 Examples:
 

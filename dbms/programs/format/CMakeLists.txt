@@ -1,4 +1,4 @@
-add_library (clickhouse-format-lib ${SPLIT_SHARED} Format.cpp)
+add_library (clickhouse-format-lib ${LINK_MODE} Format.cpp)
 target_link_libraries (clickhouse-format-lib dbms clickhouse_common_io ${Boost_PROGRAM_OPTIONS_LIBRARY})
 if (CLICKHOUSE_SPLIT_BINARY)
     add_executable (clickhouse-format clickhouse-format.cpp)

@@ -6,35 +6,10 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Columns/ColumnFunction.h>
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
-
-/** Creates an array, multiplying the column (the first argument) by the number of elements in the array (the second argument).
-  */
-class FunctionReplicate : public IFunction
-{
-public:
-    static constexpr auto name = "replicate";
-    static FunctionPtr create(const Context & context);
-
-    String getName() const override
-    {
-        return name;
-    }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
-};
-
 
 /// Executes expression. Uses for lambda functions implementation. Can't be created from factory.
 class FunctionExpression : public IFunctionBase, public IPreparedFunction,
@@ -54,7 +29,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &) const override
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionExpression>(shared_from_this());
     }
@@ -106,11 +81,11 @@ public:
         {
             DataTypes types;
             types.reserve(names.size());
-            for (const auto & name : names)
+            for (const auto & captured_name : names)
             {
-                auto it = arguments_map.find(name);
+                auto it = arguments_map.find(captured_name);
                 if (it == arguments_map.end())
-                    throw Exception("Lambda captured argument " + name + " not found in required columns.",
+                    throw Exception("Lambda captured argument " + captured_name + " not found in required columns.",
                                     ErrorCodes::LOGICAL_ERROR);
 
                 types.push_back(it->second);
@@ -138,7 +113,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return captured_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block &) const override
+    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override
     {
         return std::const_pointer_cast<FunctionCapture>(shared_from_this());
     }

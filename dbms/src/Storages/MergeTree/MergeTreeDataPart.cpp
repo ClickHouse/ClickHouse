@@ -339,7 +339,7 @@ void MergeTreeDataPart::remove() const
     {
         from_dir.renameTo(to);
     }
-    catch (const Poco::FileNotFoundException & e)
+    catch (const Poco::FileNotFoundException &)
     {
         LOG_ERROR(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
@@ -586,12 +586,13 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 
     for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
     {
+        IDataType::SubstreamPath path;
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
             Poco::File bin_file(getFullPath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin");
             if (bin_file.exists())
                 column_to_size[name_type.name] += bin_file.getSize();
-        }, {});
+        }, path);
     }
 }
 
@@ -637,18 +638,19 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         {
             for (const NameAndTypePair & name_type : columns)
             {
+                IDataType::SubstreamPath stream_path;
                 name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                     String mrk_file_name = file_name + ".mrk";
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
-                        throw Exception("No " + mrk_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                     if (!checksums.files.count(bin_file_name))
-                        throw Exception("No " + bin_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
-                }, {});
+                }, stream_path);
             }
         }
 
@@ -721,7 +723,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
                         throw Exception("Part " + path + " is broken: marks have different sizes.",
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
                 }
-            }, {});
+            });
         }
     }
 }

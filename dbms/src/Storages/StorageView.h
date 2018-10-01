@@ -2,6 +2,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
+#include <Parsers/ASTSelectQuery.h>
 
 
 namespace DB
@@ -25,7 +26,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -37,6 +38,8 @@ public:
 private:
     String table_name;
     ASTPtr inner_query;
+
+    void replaceTableNameWithSubquery(ASTSelectQuery * select_query, ASTPtr & subquery);
 
 protected:
     StorageView(

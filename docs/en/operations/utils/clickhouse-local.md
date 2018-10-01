@@ -10,9 +10,8 @@ Accepts data that represent tables and queries them using [ClickHouse SQL dialec
 
 By default `clickhouse-local` does not have access to data on the same host, but it supports loading server configuration using `--config-file` argument.
 
-<div class="admonition warning">
-It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
-</div>
+!!! warning
+    It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
 
 
 ## Usage

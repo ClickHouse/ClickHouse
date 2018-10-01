@@ -3,10 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Common/FieldVisitors.h>
@@ -429,17 +425,17 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         const auto & action = a.argument_names;
         if (a.type == ExpressionAction::Type::APPLY_FUNCTION && action.size() == 1 && a.argument_names[0] == expr_name)
         {
-            if (!a.function->hasInformationAboutMonotonicity())
+            if (!a.function_base->hasInformationAboutMonotonicity())
                 return false;
 
             // Range is irrelevant in this case
-            IFunction::Monotonicity monotonicity = a.function->getMonotonicityForRange(*out_type, Field(), Field());
+            IFunction::Monotonicity monotonicity = a.function_base->getMonotonicityForRange(*out_type, Field(), Field());
             if (!monotonicity.is_always_monotonic)
                 return false;
 
             // Apply the next transformation step
             DataTypePtr new_type;
-            applyFunction(a.function, out_type, out_value, new_type, out_value);
+            applyFunction(a.function_base, out_type, out_value, new_type, out_value);
             if (!new_type)
                 return false;
 
@@ -712,7 +708,7 @@ bool KeyCondition::atomFromAST(const ASTPtr & node, const Context & context, Blo
 
         bool cast_not_needed =
             is_set_const /// Set args are already casted inside Set::createFromAST
-            || (key_expr_type->isNumber() && const_type->isNumber()); /// Numbers are accurately compared without cast.
+            || (isNumber(key_expr_type) && isNumber(const_type)); /// Numbers are accurately compared without cast.
 
         if (!cast_not_needed)
             castValueToType(key_expr_type, const_value, const_type, node);
