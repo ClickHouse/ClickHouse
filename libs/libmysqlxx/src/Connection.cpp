@@ -45,10 +45,9 @@ Connection::Connection(
     unsigned timeout,
     unsigned rw_timeout,
     bool enable_local_infile)
-    : driver(std::make_unique<MYSQL>())
+    : Connection()
 {
-    is_connected = false;
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout);
 }
 
 Connection::Connection(const std::string & config_name)
