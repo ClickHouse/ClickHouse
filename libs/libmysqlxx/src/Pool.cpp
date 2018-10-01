@@ -1,6 +1,6 @@
 #if __has_include(<mariadb/mysql.h>)
-#include <mariadb/mysql.h>
-#include <mariadb/mysqld_error.h>
+#include <mariadb/mysql.h> // Y_IGNORE
+#include <mariadb/mysqld_error.h> // Y_IGNORE
 #else
 #include <mysql/mysql.h>
 #include <mysql/mysqld_error.h>
