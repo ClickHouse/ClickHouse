@@ -45,10 +45,11 @@ Connection::Connection(
     const char* ssl_cert,
     const char* ssl_key,
     unsigned timeout,
-    unsigned rw_timeout)
+    unsigned rw_timeout,
+    bool enable_local_infile)
     : Connection()
 {
-    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout);
+    connect(db, server, user, password, port, socket, ssl_ca, ssl_cert, ssl_key, timeout, rw_timeout, enable_local_infile);
 }
 
 Connection::Connection(const std::string & config_name)
@@ -73,7 +74,8 @@ void Connection::connect(const char* db,
     const char * ssl_cert,
     const char * ssl_key,
     unsigned timeout,
-    unsigned rw_timeout)
+    unsigned rw_timeout,
+    bool enable_local_infile)
 {
     if (is_connected)
         disconnect();
@@ -92,9 +94,9 @@ void Connection::connect(const char* db,
     if (mysql_options(driver.get(), MYSQL_OPT_WRITE_TIMEOUT, &rw_timeout))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
-    /// Disable LOAD DATA LOCAL INFILE because it is insecure.
-    unsigned enable_local_infile = 0;
-    if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile))
+    /// Disable LOAD DATA LOCAL INFILE because it is insecure if necessary.
+    unsigned enable_local_infile_arg = static_cast<unsigned>(enable_local_infile);
+    if (mysql_options(driver.get(), MYSQL_OPT_LOCAL_INFILE, &enable_local_infile_arg))
         throw ConnectionFailed(errorMessage(driver.get()), mysql_errno(driver.get()));
 
     /// Specifies particular ssl key and certificate if it needs

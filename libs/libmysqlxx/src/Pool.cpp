@@ -69,6 +69,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_key = cfg.has(config_name + ".ssl_key")
             ? cfg.getString(config_name + ".ssl_key")
             : cfg.getString(parent_config_name + ".ssl_key", "");
+
+        enable_local_infile = cfg.getBool(config_name + ".enable_local_infile",
+            cfg.getBool(parent_config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE));
     }
     else
     {
@@ -84,6 +87,9 @@ Pool::Pool(const Poco::Util::AbstractConfiguration & cfg, const std::string & co
         ssl_ca = cfg.getString(config_name + ".ssl_ca", "");
         ssl_cert = cfg.getString(config_name + ".ssl_cert", "");
         ssl_key = cfg.getString(config_name + ".ssl_key", "");
+
+        enable_local_infile = cfg.getBool(
+            config_name + ".enable_local_infile", MYSQLXX_DEFAULT_ENABLE_LOCAL_INFILE);
     }
 
     connect_timeout = cfg.getInt(config_name + ".connect_timeout",
@@ -192,7 +198,8 @@ void Pool::Entry::forceConnected() const
             pool->ssl_cert.c_str(),
             pool->ssl_key.c_str(),
             pool->connect_timeout,
-            pool->rw_timeout);
+            pool->rw_timeout,
+            pool->enable_local_infile);
     }
     while (!data->conn.ping());
 }
@@ -233,7 +240,8 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
             ssl_cert.c_str(),
             ssl_key.c_str(),
             connect_timeout,
-            rw_timeout);
+            rw_timeout,
+            enable_local_infile);
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
