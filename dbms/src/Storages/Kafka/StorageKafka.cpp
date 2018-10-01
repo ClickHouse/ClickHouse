@@ -508,11 +508,10 @@ bool StorageKafka::streamToViews()
 
     // Join multiple streams if necessary
     BlockInputStreamPtr in;
-    if (streams.size() > 1) {
+    if (streams.size() > 1)
         in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, num_consumers);
-    } else {
+    else
         in = streams[0];
-    }
 
     // Execute the query
     InterpreterInsertQuery interpreter{insert, context};
@@ -521,7 +520,8 @@ bool StorageKafka::streamToViews()
 
     // Check whether the limits were applied during query execution
     bool limits_applied = false;
-    if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(in.get())) {
+    if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(in.get()))
+    {
         const BlockStreamProfileInfo & info = p_stream->getProfileInfo();
         limits_applied = info.hasAppliedLimit();
     }
