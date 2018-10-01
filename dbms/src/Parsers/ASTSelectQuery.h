@@ -28,6 +28,8 @@ public:
     ASTPtr where_expression;
     ASTPtr group_expression_list;
     bool group_by_with_totals = false;
+    bool group_by_with_rollup = false;
+    bool group_by_with_cube = false;
     ASTPtr having_expression;
     ASTPtr order_expression_list;
     ASTPtr limit_by_value;
@@ -47,6 +49,7 @@ public:
     bool final() const;
     void setDatabaseIfNeeded(const String & database_name);
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
+    void addTableFunction(ASTPtr & table_function_ptr);
 
 protected:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

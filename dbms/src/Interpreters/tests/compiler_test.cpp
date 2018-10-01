@@ -28,7 +28,7 @@ int main(int, char **)
                     "catch (const std::runtime_error & e) { std::cout << \"Caught in .so: \" << e.what() << std::endl; throw; }\n"
                 "}"
                 ;
-        }, [](SharedLibraryPtr&){});
+        }, [](SharedLibraryPtr &){});
 
         auto f = lib->template get<void (*)()>("_Z1fv");
 

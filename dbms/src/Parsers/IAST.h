@@ -7,6 +7,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Parsers/StringRange.h>
+#include <Parsers/IdentifierQuotingStyle.h>
 
 
 class SipHash;
@@ -150,16 +151,20 @@ public:
     struct FormatSettings
     {
         std::ostream & ostr;
-        bool hilite;
+        bool hilite = false;
         bool one_line;
+        bool always_quote_identifiers = false;
+        IdentifierQuotingStyle identifier_quoting_style = IdentifierQuotingStyle::Backticks;
 
         char nl_or_ws;
 
-        FormatSettings(std::ostream & ostr_, bool hilite_, bool one_line_)
-            : ostr(ostr_), hilite(hilite_), one_line(one_line_)
+        FormatSettings(std::ostream & ostr_, bool one_line_)
+            : ostr(ostr_), one_line(one_line_)
         {
             nl_or_ws = one_line ? ' ' : '\n';
         }
+
+        void writeIdentifier(const String & name) const;
     };
 
     /// State. For example, a set of nodes can be remembered, which we already walk through.
@@ -193,8 +198,6 @@ public:
                 : ""),
             ErrorCodes::UNKNOWN_ELEMENT_IN_AST);
     }
-
-    void writeAlias(const String & name, std::ostream & s, bool hilite) const;
 
     void cloneChildren();
 

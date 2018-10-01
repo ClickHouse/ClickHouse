@@ -1,7 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,25 +12,17 @@ class Context;
 
 /// Implements the `mutations` system table, which provides information about the status of mutations
 /// in the MergeTree tables.
-class StorageSystemMutations : public ext::shared_ptr_helper<StorageSystemMutations>, public IStorage
+class StorageSystemMutations : public ext::shared_ptr_helper<StorageSystemMutations>, public IStorageSystemOneBlock<StorageSystemMutations>
 {
 public:
     String getName() const override { return "SystemMutations"; }
-    String getTableName() const override { return name; }
 
-    BlockInputStreams read(
-        const Names & column_names,
-        const SelectQueryInfo & query_info,
-        const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
-        size_t max_block_size,
-        unsigned num_streams) override;
-
-private:
-    const String name;
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    StorageSystemMutations(const String & name_);
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

@@ -10,6 +10,7 @@
 #include <common/LocalDate.h>
 #include <common/LocalDateTime.h>
 #include <common/find_first_symbols.h>
+#include <common/intExp.h>
 
 #include <Core/Types.h>
 #include <Core/UUID.h>
@@ -23,6 +24,7 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -173,7 +175,7 @@ inline void writeString(const StringRef & ref, WriteBuffer & buf)
  *  - it is assumed that string is in UTF-8, the invalid UTF-8 is not processed
  *  - all other non-ASCII characters remain as is
  */
-inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf)
+inline void writeJSONString(const char * begin, const char * end, WriteBuffer & buf, const FormatSettings & settings)
 {
     writeChar('"', buf);
     for (const char * it = begin; it != end; ++it)
@@ -205,7 +207,8 @@ inline void writeJSONString(const char * begin, const char * end, WriteBuffer & 
                 writeChar('\\', buf);
                 break;
             case '/':
-                writeChar('\\', buf);
+                if (settings.json.escape_forward_slashes)
+                    writeChar('\\', buf);
                 writeChar('/', buf);
                 break;
             case '"':
@@ -311,15 +314,15 @@ void writeAnyEscapedString(const char * begin, const char * end, WriteBuffer & b
 }
 
 
-inline void writeJSONString(const String & s, WriteBuffer & buf)
+inline void writeJSONString(const String & s, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(s.data(), s.data() + s.size(), buf);
+    writeJSONString(s.data(), s.data() + s.size(), buf, settings);
 }
 
 
-inline void writeJSONString(const StringRef & ref, WriteBuffer & buf)
+inline void writeJSONString(const StringRef & ref, WriteBuffer & buf, const FormatSettings & settings)
 {
-    writeJSONString(ref.data, ref.data + ref.size, buf);
+    writeJSONString(ref.data, ref.data + ref.size, buf, settings);
 }
 
 
@@ -394,11 +397,13 @@ inline void writeBackQuotedString(const String & s, WriteBuffer & buf)
     writeAnyQuotedString<'`'>(s, buf);
 }
 
-/// The same, but backquotes apply only if there are characters that do not match the identifier without backquotes.
-inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+
+/// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
+template <typename F>
+inline void writeProbablyQuotedStringImpl(const String & s, WriteBuffer & buf, F && write_quoted_string)
 {
     if (s.empty() || !isValidIdentifierBegin(s[0]))
-        writeBackQuotedString(s, buf);
+        write_quoted_string(s, buf);
     else
     {
         const char * pos = s.data() + 1;
@@ -407,10 +412,20 @@ inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
             if (!isWordCharASCII(*pos))
                 break;
         if (pos != end)
-            writeBackQuotedString(s, buf);
+            write_quoted_string(s, buf);
         else
             writeString(s, buf);
     }
+}
+
+inline void writeProbablyBackQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+}
+
+inline void writeProbablyDoubleQuotedString(const String & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const String & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
 }
 
 
@@ -660,8 +675,12 @@ writeBinary(const T & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
 inline void writeBinary(const String & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
 inline void writeBinary(const StringRef & x, WriteBuffer & buf) { writeStringBinary(x, buf); }
+inline void writeBinary(const Int128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
@@ -688,12 +707,36 @@ inline void writeText(const char * x, size_t size, WriteBuffer & buf) { writeEsc
 inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x, buf); }
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
-inline void writeText(const UInt128 &, WriteBuffer &)
+inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
+
+template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
+template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
+template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
+template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+
+
+template <typename T>
+void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
-    /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
-     *  it should never arrive here. But because we used the DataTypeNumber class we should have at least a definition of it.
-     */
-    throw Exception("UInt128 cannot be write as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+    if (value < Decimal<T>(0))
+    {
+        value *= Decimal<T>(-1);
+        writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
+    }
+
+    T whole_part = value;
+    if (scale)
+        whole_part = value / decimalScaleMultiplier<T>(scale);
+
+    writeIntText(whole_part, ostr);
+    if (scale)
+    {
+        writeChar('.', ostr);
+        String str_fractional(scale, '0');
+        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
+            str_fractional[pos] += value % Decimal<T>(10);
+        ostr.write(str_fractional.data(), scale);
+    }
 }
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
@@ -717,6 +760,12 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
+inline void writeQuoted(const UUID & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
@@ -808,7 +857,7 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 
 
 /// Serialize exception (so that it can be transferred over the network)
-void writeException(const Exception & e, WriteBuffer & buf);
+void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace);
 
 
 /// An easy-to-use method for converting something to a string in text form.

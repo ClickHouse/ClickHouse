@@ -384,7 +384,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
     else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (identifier_ptr->kind == ASTIdentifier::Column)
+        if (identifier_ptr->general())
             if (array_joined_names.count(identifier_ptr->name) ||
                 array_joined_names.count(Nested::extractTableName(identifier_ptr->name)))
                 return true;

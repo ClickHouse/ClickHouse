@@ -28,6 +28,7 @@ anyHeavy(column)
 ```
 
 **Arguments**
+
 - `column` – The column name.
 
 **Example**
@@ -61,6 +62,21 @@ Calculates the maximum.
 ## argMin(arg, val)
 
 Calculates the 'arg' value for a minimal 'val' value. If there are several different values of 'arg' for minimal values of 'val', the first of these values encountered is output.
+
+**Example:**
+```
+┌─user─────┬─salary─┐
+│ director │   5000 │
+│ manager  │   3000 │
+│ worker   │   1000 │
+└──────────┴────────┘
+
+SELECT argMin(user, salary) FROM salary
+
+┌─argMin(user, salary)─┐
+│ worker               │
+└──────────────────────┘
+```
 
 ## argMax(arg, val)
 
@@ -252,7 +268,7 @@ A hash table is used as the algorithm. Because of this, if the passed values ​
 
 Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
 
-The performance of the function is lower than for ` quantile`, ` quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than for `quantile`, `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
@@ -290,7 +306,7 @@ The result is equal to the square root of `varPop(x)`.
 
 Returns an array of the most frequent values in the specified column. The resulting array is sorted in descending order of frequency of values (not by the values themselves).
 
-Implements the [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+Implements the [ Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf)  algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
 
 ```
 topK(N)(column)
@@ -301,6 +317,7 @@ This function doesn't provide a guaranteed result. In certain situations, errors
 We recommend using the `N < 10 ` value; performance is reduced with large `N` values. Maximum value of ` N = 65536`.
 
 **Arguments**
+
 - 'N' is the number of values.
 - ' x ' – The column.
 
@@ -312,6 +329,7 @@ Take the [OnTime](../../getting_started/example_datasets/ontime.md#example_datas
 SELECT topK(3)(AirlineID) AS res
 FROM ontime
 ```
+
 ```
 ┌─res─────────────────┐
 │ [19393,19790,19805] │

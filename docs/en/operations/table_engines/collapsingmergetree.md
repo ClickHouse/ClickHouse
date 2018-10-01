@@ -1,3 +1,5 @@
+<a name="table_engine-collapsingmergetree"></a>
+
 # CollapsingMergeTree
 
 *This engine is used specifically for Yandex.Metrica.*

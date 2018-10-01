@@ -22,7 +22,7 @@ ExternalQueryBuilder::ExternalQueryBuilder(
     const std::string & db,
     const std::string & table,
     const std::string & where,
-    QuotingStyle quoting_style)
+    IdentifierQuotingStyle quoting_style)
     : dict_struct(dict_struct), db(db), table(table), where(where), quoting_style(quoting_style)
 {
 }
@@ -32,15 +32,15 @@ void ExternalQueryBuilder::writeQuoted(const std::string & s, WriteBuffer & out)
 {
     switch (quoting_style)
     {
-        case None:
+        case IdentifierQuotingStyle::None:
             writeString(s, out);
             break;
 
-        case Backticks:
+        case IdentifierQuotingStyle::Backticks:
             writeBackQuotedString(s, out);
             break;
 
-        case DoubleQuotes:
+        case IdentifierQuotingStyle::DoubleQuotes:
             writeDoubleQuotedString(s, out);
             break;
     }
@@ -138,7 +138,7 @@ std::string ExternalQueryBuilder::composeLoadAllQuery() const
 }
 
 
-std::string ExternalQueryBuilder::composeUpdateQuery(const std::string &update_field, const std::string &time_point) const
+std::string ExternalQueryBuilder::composeUpdateQuery(const std::string & update_field, const std::string & time_point) const
 {
     std::string out = composeLoadAllQuery();
     std::string update_query;

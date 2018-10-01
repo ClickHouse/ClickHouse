@@ -1,6 +1,6 @@
 #pragma once
 
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
 
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBuffer.h>

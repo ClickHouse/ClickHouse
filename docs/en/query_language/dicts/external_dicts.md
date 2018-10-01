@@ -1,6 +1,6 @@
 <a name="dicts-external_dicts"></a>
 
-# External dictionaries
+# External Dictionaries
 
 You can add your own dictionaries from various data sources. The data source for a dictionary can be a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Sources for external dictionaries](external_dicts_dict_sources.md#dicts-external_dicts_dict_sources)".
 
@@ -39,8 +39,5 @@ You can [configure](external_dicts_dict.md#dicts-external_dicts_dict) any number
 
 See also "[Functions for working with external dictionaries](../functions/ext_dict_functions.md#ext_dict_functions)".
 
-<div class="admonition attention">
-
-You can convert values ​​for a small dictionary by describing it in a `SELECT` query (see the [transform](../functions/other_functions.md#other_functions-transform) function). This functionality is not related to external dictionaries.
-
-</div>
+!!! attention
+    You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../functions/other_functions.md#other_functions-transform) function). This functionality is not related to external dictionaries.

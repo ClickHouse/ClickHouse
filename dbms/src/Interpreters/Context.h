@@ -8,7 +8,9 @@
 #include <thread>
 #include <atomic>
 
+#include <Common/config.h>
 #include <common/MultiVersion.h>
+#include <Common/LRUCache.h>
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Block.h>
@@ -35,6 +37,7 @@ namespace DB
 {
 
 struct ContextShared;
+class Context;
 class IRuntimeComponentsFactory;
 class QuotaForIntervals;
 class EmbeddedDictionaries;
@@ -49,11 +52,12 @@ class Compiler;
 class MarkCache;
 class UncompressedCache;
 class ProcessList;
-class ProcessListElement;
+class QueryStatus;
 class Macros;
 struct Progress;
 class Clusters;
 class QueryLog;
+class QueryThreadLog;
 class PartLog;
 struct MergeTreeSettings;
 class IDatabase;
@@ -75,6 +79,11 @@ using SystemLogsPtr = std::shared_ptr<SystemLogs>;
 class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 
+#if USE_EMBEDDED_COMPILER
+
+class CompiledExpressionCache;
+
+#endif
 
 /// (database name, table name)
 using DatabaseAndTableName = std::pair<String, String>;
@@ -85,6 +94,9 @@ using Dependencies = std::vector<DatabaseAndTableName>;
 
 using TableAndCreateAST = std::pair<StoragePtr, ASTPtr>;
 using TableAndCreateASTs = std::map<String, TableAndCreateAST>;
+
+/// Callback for external tables initializer
+using ExternalTablesInitializer = std::function<void(Context &)>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -101,13 +113,14 @@ private:
     std::shared_ptr<IRuntimeComponentsFactory> runtime_components_factory;
 
     ClientInfo client_info;
+    ExternalTablesInitializer external_tables_initializer_callback;
 
     std::shared_ptr<QuotaForIntervals> quota;           /// Current quota. By default - empty quota, that have no limits.
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
-    ProcessListElement * process_list_elem = nullptr;   /// For tracking total resource usage for query.
+    QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
 
     String default_format;  /// Format, used when server formats data by itself and if query does not have FORMAT specification.
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
@@ -166,6 +179,11 @@ public:
     /// Compute and set actual user settings, client_info.current_user should be set
     void calculateUserSettings();
 
+    /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
+    void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
+    /// This method is called in executeQuery() and will call the external tables initializer.
+    void initializeExternalTablesIfSet();
+
     ClientInfo & getClientInfo() { return client_info; }
     const ClientInfo & getClientInfo() const { return client_info; }
 
@@ -180,6 +198,7 @@ public:
     bool isTableExist(const String & database_name, const String & table_name) const;
     bool isDatabaseExist(const String & database_name) const;
     bool isExternalTableExist(const String & table_name) const;
+    bool hasDatabaseAccessRights(const String & database_name) const;
     void assertTableExists(const String & database_name, const String & table_name) const;
 
     /** The parameter check_database_access_rights exists to not check the permissions of the database again,
@@ -205,10 +224,7 @@ public:
     DatabasePtr detachDatabase(const String & database_name);
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
-    /// If such an object already exists, an exception is thrown.
-    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table, const String & message) const;
-    /// If the table already exists, it returns nullptr, otherwise guard is created.
-    std::unique_ptr<DDLGuard> getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const;
+    std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table) const;
 
     String getCurrentDatabase() const;
     String getCurrentQueryId() const;
@@ -249,6 +265,15 @@ public:
     /// How other servers can access this for downloading replicated data.
     void setInterserverIOAddress(const String & host, UInt16 port);
     std::pair<String, UInt16> getInterserverIOAddress() const;
+
+    /// Credentials which server will use to communicate with others
+    void setInterserverCredentials(const String & user, const String & password);
+    std::pair<String, String> getInterserverCredentials() const;
+
+    /// Interserver requests scheme (http or https)
+    void setInterserverScheme(const String & scheme);
+    String getInterserverScheme() const;
+
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -301,9 +326,9 @@ public:
     /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IProfilingBlockInputStream,
       *  to update and monitor information about the total number of resources spent for the query.
       */
-    void setProcessListElement(ProcessListElement * elem);
+    void setProcessListElement(QueryStatus * elem);
     /// Can return nullptr if the query was not inserted into the ProcessList.
-    ProcessListElement * getProcessListElement() const;
+    QueryStatus * getProcessListElement() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -356,17 +381,22 @@ public:
     void initializeSystemLogs();
 
     /// Nullptr if the query log is not ready for this moment.
-    QueryLog * getQueryLog();
+    QueryLog * getQueryLog(bool create_if_not_exists = true);
+    QueryThreadLog * getQueryThreadLog(bool create_if_not_exists = true);
 
     /// Returns an object used to log opertaions with parts if it possible.
     /// Provide table name to make required cheks.
-    PartLog * getPartLog(const String & part_database);
+    PartLog * getPartLog(const String & part_database, bool create_if_not_exists = true);
 
-    const MergeTreeSettings & getMergeTreeSettings();
+    const MergeTreeSettings & getMergeTreeSettings() const;
 
     /// Prevents DROP TABLE if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
     void setMaxTableSizeToDrop(size_t max_size);
-    void checkTableCanBeDropped(const String & database, const String & table, size_t table_size);
+    void checkTableCanBeDropped(const String & database, const String & table, const size_t & table_size);
+
+    /// Prevents DROP PARTITION if its size is greater than max_size (50GB by default, max_size=0 turn off this check)
+    void setMaxPartitionSizeToDrop(size_t max_size);
+    void checkPartitionCanBeDropped(const String & database, const String & table, const size_t & partition_size);
 
     /// Lets you select the compression settings according to the conditions described in the configuration file.
     CompressionSettings chooseCompressionSettings(size_t part_size, double part_size_ratio) const;
@@ -406,6 +436,12 @@ public:
 
     SampleBlockCache & getSampleBlockCache() const;
 
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> getCompiledExpressionCache() const;
+    void setCompiledExpressionCache(size_t cache_size);
+    void dropCompiledExpressionCache() const;
+#endif
+
 private:
     /** Check if the current client has access to the specified database.
       * If access is denied, throw an exception.
@@ -423,25 +459,36 @@ private:
 
     /// Session will be closed after specified timeout.
     void scheduleCloseSession(const SessionKey & key, std::chrono::steady_clock::duration timeout);
+
+    void checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop);
 };
 
 
-/// Puts an element into the map, erases it in the destructor.
-/// If the element already exists in the map, throws an exception containing provided message.
+/// Allows executing DDL query only in one thread.
+/// Puts an element into the map, locks tables's mutex, counts how much threads run parallel query on the table,
+/// when counter is 0 erases element in the destructor.
+/// If the element already exists in the map, waits, when ddl query will be finished in other thread.
 class DDLGuard
 {
 public:
-    /// Element name -> message.
-    /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
-    using Map = std::map<String, String>;
+    struct Entry
+    {
+        std::unique_ptr<std::mutex> mutex;
+        UInt32 counter;
+    };
 
-    DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && lock, const String & elem, const String & message);
+    /// Element name -> (mutex, counter).
+    /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
+    using Map = std::map<String, Entry>;
+
+    DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem);
     ~DDLGuard();
 
 private:
     Map & map;
     Map::iterator it;
-    std::mutex & mutex;
+    std::unique_lock<std::mutex> guards_lock;
+    std::unique_lock<std::mutex> table_lock;
 };
 
 

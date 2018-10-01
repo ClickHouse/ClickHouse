@@ -35,7 +35,7 @@ public:
         if (vector.empty())
         {
             vector.resize(WRITE_BUFFER_FROM_VECTOR_INITIAL_SIZE_IF_EMPTY);
-            set(reinterpret_cast<Position>(&vector[0]), vector.size());
+            set(reinterpret_cast<Position>(vector.data()), vector.size());
         }
     }
 };

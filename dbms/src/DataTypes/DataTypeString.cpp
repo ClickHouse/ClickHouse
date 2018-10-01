@@ -38,7 +38,7 @@ void DataTypeString::deserializeBinary(Field & field, ReadBuffer & istr) const
     field = String();
     String & s = get<String &>(field);
     s.resize(size);
-    istr.readStrict(&s[0], size);
+    istr.readStrict(s.data(), size);
 }
 
 
@@ -96,7 +96,7 @@ void DataTypeString::serializeBinaryBulk(const IColumn & column, WriteBuffer & o
     {
         UInt64 str_size = offsets[0] - 1;
         writeVarUInt(str_size, ostr);
-        ostr.write(reinterpret_cast<const char *>(&data[0]), str_size);
+        ostr.write(reinterpret_cast<const char *>(data.data()), str_size);
 
         ++offset;
     }
@@ -262,9 +262,9 @@ void DataTypeString::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, 
 }
 
 
-void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
+void DataTypeString::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr);
+    writeJSONString(static_cast<const ColumnString &>(column).getDataAt(row_num), ostr, settings);
 }
 
 
@@ -312,16 +312,16 @@ void registerDataTypeString(DataTypeFactory & factory)
 
     /// These synonims are added for compatibility.
 
-    factory.registerSimpleDataType("CHAR", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("VARCHAR", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("TEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("TINYTEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("MEDIUMTEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("LONGTEXT", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("BLOB", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("TINYBLOB", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("MEDIUMBLOB", creator, DataTypeFactory::CaseInsensitive);
-    factory.registerSimpleDataType("LONGBLOB", creator, DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("CHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("VARCHAR", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("LONGTEXT", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("BLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("TINYBLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("MEDIUMBLOB", "String", DataTypeFactory::CaseInsensitive);
+    factory.registerAlias("LONGBLOB", "String", DataTypeFactory::CaseInsensitive);
 }
 
 }

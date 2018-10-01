@@ -5,15 +5,15 @@
 #include <Common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <IO/Progress.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
+#include <IO/Progress.h>
 #include <DataStreams/BlockIO.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Client/TimeoutSetter.h>
 
 #include "IServer.h"
+
 
 namespace CurrentMetrics
 {
@@ -63,6 +63,9 @@ struct QueryState
     /// Timeouts setter for current query
     std::unique_ptr<TimeoutSetter> timeout_setter;
 
+    /// A queue with internal logs that will be passed to client
+    InternalTextLogsQueuePtr logs_queue;
+    BlockOutputStreamPtr logs_block_out;
 
     void reset()
     {
@@ -98,6 +101,7 @@ private:
     String client_name;
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
+    UInt64 client_version_patch = 0;
     UInt64 client_revision = 0;
 
     Context connection_context;
@@ -139,8 +143,10 @@ private:
 
     void sendHello();
     void sendData(const Block & block);    /// Write a block to the network.
-    void sendException(const Exception & e);
+    void sendLogData(const Block & block);
+    void sendException(const Exception & e, bool with_stack_trace);
     void sendProgress();
+    void sendLogs();
     void sendEndOfStream();
     void sendProfileInfo();
     void sendTotals();
@@ -149,6 +155,7 @@ private:
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
     void initBlockOutput(const Block & block);
+    void initLogsBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

@@ -4,7 +4,7 @@
 
 The `ALTER` query is only supported for `*MergeTree` tables, as well as `Merge`and`Distributed`. The query has several variations.
 
-### Column manipulations
+### Column Manipulations
 
 Changing the table structure.
 
@@ -68,7 +68,7 @@ For tables that don't store data themselves (such as `Merge` and `Distributed`),
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-### Manipulations with partitions and parts
+### Manipulations With Partitions and Parts
 
 It only works for tables in the `MergeTree` family. The following operations are available:
 
@@ -187,7 +187,7 @@ To restore from a backup:
 In this way, data from the backup will be added to the table.
 Restoring from a backup doesn't require stopping the server.
 
-### Backups and replication
+### Backups and Replication
 
 Replication provides protection from device failures. If all data disappeared on one of your replicas, follow the instructions in the "Restoration after failure" section to restore it.
 
@@ -213,7 +213,7 @@ Before downloading, the system checks that the partition exists and the table st
 
 The `ALTER ... FETCH PARTITION` query is not replicated. The partition will be downloaded to the 'detached' directory only on the local server. Note that if after this you use the `ALTER TABLE ... ATTACH` query to add data to the table, the data will be added on all replicas (on one of the replicas it will be added from the 'detached' directory, and on the rest it will be loaded from neighboring replicas).
 
-### Synchronicity of ALTER queries
+### Synchronicity of ALTER Queries
 
 For non-replicatable tables, all `ALTER` queries are performed synchronously. For replicatable tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
 
@@ -230,13 +230,19 @@ The functionality is in beta stage and is available starting with the 1.1.54388 
 
 Existing tables are ready for mutations as-is (no conversion necessary), but after the first mutation is applied to a table, its metadata format becomes incompatible with previous server versions and falling back to a previous version becomes impossible.
 
-At the moment the `ALTER DELETE` command is available:
+Currently available commands:
 
 ```sql
-ALTER TABLE [db.]table DELETE WHERE expr
+ALTER TABLE [db.]table DELETE WHERE filter_expr
 ```
 
-The expression `expr` must be of UInt8 type. The query deletes rows for which this expression evaluates to a non-zero value.
+The `filter_expr` must be of type UInt8. The query deletes rows in the table for which this expression takes a non-zero value.
+
+```sql
+ALTER TABLE [db.]table UPDATE column1 = expr1 [, ...] WHERE filter_expr
+```
+
+The `filter_expr` must be of type UInt8. This query updates values of specified columns to the values of corresponding expressions in rows for which the `filter_expr` takes a non-zero value. Values are casted to the column type using the `CAST` operator. Updating columns that are used in the calculation of the primary or the partition key is not supported.
 
 One query can contain several commands separated by commas.
 
@@ -246,7 +252,9 @@ Mutations are totally ordered by their creation order and are applied to each pa
 
 A mutation query returns immediately after the mutation entry is added (in case of replicated tables to ZooKeeper, for nonreplicated tables - to the filesystem). The mutation itself executes asynchronously using the system profile settings. To track the progress of mutations you can use the `system.mutations` table. A mutation that was successfully submitted will continue to execute even if ClickHouse servers are restarted. There is no way to roll back the mutation once it is submitted.
 
-#### system.mutations table
+Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
+
+#### system.mutations Table
 
 The table contains information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
 

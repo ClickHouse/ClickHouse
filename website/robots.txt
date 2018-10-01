@@ -1,8 +1,10 @@
 User-agent: *
 Disallow: /docs/en/single/
 Disallow: /docs/ru/single/
+Disallow: /docs/fa/single/
 Disallow: /docs/en/search.html
 Disallow: /docs/ru/search.html
+Disallow: /docs/fa/search.html
 Disallow: /deprecated/reference_en.html
 Disallow: /deprecated/reference_ru.html
 Allow: /

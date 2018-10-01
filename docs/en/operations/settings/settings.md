@@ -4,17 +4,23 @@
 
 ## distributed_product_mode
 
-Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests), i.e. in cases when the query contains the product of distributed tables.
+Changes the behavior of [distributed subqueries](../../query_language/select.md#queries-distributed-subrequests).
 
-ClickHouse applies the configuration if the subqueries on any level have a distributed table that exists on the local server and has more than one shard.
+ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
 Restrictions:
 
 - Only applied for IN and JOIN subqueries.
-- Used only if a distributed table is used in the FROM clause.
-- Not used for a table-valued [ remote](../../query_language/table_functions/remote.md#table_functions-remote) function.
+- Only if the FROM section uses a distributed table containing more than one shard.
+- If the subquery concerns a distributed table containing more than one shard,
+- Not used for a table-valued [remote](../../query_language/table_functions/remote.md#table_functions-remote) function.
 
 The possible values ​​are:
+
+- `deny`  — Default value. Prohibits using these types of subqueries (returns the "Double-distributed in/JOIN subqueries is denied" exception).
+- `local`  — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN` / `JOIN.`
+- `global` — Replaces the `IN` / `JOIN` query with `GLOBAL IN` / `GLOBAL JOIN.`
+- `allow`  — Allows the use of these types of subqueries.
 
 <a name="settings-settings-fallback_to_stale_replicas_for_distributed_queries"></a>
 
@@ -24,7 +30,7 @@ Forces a query to an out-of-date replica if updated data is not available. See "
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
-Used when performing ` SELECT`  from a distributed table that points to replicated tables.
+Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
 By default, 1 (enabled).
 
@@ -52,7 +58,7 @@ If `force_primary_key=1`,  ClickHouse checks to see if the query has a primary k
 
 ## fsync_metadata
 
-Enable or disable fsync when writing .sql files. By default, it is enabled.
+Enable or disable fsync when writing .sql files. Enabled by default.
 
 It makes sense to disable it if the server has millions of tiny table chunks that are constantly being created and destroyed.
 
@@ -99,7 +105,7 @@ Disabled by default (set to 0). It only works when reading from MergeTree engine
 
 ## log_queries
 
-Setting up query the logging.
+Setting up query logging.
 
 Queries sent to ClickHouse with this setup are logged according to the rules in the [query_log](../server_settings/settings.md#server_settings-query_log) server configuration parameter.
 
@@ -131,7 +137,7 @@ Sets the time in seconds. If a replica lags more than the set value, this replic
 
 Default value: 0 (off).
 
-Used when performing ` SELECT`  from a distributed table that points to replicated tables.
+Used when performing `SELECT`  from a distributed table that points to replicated tables.
 
 ## max_threads
 
@@ -343,4 +349,71 @@ If the value is true, integers appear in quotes when using JSON\* Int64 and UInt
 
 ## format_csv_delimiter
 
-The character to be considered as a delimiter in CSV data. By default, `,`.
+The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
+
+<a name="settings-join_use_nulls"></a>
+
+## join_use_nulls
+
+Affects the behavior of [JOIN](../../query_language/select.md#query_language-join).
+
+With `join_use_nulls=1,` `JOIN` behaves like in standard SQL, i.e. if empty cells appear when merging, the type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md#null-literal).
+
+<a name="setting-insert_quorum"></a>
+
+## insert_quorum
+
+Enables quorum writes.
+
+  - If `insert_quorum < 2`, the quorum writes are disabled.
+  - If `insert_quorum >= 2`, the quorum writes are enabled.
+
+The default value is 0.
+
+**Quorum writes**
+
+`INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
+
+All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
+
+When reading the data written from the `insert_quorum`, you can use the[select_sequential_consistency](#setting-select_sequential_consistency) option.
+
+**ClickHouse generates an exception**
+
+- If the number of available replicas at the time of the query is less than the `insert_quorum`.
+- At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+
+**See also the following parameters:**
+
+- [insert_quorum_timeout](#setting-insert_quorum_timeout)
+- [select_sequential_consistency](#setting-select_sequential_consistency)
+
+<a name="setting-insert_quorum_timeout"></a>
+
+## insert_quorum_timeout
+
+Quorum write timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+
+By default, 60 seconds.
+
+**See also the following parameters:**
+
+- [insert_quorum](#setting-insert_quorum)
+- [select_sequential_consistency](#setting-select_sequential_consistency)
+
+<a name="setting-select_sequential_consistency"></a>
+
+## select_sequential_consistency
+
+Enables/disables sequential consistency for `SELECT` queries:
+
+- 0 — disabled. The default value is 0.
+- 1 — enabled.
+
+When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
+
+See also the following parameters:
+
+- [insert_quorum](#setting-insert_quorum)
+- [insert_quorum_timeout](#setting-insert_quorum_timeout)
+

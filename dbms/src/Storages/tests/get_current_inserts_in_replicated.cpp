@@ -54,7 +54,7 @@ try
                   << " partitions, elapsed: " << stage.elapsedSeconds()  << "s." << std::endl;
         stage.restart();
 
-        std::vector<std::future<zkutil::ListResponse>> lock_futures;
+        std::vector<std::future<Coordination::ListResponse>> lock_futures;
         for (const String & partition : partitions)
             lock_futures.push_back(zookeeper->asyncGetChildren(zookeeper_path + "/block_numbers/" + partition));
 
@@ -63,7 +63,7 @@ try
             String partition;
             Int64 number;
             String zk_path;
-            std::future<zkutil::GetResponse> contents_future;
+            std::future<Coordination::GetResponse> contents_future;
         };
 
         std::vector<BlockInfo> block_infos;
@@ -85,7 +85,7 @@ try
         size_t total_count = 0;
         for (BlockInfo & block : block_infos)
         {
-            zkutil::GetResponse resp = block.contents_future.get();
+            Coordination::GetResponse resp = block.contents_future.get();
             if (!resp.error && lock_holder_paths.count(resp.data))
             {
                 ++total_count;

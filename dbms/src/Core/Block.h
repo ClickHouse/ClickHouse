@@ -109,12 +109,13 @@ public:
     Columns getColumns() const;
     void setColumns(const Columns & columns);
     Block cloneWithColumns(const Columns & columns) const;
+    Block cloneWithoutColumns() const;
 
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
-    MutableColumns mutateColumns() const;
+    MutableColumns mutateColumns();
 
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);

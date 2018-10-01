@@ -1,3 +1,296 @@
+## ClickHouse release 18.12.14, 2018-09-13
+
+### Новые возможности:
+
+* Добавлена поддержка запросов `ALTER UPDATE`. [#3035](https://github.com/yandex/ClickHouse/pull/3035)
+* Добавлена настройка `allow_ddl`, упраляющая доступом пользователя к DDL-запросам. [#3104](https://github.com/yandex/ClickHouse/pull/3104)
+* Добавлена настройка `min_merge_bytes_to_use_direct_io` для движков семейства `MergeTree`, позволяющая задать порог на суммарный размер слияния после которого работа с файлами кусков будет происходить с O_DIRECT. [#3117](https://github.com/yandex/ClickHouse/pull/3117)
+* В системную таблицу `system.merges` добавлен столбец `partition_id`. [#3099](https://github.com/yandex/ClickHouse/pull/3099)
+
+### Улучшения
+
+* Если в процессе мутации кусок остался неизменённым, он не будет скачан репликами. [#3103](https://github.com/yandex/ClickHouse/pull/3103)
+* При работе с `clickhouse-client` добавлено автодополнение для имён настроек. [#3106](https://github.com/yandex/ClickHouse/pull/3106)
+
+### Исправление ошибок
+
+* Добавлена проверка размеров массивов, которые являются элементами полей типа `Nested`, при вставке. [#3118](https://github.com/yandex/ClickHouse/pull/3118)
+* Исправлена ошибка обновления внешних словарей с источником `ODBC` и форматом хранения `hashed`. Ошибка возникла в версии 18.12.13.
+* Исправлено падение при создании временной таблицы таблицы из запроса с условием `IN`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3098)
+* Исправлена ошибка в работе агрегатных функций для массивов, элементами которых может быть `NULL`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/3097)
+
+
+## ClickHouse release 18.12.13, 2018-09-10
+
+### Новые возможности:
+
+* Добавлен тип данных `DECIMAL(digits, scale)` (`Decimal32(scale)`, `Decimal64(scale)`, `Decimal128(scale)`). Возможность доступна под настройкой `allow_experimental_decimal_type`. [#2846](https://github.com/yandex/ClickHouse/pull/2846) [#2970](https://github.com/yandex/ClickHouse/pull/2970) [#3008](https://github.com/yandex/ClickHouse/pull/3008) [#3047](https://github.com/yandex/ClickHouse/pull/3047)
+* Модификатор `WITH ROLLUP` для `GROUP BY` (также доступен синтаксис: `GROUP BY ROLLUP(...)`). [#2948](https://github.com/yandex/ClickHouse/pull/2948)
+* В запросах с JOIN, звёздочка раскрывается в список столбцов всех таблиц, в соответствии со стандартом SQL. Вернуть старое поведение можно, выставив настройку (уровня пользователя) `asterisk_left_columns_only` в значение 1. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2787)
+* Добавлена поддержка JOIN с табличной функцией. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2907)
+* Автодополнение по нажатию Tab в clickhouse-client. [Sergey Shcherbin](https://github.com/yandex/ClickHouse/pull/2447)
+* Нажатие Ctrl+C в clickhouse-client очищает запрос, если он был введён. [#2877](https://github.com/yandex/ClickHouse/pull/2877)
+* Добавлена настройка `join_default_strictness` (значения `''`, `'any'`, `'all'`). Её использование позволяет не указывать `ANY` или `ALL` для `JOIN`. [#2982](https://github.com/yandex/ClickHouse/pull/2982)
+* В каждой строчке лога сервера, относящейся к обработке запроса, выводится идентификатор запроса. [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* Возможность получения логов выполнения запроса в clickhouse-client (настройка `send_logs_level`). При распределённой обработке запроса, логи отправляются каскадно со всех серверов. [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* В таблицах `system.query_log` и `system.processes` (`SHOW PROCESSLIST`) появилась информация о всех изменённых настройках при выполнении запроса (вложенная структура данных `Settings`). Добавлена настройка `log_query_settings`. [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* В таблицах `system.query_log` и `system.processes` появилась информация о номерах потоков, участвующих в исполнении запроса (столбец `thread_numbers`). [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* Добавлены счётчики `ProfileEvents`, измеряющие время, потраченное на чтение и запись по сети; чтение и запись на диск; количество сетевых ошибок; время потраченное на ожидании при ограничении сетевой полосы. [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* Добавлены счётчики `ProfileEvents`, содержащие системные метрики из rusage (позволяющие получить информацию об использовании CPU в userspace и ядре, page faults, context switches) а также метрики taskstats (позволяющие получить информацию о времени ожидания IO, CPU, а также количество прочитанных и записанных данных с учётом и без учёта page cache). [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* Счётчики `ProfileEvents` учитываются не только глобально, но и на каждый запрос, а также на каждый поток выполнения запроса, что позволяет детально профилировать потребление ресурсов отдельными запросами. [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* Добавлена таблица `system.query_thread_log`, содержащая информацию о каждом потоке выполнения запроса. Добавлена настройка `log_query_threads`. [#2482](https://github.com/yandex/ClickHouse/pull/2482)
+* В таблицах `system.metrics` и `system.events` появилась встроенная документация. [#3016](https://github.com/yandex/ClickHouse/pull/3016)
+* Добавлена функция `arrayEnumerateDense`. [Amos Bird](https://github.com/yandex/ClickHouse/pull/2975)
+* Добавлены функции `arrayCumSumNonNegative` и `arrayDifference`. [Aleksey Studnev](https://github.com/yandex/ClickHouse/pull/2942)
+* Добавлена агрегатная функция `retention`. [Sundy Li](https://github.com/yandex/ClickHouse/pull/2887)
+* Возможность сложения (слияния) состояний агрегатных функций с помощью оператора плюс, а также умножения состояний агрегатных функций на целую неотрицательную константу. [#3062](https://github.com/yandex/ClickHouse/pull/3062) [#3034](https://github.com/yandex/ClickHouse/pull/3034)
+* В таблицах семейства MergeTree добавлен виртуальный столбец `_partition_id`. [#3089](https://github.com/yandex/ClickHouse/pull/3089)
+
+### Экспериментальные возможности:
+
+* Добавлен тип данных `LowCardinality(T)`. Тип данных автоматически создаёт локальный словарь значений и позволяет обрабатывать данные без распаковки словаря. [#2830](https://github.com/yandex/ClickHouse/pull/2830)
+* Добавлен кэш JIT-скомпилированных функций, а также счётчик числа использований перед компиляцией. Возможность JIT-компиляции выражений включается настройкой `compile_expressions`. [#2990](https://github.com/yandex/ClickHouse/pull/2990) [#3077](https://github.com/yandex/ClickHouse/pull/3077)
+
+### Улучшения:
+
+* Исправлена проблема неограниченного накопления лога репликации в случае наличия заброшенных реплик. Добавлен режим эффективного восстановления реплик после длительного отставания.
+* Увеличена производительность при выполнении `GROUP BY` в случае, если есть несколько полей агрегации, одно из которых строковое, а другие - фиксированной длины.
+* Увеличена производительность при использовании `PREWHERE` и при неявном переносе выражений в `PREWHERE`.
+* Увеличена производительность парсинга текстовых форматов (`CSV`, `TSV`). [Amos Bird](https://github.com/yandex/ClickHouse/pull/2977) [#2980](https://github.com/yandex/ClickHouse/pull/2980)
+* Увеличена производительность чтения строк и массивов в бинарных форматах. [Amos Bird](https://github.com/yandex/ClickHouse/pull/2955)
+* Увеличена производительность и уменьшено потребление памяти в запросах к таблицам `system.tables` и `system.columns` в случае наличия очень большого количества таблиц на одном сервере. [#2953](https://github.com/yandex/ClickHouse/pull/2953)
+* Исправлена проблема низкой производительности в случае наличия большого потока запросов, для которых возвращается ошибка (в `perf top` видна функция `_dl_addr`, при этом сервер использует мало CPU). [#2938](https://github.com/yandex/ClickHouse/pull/2938)
+* Прокидывание условий внутрь View (при включенной настройке `enable_optimize_predicate_expression`) [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2907)
+* Доработки недостающей функциональности для типа данных `UUID`. [#3074](https://github.com/yandex/ClickHouse/pull/3074) [#2985](https://github.com/yandex/ClickHouse/pull/2985)
+* Тип данных `UUID` поддержан в словарях The-Alchemist. [#2822](https://github.com/yandex/ClickHouse/pull/2822)
+* Функция `visitParamExtractRaw` корректно работает с вложенными структурами. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2974)
+* При использовании настройки `input_format_skip_unknown_fields` корректно работает пропуск значений-объектов в формате `JSONEachRow`. [BlahGeek](https://github.com/yandex/ClickHouse/pull/2958)
+* Для выражения `CASE` с условиями, появилась возможность не указывать `ELSE`, что эквивалентно `ELSE NULL`. [#2920](https://github.com/yandex/ClickHouse/pull/2920)
+* Возможность конфигурирования operation timeout при работе с ZooKeeper. [urykhy](https://github.com/yandex/ClickHouse/pull/2971)
+* Возможность указания смещения для `LIMIT n, m` в виде `LIMIT n OFFSET m`. [#2840](https://github.com/yandex/ClickHouse/pull/2840)
+* Возможность использования синтаксиса `SELECT TOP n` в качестве альтернативы для `LIMIT`. [#2840](https://github.com/yandex/ClickHouse/pull/2840)
+* Увеличен размер очереди записи в системные таблицы, что позволяет уменьшить количество ситуаций `SystemLog queue is full`.
+* В агрегатной функции `windowFunnel` добавлена поддержка событий, подходящих под несколько условий. [Amos Bird](https://github.com/yandex/ClickHouse/pull/2801)
+* Возможность использования дублирующихся столбцов в секции `USING` для `JOIN`. [#3006](https://github.com/yandex/ClickHouse/pull/3006)
+* Для форматов `Pretty` введено ограничение выравнивания столбцов по ширине. Настройка `output_format_pretty_max_column_pad_width`. В случае более широкого значения, оно всё ещё будет выведено целиком, но остальные ячейки таблицы не будут излишне широкими. [#3003](https://github.com/yandex/ClickHouse/pull/3003)
+* В табличной функции `odbc` добавлена возможность указания имени базы данных/схемы. [Amos Bird](https://github.com/yandex/ClickHouse/pull/2885)
+* Добавлена возможность использования имени пользователя, заданного в конфигурационном файле `clickhouse-client`. [Vladimir Kozbin](https://github.com/yandex/ClickHouse/pull/2909)
+* Счётчик `ZooKeeperExceptions` разделён на три счётчика `ZooKeeperUserExceptions`, `ZooKeeperHardwareExceptions`, `ZooKeeperOtherExceptions`.
+* Запросы `ALTER DELETE` работают для материализованных представлений.
+* Добавлена рандомизация во времени периодического запуска cleanup thread для таблиц типа `ReplicatedMergeTree`, чтобы избежать периодических всплесков нагрузки в случае очень большого количества таблиц типа `ReplicatedMergeTree`.
+* Поддержка запроса `ATTACH TABLE ... ON CLUSTER`. [#3025](https://github.com/yandex/ClickHouse/pull/3025)
+
+### Исправление ошибок:
+
+* Исправлена ошибка в работе таблиц типа `Dictionary` (кидается исключение `Size of offsets doesn't match size of column` или `Unknown compression method`). Ошибка появилась в версии 18.10.3. [#2913](https://github.com/yandex/ClickHouse/issues/2913)
+* Исправлена ошибка при мерже данных таблиц типа `CollapsingMergeTree`, если один из кусков данных пустой (такие куски, в свою очередь, образуются при слиянии или при `ALTER DELETE` в случае удаления всех данных), и для слияния был выбран алгоритм `vertical`. [#3049](https://github.com/yandex/ClickHouse/pull/3049)
+* Исправлен race condition при `DROP` или `TRUNCATE` таблиц типа `Memory` при одновременном `SELECT`, который мог приводить к падениям сервера. Ошибка появилась в версии 1.1.54388. [#3038](https://github.com/yandex/ClickHouse/pull/3038)
+* Исправлена возможность потери данных при вставке в `Replicated` таблицы в случае получения ошибки `Session expired` (потеря данных может быть обнаружена по метрике `ReplicatedDataLoss`). Ошибка возникла в версии 1.1.54378. [#2939](https://github.com/yandex/ClickHouse/pull/2939) [#2949](https://github.com/yandex/ClickHouse/pull/2949) [#2964](https://github.com/yandex/ClickHouse/pull/2964)
+* Исправлен segfault при `JOIN ... ON`. [#3000](https://github.com/yandex/ClickHouse/pull/3000)
+* Исправлена ошибка поиска имён столбцов в случае, если выражение `WHERE` состоит целиком из квалифицированного имени столбца, как например `WHERE table.column`. [#2994](https://github.com/yandex/ClickHouse/pull/2994)
+* Исправлена ошибка вида "Not found column" при выполнении распределённых запросов в случае, если с удалённого сервера запрашивается единственный столбец, представляющий собой выражение IN с подзапросом. [#3087](https://github.com/yandex/ClickHouse/pull/3087)
+* Исправлена ошибка `Block structure mismatch in UNION stream: different number of columns`, возникающая при распределённых запросах, если один из шардов локальный, а другой - нет, и если при этом срабатывает оптимизация переноса в `PREWHERE`. [#2226](https://github.com/yandex/ClickHouse/pull/2226) [#3037](https://github.com/yandex/ClickHouse/pull/3037) [#3055](https://github.com/yandex/ClickHouse/pull/3055) [#3065](https://github.com/yandex/ClickHouse/pull/3065) [#3073](https://github.com/yandex/ClickHouse/pull/3073) [#3090](https://github.com/yandex/ClickHouse/pull/3090) [#3093](https://github.com/yandex/ClickHouse/pull/3093)
+* Исправлена работа функции `pointInPolygon` для некоторого случая невыпуклых полигонов. [#2910](https://github.com/yandex/ClickHouse/pull/2910)
+* Исправлен некорректный результат при сравнении `nan` с целыми числами. [#3024](https://github.com/yandex/ClickHouse/pull/3024)
+* Исправлена ошибка в библиотеке `zlib-ng`, которая могла приводить к segfault в редких случаях. [#2854](https://github.com/yandex/ClickHouse/pull/2854)
+* Исправлена утечка памяти при вставке в таблицу со столбцами типа `AggregateFunction`, если состояние агрегатной функции нетривиальное (выделяет память отдельно), и если в одном запросе на вставку получается несколько маленьких блоков. [#3084](https://github.com/yandex/ClickHouse/pull/3084)
+* Исправлен race condition при одновременном создании и удалении одной и той же таблицы типа `Buffer` или `MergeTree`.
+* Исправлена возможность segfault при сравнении кортежей из некоторых нетривиальных типов, таких как, например, кортежей. [#2989](https://github.com/yandex/ClickHouse/pull/2989)
+* Исправлена возможность segfault при выполнении некоторых запросов `ON CLUSTER`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2960)
+* Исправлена ошибка в функции `arrayDistinct` в случае `Nullable` элементов массивов. [#2845](https://github.com/yandex/ClickHouse/pull/2845) [#2937](https://github.com/yandex/ClickHouse/pull/2937)
+* Возможность `enable_optimize_predicate_expression` корректно поддерживает случаи с `SELECT *`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2929)
+* Исправлена возможность segfault при переинициализации сессии с ZooKeeper. [#2917](https://github.com/yandex/ClickHouse/pull/2917)
+* Исправлена возможность блокировки при взаимодействии с ZooKeeper.
+* Исправлен некорректный код суммирования вложенных структур данных в `SummingMergeTree`.
+* При выделении памяти для состояний агрегатных функций, корректно учитывается выравнивание, что позволяет использовать при реализации состояний агрегатных функций операции, для которых выравнивание является необходимым. [chenxing-xc](https://github.com/yandex/ClickHouse/pull/2808)
+
+### Исправления безопасности:
+
+* Безопасная работа с ODBC источниками данных. Взаимодействие с ODBC драйверами выполняется через отдельный процесс `clickhouse-odbc-bridge`. Ошибки в сторонних ODBC драйверах теперь не приводят к проблемам со стабильностью сервера или уязвимостям. [#2828](https://github.com/yandex/ClickHouse/pull/2828) [#2879](https://github.com/yandex/ClickHouse/pull/2879) [#2886](https://github.com/yandex/ClickHouse/pull/2886) [#2893](https://github.com/yandex/ClickHouse/pull/2893) [#2921](https://github.com/yandex/ClickHouse/pull/2921)
+* Исправлена некорректная валидация пути к файлу в табличной функции `catBoostPool`. [#2894](https://github.com/yandex/ClickHouse/pull/2894)
+* Содержимое системных таблиц (`tables`, `databases`, `parts`, `columns`, `parts_columns`, `merges`, `mutations`, `replicas`, `replication_queue`) фильтруется согласно конфигурации доступа к базам данных для пользователя (`allow_databases`) [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2856)
+
+### Обратно несовместимые изменения:
+
+* В запросах с JOIN, звёздочка раскрывается в список столбцов всех таблиц, в соответствии со стандартом SQL. Вернуть старое поведение можно, выставив настройку (уровня пользователя) `asterisk_left_columns_only` в значение 1.
+
+### Изменения сборки:
+
+* Добавлен покоммитный запуск большинства интеграционных тестов.
+* Добавлен покоммитный запуск проверки стиля кода.
+* Корректный выбор реализации `memcpy` при сборке на CentOS7 / Fedora. [Etienne Champetier](https://github.com/yandex/ClickHouse/pull/2912)
+* При сборке с помощью clang добавлены некоторые warnings из `-Weverything` в дополнение к обычным `-Wall -Wextra -Werror`. [#2957](https://github.com/yandex/ClickHouse/pull/2957)
+* При debug сборке используется debug вариант `jemalloc`.
+* Абстрагирован интерфейс библиотеки для взаимодействия с ZooKeeper. [#2950](https://github.com/yandex/ClickHouse/pull/2950)
+
+
+## ClickHouse release 18.10.3, 2018-08-13
+
+### Новые возможности:
+* Возможность использования HTTPS для репликации. [#2760](https://github.com/yandex/ClickHouse/pull/2760)
+* Добавлены функции `murmurHash2_64`, `murmurHash3_32`, `murmurHash3_64`, `murmurHash3_128` в дополнение к имеющемуся `murmurHash2_32`. [#2791](https://github.com/yandex/ClickHouse/pull/2791)
+* Поддержка Nullable типов в ODBC драйвере ClickHouse (формат вывода `ODBCDriver2`) [#2834](https://github.com/yandex/ClickHouse/pull/2834)
+* Поддержка `UUID` в ключевых столбцах.
+
+### Улучшения:
+* Удаление кластеров без перезагрузки сервера при их удалении из конфигурационных файлов. [#2777](https://github.com/yandex/ClickHouse/pull/2777)
+* Удаление внешних словарей без перезагрузки сервера при их удалении из конфигурационных файлов. [#2779](https://github.com/yandex/ClickHouse/pull/2779)
+* Добавлена поддержка `SETTINGS` для движка таблиц `Kafka`. [Alexander Marshalov](https://github.com/yandex/ClickHouse/pull/2781)
+* Доработки для типа данных `UUID` (не полностью) Šimon Podlipský. [#2618](https://github.com/yandex/ClickHouse/pull/2618)
+* Поддежка пустых кусков после мержей в движках `SummingMergeTree`, `CollapsingMergeTree` and `VersionedCollapsingMergeTree`. [#2815](https://github.com/yandex/ClickHouse/pull/2815)
+* Удаление старых записей о полностью выполнившихся мутациях (`ALTER DELETE`) [#2784](https://github.com/yandex/ClickHouse/pull/2784)
+* Добавлена таблица `system.merge_tree_settings`. [Kirill Shvakov](https://github.com/yandex/ClickHouse/pull/2841)
+* В таблицу `system.tables` добавлены столбцы зависимостей: `dependencies_database` и `dependencies_table`. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2851)
+* Добавлена опция конфига `max_partition_size_to_drop`. [#2782](https://github.com/yandex/ClickHouse/pull/2782)
+* Добавлена настройка `output_format_json_escape_forward_slashes`. [Alexander Bocharov](https://github.com/yandex/ClickHouse/pull/2812)
+* Добавлена настройка `max_fetch_partition_retries_count`. [#2831](https://github.com/yandex/ClickHouse/pull/2831)
+* Добавлена настройка `prefer_localhost_replica`, позволяющая отключить предпочтение локальной реплики и хождение на локальную реплику без межпроцессного взаимодействия. [#2832](https://github.com/yandex/ClickHouse/pull/2832)
+* Агрегатная функция `quantileExact` возвращает `nan` в случае агрегации по пустому множеству `Float32`/`Float64` типов. [Sundy Li](https://github.com/yandex/ClickHouse/pull/2855)
+
+### Исправление ошибок:
+* Убрано излишнее экранирование параметров connection string для ODBC, котрое приводило к невозможности соединения. Ошибка возникла в версии 18.6.0.
+* Исправлена логика обработки команд на `REPLACE PARTITION` в очереди репликации. Неправильная логика могла приводить к тому, что при наличии двух `REPLACE` одной и той же партиции, один из них оставался в очереди репликации и не мог выполниться. [#2814](https://github.com/yandex/ClickHouse/pull/2814)
+* Исправлена ошибка при мерже, если все куски были пустыми (такие куски, в свою очередь, образуются при слиянии или при `ALTER DELETE` в случае удаления всех данных). Ошибка появилась в версии 18.1.0. [#2930](https://github.com/yandex/ClickHouse/pull/2930)
+* Исправлена ошибка при параллельной записи в таблицы типа `Set` или `Join`. [Amos Bird](https://github.com/yandex/ClickHouse/pull/2823)
+* Исправлена ошибка `Block structure mismatch in UNION stream: different number of columns`, возникающая при запросах с `UNION ALL` внутри подзапроса, в случае, если один из `SELECT` запросов содержит дублирующиеся имена столбцов. [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2094)
+* Исправлена утечка памяти в случае исключения при соединении с MySQL сервером.
+* Исправлен некорректный код возврата clickhouse-client в случае ошибочного запроса
+* Исправлен некорректная работа materialized views, содержащих DISTINCT. [#2795](https://github.com/yandex/ClickHouse/issues/2795)
+
+### Обратно несовместимые изменения
+* Убрана поддержка запросов CHECK TABLE для Distributed таблиц.
+
+### Изменения сборки:
+* Заменен аллокатор, теперь используется `jemalloc` вместо `tcmalloc`. На некоторых сценариях ускорение достигает 20%. В то же время, существуют запросы, замедлившиеся до 20%. Потребление памяти на некоторых сценариях примерно на 10% меньше и более стабильно. При высококонкурентной нагрузке, потребление CPU в userspace и в system незначительно вырастает. [#2773](https://github.com/yandex/ClickHouse/pull/2773)
+* Использование libressl из submodule. [#1983](https://github.com/yandex/ClickHouse/pull/1983) [#2807](https://github.com/yandex/ClickHouse/pull/2807)
+* Использование unixodbc из submodule. [#2789](https://github.com/yandex/ClickHouse/pull/2789)
+* Использование mariadb-connector-c из submodule. [#2785](https://github.com/yandex/ClickHouse/pull/2785)
+* В репозиторий добавлены файлы функциональных тестов, рассчитывающих на наличие тестовых данных (пока без самих тестовых данных).
+
+
+## ClickHouse release 18.6.0, 2018-08-02
+
+### Новые возможности:
+* Добавлена поддержка ON выражений для JOIN ON синтаксиса:
+`JOIN ON Expr([table.]column, ...) = Expr([table.]column, ...) [AND Expr([table.]column, ...) = Expr([table.]column, ...) ...]`
+Выражение должно представлять из себя цепочку равенств, объединенных оператором AND. Каждая часть равенства может являться произвольным выражением над столбцами одной из таблиц. Поддержана возможность использования fully qualified имен столбцов (`table.name`, `database.table.name`, `table_alias.name`, `subquery_alias.name`) для правой таблицы. [#2742](https://github.com/yandex/ClickHouse/pull/2742)
+* Добавлена возможность включить HTTPS для репликации. [#2760](https://github.com/yandex/ClickHouse/pull/2760)
+
+### Улучшения:
+* Сервер передаёт на клиент также patch-компонент своей версии. Данные о patch компоненте версии добавлены в `system.processes` и `query_log`. [#2646](https://github.com/yandex/ClickHouse/pull/2646)
+
+
+## ClickHouse release 18.5.1, 2018-07-31
+
+### Новые возможности:
+* Добавлена функция хеширования `murmurHash2_32`. [#2756](https://github.com/yandex/ClickHouse/pull/2756).
+
+### Улучшения:
+* Добавлена возможность указывать значения в конфигурационных файлах из переменных окружения с помощью атрибута `from_env`. [#2741](https://github.com/yandex/ClickHouse/pull/2741).
+* Добавлены регистронезависимые версии функций `coalesce`, `ifNull`, `nullIf`. [#2752](https://github.com/yandex/ClickHouse/pull/2752).
+
+### Исправление ошибок:
+* Исправлена возможная ошибка при старте реплики. [#2759](https://github.com/yandex/ClickHouse/pull/2759).
+
+
+## ClickHouse release 18.4.0, 2018-07-28
+
+### Новые возможности:
+* Добавлены системные таблицы `formats`, `data_type_families`, `aggregate_function_combinators`, `table_functions`, `table_engines`, `collations` [#2721](https://github.com/yandex/ClickHouse/pull/2721).
+* Добавлена возможность использования табличной функции вместо таблицы в качестве аргумента табличной функции `remote` и `cluster` [#2708](https://github.com/yandex/ClickHouse/pull/2708).
+* Поддержка `HTTP Basic` аутентификации в протоколе репликации [#2727](https://github.com/yandex/ClickHouse/pull/2727).
+* В функции `has` добавлена возможность поиска в массиве значений типа `Enum` по числовому значению [Maxim Khrisanfov](https://github.com/yandex/ClickHouse/pull/2699).
+* Поддержка добавления произвольных разделителей сообщений в процессе чтения из `Kafka` [Amos Bird](https://github.com/yandex/ClickHouse/pull/2701).
+
+### Улучшения:
+* Запрос `ALTER TABLE t DELETE WHERE` не перезаписывает куски данных, которые не были затронуты условием WHERE [#2694](https://github.com/yandex/ClickHouse/pull/2694).
+* Настройка `use_minimalistic_checksums_in_zookeeper` таблиц семейства `ReplicatedMergeTree` включена по-умолчанию. Эта настройка была добавлена в версии 1.1.54378, 2018-04-16. Установка версий, более старых, чем 1.1.54378, становится невозможной.
+* Поддерживается запуск запросов `KILL` и `OPTIMIZE` с указанием `ON CLUSTER` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2689).
+
+### Исправление ошибок:
+* Исправлена ошибка `Column ... is not under aggregate function and not in GROUP BY` в случае агрегации по выражению с оператором IN. Ошибка появилась в версии 18.1.0. ([bbdd780b](https://github.com/yandex/ClickHouse/commit/bbdd780be0be06a0f336775941cdd536878dd2c2))
+* Исправлена ошибка в агрегатной функции `windowFunnel` [Winter Zhang](https://github.com/yandex/ClickHouse/pull/2735).
+* Исправлена ошибка в агрегатной функции `anyHeavy` ([a2101df2](https://github.com/yandex/ClickHouse/commit/a2101df25a6a0fba99aa71f8793d762af2b801ee))
+* Исправлено падение сервера при использовании функции `countArray()`.
+
+### Обратно несовместимые изменения:
+
+* Список параметров для таблиц `Kafka` был изменён с `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_schema, kafka_num_consumers])` на `Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format[, kafka_row_delimiter, kafka_schema, kafka_num_consumers])`. Если вы использовали параметры `kafka_schema` или `kafka_num_consumers`, вам необходимо вручную отредактировать файлы с метаданными `path/metadata/database/table.sql`, добавив параметр `kafka_row_delimiter` со значением `''` в соответствующее место.
+
+
+## ClickHouse release 18.1.0, 2018-07-23
+
+### Новые возможности:
+* Поддержка запроса `ALTER TABLE t DELETE WHERE` для нереплицированных MergeTree-таблиц ([#2634](https://github.com/yandex/ClickHouse/pull/2634)).
+* Поддержка произвольных типов для семейства агрегатных функций `uniq*` ([#2010](https://github.com/yandex/ClickHouse/issues/2010)).
+* Поддержка произвольных типов в операторах сравнения ([#2026](https://github.com/yandex/ClickHouse/issues/2026)).
+* Возможность в `users.xml` указывать маску подсети в формате `10.0.0.1/255.255.255.0`. Это необходимо для использования "дырявых" масок IPv6 сетей ([#2637](https://github.com/yandex/ClickHouse/pull/2637)).
+* Добавлена функция `arrayDistinct` ([#2670](https://github.com/yandex/ClickHouse/pull/2670)).
+* Движок SummingMergeTree теперь может работать со столбцами типа AggregateFunction ([Constantin S. Pan](https://github.com/yandex/ClickHouse/pull/2566)).
+
+### Улучшения:
+* Изменена схема версионирования релизов. Теперь первый компонент содержит год релиза (A.D.; по московскому времени; из номера вычитается 2000), второй - номер крупных изменений (увеличивается для большинства релизов), третий - патч-версия. Релизы по-прежнему обратно совместимы, если другое не указано в changelog.
+* Ускорено преобразование чисел с плавающей точкой в строку ([Amos Bird](https://github.com/yandex/ClickHouse/pull/2664)).
+* Теперь, если при вставке из-за ошибок парсинга пропущено некоторое количество строк (такое возможно про включённых настройках `input_allow_errors_num`, `input_allow_errors_ratio`), это количество пишется в лог сервера ([Leonardo Cecchi](https://github.com/yandex/ClickHouse/pull/2669)).
+
+### Исправление ошибок:
+* Исправлена работа команды TRUNCATE для временных таблиц ([Amos Bird](https://github.com/yandex/ClickHouse/pull/2624)).
+* Исправлен редкий deadlock в клиентской библиотеке ZooKeeper, который возникал при сетевой ошибке во время вычитывания ответа ([c315200](https://github.com/yandex/ClickHouse/commit/c315200e64b87e44bdf740707fc857d1fdf7e947)).
+* Исправлена ошибка при CAST в Nullable типы ([#1322](https://github.com/yandex/ClickHouse/issues/1322)).
+* Исправлен неправильный результат функции `maxIntersection()` в случае совпадения границ отрезков ([Michael Furmur](https://github.com/yandex/ClickHouse/pull/2657)).
+* Исправлено неверное преобразование цепочки OR-выражений в аргументе функции ([chenxing-xc](https://github.com/yandex/ClickHouse/pull/2663)).
+* Исправлена деградация производительности запросов, содержащих выражение `IN (подзапрос)` внутри другого подзапроса ([#2571](https://github.com/yandex/ClickHouse/issues/2571)).
+* Исправлена несовместимость серверов разных версий при распределённых запросах, использующих функцию `CAST` не в верхнем регистре ([fe8c4d6](https://github.com/yandex/ClickHouse/commit/fe8c4d64e434cacd4ceef34faa9005129f2190a5)).
+* Добавлено недостающее квотирование идентификаторов при запросах к внешним СУБД ([#2635](https://github.com/yandex/ClickHouse/issues/2635)).
+
+### Обратно несовместимые изменения:
+* Не работает преобразование строки, содержащей число ноль, в DateTime. Пример: `SELECT toDateTime('0')`. По той же причине не работает `DateTime DEFAULT '0'` в таблицах, а также `<null_value>0</null_value>` в словарях. Решение: заменить `0` на `0000-00-00 00:00:00`.
+
+
+## ClickHouse release 1.1.54394, 2018-07-12
+
+### Новые возможности:
+* Добавлена агрегатная функция `histogram` ([Михаил Сурин](https://github.com/yandex/ClickHouse/pull/2521)).
+* Возможность использования `OPTIMIZE TABLE ... FINAL` без указания партиции для `ReplicatedMergeTree` ([Amos Bird](https://github.com/yandex/ClickHouse/pull/2600)).
+
+### Исправление ошибок:
+* Исправлена ошибка - выставление слишком маленького таймаута у сокетов (одна секунда) для чтения и записи при отправке и скачивании реплицируемых данных, что приводило к невозможности скачать куски достаточно большого размера при наличии некоторой нагрузки на сеть или диск (попытки скачивания кусков циклически повторяются). Ошибка возникла в версии 1.1.54388.
+* Исправлена работа при использовании chroot в ZooKeeper, в случае вставки дублирующихся блоков данных в таблицу.
+* Исправлена работа функции `has` для случая массива с Nullable элементами ([#2115](https://github.com/yandex/ClickHouse/issues/2521)).
+* Исправлена работа таблицы `system.tables` при её использовании в распределённых запросах; столбцы `metadata_modification_time` и `engine_full` сделаны невиртуальными; исправлена ошибка в случае, если из таблицы были запрошены только эти столбцы.
+* Исправлена работа пустой таблицы типа `TinyLog` после вставки в неё пустого блока данных ([#2563](https://github.com/yandex/ClickHouse/issues/2563)).
+* Таблица `system.zookeeper` работает в случае, если значение узла в ZooKeeper равно NULL.
+
+
+## ClickHouse release 1.1.54390, 2018-07-06
+
+### Новые возможности:
+* Возможность отправки запроса в формате `multipart/form-data` (в поле `query`), что полезно, если при этом также отправляются внешние данные для обработки запроса ([Ольга Хвостикова](https://github.com/yandex/ClickHouse/pull/2490)).
+* Добавлена возможность включить или отключить обработку одинарных или двойных кавычек при чтении данных в формате CSV. Это задаётся настройками `format_csv_allow_single_quotes` и `format_csv_allow_double_quotes` ([Amos Bird](https://github.com/yandex/ClickHouse/pull/2574))
+* Возможность использования `OPTIMIZE TABLE ... FINAL` без указания партиции для не реплицированных вариантов`MergeTree` ([Amos Bird](https://github.com/yandex/ClickHouse/pull/2599)).
+
+### Улучшения:
+* Увеличена производительность, уменьшено потребление памяти, добавлен корректный учёт потребления памяти, при использовании оператора IN в случае, когда для его работы может использоваться индекс таблицы ([#2584](https://github.com/yandex/ClickHouse/pull/2584)).
+* Убраны избыточные проверки чексумм при добавлении куска. Это важно в случае большого количества реплик, так как в этом случае суммарное количество проверок было равно N^2.
+* Добавлена поддержка аргументов типа `Array(Tuple(...))` для функции `arrayEnumerateUniq` ([#2573](https://github.com/yandex/ClickHouse/pull/2573)).
+* Добавлена поддержка `Nullable` для функции `runningDifference`. ([#2594](https://github.com/yandex/ClickHouse/pull/2594))
+* Увеличена производительность анализа запроса в случае очень большого количества выражений ([#2572](https://github.com/yandex/ClickHouse/pull/2572)).
+* Более быстрый выбор кусков для слияния в таблицах типа `ReplicatedMergeTree`. Более быстрое восстановление сессии с ZooKeeper. ([#2597](https://github.com/yandex/ClickHouse/pull/2597)).
+* Файл `format_version.txt` для таблиц семейства `MergeTree` создаётся заново при его отсутствии, что имеет смысл в случае запуска ClickHouse после копирования структуры директорий без файлов ([Ciprian Hacman](https://github.com/yandex/ClickHouse/pull/2593)).
+
+### Исправление ошибок:
+* Исправлена ошибка при работе с ZooKeeper, которая могла приводить к невозможности восстановления сессии и readonly состояниям таблиц до перезапуска сервера.
+* Исправлена ошибка при работе с ZooKeeper, которая могла приводить к неудалению старых узлов при разрыве сессии.
+* Исправлена ошибка в функции `quantileTDigest` для Float аргументов (ошибка появилась в версии 1.1.54388) ([Михаил Сурин](https://github.com/yandex/ClickHouse/pull/2553)).
+* Исправлена ошибка работы индекса таблиц типа MergeTree, если в условии, столбец первичного ключа расположен внутри функции преобразования типов между знаковым и беззнаковым целым одного размера ([#2603](https://github.com/yandex/ClickHouse/pull/2603)).
+* Исправлен segfault, если в конфигурационном файле нет `macros`, но они используются ([#2570](https://github.com/yandex/ClickHouse/pull/2570)).
+* Исправлено переключение на базу данных по-умолчанию при переподключении клиента ([#2583](https://github.com/yandex/ClickHouse/pull/2583)).
+* Исправлена ошибка в случае отключенной настройки `use_index_for_in_with_subqueries`.
+
+### Исправления безопасности:
+* При соединениях с MySQL удалена возможность отправки файлов (`LOAD DATA LOCAL INFILE`).
+
+
 ## ClickHouse release 1.1.54388, 2018-06-28
 
 ### Новые возможности:
@@ -323,7 +616,7 @@
 * Добавлена поддержка `ALTER` для таблиц типа `Null` (Anastasiya Tsarkova).
 * Функция `reinterpretAsString` расширена на все типы данных, значения которых хранятся в памяти непрерывно.
 * Для программы `clickhouse-local` добавлена опция `--silent` для подавления вывода информации о выполнении запроса в stderr.
-* Добавлена поддержка чтения `Date` в текстовом виде в формате, где месяц и день месяца могут быть указаны одной цифрой вместо двух (Amos Bird).
+* Добавлена поддержка чтения `Date` в текстовом виде в формате, где месяц и день месяца могут быть указаны одной цифрой вместо двух (Amos Bird).
 
 ### Увеличение производительности:
 
@@ -344,7 +637,7 @@
 * Добавлена недостающая поддержка типа данных `UUID` для `DISTINCT`, `JOIN`, в агрегатных функциях `uniq` и во внешних словарях (Иванов Евгений). Поддержка `UUID` всё ещё остаётся не полной.
 * Исправлено поведение `SummingMergeTree` для строк, в которых все значения после суммирования равны нулю.
 * Многочисленные доработки для движка таблиц `Kafka` (Marek Vavruša).
-* Исправлена некорректная работа движка таблиц `Join` (Amos Bird).
+* Исправлена некорректная работа движка таблиц `Join` (Amos Bird).
 * Исправлена работа аллокатора под FreeBSD и OS X.
 * Функция `extractAll` теперь может доставать пустые вхождения.
 * Исправлена ошибка, не позволяющая подключить при сборке `libressl` вместо `openssl`.
@@ -368,7 +661,7 @@
 * Исправлена работа `DISTINCT` при условии, что все столбцы константные.
 * Исправлено форматирование запроса в случае наличия функции `tupleElement` со сложным константным выражением в качестве номера элемента.
 * Исправлена работа `Dictionary` таблиц для словарей типа `range_hashed`.
-* Исправлена ошибка, приводящая к появлению лишних строк при `FULL` и `RIGHT JOIN` (Amos Bird).
+* Исправлена ошибка, приводящая к появлению лишних строк при `FULL` и `RIGHT JOIN` (Amos Bird).
 * Исправлено падение сервера в случае создания и удаления временных файлов в `config.d` директориях в момент перечитывания конфигурации.
 * Исправлена работа запроса `SYSTEM DROP DNS CACHE`: ранее сброс DNS кэша не приводил к повторному резолвингу имён хостов кластера.
 * Исправлено поведение `MATERIALIZED VIEW` после `DETACH TABLE` таблицы, на которую он смотрит (Marek Vavruša).
@@ -392,7 +685,7 @@
 * Формат засечек (marks) для таблиц типа `Log`, содержащих `Nullable` столбцы, изменён обратно-несовместимым образом. В случае наличия таких таблиц, вы можете преобразовать их в `TinyLog` до запуска новой версии сервера. Для этого в соответствующем таблице файле `.sql` в директории `metadata`, замените `ENGINE = Log` на `ENGINE = TinyLog`. Если в таблице нет `Nullable` столбцов или тип таблицы не `Log`, то ничего делать не нужно.
 * Удалена настройка `experimental_allow_extended_storage_definition_syntax`. Соответствующая функциональность включена по-умолчанию.
 * Функция `runningIncome` переименована в `runningDifferenceStartingWithFirstValue` во избежание путаницы.
-* Удалена возможность написания `FROM ARRAY JOIN arr` без указания таблицы после FROM (Amos Bird).
+* Удалена возможность написания `FROM ARRAY JOIN arr` без указания таблицы после FROM (Amos Bird).
 * Удалён формат `BlockTabSeparated`, использовавшийся лишь для демонстрационных целей.
 * Изменён формат состояния агрегатных функций `varSamp`, `varPop`, `stddevSamp`, `stddevPop`, `covarSamp`, `covarPop`, `corr`. Если вы использовали эти состояния для хранения в таблицах (тип данных `AggregateFunction` от этих функций или материализованные представления, хранящие эти состояния), напишите на clickhouse-feedback@yandex-team.com.
 * В предыдущих версиях существовала недокументированная возможность: в типе данных AggregateFunction можно было не указывать параметры для агрегатной функции, которая зависит от параметров. Пример: `AggregateFunction(quantiles, UInt64)` вместо `AggregateFunction(quantiles(0.5, 0.9), UInt64)`. Эта возможность потеряна. Не смотря на то, что возможность не документирована, мы собираемся вернуть её в ближайших релизах.

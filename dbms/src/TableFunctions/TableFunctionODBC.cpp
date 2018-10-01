@@ -1,27 +1,23 @@
 #include <TableFunctions/TableFunctionODBC.h>
-
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #include <type_traits>
 #include <ext/scope_guard.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ParserQueryWithOutput.h>
+#include <Parsers/parseQuery.h>
+#include <Poco/Net/HTTPRequest.h>
 #include <Storages/StorageODBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
+#include <Common/ODBCBridgeHelper.h>
 #include <Core/Defines.h>
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wsign-compare"
-    #include <Poco/Data/ODBC/ODBCException.h>
-    #include <Poco/Data/ODBC/SessionImpl.h>
-    #include <Poco/Data/ODBC/Utility.h>
-#pragma GCC diagnostic pop
 
 
 namespace DB
@@ -32,33 +28,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-DataTypePtr getDataType(SQLSMALLINT type)
-{
-    const auto & factory = DataTypeFactory::instance();
-
-    switch (type)
-    {
-        case SQL_INTEGER:
-            return factory.get("Int32");
-        case SQL_SMALLINT:
-            return factory.get("Int16");
-        case SQL_FLOAT:
-            return factory.get("Float32");
-        case SQL_REAL:
-            return factory.get("Float32");
-        case SQL_DOUBLE:
-            return factory.get("Float64");
-        case SQL_DATETIME:
-            return factory.get("DateTime");
-        case SQL_TYPE_TIMESTAMP:
-            return factory.get("DateTime");
-        case SQL_TYPE_DATE:
-            return factory.get("Date");
-        default:
-            return factory.get("String");
-    }
-}
-
 StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
 {
     const ASTFunction & args_func = typeid_cast<const ASTFunction &>(*ast_function);
@@ -67,53 +36,44 @@ StoragePtr TableFunctionODBC::executeImpl(const ASTPtr & ast_function, const Con
         throw Exception("Table function 'odbc' must have arguments.", ErrorCodes::LOGICAL_ERROR);
 
     ASTs & args = typeid_cast<ASTExpressionList &>(*args_func.arguments).children;
-
-    if (args.size() != 2)
-        throw Exception("Table function 'odbc' requires exactly 2 arguments: ODBC connection string and table name.",
+    if (args.size() != 2 && args.size() != 3)
+        throw Exception("Table function 'odbc' requires 2 or 3 arguments: ODBC('DSN', table) or ODBC('DSN', schema, table)",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (int i = 0; i < 2; ++i)
+    for (auto i = 0u; i < args.size(); ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string connection_string = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
-    std::string table_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
-
-    Poco::Data::ODBC::SessionImpl session(connection_string, DBMS_DEFAULT_CONNECT_TIMEOUT_SEC);
-    SQLHDBC hdbc = session.dbc().handle();
-
-    SQLHSTMT hstmt = nullptr;
-
-    if (Poco::Data::ODBC::Utility::isError(SQLAllocStmt(hdbc, &hstmt)))
-        throw Poco::Data::ODBC::ODBCException("Could not allocate connection handle.");
-
-    SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
-
-    /// TODO Why not do SQLColumns instead?
-    std::string query = "SELECT * FROM " + table_name + " WHERE 1 = 0";
-    if (Poco::Data::ODBC::Utility::isError(Poco::Data::ODBC::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(&query[0]), query.size())))
-        throw Poco::Data::ODBC::DescriptorException(session.dbc());
-
-    if (Poco::Data::ODBC::Utility::isError(SQLExecute(hstmt)))
-        throw Poco::Data::ODBC::StatementException(hstmt);
-
-    SQLSMALLINT cols = 0;
-    if (Poco::Data::ODBC::Utility::isError(SQLNumResultCols(hstmt, &cols)))
-        throw Poco::Data::ODBC::StatementException(hstmt);
-
-    /// TODO cols not checked
-
-    NamesAndTypesList columns;
-    for (SQLSMALLINT ncol = 1; ncol <= cols; ++ncol)
+    std::string connection_string = "";
+    std::string schema_name = "";
+    std::string table_name = "";
+    if (args.size() == 3)
     {
-        SQLSMALLINT type = 0;
-        /// TODO Why 301?
-        SQLCHAR column_name[301];
-        /// TODO Result is not checked.
-        Poco::Data::ODBC::SQLDescribeCol(hstmt, ncol, column_name, sizeof(column_name), NULL, &type, NULL, NULL, NULL);
-        columns.emplace_back(reinterpret_cast<char *>(column_name), getDataType(type));
+        connection_string = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        schema_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
+        table_name = static_cast<const ASTLiteral &>(*args[2]).value.safeGet<String>();
+    } else if (args.size() == 2)
+    {
+        connection_string = static_cast<const ASTLiteral &>(*args[0]).value.safeGet<String>();
+        table_name = static_cast<const ASTLiteral &>(*args[1]).value.safeGet<String>();
     }
 
-    auto result = StorageODBC::create(table_name, connection_string, "", table_name, ColumnsDescription{columns});
+    const auto & config = context.getConfigRef();
+    ODBCBridgeHelper helper(config, context.getSettingsRef().http_receive_timeout.value, connection_string);
+    helper.startODBCBridgeSync();
+
+    Poco::URI columns_info_uri = helper.getColumnsInfoURI();
+    columns_info_uri.addQueryParameter("connection_string", connection_string);
+    if (!schema_name.empty())
+        columns_info_uri.addQueryParameter("schema", schema_name);
+    columns_info_uri.addQueryParameter("table", table_name);
+
+    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, nullptr);
+
+    std::string columns_info;
+    readStringBinary(columns_info, buf);
+    NamesAndTypesList columns = NamesAndTypesList::parse(columns_info);
+
+    auto result = StorageODBC::create(table_name, connection_string, schema_name, table_name, ColumnsDescription{columns}, context);
     result->startup();
     return result;
 }
@@ -124,5 +84,3 @@ void registerTableFunctionODBC(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionODBC>();
 }
 }
-
-#endif

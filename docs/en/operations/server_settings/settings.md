@@ -22,11 +22,8 @@ Default value: 3600.
 
 Data compression settings.
 
-<div class="admonition warning">
-
-Don't use it if you have just started using ClickHouse.
-
-</div>
+!!! warning
+    Don't use it if you have just started using ClickHouse.
 
 The configuration looks like this:
 
@@ -47,7 +44,7 @@ Block field `<case>`:
 - ``min_part_size_ratio`` – The ratio of the minimum size of a table part to the full size of the table.
 - ``method`` – Compression method. Acceptable values ​: ``lz4`` or ``zstd``(experimental).
 
-ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes the ` case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
+ClickHouse checks `min_part_size`  and `min_part_size_ratio`  and processes the `case` blocks that match these conditions. If none of the `<case>` matches, ClickHouse applies the `lz4` compression algorithm.
 
 **Example**
 
@@ -67,7 +64,7 @@ ClickHouse checks ` min_part_size`  and ` min_part_size_ratio`  and processes th
 
 The default database.
 
-To get a list of databases, use the [SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases).
+To get a list of databases, use the [ SHOW DATABASES](../../query_language/misc.md#query_language_queries_show_databases) query.
 
 **Example**
 
@@ -114,11 +111,11 @@ See also "[External dictionaries](../../query_language/dicts/external_dicts.md#d
 
 Lazy loading of dictionaries.
 
-If ` true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
 
 If `false`, all dictionaries are created when the server starts, and if there is an error, the server shuts down.
 
-The default is ` true`.
+The default is `true`.
 
 **Example**
 
@@ -179,7 +176,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 Settings for thinning data for Graphite.
 
-For more information, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
+For more details, see [GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#table_engines-graphitemergetree).
 
 **Example**
 
@@ -267,7 +264,7 @@ Port for exchanging data between ClickHouse servers.
 
 The host name that can be used by other servers to access this server.
 
-If omitted, it is defined in the same way as the ` hostname-f` command.
+If omitted, it is defined in the same way as the `hostname-f` command.
 
 Useful for breaking away from a specific network interface.
 
@@ -311,7 +308,7 @@ Logging settings.
 Keys:
 
 - level – Logging level. Acceptable values: ``trace``, ``debug``, ``information``, ``warning``, ``error``.
-- log – The log file. Contains all the entries according to `` level``.
+- log – The log file. Contains all the entries according to `level`.
 - errorlog – Error log file.
 - size – Size of the file. Applies to ``log``and``errorlog``. Once the file reaches ``size``, ClickHouse archives and renames it, and creates a new log file in its place.
 - count – The number of archived log files that ClickHouse stores.
@@ -328,13 +325,14 @@ Keys:
 </logger>
 ```
 
-Also, logging to syslog is possible. Configuration example:
+Writing to the syslog is also supported. Config example:
+
 ```xml
 <logger>
     <use_syslog>1</use_syslog>
     <syslog>
         <address>syslog.remote:10514</address>
-        <hostname>myhost.local</hostname> 
+        <hostname>myhost.local</hostname>
         <facility>LOG_LOCAL6</facility>
         <format>syslog</format>
     </syslog>
@@ -342,13 +340,14 @@ Also, logging to syslog is possible. Configuration example:
 ```
 
 Keys:
-- user_syslog - activation key, turning on syslog logging.
-- address - host[:port] of syslogd. If not specified, local one would be used.
-- hostname - optional, source host of logs
-- facility - [syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility), 
-in uppercase, prefixed with "LOG_": (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3`` etc.). 
-Default values: when ``address`` is specified, then ``LOG_USER``, otherwise - ``LOG_DAEMON``
-- format - message format. Possible values are - ``bsd`` and ``syslog``
+
+- user_syslog — Required setting if you want to write to the syslog.
+- address — The host[:порт] of syslogd. If omitted, the local daemon is used.
+- hostname — Optional. The name of the host that logs are sent from.
+- facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility)
+in uppercase letters with the "LOG_" prefix: (``LOG_USER``, ``LOG_DAEMON``, ``LOG_LOCAL3``, and so on).
+Default value: ``LOG_USER`` if ``address`` is specified, ``LOG_DAEMON otherwise.``
+- format – Message format. Possible values: ``bsd`` and ``syslog.``
 
 <a name="server_settings-macros"></a>
 
@@ -370,7 +369,7 @@ For more information, see the section "[Creating replicated tables](../../operat
 
 ## mark_cache_size
 
-Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) engines.
+Approximate size (in bytes) of the cache of "marks" used by [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
 
 The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
@@ -412,7 +411,7 @@ The maximum number of open files.
 
 By default: `maximum`.
 
-We recommend using this option in Mac OS X, since the ` getrlimit()` function returns an incorrect value.
+We recommend using this option in Mac OS X, since the `getrlimit()` function returns an incorrect value.
 
 **Example**
 
@@ -426,9 +425,9 @@ We recommend using this option in Mac OS X, since the ` getrlimit()` function re
 
 Restriction on deleting tables.
 
-If the size of a [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) type table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
+If the size of a [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) table exceeds `max_table_size_to_drop` (in bytes), you can't delete it using a DROP query.
 
-If you still need to delete the table without restarting the ClickHouse server, create the ` <clickhouse-path>/flags/force_drop_table` file and run the DROP query.
+If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
 
 Default value: 50 GB.
 
@@ -444,7 +443,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge_tree
 
-Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) family.
+Fine tuning for tables in the [ MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
 
 For more information, see the MergeTreeSettings.h header file.
 
@@ -462,25 +461,25 @@ For more information, see the MergeTreeSettings.h header file.
 
 SSL client/server configuration.
 
-Support for SSL is provided by the `` libpoco`` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+Support for SSL is provided by the `libpoco` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
 Keys for server/client settings:
 
 - privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
-- certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `` privateKeyFile`` contains the certificate.
+- certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
 - caConfig – The path to the file or directory that contains trusted root certificates.
 - verificationMode – The method for checking the node's certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: ``none``, ``relaxed``, ``strict``, ``once``.
 - verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
-- loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `` true``, `` false``.  |
-- cipherList – Supported OpenSSL encryptions. For example: `` ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH``.
-- cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `` true``, `` false``.
+- loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`.  |
+- cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
+- cacheSessions – Enables or disables caching sessions. Must be used in combination with ``sessionIdContext``. Acceptable values: `true`, `false`.
 - sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed ``SSL_MAX_SSL_SESSION_ID_LENGTH``. This parameter is always recommended, since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: ``${application.name}``.
 - sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
 - sessionTimeout – Time for caching the session on the server.
-- extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `` true``, `` false``.
-- requireTLSv1 – Require a TLSv1 connection. Acceptable values: `` true``, `` false``.
-- requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `` true``, `` false``.
-- requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `` true``, `` false``.
+- extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
+- requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
+- requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
+- requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 - fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 - privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: ``<privateKeyPassphraseHandler>``, ``<name>KeyFileHandler</name>``, ``<options><password>test</password></options>``, ``</privateKeyPassphraseHandler>``.
 - invalidCertificateHandler – Class (subclass of CertificateHandler) for verifying invalid certificates. For example: `` <invalidCertificateHandler> <name>ConsoleCertificateHandler</name>  </invalidCertificateHandler>`` .
@@ -521,7 +520,7 @@ Keys for server/client settings:
 
 ## part_log
 
-Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) data. For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+Logging events that are associated with [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
 Queries are logged in the ClickHouse table, not in a separate file.
 
@@ -561,11 +560,8 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-<div class="admonition warning">
-
-The end slash is mandatory.
-
-</div>
+!!! note
+    The trailing slash is mandatory.
 
 **Example**
 
@@ -651,11 +647,8 @@ Port for communicating with clients over the TCP protocol.
 
 Path to temporary data for processing large queries.
 
-<div class="admonition warning">
-
-The end slash is mandatory.
-
-</div>
+!!! note
+    The trailing slash is mandatory.
 
 **Example**
 
@@ -667,7 +660,7 @@ The end slash is mandatory.
 
 ## uncompressed_cache_size
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree) family.
+Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../operations/table_engines/mergetree.md#table_engines-mergetree).
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use_uncompressed_cache](../settings/settings.md#settings-use_uncompressed_cache) is enabled.
 
@@ -681,7 +674,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ## user_files_path
 
-A catalog with user files. Used in a [file()](../../query_language/table_functions/file.md#table_functions-file) table function.
+The directory with user files. Used in the  table function [file()](../../query_language/table_functions/file.md#table_functions-file).
 
 **Example**
 
@@ -723,3 +716,4 @@ For more information, see the section "[Replication](../../operations/table_engi
 ```xml
 <zookeeper incl="zookeeper-servers" optional="true" />
 ```
+

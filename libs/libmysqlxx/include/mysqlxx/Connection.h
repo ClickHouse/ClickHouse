@@ -67,8 +67,8 @@ public:
     Connection(
         const char * db,
         const char * server,
-        const char * user = 0,
-        const char * password = 0,
+        const char * user = nullptr,
+        const char * password = nullptr,
         unsigned port = 0,
         const char * socket = "",
         const char * ssl_ca = "",
@@ -155,7 +155,8 @@ public:
 
 private:
     std::unique_ptr<MYSQL> driver;
-    bool is_connected;
+    bool is_initialized = false;
+    bool is_connected = false;
 };
 
 

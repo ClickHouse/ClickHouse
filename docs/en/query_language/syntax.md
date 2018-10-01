@@ -42,7 +42,7 @@ We recommend using identifiers that do not need to be quoted.
 
 There are numeric literals, string literals, and compound literals.
 
-### Numeric literals
+### Numeric Literals
 
 A numeric literal tries to be parsed:
 
@@ -56,19 +56,33 @@ For example, 1 is parsed as UInt8, but 256 is parsed as UInt16. For more informa
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
-### String literals
+### String Literals
 
 Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where "c" is any character, are converted to "c". This means that you can use the sequences `\'`and`\\`. The value will have the String type.
 
 The minimum set of characters that you need to escape in string literals: `'` and `\`.
 
-### Compound literals
+### Compound Literals
 
 Constructions are supported for arrays: `[1, 2, 3]` and tuples: `(1, 'Hello, world!', 2)`..
 Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
 For more information, see the section "Operators2".
 An array must consist of at least one item, and a tuple must have at least two items.
 Tuples have a special purpose for use in the IN clause of a SELECT query. Tuples can be obtained as the result of a query, but they can't be saved to a database (with the exception of Memory-type tables).
+
+<a name="null-literal"></a>
+
+### NULL Literal
+
+Indicates that the value is missing.
+
+In order to store `NULL` in a table field, it must be of the [Nullable](../data_types/nullable.md#data_type-nullable) type.
+
+Depending on the data format (input or output), `NULL` may have a different representation. For more information, see the documentation for [data formats](../interfaces/formats.md#formats).
+
+There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation will also be `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
+
+In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md#operator-is-not-null) operators and the related functions `isNull` and `isNotNull`.
 
 ## Functions
 
@@ -81,7 +95,7 @@ Operators are converted to their corresponding functions during query parsing, t
 For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, multiply(2, 3)), 4)`.
 For more information, see the section "Operators" below.
 
-## Data types and database table engines
+## Data Types and Database Table Engines
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections "Data types," "Table engines," and "CREATE".
 

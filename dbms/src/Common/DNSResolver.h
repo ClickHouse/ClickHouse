@@ -25,6 +25,9 @@ public:
 
     Poco::Net::SocketAddress resolveAddress(const std::string & host, UInt16 port);
 
+    /// Get this server host name
+    String getHostName();
+
     /// Disables caching
     void setDisableCacheFlag(bool is_disabled = true);
 

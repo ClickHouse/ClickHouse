@@ -1,10 +1,7 @@
 #pragma once
 
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/IDataType.h>
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -14,6 +11,7 @@ class DataTypeUUID final : public DataTypeNumberBase<UInt128>
 
 public:
     const char * getFamilyName() const override { return "UUID"; }
+    TypeIndex getTypeId() const override { return TypeIndex::UUID; }
 
     bool equals(const IDataType & rhs) const override;
 
