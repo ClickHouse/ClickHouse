@@ -15,6 +15,7 @@ public:
     ASTPtr type;
     String default_specifier;
     ASTPtr default_expression;
+    ASTPtr comment_expression;
 
     String getID() const override { return "ColumnDeclaration_" + name; }
 
@@ -33,6 +34,11 @@ public:
         {
             res->default_expression = default_expression->clone();
             res->children.push_back(res->default_expression);
+        }
+
+        if (comment_expression) {
+            res->comment_expression = comment_expression->clone();
+            res->children.push_back(res->comment_expression); // TODO: понять, зачем это нужно.
         }
 
         return res;
@@ -55,6 +61,11 @@ protected:
         {
             settings.ostr << ' ' << (settings.hilite ? hilite_keyword : "") << default_specifier << (settings.hilite ? hilite_none : "") << ' ';
             default_expression->formatImpl(settings, state, frame);
+        }
+
+        // TODO: понять, почему не отрицание
+        if (comment_expression) {
+            comment_expression->formatImpl(settings, state, frame);
         }
     }
 };

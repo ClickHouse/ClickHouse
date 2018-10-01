@@ -111,6 +111,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_default{"DEFAULT"};
     ParserKeyword s_materialized{"MATERIALIZED"};
     ParserKeyword s_alias{"ALIAS"};
+    ParserKeyword s_comment{"COMMENT"};
     ParserTernaryOperatorExpression expr_parser;
 
     /// mandatory column name
@@ -119,13 +120,14 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         return false;
 
     /** column name should be followed by type name if it
-      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS}
+      *    is not immediately followed by {DEFAULT, MATERIALIZED, ALIAS, COMMENT}
       */
     ASTPtr type;
     const auto fallback_pos = pos;
     if (!s_default.check(pos, expected) &&
         !s_materialized.check(pos, expected) &&
-        !s_alias.check(pos, expected))
+        !s_alias.check(pos, expected) &&
+        !s_comment.check(pos, expected))
     {
         type_parser.parse(pos, type, expected);
     }
@@ -149,6 +151,17 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     else if (!type)
         return false; /// reject sole column name without type
 
+    String comment_specifier;
+    ASTPtr comment_expression;
+    pos_before_specifier = pos;
+    if (s_comment.ignore(pos, expected))
+    {
+        comment_specifier = Poco::toUpper(std::string{pos_before_specifier->begin, pos_specifier->end});
+        if (!expr_parser.parse(pos, comment_expression, expected)) {
+            return false;
+        }
+    }
+
     const auto column_declaration = std::make_shared<ASTColumnDeclaration>();
     node = column_declaration;
     column_declaration->name = typeid_cast<ASTIdentifier &>(*name).name;
@@ -163,6 +176,11 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
         column_declaration->default_specifier = default_specifier;
         column_declaration->default_expression = default_expression;
         column_declaration->children.push_back(std::move(default_expression));
+    }
+
+    if (comment_expression) {
+        column_declaration->comment_expression = comment_expression;
+        column_declaration->children.push_back(std::move(comment_expression));
     }
 
     return true;
