@@ -2,6 +2,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/copyData.h>
+#include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
 
@@ -63,14 +64,24 @@ static void enrichBlockWithConstants(Block & block, const Block & header)
 }
 
 
+MergeSortingBlockInputStream::MergeSortingBlockInputStream(
+    const BlockInputStreamPtr & input, SortDescription & description_,
+    size_t max_merged_block_size_, size_t limit_, size_t max_bytes_before_remerge_,
+    size_t max_bytes_before_external_sort_, const std::string & tmp_path_)
+    : description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_),
+    max_bytes_before_remerge(max_bytes_before_remerge_),
+    max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_path(tmp_path_)
+{
+    children.push_back(input);
+    header = children.at(0)->getHeader();
+    header_without_constants = header;
+    removeConstantsFromBlock(header_without_constants);
+    removeConstantsFromSortDescription(header, description);
+}
+
+
 Block MergeSortingBlockInputStream::readImpl()
 {
-    if (!header)
-    {
-        header = getHeader();
-        removeConstantsFromSortDescription(header, description);
-    }
-
     /** Algorithm:
       * - read to memory blocks from source stream;
       * - if too many of them and if external sorting is enabled,
@@ -91,7 +102,20 @@ Block MergeSortingBlockInputStream::readImpl()
             removeConstantsFromBlock(block);
 
             blocks.push_back(block);
-            sum_bytes_in_blocks += block.bytes();
+            sum_rows_in_blocks += block.rows();
+            sum_bytes_in_blocks += block.allocatedBytes();
+
+            /** If significant amount of data was accumulated, perform preliminary merging step.
+              */
+            if (blocks.size() > 1
+                && limit
+                && limit * 2 < sum_rows_in_blocks   /// 2 is just a guess.
+                && remerge_is_useful
+                && max_bytes_before_remerge
+                && sum_bytes_in_blocks > max_bytes_before_remerge)
+            {
+                remerge();
+            }
 
             /** If too many of them and if external sorting is enabled,
               *  will merge blocks that we have in memory at this moment and write merged stream to temporary (compressed) file.
@@ -99,11 +123,12 @@ Block MergeSortingBlockInputStream::readImpl()
               */
             if (max_bytes_before_external_sort && sum_bytes_in_blocks > max_bytes_before_external_sort)
             {
+                Poco::File(tmp_path).createDirectories();
                 temporary_files.emplace_back(new Poco::TemporaryFile(tmp_path));
                 const std::string & path = temporary_files.back()->path();
                 WriteBufferFromFile file_buf(path);
                 CompressedWriteBuffer compressed_buf(file_buf);
-                NativeBlockOutputStream block_out(compressed_buf, 0, block.cloneEmpty());
+                NativeBlockOutputStream block_out(compressed_buf, 0, header_without_constants);
                 MergeSortingBlocksBlockInputStream block_in(blocks, description, max_merged_block_size, limit);
 
                 LOG_INFO(log, "Sorting and writing part of data into temporary file " + path);
@@ -113,6 +138,7 @@ Block MergeSortingBlockInputStream::readImpl()
 
                 blocks.clear();
                 sum_bytes_in_blocks = 0;
+                sum_rows_in_blocks = 0;
             }
         }
 
@@ -133,7 +159,7 @@ Block MergeSortingBlockInputStream::readImpl()
             /// Create sorted streams to merge.
             for (const auto & file : temporary_files)
             {
-                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path()));
+                temporary_inputs.emplace_back(std::make_unique<TemporaryFileStream>(file->path(), header_without_constants));
                 inputs_to_merge.emplace_back(temporary_inputs.back()->block_in);
             }
 
@@ -173,7 +199,7 @@ MergeSortingBlocksBlockInputStream::MergeSortingBlocksBlockInputStream(
     if (!has_collation)
     {
         for (size_t i = 0; i < cursors.size(); ++i)
-            queue.push(SortCursor(&cursors[i]));
+            queue_without_collation.push(SortCursor(&cursors[i]));
     }
     else
     {
@@ -196,7 +222,7 @@ Block MergeSortingBlocksBlockInputStream::readImpl()
     }
 
     return !has_collation
-        ? mergeImpl<SortCursor>(queue)
+        ? mergeImpl<SortCursor>(queue_without_collation)
         : mergeImpl<SortCursorWithCollation>(queue_with_collation);
 }
 
@@ -244,5 +270,38 @@ Block MergeSortingBlocksBlockInputStream::mergeImpl(std::priority_queue<TSortCur
     return blocks[0].cloneWithColumns(std::move(merged_columns));
 }
 
+
+void MergeSortingBlockInputStream::remerge()
+{
+    LOG_DEBUG(log, "Re-merging intermediate ORDER BY data (" << blocks.size() << " blocks with " << sum_rows_in_blocks << " rows) to save memory consumption");
+
+    /// NOTE Maybe concat all blocks and partial sort will be faster than merge?
+    MergeSortingBlocksBlockInputStream merger(blocks, description, max_merged_block_size, limit);
+
+    Blocks new_blocks;
+    size_t new_sum_rows_in_blocks = 0;
+    size_t new_sum_bytes_in_blocks = 0;
+
+    merger.readPrefix();
+    while (Block block = merger.read())
+    {
+        new_sum_rows_in_blocks += block.rows();
+        new_sum_bytes_in_blocks += block.allocatedBytes();
+        new_blocks.emplace_back(std::move(block));
+    }
+    merger.readSuffix();
+
+    LOG_DEBUG(log, "Memory usage is lowered from "
+        << formatReadableSizeWithBinarySuffix(sum_bytes_in_blocks) << " to "
+        << formatReadableSizeWithBinarySuffix(new_sum_bytes_in_blocks));
+
+    /// If the memory consumption was not lowered enough - we will not perform remerge anymore. 2 is a guess.
+    if (new_sum_bytes_in_blocks * 2 > sum_bytes_in_blocks)
+        remerge_is_useful = false;
+
+    blocks = std::move(new_blocks);
+    sum_rows_in_blocks = new_sum_rows_in_blocks;
+    sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+}
 
 }

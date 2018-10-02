@@ -16,7 +16,12 @@ namespace
         assertBinary(name, argument_types);
         assertNoParameters(name, parameters);
 
-        return AggregateFunctionPtr{createWithNumericType<AggregateFunctionIntersectionsMax>(*argument_types[0], kind, argument_types)};
+        AggregateFunctionPtr res(createWithNumericType<AggregateFunctionIntersectionsMax>(*argument_types[0], kind, argument_types));
+        if (!res)
+            throw Exception("Illegal types " + argument_types[0]->getName() + " and " + argument_types[1]->getName()
+                + " of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return res;
     }
 }
 

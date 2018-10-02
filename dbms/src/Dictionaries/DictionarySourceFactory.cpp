@@ -9,6 +9,7 @@
 #include <Dictionaries/LibraryDictionarySource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitors.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/HTTPCommon.h>
@@ -16,14 +17,11 @@
 #include <mutex>
 
 #include <Common/config.h>
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
     #include <Dictionaries/MongoDBDictionarySource.h>
 #endif
-#if Poco_DataODBC_FOUND
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     #include <Poco/Data/ODBC/Connector.h>
-#pragma GCC diagnostic pop
     #include <Dictionaries/ODBCDictionarySource.h>
 #endif
 #if USE_MYSQL
@@ -53,8 +51,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
     Block block;
 
     if (dict_struct.id)
-        block.insert(ColumnWithTypeAndName{
-            ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
+        block.insert(ColumnWithTypeAndName{ColumnUInt64::create(1, 0), std::make_shared<DataTypeUInt64>(), dict_struct.id->name});
 
     if (dict_struct.key)
     {
@@ -68,9 +65,16 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
     }
 
     if (dict_struct.range_min)
+    {
         for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
-            block.insert(ColumnWithTypeAndName{
-                ColumnUInt16::create(1, 0), std::make_shared<DataTypeDate>(), attribute->name});
+        {
+            const auto & type = std::make_shared<DataTypeNullable>(attribute->type);
+            auto column = type->createColumn();
+            column->insertDefault();
+
+            block.insert(ColumnWithTypeAndName{std::move(column), type, attribute->name});
+        }
+    }
 
     for (const auto & attribute : dict_struct.attributes)
     {
@@ -89,7 +93,7 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
 DictionarySourceFactory::DictionarySourceFactory()
     : log(&Poco::Logger::get("DictionarySourceFactory"))
 {
-#if Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     Poco::Data::ODBC::Connector::registerConnector();
 #endif
 }
@@ -109,10 +113,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
     if (keys.size() != 1)
-        throw Exception{
-            name +": element dictionary.source should have exactly one child element",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG
-        };
+        throw Exception{name +": element dictionary.source should have exactly one child element", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
     auto sample_block = createSampleBlock(dict_struct);
 
@@ -121,9 +122,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     if ("file" == source_type)
     {
         if (dict_struct.has_expressions)
-            throw Exception{
-                "Dictionary source of type `file` does not support attribute expressions",
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Dictionary source of type `file` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         const auto filename = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
@@ -145,7 +144,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else if ("mongodb" == source_type)
     {
-#if Poco_MongoDB_FOUND
+#if USE_POCO_MONGODB
         return std::make_unique<MongoDBDictionarySource>(dict_struct, config, config_prefix + ".mongodb", sample_block);
 #else
         throw Exception{"Dictionary source of type `mongodb` is disabled because poco library was built without mongodb support.",
@@ -154,7 +153,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else if ("odbc" == source_type)
     {
-#if Poco_DataODBC_FOUND
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
         return std::make_unique<ODBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context);
 #else
         throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
@@ -164,9 +163,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     else if ("executable" == source_type)
     {
         if (dict_struct.has_expressions)
-            throw Exception{
-                "Dictionary source of type `executable` does not support attribute expressions",
-                ErrorCodes::LOGICAL_ERROR};
+            throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
     }
@@ -174,14 +171,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
 
         if (dict_struct.has_expressions)
-            throw Exception{
-                "Dictionary source of type `http` does not support attribute expressions",
-                ErrorCodes::LOGICAL_ERROR};
-
-#if Poco_NetSSL_FOUND
-        // Used for https queries
-        std::call_once(ssl_init_once, SSLInit);
-#endif
+            throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
     }
@@ -199,9 +189,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
         }
     }
 
-    throw Exception{
-        name + ": unknown dictionary source type: " + source_type,
-        ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
+    throw Exception{name + ": unknown dictionary source type: " + source_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG};
 }
 
 }

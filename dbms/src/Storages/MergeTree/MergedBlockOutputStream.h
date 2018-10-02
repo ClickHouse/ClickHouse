@@ -25,6 +25,8 @@ public:
 
 protected:
     using OffsetColumns = std::set<std::string>;
+    using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
+    using SerializationStates = std::vector<SerializationState>;
 
     struct ColumnStream
     {
@@ -64,8 +66,12 @@ protected:
 
     void addStreams(const String & path, const String & name, const IDataType & type, size_t estimated_size, bool skip_offsets);
 
+
+    IDataType::OutputStreamGetter createStreamGetter(const String & name, OffsetColumns & offset_columns, bool skip_offsets);
+
     /// Write data of one column.
-    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns, bool skip_offsets);
+    void writeData(const String & name, const IDataType & type, const IColumn & column, OffsetColumns & offset_columns,
+                   bool skip_offsets, IDataType::SerializeBinaryBulkStatePtr & serialization_state);
 
     MergeTreeData & storage;
 
@@ -122,9 +128,6 @@ public:
             const NamesAndTypesList * total_columns_list = nullptr,
             MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
 
-    /// How many rows are already written.
-    size_t getRowsCount() const { return rows_count; }
-
 private:
     void init();
 
@@ -135,6 +138,7 @@ private:
 
 private:
     NamesAndTypesList columns_list;
+    SerializationStates serialization_states;
     String part_path;
 
     size_t rows_count = 0;
@@ -150,6 +154,7 @@ private:
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
 public:
+    /// skip_offsets: used when ALTERing columns if we know that array offsets are not altered.
     MergedColumnOnlyOutputStream(
         MergeTreeData & storage_, const Block & header_, String part_path_, bool sync_, CompressionSettings compression_settings, bool skip_offsets_);
 
@@ -160,6 +165,7 @@ public:
 
 private:
     Block header;
+    SerializationStates serialization_states;
     String part_path;
 
     bool initialized = false;

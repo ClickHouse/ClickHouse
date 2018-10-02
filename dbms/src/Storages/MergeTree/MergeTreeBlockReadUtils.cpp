@@ -71,9 +71,9 @@ MergeTreeReadTask::MergeTreeReadTask(
     const Names & ordered_names, const NameSet & column_name_set, const NamesAndTypesList & columns,
     const NamesAndTypesList & pre_columns, const bool remove_prewhere_column, const bool should_reorder,
     MergeTreeBlockSizePredictorPtr && size_predictor)
-: data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
-ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
-remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
+    : data_part{data_part}, mark_ranges{mark_ranges}, part_index_in_query{part_index_in_query},
+    ordered_names{ordered_names}, column_name_set{column_name_set}, columns{columns}, pre_columns{pre_columns},
+    remove_prewhere_column{remove_prewhere_column}, should_reorder{should_reorder}, size_predictor{std::move(size_predictor)}
 {}
 
 MergeTreeReadTask::~MergeTreeReadTask() = default;
@@ -102,8 +102,6 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
         const String & column_name = column_with_type_and_name.name;
         const ColumnPtr & column_data = column_with_type_and_name.column;
 
-        const auto column_checksum = data_part->tryGetBinChecksum(column_name);
-
         if (!from_update && !names_set.count(column_name))
             continue;
 
@@ -122,8 +120,11 @@ void MergeTreeBlockSizePredictor::initialize(const Block & sample_block, const N
             ColumnInfo info;
             info.name = column_name;
             /// If column isn't fixed and doesn't have checksum, than take first
-            info.bytes_per_row_global = column_checksum
-                ? column_checksum->uncompressed_size / number_of_rows_in_part
+            MergeTreeDataPart::ColumnSize column_size = data_part->getColumnSize(
+                column_name, *column_with_type_and_name.type);
+
+            info.bytes_per_row_global = column_size.data_uncompressed
+                ? column_size.data_uncompressed / number_of_rows_in_part
                 : column_data->byteSize() / std::max<size_t>(1, column_data->size());
 
             dynamic_columns_infos.emplace_back(info);

@@ -138,7 +138,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isDeterministicInScopeOfQuery() override { return false; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -150,14 +150,14 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         auto col_to = ColumnVector<ToType>::create();
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
-        size_t size = block.rows();
+        size_t size = input_rows_count;
         vec_to.resize(size);
-        Impl::execute(&vec_to[0], vec_to.size());
+        Impl::execute(vec_to.data(), vec_to.size());
 
         block.getByPosition(result).column = std::move(col_to);
     }
@@ -196,17 +196,17 @@ public:
         return std::make_shared<DataTypeNumber<typename Impl::ReturnType>>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & /*arguments*/, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers &, size_t result, size_t input_rows_count) override
     {
         if (!is_initialized)
         {
             is_initialized = true;
             typename ColumnVector<ToType>::Container vec_to(1);
-            Impl::execute(&vec_to[0], vec_to.size());
+            Impl::execute(vec_to.data(), vec_to.size());
             value = vec_to[0];
         }
 
-        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(block.rows(), toField(value));
+        block.getByPosition(result).column = DataTypeNumber<ToType>().createColumnConst(input_rows_count, toField(value));
     }
 };
 

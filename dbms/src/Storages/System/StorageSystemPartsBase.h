@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ext/shared_ptr_helper.h>
+#include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -26,7 +27,7 @@ public:
             const Names & column_names,
             const SelectQueryInfo & query_info,
             const Context & context,
-            QueryProcessingStage::Enum & processed_stage,
+            QueryProcessingStage::Enum processed_stage,
             size_t max_block_size,
             unsigned num_streams) override;
 
@@ -49,10 +50,11 @@ public:
 private:
     const std::string name;
 
-
     bool hasStateColumn(const Names & column_names);
 
 protected:
+    const FormatSettings format_settings;
+
     StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_);
 
     virtual void processNextStorage(MutableColumns & columns, const StoragesInfo & info, bool has_state_column) = 0;

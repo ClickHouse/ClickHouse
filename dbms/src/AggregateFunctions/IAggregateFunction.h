@@ -43,7 +43,7 @@ public:
     /// Get the result type.
     virtual DataTypePtr getReturnType() const = 0;
 
-    virtual ~IAggregateFunction() {};
+    virtual ~IAggregateFunction() {}
 
     /** Data manipulating functions. */
 

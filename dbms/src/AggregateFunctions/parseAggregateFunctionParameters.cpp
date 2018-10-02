@@ -65,7 +65,7 @@ void getAggregateFunctionNameAndParametersArray(
     ParserExpressionList params_parser(false);
     ASTPtr args_ast = parseQuery(params_parser,
         parameters_str.data(), parameters_str.data() + parameters_str.size(),
-        "parameters of aggregate function in " + error_context);
+        "parameters of aggregate function in " + error_context, 0);
 
     ASTExpressionList & args_list = typeid_cast<ASTExpressionList &>(*args_ast);
     if (args_list.children.empty())

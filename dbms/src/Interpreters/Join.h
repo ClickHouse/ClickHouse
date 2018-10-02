@@ -219,8 +219,8 @@ struct JoinKeyGetterHashed
 class Join
 {
 public:
-    Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
-         const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_);
+    Join(const Names & key_names_left_, const Names & key_names_right_, const NameSet & needed_key_names_right_,
+         bool use_nulls_, const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_);
 
     bool empty() { return type == Type::EMPTY; }
 
@@ -242,7 +242,7 @@ public:
     /** Keep "totals" (separate part of dataset, see WITH TOTALS) to use later.
       */
     void setTotals(const Block & block) { totals = block; }
-    bool hasTotals() const { return totals; };
+    bool hasTotals() const { return totals; }
 
     void joinTotals(Block & block) const;
 
@@ -361,6 +361,8 @@ private:
     const Names key_names_left;
     /// Names of key columns (columns for equi-JOIN) in "right" table (in the order they appear in USING clause).
     const Names key_names_right;
+    /// Names of key columns in the "right" table which should stay in block after join.
+    const NameSet needed_key_names_right;
 
     /// Substitute NULLs for non-JOINed rows.
     bool use_nulls;

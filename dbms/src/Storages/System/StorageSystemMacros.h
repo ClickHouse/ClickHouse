@@ -1,7 +1,8 @@
 #pragma once
 
+#include <DataTypes/DataTypeString.h>
 #include <ext/shared_ptr_helper.h>
-#include <Storages/IStorage.h>
+#include <Storages/System/IStorageSystemOneBlock.h>
 
 
 namespace DB
@@ -12,25 +13,17 @@ class Context;
 
 /** Information about macros for introspection.
   */
-class StorageSystemMacros : public ext::shared_ptr_helper<StorageSystemMacros>, public IStorage
+class StorageSystemMacros : public ext::shared_ptr_helper<StorageSystemMacros>, public IStorageSystemOneBlock<StorageSystemMacros>
 {
 public:
     std::string getName() const override { return "SystemMacros"; }
-    std::string getTableName() const override { return name; }
 
-    BlockInputStreams read(
-            const Names & column_names,
-            const SelectQueryInfo & query_info,
-            const Context & context,
-            QueryProcessingStage::Enum & processed_stage,
-            size_t max_block_size,
-            unsigned num_streams) override;
-
-private:
-    const std::string name;
+    static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    StorageSystemMacros(const std::string & name_);
+    using IStorageSystemOneBlock::IStorageSystemOneBlock;
+
+    void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 };
 
 }

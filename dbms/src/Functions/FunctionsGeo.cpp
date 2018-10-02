@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsGeo.h>
 #include <Functions/GeoUtils.h>
-#include <Functions/ObjectPool.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
@@ -14,6 +13,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ObjectPool.h>
+#include <string>
+#include <memory>
 
 
 namespace ProfileEvents
@@ -131,7 +133,7 @@ public:
 
             for (auto j : ext::range(0, elements.size()))
             {
-                if (!elements[j]->isNumber())
+                if (!isNumber(elements[j]))
                 {
                     throw Exception(getMsgPrefix(i) + " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -142,7 +144,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
 
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
@@ -160,7 +162,7 @@ public:
         const Columns & tuple_columns = tuple_col->getColumns();
         const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
 
-        bool use_float64 = checkDataType<DataTypeFloat64>(tuple_types[0].get()) || checkDataType<DataTypeFloat64>(tuple_types[1].get());
+        bool use_float64 = WhichDataType(tuple_types[0]).isFloat64() || WhichDataType(tuple_types[1]).isFloat64();
 
         auto & result_column = block.safeGetByPosition(result).column;
 

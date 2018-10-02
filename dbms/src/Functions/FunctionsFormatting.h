@@ -44,9 +44,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType * type = arguments[0].get();
+        const DataTypePtr & type = arguments[0];
 
-        if (!type->isInteger())
+        if (!isInteger(type))
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -54,7 +54,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (!(    executeType<UInt8>(block, arguments, result)
             ||    executeType<UInt16>(block, arguments, result)
@@ -139,7 +139,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!type.isNumber())
+        if (!isNumber(type))
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -147,7 +147,7 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
         if (!(    executeType<UInt8>(block, arguments, result)
             ||    executeType<UInt16>(block, arguments, result)

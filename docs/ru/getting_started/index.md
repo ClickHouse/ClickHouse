@@ -2,21 +2,25 @@
 
 ## Системные требования
 
-Система некроссплатформенная. Требуется ОС Linux Ubuntu не более старая, чем Precise (12.04); архитектура x86_64 с поддержкой набора инструкций SSE 4.2.
+Для установки из официального репозитория требуется ОС Linux; архитектура x86_64 с поддержкой набора инструкций SSE 4.2.
+
 Для проверки наличия SSE 4.2, выполните:
 
 ```bash
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-Рекомендуется использовать Ubuntu Trusty или Ubuntu Xenial или Ubuntu Precise.
-Терминал должен работать в кодировке UTF-8 (как по умолчанию в Ubuntu).
+Рекомендуется использовать Ubuntu или Debian. Терминал должен работать в кодировке UTF-8.
+
+Для rpm-based систем вы можете использовать 3rd-party пакеты: https://packagecloud.io/altinity/clickhouse либо установить debian пакеты.
+
+ClickHouse также работает на FreeBSD и Mac OS X; может быть собран для процессоров x86_64 без поддержки SSE 4.2, и для процессоров AArch64.
 
 ## Установка
 
 В целях тестирования и разработки, система может быть установлена на один сервер или на рабочий компьютер.
 
-### Установка из пакетов для Debian/Ubuntu 
+### Установка из пакетов для Debian/Ubuntu
 
 Пропишите в `/etc/apt/sources.list` (или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`) репозитории:
 
@@ -31,7 +35,7 @@ deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```bash
 sudo apt-key adv --keyserver keyserver.ubuntu.com --recv E0C56BD4    # optional
 sudo apt-get update
-sudo apt-get install clickhouse-client clickhouse-server-common
+sudo apt-get install clickhouse-client clickhouse-server
 ```
 
 Также можно скачать и установить пакеты вручную, отсюда: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
@@ -48,8 +52,8 @@ ClickHouse содержит настройки ограничения досту
 Также вы можете использовать программы без установки пакетов.
 
 ```text
-Client: dbms/src/Client/
-Server: dbms/src/Server/
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 Для сервера создаёте директории с данными, например:
@@ -62,7 +66,7 @@ Server: dbms/src/Server/
 (Настраивается в конфиге сервера.)
 Сделайте chown под нужного пользователя.
 
-Обратите внимание на путь к логам в конфиге сервера (src/dbms/src/Server/config.xml).
+Обратите внимание на путь к логам в конфиге сервера (src/dbms/programs/server/config.xml).
 
 ### Другие методы установки
 
@@ -70,7 +74,7 @@ Docker образ: <https://hub.docker.com/r/yandex/clickhouse-server/>
 
 RPM пакеты для CentOS, RHEL: <https://github.com/Altinity/clickhouse-rpm-install>
 
-Gentoo overlay: <https://github.com/kmeaw/clickhouse-overlay>
+Gentoo: `emerge clickhouse`
 
 ## Запуск
 

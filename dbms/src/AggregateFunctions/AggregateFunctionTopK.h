@@ -165,12 +165,13 @@ public:
         set.resize(reserved);
 
         // Specialized here because there's no deserialiser for StringRef
-        size_t count = 0;
-        readVarUInt(count, buf);
-        for (size_t i = 0; i < count; ++i)
+        size_t size = 0;
+        readVarUInt(size, buf);
+        for (size_t i = 0; i < size; ++i)
         {
             auto ref = readStringBinaryInto(*arena, buf);
-            UInt64 count, error;
+            UInt64 count;
+            UInt64 error;
             readVarUInt(count, buf);
             readVarUInt(error, buf);
             set.insert(ref, count, error);

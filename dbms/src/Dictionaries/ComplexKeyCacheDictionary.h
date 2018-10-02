@@ -50,7 +50,7 @@ public:
     std::string getKeyDescription() const
     {
         return key_description;
-    };
+    }
 
     std::exception_ptr getCreationException() const override
     {
@@ -290,7 +290,7 @@ private:
         DISPATCH(Float64)
 #undef DISPATCH
         else throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
-    };
+    }
 
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
@@ -367,7 +367,7 @@ private:
                 for (const auto row : outdated_keys[key])
                     out[row] = get_default(row);
             });
-    };
+    }
 
     template <typename DefaultGetter>
     void getItemsString(Attribute & attribute, const Columns & key_columns, ColumnString * out, DefaultGetter && get_default) const
@@ -510,7 +510,7 @@ private:
             const auto string_ref = it != std::end(map) ? it->second : get_default(row);
             out->insertData(string_ref.data, string_ref.size);
         }
-    };
+    }
 
     template <typename PresentKeyHandler, typename AbsentKeyHandler>
     void update(const Columns & in_key_columns,
@@ -609,7 +609,7 @@ private:
         const auto now = std::chrono::system_clock::now();
 
         /// Check which ids have not been found and require setting null_value
-        for (const auto key_found_pair : remaining_keys)
+        for (const auto & key_found_pair : remaining_keys)
         {
             if (key_found_pair.second)
             {
@@ -660,7 +660,7 @@ private:
 
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, found_num);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
-    };
+    }
 
     UInt64 getCellIdx(const StringRef key) const;
 
@@ -698,7 +698,7 @@ private:
     {
         const auto hash = StringRefHash{}(key);
         return findCellIdx(key, now, hash);
-    };
+    }
 
     bool isEmptyCell(const UInt64 idx) const;
 
@@ -738,4 +738,5 @@ private:
 
     const std::chrono::time_point<std::chrono::system_clock> creation_time = std::chrono::system_clock::now();
 };
+
 }

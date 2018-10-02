@@ -1,14 +1,13 @@
 #include <IO/ReadBufferAIO.h>
 #include <Core/Defines.h>
-
 #include <boost/filesystem.hpp>
-
 #include <vector>
 #include <iostream>
 #include <fstream>
 #include <functional>
 #include <cstdlib>
-#include <unistd.h>
+#include <port/unistd.h>
+
 
 namespace
 {
@@ -225,7 +224,7 @@ bool test2(const std::string & filename, const std::string & buf)
     newbuf.resize(buf.length());
 
     DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
     if (count != newbuf.length())
         return false;
 
@@ -241,7 +240,7 @@ bool test3(const std::string & filename, const std::string & buf)
 
     DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
     in.setMaxBytes(requested);
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
 
     newbuf.resize(count);
     return (newbuf == buf.substr(0, requested));
@@ -254,7 +253,7 @@ bool test4(const std::string & filename, const std::string & buf)
 
     DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
     in.setMaxBytes(0);
-    size_t n_read = in.read(&newbuf[0], newbuf.length());
+    size_t n_read = in.read(newbuf.data(), newbuf.length());
 
     return n_read == 0;
 }
@@ -267,7 +266,7 @@ bool test5(const std::string & filename, const std::string & buf)
     DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
     in.setMaxBytes(1 + (DEFAULT_AIO_FILE_BLOCK_SIZE >> 1));
 
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
     if (count != newbuf.length())
         return false;
 
@@ -287,7 +286,7 @@ bool test6(const std::string & filename, const std::string & buf)
     if (in.getPositionInFile() != 0)
         return false;
 
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
     if (count != newbuf.length())
         return false;
 
@@ -304,7 +303,7 @@ bool test7(const std::string & filename, const std::string & buf)
 
     DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
     (void) in.seek(DEFAULT_AIO_FILE_BLOCK_SIZE, SEEK_SET);
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
     if (count != (9 * DEFAULT_AIO_FILE_BLOCK_SIZE))
         return false;
 
@@ -318,7 +317,7 @@ bool test8(const std::string & filename, const std::string & buf)
 
     DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
     (void) in.seek(DEFAULT_AIO_FILE_BLOCK_SIZE + 1, SEEK_CUR);
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
 
     if (count != newbuf.length())
         return false;
@@ -339,7 +338,7 @@ bool test9(const std::string & filename, const std::string & buf)
         newbuf.resize(buf.length());
 
         DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-        size_t count =  in.read(&newbuf[0], newbuf.length());
+        size_t count =  in.read(newbuf.data(), newbuf.length());
         if (count != newbuf.length())
             return false;
         in.setMaxBytes(9 * DEFAULT_AIO_FILE_BLOCK_SIZE);
@@ -360,7 +359,7 @@ bool test10(const std::string & filename, const std::string & buf)
         std::string newbuf;
         newbuf.resize(4 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-        size_t count1 = in.read(&newbuf[0], newbuf.length());
+        size_t count1 = in.read(newbuf.data(), newbuf.length());
         if (count1 != newbuf.length())
             return false;
 
@@ -374,7 +373,7 @@ bool test10(const std::string & filename, const std::string & buf)
         std::string newbuf;
         newbuf.resize(4 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-        size_t count2 = in.read(&newbuf[0], newbuf.length());
+        size_t count2 = in.read(newbuf.data(), newbuf.length());
         if (count2 != newbuf.length())
             return false;
 
@@ -412,7 +411,7 @@ bool test12(const std::string & filename, const std::string &)
         newbuf.resize(4 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
         DB::ReadBufferAIO in(filename, 3 * DEFAULT_AIO_FILE_BLOCK_SIZE);
-        size_t count =  in.read(&newbuf[0], newbuf.length());
+        size_t count =  in.read(newbuf.data(), newbuf.length());
         if (count != newbuf.length())
             return false;
 
@@ -432,7 +431,7 @@ bool test13(const std::string & filename, const std::string &)
     newbuf.resize(2 * DEFAULT_AIO_FILE_BLOCK_SIZE - 3);
 
     DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
-    size_t count1 = in.read(&newbuf[0], newbuf.length());
+    size_t count1 = in.read(newbuf.data(), newbuf.length());
     if (count1 != newbuf.length())
         return false;
     return true;
@@ -447,7 +446,7 @@ bool test14(const std::string & filename, const std::string & buf)
     (void) in.seek(2, SEEK_SET);
     in.setMaxBytes(3 + (DEFAULT_AIO_FILE_BLOCK_SIZE >> 1));
 
-    size_t count = in.read(&newbuf[0], newbuf.length());
+    size_t count = in.read(newbuf.data(), newbuf.length());
     if (count != newbuf.length())
         return false;
 
@@ -464,7 +463,7 @@ bool test15(const std::string & filename, const std::string &)
 
     DB::ReadBufferAIO in(filename, DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-    size_t count = in.read(&newbuf[0], 1);
+    size_t count = in.read(newbuf.data(), 1);
     if (count != 1)
         return false;
     if (newbuf[0] != '1')
@@ -480,7 +479,7 @@ bool test16(const std::string & filename, const std::string &)
     {
         std::string newbuf;
         newbuf.resize(1);
-        count = in.read(&newbuf[0], 1);
+        count = in.read(newbuf.data(), 1);
         if (count != 1)
             return false;
         if (newbuf[0] != '1')
@@ -492,7 +491,7 @@ bool test16(const std::string & filename, const std::string &)
     {
         std::string newbuf;
         newbuf.resize(3);
-        count = in.read(&newbuf[0], 3);
+        count = in.read(newbuf.data(), 3);
         if (count != 3)
             return false;
         if (newbuf != "333")
@@ -504,7 +503,7 @@ bool test16(const std::string & filename, const std::string &)
     {
         std::string newbuf;
         newbuf.resize(5);
-        count = in.read(&newbuf[0], 5);
+        count = in.read(newbuf.data(), 5);
         if (count != 5)
             return false;
         if (newbuf != "55555")
@@ -516,7 +515,7 @@ bool test16(const std::string & filename, const std::string &)
     {
         std::string newbuf;
         newbuf.resize(7);
-        count = in.read(&newbuf[0], 7);
+        count = in.read(newbuf.data(), 7);
         if (count != 7)
             return false;
         if (newbuf != "7777777")
@@ -528,7 +527,7 @@ bool test16(const std::string & filename, const std::string &)
     {
         std::string newbuf;
         newbuf.resize(9);
-        count = in.read(&newbuf[0], 9);
+        count = in.read(newbuf.data(), 9);
         if (count != 9)
             return false;
         if (newbuf != "999999999")
@@ -546,7 +545,7 @@ bool test17(const std::string & filename, const std::string & buf)
     {
         std::string newbuf;
         newbuf.resize(10);
-        count = in.read(&newbuf[0], 10);
+        count = in.read(newbuf.data(), 10);
 
         if (count != 10)
             return false;
@@ -561,7 +560,7 @@ bool test17(const std::string & filename, const std::string & buf)
     {
         std::string newbuf;
         newbuf.resize(160);
-        count = in.read(&newbuf[0], 160);
+        count = in.read(newbuf.data(), 160);
 
         if (count != 2)
             return false;
@@ -574,7 +573,7 @@ bool test17(const std::string & filename, const std::string & buf)
     {
         std::string newbuf;
         newbuf.resize(50);
-        count = in.read(&newbuf[0], 50);
+        count = in.read(newbuf.data(), 50);
         if (count != 0)
             return false;
     }
@@ -590,7 +589,7 @@ bool test18(const std::string & filename, const std::string & buf)
     newbuf.resize(1340);
 
     in.seek(2984, SEEK_SET);
-    size_t count = in.read(&newbuf[0], 1340);
+    size_t count = in.read(newbuf.data(), 1340);
 
     if (count != 1340)
         return false;
@@ -608,7 +607,7 @@ bool test19(const std::string & filename, const std::string & buf)
         std::string newbuf;
         newbuf.resize(5 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-        size_t count1 = in.read(&newbuf[0], newbuf.length());
+        size_t count1 = in.read(newbuf.data(), newbuf.length());
         if (count1 != newbuf.length())
             return false;
 
@@ -620,7 +619,7 @@ bool test19(const std::string & filename, const std::string & buf)
         std::string newbuf;
         newbuf.resize(5 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-        size_t count2 = in.read(&newbuf[0], newbuf.length());
+        size_t count2 = in.read(newbuf.data(), newbuf.length());
         if (count2 != newbuf.length())
             return false;
 
@@ -639,7 +638,7 @@ bool test20(const std::string & filename, const std::string & buf)
         std::string newbuf;
         newbuf.resize(5 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-        size_t count1 = in.read(&newbuf[0], newbuf.length());
+        size_t count1 = in.read(newbuf.data(), newbuf.length());
         if (count1 != newbuf.length())
             return false;
 
@@ -653,7 +652,7 @@ bool test20(const std::string & filename, const std::string & buf)
         std::string newbuf;
         newbuf.resize(5 * DEFAULT_AIO_FILE_BLOCK_SIZE);
 
-        size_t count2 = in.read(&newbuf[0], newbuf.length());
+        size_t count2 = in.read(newbuf.data(), newbuf.length());
         if (count2 != newbuf.length())
             return false;
 

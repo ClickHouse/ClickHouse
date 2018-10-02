@@ -3,7 +3,7 @@
 
 #if defined(__x86_64__)
 
-    #include <cpuid/libcpuid.h>
+    #include <libcpuid/libcpuid.h>
     #include <Common/Exception.h>
 
     namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
@@ -14,7 +14,6 @@
 unsigned getNumberOfPhysicalCPUCores()
 {
 #if defined(__x86_64__)
-
     cpu_raw_data_t raw_data;
     if (0 != cpuid_get_raw_data(&raw_data))
         throw DB::Exception("Cannot cpuid_get_raw_data: " + std::string(cpuid_error()), DB::ErrorCodes::CPUID_ERROR);

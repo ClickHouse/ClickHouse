@@ -2,7 +2,6 @@
 
 #include <common/DateLUTImpl.h>
 #include <ext/singleton.h>
-
 #include <unordered_map>
 #include <atomic>
 #include <mutex>
@@ -10,7 +9,11 @@
 
 // Also defined in Core/Defines.h
 #if !defined(ALWAYS_INLINE)
+#if defined(_MSC_VER)
+    #define ALWAYS_INLINE __forceinline
+#else
     #define ALWAYS_INLINE __attribute__((__always_inline__))
+#endif
 #endif
 
 

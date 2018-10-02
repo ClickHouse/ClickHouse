@@ -16,6 +16,28 @@ namespace ErrorCodes
 }
 
 
+CreatingSetsBlockInputStream::CreatingSetsBlockInputStream(
+    const BlockInputStreamPtr & input,
+    const SubqueriesForSets & subqueries_for_sets_,
+    const SizeLimits & network_transfer_limits)
+    : subqueries_for_sets(subqueries_for_sets_),
+    network_transfer_limits(network_transfer_limits)
+{
+    for (auto & elem : subqueries_for_sets)
+    {
+        if (elem.second.source)
+        {
+            children.push_back(elem.second.source);
+
+            if (elem.second.set)
+                elem.second.set->setHeader(elem.second.source->getHeader());
+        }
+    }
+
+    children.push_back(input);
+}
+
+
 Block CreatingSetsBlockInputStream::readImpl()
 {
     Block res;
@@ -97,12 +119,27 @@ void CreatingSetsBlockInputStream::createOne(SubqueryForSet & subquery)
 
         if (!done_with_set)
         {
-            if (!subquery.set->insertFromBlock(block, /*fill_set_elements=*/false))
+            if (!subquery.set->insertFromBlock(block))
                 done_with_set = true;
         }
 
         if (!done_with_join)
         {
+            if (subquery.joined_block_actions)
+                subquery.joined_block_actions->execute(block);
+
+            for (const auto & name_with_alias : subquery.joined_block_aliases)
+            {
+                if (block.has(name_with_alias.first))
+                {
+                    auto pos = block.getPositionByName(name_with_alias.first);
+                    auto column = block.getByPosition(pos);
+                    block.erase(pos);
+                    column.name = name_with_alias.second;
+                    block.insert(std::move(column));
+                }
+            }
+
             if (!subquery.join->insertFromBlock(block))
                 done_with_join = true;
         }

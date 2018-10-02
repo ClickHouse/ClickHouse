@@ -18,7 +18,7 @@
   *
   * packed - for memcmp to work naturally (but because m_year is 2 bytes, on little endian, comparison is correct only before year 2047)
   */
-class __attribute__ ((__packed__)) LocalDate
+class LocalDate
 {
 private:
     unsigned short m_year;
@@ -62,7 +62,7 @@ public:
         init(time);
     }
 
-    LocalDate(DayNum_t day_num)
+    LocalDate(DayNum day_num)
     {
         const auto & values = DateLUT::instance().getValues(day_num);
         m_year  = values.year;
@@ -103,12 +103,12 @@ public:
         return DateLUT::instance().makeDate(m_year, m_month, m_day);
     }
 
-    DayNum_t getDayNum() const
+    DayNum getDayNum() const
     {
         return DateLUT::instance().makeDayNum(m_year, m_month, m_day);
     }
 
-    operator DayNum_t() const
+    operator DayNum() const
     {
         return getDayNum();
     }
@@ -164,6 +164,9 @@ public:
         return ss.str();
     }
 };
+
+static_assert(sizeof(LocalDate) == 4);
+
 
 inline std::ostream & operator<< (std::ostream & ostr, const LocalDate & date)
 {

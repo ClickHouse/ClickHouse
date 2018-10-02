@@ -4,6 +4,8 @@
 #include <Dictionaries/MySQLBlockInputStream.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <ext/range.h>
 #include <vector>
 
@@ -24,9 +26,7 @@ MySQLBlockInputStream::MySQLBlockInputStream(
         max_block_size{max_block_size}
 {
     if (sample_block.columns() != result.getNumFields())
-        throw Exception{
-            "mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " +
-                toString(sample_block.columns()) + " expected",
+        throw Exception{"mysqlxx::UseQueryResult contains " + toString(result.getNumFields()) + " columns while " + toString(sample_block.columns()) + " expected",
             ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH};
 
     description.init(sample_block);
@@ -54,6 +54,7 @@ namespace
             case ValueType::String: static_cast<ColumnString &>(column).insertData(value.data(), value.size()); break;
             case ValueType::Date: static_cast<ColumnUInt16 &>(column).insert(UInt16{value.getDate().getDayNum()}); break;
             case ValueType::DateTime: static_cast<ColumnUInt32 &>(column).insert(time_t{value.getDateTime()}); break;
+            case ValueType::UUID: static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.data(), value.size())); break;
         }
     }
 

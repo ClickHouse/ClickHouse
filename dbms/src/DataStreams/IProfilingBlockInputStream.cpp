@@ -1,6 +1,13 @@
 #include <Interpreters/Quota.h>
 #include <Interpreters/ProcessList.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
+#include <Common/CurrentThread.h>
+
+
+namespace ProfileEvents
+{
+    extern const Event ThrottlerSleepMicroseconds;
+}
 
 
 namespace DB
@@ -42,7 +49,7 @@ Block IProfilingBlockInputStream::read()
     if (isCancelledOrThrowIfKilled())
         return res;
 
-    if (!checkTimeLimits())
+    if (!checkTimeLimit())
         limit_exceeded_need_break = true;
 
     if (!limit_exceeded_need_break)
@@ -188,10 +195,10 @@ static bool handleOverflowMode(OverflowMode mode, const String & message, int co
         default:
             throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
     }
-};
+}
 
 
-bool IProfilingBlockInputStream::checkTimeLimits()
+bool IProfilingBlockInputStream::checkTimeLimit()
 {
     if (limits.max_execution_time != 0
         && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.max_execution_time.totalMicroseconds()) * 1000)
@@ -238,7 +245,7 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
     if (process_list_elem)
     {
         if (!process_list_elem->updateProgressIn(value))
-            cancel(false);
+            cancel(/* kill */ true);
 
         /// The total amount of data processed or intended for processing in all leaf sources, possibly on remote servers.
 
@@ -265,7 +272,6 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
                         throw Exception("Limit for (uncompressed) bytes to read exceeded: " + toString(progress.bytes)
                             + " bytes read, maximum: " + toString(limits.size_limits.max_bytes),
                             ErrorCodes::TOO_MANY_BYTES);
-                    break;
                 }
 
                 case OverflowMode::BREAK:
@@ -287,23 +293,34 @@ void IProfilingBlockInputStream::progressImpl(const Progress & value)
 
         size_t total_rows = progress.total_rows;
 
-        if (limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
-        {
-            double total_elapsed = info.total_stopwatch.elapsedSeconds();
+        constexpr UInt64 profile_events_update_period_microseconds = 10 * 1000; // 10 milliseconds
+        UInt64 total_elapsed_microseconds = info.total_stopwatch.elapsedMicroseconds();
 
-            if (total_elapsed > limits.timeout_before_checking_execution_speed.totalMicroseconds() / 1000000.0)
+        if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
+        {
+            CurrentThread::updatePerformanceCounters();
+            last_profile_events_update_time = total_elapsed_microseconds;
+        }
+
+        if ((limits.min_execution_speed || (total_rows && limits.timeout_before_checking_execution_speed != 0))
+             && (static_cast<Int64>(total_elapsed_microseconds) > limits.timeout_before_checking_execution_speed.totalMicroseconds()))
+        {
+            /// Do not count sleeps in throttlers
+            UInt64 throttler_sleep_microseconds = CurrentThread::getProfileEvents()[ProfileEvents::ThrottlerSleepMicroseconds];
+            double elapsed_seconds = (throttler_sleep_microseconds > total_elapsed_microseconds)
+                                     ? 0.0 : (total_elapsed_microseconds - throttler_sleep_microseconds) / 1000000.0;
+
+            if (elapsed_seconds > 0)
             {
-                if (limits.min_execution_speed && progress.rows / total_elapsed < limits.min_execution_speed)
-                    throw Exception("Query is executing too slow: " + toString(progress.rows / total_elapsed)
+                if (limits.min_execution_speed && progress.rows / elapsed_seconds < limits.min_execution_speed)
+                    throw Exception("Query is executing too slow: " + toString(progress.rows / elapsed_seconds)
                         + " rows/sec., minimum: " + toString(limits.min_execution_speed),
                         ErrorCodes::TOO_SLOW);
-
-                size_t total_rows = progress.total_rows;
 
                 /// If the predicted execution time is longer than `max_execution_time`.
                 if (limits.max_execution_time != 0 && total_rows)
                 {
-                    double estimated_execution_time_seconds = total_elapsed * (static_cast<double>(total_rows) / progress.rows);
+                    double estimated_execution_time_seconds = elapsed_seconds * (static_cast<double>(total_rows) / progress.rows);
 
                     if (estimated_execution_time_seconds > limits.max_execution_time.totalSeconds())
                         throw Exception("Estimated query execution time (" + toString(estimated_execution_time_seconds) + " seconds)"
@@ -339,6 +356,21 @@ void IProfilingBlockInputStream::cancel(bool kill)
 }
 
 
+bool IProfilingBlockInputStream::isCancelled() const
+{
+    return is_cancelled;
+}
+
+bool IProfilingBlockInputStream::isCancelledOrThrowIfKilled() const
+{
+    if (!is_cancelled)
+        return false;
+    if (is_killed)
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    return true;
+}
+
+
 void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & callback)
 {
     progress_callback = callback;
@@ -351,7 +383,7 @@ void IProfilingBlockInputStream::setProgressCallback(const ProgressCallback & ca
 }
 
 
-void IProfilingBlockInputStream::setProcessListElement(ProcessListElement * elem)
+void IProfilingBlockInputStream::setProcessListElement(QueryStatus * elem)
 {
     process_list_elem = elem;
 

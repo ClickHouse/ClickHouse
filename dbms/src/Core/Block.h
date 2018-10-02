@@ -106,11 +106,16 @@ public:
     /** Get the same block, but empty. */
     Block cloneEmpty() const;
 
+    Columns getColumns() const;
+    void setColumns(const Columns & columns);
+    Block cloneWithColumns(const Columns & columns) const;
+    Block cloneWithoutColumns() const;
+
     /** Get empty columns with the same types as in block. */
     MutableColumns cloneEmptyColumns() const;
 
-    /** Get columns from block for mutation. */
-    MutableColumns mutateColumns() const;
+    /** Get columns from block for mutation. Columns in block will be nullptr. */
+    MutableColumns mutateColumns();
 
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);

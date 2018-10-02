@@ -6,6 +6,8 @@ const char * auto_config_build[]
 {
     "VERSION_FULL", "@VERSION_FULL@",
     "VERSION_DESCRIBE", "@VERSION_DESCRIBE@",
+    "VERSION_GITHASH", "@VERSION_GITHASH@",
+    "VERSION_REVISION", "@VERSION_REVISION@",
     "BUILD_DATE", "@BUILD_DATE@",
     "BUILD_TYPE", "@CMAKE_BUILD_TYPE@",
     "SYSTEM", "@CMAKE_SYSTEM@",
@@ -34,9 +36,10 @@ const char * auto_config_build[]
     "USE_VECTORCLASS", "@USE_VECTORCLASS@",
     "USE_RDKAFKA", "@USE_RDKAFKA@",
     "USE_CAPNP", "@USE_CAPNP@",
-    "USE_Poco_DataODBC", "@Poco_DataODBC_FOUND@",
-    "USE_Poco_MongoDB", "@Poco_MongoDB_FOUND@",
-    "USE_Poco_NetSSL", "@Poco_NetSSL_FOUND@",
+    "USE_POCO_SQLODBC", "@USE_POCO_SQLODBC@",
+    "USE_POCO_DATAODBC", "@USE_POCO_DATAODBC@",
+    "USE_POCO_MONGODB", "@USE_POCO_MONGODB@",
+    "USE_POCO_NETSSL", "@USE_POCO_NETSSL@",
 
     nullptr, nullptr
 };

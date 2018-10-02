@@ -1,7 +1,7 @@
 SELECT '*** MergeTree ***';
 
 DROP TABLE IF EXISTS test.unsorted;
-CREATE TABLE test.unsorted (x UInt32, y String) ENGINE MergeTree ORDER BY tuple();
+CREATE TABLE test.unsorted (x UInt32, y String) ENGINE MergeTree ORDER BY tuple() SETTINGS vertical_merge_algorithm_min_rows_to_activate=0, vertical_merge_algorithm_min_columns_to_activate=0;
 
 INSERT INTO test.unsorted VALUES (1, 'a'), (5, 'b');
 INSERT INTO test.unsorted VALUES (2, 'c'), (4, 'd');

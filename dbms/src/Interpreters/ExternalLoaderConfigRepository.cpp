@@ -61,11 +61,11 @@ Poco::Timestamp ExternalLoaderConfigRepository::getLastModificationTime(
 }
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> ExternalLoaderConfigRepository::load(
-    const std::string & config_file) const
+    const std::string & config_file, const std::string & preprocessed_dir) const
 {
     ConfigProcessor config_processor{config_file};
     ConfigProcessor::LoadedConfig preprocessed = config_processor.loadConfig();
-    config_processor.savePreprocessedConfig(preprocessed);
+    config_processor.savePreprocessedConfig(preprocessed, preprocessed_dir);
     return preprocessed.configuration;
 }
 

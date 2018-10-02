@@ -1,5 +1,6 @@
 #include <Storages/System/StorageSystemGraphite.h>
 
+#include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
@@ -9,6 +10,7 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Util/Application.h>
+
 
 namespace DB
 {
@@ -122,10 +124,9 @@ static Strings getAllGraphiteSections(const AbstractConfiguration & config)
 
 } // namespace
 
-StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
+    return {
         {"config_name", std::make_shared<DataTypeString>()},
         {"regexp",      std::make_shared<DataTypeString>()},
         {"function",    std::make_shared<DataTypeString>()},
@@ -133,23 +134,12 @@ StorageSystemGraphite::StorageSystemGraphite(const std::string & name_)
         {"precision",   std::make_shared<DataTypeUInt64>()},
         {"priority",    std::make_shared<DataTypeUInt16>()},
         {"is_default",  std::make_shared<DataTypeUInt8>()},
-    }));
+    };
 }
 
 
-BlockInputStreams StorageSystemGraphite::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    size_t /*max_block_size*/,
-    unsigned /*num_streams*/)
+void StorageSystemGraphite::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
     const auto & config = context.getConfigRef();
 
     Strings sections = getAllGraphiteSections(config);
@@ -170,8 +160,6 @@ BlockInputStreams StorageSystemGraphite::read(
             }
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
 
 }

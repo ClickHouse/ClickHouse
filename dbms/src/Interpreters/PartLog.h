@@ -14,6 +14,7 @@ struct PartLogElement
         MERGE_PARTS = 2,
         DOWNLOAD_PART = 3,
         REMOVE_PART = 4,
+        MUTATE_PART = 5,
     };
 
     Type event_type = NEW_PART;
@@ -24,6 +25,7 @@ struct PartLogElement
     String database_name;
     String table_name;
     String part_name;
+    String partition_id;
 
     /// Size of the part
     UInt64 rows = 0;
@@ -31,13 +33,13 @@ struct PartLogElement
     /// Size of files in filesystem
     UInt64 bytes_compressed_on_disk = 0;
 
-    //// Make sense for Merges
+    /// Makes sense for merges and mutations.
     Strings source_part_names;
     UInt64 bytes_uncompressed = 0;
     UInt64 rows_read = 0;
     UInt64 bytes_read_uncompressed = 0;
 
-    /// Is the operation was successful?
+    /// Was the operation successful?
     UInt16 error = 0;
     String exception;
 
@@ -55,10 +57,15 @@ class PartLog : public SystemLog<PartLogElement>
 {
     using SystemLog<PartLogElement>::SystemLog;
 
+    using MutableDataPartPtr = std::shared_ptr<MergeTreeDataPart>;
+    using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
+
 public:
     /// Add a record about creation of new part.
-    static bool addNewPartToTheLog(Context & context, const MergeTreeDataPart & part, UInt64 elapsed_ns,
-                                   const ExecutionStatus & execution_status = {});
+    static bool addNewPart(Context & context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
+                           const ExecutionStatus & execution_status = {});
+    static bool addNewParts(Context & context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
+                            const ExecutionStatus & execution_status = {});
 };
 
 }

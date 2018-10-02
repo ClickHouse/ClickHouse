@@ -61,7 +61,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeFloat64>(arg))
+            if (!WhichDataType(arg).isFloat64())
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -117,9 +117,9 @@ private:
     }
 
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto size = block.rows();
+        const auto size = input_rows_count;
 
         bool result_is_const{};
         auto instrs = getInstructions(block, arguments, result_is_const);
@@ -213,7 +213,7 @@ private:
         for (const auto arg_idx : ext::range(0, arguments.size()))
         {
             const auto arg = arguments[arg_idx].get();
-            if (!checkDataType<DataTypeFloat64>(arg))
+            if (!WhichDataType(arg).isFloat64())
             {
                 throw Exception(
                     "Illegal type " + arg->getName() + " of argument " + std::to_string(arg_idx + 1) + " of function " + getName() + ". Must be Float64",
@@ -224,9 +224,9 @@ private:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, const size_t result) override
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
-        const auto size = block.rows();
+        const auto size = input_rows_count;
 
         /// Prepare array of ellipses.
         size_t ellipses_count = (arguments.size() - 2) / 4;

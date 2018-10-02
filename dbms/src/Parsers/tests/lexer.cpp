@@ -57,6 +57,7 @@ std::map<TokenType, const char *> hilite =
     {TokenType::ErrorBackQuoteIsNotClosed, "\033[0;41m"},
     {TokenType::ErrorSingleExclamationMark, "\033[0;41m"},
     {TokenType::ErrorWrongNumber, "\033[0;41m"},
+    {TokenType::ErrorMaxQuerySizeExceeded, "\033[0;41m"},
 };
 
 

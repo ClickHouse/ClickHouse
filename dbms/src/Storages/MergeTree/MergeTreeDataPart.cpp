@@ -13,6 +13,7 @@
 #include <Common/SipHash.h>
 #include <Common/escapeForFileName.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/localBackup.h>
 #include <Storages/MergeTree/MergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -30,272 +31,14 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
     extern const int NO_FILE_IN_DATA_PART;
     extern const int EXPECTED_END_OF_FILE;
-    extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int CORRUPTED_DATA;
-    extern const int FORMAT_VERSION_TOO_OLD;
-    extern const int UNKNOWN_FORMAT;
-    extern const int UNEXPECTED_FILE_IN_DATA_PART;
     extern const int NOT_FOUND_EXPECTED_DATA_PART;
+    extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
 }
 
-
-void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs, bool have_uncompressed, const String & name) const
-{
-    if (is_compressed && have_uncompressed)
-    {
-        if (!rhs.is_compressed)
-            throw Exception("No uncompressed checksum for file " + name, ErrorCodes::CHECKSUM_DOESNT_MATCH);
-        if (rhs.uncompressed_size != uncompressed_size)
-            throw Exception("Unexpected uncompressed size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-        if (rhs.uncompressed_hash != uncompressed_hash)
-            throw Exception("Checksum mismatch for uncompressed file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-        return;
-    }
-    if (rhs.file_size != file_size)
-        throw Exception("Unexpected size of file " + name + " in data part", ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-    if (rhs.file_hash != file_hash)
-        throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
-}
-
-void MergeTreeDataPartChecksum::checkSize(const String & path) const
-{
-    Poco::File file(path);
-    if (!file.exists())
-        throw Exception(path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    UInt64 size = file.getSize();
-    if (size != file_size)
-        throw Exception(path + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
-            ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
-}
-
-
-void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & rhs, bool have_uncompressed) const
-{
-    for (const auto & it : rhs.files)
-    {
-        const String & name = it.first;
-
-        if (!files.count(name))
-            throw Exception("Unexpected file " + name + " in data part", ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART);
-    }
-
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-
-        auto jt = rhs.files.find(name);
-        if (jt == rhs.files.end())
-            throw Exception("No file " + name + " in data part", ErrorCodes::NO_FILE_IN_DATA_PART);
-
-        it.second.checkEqual(jt->second, have_uncompressed, name);
-    }
-}
-
-void MergeTreeDataPartChecksums::checkSizes(const String & path) const
-{
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        it.second.checkSize(path + name);
-    }
-}
-
-bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
-{
-    files.clear();
-
-    assertString("checksums format version: ", in);
-    int format_version;
-    readText(format_version, in);
-    assertChar('\n', in);
-
-    switch (format_version)
-    {
-        case 1:
-            return false;
-        case 2:
-            return read_v2(in);
-        case 3:
-            return read_v3(in);
-        case 4:
-            return read_v4(in);
-        default:
-            throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
-    }
-}
-
-bool MergeTreeDataPartChecksums::read_v2(ReadBuffer & in)
-{
-    size_t count;
-
-    readText(count, in);
-    assertString(" files:\n", in);
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        String name;
-        Checksum sum;
-
-        readString(name, in);
-        assertString("\n\tsize: ", in);
-        readText(sum.file_size, in);
-        assertString("\n\thash: ", in);
-        readText(sum.file_hash.first, in);
-        assertString(" ", in);
-        readText(sum.file_hash.second, in);
-        assertString("\n\tcompressed: ", in);
-        readText(sum.is_compressed, in);
-        if (sum.is_compressed)
-        {
-            assertString("\n\tuncompressed size: ", in);
-            readText(sum.uncompressed_size, in);
-            assertString("\n\tuncompressed hash: ", in);
-            readText(sum.uncompressed_hash.first, in);
-            assertString(" ", in);
-            readText(sum.uncompressed_hash.second, in);
-        }
-        assertChar('\n', in);
-
-        files.insert(std::make_pair(name, sum));
-    }
-
-    return true;
-}
-
-bool MergeTreeDataPartChecksums::read_v3(ReadBuffer & in)
-{
-    size_t count;
-
-    readVarUInt(count, in);
-
-    for (size_t i = 0; i < count; ++i)
-    {
-        String name;
-        Checksum sum;
-
-        readBinary(name, in);
-        readVarUInt(sum.file_size, in);
-        readPODBinary(sum.file_hash, in);
-        readBinary(sum.is_compressed, in);
-
-        if (sum.is_compressed)
-        {
-            readVarUInt(sum.uncompressed_size, in);
-            readPODBinary(sum.uncompressed_hash, in);
-        }
-
-        files.emplace(std::move(name), sum);
-    }
-
-    return true;
-}
-
-bool MergeTreeDataPartChecksums::read_v4(ReadBuffer & from)
-{
-    CompressedReadBuffer in{from};
-    return read_v3(in);
-}
-
-void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
-{
-    writeString("checksums format version: 4\n", to);
-
-    CompressedWriteBuffer out{to, CompressionSettings(CompressionMethod::LZ4), 1 << 16};
-    writeVarUInt(files.size(), out);
-
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        const Checksum & sum = it.second;
-
-        writeBinary(name, out);
-        writeVarUInt(sum.file_size, out);
-        writePODBinary(sum.file_hash, out);
-        writeBinary(sum.is_compressed, out);
-
-        if (sum.is_compressed)
-        {
-            writeVarUInt(sum.uncompressed_size, out);
-            writePODBinary(sum.uncompressed_hash, out);
-        }
-    }
-}
-
-void MergeTreeDataPartChecksums::addFile(const String & file_name, UInt64 file_size, MergeTreeDataPartChecksum::uint128 file_hash)
-{
-    files[file_name] = Checksum(file_size, file_hash);
-}
-
-void MergeTreeDataPartChecksums::add(MergeTreeDataPartChecksums && rhs_checksums)
-{
-    for (auto & checksum : rhs_checksums.files)
-        files[std::move(checksum.first)] = std::move(checksum.second);
-
-    rhs_checksums.files.clear();
-}
-
-/// Checksum computed from the set of control sums of .bin files.
-void MergeTreeDataPartChecksums::summaryDataChecksum(SipHash & hash) const
-{
-    /// We use fact that iteration is in deterministic (lexicographical) order.
-    for (const auto & it : files)
-    {
-        const String & name = it.first;
-        const Checksum & sum = it.second;
-
-        if (!endsWith(name, ".bin"))
-            continue;
-
-        UInt64 len = name.size();
-        hash.update(len);
-        hash.update(name.data(), len);
-        hash.update(sum.uncompressed_size);
-        hash.update(sum.uncompressed_hash);
-    }
-}
-
-String MergeTreeDataPartChecksums::toString() const
-{
-    WriteBufferFromOwnString out;
-    write(out);
-    return out.str();
-}
-
-MergeTreeDataPartChecksums MergeTreeDataPartChecksums::parse(const String & s)
-{
-    ReadBufferFromString in(s);
-    MergeTreeDataPartChecksums res;
-    if (!res.read(in))
-        throw Exception("Checksums format is too old", ErrorCodes::FORMAT_VERSION_TOO_OLD);
-    assertEOF(in);
-    return res;
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetChecksum(const String & name, const String & ext) const
-{
-    if (checksums.empty())
-        return nullptr;
-
-    const auto & files = checksums.files;
-    const auto file_name = escapeForFileName(name) + ext;
-    auto it = files.find(file_name);
-
-    return (it == files.end()) ? nullptr : &it->second;
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetBinChecksum(const String & name) const
-{
-    return tryGetChecksum(name, ".bin");
-}
-
-const MergeTreeDataPartChecksums::Checksum * MergeTreeDataPart::tryGetMrkChecksum(const String & name) const
-{
-    return tryGetChecksum(name, ".mrk");
-}
 
 static ReadBufferFromFile openForReading(const String & path)
 {
@@ -305,21 +48,29 @@ static ReadBufferFromFile openForReading(const String & path)
 void MergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & storage, const String & part_path)
 {
     size_t minmax_idx_size = storage.minmax_idx_column_types.size();
-    min_values.resize(minmax_idx_size);
-    max_values.resize(minmax_idx_size);
+    parallelogram.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
         String file_name = part_path + "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
         ReadBufferFromFile file = openForReading(file_name);
         const DataTypePtr & type = storage.minmax_idx_column_types[i];
-        type->deserializeBinary(min_values[i], file);
-        type->deserializeBinary(max_values[i], file);
+
+        Field min_val;
+        type->deserializeBinary(min_val, file);
+        Field max_val;
+        type->deserializeBinary(max_val, file);
+
+        parallelogram.emplace_back(min_val, true, max_val, true);
     }
     initialized = true;
 }
 
 void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const
 {
+    if (!initialized)
+        throw Exception("Attempt to store uninitialized MinMax index for part " + part_path + ". This is a bug.",
+            ErrorCodes::LOGICAL_ERROR);
+
     for (size_t i = 0; i < storage.minmax_idx_columns.size(); ++i)
     {
         String file_name = "minmax_" + escapeForFileName(storage.minmax_idx_columns[i]) + ".idx";
@@ -327,8 +78,8 @@ void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const 
 
         WriteBufferFromFile out(part_path + file_name);
         HashingWriteBuffer out_hashing(out);
-        type->serializeBinary(min_values[i], out_hashing);
-        type->serializeBinary(max_values[i], out_hashing);
+        type->serializeBinary(parallelogram[i].left, out_hashing);
+        type->serializeBinary(parallelogram[i].right, out_hashing);
         out_hashing.next();
         checksums.files[file_name].file_size = out_hashing.count();
         checksums.files[file_name].file_hash = out_hashing.getHash();
@@ -338,10 +89,7 @@ void MergeTreeDataPart::MinMaxIndex::store(const MergeTreeData & storage, const 
 void MergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & column_names)
 {
     if (!initialized)
-    {
-        min_values.resize(column_names.size());
-        max_values.resize(column_names.size());
-    }
+        parallelogram.reserve(column_names.size());
 
     for (size_t i = 0; i < column_names.size(); ++i)
     {
@@ -351,14 +99,11 @@ void MergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & c
         column.column->getExtremes(min_value, max_value);
 
         if (!initialized)
-        {
-            min_values[i] = Field(min_value);
-            max_values[i] = Field(max_value);
-        }
+            parallelogram.emplace_back(min_value, true, max_value, true);
         else
         {
-            min_values[i] = std::min(min_values[i], min_value);
-            max_values[i] = std::max(max_values[i], max_value);
+            parallelogram[i].left = std::min(parallelogram[i].left, min_value);
+            parallelogram[i].right = std::max(parallelogram[i].right, max_value);
         }
     }
 
@@ -372,16 +117,15 @@ void MergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
     if (!initialized)
     {
-        min_values.assign(other.min_values);
-        max_values.assign(other.max_values);
+        parallelogram = other.parallelogram;
         initialized = true;
     }
     else
     {
-        for (size_t i = 0; i < min_values.size(); ++i)
+        for (size_t i = 0; i < parallelogram.size(); ++i)
         {
-            min_values[i] = std::min(min_values[i], other.min_values[i]);
-            max_values[i] = std::max(max_values[i], other.max_values[i]);
+            parallelogram[i].left = std::min(parallelogram[i].left, other.parallelogram[i].left);
+            parallelogram[i].right = std::max(parallelogram[i].right, other.parallelogram[i].right);
         }
     }
 }
@@ -392,26 +136,51 @@ MergeTreeDataPart::MergeTreeDataPart(MergeTreeData & storage_, const String & na
 {
 }
 
-/// Returns the size of .bin file for column `name` if found, zero otherwise.
-UInt64 MergeTreeDataPart::getColumnCompressedSize(const String & name) const
+/// Takes into account the fact that several columns can e.g. share their .size substreams.
+/// When calculating totals these should be counted only once.
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const
 {
-    const Checksum * checksum = tryGetBinChecksum(name);
+    ColumnSize size;
+    if (checksums.empty())
+        return size;
 
-    /// Probably a logic error, not sure if this can ever happen if checksums are not empty
-    return checksum ? checksum->file_size : 0;
+    type.enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
+    {
+        String file_name = IDataType::getFileNameForStream(name, substream_path);
+
+        if (processed_substreams && !processed_substreams->insert(file_name).second)
+            return;
+
+        auto bin_checksum = checksums.files.find(file_name + ".bin");
+        if (bin_checksum != checksums.files.end())
+        {
+            size.data_compressed += bin_checksum->second.file_size;
+            size.data_uncompressed += bin_checksum->second.uncompressed_size;
+        }
+
+        auto mrk_checksum = checksums.files.find(file_name + ".mrk");
+        if (mrk_checksum != checksums.files.end())
+            size.marks += mrk_checksum->second.file_size;
+    }, {});
+
+    return size;
 }
 
-UInt64 MergeTreeDataPart::getColumnUncompressedSize(const String & name) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getColumnSize(const String & name, const IDataType & type) const
 {
-    const Checksum * checksum = tryGetBinChecksum(name);
-    return checksum ? checksum->uncompressed_size : 0;
+    return getColumnSizeImpl(name, type, nullptr);
 }
 
-
-UInt64 MergeTreeDataPart::getColumnMrkSize(const String & name) const
+MergeTreeDataPart::ColumnSize MergeTreeDataPart::getTotalColumnsSize() const
 {
-    const Checksum * checksum = tryGetMrkChecksum(name);
-    return checksum ? checksum->file_size : 0;
+    ColumnSize totals;
+    std::unordered_set<String> processed_substreams;
+    for (const NameAndTypePair & column : columns)
+    {
+        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
+        totals.add(size);
+    }
+    return totals;
 }
 
 
@@ -429,7 +198,7 @@ String MergeTreeDataPart::getColumnNameWithMinumumCompressedSize() const
         if (!hasColumnFiles(column.name))
             continue;
 
-        const auto size = getColumnCompressedSize(column.name);
+        const auto size = getColumnSize(column.name, *column.type).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -462,22 +231,39 @@ String MergeTreeDataPart::getNameWithPrefix() const
     return res;
 }
 
-
-DayNum_t MergeTreeDataPart::getMinDate() const
+String MergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) const
 {
-    if (storage.minmax_idx_date_column_pos != -1)
-        return DayNum_t(minmax_idx.min_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    {
+        /// NOTE: getting min and max dates from the part name (instead of part data) because we want
+        /// the merged part name be determined only by source part names.
+        /// It is simpler this way when the real min and max dates for the block range can change
+        /// (e.g. after an ALTER DELETE command).
+        DayNum min_date;
+        DayNum max_date;
+        MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
+        return new_part_info.getPartNameV0(min_date, max_date);
+    }
     else
-        return DayNum_t();
+        return new_part_info.getPartName();
 }
 
 
-DayNum_t MergeTreeDataPart::getMaxDate() const
+DayNum MergeTreeDataPart::getMinDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1)
-        return DayNum_t(minmax_idx.max_values[storage.minmax_idx_date_column_pos].get<UInt64>());
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
+        return DayNum(minmax_idx.parallelogram[storage.minmax_idx_date_column_pos].left.get<UInt64>());
     else
-        return DayNum_t();
+        return DayNum();
+}
+
+
+DayNum MergeTreeDataPart::getMaxDate() const
+{
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
+        return DayNum(minmax_idx.parallelogram[storage.minmax_idx_date_column_pos].right.get<UInt64>());
+    else
+        return DayNum();
 }
 
 
@@ -509,7 +295,7 @@ MergeTreeDataPart::~MergeTreeDataPart()
     }
 }
 
-UInt64 MergeTreeDataPart::calculateTotalSize(const String & from)
+UInt64 MergeTreeDataPart::calculateTotalSizeOnDisk(const String & from)
 {
     Poco::File cur(from);
     if (cur.isFile())
@@ -518,7 +304,7 @@ UInt64 MergeTreeDataPart::calculateTotalSize(const String & from)
     cur.list(files);
     UInt64 res = 0;
     for (const auto & file : files)
-        res += calculateTotalSize(from + file);
+        res += calculateTotalSizeOnDisk(from + file);
     return res;
 }
 
@@ -553,7 +339,7 @@ void MergeTreeDataPart::remove() const
     {
         from_dir.renameTo(to);
     }
-    catch (const Poco::FileNotFoundException & e)
+    catch (const Poco::FileNotFoundException &)
     {
         LOG_ERROR(storage.log, "Directory " << from << " (part to remove) doesn't exist or one of nested files has gone."
             " Most likely this is due to manual removing. This should be discouraged. Ignoring.");
@@ -572,7 +358,7 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
 
     Poco::File from_file(from);
     if (!from_file.exists())
-        throw Exception("Part directory " + from + " doesn't exists. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
+        throw Exception("Part directory " + from + " doesn't exist. Most likely it is logical error.", ErrorCodes::FILE_DOESNT_EXIST);
 
     Poco::File to_file(to);
     if (to_file.exists())
@@ -599,29 +385,45 @@ void MergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_n
 }
 
 
-void MergeTreeDataPart::renameAddPrefix(bool to_detached, const String & prefix) const
+String MergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix) const
 {
+    String res;
     unsigned try_no = 0;
-    auto dst_name = [&, this] { return (to_detached ? "detached/" : "") + prefix + name + (try_no ? "_try" + DB::toString(try_no) : ""); };
+    auto dst_name = [&, this] { return "detached/" + prefix + name + (try_no ? "_try" + DB::toString(try_no) : ""); };
 
-    if (to_detached)
+    /** If you need to detach a part, and directory into which we want to rename it already exists,
+        *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
+        * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
+        * No more than 10 attempts are made so that there are not too many junk directories left.
+        */
+    while (try_no < 10)
     {
-        /** If you need to detach a part, and directory into which we want to rename it already exists,
-            *  we will rename to the directory with the name to which the suffix is added in the form of "_tryN".
-            * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
-            * No more than 10 attempts are made so that there are not too many junk directories left.
-            */
-        while (try_no < 10 && Poco::File(storage.full_path + dst_name()).exists())
-        {
-            LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
-                " Will detach to directory with '_tryN' suffix.");
-            ++try_no;
-        }
+        res = dst_name();
+
+        if (!Poco::File(storage.full_path + res).exists())
+            return res;
+
+        LOG_WARNING(storage.log, "Directory " << dst_name() << " (to detach to) is already exist."
+            " Will detach to directory with '_tryN' suffix.");
+        ++try_no;
     }
 
-    renameTo(dst_name());
+    return res;
 }
 
+void MergeTreeDataPart::renameToDetached(const String & prefix) const
+{
+    renameTo(getRelativePathForDetachedPart(prefix));
+}
+
+
+void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
+{
+    Poco::Path src(getFullPath());
+    Poco::Path dst(storage.full_path + getRelativePathForDetachedPart(prefix));
+    /// Backup is not recursive (max_level is 0), so do not copy inner directories
+    localBackup(src, dst, 0);
+}
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
 {
@@ -646,7 +448,7 @@ void MergeTreeDataPart::loadIndex()
             .getSize() / MERGE_TREE_MARK_SIZE;
     }
 
-    size_t key_size = storage.primary_sort_descr.size();
+    size_t key_size = storage.primary_sort_columns.size();
 
     if (key_size)
     {
@@ -662,7 +464,7 @@ void MergeTreeDataPart::loadIndex()
         String index_path = getFullPath() + "primary.idx";
         ReadBufferFromFile index_file = openForReading(index_path);
 
-        for (size_t i = 0; i < marks_count; ++i)
+        for (size_t i = 0; i < marks_count; ++i)    //-V756
             for (size_t j = 0; j < key_size; ++j)
                 storage.primary_key_data_types[j]->deserializeBinary(*loaded_index[j].get(), index_file);
 
@@ -678,15 +480,15 @@ void MergeTreeDataPart::loadIndex()
         index.assign(std::make_move_iterator(loaded_index.begin()), std::make_move_iterator(loaded_index.end()));
     }
 
-    size_in_bytes = calculateTotalSize(getFullPath());
+    bytes_on_disk = calculateTotalSizeOnDisk(getFullPath());
 }
 
 void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
 {
     if (storage.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date;
-        DayNum_t max_date;
+        DayNum min_date;
+        DayNum max_date;
         MergeTreePartInfo::parseMinMaxDatesFromPartName(name, min_date, max_date);
 
         const auto & date_lut = DateLUT::instance();
@@ -697,7 +499,8 @@ void MergeTreeDataPart::loadPartitionAndMinMaxIndex()
     {
         String full_path = getFullPath();
         partition.load(storage, full_path);
-        minmax_idx.load(storage, full_path);
+        if (!isEmpty())
+            minmax_idx.load(storage, full_path);
     }
 
     String calculated_partition_id = partition.getID(storage);
@@ -725,7 +528,11 @@ void MergeTreeDataPart::loadChecksums(bool require)
 
 void MergeTreeDataPart::loadRowsCount()
 {
-    if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
+    if (marks_count == 0)
+    {
+        rows_count = 0;
+    }
+    else if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         String path = getFullPath() + "count.txt";
         if (!Poco::File(path).exists())
@@ -742,20 +549,21 @@ void MergeTreeDataPart::loadRowsCount()
         for (const NameAndTypePair & column : columns)
         {
             ColumnPtr column_col = column.type->createColumn();
-            const auto checksum = tryGetBinChecksum(column.name);
+            if (!column_col->isFixedAndContiguous())
+                continue;
 
-            /// Should be fixed non-nullable column
-            if (!checksum || !column_col->isFixedAndContiguous())
+            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
+            if (!column_size)
                 continue;
 
             size_t sizeof_field = column_col->sizeOfValueIfFixed();
-            rows_count = checksum->uncompressed_size / sizeof_field;
+            rows_count = column_size / sizeof_field;
 
-            if (checksum->uncompressed_size % sizeof_field != 0)
+            if (column_size % sizeof_field != 0)
             {
                 throw Exception(
-                    "Column " + column.name + " has indivisible uncompressed size " + toString(checksum->uncompressed_size)
-                    + ", sizeof " + toString(sizeof_field),
+                    "Uncompressed size of column " + column.name + "(" + toString(column_size)
+                    + ") is not divisible by the size of value (" + toString(sizeof_field) + ")",
                     ErrorCodes::LOGICAL_ERROR);
             }
 
@@ -778,12 +586,13 @@ void MergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) con
 
     for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
     {
+        IDataType::SubstreamPath path;
         name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
         {
             Poco::File bin_file(getFullPath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin");
             if (bin_file.exists())
                 column_to_size[name_type.name] += bin_file.getSize();
-        }, {});
+        }, path);
     }
 }
 
@@ -822,25 +631,26 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
 
     if (!checksums.empty())
     {
-        if (!storage.primary_sort_descr.empty() && !checksums.files.count("primary.idx"))
+        if (!storage.primary_sort_columns.empty() && !checksums.files.count("primary.idx"))
             throw Exception("No checksum for primary.idx", ErrorCodes::NO_FILE_IN_DATA_PART);
 
         if (require_part_metadata)
         {
             for (const NameAndTypePair & name_type : columns)
             {
+                IDataType::SubstreamPath stream_path;
                 name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
                 {
                     String file_name = IDataType::getFileNameForStream(name_type.name, substream_path);
                     String mrk_file_name = file_name + ".mrk";
                     String bin_file_name = file_name + ".bin";
                     if (!checksums.files.count(mrk_file_name))
-                        throw Exception("No " + mrk_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + mrk_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
                     if (!checksums.files.count(bin_file_name))
-                        throw Exception("No " + bin_file_name + " file checksum for column " + name + " in part " + path,
+                        throw Exception("No " + bin_file_name + " file checksum for column " + name_type.name + " in part " + path,
                             ErrorCodes::NO_FILE_IN_DATA_PART);
-                }, {});
+                }, stream_path);
             }
         }
 
@@ -852,10 +662,13 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
             if (storage.partition_expr && !checksums.files.count("partition.dat"))
                 throw Exception("No checksum for partition.dat", ErrorCodes::NO_FILE_IN_DATA_PART);
 
-            for (const String & col_name : storage.minmax_idx_columns)
+            if (!isEmpty())
             {
-                if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
-                    throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
+                for (const String & col_name : storage.minmax_idx_columns)
+                {
+                    if (!checksums.files.count("minmax_" + escapeForFileName(col_name) + ".idx"))
+                        throw Exception("No minmax idx file checksum for column " + col_name, ErrorCodes::NO_FILE_IN_DATA_PART);
+                }
             }
         }
 
@@ -872,7 +685,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
         };
 
         /// Check that the primary key index is not empty.
-        if (!storage.primary_sort_descr.empty())
+        if (!storage.primary_sort_columns.empty())
             check_file_not_empty(path + "primary.idx");
 
         if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -910,7 +723,7 @@ void MergeTreeDataPart::checkConsistency(bool require_part_metadata)
                         throw Exception("Part " + path + " is broken: marks have different sizes.",
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
                 }
-            }, {});
+            });
         }
     }
 }
@@ -941,18 +754,6 @@ UInt64 MergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     UInt64 res = 0;
     for (const ColumnPtr & column : index)
         res += column->allocatedBytes();
-    return res;
-}
-
-UInt64 MergeTreeDataPart::getTotalMrkSizeInBytes() const
-{
-    UInt64 res = 0;
-    for (const NameAndTypePair & it : columns)
-    {
-        const Checksum * checksum = tryGetMrkChecksum(it.name);
-        if (checksum)
-            res += checksum->file_size;
-    }
     return res;
 }
 

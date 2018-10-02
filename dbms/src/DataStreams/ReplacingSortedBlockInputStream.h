@@ -15,11 +15,13 @@ namespace DB
 class ReplacingSortedBlockInputStream : public MergingSortedBlockInputStream
 {
 public:
-    ReplacingSortedBlockInputStream(BlockInputStreams inputs_, const SortDescription & description_,
-        const String & version_column_, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
-        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_),
-        version_column(version_column_)
+    ReplacingSortedBlockInputStream(
+        const BlockInputStreams & inputs_, const SortDescription & description_,
+        const String & version_column, size_t max_block_size_, WriteBuffer * out_row_sources_buf_ = nullptr)
+        : MergingSortedBlockInputStream(inputs_, description_, max_block_size_, 0, out_row_sources_buf_)
     {
+        if (!version_column.empty())
+            version_column_number = header.getPositionByName(version_column);
     }
 
     String getName() const override { return "ReplacingSorted"; }
@@ -29,7 +31,6 @@ protected:
     Block readImpl() override;
 
 private:
-    String version_column;
     ssize_t version_column_number = -1;
 
     Logger * log = &Logger::get("ReplacingSortedBlockInputStream");

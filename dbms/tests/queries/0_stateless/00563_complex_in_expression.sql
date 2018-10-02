@@ -22,4 +22,11 @@ ALL INNER JOIN
     FROM test.join_with_index
     WHERE toUInt64(data) IN (0, 529335254087962442)
 ) USING (key);
+
+SELECT _uniq, _uniq IN (0, 99)
+FROM test.join_with_index
+ARRAY JOIN
+    [key, data] AS _uniq
+ORDER BY _uniq;
+
 DROP TABLE IF EXISTS test.join_with_index;

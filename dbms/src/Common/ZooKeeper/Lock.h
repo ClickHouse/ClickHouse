@@ -40,7 +40,7 @@ namespace zkutil
             {
                 unlock();
             }
-            catch (const zkutil::KeeperException & e)
+            catch (...)
             {
                 DB::tryLogCurrentException(__PRETTY_FUNCTION__);
             }
@@ -51,15 +51,12 @@ namespace zkutil
             UNLOCKED,
             LOCKED_BY_ME,
             LOCKED_BY_OTHER,
-            END
         };
-        std::string status2String(Status status);
 
         /// проверяет создана ли эфемерная нода и кто ее владелец.
         Status tryCheck() const;
 
         void unlock();
-        void unlockOrMoveIfFailed(std::vector<zkutil::Lock> & failed_to_unlock_locks);
         void unlockAssumeLockNodeRemovedManually();
 
         bool tryLock();

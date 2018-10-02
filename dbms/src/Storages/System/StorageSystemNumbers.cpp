@@ -5,7 +5,6 @@
 #include <DataStreams/LimitBlockInputStream.h>
 #include <Storages/System/StorageSystemNumbers.h>
 
-
 namespace DB
 {
 
@@ -29,7 +28,7 @@ protected:
         ColumnUInt64::Container & vec = column->getData();
 
         size_t curr = next;     /// The local variable for some reason works faster (>20%) than member of class.
-        UInt64 * pos = &vec[0]; /// This also accelerates the code.
+        UInt64 * pos = vec.data(); /// This also accelerates the code.
         UInt64 * end = &vec[block_size];
         while (pos < end)
             *pos++ = curr++;
@@ -44,8 +43,8 @@ private:
 };
 
 
-StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_)
-    : name(name_), multithreaded(multithreaded_), limit(limit_)
+StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_, size_t offset_)
+    : name(name_), multithreaded(multithreaded_), limit(limit_), offset(offset_)
 {
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
@@ -54,13 +53,12 @@ StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multi
 BlockInputStreams StorageSystemNumbers::read(
     const Names & column_names,
     const SelectQueryInfo &,
-    const Context &,
-    QueryProcessingStage::Enum & processed_stage,
+    const Context & /*context*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
     check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
 
     if (limit && limit < max_block_size)
     {
@@ -74,7 +72,7 @@ BlockInputStreams StorageSystemNumbers::read(
     BlockInputStreams res(num_streams);
     for (size_t i = 0; i < num_streams; ++i)
     {
-        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, i * max_block_size, num_streams * max_block_size);
+        res[i] = std::make_shared<NumbersBlockInputStream>(max_block_size, offset + i * max_block_size, num_streams * max_block_size);
 
         if (limit)  /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
             res[i] = std::make_shared<LimitBlockInputStream>(res[i], limit * (i + 1) / num_streams - limit * i / num_streams, 0);

@@ -28,9 +28,9 @@ public:
 
     TrieDictionary(const TrieDictionary & other);
 
-    ~TrieDictionary();
+    ~TrieDictionary() override;
 
-    std::string getKeyDescription() const { return key_description; };
+    std::string getKeyDescription() const { return key_description; }
 
     std::exception_ptr getCreationException() const override { return creation_exception; }
 

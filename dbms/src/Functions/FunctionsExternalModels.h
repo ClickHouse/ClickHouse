@@ -23,13 +23,13 @@ public:
 
     bool isVariadic() const override { return true; }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result) override;
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
 private:
     const ExternalModels & models;

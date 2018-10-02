@@ -1,0 +1,69 @@
+<header class="md-header" data-md-component="header">
+
+  <nav class="md-header-nav md-grid">
+    <div class="md-flex">
+      <div class="md-flex__cell md-flex__cell--shrink">
+        <a href="/" title="{{ config.site_name }}" class="md-header-nav__button md-logo">
+          {% if config.theme.logo.icon %}
+            <i class="md-icon">{{ config.theme.logo.icon }}</i>
+          {% else %}
+            <img src="{{ base_url }}/{{ config.theme.logo }}" width="40" height="40">
+          {% endif %}
+        </a>
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+        <label class="md-icon md-icon--menu md-header-nav__button" for="drawer"></label>
+      </div>
+      <div class="md-flex__cell md-flex__cell--stretch">
+        <div class="md-flex__ellipsis md-header-nav__title" data-md-component="title">
+          {% block site_name %}
+            {% if config.site_name == page.title %}
+              {{ config.site_name }}
+            {% else %}
+              <span class="md-header-nav__topic">
+                {{ config.site_name }}
+              </span>
+              <span class="md-header-nav__topic">
+                {{ page.title }}
+              </span>
+            {% endif %}
+          {% endblock %}
+        </div>
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+      </div>
+      <div class="md-flex__cell md-flex__cell--shrink">
+        {% block search_box %}
+          {% if "search" in config["plugins"] %}
+            <label class="md-icon md-icon--search md-header-nav__button" for="search"></label>
+            {% include "partials/search.html" %}
+          {% endif %}
+        {% endblock %}
+      </div>
+      {% if page %}
+        <div class="md-flex__cell md-flex__cell--shrink">
+          <div id="md-language-switch" class="md-header-nav__source">
+            {% if config.theme.extra.opposite_lang == 'en' %}
+              <a href="{{ base_url }}/../{{ config.theme.extra.opposite_lang }}/{{ page.url or '' }}" title="Switch to English" class="md-flex__ellipsis md-header-nav__title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="50" height="30" viewBox="0,0 25,15" style="border:1px solid #eee;margin: .8rem 0 0 -1.25rem;">
+                  <rect width="25" height="15" fill="#00247d"></rect>
+                  <path d="M 0,0 L 25,15 M 25,0 L 0,15" stroke="#fff" stroke-width="3"></path>
+                  <path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#fff" stroke-width="5"></path>
+                  <path d="M 12.5,0 V 15 M 0,7.5 H 25" stroke="#cf142b" stroke-width="3"></path>
+                </svg>
+              </a>
+            {% else %}
+              <a href="{{ base_url }}/../{{ config.theme.extra.opposite_lang }}/{{ page.url or '' }}" title="Переключить на русский язык" class="md-flex__ellipsis md-header-nav__title">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 6" width="50" height="30" style="border: 1px solid #eee;margin: .8rem 0 0 -1.25rem">
+                  <rect fill="#fff" width="10" height="3"></rect>
+                  <rect fill="#d52b1e" y="3" width="10" height="3"></rect>
+                  <rect fill="#0039a6" y="2" width="10" height="2"></rect>
+                </svg>
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </div>
+  </nav>
+</header>

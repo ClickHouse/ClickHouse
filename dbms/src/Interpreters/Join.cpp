@@ -30,11 +30,12 @@ namespace ErrorCodes
 }
 
 
-Join::Join(const Names & key_names_left_, const Names & key_names_right_, bool use_nulls_,
-    const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
+Join::Join(const Names & key_names_left_, const Names & key_names_right_, const NameSet & needed_key_names_right_,
+    bool use_nulls_, const SizeLimits & limits, ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_)
     : kind(kind_), strictness(strictness_),
     key_names_left(key_names_left_),
     key_names_right(key_names_right_),
+    needed_key_names_right(needed_key_names_right_),
     use_nulls(use_nulls_),
     log(&Logger::get("Join")),
     limits(limits)
@@ -715,6 +716,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     MutableColumns added_columns;
     added_columns.reserve(num_columns_to_add);
 
+    std::vector<std::pair<decltype(ColumnWithTypeAndName::type), decltype(ColumnWithTypeAndName::name)>> added_type_name;
+    added_type_name.reserve(num_columns_to_add);
+
     std::vector<size_t> right_indexes;
     right_indexes.reserve(num_columns_to_add);
 
@@ -727,6 +731,7 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         {
             added_columns.push_back(src_column.column->cloneEmpty());
             added_columns.back()->reserve(src_column.column->size());
+            added_type_name.emplace_back(src_column.type, src_column.name);
             right_indexes.push_back(num_columns_to_skip + i);
         }
     }
@@ -761,11 +766,9 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
             throw Exception("Unknown JOIN keys variant.", ErrorCodes::UNKNOWN_SET_DATA_VARIANT);
     }
 
-    for (size_t i = 0; i < num_columns_to_add; ++i)
-    {
-        const ColumnWithTypeAndName & sample_col = sample_block_with_columns_to_add.getByPosition(i);
-        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), sample_col.type, sample_col.name));
-    }
+    const auto added_columns_size = added_columns.size();
+    for (size_t i = 0; i < added_columns_size; ++i)
+        block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
 
     /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
     if (filter)
@@ -776,6 +779,19 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     if (offsets_to_replicate)
         for (size_t i = 0; i < existing_columns; ++i)
             block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
+
+    /// Add join key columns from right block if they has different name.
+    for (size_t i = 0; i < key_names_right.size(); ++i)
+    {
+        auto & right_name = key_names_right[i];
+        auto & left_name = key_names_left[i];
+
+        if (needed_key_names_right.count(right_name) && !block.has(right_name))
+        {
+            const auto & col = block.getByName(left_name);
+            block.insert({col.column, col.type, right_name});
+        }
+    }
 }
 
 
@@ -1008,7 +1024,7 @@ public:
 
     String getName() const override { return "NonJoined"; }
 
-    Block getHeader() const override { return result_sample_block; };
+    Block getHeader() const override { return result_sample_block; }
 
 
 protected:
@@ -1098,7 +1114,7 @@ private:
 
         if (!position)
             position = decltype(position)(
-                static_cast<void *>(new typename Map::const_iterator(map.begin())),
+                static_cast<void *>(new typename Map::const_iterator(map.begin())), //-V572
                 [](void * ptr) { delete reinterpret_cast<typename Map::const_iterator *>(ptr); });
 
         auto & it = *reinterpret_cast<typename Map::const_iterator *>(position.get());

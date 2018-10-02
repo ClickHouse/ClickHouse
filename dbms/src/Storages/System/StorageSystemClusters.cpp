@@ -1,49 +1,32 @@
-#include <Storages/System/StorageSystemClusters.h>
-#include <Interpreters/Cluster.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
+#include <Common/DNSResolver.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Storages/System/StorageSystemClusters.h>
 
 namespace DB
 {
 
-
-StorageSystemClusters::StorageSystemClusters(const std::string & name_)
-    : name(name_)
+NamesAndTypesList StorageSystemClusters::getNamesAndTypes()
 {
-    setColumns(ColumnsDescription({
-        { "cluster",      std::make_shared<DataTypeString>() },
-        { "shard_num",    std::make_shared<DataTypeUInt32>() },
-        { "shard_weight", std::make_shared<DataTypeUInt32>() },
-        { "replica_num",  std::make_shared<DataTypeUInt32>() },
-        { "host_name",    std::make_shared<DataTypeString>() },
-        { "host_address", std::make_shared<DataTypeString>() },
-        { "port",         std::make_shared<DataTypeUInt16>() },
-        { "is_local",     std::make_shared<DataTypeUInt8>() },
-        { "user",         std::make_shared<DataTypeString>() },
-        { "default_database", std::make_shared<DataTypeString>() },
-    }));
+    return {
+        {"cluster", std::make_shared<DataTypeString>()},
+        {"shard_num", std::make_shared<DataTypeUInt32>()},
+        {"shard_weight", std::make_shared<DataTypeUInt32>()},
+        {"replica_num", std::make_shared<DataTypeUInt32>()},
+        {"host_name", std::make_shared<DataTypeString>()},
+        {"host_address", std::make_shared<DataTypeString>()},
+        {"port", std::make_shared<DataTypeUInt16>()},
+        {"is_local", std::make_shared<DataTypeUInt8>()},
+        {"user", std::make_shared<DataTypeString>()},
+        {"default_database", std::make_shared<DataTypeString>()},
+    };
 }
 
-
-BlockInputStreams StorageSystemClusters::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context & context,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+void StorageSystemClusters::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
-    auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info,
-                             const Cluster::Address & address)
+    auto updateColumns = [&](const std::string & cluster_name, const Cluster::ShardInfo & shard_info, const Cluster::Address & address)
     {
         size_t i = 0;
         res_columns[i++]->insert(cluster_name);
@@ -51,7 +34,7 @@ BlockInputStreams StorageSystemClusters::read(
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.weight));
         res_columns[i++]->insert(static_cast<UInt64>(address.replica_num));
         res_columns[i++]->insert(address.host_name);
-        res_columns[i++]->insert(address.resolved_address.host().toString());
+        res_columns[i++]->insert(DNSResolver::instance().resolveHost(address.host_name).toString());
         res_columns[i++]->insert(static_cast<UInt64>(address.port));
         res_columns[i++]->insert(static_cast<UInt64>(shard_info.isLocal()));
         res_columns[i++]->insert(address.user);
@@ -84,8 +67,5 @@ BlockInputStreams StorageSystemClusters::read(
             }
         }
     }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
 }
-
 }

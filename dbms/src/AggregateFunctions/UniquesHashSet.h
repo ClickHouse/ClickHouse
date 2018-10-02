@@ -74,8 +74,8 @@ template <typename Hash = UniquesHashSetDefaultHash>
 class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
 {
 private:
-    using Value_t = UInt64;
-    using HashValue_t = UInt32;
+    using Value = UInt64;
+    using HashValue = UInt32;
     using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
     UInt32 m_size;          /// Number of elements
@@ -83,7 +83,7 @@ private:
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
-    HashValue_t * buf;
+    HashValue * buf;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     /// For profiling.
@@ -92,7 +92,7 @@ private:
 
     void alloc(UInt8 new_size_degree)
     {
-        buf = reinterpret_cast<HashValue_t *>(Allocator::alloc((1ULL << new_size_degree) * sizeof(buf[0])));
+        buf = reinterpret_cast<HashValue *>(Allocator::alloc((1ULL << new_size_degree) * sizeof(buf[0])));
         size_degree = new_size_degree;
     }
 
@@ -108,15 +108,15 @@ private:
     inline size_t buf_size() const           { return 1ULL << size_degree; }
     inline size_t max_fill() const           { return 1ULL << (size_degree - 1); }
     inline size_t mask() const               { return buf_size() - 1; }
-    inline size_t place(HashValue_t x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
+    inline size_t place(HashValue x) const { return (x >> UNIQUES_HASH_BITS_FOR_SKIP) & mask(); }
 
     /// The value is divided by 2 ^ skip_degree
-    inline bool good(HashValue_t hash) const
+    inline bool good(HashValue hash) const
     {
         return hash == ((hash >> skip_degree) << skip_degree);
     }
 
-    HashValue_t hash(Value_t key) const
+    HashValue hash(Value key) const
     {
         return Hash()(key);
     }
@@ -141,7 +141,7 @@ private:
         {
             if (unlikely(buf[i] && i != place(buf[i])))
             {
-                HashValue_t x = buf[i];
+                HashValue x = buf[i];
                 buf[i] = 0;
                 reinsertImpl(x);
             }
@@ -157,7 +157,7 @@ private:
             new_size_degree = size_degree + 1;
 
         /// Expand the space.
-        buf = reinterpret_cast<HashValue_t *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
+        buf = reinterpret_cast<HashValue *>(Allocator::realloc(buf, old_size * sizeof(buf[0]), (1ULL << new_size_degree) * sizeof(buf[0])));
         size_degree = new_size_degree;
 
         /** Now some items may need to be moved to a new location.
@@ -174,7 +174,7 @@ private:
           */
         for (size_t i = 0; i < old_size || buf[i]; ++i)
         {
-            HashValue_t x = buf[i];
+            HashValue x = buf[i];
             if (!x)
                 continue;
 
@@ -204,7 +204,7 @@ private:
     }
 
     /// Insert a value.
-    void insertImpl(HashValue_t x)
+    void insertImpl(HashValue x)
     {
         if (x == 0)
         {
@@ -234,7 +234,7 @@ private:
     /** Insert a value into the new buffer that was in the old buffer.
       * Used when increasing the size of the buffer, as well as when reading from a file.
       */
-    void reinsertImpl(HashValue_t x)
+    void reinsertImpl(HashValue x)
     {
         size_t place_value = place(x);
         while (buf[place_value])
@@ -272,6 +272,8 @@ private:
 
 
 public:
+    using value_type = Value;
+
     UniquesHashSet() :
         m_size(0),
         skip_degree(0),
@@ -312,9 +314,9 @@ public:
         free();
     }
 
-    void insert(Value_t x)
+    void insert(Value x)
     {
-        HashValue_t hash_value = hash(x);
+        HashValue hash_value = hash(x);
         if (!good(hash_value))
             return;
 
@@ -380,7 +382,7 @@ public:
 
         if (has_zero)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::writeIntBinary(x, wb);
         }
 
@@ -409,7 +411,7 @@ public:
 
         for (size_t i = 0; i < m_size; ++i)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::readIntBinary(x, rb);
             if (x == 0)
                 has_zero = true;
@@ -443,7 +445,7 @@ public:
 
         for (size_t i = 0; i < rhs_size; ++i)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::readIntBinary(x, rb);
             insertHash(x);
         }
@@ -459,7 +461,7 @@ public:
         if (size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
-        rb.ignore(sizeof(HashValue_t) * size);
+        rb.ignore(sizeof(HashValue) * size);
     }
 
     void writeText(DB::WriteBuffer & wb) const
@@ -505,7 +507,7 @@ public:
 
         for (size_t i = 0; i < m_size; ++i)
         {
-            HashValue_t x = 0;
+            HashValue x = 0;
             DB::assertChar(',', rb);
             DB::readIntText(x, rb);
             if (x == 0)
@@ -515,7 +517,7 @@ public:
         }
     }
 
-    void insertHash(HashValue_t hash_value)
+    void insertHash(HashValue hash_value)
     {
         if (!good(hash_value))
             return;

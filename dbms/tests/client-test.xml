@@ -1,7 +1,7 @@
 <!-- Config for connecting to test server -->
 <yandex>
     <tcp_port>59000</tcp_port>
-    <tcp_ssl_port>59440</tcp_ssl_port>
+    <tcp_port_secure>59440</tcp_port_secure>
     <openSSL>
         <client>
             <loadDefaultCAFile>true</loadDefaultCAFile>

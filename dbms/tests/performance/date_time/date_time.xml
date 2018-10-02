@@ -30,9 +30,12 @@
                <value>toHour</value>
                <value>toDayOfWeek</value>
                <value>toDayOfMonth</value>
+               <value>toDayOfYear</value>
                <value>toMonth</value>
-               <!--value>toQuarter</value-->
+               <value>toQuarter</value>
                <value>toYear</value>
+               <value>toISOWeek</value>
+               <value>toISOYear</value>
 
                <value>toStartOfMinute</value>
                <value>toStartOfFiveMinute</value>
@@ -43,7 +46,8 @@
                <value>toMonday</value>
                <value>toStartOfMonth</value>
                <value>toStartOfQuarter</value>
-               <value>toYear</value>
+               <value>toStartOfYear</value>
+               <value>toStartOfISOYear</value>
 
                <value>toTime</value>
 
@@ -65,16 +69,20 @@
            <values>
                <value>toDayOfWeek</value>
                <value>toDayOfMonth</value>
+               <value>toDayOfYear</value>
                <value>toMonth</value>
-               <!--value>toQuarter</value-->
+               <value>toQuarter</value>
                <value>toYear</value>
+               <value>toISOWeek</value>
+               <value>toISOYear</value>
 
                <value>toStartOfDay</value>
                <value>toDate</value>
                <value>toMonday</value>
                <value>toStartOfMonth</value>
                <value>toStartOfQuarter</value>
-               <value>toYear</value>
+               <value>toStartOfYear</value>
+               <value>toStartOfISOYear</value>
 
                <value>toRelativeYearNum</value>
                <value>toRelativeMonthNum</value>

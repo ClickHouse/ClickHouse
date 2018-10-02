@@ -1,6 +1,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <IO/WriteHelpers.h>
 #include <iomanip>
 
 
@@ -20,43 +21,31 @@ namespace ErrorCodes
 ColumnGathererStream::ColumnGathererStream(
         const String & column_name_, const BlockInputStreams & source_streams, ReadBuffer & row_sources_buf_,
         size_t block_preferred_size_)
-    : name(column_name_), row_sources_buf(row_sources_buf_)
+    : column_name(column_name_), sources(source_streams.size()), row_sources_buf(row_sources_buf_)
     , block_preferred_size(block_preferred_size_), log(&Logger::get("ColumnGathererStream"))
 {
     if (source_streams.empty())
         throw Exception("There are no streams to gather", ErrorCodes::EMPTY_DATA_PASSED);
 
     children.assign(source_streams.begin(), source_streams.end());
-}
 
-
-void ColumnGathererStream::init()
-{
-    sources.reserve(children.size());
     for (size_t i = 0; i < children.size(); ++i)
     {
-        sources.emplace_back(children[i]->read(), name);
-
-        Block & block = sources.back().block;
+        const Block & header = children[i]->getHeader();
 
         /// Sometimes MergeTreeReader injects additional column with partitioning key
-        if (block.columns() > 2)
+        if (header.columns() > 2)
             throw Exception(
-                    "Block should have 1 or 2 columns, but contains " + toString(block.columns()),
-                    ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
-        if (!block.has(name))
-            throw Exception(
-                    "Not found column `" + name + "' in block.",
-                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+                "Block should have 1 or 2 columns, but contains " + toString(header.columns()),
+                ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS);
 
         if (i == 0)
         {
-            column.name = name;
-            column.type = block.getByName(name).type;
+            column.name = column_name;
+            column.type = header.getByName(column_name).type;
             column.column = column.type->createColumn();
         }
-
-        if (block.getByName(name).column->getName() != column.column->getName())
+        else if (header.getByName(column_name).column->getName() != column.column->getName())
             throw Exception("Column types don't match", ErrorCodes::INCOMPATIBLE_COLUMNS);
     }
 }
@@ -68,15 +57,11 @@ Block ColumnGathererStream::readImpl()
     if (children.size() == 1 && row_sources_buf.eof())
         return children[0]->read();
 
-    /// Initialize first source blocks
-    if (sources.empty())
-        init();
-
     if (!source_to_fully_copy && row_sources_buf.eof())
         return Block();
 
     output_block = Block{column.cloneEmpty()};
-    MutableColumnPtr output_column = output_block.getByPosition(0).column->mutate();
+    MutableColumnPtr output_column = output_block.getByPosition(0).column->assumeMutable();
     output_column->gather(*this);
     if (!output_column->empty())
         output_block.getByPosition(0).column = std::move(output_column);
@@ -90,7 +75,7 @@ void ColumnGathererStream::fetchNewBlock(Source & source, size_t source_num)
     try
     {
         source.block = children[source_num]->read();
-        source.update(name);
+        source.update(column_name);
     }
     catch (Exception & e)
     {
@@ -115,15 +100,18 @@ void ColumnGathererStream::readSuffixImpl()
         return;
 
     double seconds = profile_info.total_stopwatch.elapsedSeconds();
-    std::stringstream speed;
-    if (seconds)
-        speed << ", " << profile_info.rows / seconds << " rows/sec., "
-            << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
-    LOG_TRACE(log, std::fixed << std::setprecision(2)
-        << "Gathered column " << name
+
+    std::stringstream message;
+    message << std::fixed << std::setprecision(2)
+        << "Gathered column " << column_name
         << " (" << static_cast<double>(profile_info.bytes) / profile_info.rows << " bytes/elem.)"
-        << " in " << seconds << " sec."
-        << speed.str());
+        << " in " << seconds << " sec.";
+
+    if (seconds)
+        message << ", " << profile_info.rows / seconds << " rows/sec., "
+            << profile_info.bytes / 1048576.0 / seconds << " MiB/sec.";
+
+    LOG_TRACE(log, message.str());
 }
 
 }

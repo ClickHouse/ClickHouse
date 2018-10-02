@@ -68,9 +68,7 @@ void TrieDictionary::get##TYPE(\
     \
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     const auto null_value = std::get<TYPE>(attribute.null_values);\
     \
@@ -99,9 +97,7 @@ void TrieDictionary::getString(
 
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -119,9 +115,7 @@ void TrieDictionary::get##TYPE(\
     \
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, key_columns,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -148,9 +142,7 @@ void TrieDictionary::getString(
 
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -166,9 +158,7 @@ void TrieDictionary::get##TYPE(\
     \
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
-        throw Exception{\
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),\
-            ErrorCodes::TYPE_MISMATCH};\
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};\
     \
     getItemsNumber<TYPE>(attribute, key_columns,\
         [&] (const size_t row, const auto value) { out[row] = value; },\
@@ -195,9 +185,7 @@ void TrieDictionary::getString(
 
     const auto & attribute = getAttribute(attribute_name);
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::String))
-        throw Exception{
-            name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type),
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{name + ": type mismatch: attribute " + attribute_name + " has type " + toString(attribute.type), ErrorCodes::TYPE_MISMATCH};
 
     getItemsImpl<StringRef, StringRef>(attribute, key_columns,
         [&] (const size_t, const StringRef value) { out->insertData(value.data, value.size); },
@@ -238,9 +226,7 @@ void TrieDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{
-                name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
-                ErrorCodes::TYPE_MISMATCH};
+            throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(), ErrorCodes::TYPE_MISMATCH};
     }
 }
 
@@ -290,9 +276,7 @@ void TrieDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{
-            name + ": dictionary source is empty and 'require_nonempty' property is set.",
-            ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -338,16 +322,12 @@ void TrieDictionary::calculateBytesAllocated()
 void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
 {
     if (key_types.size() != 1)
-        throw Exception{
-            "Expected a single IP address",
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
 
     const auto & actual_type = key_types[0]->getName();
 
     if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{
-            "Key does not match, expected either UInt32 or FixedString(16)",
-            ErrorCodes::TYPE_MISMATCH};
+        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
 }
 
 
@@ -526,9 +506,7 @@ const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{
-            name + ": no such attribute '" + attribute_name + "'",
-            ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -591,7 +569,7 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
 
         if (node && node->right)
         {
-            stack.push(NULL);
+            stack.push(nullptr);
             key |= getBit(stack.size());
             stack.push(node->right);
             while (stack.top()->left)

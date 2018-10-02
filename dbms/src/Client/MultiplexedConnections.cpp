@@ -247,6 +247,7 @@ Connection::Packet MultiplexedConnections::receivePacketUnlocked()
         case Protocol::Server::ProfileInfo:
         case Protocol::Server::Totals:
         case Protocol::Server::Extremes:
+        case Protocol::Server::Log:
             break;
 
         case Protocol::Server::EndOfStream:
@@ -276,12 +277,11 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
     for (const ReplicaState & state : replica_states)
     {
         Connection * connection = state.connection;
-        if ((connection != nullptr) && connection->hasReadBufferPendingData())
+        if ((connection != nullptr) && connection->hasReadPendingData())
             read_list.push_back(*connection->socket);
     }
 
-    /// If no data was found, then we check if there are any connections
-    /// ready for reading.
+    /// If no data was found, then we check if there are any connections ready for reading.
     if (read_list.empty())
     {
         Poco::Net::Socket::SocketList write_list;
@@ -299,6 +299,9 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
         if (n == 0)
             throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
     }
+
+    /// TODO Absolutely wrong code: read_list could be empty; rand() is not thread safe and has low quality; motivation of rand is unclear.
+    /// This code path is disabled by default.
 
     auto & socket = read_list[rand() % read_list.size()];
     if (fd_to_replica_state_idx.empty())

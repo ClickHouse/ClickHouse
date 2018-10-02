@@ -29,7 +29,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -37,10 +37,11 @@ private:
     const std::string name;
     bool multithreaded;
     size_t limit;
+    size_t offset;
 
 protected:
     /// limit: 0 means unlimited.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0);
+    StorageSystemNumbers(const std::string & name_, bool multithreaded_, size_t limit_ = 0, size_t offset_ = 0);
 };
 
 }

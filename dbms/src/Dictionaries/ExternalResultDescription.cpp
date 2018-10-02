@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeUUID.h>
 #include <Common/typeid_cast.h>
 
 
@@ -55,10 +56,10 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.push_back(ValueType::Date);
         else if (typeid_cast<const DataTypeDateTime *>(type))
             types.push_back(ValueType::DateTime);
+        else if (typeid_cast<const DataTypeUUID *>(type))
+            types.push_back(ValueType::UUID);
         else
-            throw Exception{
-                "Unsupported type " + type->getName(),
-                ErrorCodes::UNKNOWN_TYPE};
+            throw Exception{"Unsupported type " + type->getName(), ErrorCodes::UNKNOWN_TYPE};
 
         names.emplace_back(column.name);
         sample_columns.emplace_back(column.column);
@@ -66,7 +67,7 @@ void ExternalResultDescription::init(const Block & sample_block_)
         /// If default value for column was not provided, use default from data type.
         if (sample_columns.back()->empty())
         {
-            MutableColumnPtr mutable_column = sample_columns.back()->mutate();
+            MutableColumnPtr mutable_column = (*std::move(sample_columns.back())).mutate();
             column.type->insertDefaultInto(*mutable_column);
             sample_columns.back() = std::move(mutable_column);
         }

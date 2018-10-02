@@ -32,29 +32,27 @@ std::optional<std::string> ZooKeeperNodeCache::get(const std::string & path)
     if (!zookeeper)
         throw DB::Exception("Could not get znode: `" + path + "'. ZooKeeper not configured.", DB::ErrorCodes::NO_ZOOKEEPER);
 
-    for (const auto & path : invalidated_paths)
+    for (const auto & invalidated_path : invalidated_paths)
     {
-        nonexistent_nodes.erase(path);
-        node_cache.erase(path);
+        nonexistent_nodes.erase(invalidated_path);
+        node_cache.erase(invalidated_path);
     }
 
     if (nonexistent_nodes.count(path))
         return std::nullopt;
 
-    auto watch_callback = [context=context](zkutil::ZooKeeper & zookeeper, int type, int state, const char * path)
+    auto watch_callback = [context=context](const Coordination::WatchResponse & response)
     {
-        if (!(type != ZOO_SESSION_EVENT || state == ZOO_EXPIRED_SESSION_STATE))
+        if (!(response.type != Coordination::SESSION || response.state == Coordination::EXPIRED_SESSION))
             return;
 
         bool changed = false;
         {
             std::lock_guard<std::mutex> lock(context->mutex);
-            if (&zookeeper != context->zookeeper.get())
-                return;
 
-            if (type != ZOO_SESSION_EVENT)
-                changed = context->invalidated_paths.emplace(path).second;
-            else if (state == ZOO_EXPIRED_SESSION_STATE)
+            if (response.type != Coordination::SESSION)
+                changed = context->invalidated_paths.emplace(response.path).second;
+            else if (response.state == Coordination::EXPIRED_SESSION)
             {
                 context->zookeeper = nullptr;
                 context->invalidated_paths.clear();

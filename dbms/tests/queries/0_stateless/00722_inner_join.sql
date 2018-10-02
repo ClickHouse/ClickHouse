@@ -1,0 +1,60 @@
+CREATE DATABASE IF NOT EXISTS test;
+DROP TABLE IF EXISTS test.one;
+CREATE TABLE test.one(dummy UInt8) ENGINE = Memory;
+
+SELECT x, t.name
+    FROM (SELECT name, database AS x FROM system.tables) AS t
+    ALL INNER JOIN (SELECT name AS x FROM system.databases) AS db USING x
+    WHERE x = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
+SELECT x, t.name
+    FROM (SELECT name, database AS x FROM system.tables) AS t
+    JOIN (SELECT name AS x FROM system.databases) AS db USING x
+    WHERE x = 'system' AND t.name = 'one'
+    SETTINGS join_default_strictness = 'ALL'
+    FORMAT PrettyCompactNoEscapes;
+
+SET join_default_strictness = 'ALL';
+
+SELECT database, t.name
+    FROM (SELECT * FROM system.tables) AS t
+    JOIN (SELECT name, name AS database FROM system.databases) AS db USING database
+    WHERE db.name = 'system' AND t.name = 'one'
+    FORMAT PrettyCompactNoEscapes;
+
+--SELECT db.name, t.name
+--    FROM (SELECT name, database AS x FROM system.tables) AS t
+--    JOIN (SELECT name AS x FROM system.databases) AS db USING x
+--    WHERE x = 'system' AND t.name = 'one'
+--    FORMAT PrettyCompactNoEscapes;
+
+SELECT t.name --, db.name
+    FROM (SELECT name, database FROM system.tables WHERE name = 'one') AS t
+    JOIN (SELECT name FROM system.databases WHERE name = 'system') AS db ON t.database = db.name;
+
+--SELECT db.name, t.name
+--    FROM system.tables AS t
+--    JOIN (SELECT * FROM system.databases WHERE name = 'system') AS db ON t.database = db.name
+--    WHERE t.name = 'one';
+
+SELECT database, t.name
+    FROM system.tables AS t
+    JOIN (SELECT name, name AS database FROM system.databases) AS db ON t.database = db.name
+    WHERE t.name = 'one';
+
+SELECT count(t.database)
+    FROM (SELECT * FROM system.tables WHERE name = 'one') AS t
+    JOIN system.databases AS db ON t.database = db.name;
+
+--SELECT count(db.name)
+--    FROM system.tables AS t
+--    JOIN system.databases AS db ON t.database = db.name
+--    WHERE t.name = 'one';
+
+SELECT count()
+    FROM system.tables AS t
+    JOIN system.databases AS db ON db.name = t.database
+    WHERE t.name = 'one';
+
+DROP TABLE test.one;

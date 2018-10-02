@@ -1,6 +1,9 @@
 add_executable(zkutil_test_commands zkutil_test_commands.cpp)
 target_link_libraries(zkutil_test_commands clickhouse_common_zookeeper)
 
+add_executable(zkutil_test_commands_new_lib zkutil_test_commands_new_lib.cpp)
+target_link_libraries(zkutil_test_commands_new_lib clickhouse_common_zookeeper)
+
 add_executable(zkutil_test_lock zkutil_test_lock.cpp)
 target_link_libraries(zkutil_test_lock clickhouse_common_zookeeper)
 
@@ -15,3 +18,6 @@ target_link_libraries(zkutil_zookeeper_holder clickhouse_common_zookeeper)
 
 add_executable (zk_many_watches_reconnect zk_many_watches_reconnect.cpp)
 target_link_libraries (zk_many_watches_reconnect clickhouse_common_zookeeper clickhouse_common_config)
+
+add_executable (zookeeper_impl zookeeper_impl.cpp)
+target_link_libraries (zookeeper_impl clickhouse_common_zookeeper)

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDate.h>
@@ -18,6 +19,9 @@
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+
+#include <common/DateLUT.h>
 
 
 namespace DB
@@ -72,10 +76,50 @@ static Field convertNumericType(const Field & from, const IDataType & type)
 }
 
 
-DayNum_t stringToDate(const String & s)
+template <typename From, typename To>
+static Field convertIntToDecimalType(const Field & from, const To & type)
+{
+    using FieldType = typename To::FieldType;
+
+    From value = from.get<From>();
+    if (!type.canStoreWhole(value))
+        throw Exception("Number is too much to place in " + type.getName(), ErrorCodes::ARGUMENT_OUT_OF_BOUND);
+
+    FieldType scaled_value = type.getScaleMultiplier() * value;
+    return Field(typename NearestFieldType<FieldType>::Type(scaled_value, type.getScale()));
+}
+
+
+template <typename T>
+static Field convertStringToDecimalType(const Field & from, const DataTypeDecimal<T> & type)
+{
+    using FieldType = typename DataTypeDecimal<T>::FieldType;
+
+    const String & str_value = from.get<String>();
+    T value = type.parseFromString(str_value);
+    return Field(typename NearestFieldType<FieldType>::Type(value, type.getScale()));
+}
+
+
+template <typename To>
+static Field convertDecimalType(const Field & from, const To & type)
+{
+    if (from.getType() == Field::Types::UInt64)
+        return convertIntToDecimalType<UInt64>(from, type);
+    if (from.getType() == Field::Types::Int64)
+        return convertIntToDecimalType<Int64>(from, type);
+    if (from.getType() == Field::Types::String)
+        return convertStringToDecimalType(from, type);
+
+    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
+        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+}
+
+
+DayNum stringToDate(const String & s)
 {
     ReadBufferFromString in(s);
-    DayNum_t date{};
+    DayNum date{};
 
     readDateText(date, in);
     if (!in.eof())
@@ -96,73 +140,69 @@ UInt64 stringToDateTime(const String & s)
     return UInt64(date_time);
 }
 
-UInt128 stringToUUID(const String & s)
+Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint)
 {
-    ReadBufferFromString in(s);
-    UUID uuid;
+    WhichDataType which_type(type);
+    WhichDataType which_from_type;
+    if (from_type_hint)
+        which_from_type = WhichDataType(*from_type_hint);
 
-    readText(uuid, in);
-    if (!in.eof())
-        throw Exception("String is too long for UUID: " + s);
-
-    return UInt128(uuid);
-}
-
-
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type)
-{
-    if (type.isValueRepresentedByNumber())
+    /// Conversion between Date and DateTime and vice versa.
+    if (which_type.isDate() && which_from_type.isDateTime())
     {
-        if (typeid_cast<const DataTypeUInt8 *>(&type)) return convertNumericType<UInt8>(src, type);
-        if (typeid_cast<const DataTypeUInt16 *>(&type)) return convertNumericType<UInt16>(src, type);
-        if (typeid_cast<const DataTypeUInt32 *>(&type)) return convertNumericType<UInt32>(src, type);
-        if (typeid_cast<const DataTypeUInt64 *>(&type)) return convertNumericType<UInt64>(src, type);
-        if (typeid_cast<const DataTypeInt8 *>(&type))  return convertNumericType<Int8>(src, type);
-        if (typeid_cast<const DataTypeInt16 *>(&type)) return convertNumericType<Int16>(src, type);
-        if (typeid_cast<const DataTypeInt32 *>(&type)) return convertNumericType<Int32>(src, type);
-        if (typeid_cast<const DataTypeInt64 *>(&type)) return convertNumericType<Int64>(src, type);
-        if (typeid_cast<const DataTypeFloat32 *>(&type)) return convertNumericType<Float32>(src, type);
-        if (typeid_cast<const DataTypeFloat64 *>(&type)) return convertNumericType<Float64>(src, type);
+        return UInt64(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.get<UInt64>()));
+    }
+    else if (which_type.isDateTime() && which_from_type.isDate())
+    {
+        return UInt64(static_cast<const DataTypeDateTime &>(type).getTimeZone().fromDayNum(DayNum(src.get<UInt64>())));
+    }
+    else if (type.isValueRepresentedByNumber())
+    {
+        if (which_type.isUInt8()) return convertNumericType<UInt8>(src, type);
+        if (which_type.isUInt16()) return convertNumericType<UInt16>(src, type);
+        if (which_type.isUInt32()) return convertNumericType<UInt32>(src, type);
+        if (which_type.isUInt64()) return convertNumericType<UInt64>(src, type);
+        if (which_type.isInt8())  return convertNumericType<Int8>(src, type);
+        if (which_type.isInt16()) return convertNumericType<Int16>(src, type);
+        if (which_type.isInt32()) return convertNumericType<Int32>(src, type);
+        if (which_type.isInt64()) return convertNumericType<Int64>(src, type);
+        if (which_type.isFloat32()) return convertNumericType<Float32>(src, type);
+        if (which_type.isFloat64()) return convertNumericType<Float64>(src, type);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Decimal32> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Decimal64> *>(&type)) return convertDecimalType(src, *ptype);
+        if (auto * ptype = typeid_cast<const DataTypeDecimal<Decimal128> *>(&type)) return convertDecimalType(src, *ptype);
 
-        const bool is_date = typeid_cast<const DataTypeDate *>(&type);
-        bool is_datetime = false;
-        bool is_enum = false;
-        bool is_uuid = false;
-
-        if (!is_date)
-            if (!(is_datetime = typeid_cast<const DataTypeDateTime *>(&type)))
-                if (!(is_uuid = typeid_cast<const DataTypeUUID *>(&type)))
-                    if (!(is_enum = dynamic_cast<const IDataTypeEnum *>(&type)))
-                        throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
+        if (!which_type.isDateOrDateTime() && !which_type.isUUID() && !which_type.isEnum())
+            throw Exception{"Logical error: unknown numeric type " + type.getName(), ErrorCodes::LOGICAL_ERROR};
 
         /// Numeric values for Enums should not be used directly in IN section
-        if (src.getType() == Field::Types::UInt64 && !is_enum)
+        if (src.getType() == Field::Types::UInt64 && !which_type.isEnum())
             return src;
 
         if (src.getType() == Field::Types::String)
         {
-            if (is_date)
+            if (which_type.isDate())
             {
                 /// Convert 'YYYY-MM-DD' Strings to Date
                 return UInt64(stringToDate(src.get<const String &>()));
             }
-            else if (is_datetime)
+            else if (which_type.isDateTime())
             {
                 /// Convert 'YYYY-MM-DD hh:mm:ss' Strings to DateTime
                 return stringToDateTime(src.get<const String &>());
             }
-            else if (is_uuid)
+            else if (which_type.isUUID())
             {
                 return stringToUUID(src.get<const String &>());
             }
-            else if (is_enum)
+            else if (which_type.isEnum())
             {
                 /// Convert String to Enum's value
                 return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
             }
         }
     }
-    else if (type.isStringOrFixedString())
+    else if (which_type.isStringOrFixedString())
     {
         if (src.getType() == Field::Types::String)
             return src;
@@ -217,14 +257,12 @@ Field convertFieldToType(const Field & from_value, const IDataType & to_type, co
     if (from_type_hint && from_type_hint->equals(to_type))
         return from_value;
 
-    if (to_type.isNullable())
-    {
-        const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(to_type);
-        const DataTypePtr & nested_type = nullable_type.getNestedType();
-        return convertFieldToTypeImpl(from_value, *nested_type);
-    }
+    if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(&to_type))
+        return convertFieldToType(from_value, *low_cardinality_type->getDictionaryType(), from_type_hint);
+    else if (auto * nullable_type = typeid_cast<const DataTypeNullable *>(&to_type))
+        return convertFieldToTypeImpl(from_value, *nullable_type->getNestedType(), from_type_hint);
     else
-        return convertFieldToTypeImpl(from_value, to_type);
+        return convertFieldToTypeImpl(from_value, to_type, from_type_hint);
 }
 
 

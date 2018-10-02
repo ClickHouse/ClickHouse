@@ -58,7 +58,7 @@ def started_cluster():
                     name = "s{}_{}_{}".format(cluster_name, shard_name, replica_name)
                     cluster.add_instance(name,
                         config_dir="configs",
-                        macroses={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
+                        macros={"cluster": cluster_name, "shard": shard_name, "replica": replica_name},
                         with_zookeeper=True)
 
         cluster.start()
@@ -154,7 +154,7 @@ class Task_test_block_size:
 
         ddl_check_query(instance, """
             CREATE TABLE test_block_size ON CLUSTER shard_0_0 (partition Date, d UInt64)
-            ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/a', '{replica}')
+            ENGINE=ReplicatedMergeTree('/clickhouse/tables/cluster_{cluster}/{shard}/test_block_size', '{replica}')
             ORDER BY d""", 2)
 
         instance.query("INSERT INTO test_block_size SELECT toDate(0) AS partition, number as d FROM system.numbers LIMIT {}".format(self.rows))
@@ -183,7 +183,7 @@ def execute_task(task, cmd_options):
     copiers_exec_ids = []
 
     cmd = ['/usr/bin/clickhouse', 'copier',
-        '--config', '/etc/clickhouse-server/config-preprocessed.xml',
+        '--config', '/etc/clickhouse-server/config-copier.xml',
         '--task-path', zk_task_path,
         '--base-dir', '/var/log/clickhouse-server/copier']
     cmd += cmd_options

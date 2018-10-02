@@ -33,6 +33,7 @@ public:
     ConfigReloader(
             const std::string & path,
             const std::string & include_from_path,
+            const std::string & preprocessed_dir,
             zkutil::ZooKeeperNodeCache && zk_node_cache,
             Updater && updater,
             bool already_loaded);
@@ -56,7 +57,7 @@ private:
     {
         std::set<FileWithTimestamp> files;
 
-        void addIfExists(const std::string & path);
+        void addIfExists(const std::string & path_to_add);
         bool isDifferOrNewerThan(const FilesChangesTracker & rhs);
     };
 
@@ -70,6 +71,7 @@ private:
 
     std::string path;
     std::string include_from_path;
+    std::string preprocessed_dir;
     FilesChangesTracker files;
     zkutil::ZooKeeperNodeCache zk_node_cache;
 
