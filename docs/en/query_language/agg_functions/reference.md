@@ -9,6 +9,8 @@ The syntax `COUNT(DISTINCT x)` is not supported. The separate `uniq` aggregate f
 
 A `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It will select some small column from the table and count the number of values in it.
 
+<a name="agg_function-any"></a>
+
 ## any(x)
 
 Selects the first encountered value.
@@ -67,6 +69,8 @@ Calculates the 'arg' value for a minimal 'val' value. If there are several diffe
 
 Calculates the 'arg' value for a maximum 'val' value. If there are several different values of 'arg' for maximum values of 'val', the first of these values encountered is output.
 
+<a name="agg_function-sum"></a>
+
 ## sum(x)
 
 Calculates the sum.
@@ -77,6 +81,8 @@ Only works for numbers.
 Computes the sum of the numbers, using the same data type for the result as for the input parameters. If the sum exceeds the maximum value for this data type, the function returns an error.
 
 Only works for numbers.
+
+<a name="agg_function-summap"></a>
 
 ## sumMap(key, value)
 
@@ -119,6 +125,8 @@ GROUP BY timeslot
 Calculates the average.
 Only works for numbers.
 The result is always Float64.
+
+<a name="agg_function-uniq"></a>
 
 ## uniq(x)
 
@@ -253,7 +261,7 @@ A hash table is used as the algorithm. Because of this, if the passed values ​
 
 Approximates the quantile level using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The maximum error is 1%. Memory consumption by State is proportional to the logarithm of the number of passed values.
 
-The performance of the function is lower than for `quantile`, `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than for `quantile` or `quantileTiming`. In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 The result depends on the order of running the query, and is nondeterministic.
 
