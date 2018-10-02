@@ -78,7 +78,9 @@ void ExternalLoader::init(bool throw_on_error)
 ExternalLoader::~ExternalLoader()
 {
     destroy.set();
-    reloading_thread.join();
+    /// It can be partially initialized
+    if (reloading_thread.joinable())
+        reloading_thread.join();
 }
 
 
