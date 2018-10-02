@@ -18,7 +18,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
     name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
     ...
-) ENGINE = MergeTree()
+) ENGINE = AggregatingMergeTree()
 [PARTITION BY expr]
 [ORDER BY expr]
 [SAMPLE BY expr]
@@ -29,10 +29,10 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 **Секции запроса**
 
-`AggregatingMergeTree` использует те же [секции ENGINE](mergetree.md#table_engines-mergetree-configuring), что и `MergeTree`.
+При создании таблицы `AggregatingMergeTree` используются те же [секции](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
 
 
-### Устаревший способ конфигурирования движка
+### Устаревший способ создания таблицы
 
 !!!attention
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.

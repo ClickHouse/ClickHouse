@@ -4,7 +4,7 @@
 
 The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
 
-!!! info
+!!!info
     The [Merge](merge.md#table_engine-merge) engine does not belong to the `*MergeTree` family.
 
 Main features:
@@ -25,29 +25,44 @@ Main features:
 
     If necessary, you can set the data sampling method in the table.
 
-## Engine Configuration When Creating a Table
+<a name="table_engines-mergetree-configuring"></a>
+
+## Creating a Table
 
 ```
-ENGINE [=] MergeTree() [PARTITION BY expr] [ORDER BY expr] [SAMPLE BY expr] [SETTINGS name=value, ...]
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
 ```
 
-**ENGINE clauses**
+For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
+
+**Query clauses**
+
+- `ENGINE` - Name and parameters of the engine. `ENGINE = MergeTree()`. `MergeTree` engine does not have parameters.
 
 - `ORDER BY` — Primary key.
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
-If a sampling key is used, the primary key must contain it. Example: `ORDER BY (CounerID, EventDate, intHash32(UserID))`.
+If a sampling expression is used, the primary key must contain it. Example: `ORDER BY (CounerID, EventDate, intHash32(UserID))`.
 
 - `PARTITION BY` — The [partitioning key](custom_partitioning_key.md#table_engines-custom_partitioning_key).
 
     For partitioning by month, use the `toYYYYMM(date_column)` expression, where `date_column` is a column with a date of the type [Date](../../data_types/date.md#data_type-date). The partition names here have the `"YYYYMM"` format.
 
-- `SAMPLE BY` — An  expression for sampling (optional). Example: `intHash32(UserID))`.
+- `SAMPLE BY` — An  expression for sampling. Example: `intHash32(UserID))`.
 
-- `SETTINGS` — Additional parameters that control the behavior of the `MergeTree` (optional):
+- `SETTINGS` — Additional parameters that control the behavior of the `MergeTree`:
     - `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. By default, 8192.
 
-**Example**
+**Example of sections setting**
 
 ```
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
@@ -59,13 +74,18 @@ We also set an expression for sampling as a hash by the user ID. This allows you
 
 `index_granularity` could be omitted because 8192 is the default value.
 
-### Deprecated Method for Engine Configuration
+### Deprecated Method for Creating a Table
 
-!!! attention
+!!!attention
     Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```
-ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] MergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
 ```
 
 **MergeTree() parameters**
@@ -89,7 +109,7 @@ A table consists of data *parts* sorted by primary key.
 
 When data is inserted in a table, separate data parts are created and each of them is lexicographically sorted by primary key. For example, if the primary key is `(CounterID, Date)`, the data in the part is sorted by `CounterID`, and within each `CounterID`, it is ordered by `Date`.
 
-Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged.
+Data belonging to different partitions are separated into different parts. In the background, ClickHouse merges data parts for more efficient storage. Parts belonging to different partitions are not merged. The merge mechanism does not guarantee that all rows with the same primary key will be in the same data part.
 
 For each data part, ClickHouse creates an index file that contains the primary key value for each index row ("mark"). Index row numbers are defined as `n * index_granularity`. The maximum value `n` is equal to the integer part of dividing the total number of rows by the `index_granularity`. For each column, the "marks" are also written for the same index rows as the primary key. These "marks" allow you to find the data directly in the columns.
 
@@ -136,13 +156,13 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- To provide additional logic when merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md#table_engine-summingmergetree) engines.
+- Provide additional logic when data parts merging in the [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) and [SummingMergeTree](summingmergetree.md#table_engine-summingmergetree) engines.
 
-    You may need to have many fields in the primary key even if they are not necessary for the previous steps.
+    You may need many fields in the primary key even if they are not necessary for the previous steps.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-### Usage of Indexes and Partitions in Queries
+### Use of Indexes and Partitions in Queries
 
 For`SELECT` queries, ClickHouse analyzes whether an index can be used. An index can be used if the `WHERE/PREWHERE` clause has an expression (as one of the conjunction elements, or entirely) that represents an equality or inequality comparison operation, or if it has `IN` or `LIKE` with a fixed prefix on columns or expressions that are in the primary key or partitioning key, or on certain partially repetitive functions of these columns, or logical relationships of these expressions.
 
@@ -181,4 +201,3 @@ The key for partitioning by month allows reading only those data blocks which co
 For concurrent table access, we use multi-versioning. In other words, when a table is simultaneously read and updated, data is read from a set of parts that is current at the time of the query. There are no lengthy locks. Inserts do not get in the way of read operations.
 
 Reading from a table is automatically parallelized.
-

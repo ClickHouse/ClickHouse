@@ -34,7 +34,7 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 
 **Секции запроса**
 
-При создании таблицы `ReplacingMergeTree` используются те же [секции ENGINE](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
+При создании таблицы `ReplacingMergeTree` используются те же [секции](mergetree.md#table_engines-mergetree-configuring), что и при создании таблицы `MergeTree`.
 
 ### Устаревший способ создания таблицы
 

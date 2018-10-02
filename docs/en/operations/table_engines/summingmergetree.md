@@ -2,33 +2,120 @@
 
 # SummingMergeTree
 
-This engine differs from `MergeTree` in that it totals data while merging.
+The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for  `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key with one row which contains summarized values for the columns with the numeric data type. If the primary key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
-```sql
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192)
+We recommend to use the engine together with `MergeTree`. Store complete data in `MergeTree`  table, and use `SummingMergeTree` for aggregated data storing, for example, when preparing reports. Such an approach will prevent you from losing valuable data due to an incorrectly composed primary key.
+
+## Creating a Table
+
+```
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
 ```
 
-The columns to total are implicit. When merging, all rows with the same primary key value (in the example, OrderId, EventDate, BannerID, ...) have their values totaled in numeric columns that are not part of the primary key.
+For a description of request parameters, see [request description](../../query_language/create.md#query_language-queries-create_table).
 
-```sql
-SummingMergeTree(EventDate, (OrderID, EventDate, BannerID, ...), 8192, (Shows, Clicks, Cost, ...))
+**Parameters of SummingMergeTree**
+
+- `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
+The columns must be of a numeric type and must not be in the primary key.
+
+    If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
+
+**Query clauses**
+
+When creating a `SummingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
+
+### Deprecated Method for Creating a Table
+
+!!!attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+
+```
+CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
 ```
 
-The columns to total are set explicitly (the last parameter – Shows, Clicks, Cost, ...). When merging, all rows with the same primary key value have their values totaled in the specified columns. The specified columns also must be numeric and must not be part of the primary key.
+All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
-If the values were zero in all of these columns, the row is deleted.
+- `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
 
-For the other columns that are not part of the primary key, the first value that occurs is selected when merging. But for the AggregateFunction type of columns, aggregation is performed according to the set function, so this engine actually behaves like `AggregatingMergeTree`.
+## Usage Example
 
-Summation is not performed for a read operation. If it is necessary, write the appropriate GROUP BY.
+Consider the following table:
 
-In addition, a table can have nested data structures that are processed in a special way.
-If the name of a nested table ends in 'Map' and it contains at least two columns that meet the following criteria:
+```sql
+CREATE TABLE summtt
+(
+    key UInt32,
+    value UInt32
+)
+ENGINE = SummingMergeTree()
+ORDER BY key
+```
 
-- The first table is numeric ((U)IntN, Date, DateTime), which we'll refer to as the 'key'.
-- The other columns are arithmetic ((U)IntN, Float32/64), which we'll refer to as '(values...)'.
+Insert data to it:
 
-Then this nested table is interpreted as a mapping of key `=>` (values...), and when merging its rows, the elements of two data sets are merged by 'key' with a summation of the corresponding (values...).
+```
+:) INSERT INTO summtt Values(1,1),(1,2),(2,1)
+```
+
+ClickHouse may sum all the rows not completely ([see below](#summary-data-processing)), so we use an aggregate function `sum`  and `GROUP BY` clause  in the query.
+
+```sql
+SELECT key, sum(value) FROM summtt GROUP BY key
+```
+
+```
+┌─key─┬─sum(value)─┐
+│   2 │          1 │
+│   1 │          3 │
+└─────┴────────────┘
+```
+
+<a name="summingmergetree-data-processing"></a>
+
+## Data Processing
+
+When data are inserted into a table, they are saved as-is. Clickhouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
+
+ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
+
+### Common rules for summation
+
+The values in the columns with the numeric data type are summarized. The set of columns is defined by the parameter `columns`.
+
+If the values were 0 in all of the columns for summation, the row is deleted.
+
+If column is not in the primary key and is not summarized, an arbitrary value is selected from the existing ones.
+
+The values are not summarized for columns in the primary key.
+
+### The Summation in the AggregateFunction Columns
+
+For columns of [AggregateFunction type](../../data_types/nested_data_structures/aggregatefunction.md#data_type-aggregatefunction) ClickHouse behaves as [AggregatingMergeTree](aggregatingmergetree.md#table_engine-aggregatingmergetree) engine aggregating according to the function.
+
+### Nested Structures
+
+Table can have nested data structures that are processed in a special way.
+
+If the name of a nested table ends with `Map` and it contains at least two columns that meet the following criteria:
+
+- the first column is numeric `(*Int*, Date, DateTime)`, let's call it `key`,
+- the other columns are arithmetic `(*Int*, Float32/64)`, let's call it `(values...)`,
+
+then this nested table is interpreted as a mapping of `key => (values...)`, and when merging its rows, the elements of two data sets are merged by `key` with a summation of the corresponding `(values...)`.
 
 Examples:
 
@@ -39,9 +126,7 @@ Examples:
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-For aggregation of Map, use the function sumMap(key, value).
+When requesting data, use the [sumMap(key, value)](../../query_language/agg_functions/reference.md#agg_function-summary) function for aggregation of `Map`.
 
-For nested data structures, you don't need to specify the columns as a list of columns for totaling.
-
-This table engine is not particularly useful. Remember that when saving just pre-aggregated data, you lose some of the system's advantages.
+For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
