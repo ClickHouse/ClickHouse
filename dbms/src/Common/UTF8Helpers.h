@@ -72,6 +72,11 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
     return res;
 }
 
+/// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.
+/// `prefix` is used to compute the `\t` width which extends the string before
+/// and include `\t` to the nearest longer length with multiple of eight.
+size_t computeWidth(const UInt8 * data, size_t size, size_t prefix = 0) noexcept;
+
 }
 
 
