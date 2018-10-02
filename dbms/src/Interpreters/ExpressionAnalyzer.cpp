@@ -2463,7 +2463,6 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
                 subquery_for_set.joined_block_aliases.emplace_back(column.original_name, column.name_and_type.name);
 
         auto sample_block = subquery_for_set.source->getHeader();
-        analyzed_join.joined_block_actions->execute(sample_block);
         for (const auto & name_with_alias : subquery_for_set.joined_block_aliases)
         {
             if (sample_block.has(name_with_alias.first))
@@ -2475,6 +2474,8 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
                 sample_block.insert(std::move(column));
             }
         }
+
+        analyzed_join.joined_block_actions->execute(sample_block);
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_set.join = join;
