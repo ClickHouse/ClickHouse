@@ -189,11 +189,11 @@ void runOneTest(const TestDescriptor & test_descriptor)
     const auto path_name = createTmpPath("users.xml");
     createFile(path_name, test_descriptor.config_content);
 
-    ConfigurationPtr config;
+    DB::ConfigurationPtr config;
 
     try
     {
-        config = ConfigProcessor(path_name).loadConfig().configuration;
+        config = DB::ConfigProcessor(path_name).loadConfig().configuration;
     }
     catch (const Poco::Exception & ex)
     {

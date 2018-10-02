@@ -26,18 +26,18 @@ static void setupLogging(const std::string & log_level)
 static std::string extractFromConfig(
         const std::string & config_path, const std::string & key, bool process_zk_includes, bool try_get = false)
 {
-    ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
+    DB::ConfigProcessor processor(config_path, /* throw_on_bad_incl = */ false, /* log_to_console = */ false);
     bool has_zk_includes;
-    XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
+    DB::XMLDocumentPtr config_xml = processor.processConfig(&has_zk_includes);
     if (has_zk_includes && process_zk_includes)
     {
-        ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
+        DB::ConfigurationPtr bootstrap_configuration(new Poco::Util::XMLConfiguration(config_xml));
         zkutil::ZooKeeperPtr zookeeper = std::make_shared<zkutil::ZooKeeper>(
                 *bootstrap_configuration, "zookeeper");
         zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
         config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);
     }
-    ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
+    DB::ConfigurationPtr configuration(new Poco::Util::XMLConfiguration(config_xml));
     // do not throw exception if not found
     if (try_get)
         return configuration->getString(key, "");

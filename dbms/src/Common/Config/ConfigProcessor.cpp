@@ -20,6 +20,10 @@
 
 using namespace Poco::XML;
 
+namespace DB
+{
+
+std::string main_config_path;
 
 /// Extracts from a string the first encountered number consisting of at least two digits.
 static std::string numberFromHost(const std::string & s)
@@ -45,7 +49,6 @@ bool ConfigProcessor::isPreprocessedFile(const std::string & path)
     return endsWith(Poco::Path(path).getBaseName(), PREPROCESSED_SUFFIX);
 }
 
-std::string ConfigProcessor::main_config_path;
 
 ConfigProcessor::ConfigProcessor(
     const std::string & path_,
@@ -571,11 +574,9 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
         std::replace( new_path.begin(), new_path.end(), '/', '_');
         preprocessed_path = preprocessed_dir + new_path;
         auto path = Poco::Path(preprocessed_path).makeParent();
-
         if (!path.toString().empty())
             Poco::File(path).createDirectories();
     }
-
     try
     {
         DOMWriter().writeNode(preprocessed_path, loaded_config.preprocessed_xml);
@@ -584,4 +585,6 @@ void ConfigProcessor::savePreprocessedConfig(const LoadedConfig & loaded_config,
     {
         LOG_WARNING(log, "Couldn't save preprocessed config to " << preprocessed_path << ": " << e.displayText());
     }
+}
+
 }

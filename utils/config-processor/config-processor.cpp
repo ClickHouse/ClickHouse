@@ -11,8 +11,8 @@ int main(int argc, char ** argv)
             return 3;
         }
 
-        ConfigProcessor processor(argv[1], false, true);
-        XMLDocumentPtr document = processor.processConfig();
+        DB::ConfigProcessor processor(argv[1], false, true);
+        DB::XMLDocumentPtr document = processor.processConfig();
         Poco::XML::DOMWriter().writeNode(std::cout, document);
     }
     catch (Poco::Exception & e)

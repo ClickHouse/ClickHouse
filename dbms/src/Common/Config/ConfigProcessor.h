@@ -24,8 +24,13 @@ namespace zkutil
     class ZooKeeperNodeCache;
 }
 
+namespace DB
+{
+
 using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 using XMLDocumentPtr = Poco::AutoPtr<Poco::XML::Document>;
+
+extern std::string main_config_path; /// For cutting prerpocessed path to this base
 
 class ConfigProcessor
 {
@@ -98,8 +103,6 @@ public:
 
     static inline const auto SUBSTITUTION_ATTRS = {"incl", "from_zk", "from_env"};
 
-    static std::string main_config_path; /// For cutting prerpocessed path to this base
-
 private:
     const std::string path;
     std::string preprocessed_path;
@@ -130,3 +133,5 @@ private:
             zkutil::ZooKeeperNodeCache * zk_node_cache,
             std::unordered_set<std::string> & contributing_zk_paths);
 };
+
+}
