@@ -47,12 +47,9 @@ static void replaceConstFunction(const IAST & node, const Context & context, con
             auto result_column = result_block.getByName(child->getColumnName()).column;
             auto result_string = applyVisitor(FieldVisitorToString(), (*result_column)[0]);
 
-            Field result_field(result_string);
-            ASTLiteral result_ast(result_field);
-
             auto new_node = const_cast<IAST *>(&node);
 
-            new_node->children[i] = std::make_shared<ASTLiteral>(result_field);
+            new_node->children[i] = std::make_shared<ASTLiteral>((*result_column)[0]);
         }
     }
 }
@@ -108,7 +105,8 @@ String transformQueryForExternalDatabase(
     const String & table,
     const Context & context)
 {
-    ExpressionAnalyzer analyzer(query.clone(), context, {}, available_columns);
+    auto clone_query = query.clone();
+    ExpressionAnalyzer analyzer(clone_query, context, {}, available_columns);
     const Names & used_columns = analyzer.getRequiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
@@ -127,7 +125,7 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    const ASTPtr & original_where = typeid_cast<const ASTSelectQuery &>(query).where_expression;
+    const ASTPtr & original_where = typeid_cast<const ASTSelectQuery &>(*clone_query).where_expression;
     if (original_where)
     {
         replaceConstFunction(*original_where, context, available_columns);
