@@ -60,26 +60,26 @@ static const size_t max_block_size = 8192;
 
 
 XDBCDictionarySource::XDBCDictionarySource(const DictionaryStructure & dict_struct_,
-    const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-    const Block & sample_block, const Context & context, const BridgeHelperPtr bridge)
-    : log(&Logger::get(bridge->getName() + "DictionarySource")),
+    const Poco::Util::AbstractConfiguration & config_, const std::string & config_prefix_,
+    const Block & sample_block_, const Context & context_, const BridgeHelperPtr bridge_)
+    : log(&Logger::get(bridge_->getName() + "DictionarySource")),
     update_time{std::chrono::system_clock::from_time_t(0)},
     dict_struct{dict_struct_},
-    db{config.getString(config_prefix + ".db", "")},
-    table{config.getString(config_prefix + ".table")},
-    where{config.getString(config_prefix + ".where", "")},
-    update_field{config.getString(config_prefix + ".update_field", "")},
-    sample_block{sample_block},
-    query_builder{dict_struct, db, table, where, bridge->getIdentifierQuotingStyle()},
+    db{config_.getString(config_prefix_ + ".db", "")},
+    table{config_.getString(config_prefix_ + ".table")},
+    where{config_.getString(config_prefix_ + ".where", "")},
+    update_field{config_.getString(config_prefix_ + ".update_field", "")},
+    sample_block{sample_block_},
+    query_builder{dict_struct, db, table, where, bridge_->getIdentifierQuotingStyle()},
     load_all_query{query_builder.composeLoadAllQuery()},
-    invalidate_query{config.getString(config_prefix + ".invalidate_query", "")},
-    bridge_helper{bridge},
-    timeouts{ConnectionTimeouts::getHTTPTimeouts(context.getSettingsRef())},
-    global_context(context)
+    invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")},
+    bridge_helper{bridge_},
+    timeouts{ConnectionTimeouts::getHTTPTimeouts(context_.getSettingsRef())},
+    global_context(context_)
 {
     bridge_url = bridge_helper->getMainURI();
 
-    auto url_params = bridge_helper->getURLParams(sample_block.getNamesAndTypesList().toString(), max_block_size);
+    auto url_params = bridge_helper->getURLParams(sample_block_.getNamesAndTypesList().toString(), max_block_size);
     for (const auto & [name, value] : url_params)
         bridge_url.addQueryParameter(name, value);
 }

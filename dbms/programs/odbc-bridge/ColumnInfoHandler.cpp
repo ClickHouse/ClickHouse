@@ -59,6 +59,11 @@ namespace
     }
 }
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
+
 void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
@@ -123,12 +128,12 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
         else if(identifier_quote[0] == '"')
             settings.identifier_quoting_style = IdentifierQuotingStyle::DoubleQuotes;
         else
-            throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value");
+            throw Exception("Can not map quote identifier '" + identifier_quote + "' to IdentifierQuotingStyle value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         select->format(settings);
         std::string query = ss.str();
 
-        std::cout << query << std::endl;
+        LOG_TRACE(log, "Inferring structure with query '" << query << "'");
 
         if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLPrepare(hstmt, reinterpret_cast<SQLCHAR *>(query.data()), query.size())))
             throw POCO_SQL_ODBC_CLASS::DescriptorException(session.dbc());
