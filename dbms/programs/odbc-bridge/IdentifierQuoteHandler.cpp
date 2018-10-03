@@ -14,29 +14,27 @@
 #define POCO_SQL_ODBC_CLASS Poco::Data::ODBC
 #endif
 
-#include <Poco/Net/HTTPServerRequest.h>
-#include <Poco/Net/HTTPServerResponse.h>
-#include <Poco/Net/HTMLForm.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
+#include <Poco/Net/HTMLForm.h>
+#include <Poco/Net/HTTPServerRequest.h>
+#include <Poco/Net/HTTPServerResponse.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
-#include "validateODBCConnectionString.h"
 #include "getIdentifierQuote.h"
+#include "validateODBCConnectionString.h"
 
 namespace DB
 {
-
 void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response)
 {
     Poco::Net::HTMLForm params(request, request.stream());
     LOG_TRACE(log, "Request URI: " + request.getURI());
 
-    auto process_error = [&response, this](const std::string & message)
-    {
+    auto process_error = [&response, this](const std::string & message) {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             response.send() << message << std::endl;

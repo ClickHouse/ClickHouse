@@ -1,8 +1,8 @@
 #pragma once
-#include <Common/config.h>
 #include <Interpreters/Context.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequestHandler.h>
+#include <Common/config.h>
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 /** This handler establish connection to database, and retrieve quote style identifier
