@@ -27,7 +27,7 @@ AggregateFunctionPtr createAggregateFunctionAvg(const std::string & name, const 
     AggregateFunctionPtr res;
     DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
-        res.reset(createWithDecimalType<AggregateFuncAvg>(*data_type));
+        res.reset(createWithDecimalType<AggregateFuncAvg>(*data_type, *data_type));
     else
         res.reset(createWithNumericType<AggregateFuncAvg>(*data_type));
 
