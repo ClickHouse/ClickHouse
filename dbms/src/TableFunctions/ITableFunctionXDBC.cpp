@@ -24,6 +24,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNKNOWN_EXCEPTION;
+    extern const int LOGICAL_ERROR;
 }
 
 StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Context & context) const
@@ -42,9 +44,9 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
     for (auto i = 0u; i < args.size(); ++i)
         args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
 
-    std::string connection_string = "";
-    std::string schema_name = "";
-    std::string table_name = "";
+    std::string connection_string;
+    std::string schema_name;
+    std::string table_name;
 
     if (args.size() == 3)
     {
@@ -79,7 +81,7 @@ StoragePtr ITableFunctionXDBC::executeImpl(const ASTPtr & ast_function, const Co
     auto result = std::make_shared<StorageXDBC>(table_name, schema_name, table_name, ColumnsDescription{columns}, context, helper);
 
     if (!result)
-        throw Exception("Failed to instantiate storage from table function " + getName());
+        throw Exception("Failed to instantiate storage from table function " + getName(), ErrorCodes::UNKNOWN_EXCEPTION);
 
     result->startup();
     return result;

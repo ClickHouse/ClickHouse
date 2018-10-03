@@ -21,6 +21,7 @@ namespace ErrorCodes
 {
     extern const int EXTERNAL_EXECUTABLE_NOT_FOUND;
     extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /**
@@ -38,7 +39,7 @@ public:
     virtual IdentifierQuotingStyle getIdentifierQuotingStyle() = 0;
     virtual String getName() const = 0;
 
-    virtual ~IXDBCBridgeHelper() {}
+    virtual ~IXDBCBridgeHelper() = default;
 };
 
 using BridgeHelperPtr = std::shared_ptr<IXDBCBridgeHelper>;
@@ -99,6 +100,8 @@ public:
     {
         if (!quote_style.has_value())
         {
+            startBridgeSync();
+
             auto uri = createBaseURI();
             uri.setPath(IDENTIFIER_QUOTE_HANDLER);
             uri.addQueryParameter("connection_string", getConnectionString());
@@ -107,16 +110,15 @@ public:
             std::string character;
             readStringBinary(character, buf);
             if (character.length() > 1)
-                throw Exception("Failed to get quoting style from " + BridgeHelperMixin::serviceAlias());
-
-            if (character.length() == 0)
+                throw Exception("Failed to parse quoting style from '" + character + "' for service " + BridgeHelperMixin::serviceAlias(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            else if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
             else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '"')
                 quote_style = IdentifierQuotingStyle::DoubleQuotes;
             else
-                throw Exception("Can not map quote identifier '" + character + "' to enum value");
+                throw Exception("Can not map quote identifier '" + character + "' to enum value", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
 
         return *quote_style;
@@ -234,7 +236,7 @@ struct JDBCBridgeMixin
 
     static void startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, const Poco::Timespan &)
     {
-        throw Exception("jdbc-bridge is not running. Please, start it manually");
+        throw Exception("jdbc-bridge is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
     }
 };
 
