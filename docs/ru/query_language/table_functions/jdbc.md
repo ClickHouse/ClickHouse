@@ -11,13 +11,13 @@
 **Пример**
 
 ```sql
-SELECT * FROM url('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
+SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
 ```
 
 ```sql
-SELECT * FROM url('mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
+SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
 ```
 
 ```sql
-SELECT * FROM url('datasource://mysql-local', 'schema', 'table')
+SELECT * FROM jdbc('datasource://mysql-local', 'schema', 'table')
 ```

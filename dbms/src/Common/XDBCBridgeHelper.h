@@ -1,15 +1,14 @@
 #pragma once
 
-#include <Interpreters/Context.h>
-#include <Poco/Logger.h>
-#include <Poco/URI.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <sstream>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/Context.h>
 #include <Poco/File.h>
+#include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Path.h>
+#include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <Common/config.h>
@@ -18,7 +17,6 @@
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int EXTERNAL_EXECUTABLE_NOT_FOUND;
@@ -66,7 +64,6 @@ protected:
     }
 
 public:
-
     using Configuration = Poco::Util::AbstractConfiguration;
 
     const Configuration & config;
@@ -79,9 +76,8 @@ public:
     static constexpr inline auto IDENTIFIER_QUOTE_HANDLER = "/identifier_quote";
     static constexpr inline auto PING_OK_ANSWER = "Ok.";
 
-    XDBCBridgeHelper(
-            const Configuration & config_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
-            : http_timeout(http_timeout_), connection_string(connection_string_), config(config_)
+    XDBCBridgeHelper(const Configuration & config_, const Poco::Timespan & http_timeout_, const std::string & connection_string_)
+        : http_timeout(http_timeout_), connection_string(connection_string_), config(config_)
     {
         size_t bridge_port = config.getUInt(BridgeHelperMixin::configPrefix() + ".port", DEFAULT_PORT);
         std::string bridge_host = config.getString(BridgeHelperMixin::configPrefix() + ".host", DEFAULT_HOST);
@@ -115,9 +111,9 @@ public:
 
             if (character.length() == 0)
                 quote_style = IdentifierQuotingStyle::None;
-            else if(character[0] == '`')
+            else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;
-            else if(character[0] == '"')
+            else if (character[0] == '"')
                 quote_style = IdentifierQuotingStyle::DoubleQuotes;
             else
                 throw Exception("Can not map quote identifier '" + character + "' to enum value");
@@ -161,7 +157,8 @@ public:
                 std::this_thread::sleep_for(std::chrono::milliseconds(10));
             }
             if (!started)
-                throw Exception(BridgeHelperMixin::getName() + "BridgeHelper: " + BridgeHelperMixin::serviceAlias() + " is not responding", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
+                throw Exception(BridgeHelperMixin::getName() + "BridgeHelper: " + BridgeHelperMixin::serviceAlias() + " is not responding",
+                    ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
         }
     }
 
@@ -188,7 +185,7 @@ public:
 protected:
     Poco::URI createBaseURI() const
     {
-        size_t bridge_port = config.getUInt(BridgeHelperMixin::serviceAlias()+ ".port", DEFAULT_PORT);
+        size_t bridge_port = config.getUInt(BridgeHelperMixin::serviceAlias() + ".port", DEFAULT_PORT);
         std::string bridge_host = config.getString(BridgeHelperMixin::serviceAlias() + ".host", DEFAULT_HOST);
 
         Poco::URI uri;
@@ -199,8 +196,6 @@ protected:
     }
 
 private:
-
-
     bool checkBridgeIsRunning() const
     {
         try
@@ -224,24 +219,41 @@ private:
 struct JDBCBridgeMixin
 {
     static constexpr inline auto DEFAULT_PORT = 9019;
-    static const String configPrefix() { return "jdbc_bridge"; }
-    static const String serviceAlias() { return "clickhouse-jdbc-bridge"; }
-    static const String getName() { return "JDBC"; }
+    static const String configPrefix()
+    {
+        return "jdbc_bridge";
+    }
+    static const String serviceAlias()
+    {
+        return "clickhouse-jdbc-bridge";
+    }
+    static const String getName()
+    {
+        return "JDBC";
+    }
 
-    static void startBridge(const Poco::Util::AbstractConfiguration & , const Poco::Logger * , const Poco::Timespan & )
+    static void startBridge(const Poco::Util::AbstractConfiguration &, const Poco::Logger *, const Poco::Timespan &)
     {
         throw Exception("jdbc-bridge is not running. Please, start it manually");
     }
-
 };
 
-struct ODBCBridgeMixin {
-
+struct ODBCBridgeMixin
+{
     static constexpr inline auto DEFAULT_PORT = 9018;
 
-    static const String configPrefix() { return "odbc_bridge"; }
-    static const String serviceAlias() { return "clickhouse-odbc-bridge"; }
-    static const String getName() { return "ODBC"; }
+    static const String configPrefix()
+    {
+        return "odbc_bridge";
+    }
+    static const String serviceAlias()
+    {
+        return "clickhouse-odbc-bridge";
+    }
+    static const String getName()
+    {
+        return "ODBC";
+    }
 
     static void startBridge(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log, const Poco::Timespan & http_timeout)
     {
@@ -249,9 +261,9 @@ struct ODBCBridgeMixin {
 
         path.setFileName(
 #if CLICKHOUSE_SPLIT_BINARY
-                "clickhouse-odbc-bridge"
+            "clickhouse-odbc-bridge"
 #else
-                "clickhouse"
+            "clickhouse"
 #endif
         );
 
@@ -261,18 +273,19 @@ struct ODBCBridgeMixin {
         std::stringstream command;
 
         command << path.toString() <<
-                #if CLICKHOUSE_SPLIT_BINARY
-                " "
-                #else
-                " odbc-bridge "
+#if CLICKHOUSE_SPLIT_BINARY
+            " "
+#else
+            " odbc-bridge "
 #endif
-                ;
+            ;
 
         command << "--http-port " << config.getUInt(configPrefix() + ".port", DEFAULT_PORT) << ' ';
-        command << "--listen-host " << config.getString(configPrefix() + ".listen_host", XDBCBridgeHelper<ODBCBridgeMixin>::DEFAULT_HOST) << ' ';
+        command << "--listen-host " << config.getString(configPrefix() + ".listen_host", XDBCBridgeHelper<ODBCBridgeMixin>::DEFAULT_HOST)
+                << ' ';
         command << "--http-timeout " << http_timeout.totalMicroseconds() << ' ';
-        if (config.has("logger." + configPrefix() +"_log"))
-            command << "--log-path " << config.getString("logger."+configPrefix()+"_log") << ' ';
+        if (config.has("logger." + configPrefix() + "_log"))
+            command << "--log-path " << config.getString("logger." + configPrefix() + "_log") << ' ';
         if (config.has("logger." + configPrefix() + "_errlog"))
             command << "--err-log-path " << config.getString("logger." + configPrefix() + "_errlog") << ' ';
         if (config.has("logger." + configPrefix() + "_level"))
@@ -289,5 +302,4 @@ struct ODBCBridgeMixin {
         cmd->wait();
     }
 };
-
 }

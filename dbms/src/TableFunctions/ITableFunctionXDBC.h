@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Common/config.h>
-#include <Common/XDBCBridgeHelper.h>
+#include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <Storages/StorageXDBC.h>
+#include <Common/XDBCBridgeHelper.h>
+#include <Common/config.h>
 
 namespace DB
 {
@@ -19,8 +19,8 @@ private:
 
     /* A factory method to create bridge helper, that will assist in remote interaction */
     virtual BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
-            const Poco::Timespan & http_timeout_,
-            const std::string & connection_string_) const = 0;
+        const Poco::Timespan & http_timeout_,
+        const std::string & connection_string_) const = 0;
 };
 
 class TableFunctionJDBC : public ITableFunctionXDBC
@@ -31,11 +31,12 @@ public:
     {
         return name;
     }
-private:
 
+private:
     BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
-                                       const Poco::Timespan & http_timeout_,
-                                       const std::string & connection_string_) const override {
+        const Poco::Timespan & http_timeout_,
+        const std::string & connection_string_) const override
+    {
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config_, http_timeout_, connection_string_);
     }
 };
@@ -48,13 +49,13 @@ public:
     {
         return name;
     }
-private:
 
+private:
     BridgeHelperPtr createBridgeHelper(const Poco::Util::AbstractConfiguration & config_,
-                                       const Poco::Timespan & http_timeout_,
-                                       const std::string & connection_string_) const override {
+        const Poco::Timespan & http_timeout_,
+        const std::string & connection_string_) const override
+    {
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(config_, http_timeout_, connection_string_);
     }
 };
-
 }
