@@ -44,6 +44,14 @@ void ProgressValues::writeJSON(WriteBuffer & out) const
     writeText(bytes, out);
     writeCString("\",\"total_rows\":\"", out);
     writeText(total_rows, out);
+
+    if (total_rows > 0)
+    {
+        const size_t percent_complete = static_cast<size_t>(rows * 100.0 / total_rows);
+        writeCString("\",\"percent_complete\":\"", out);
+        writeText(percent_complete, out);
+    }
+
     writeCString("\"}", out);
 }
 

@@ -28,3 +28,9 @@
 7
 8
 9
+< X-ClickHouse-Progress: {"read_rows":"0","read_bytes":"0","total_rows":"8192","percent_complete":"0"}
+< X-ClickHouse-Progress: {"read_rows":"10","read_bytes":"40","total_rows":"8192","percent_complete":"0"}
+0
+3
+6
+9
