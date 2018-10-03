@@ -1,6 +1,5 @@
 #include <sstream>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
@@ -45,7 +44,6 @@ static void replaceConstFunction(const IAST & node, const Context & context, con
                 return;
 
             auto result_column = result_block.getByName(child->getColumnName()).column;
-            auto result_string = applyVisitor(FieldVisitorToString(), (*result_column)[0]);
 
             auto new_node = const_cast<IAST *>(&node);
 
