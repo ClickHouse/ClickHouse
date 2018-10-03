@@ -423,14 +423,21 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
             /// block.rows() <= read_result.block. We must filter block before adding columns to read_result.block
 
             /// Fill missing columns before filtering because some arrays from Nested may have empty data.
-            merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults);
+            merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults, block.rows());
 
             if (read_result.getFilter())
                 filterBlock(block, read_result.getFilter()->getData());
-
-            for (auto i : ext::range(0, block.columns()))
-                read_result.block.insert(std::move(block.getByPosition(i)));
         }
+        else
+        {
+            /// If block is empty, we still may need to add missing columns.
+            /// In that case use number of rows in result block and don't filter block.
+            merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults,
+                                                  read_result.numReadRows());
+        }
+
+        for (auto i : ext::range(0, block.columns()))
+            read_result.block.insert(std::move(block.getByPosition(i)));
 
         if (read_result.block)
         {
@@ -444,7 +451,8 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         if (read_result.block)
         {
             bool should_evaluate_missing_defaults;
-            merge_tree_reader->fillMissingColumns(read_result.block, should_reorder, should_evaluate_missing_defaults);
+            merge_tree_reader->fillMissingColumns(read_result.block, should_reorder, should_evaluate_missing_defaults,
+                                                  read_result.block.rows());
 
             if (should_evaluate_missing_defaults)
                 merge_tree_reader->evaluateMissingDefaults(read_result.block);
