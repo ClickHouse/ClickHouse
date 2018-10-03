@@ -340,7 +340,7 @@ struct Settings
     static void setDefaultValue(SETTING && setting, TYPE && default_value)
     {
         setting = setting.changed ? setting.value : default_value;
-    };
+    }
 };
 
 
