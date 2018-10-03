@@ -40,11 +40,10 @@ static void replaceConstFunction(const IAST & node, const Context & context, con
 
         if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*child))
         {
-_partition_id            auto result_block = getBlockWithConstants(function->clone(), context, all_columns);
+            auto result_block = getBlockWithConstants(function->clone(), context, all_columns);
             if (!result_block.has(child->getColumnName()))
-            {
                 return;
-            }
+
             auto result_column = result_block.getByName(child->getColumnName()).column;
             auto result_string = applyVisitor(FieldVisitorToString(), (*result_column)[0]);
 
