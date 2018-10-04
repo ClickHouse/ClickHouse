@@ -88,9 +88,7 @@ public:
         ping_url.setScheme("http");
         ping_url.setPath(PING_HANDLER);
     }
-
-    virtual ~XDBCBridgeHelper() {}
-
+    
     String getName() const override
     {
         return BridgeHelperMixin::getName();
