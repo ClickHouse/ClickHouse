@@ -396,7 +396,7 @@ public:
       */
     virtual bool canBeInsideNullable() const { return false; }
 
-    virtual bool withDictionary() const { return false; }
+    virtual bool lowCardinality() const { return false; }
 
 
     /// Updates avg_value_size_hint for newly read column. Uses to optimize deserialization. Zero expected for first column.
@@ -410,6 +410,11 @@ public:
 struct WhichDataType
 {
     TypeIndex idx;
+
+    /// For late initialization.
+    WhichDataType()
+        : idx(TypeIndex::Nothing)
+    {}
 
     WhichDataType(const IDataType & data_type)
         : idx(data_type.getTypeId())
