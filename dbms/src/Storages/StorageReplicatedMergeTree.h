@@ -195,6 +195,8 @@ public:
 
     ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
 
+    ASTPtr getPrimaryExpression() const override { return data.getPrimaryExpression(); }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();
