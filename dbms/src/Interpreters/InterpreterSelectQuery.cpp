@@ -20,7 +20,7 @@
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/RollupBlockInputStream.h>
 #include <DataStreams/CubeBlockInputStream.h>
-#include <DataStreams/ConvertColumnWithDictionaryToFullBlockInputStream.h>
+#include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -202,8 +202,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 context.addExternalTable(it.first, it.second);
 
         if (query_analyzer->isRewriteSubqueriesPredicate())
-            interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1, only_analyze);
+        {
+            /// remake interpreter_subquery when PredicateOptimizer is rewrite subqueries and main table is subquery
+            if (typeid_cast<ASTSelectWithUnionQuery *>(table_expression.get()))
+                interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
+                    table_expression, getSubqueryContext(context), required_columns, QueryProcessingStage::Complete, subquery_depth + 1,
+                    only_analyze);
+        }
+
     }
 
     if (interpreter_subquery)
@@ -962,8 +968,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 {
     pipeline.transform([&](auto & stream)
     {
-        stream = //std::make_shared<ConvertColumnWithDictionaryToFullBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(stream, expression); //);
+        stream = std::make_shared<ExpressionBlockInputStream>(stream, expression);
     });
 
     Names key_names;

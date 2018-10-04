@@ -37,8 +37,8 @@
 #include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/DateTimeTransforms.h>
-#include <DataTypes/DataTypeWithDictionary.h>
-#include <Columns/ColumnWithDictionary.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
@@ -1374,7 +1374,7 @@ protected:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
@@ -1750,10 +1750,10 @@ private:
 
     WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
-        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
-        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
-        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
-        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
+        const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from_type.get());
+        const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(to_type.get());
+        const auto & from_nested = from_low_cardinality ? from_low_cardinality->getDictionaryType() : from_type;
+        const auto & to_nested = to_low_cardinality ? to_low_cardinality->getDictionaryType() : to_type;
 
         if (from_type->onlyNull())
         {
@@ -1768,10 +1768,10 @@ private:
         }
 
         auto wrapper = prepareRemoveNullable(from_nested, to_nested);
-        if (!from_with_dict && !to_with_dict)
+        if (!from_low_cardinality && !to_low_cardinality)
             return wrapper;
 
-        return [wrapper, from_with_dict, to_with_dict]
+        return [wrapper, from_low_cardinality, to_low_cardinality]
                 (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto & arg = block.getByPosition(arguments[0]);
@@ -1790,21 +1790,21 @@ private:
 
                 auto tmp_rows_count = input_rows_count;
 
-                if (to_with_dict)
-                    res.type = to_with_dict->getDictionaryType();
+                if (to_low_cardinality)
+                    res.type = to_low_cardinality->getDictionaryType();
 
-                if (from_with_dict)
+                if (from_low_cardinality)
                 {
-                    auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(prev_arg_col.get());
-                    arg.column = col_with_dict->getDictionary().getNestedColumn();
-                    arg.type = from_with_dict->getDictionaryType();
+                    auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(prev_arg_col.get());
+                    arg.column = col_low_cardinality->getDictionary().getNestedColumn();
+                    arg.type = from_low_cardinality->getDictionaryType();
 
                     /// TODO: Make map with defaults conversion.
                     src_converted_to_full_column = !removeNullable(arg.type)->equals(*removeNullable(res.type));
                     if (src_converted_to_full_column)
-                        arg.column = arg.column->index(col_with_dict->getIndexes(), 0);
+                        arg.column = arg.column->index(col_low_cardinality->getIndexes(), 0);
                     else
-                        res_indexes = col_with_dict->getIndexesPtr();
+                        res_indexes = col_low_cardinality->getIndexesPtr();
 
                     tmp_rows_count = arg.column->size();
                 }
@@ -1817,18 +1817,18 @@ private:
                 res.type = prev_res_type;
             }
 
-            if (to_with_dict)
+            if (to_low_cardinality)
             {
-                auto res_column = to_with_dict->createColumn();
-                auto * col_with_dict = typeid_cast<ColumnWithDictionary *>(res_column.get());
+                auto res_column = to_low_cardinality->createColumn();
+                auto * col_low_cardinality = typeid_cast<ColumnLowCardinality *>(res_column.get());
 
-                if (from_with_dict && !src_converted_to_full_column)
+                if (from_low_cardinality && !src_converted_to_full_column)
                 {
                     auto res_keys = std::move(res.column);
-                    col_with_dict->insertRangeFromDictionaryEncodedColumn(*res_keys, *res_indexes);
+                    col_low_cardinality->insertRangeFromDictionaryEncodedColumn(*res_keys, *res_indexes);
                 }
                 else
-                    col_with_dict->insertRangeFromFullColumn(*res.column, 0, res.column->size());
+                    col_low_cardinality->insertRangeFromFullColumn(*res.column, 0, res.column->size());
 
                 res.column = std::move(res_column);
             }
@@ -2026,7 +2026,7 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
     template <typename DataType>
