@@ -597,9 +597,9 @@ BlockInputStreams MergeTreeDataSelectExecutor::readFromParts(
             stream = std::make_shared<AddingConstColumnBlockInputStream<Float64>>(
                 stream, std::make_shared<DataTypeFloat64>(), used_sample_factor, "_sample_factor");
 
-    if (query_info.prewhere_info && query_info.prewhere_info->after_sampling_actions)
+    if (query_info.prewhere_info && query_info.prewhere_info->remove_columns_actions)
         for (auto & stream : res)
-            stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->after_sampling_actions);
+            stream = std::make_shared<ExpressionBlockInputStream>(stream, query_info.prewhere_info->remove_columns_actions);
 
     return res;
 }
