@@ -91,6 +91,8 @@ public:
         zkutil::ZooKeeperNodeCache & zk_node_cache,
         bool fallback_to_preprocessed = false);
 
+    /// Save preprocessed config to specified directory.
+    /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
 public:
