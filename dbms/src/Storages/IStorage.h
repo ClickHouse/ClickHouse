@@ -343,23 +343,11 @@ public:
     /// Returns data path if storage supports it, empty string otherwise.
     virtual String getDataPath() const { return {}; }
 
-protected:
+    /// Returns sampling expression for storage or nullptr if there is no.
+    virtual ASTPtr getSamplingExpression() const { return nullptr; }
+
     using ITableDeclaration::ITableDeclaration;
     using std::enable_shared_from_this<IStorage>::shared_from_this;
-
-    void checkQueryProcessingStage(QueryProcessingStage::Enum processed_stage, const Context & context)
-    {
-        auto expected_stage = getQueryProcessingStage(context);
-        checkQueryProcessingStage(processed_stage, expected_stage);
-    }
-
-    void checkQueryProcessingStage(QueryProcessingStage::Enum processed_stage, QueryProcessingStage::Enum expected_stage)
-    {
-        if (processed_stage != expected_stage)
-            throw Exception("Unexpected query processing stage for storage " + getName() +
-                            ": expected " + QueryProcessingStage::toString(expected_stage) +
-                            ", got " + QueryProcessingStage::toString(processed_stage), ErrorCodes::LOGICAL_ERROR);
-    }
 
 private:
     friend class TableStructureReadLock;

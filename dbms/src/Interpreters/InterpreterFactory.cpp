@@ -54,10 +54,11 @@ namespace ErrorCodes
 {
     extern const int READONLY;
     extern const int UNKNOWN_TYPE_OF_QUERY;
+    extern const int QUERY_IS_PROHIBITED;
 }
 
 
-static void throwIfReadOnly(Context & context)
+static void throwIfNoAccess(Context & context)
 {
     if (context.getSettingsRef().readonly)
     {
@@ -68,6 +69,8 @@ static void throwIfReadOnly(Context & context)
         else
             throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
     }
+    else if (!context.getSettingsRef().allow_ddl)
+        throw Exception("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 
 
@@ -95,17 +98,17 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (typeid_cast<ASTCreateQuery *>(query.get()))
     {
-        /// readonly is checked inside InterpreterCreateQuery
+        /// readonly and allow_ddl are checked inside InterpreterCreateQuery
         return std::make_unique<InterpreterCreateQuery>(query, context);
     }
     else if (typeid_cast<ASTDropQuery *>(query.get()))
     {
-        /// readonly is checked inside InterpreterDropQuery
+        /// readonly and allow_ddl are checked inside InterpreterDropQuery
         return std::make_unique<InterpreterDropQuery>(query, context);
     }
     else if (typeid_cast<ASTRenameQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        throwIfNoAccess(context);
         return std::make_unique<InterpreterRenameQuery>(query, context);
     }
     else if (typeid_cast<ASTShowTablesQuery *>(query.get()))
@@ -123,7 +126,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (typeid_cast<ASTOptimizeQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
     else if (typeid_cast<ASTExistsQuery *>(query.get()))
@@ -148,7 +151,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (typeid_cast<ASTAlterQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        throwIfNoAccess(context);
         return std::make_unique<InterpreterAlterQuery>(query, context);
     }
     else if (typeid_cast<ASTCheckQuery *>(query.get()))
@@ -161,7 +164,7 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (typeid_cast<ASTSystemQuery *>(query.get()))
     {
-        throwIfReadOnly(context);
+        throwIfNoAccess(context);
         return std::make_unique<InterpreterSystemQuery>(query, context);
     }
     else

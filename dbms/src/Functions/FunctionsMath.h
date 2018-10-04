@@ -1,13 +1,15 @@
 #pragma once
 
 #include <common/preciseExp10.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/config.h>
-#include <Common/typeid_cast.h>
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.
   * Disabled due to licence compatibility limitations.
@@ -78,68 +80,91 @@ private:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments.front()->isNumber())
-            throw Exception{"Illegal type " + arguments.front()->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+        const auto & arg = arguments.front();
+        if (!isNumber(arg) && !isDecimal(arg))
+            throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         return std::make_shared<DataTypeFloat64>();
     }
 
-    template <typename FieldType>
-    bool execute(Block & block, const IColumn * arg, const size_t result)
+    template <typename T>
+    static void executeInIterations(const T * src_data, Float64 * dst_data, size_t size)
     {
-        if (const auto col = checkAndGetColumn<ColumnVector<FieldType>>(arg))
+        const size_t rows_remaining = size % Impl::rows_per_iteration;
+        const size_t rows_size = size - rows_remaining;
+
+        for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
+            Impl::execute(&src_data[i], &dst_data[i]);
+
+        if (rows_remaining != 0)
         {
-            auto dst = ColumnVector<Float64>::create();
+            T src_remaining[Impl::rows_per_iteration];
+            memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(T));
+            memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(T));
+            Float64 dst_remaining[Impl::rows_per_iteration];
 
-            const auto & src_data = col->getData();
-            const auto src_size = src_data.size();
-            auto & dst_data = dst->getData();
-            dst_data.resize(src_size);
+            Impl::execute(src_remaining, dst_remaining);
 
-            const auto rows_remaining = src_size % Impl::rows_per_iteration;
-            const auto rows_size = src_size - rows_remaining;
-
-            for (size_t i = 0; i < rows_size; i += Impl::rows_per_iteration)
-                Impl::execute(&src_data[i], &dst_data[i]);
-
-            if (rows_remaining != 0)
-            {
-                FieldType src_remaining[Impl::rows_per_iteration];
-                memcpy(src_remaining, &src_data[rows_size], rows_remaining * sizeof(FieldType));
-                memset(src_remaining + rows_remaining, 0, (Impl::rows_per_iteration - rows_remaining) * sizeof(FieldType));
-                Float64 dst_remaining[Impl::rows_per_iteration];
-
-                Impl::execute(src_remaining, dst_remaining);
-
-                memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
-            }
-
-            block.getByPosition(result).column = std::move(dst);
-            return true;
+            memcpy(&dst_data[rows_size], dst_remaining, rows_remaining * sizeof(Float64));
         }
+    }
 
-        return false;
+    template <typename T>
+    static bool execute(Block & block, const ColumnVector<T> * col, const size_t result)
+    {
+        const auto & src_data = col->getData();
+        const size_t size = src_data.size();
+
+        auto dst = ColumnVector<Float64>::create();
+        auto & dst_data = dst->getData();
+        dst_data.resize(size);
+
+        executeInIterations(src_data.data(), dst_data.data(), size);
+
+        block.getByPosition(result).column = std::move(dst);
+        return true;
+    }
+
+    template <typename T>
+    static bool execute(Block & block, const ColumnDecimal<T> * col, const size_t result)
+    {
+        const auto & src_data = col->getData();
+        const size_t size = src_data.size();
+        UInt32 scale = src_data.getScale();
+
+        auto dst = ColumnVector<Float64>::create();
+        auto & dst_data = dst->getData();
+        dst_data.resize(size);
+
+        for (size_t i = 0; i < size; ++i)
+            dst_data[i] = convertFromDecimal<DataTypeDecimal<T>, DataTypeNumber<Float64>>(src_data[i], scale);
+
+        executeInIterations(dst_data.data(), dst_data.data(), size);
+
+        block.getByPosition(result).column = std::move(dst);
+        return true;
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const auto arg = block.getByPosition(arguments[0]).column.get();
+        const ColumnWithTypeAndName & col = block.getByPosition(arguments[0]);
 
-        if (!execute<UInt8>(block, arg, result) &&
-            !execute<UInt16>(block, arg, result) &&
-            !execute<UInt32>(block, arg, result) &&
-            !execute<UInt64>(block, arg, result) &&
-            !execute<Int8>(block, arg, result) &&
-            !execute<Int16>(block, arg, result) &&
-            !execute<Int32>(block, arg, result) &&
-            !execute<Int64>(block, arg, result) &&
-            !execute<Float32>(block, arg, result) &&
-            !execute<Float64>(block, arg, result))
+        auto call = [&](const auto & types) -> bool
         {
-            throw Exception{"Illegal column " + arg->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN};
-        }
+            using Types = std::decay_t<decltype(types)>;
+            using Type = typename Types::RightType;
+            using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
+
+            const auto col_vec = checkAndGetColumn<ColVecType>(col.column.get());
+            return execute<Type>(block, col_vec, result);
+        };
+
+        if (!callOnBasicType<void, true, true, true>(col.type->getTypeId(), call))
+            throw Exception{"Illegal column " + col.column->getName() + " of argument of function " + getName(),
+                ErrorCodes::ILLEGAL_COLUMN};
     }
 };
 
@@ -199,7 +224,7 @@ private:
     {
         const auto check_argument_type = [this] (const IDataType * arg)
         {
-            if (!arg->isNumber())
+            if (!isNumber(arg))
                 throw Exception{"Illegal type " + arg->getName() + " of argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         };
@@ -211,8 +236,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeRight(Block & block, const size_t result, const ColumnConst * left_arg,
-        const IColumn * right_arg)
+    bool executeTyped(Block & block, const size_t result, const ColumnConst * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -251,8 +275,7 @@ private:
     }
 
     template <typename LeftType, typename RightType>
-    bool executeRight(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg,
-        const IColumn * right_arg)
+    bool executeTyped(Block & block, const size_t result, const ColumnVector<LeftType> * left_arg, const IColumn * right_arg)
     {
         if (const auto right_arg_typed = checkAndGetColumn<ColumnVector<RightType>>(right_arg))
         {
@@ -324,80 +347,47 @@ private:
         return false;
     }
 
-    template <typename LeftType>
-    bool executeLeft(Block & block, const ColumnNumbers & arguments, const size_t result,
-        const IColumn * left_arg)
-    {
-        if (const auto left_arg_typed = checkAndGetColumn<ColumnVector<LeftType>>(left_arg))
-        {
-            const auto right_arg = block.getByPosition(arguments[1]).column.get();
-
-            if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, UInt32>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, UInt64>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int8>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int16>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int32>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int64>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Float32>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Float64>(block, result, left_arg_typed, right_arg))
-            {
-                return true;
-            }
-            else
-            {
-                throw Exception{"Illegal column " + block.getByPosition(arguments[1]).column->getName() +
-                    " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
-            }
-        }
-        else if (const auto left_arg_typed = checkAndGetColumnConst<ColumnVector<LeftType>>(left_arg))
-        {
-            const auto right_arg = block.getByPosition(arguments[1]).column.get();
-
-            if (executeRight<LeftType, UInt8>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, UInt16>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, UInt32>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, UInt64>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int8>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int16>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int32>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Int64>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Float32>(block, result, left_arg_typed, right_arg) ||
-                executeRight<LeftType, Float64>(block, result, left_arg_typed, right_arg))
-            {
-                return true;
-            }
-            else
-            {
-                throw Exception{"Illegal column " + block.getByPosition(arguments[1]).column->getName() +
-                    " of second argument of function " + getName(),
-                    ErrorCodes::ILLEGAL_COLUMN};
-            }
-        }
-
-        return false;
-    }
-
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const auto left_arg = block.getByPosition(arguments[0]).column.get();
+        const ColumnWithTypeAndName & col_left = block.getByPosition(arguments[0]);
+        const ColumnWithTypeAndName & col_right = block.getByPosition(arguments[1]);
 
-        if (!executeLeft<UInt8>(block, arguments, result, left_arg) &&
-            !executeLeft<UInt16>(block, arguments, result, left_arg) &&
-            !executeLeft<UInt32>(block, arguments, result, left_arg) &&
-            !executeLeft<UInt64>(block, arguments, result, left_arg) &&
-            !executeLeft<Int8>(block, arguments, result, left_arg) &&
-            !executeLeft<Int16>(block, arguments, result, left_arg) &&
-            !executeLeft<Int32>(block, arguments, result, left_arg) &&
-            !executeLeft<Int64>(block, arguments, result, left_arg) &&
-            !executeLeft<Float32>(block, arguments, result, left_arg) &&
-            !executeLeft<Float64>(block, arguments, result, left_arg))
+        auto call = [&](const auto & types) -> bool
         {
-            throw Exception{"Illegal column " + left_arg->getName() + " of argument of function " + getName(),
+            using Types = std::decay_t<decltype(types)>;
+            using LeftType = typename Types::LeftType;
+            using RightType = typename Types::RightType;
+            using ColVecLeft = ColumnVector<LeftType>;
+
+            const IColumn * left_arg = col_left.column.get();
+            const IColumn * right_arg = col_right.column.get();
+
+            if (const auto left_arg_typed = checkAndGetColumn<ColVecLeft>(left_arg))
+            {
+                if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
+                    return true;
+
+                throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN};
+            }
+            else if (const auto left_arg_typed = checkAndGetColumnConst<ColVecLeft>(left_arg))
+            {
+                if (executeTyped<LeftType, RightType>(block, result, left_arg_typed, right_arg))
+                    return true;
+
+                throw Exception{"Illegal column " + right_arg->getName() + " of second argument of function " + getName(),
+                    ErrorCodes::ILLEGAL_COLUMN};
+            }
+
+            return false;
+        };
+
+        TypeIndex left_index = col_left.type->getTypeId();
+        TypeIndex right_index = col_right.type->getTypeId();
+
+        if (!callOnBasicTypes<true, true, false>(left_index, right_index, call))
+            throw Exception{"Illegal column " + col_left.column->getName() + " of argument of function " + getName(),
                 ErrorCodes::ILLEGAL_COLUMN};
-        }
     }
 };
 

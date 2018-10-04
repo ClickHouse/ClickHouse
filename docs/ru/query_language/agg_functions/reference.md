@@ -68,6 +68,20 @@ FROM ontime
 
 Вычисляет значение arg при минимальном значении val. Если есть несколько разных значений arg для минимальных значений val, то выдаётся первое попавшееся из таких значений.
 
+**Пример:**
+```
+┌─user─────┬─salary─┐
+│ director │   5000 │
+│ manager  │   3000 │
+│ worker   │   1000 │
+└──────────┴────────┘
+
+SELECT argMin(user, salary) FROM salary
+
+┌─argMin(user, salary)─┐
+│ worker               │
+└──────────────────────┘
+```
 
 ## argMax(arg, val)
 

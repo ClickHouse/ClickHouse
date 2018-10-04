@@ -725,7 +725,7 @@ private:
             return true;
         };
 
-        if (!callOnBasicTypes(left_number, right_number, call))
+        if (!callOnBasicTypes<true, false, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
     }
@@ -817,17 +817,9 @@ private:
         const IColumn * column_number = left_is_num ? col_left_untyped : col_right_untyped;
         const IDataType * number_type = left_is_num ? left_type.get() : right_type.get();
 
-        bool is_date = false;
-        bool is_date_time = false;
-        bool is_uuid = false;
-        bool is_enum8 = false;
-        bool is_enum16 = false;
+        WhichDataType which(number_type);
 
-        const auto legal_types = (is_date = checkAndGetDataType<DataTypeDate>(number_type))
-            || (is_date_time = checkAndGetDataType<DataTypeDateTime>(number_type))
-            || (is_uuid = checkAndGetDataType<DataTypeUUID>(number_type))
-            || (is_enum8 = checkAndGetDataType<DataTypeEnum8>(number_type))
-            || (is_enum16 = checkAndGetDataType<DataTypeEnum16>(number_type));
+        const bool legal_types = which.isDateOrDateTime() || which.isEnum() || which.isUUID();
 
         const auto column_string = checkAndGetColumnConst<ColumnString>(column_string_untyped);
         if (!column_string || !legal_types)
@@ -835,7 +827,7 @@ private:
 
         StringRef string_value = column_string->getDataAt(0);
 
-        if (is_date)
+        if (which.isDate())
         {
             DayNum date;
             ReadBufferFromMemory in(string_value.data, string_value.size);
@@ -849,7 +841,7 @@ private:
                 left_is_num ? col_left_untyped : parsed_const_date,
                 left_is_num ? parsed_const_date : col_right_untyped);
         }
-        else if (is_date_time)
+        else if (which.isDateTime())
         {
             time_t date_time;
             ReadBufferFromMemory in(string_value.data, string_value.size);
@@ -863,7 +855,7 @@ private:
                 left_is_num ? col_left_untyped : parsed_const_date_time,
                 left_is_num ? parsed_const_date_time : col_right_untyped);
         }
-        else if (is_uuid)
+        else if (which.isUUID())
         {
             UUID uuid;
             ReadBufferFromMemory in(string_value.data, string_value.size);
@@ -878,10 +870,10 @@ private:
                 left_is_num ? parsed_const_uuid : col_right_untyped);
         }
 
-        else if (is_enum8)
+        else if (which.isEnum8())
             executeEnumWithConstString<DataTypeEnum8>(block, result, column_number, column_string,
                 number_type, left_is_num, input_rows_count);
-        else if (is_enum16)
+        else if (which.isEnum16())
             executeEnumWithConstString<DataTypeEnum16>(block, result, column_number, column_string,
                 number_type, left_is_num, input_rows_count);
 
@@ -1085,62 +1077,26 @@ public:
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        bool left_is_date = false;
-        bool left_is_date_time = false;
-        bool left_is_uuid = false;
-        bool left_is_enum8 = false;
-        bool left_is_enum16 = false;
-        bool left_is_string = false;
-        bool left_is_fixed_string = false;
-        const DataTypeTuple * left_tuple = nullptr;
+        WhichDataType left(arguments[0].get());
+        WhichDataType right(arguments[1].get());
 
-        false
-            || (left_is_date         = checkAndGetDataType<DataTypeDate>(arguments[0].get()))
-            || (left_is_date_time    = checkAndGetDataType<DataTypeDateTime>(arguments[0].get()))
-            || (left_is_enum8        = checkAndGetDataType<DataTypeEnum8>(arguments[0].get()))
-            || (left_is_uuid         = checkAndGetDataType<DataTypeUUID>(arguments[0].get()))
-            || (left_is_enum16       = checkAndGetDataType<DataTypeEnum16>(arguments[0].get()))
-            || (left_is_string       = checkAndGetDataType<DataTypeString>(arguments[0].get()))
-            || (left_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[0].get()))
-            || (left_tuple           = checkAndGetDataType<DataTypeTuple>(arguments[0].get()));
-
-        const bool left_is_enum = left_is_enum8 || left_is_enum16;
-
-        bool right_is_date = false;
-        bool right_is_date_time = false;
-        bool right_is_uuid = false;
-        bool right_is_enum8 = false;
-        bool right_is_enum16 = false;
-        bool right_is_string = false;
-        bool right_is_fixed_string = false;
-        const DataTypeTuple * right_tuple = nullptr;
-
-        false
-            || (right_is_date = checkAndGetDataType<DataTypeDate>(arguments[1].get()))
-            || (right_is_date_time = checkAndGetDataType<DataTypeDateTime>(arguments[1].get()))
-            || (right_is_uuid = checkAndGetDataType<DataTypeUUID>(arguments[1].get()))
-            || (right_is_enum8 = checkAndGetDataType<DataTypeEnum8>(arguments[1].get()))
-            || (right_is_enum16 = checkAndGetDataType<DataTypeEnum16>(arguments[1].get()))
-            || (right_is_string = checkAndGetDataType<DataTypeString>(arguments[1].get()))
-            || (right_is_fixed_string = checkAndGetDataType<DataTypeFixedString>(arguments[1].get()))
-            || (right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get()));
-
-        const bool right_is_enum = right_is_enum8 || right_is_enum16;
+        const DataTypeTuple * left_tuple = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
+        const DataTypeTuple * right_tuple = checkAndGetDataType<DataTypeTuple>(arguments[1].get());
 
         if (!((arguments[0]->isValueRepresentedByNumber() && arguments[1]->isValueRepresentedByNumber())
-            || ((left_is_string || left_is_fixed_string) && (right_is_string || right_is_fixed_string))
-            || (left_is_date && right_is_date)
-            || (left_is_date && right_is_string)    /// You can compare the date, datetime and an enumeration with a constant string.
-            || (left_is_string && right_is_date)
-            || (left_is_date_time && right_is_date_time)
-            || (left_is_date_time && right_is_string)
-            || (left_is_string && right_is_date_time)
-            || (left_is_uuid && right_is_uuid)
-            || (left_is_uuid && right_is_string)
-            || (left_is_string && right_is_uuid)
-            || (left_is_enum && right_is_enum && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
-            || (left_is_enum && right_is_string)
-            || (left_is_string && right_is_enum)
+            || (left.isStringOrFixedString() && right.isStringOrFixedString())
+            || (left.isDate() && right.isDate())
+            || (left.isDate() && right.isString())    /// You can compare the date, datetime and an enumeration with a constant string.
+            || (left.isString() && right.isDate())
+            || (left.isDateTime() && right.isDateTime())
+            || (left.isDateTime() && right.isString())
+            || (left.isString() && right.isDateTime())
+            || (left.isUUID() && right.isUUID())
+            || (left.isUUID() && right.isString())
+            || (left.isString() && right.isUUID())
+            || (left.isEnum() && right.isEnum() && arguments[0]->getName() == arguments[1]->getName()) /// only equivalent enum type values can be compared against
+            || (left.isEnum() && right.isString())
+            || (left.isString() && right.isEnum())
             || (left_tuple && right_tuple && left_tuple->getElements().size() == right_tuple->getElements().size())
             || (arguments[0]->equals(*arguments[1]))))
         {
@@ -1203,9 +1159,9 @@ public:
         {
             executeTuple(block, result, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
         }
-        else if (isDecimal(*left_type) || isDecimal(*right_type))
+        else if (isDecimal(left_type) || isDecimal(right_type))
         {
-            if (!allowDecimalComparison(*left_type, *right_type))
+            if (!allowDecimalComparison(left_type, right_type))
                 throw Exception("No operation " + getName() + " between " + left_type->getName() + " and " + right_type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -1237,7 +1193,7 @@ public:
         auto isFloatingPoint = &typeIsEither<DataTypeFloat32, DataTypeFloat64>;
         if ((isBigInteger(*types[0]) && isFloatingPoint(*types[1])) || (isBigInteger(*types[1]) && isFloatingPoint(*types[0])))
             return false; /// TODO: implement (double, int_N where N > double's mantissa width)
-        return types[0]->isValueRepresentedByNumber() && types[1]->isValueRepresentedByNumber();
+        return isCompilableType(types[0]) && isCompilableType(types[1]);
     }
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const DataTypes & types, ValuePlaceholders values) const override

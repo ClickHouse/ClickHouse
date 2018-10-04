@@ -393,6 +393,9 @@ namespace ErrorCodes
     extern const int REPLICA_STATUS_CHANGED = 416;
     extern const int EXPECTED_ALL_OR_ANY = 417;
     extern const int UNKNOWN_JOIN_STRICTNESS = 418;
+    extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN = 419;
+    extern const int CANNOT_UPDATE_COLUMN = 420;
+    extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

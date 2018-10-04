@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
+#include <Common/config.h>
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <common/ThreadPool.h>
@@ -148,6 +149,11 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_UNCOMPRESSED_CACHE:
             system_context.dropUncompressedCache();
             break;
+#if USE_EMBEDDED_COMPILER
+        case Type::DROP_COMPILED_EXPRESSION_CACHE:
+            system_context.dropCompiledExpressionCache();
+            break;
+#endif
         case Type::RELOAD_DICTIONARY:
             system_context.getExternalDictionaries().reloadDictionary(query.target_dictionary);
             break;
@@ -219,7 +225,7 @@ BlockIO InterpreterSystemQuery::execute()
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
 {
     auto database = system_context.getDatabase(database_name);
-    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name, "Table " + database_name + "." + table_name + " is restarting right now");
+    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
     ASTPtr create_ast;
 
     /// Detach actions

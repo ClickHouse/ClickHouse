@@ -97,6 +97,8 @@ ODBCDictionarySource::ODBCDictionarySource(const ODBCDictionarySource & other)
     invalidate_query{other.invalidate_query},
     invalidate_query_response{other.invalidate_query_response},
     odbc_bridge_helper{other.odbc_bridge_helper},
+    bridge_url{other.bridge_url},
+    timeouts{other.timeouts},
     global_context{other.global_context}
 {
 
@@ -185,10 +187,16 @@ std::string ODBCDictionarySource::doInvalidateQuery(const std::string & request)
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
+
     odbc_bridge_helper.startODBCBridgeSync();
 
+    auto invalidate_url = odbc_bridge_helper.getMainURI();
+    auto url_params = odbc_bridge_helper.getURLParams(invalidate_sample_block.getNamesAndTypesList().toString(), max_block_size);
+    for (const auto & [name, value] : url_params)
+        invalidate_url.addQueryParameter(name, value);
+
     ODBCBridgeBlockInputStream stream(
-        bridge_url,
+        invalidate_url,
         [request](std::ostream & os) { os << "query=" << request; },
         invalidate_sample_block,
         global_context,

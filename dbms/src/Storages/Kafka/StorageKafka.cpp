@@ -2,7 +2,6 @@
 #include <Common/config_version.h>
 #if USE_RDKAFKA
 
-#include <thread>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
@@ -25,7 +24,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/StorageKafka.h> // Y_IGNORE
+#include <Storages/Kafka/StorageKafka.h>
 #include <Storages/StorageFactory.h>
 #include <IO/ReadBuffer.h>
 #include <common/logger_useful.h>
@@ -33,7 +32,7 @@
 #if __has_include(<rdkafka.h>) // maybe bundled
 #include <rdkafka.h> // Y_IGNORE
 #else // system
-#include <librdkafka/rdkafka.h> // Y_IGNORE
+#include <librdkafka/rdkafka.h>
 #endif
 
 
@@ -49,6 +48,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 using namespace Poco::Util;
@@ -132,7 +132,8 @@ public:
         : ReadBuffer(nullptr, 0), consumer(consumer_), current(nullptr),
         current_pending(false), log(log_), read_messages(0), row_delimiter(row_delimiter_)
     {
-        LOG_TRACE(log, "Row delimiter is: " << row_delimiter);
+        if (row_delimiter != '\0')
+            LOG_TRACE(log, "Row delimiter is: " << row_delimiter);
     }
 
     ~ReadBufferFromKafkaConsumer() override { reset(); }
@@ -156,23 +157,20 @@ class KafkaBlockInputStream : public IProfilingBlockInputStream
 {
 public:
 
-    KafkaBlockInputStream(StorageKafka & storage_, StorageKafka::ConsumerPtr consumer_, const Context & context_, const String & schema, size_t max_block_size)
-        : storage(storage_), consumer(consumer_)
+    KafkaBlockInputStream(StorageKafka & storage_, const Context & context_, const String & schema, size_t max_block_size_)
+        : storage(storage_), consumer(nullptr), context(context_), max_block_size(max_block_size_)
     {
         // Always skip unknown fields regardless of the context (JSON or TSKV)
-        Context context = context_;
         context.setSetting("input_format_skip_unknown_fields", UInt64(1));
         if (schema.size() > 0)
             context.setSetting("format_schema", schema);
-
-        // Create a formatted reader on Kafka messages
-        LOG_TRACE(storage.log, "Creating formatted reader");
-        read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log, storage.row_delimiter);
-        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     ~KafkaBlockInputStream() override
     {
+        if (!hasClaimed())
+            return;
+
         // An error was thrown during the stream or it did not finish successfully
         // The read offsets weren't comitted, so consumer must rejoin the group from the original starting point
         if (!finalized)
@@ -184,6 +182,7 @@ public:
 
         // Return consumer for another reader
         storage.pushConsumer(consumer);
+        consumer = nullptr;
     }
 
     String getName() const override
@@ -193,16 +192,28 @@ public:
 
     Block readImpl() override
     {
-        if (isCancelledOrThrowIfKilled())
+        if (isCancelledOrThrowIfKilled() || !hasClaimed())
             return {};
 
         return reader->read();
     }
 
-    Block getHeader() const override { return reader->getHeader(); }
+    Block getHeader() const override { return storage.getSampleBlock(); }
 
     void readPrefixImpl() override
     {
+        if (!hasClaimed())
+        {
+            // Create a formatted reader on Kafka messages
+            LOG_TRACE(storage.log, "Creating formatted reader");
+            consumer = storage.tryClaimConsumer(context.getSettingsRef().queue_max_wait_ms.totalMilliseconds());
+            if (consumer == nullptr)
+                throw Exception("Failed to claim consumer: ", ErrorCodes::TIMEOUT_EXCEEDED);
+
+            read_buf = std::make_unique<ReadBufferFromKafkaConsumer>(consumer->stream, storage.log, storage.row_delimiter);
+            reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        }
+
         // Start reading data
         finalized = false;
         reader->readPrefix();
@@ -210,10 +221,12 @@ public:
 
     void readSuffixImpl() override
     {
-        reader->readSuffix();
-
-        // Store offsets read in this stream
-        read_buf->commit();
+        if (hasClaimed())
+        {
+            reader->readSuffix();
+            // Store offsets read in this stream
+            read_buf->commit();
+        }
 
         // Mark as successfully finished
         finalized = true;
@@ -222,10 +235,15 @@ public:
 private:
     StorageKafka & storage;
     StorageKafka::ConsumerPtr consumer;
+    Context context;
+    size_t max_block_size;
     Block sample_block;
     std::unique_ptr<ReadBufferFromKafkaConsumer> read_buf;
-    BlockInputStreamPtr reader;
+    BlockInputStreamPtr reader = nullptr;
     bool finalized = false;
+
+    // Return true if consumer has been claimed by the stream
+    bool hasClaimed() { return consumer != nullptr; }
 };
 
 static void loadFromConfig(struct rd_kafka_conf_s * conf, const AbstractConfiguration & config, const std::string & path)
@@ -260,8 +278,10 @@ StorageKafka::StorageKafka(
     row_delimiter(row_delimiter_),
     schema_name(context.getMacros()->expand(schema_name_)),
     num_consumers(num_consumers_), log(&Logger::get("StorageKafka (" + table_name_ + ")")),
-    semaphore(0, num_consumers_), mutex(), consumers(), event_update()
+    semaphore(0, num_consumers_), mutex(), consumers()
 {
+    task = context.getSchedulePool().createTask(log->name(), [this]{ streamThread(); });
+    task->deactivate();
 }
 
 
@@ -269,11 +289,10 @@ BlockInputStreams StorageKafka::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum processed_stage,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
     check(column_names);
 
     if (num_consumers == 0)
@@ -287,12 +306,8 @@ BlockInputStreams StorageKafka::read(
     // Claim as many consumers as requested, but don't block
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto consumer = tryClaimConsumer(0);
-        if (consumer == nullptr)
-            break;
-
         // Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
-        streams.push_back(std::make_shared<KafkaBlockInputStream>(*this, consumer, context, schema_name, 1));
+        streams.emplace_back(std::make_shared<KafkaBlockInputStream>(*this, context, schema_name, 1));
     }
 
     LOG_DEBUG(log, "Starting reading " << streams.size() << " streams, " << max_block_size << " block size");
@@ -327,7 +342,7 @@ void StorageKafka::startup()
     }
 
     // Start the reader thread
-    stream_thread = std::thread(&StorageKafka::streamThread, this);
+    task->activateAndSchedule();
 }
 
 
@@ -335,27 +350,24 @@ void StorageKafka::shutdown()
 {
     // Interrupt streaming thread
     stream_cancelled = true;
-    event_update.set();
 
-    // Unsubscribe from assignments
-    LOG_TRACE(log, "Unsubscribing from assignments");
+    // Close all consumers
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto consumer = claimConsumer();
-        consumer->unsubscribe();
+        consumer->close();
     }
 
-    // Wait for stream thread to finish
-    if (stream_thread.joinable())
-        stream_thread.join();
-
+    LOG_TRACE(log, "Waiting for cleanup");
     rd_kafka_wait_destroyed(CLEANUP_TIMEOUT_MS);
+
+    task->deactivate();
 }
 
 
 void StorageKafka::updateDependencies()
 {
-    event_update.set();
+    task->activateAndSchedule();
 }
 
 
@@ -424,49 +436,45 @@ void StorageKafka::pushConsumer(StorageKafka::ConsumerPtr c)
 
 void StorageKafka::streamThread()
 {
-    setThreadName("KafkaStreamThr");
-    CurrentThread::initializeQuery();
-
-    while (!stream_cancelled)
+    try
     {
-        try
+        // Keep streaming as long as there are attached views and streaming is not cancelled
+        while (!stream_cancelled)
         {
-            // Keep streaming as long as there are attached views and streaming is not cancelled
-            while (!stream_cancelled)
+            // Check if all dependencies are attached
+            auto dependencies = context.getDependencies(database_name, table_name);
+            if (dependencies.size() == 0)
+                break;
+
+            // Check the dependencies are ready?
+            bool ready = true;
+            for (const auto & db_tab : dependencies)
             {
-                // Check if all dependencies are attached
-                auto dependencies = context.getDependencies(database_name, table_name);
-                if (dependencies.size() == 0)
-                    break;
-                // Check the dependencies are ready?
-                bool ready = true;
-                for (const auto & db_tab : dependencies)
-                {
-                    if (!context.tryGetTable(db_tab.first, db_tab.second))
-                        ready = false;
-                }
-                if (!ready)
-                    break;
-
-                LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
-                streamToViews();
-                LOG_DEBUG(log, "Stopped streaming to views");
+                if (!context.tryGetTable(db_tab.first, db_tab.second))
+                    ready = false;
             }
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
+            if (!ready)
+                break;
 
-        // Wait for attached views
-        event_update.tryWait(READ_POLL_MS);
+            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+
+            // Reschedule if not limited
+            if (!streamToViews())
+                break;
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
-    LOG_DEBUG(log, "Stream thread finished");
+    // Wait for attached views
+    if (!stream_cancelled)
+        task->scheduleAfter(READ_POLL_MS);
 }
 
 
-void StorageKafka::streamToViews()
+bool StorageKafka::streamToViews()
 {
     auto table = context.getTable(database_name, table_name);
     if (!table)
@@ -487,9 +495,8 @@ void StorageKafka::streamToViews()
     streams.reserve(num_consumers);
     for (size_t i = 0; i < num_consumers; ++i)
     {
-        auto consumer = claimConsumer();
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, consumer, context, schema_name, block_size);
-        streams.push_back(stream);
+        auto stream = std::make_shared<KafkaBlockInputStream>(*this, context, schema_name, block_size);
+        streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
         IProfilingBlockInputStream::LocalLimits limits;
@@ -499,12 +506,27 @@ void StorageKafka::streamToViews()
             p_stream->setLimits(limits);
     }
 
-    auto in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, num_consumers);
+    // Join multiple streams if necessary
+    BlockInputStreamPtr in;
+    if (streams.size() > 1)
+        in = std::make_shared<UnionBlockInputStream<>>(streams, nullptr, num_consumers);
+    else
+        in = streams[0];
 
     // Execute the query
     InterpreterInsertQuery interpreter{insert, context};
     auto block_io = interpreter.execute();
     copyData(*in, *block_io.out, &stream_cancelled);
+
+    // Check whether the limits were applied during query execution
+    bool limits_applied = false;
+    if (IProfilingBlockInputStream * p_stream = dynamic_cast<IProfilingBlockInputStream *>(in.get()))
+    {
+        const BlockStreamProfileInfo & info = p_stream->getProfileInfo();
+        limits_applied = info.hasAppliedLimit();
+    }
+
+    return limits_applied;
 }
 
 
@@ -524,12 +546,7 @@ StorageKafka::Consumer::Consumer(struct rd_kafka_conf_s * conf)
 
 StorageKafka::Consumer::~Consumer()
 {
-    if (stream != nullptr)
-    {
-        rd_kafka_consumer_close(stream);
-        rd_kafka_destroy(stream);
-        stream = nullptr;
-    }
+    close();
 }
 
 
@@ -563,6 +580,15 @@ void StorageKafka::Consumer::unsubscribe()
         rd_kafka_unsubscribe(stream);
 }
 
+void StorageKafka::Consumer::close()
+{
+    if (stream != nullptr)
+    {
+        rd_kafka_consumer_close(stream);
+        rd_kafka_destroy(stream);
+        stream = nullptr;
+    }
+}
 
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -728,7 +754,7 @@ void registerStorageKafka(StorageFactory & factory)
         String schema;
         if (args_count >= 6)
         {
-            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
+            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
             auto ast = typeid_cast<const ASTLiteral *>(engine_args[5].get());
             if (ast && ast->value.getType() == Field::Types::String)

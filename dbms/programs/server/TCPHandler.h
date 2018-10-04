@@ -8,8 +8,6 @@
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <DataStreams/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Client/TimeoutSetter.h>

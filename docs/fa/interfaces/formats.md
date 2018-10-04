@@ -318,7 +318,7 @@ Extremes:
 </div>
 
 ```bash
-watch -n1 "clickhouse-client --query='SELECT * FROM system.events FORMAT PrettyCompactNoEscapes'"
+watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
 <div dir="rtl" markdown="1">

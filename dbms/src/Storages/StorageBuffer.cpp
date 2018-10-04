@@ -63,6 +63,16 @@ StorageBuffer::StorageBuffer(const std::string & name_, const ColumnsDescription
 {
 }
 
+StorageBuffer::~StorageBuffer()
+{
+    // Should not happen if shutdown was called
+    if (flush_thread.joinable())
+    {
+        shutdown_event.set();
+        flush_thread.join();
+    }
+}
+
 
 /// Reads from one buffer (from one block) under its mutex.
 class BufferBlockInputStream : public IProfilingBlockInputStream
@@ -126,8 +136,6 @@ BlockInputStreams StorageBuffer::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    checkQueryProcessingStage(processed_stage, context);
-
     BlockInputStreams streams_from_dst;
 
     if (!no_destination)
@@ -587,13 +595,17 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
     insert->columns = list_of_columns;
     list_of_columns->children.reserve(columns_intersection.size());
     for (const String & column : columns_intersection)
-        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column, ASTIdentifier::Column));
+        list_of_columns->children.push_back(std::make_shared<ASTIdentifier>(column));
 
     InterpreterInsertQuery interpreter{insert, context, allow_materialized};
 
+    Block block_to_write;
+    for (const auto & name : columns_intersection)
+        block_to_write.insert(block.getByName(name));
+
     auto block_io = interpreter.execute();
     block_io.out->writePrefix();
-    block_io.out->write(block);
+    block_io.out->write(block_to_write);
     block_io.out->writeSuffix();
 }
 
