@@ -133,7 +133,7 @@ private:
 
 
 /** Takes stream already sorted by `x` and finishes sorting it by (`x`, `y`). 
- *  During sorting only blocks with rows equal by `x` saved in RAM.
+ *  During sorting only blocks with rows that equal by `x` saved in RAM.
  * */
 class FinishMergeSortingBlockInputStream : public IProfilingBlockInputStream
 {

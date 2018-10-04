@@ -31,26 +31,6 @@ bool isAlreadySorted(const Block & block, const SortDescription & description);
 
 using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
 
-struct PartialSortingLess
-{
-    const ColumnsWithSortDescriptions & columns;
-
-    explicit PartialSortingLess(const ColumnsWithSortDescriptions & columns_) : columns(columns_) {}
-
-    bool operator() (size_t a, size_t b) const
-    {
-        for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
-        {
-            int res = it->second.direction * it->first->compareAt(a, b, *it->first, it->second.nulls_direction);
-            if (res < 0)
-                return true;
-            else if (res > 0)
-                return false;
-        }
-        return false;
-    }
-};
-
 ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description);
 
 }
