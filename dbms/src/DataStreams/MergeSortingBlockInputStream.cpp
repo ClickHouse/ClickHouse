@@ -5,6 +5,7 @@
 #include <Common/formatReadable.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/CompressedWriteBuffer.h>
+#include <Interpreters/sortBlock.h>
 
 
 namespace ProfileEvents
@@ -302,6 +303,128 @@ void MergeSortingBlockInputStream::remerge()
     blocks = std::move(new_blocks);
     sum_rows_in_blocks = new_sum_rows_in_blocks;
     sum_bytes_in_blocks = new_sum_bytes_in_blocks;
+}
+
+
+FinishMergeSortingBlockInputStream::FinishMergeSortingBlockInputStream(
+    const BlockInputStreamPtr & input, SortDescription & description_sorted_,
+    SortDescription & description_to_sort_, 
+    size_t max_merged_block_size_, size_t limit_)
+    : description_sorted(description_sorted_), description_to_sort(description_to_sort_),
+    max_merged_block_size(max_merged_block_size_), limit(limit_)
+{
+    children.push_back(input);
+    header = children.at(0)->getHeader();
+    removeConstantsFromSortDescription(header, description_sorted);
+    removeConstantsFromSortDescription(header, description_to_sort);
+}
+
+static bool equalKeysAt(const ColumnsWithSortDescriptions & lhs, const ColumnsWithSortDescriptions & rhs, size_t n, size_t m)
+{
+
+    for (auto it = lhs.begin(), jt = rhs.begin(); it != lhs.end(); ++it, ++jt)
+    {
+        int res = it->first->compareAt(n, m, *jt->first, it->second.nulls_direction);
+        if (res != 0)
+            return false;
+    }
+    return true;
+}
+
+Block FinishMergeSortingBlockInputStream::readImpl()
+{
+    if (limit && total_rows_processed == limit)
+        return {};
+
+    Block res;
+    if (impl)
+        res = impl->read();
+
+    /// If res block is empty, we finish sorting previous chunk of blocks.
+    if (!res)
+    {
+        if (end_of_stream)
+            return {};
+
+        blocks.clear();
+        if (tail_block)
+            blocks.push_back(std::move(tail_block));
+
+        Block block;
+        size_t tail_pos = 0;
+        while (true)
+        {
+            block = children.back()->read();
+
+            /// End of input stream, but we can`t returns immediatly, we need to merge already read blocks.
+            /// Check it later, when get end of stream from impl.
+            if (!block)
+            {
+                end_of_stream = true;
+                break;
+            }
+
+            // If there were only const columns in sort description, then there is no need to sort.
+            // Return the blocks as is.
+            if (description_to_sort.empty())
+                return block;
+
+            size_t size = block.rows();
+            if (size == 0)
+                continue;
+
+            auto columns_with_sort_desc = getColumnsWithSortDescription(block, description_sorted);
+
+            removeConstantsFromBlock(block);
+
+            /// May be new block starts with new key.
+            if (!blocks.empty())
+            {
+                const Block & last_block = blocks.back();
+                if (!equalKeysAt(getColumnsWithSortDescription(last_block, description_sorted), columns_with_sort_desc, last_block.rows() - 1, 0))
+                    break;
+            }
+
+            IColumn::Permutation perm(size);
+            for (size_t i = 0; i < size; ++i)
+                perm[i] = i;
+
+            PartialSortingLess less(columns_with_sort_desc);
+
+            /// We need to save tail of block, because next block may starts with the same key as in tail
+            /// and we should sort these rows in one chunk.
+            tail_pos = *std::lower_bound(perm.begin(), perm.end(), size - 1, less);
+
+            if (tail_pos != 0)
+                break;
+            
+            /// If we reach here, that means that current block has all rows with the same key as tail of a previous block.
+            blocks.push_back(block);
+        }
+
+        if (block)
+        {
+            Block head_block = block.cloneEmpty();
+            tail_block = block.cloneEmpty();
+            for (size_t i = 0; i < block.columns(); ++i)
+            {
+                head_block.getByPosition(i).column = block.getByPosition(i).column->cut(0, tail_pos);
+                tail_block.getByPosition(i).column = block.getByPosition(i).column->cut(tail_pos, block.rows() - tail_pos);
+            }
+
+            blocks.push_back(head_block);   
+        }
+
+        impl = std::make_unique<MergeSortingBlocksBlockInputStream>(blocks, description_to_sort, max_merged_block_size, limit);
+        res = impl->read();
+    }
+
+    if (res)
+        enrichBlockWithConstants(res, header);
+    
+    total_rows_processed += res.rows();
+    
+    return res;
 }
 
 }
