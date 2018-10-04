@@ -308,21 +308,21 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
             const ExpressionActionsChain::Step & step = chain.steps.at(0);
             res.prewhere_info->remove_prewhere_column = step.can_remove_required_output.at(0);
 
-            Names columns_to_remove_after_sampling;
+            Names columns_to_remove;
             for (size_t i = 1; i < step.required_output.size(); ++i)
             {
                 if (step.can_remove_required_output[i])
-                    columns_to_remove_after_sampling.push_back(step.required_output[i]);
+                    columns_to_remove.push_back(step.required_output[i]);
             }
 
-            if (!columns_to_remove_after_sampling.empty())
+            if (!columns_to_remove.empty())
             {
                 auto columns = res.prewhere_info->prewhere_actions->getSampleBlock().getNamesAndTypesList();
                 ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(columns, context);
-                for (const auto & column : columns_to_remove_after_sampling)
+                for (const auto & column : columns_to_remove)
                     actions->add(ExpressionAction::removeColumn(column));
 
-                res.prewhere_info->after_sampling_actions = std::move(actions);
+                res.prewhere_info->remove_columns_actions = std::move(actions);
             }
         }
         if (has_where)
@@ -336,8 +336,9 @@ InterpreterSelectQuery::AnalysisResult InterpreterSelectQuery::analyzeExpression
     {
         ExpressionActionsChain chain(context);
 
-        ASTPtr sampling_expression = storage && query.sample_size() ? storage->getSamplingExpression() : nullptr;
-        if (query_analyzer->appendPrewhere(chain, !res.first_stage, sampling_expression))
+        ASTPtr sampling_expression = (storage && query.sample_size()) ? storage->getSamplingExpression() : nullptr;
+        ASTPtr primary_expression = (storage && query.final()) ? storage->getPrimaryExpression() : nullptr;
+        if (query_analyzer->appendPrewhere(chain, !res.first_stage, sampling_expression, primary_expression))
         {
             has_prewhere = true;
 
