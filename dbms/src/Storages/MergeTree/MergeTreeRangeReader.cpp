@@ -430,10 +430,20 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, Mar
         }
         else
         {
+            size_t num_rows = read_result.block.rows();
+            if (!read_result.block)
+            {
+                if (auto * filter = read_result.getFilter())
+                    num_rows = countBytesInFilter(filter->getData()); /// All columns were removed and filter is not always true.
+                else if (read_result.totalRowsPerGranule())
+                    num_rows = read_result.numReadRows();   /// All columns were removed and filter is always true.
+                /// else filter is always false.
+            }
+
             /// If block is empty, we still may need to add missing columns.
             /// In that case use number of rows in result block and don't filter block.
-            merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults,
-                                                  read_result.numReadRows());
+            if (num_rows)
+                merge_tree_reader->fillMissingColumns(block, should_reorder, should_evaluate_missing_defaults, num_rows);
         }
 
         for (auto i : ext::range(0, block.columns()))
