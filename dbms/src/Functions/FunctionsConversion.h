@@ -35,10 +35,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
-#include <Functions/FunctionsDateTime.h>
 #include <Functions/FunctionHelpers.h>
-#include <DataTypes/DataTypeWithDictionary.h>
-#include <Columns/ColumnWithDictionary.h>
+#include <Functions/DateTimeTransforms.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnLowCardinality.h>
 
 
 namespace DB
@@ -107,10 +107,17 @@ struct ConvertImpl
         using ColVecFrom = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
         using ColVecTo = std::conditional_t<IsDecimalNumber<ToFieldType>, ColumnDecimal<ToFieldType>, ColumnVector<ToFieldType>>;
 
+        if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+        {
+            if constexpr (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>)
+                throw Exception("Illegal column " + named_from.column->getName() + " of first argument of function " + Name::name,
+                    ErrorCodes::ILLEGAL_COLUMN);
+        }
+
         if (const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get()))
         {
             typename ColVecTo::MutablePtr col_to = nullptr;
-            if constexpr (IsDecimal<ToDataType>)
+            if constexpr (IsDataTypeDecimal<ToDataType>)
             {
                 UInt32 scale = additions;
                 col_to = ColVecTo::create(0, scale);
@@ -125,12 +132,15 @@ struct ConvertImpl
 
             for (size_t i = 0; i < size; ++i)
             {
-                if constexpr (IsDecimal<FromDataType> && IsDecimal<ToDataType>)
-                    vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
-                else if constexpr (IsDecimal<FromDataType>)
-                    vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
-                else if constexpr (IsDecimal<ToDataType>)
-                    vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                if constexpr (IsDataTypeDecimal<FromDataType> || IsDataTypeDecimal<ToDataType>)
+                {
+                    if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                        vec_to[i] = convertDecimals<FromDataType, ToDataType>(vec_from[i], vec_from.getScale(), vec_to.getScale());
+                    else if constexpr (IsDataTypeDecimal<FromDataType> && IsDataTypeNumber<ToDataType>)
+                        vec_to[i] = convertFromDecimal<FromDataType, ToDataType>(vec_from[i], vec_from.getScale());
+                    else if constexpr (IsDataTypeNumber<FromDataType> && IsDataTypeDecimal<ToDataType>)
+                        vec_to[i] = convertToDecimal<FromDataType, ToDataType>(vec_from[i], vec_to.getScale());
+                }
                 else
                     vec_to[i] = static_cast<ToFieldType>(vec_from[i]);
             }
@@ -262,6 +272,7 @@ template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name>
 {
     using FromFieldType = typename FromDataType::FieldType;
+    using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
 
     static void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/)
     {
@@ -274,11 +285,11 @@ struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, 
         if constexpr (std::is_same_v<FromDataType, DataTypeDateTime>)
             time_zone = &extractTimeZoneFromFunctionArguments(block, arguments, 1, 0);
 
-        if (const auto col_from = checkAndGetColumn<ColumnVector<FromFieldType>>(col_with_type_and_name.column.get()))
+        if (const auto col_from = checkAndGetColumn<ColVecType>(col_with_type_and_name.column.get()))
         {
             auto col_to = ColumnString::create();
 
-            const typename ColumnVector<FromFieldType>::Container & vec_from = col_from->getData();
+            const typename ColVecType::Container & vec_from = col_from->getData();
             ColumnString::Chars_t & data_to = col_to->getChars();
             ColumnString::Offsets & offsets_to = col_to->getOffsets();
             size_t size = vec_from.size();
@@ -490,7 +501,7 @@ struct ConvertThroughParsing
         size_t size = input_rows_count;
         typename ColVecTo::MutablePtr col_to = nullptr;
 
-        if constexpr (IsDecimal<ToDataType>)
+        if constexpr (IsDataTypeDecimal<ToDataType>)
         {
             UInt32 scale = additions;
             ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
@@ -533,7 +544,7 @@ struct ConvertThroughParsing
 
             ReadBufferFromMemory read_buffer(&(*chars)[current_offset], string_size);
 
-            if constexpr (IsDecimal<ToDataType>)
+            if constexpr (IsDataTypeDecimal<ToDataType>)
             {
                 ToDataType::readText(vec_to[i], read_buffer, ToDataType::maxPrecision(), vec_to.getScale());
             }
@@ -802,7 +813,7 @@ public:
                     || std::is_same_v<Name, NameToUnixTimestamp>;
 
                 if (!(to_date_or_time
-                    || (std::is_same_v<Name, NameToString> && checkDataType<DataTypeDateTime>(arguments[0].type.get()))))
+                    || (std::is_same_v<Name, NameToString> && WhichDataType(arguments[0].type).isDateTime())))
                 {
                     throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                         + toString(arguments.size()) + ", should be 1.",
@@ -880,7 +891,7 @@ private:
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDecimal<RightDataType>)
+            if constexpr (IsDataTypeDecimal<RightDataType>)
             {
                 if (arguments.size() != 2)
                     throw Exception{"Function " + getName() + " expects 2 arguments for Decimal.",
@@ -950,7 +961,7 @@ public:
                 + toString(arguments.size()) + ", should be 1 or 2. Second argument (time zone) is optional only make sense for DateTime.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        if (!arguments[0].type->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0].type))
             throw Exception("Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -963,7 +974,7 @@ public:
                     + toString(arguments.size()) + ", should be 1. Second argument makes sense only when converting to DateTime.",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-            if (!arguments[1].type->isString())
+            if (!isString(arguments[1].type))
                 throw Exception("Illegal type " + arguments[1].type->getName() + " of 2nd argument of function " + getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         }
@@ -1020,11 +1031,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (!arguments[1].type->isUnsignedInteger())
+        if (!isUnsignedInteger(arguments[1].type))
             throw Exception("Second argument for function " + getName() + " must be unsigned integer", ErrorCodes::ILLEGAL_COLUMN);
         if (!arguments[1].column)
             throw Exception("Second argument for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
-        if (!arguments[0].type->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0].type))
             throw Exception(getName() + " is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED);
 
         const size_t n = arguments[1].column->getUInt(0);
@@ -1140,8 +1151,8 @@ struct ToIntMonotonicity
         }
 
         /// If type is same, too. (Enum has separate case, because it is different data type)
-        if (checkDataType<DataTypeNumber<T>>(&type) ||
-            checkDataType<DataTypeEnum<T>>(&type))
+        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
+            checkAndGetDataType<DataTypeEnum<T>>(&type))
             return { true, true, true };
 
         /// In other cases, if range is unbounded, we don't know, whether function is monotonic or not.
@@ -1149,8 +1160,7 @@ struct ToIntMonotonicity
             return {};
 
         /// If converting from float, for monotonicity, arguments must fit in range of result type.
-        if (checkDataType<DataTypeFloat32>(&type)
-            || checkDataType<DataTypeFloat64>(&type))
+        if (WhichDataType(type).isFloat())
         {
             Float64 left_float = left.get<Float64>();
             Float64 right_float = right.get<Float64>();
@@ -1364,7 +1374,7 @@ protected:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
 private:
@@ -1391,7 +1401,7 @@ public:
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getReturnType() const override { return return_type; }
 
-    PreparedFunctionPtr prepare(const Block & /*sample_block*/) const override
+    PreparedFunctionPtr prepare(const Block & /*sample_block*/, const ColumnNumbers & /*arguments*/, size_t /*result*/) const override
     {
         return std::make_shared<PreparedFunctionCast>(
                 prepareUnpackDictionaries(getArgumentTypes()[0], getReturnType()), name);
@@ -1460,12 +1470,30 @@ private:
 
     static WrapperType createFixedStringWrapper(const DataTypePtr & from_type, const size_t N)
     {
-        if (!from_type->isStringOrFixedString())
+        if (!isStringOrFixedString(from_type))
             throw Exception{"CAST AS FixedString is only implemented for types String and FixedString", ErrorCodes::NOT_IMPLEMENTED};
 
         return [N] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t /*input_rows_count*/)
         {
             FunctionToFixedString::executeForN(block, arguments, result, N);
+        };
+    }
+
+    WrapperType createUUIDWrapper(const DataTypePtr & from_type, const DataTypeUUID * const, bool requested_result_is_nullable) const
+    {
+        if (requested_result_is_nullable)
+            throw Exception{"CAST AS Nullable(UUID) is not implemented", ErrorCodes::NOT_IMPLEMENTED};
+
+        FunctionPtr function = FunctionTo<DataTypeUUID>::Type::create(context);
+
+        /// Check conversion using underlying function
+        {
+            function->getReturnType(ColumnsWithTypeAndName(1, { nullptr, from_type, "" }));
+        }
+
+        return [function] (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+        {
+            function->execute(block, arguments, result, input_rows_count);
         };
     }
 
@@ -1628,7 +1656,7 @@ private:
             return createStringToEnumWrapper<ColumnString, EnumType>();
         else if (checkAndGetDataType<DataTypeFixedString>(from_type.get()))
             return createStringToEnumWrapper<ColumnFixedString, EnumType>();
-        else if (from_type->isNumber() || from_type->isEnum())
+        else if (isNumber(from_type) || isEnum(from_type))
         {
             auto function = Function::create(context);
 
@@ -1722,9 +1750,14 @@ private:
 
     WrapperType prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
     {
+        const auto * from_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(from_type.get());
+        const auto * to_low_cardinality = typeid_cast<const DataTypeLowCardinality *>(to_type.get());
+        const auto & from_nested = from_low_cardinality ? from_low_cardinality->getDictionaryType() : from_type;
+        const auto & to_nested = to_low_cardinality ? to_low_cardinality->getDictionaryType() : to_type;
+
         if (from_type->onlyNull())
         {
-            if (!to_type->isNullable())
+            if (!to_nested->isNullable())
                 throw Exception{"Cannot convert NULL to a non-nullable type", ErrorCodes::CANNOT_CONVERT_TYPE};
 
             return [](Block & block, const ColumnNumbers &, const size_t result, size_t input_rows_count)
@@ -1734,16 +1767,11 @@ private:
             };
         }
 
-        const auto * from_with_dict = typeid_cast<const DataTypeWithDictionary *>(from_type.get());
-        const auto * to_with_dict = typeid_cast<const DataTypeWithDictionary *>(to_type.get());
-        const auto & from_nested = from_with_dict ? from_with_dict->getDictionaryType() : from_type;
-        const auto & to_nested = to_with_dict ? to_with_dict->getDictionaryType() : to_type;
-
         auto wrapper = prepareRemoveNullable(from_nested, to_nested);
-        if (!from_with_dict && !to_with_dict)
+        if (!from_low_cardinality && !to_low_cardinality)
             return wrapper;
 
-        return [wrapper, from_with_dict, to_with_dict]
+        return [wrapper, from_low_cardinality, to_low_cardinality]
                 (Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
         {
             auto & arg = block.getByPosition(arguments[0]);
@@ -1762,21 +1790,21 @@ private:
 
                 auto tmp_rows_count = input_rows_count;
 
-                if (to_with_dict)
-                    res.type = to_with_dict->getDictionaryType();
+                if (to_low_cardinality)
+                    res.type = to_low_cardinality->getDictionaryType();
 
-                if (from_with_dict)
+                if (from_low_cardinality)
                 {
-                    auto * col_with_dict = typeid_cast<const ColumnWithDictionary *>(prev_arg_col.get());
-                    arg.column = col_with_dict->getDictionary().getNestedColumn();
-                    arg.type = from_with_dict->getDictionaryType();
+                    auto * col_low_cardinality = typeid_cast<const ColumnLowCardinality *>(prev_arg_col.get());
+                    arg.column = col_low_cardinality->getDictionary().getNestedColumn();
+                    arg.type = from_low_cardinality->getDictionaryType();
 
                     /// TODO: Make map with defaults conversion.
                     src_converted_to_full_column = !removeNullable(arg.type)->equals(*removeNullable(res.type));
                     if (src_converted_to_full_column)
-                        arg.column = arg.column->index(col_with_dict->getIndexes(), 0);
+                        arg.column = arg.column->index(col_low_cardinality->getIndexes(), 0);
                     else
-                        res_indexes = col_with_dict->getIndexesPtr();
+                        res_indexes = col_low_cardinality->getIndexesPtr();
 
                     tmp_rows_count = arg.column->size();
                 }
@@ -1789,18 +1817,18 @@ private:
                 res.type = prev_res_type;
             }
 
-            if (to_with_dict)
+            if (to_low_cardinality)
             {
-                auto res_column = to_with_dict->createColumn();
-                auto * col_with_dict = typeid_cast<ColumnWithDictionary *>(res_column.get());
+                auto res_column = to_low_cardinality->createColumn();
+                auto * col_low_cardinality = typeid_cast<ColumnLowCardinality *>(res_column.get());
 
-                if (from_with_dict && !src_converted_to_full_column)
+                if (from_low_cardinality && !src_converted_to_full_column)
                 {
                     auto res_keys = std::move(res.column);
-                    col_with_dict->insertRangeFromDictionaryEncodedColumn(*res_keys, *res_indexes);
+                    col_low_cardinality->insertRangeFromDictionaryEncodedColumn(*res_keys, *res_indexes);
                 }
                 else
-                    col_with_dict->insertRangeFromFullColumn(*res.column, 0, res.column->size());
+                    col_low_cardinality->insertRangeFromFullColumn(*res.column, 0, res.column->size());
 
                 res.column = std::move(res_column);
             }
@@ -1878,7 +1906,7 @@ private:
     {
         if (from_type->equals(*to_type))
             return createIdentityWrapper(from_type);
-        else if (checkDataType<DataTypeNothing>(from_type.get()))
+        else if (WhichDataType(from_type).isNothing())
             return createNothingWrapper(to_type.get());
 
         WrapperType ret;
@@ -1919,6 +1947,14 @@ private:
             {
                 ret = createDecimalWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()));
                 return true;
+            }
+            if constexpr (std::is_same_v<ToDataType, DataTypeUUID>)
+            {
+                if (isStringOrFixedString(from_type))
+                {
+                    ret = createUUIDWrapper(from_type, checkAndGetDataType<ToDataType>(to_type.get()), requested_result_is_nullable);
+                    return true;
+                }
             }
 
             return false;
@@ -1990,7 +2026,7 @@ protected:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
 private:
     template <typename DataType>
@@ -2027,7 +2063,7 @@ private:
             return monotonicityForType(type);
         else if (const auto type = checkAndGetDataType<DataTypeString>(to_type))
             return monotonicityForType(type);
-        else if (from_type->isEnum())
+        else if (isEnum(from_type))
         {
             if (const auto type = checkAndGetDataType<DataTypeEnum8>(to_type))
                 return monotonicityForType(type);

@@ -115,7 +115,7 @@ public:
     MutableColumns cloneEmptyColumns() const;
 
     /** Get columns from block for mutation. Columns in block will be nullptr. */
-    MutableColumns mutateColumns() const;
+    MutableColumns mutateColumns();
 
     /** Replace columns in a block */
     void setColumns(MutableColumns && columns);

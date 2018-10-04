@@ -30,6 +30,16 @@ def _create_env_file(path, variables, fname=DEFAULT_ENV_NAME):
             f.write("=".join([var, value]) + "\n")
     return full_path
 
+def subprocess_check_call(args):
+    # Uncomment for debugging
+    # print('run:', ' ' . join(args))
+    subprocess.check_call(args)
+
+def subprocess_call(args):
+    # Uncomment for debugging
+    # print('run:', ' ' . join(args))
+    subprocess.call(args)
+
 class ClickHouseCluster:
     """ClickHouse cluster with several instances and (possibly) ZooKeeper.
 
@@ -45,8 +55,8 @@ class ClickHouseCluster:
         self.name = name if name is not None else ''
 
         self.base_configs_dir = base_configs_dir or os.environ.get('CLICKHOUSE_TESTS_BASE_CONFIG_DIR', '/etc/clickhouse-server/')
-        self.server_bin_path = server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse')
-        self.client_bin_path = client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client')
+        self.server_bin_path = p.realpath(server_bin_path or os.environ.get('CLICKHOUSE_TESTS_SERVER_BIN_PATH', '/usr/bin/clickhouse'))
+        self.client_bin_path = p.realpath(client_bin_path or os.environ.get('CLICKHOUSE_TESTS_CLIENT_BIN_PATH', '/usr/bin/clickhouse-client'))
         self.zookeeper_config_path = p.join(self.base_dir, zookeeper_config_path) if zookeeper_config_path else p.join(HELPERS_DIR, 'zookeeper_config.xml')
 
         self.project_name = pwd.getpwuid(os.getuid()).pw_name + p.basename(self.base_dir) + self.name
@@ -75,6 +85,12 @@ class ClickHouseCluster:
         self.docker_client = None
         self.is_up = False
 
+
+    def get_client_cmd(self):
+        cmd = self.client_bin_path
+        if p.basename(cmd) == 'clickhouse':
+            cmd += " client"
+        return cmd
 
     def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={}, with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None, with_odbc_drivers=False, hostname=None, env_variables={}, image="ubuntu:14.04"):
         """Add an instance to the cluster.
@@ -173,8 +189,8 @@ class ClickHouseCluster:
 
         # Just in case kill unstopped containers from previous launch
         try:
-            if not subprocess.call(['docker-compose', 'kill']):
-                subprocess.call(['docker-compose', 'down', '--volumes'])
+            if not subprocess_call(['docker-compose', 'kill']):
+                subprocess_call(['docker-compose', 'down', '--volumes'])
         except:
             pass
 
@@ -188,23 +204,20 @@ class ClickHouseCluster:
         self.docker_client = docker.from_env(version=self.docker_api_version)
 
         if self.with_zookeeper and self.base_zookeeper_cmd:
-            subprocess.check_call(self.base_zookeeper_cmd + ['up', '-d', '--no-recreate'])
+            subprocess_check_call(self.base_zookeeper_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             for command in self.pre_zookeeper_commands:
                 self.run_kazoo_commands_with_retries(command, repeats=5)
-            self.wait_zookeeper_to_start()
+            self.wait_zookeeper_to_start(120)
 
         if self.with_mysql and self.base_mysql_cmd:
-            subprocess.check_call(self.base_mysql_cmd + ['up', '-d', '--no-recreate'])
+            subprocess_check_call(self.base_mysql_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.wait_mysql_to_start(120)
 
         if self.with_kafka and self.base_kafka_cmd:
-            subprocess.check_call(self.base_kafka_cmd + ['up', '-d', '--no-recreate'])
+            subprocess_check_call(self.base_kafka_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
             self.kafka_docker_id = self.get_instance_docker_id('kafka1')
 
-        # Uncomment for debugging
-        #print ' '.join(self.base_cmd + ['up', '--no-recreate'])
-
-        subprocess.check_call(self.base_cmd + ['up', '-d', '--no-recreate'])
+        subprocess_check_call(self.base_cmd + ['up', '-d', '--force-recreate', '--remove-orphans'])
 
         start_deadline = time.time() + 20.0 # seconds
         for instance in self.instances.itervalues():
@@ -220,8 +233,8 @@ class ClickHouseCluster:
 
     def shutdown(self, kill=True):
         if kill:
-            subprocess.check_call(self.base_cmd + ['kill'])
-        subprocess.check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
+            subprocess_check_call(self.base_cmd + ['kill'])
+        subprocess_check_call(self.base_cmd + ['down', '--volumes', '--remove-orphans'])
         self.is_up = False
 
         self.docker_client = None
@@ -462,8 +475,12 @@ class ClickHouseInstance:
         shutil.copy(p.join(self.base_configs_dir, 'config.xml'), configs_dir)
         shutil.copy(p.join(self.base_configs_dir, 'users.xml'), configs_dir)
 
+        # used by all utils with any config
+        conf_d_dir = p.abspath(p.join(configs_dir, 'conf.d'))
+        # used by server with main config.xml
         config_d_dir = p.abspath(p.join(configs_dir, 'config.d'))
         users_d_dir = p.abspath(p.join(configs_dir, 'users.d'))
+        os.mkdir(conf_d_dir)
         os.mkdir(config_d_dir)
         os.mkdir(users_d_dir)
 
@@ -477,7 +494,7 @@ class ClickHouseInstance:
 
         # Put ZooKeeper config
         if self.with_zookeeper:
-            shutil.copy(self.zookeeper_config_path, config_d_dir)
+            shutil.copy(self.zookeeper_config_path, conf_d_dir)
 
         # Copy config dir
         if self.custom_config_dir:

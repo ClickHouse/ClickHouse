@@ -64,15 +64,9 @@ SELECT * FROM url_engine_table
 └───────┴───────┘
 ```
 
-## Usage
-
-<<<<<<< HEAD
-- Multi-stream reading and writing are supported.
-=======
 ## Details of Implementation
 
 - Reads and writes can be parallel
->>>>>>> upstream/master
 - Not supported:
     - `ALTER` and `SELECT...SAMPLE` operations.
     - Indexes.

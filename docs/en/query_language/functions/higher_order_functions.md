@@ -1,5 +1,3 @@
-<a name="higher_order_functions"></a>
-
 # Higher-order functions
 
 ## `->` operator, lambda(params, expr) function
@@ -91,9 +89,9 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 
 ### arraySort(\[func,\] arr1, ...)
 
-Returns the `arr1` array sorted in ascending order. If `func`  is set, the sort order is determined by the result of the `func` function on the elements of the array or arrays.
+Returns an array as result of sorting the elements of `arr1` in ascending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
 
-To improve sorting efficiency, we use the [Schwartzian Transform](https://en.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
+The [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used to impove sorting efficiency.
 
 Example:
 
@@ -109,5 +107,9 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 
 ### arrayReverseSort(\[func,\] arr1, ...)
 
-Returns the `arr1` array sorted in descending order. If `func`  is set, the sort order is determined by the result of the `func` function on the elements of the array or arrays.
+Returns an array as result of sorting the elements of `arr1` in descending order. If the `func` function is specified, sorting order is determined by the result of the function `func` applied to the elements of array (arrays)  
 
+
+
+
+ 

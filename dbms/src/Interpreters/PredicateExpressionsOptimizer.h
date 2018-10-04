@@ -61,6 +61,8 @@ private:
 
     bool isAggregateFunction(ASTPtr & node);
 
+    bool isArrayJoinFunction(const ASTPtr & node);
+
     PredicateExpressions splitConjunctionPredicate(ASTPtr & predicate_expression);
 
     void getDependenciesAndQualifiedOfExpression(const ASTPtr & expression, IdentifiersWithQualifiedNameSet & dependencies_and_qualified,
@@ -86,6 +88,8 @@ private:
     std::vector<ASTTableExpression *> getSelectTablesExpression(ASTSelectQuery * select_query);
 
     ASTs evaluateAsterisk(ASTSelectQuery * select_query, const ASTPtr & asterisk);
+
+    void cleanExpressionAlias(ASTPtr & expression);
 };
 
 }

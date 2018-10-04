@@ -9,6 +9,7 @@
 #include <Dictionaries/LibraryDictionarySource.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/FieldVisitors.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/HTTPCommon.h>
@@ -64,9 +65,16 @@ Block createSampleBlock(const DictionaryStructure & dict_struct)
     }
 
     if (dict_struct.range_min)
+    {
         for (const auto & attribute : { dict_struct.range_min, dict_struct.range_max })
-            block.insert(ColumnWithTypeAndName{
-                ColumnUInt16::create(1, 0), std::make_shared<DataTypeDate>(), attribute->name});
+        {
+            const auto & type = std::make_shared<DataTypeNullable>(attribute->type);
+            auto column = type->createColumn();
+            column->insertDefault();
+
+            block.insert(ColumnWithTypeAndName{std::move(column), type, attribute->name});
+        }
+    }
 
     for (const auto & attribute : dict_struct.attributes)
     {
@@ -165,8 +173,6 @@ DictionarySourcePtr DictionarySourceFactory::create(
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
-        // Used for https queries
-        initSSL();
         return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
     }
     else if ("library" == source_type)

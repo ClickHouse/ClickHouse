@@ -122,7 +122,7 @@ public:
     bool isCompilableImpl(const DataTypes & types) const override
     {
         for (const auto & type : types)
-            if (!removeNullable(type)->isValueRepresentedByNumber())
+            if (!isCompilableType(removeNullable(type)))
                 return false;
         return true;
     }
@@ -895,7 +895,7 @@ public:
             return makeNullable(getReturnTypeImpl({
                 removeNullable(arguments[0]), arguments[1], arguments[2]}));
 
-        if (!checkDataType<DataTypeUInt8>(arguments[0].get()))
+        if (!WhichDataType(arguments[0]).isUInt8())
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument (condition) of function if. Must be UInt8.",
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

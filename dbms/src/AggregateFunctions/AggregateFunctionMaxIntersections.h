@@ -61,10 +61,10 @@ public:
     AggregateFunctionIntersectionsMax(AggregateFunctionIntersectionsKind kind_, const DataTypes & arguments)
         : kind(kind_)
     {
-        if (!arguments[0]->isNumber())
+        if (!isNumber(arguments[0]))
             throw Exception{getName() + ": first argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
-        if (!arguments[1]->isNumber())
+        if (!isNumber(arguments[1]))
             throw Exception{getName() + ": second argument must be represented by integer", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
 
         if (!arguments[0]->equals(*arguments[1]))

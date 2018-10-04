@@ -29,25 +29,26 @@ public:
     struct Result
     {
         bool ready = false;
-        Block block;
+        MutableColumns columns;
 
         Result(bool ready_) : ready(ready_) {}
-        Result(Block && block_) : ready(true), block(std::move(block_)) {}
+        Result(MutableColumns && columns) : ready(true), columns(std::move(columns)) {}
     };
 
     /** Add next block and possibly returns squashed block.
       * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
       */
-    Result add(Block && block);
+    Result add(MutableColumns && columns);
 
 private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
 
-    Block accumulated_block;
+    MutableColumns accumulated_columns;
 
-    void append(Block && block);
+    void append(MutableColumns && columns);
 
+    bool isEnoughSize(const MutableColumns & columns);
     bool isEnoughSize(size_t rows, size_t bytes) const;
 };
 

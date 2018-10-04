@@ -1,4 +1,5 @@
 #include <DataStreams/RollupBlockInputStream.h>
+#include <DataStreams/finalizeBlock.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/FilterDescription.h>
@@ -6,22 +7,6 @@
 
 namespace DB
 {
-
-static void finalize(Block & block)
-{
-    for (size_t i = 0; i < block.columns(); ++i)
-    {
-        ColumnWithTypeAndName & current = block.getByPosition(i);
-        const DataTypeAggregateFunction * unfinalized_type = typeid_cast<const DataTypeAggregateFunction *>(current.type.get());
-
-        if (unfinalized_type)
-        {
-            current.type = unfinalized_type->getReturnType();
-            if (current.column)
-                current.column = typeid_cast<const ColumnAggregateFunction &>(*current.column).convertToValues();
-        }
-    }
-}
 
 RollupBlockInputStream::RollupBlockInputStream(
     const BlockInputStreamPtr & input_, const Aggregator::Params & params_) : aggregator(params_),
@@ -36,7 +21,7 @@ RollupBlockInputStream::RollupBlockInputStream(
 Block RollupBlockInputStream::getHeader() const
 {
     Block res = children.at(0)->getHeader();
-    finalize(res);
+    finalizeBlock(res);
     return res;
 }
 
@@ -58,7 +43,7 @@ Block RollupBlockInputStream::readImpl()
         rollup_block = aggregator.mergeBlocks(rollup_blocks, false);
 
         Block finalized = rollup_block;
-        finalize(finalized);
+        finalizeBlock(finalized);
         return finalized;
     }
 
@@ -66,7 +51,7 @@ Block RollupBlockInputStream::readImpl()
     current_key = keys.size() - 1;
 
     rollup_block = block;
-    finalize(block);
+    finalizeBlock(block);
 
     return block;
 }

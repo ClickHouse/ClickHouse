@@ -20,14 +20,14 @@ namespace ErrorCodes
 }
 
 ///
-inline bool allowDecimalComparison(const IDataType & left_type, const IDataType & right_type)
+inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     if (isDecimal(left_type))
     {
-        if (isDecimal(right_type) || notDecimalButComparableToDecimal(right_type))
+        if (isDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
             return true;
     }
-    else if (notDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
+    else if (isNotDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
         return true;
     return false;
 }

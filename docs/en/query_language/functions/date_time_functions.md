@@ -151,3 +151,34 @@ For a time interval starting at 'StartTime' and continuing for 'Duration' second
 For example, `timeSlots(toDateTime('2012-01-01 12:20:00'), 600) = [toDateTime('2012-01-01 12:00:00'), toDateTime('2012-01-01 12:30:00')]`.
 This is necessary for searching for pageviews in the corresponding session.
 
+## formatDateTime(Time, Format\[, Timezone\])
+
+Function formats a Time according given Format string. N.B.: Format is a constant expression, e.g. you can not have multiple formats for single result column.
+
+Supported modifiers for Format:
+("Example" column shows formatting result for time `2018-01-02 22:33:44`)
+
+| Modifier | Description | Example |
+| ----------- | -------- | --------------- |
+|%C|year divided by 100 and truncated to integer (00-99)|20
+|%d|day of the month, zero-padded (01-31)|02
+|%D|Short MM/DD/YY date, equivalent to %m/%d/%y|01/02/2018|
+|%e|day of the month, space-padded ( 1-31)|  2|
+|%F|short YYYY-MM-DD date, equivalent to %Y-%m-%d|2018-01-02
+|%H|hour in 24h format (00-23)|22|
+|%I|hour in 12h format (01-12)|10|
+|%j|day of the year (001-366)|002|
+|%m|month as a decimal number (01-12)|01|
+|%M|minute (00-59)|33|
+|%n|new-line character ('\n')||
+|%p|AM or PM designation|PM|
+|%R|24-hour HH:MM time, equivalent to %H:%M|22:33|
+|%S|second (00-59)|44|
+|%t|horizontal-tab character ('\t')||
+|%T|ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S|22:33:44|
+|%u|ISO 8601 weekday as number with Monday as 1 (1-7)|2|
+|%V|ISO 8601 week number (01-53)|01|
+|%w|weekday as a decimal number with Sunday as 0 (0-6)|2|
+|%y|Year, last two digits (00-99)|18|
+|%Y|Year|2018|
+|%%|a % sign|%|

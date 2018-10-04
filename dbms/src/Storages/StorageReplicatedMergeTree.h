@@ -193,6 +193,8 @@ public:
 
     String getDataPath() const override { return full_path; }
 
+    ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
+
 private:
     /// Delete old parts from disk and from ZooKeeper.
     void clearOldPartsAndRemoveFromZK();

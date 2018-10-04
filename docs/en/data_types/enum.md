@@ -2,14 +2,14 @@
 
 # Enum8, Enum16
 
-Includes the `Enum8` and `Enum16` types. `Enum` saves the final set of pairs of `'string' = integer`. In ClickHouse , all operations with the `Enum` data type are performed as if with numbers, although the user is working with string constants. This is more effective in terms of performance than working with the `String` data type.
+Includes the `Enum8` and `Enum16` types. `Enum` saves the finite set of pairs of `'string' = integer`. In ClickHouse, all operations with the `Enum` data type are performed as if value contains integers, although the user is working with string constants. This is more effective in terms of performance than working with the `String` data type.
 
 - `Enum8` is described by pairs of `'String' = Int8`.
 - `Enum16` is described by pairs of `'String' = Int16`.
 
 ## Usage examples
 
-Here we create a table with an `Enum8('hello' = 1, 'world' = 2)`  type column.
+Here we create a table with an `Enum8('hello' = 1, 'world' = 2)`  type column:
 
 ```
 CREATE TABLE t_enum
@@ -19,10 +19,10 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-This column `x` can only store the values that are listed in the type definition: `'hello'` or `'world'`. If you try to save a different value, ClickHouse generates an exception.
+This column `x` can only store the values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will generate an exception.
 
 ```
-:) INSERT INTO t_enum Values('hello'),('world'),('hello')
+:) INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
 
 INSERT INTO t_enum VALUES
 
@@ -51,7 +51,7 @@ SELECT * FROM t_enum
 └───────┘
 ```
 
-If you need to see the numeric equivalents of the rows, you must cast the type.
+If you need to see the numeric equivalents of the rows, you must cast the `Enum` value to integer type.
 
 ```
 SELECT CAST(x, 'Int8') FROM t_enum
@@ -63,7 +63,7 @@ SELECT CAST(x, 'Int8') FROM t_enum
 └─────────────────┘
 ```
 
-To create an Enum value in a query, you also need the `CAST` function.
+To create an Enum value in a query, you also need to use `CAST`.
 
 ```
 SELECT toTypeName(CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)'))
@@ -79,7 +79,7 @@ Each of the values is assigned a number in the range `-128 ... 127` for `Enum8` 
 
 Neither the string nor the numeric value in an `Enum` can be [NULL](../query_language/syntax.md#null-literal).
 
-`An Enum` can be passed to a [Nullable](nullable.md#data_type-nullable) type. So if you create a table using the query
+An `Enum` can be contained in [Nullable](nullable.md#data_type-nullable) type. So if you create a table using the query
 
 ```
 CREATE TABLE t_enum_nullable
@@ -96,6 +96,7 @@ INSERT INTO t_enum_null Values('hello'),('world'),(NULL)
 ```
 
 In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.
+
 When reading in text form, ClickHouse parses the value as a string and searches for the corresponding string from the set of Enum values. If it is not found, an exception is thrown. When reading in text format, the string is read and the corresponding numeric value is looked up. An exception will be thrown if it is not found.
 When writing in text form, it writes the value as the corresponding string. If column data contains garbage (numbers that are not from the valid set), an exception is thrown. When reading and writing in binary form, it works the same way as for Int8 and Int16 data types.
 The implicit default value is the value with the lowest number.

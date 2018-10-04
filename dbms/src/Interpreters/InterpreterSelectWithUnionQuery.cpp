@@ -34,9 +34,6 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     to_stage(to_stage_),
     subquery_depth(subquery_depth_)
 {
-    if (!context.hasQueryContext())
-        context.setQueryContext(context);
-
     const ASTSelectWithUnionQuery & ast = typeid_cast<const ASTSelectWithUnionQuery &>(*query_ptr);
 
     size_t num_selects = ast.list_of_selects->children.size();

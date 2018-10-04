@@ -24,12 +24,14 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Settings.h>
+#include <Interpreters/ExpressionJIT.h>
 #include <Interpreters/RuntimeComponentsFactory.h>
 #include <Interpreters/ISecurityManager.h>
 #include <Interpreters/Quota.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionaries.h>
 #include <Interpreters/ExternalModels.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
@@ -54,6 +56,7 @@
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -174,12 +177,17 @@ struct ContextShared
     ConfigurationPtr clusters_config;                        /// Soteres updated configs
     mutable std::mutex clusters_mutex;                        /// Guards clusters and clusters_config
 
+#if USE_EMBEDDED_COMPILER
+    std::shared_ptr<CompiledExpressionCache> compiled_expression_cache;
+#endif
+
     bool shutdown_called = false;
 
     /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> table -> exception_message
-    /// For the duration of the operation, an element is placed here, and an object is returned, which deletes the element in the destructor.
-    /// In case the element already exists, an exception is thrown. See class DDLGuard below.
+    /// database -> table -> (mutex, counter), counter: how many threads are running a query on the table at the same time
+    /// For the duration of the operation, an element is placed here, and an object is returned,
+    /// which deletes the element in the destructor when counter becomes zero.
+    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
     using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
     DDLGuards ddl_guards;
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
@@ -889,37 +897,30 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 }
 
 
-DDLGuard::DDLGuard(Map & map_, std::mutex & mutex_, std::unique_lock<std::mutex> && /*lock*/, const String & elem, const String & message)
-    : map(map_), mutex(mutex_)
+DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
+    : map(map_), guards_lock(std::move(guards_lock_))
 {
-    bool inserted;
-    std::tie(it, inserted) = map.emplace(elem, message);
-    if (!inserted)
-        throw Exception(it->second, ErrorCodes::DDL_GUARD_IS_ACTIVE);
+    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
+    ++it->second.counter;
+    guards_lock.unlock();
+    table_lock = std::unique_lock<std::mutex>(*it->second.mutex);
 }
 
 DDLGuard::~DDLGuard()
 {
-    std::lock_guard<std::mutex> lock(mutex);
-    map.erase(it);
+    guards_lock.lock();
+    --it->second.counter;
+    if (!it->second.counter)
+    {
+        table_lock.unlock();
+        map.erase(it);
+    }
 }
 
-std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table, const String & message) const
+std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
 {
     std::unique_lock<std::mutex> lock(shared->ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(shared->ddl_guards[database], shared->ddl_guards_mutex, std::move(lock), table, message);
-}
-
-
-std::unique_ptr<DDLGuard> Context::getDDLGuardIfTableDoesntExist(const String & database, const String & table, const String & message) const
-{
-    auto lock = getLock();
-
-    Databases::const_iterator it = shared->databases.find(database);
-    if (shared->databases.end() != it && it->second->isTableExist(*this, table))
-        return {};
-
-    return getDDLGuard(database, table, message);
+    return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
 }
 
 
@@ -1804,6 +1805,35 @@ Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
     return getQueryContext().sample_block_cache;
 }
+
+
+#if USE_EMBEDDED_COMPILER
+
+std::shared_ptr<CompiledExpressionCache> Context::getCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    return shared->compiled_expression_cache;
+}
+
+void Context::setCompiledExpressionCache(size_t cache_size)
+{
+
+    auto lock = getLock();
+
+    if (shared->compiled_expression_cache)
+        throw Exception("Compiled expressions cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->compiled_expression_cache = std::make_shared<CompiledExpressionCache>(cache_size);
+}
+
+void Context::dropCompiledExpressionCache() const
+{
+    auto lock = getLock();
+    if (shared->compiled_expression_cache)
+        shared->compiled_expression_cache->reset();
+}
+
+#endif
 
 std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
 {
