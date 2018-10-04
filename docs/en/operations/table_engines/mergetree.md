@@ -4,8 +4,7 @@
 
 The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHousе table engines.
 
-!!!info
-    The [Merge](merge.md#table_engine-merge) engine does not belong to the `*MergeTree` family.
+The basic idea for `MergeTree` engines family is the following. When you have tremendous amount of a data that should be inserted into the table, you should write them quickly part by part and then merge parts by some rules in background. This method is much more efficient than constantly rewriting data in the storage at the insert.
 
 Main features:
 
@@ -24,6 +23,9 @@ Main features:
 - Data sampling support.
 
     If necessary, you can set the data sampling method in the table.
+
+!!!info
+    The [Merge](merge.md#table_engine-merge) engine does not belong to the `*MergeTree` family.
 
 <a name="table_engines-mergetree-configuring"></a>
 

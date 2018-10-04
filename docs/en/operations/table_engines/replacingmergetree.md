@@ -33,11 +33,12 @@ For a description of request parameters, see [request description](../../query_l
 
 **Query clauses**
 
-When creating a `ReplacingMergeTree` table the same [clausesmergetree.md](#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
+When creating a `ReplacingMergeTree` table the same [clauses](mergetree.md#table_engines-mergetree-configuring)  are required, as when creating a `MergeTree`  table.
 
 ### Deprecated Method for Creating a Table
 
-!!!attention    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!!attention
+    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
 
 ```sql
 CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
@@ -51,4 +52,3 @@ CREATE [TEMPORARY] TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
 - `ver` - column with the version. Optional parameter. For a description, see the text above.
-
