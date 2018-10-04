@@ -1181,6 +1181,24 @@ static size_t getLimitForSorting(ASTSelectQuery & query)
 void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
+
+    if (auto merge_tree = static_cast<StorageMergeTree *>(&*storage))
+    {
+        auto column_sorted_order = merge_tree->getData().getSortColumns();
+
+        for (size_t i = 0; i < order_descr.size(); ++i)
+        {
+            if ((i == column_sorted_order.size()) || (order_descr[i].column_name != column_sorted_order[i]))
+                break;
+
+            if (i == order_descr.size() - 1)
+            {
+                storage->do_not_read_with_order = false;
+                return;
+            }
+        }
+    }
+
     size_t limit = getLimitForSorting(query);
 
     const Settings & settings = context.getSettingsRef();
