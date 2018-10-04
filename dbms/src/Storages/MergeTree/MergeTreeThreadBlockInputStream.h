@@ -47,7 +47,7 @@ private:
     /// Last readed mark in task for this thread
     size_t last_task_end_mark;
     /// Last part readed in this thread
-    std::string last_readed_part;
+    std::string last_readed_part_path;
     /// Names from header. Used in order to order columns in read blocks.
     Names ordered_names;
 };
