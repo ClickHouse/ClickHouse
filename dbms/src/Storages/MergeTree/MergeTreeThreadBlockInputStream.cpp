@@ -92,7 +92,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
     else
     {
         /// in other case we can reuse readers, they stopped exactly at required position
-        if (last_task_end_mark != current_task_first_mark || path != last_readed_part)
+        if (last_task_end_mark != current_task_first_mark || path != last_readed_part_path)
         {
             /// retain avg_value_size_hints
             reader = std::make_unique<MergeTreeReader>(
@@ -107,7 +107,7 @@ bool MergeTreeThreadBlockInputStream::getNewTask()
                     max_read_buffer_size, pre_reader->getAvgValueSizeHints(), profile_callback);
         }
     }
-    last_readed_part = path;
+    last_readed_part_path = path;
     last_task_end_mark = current_task_end_mark;
 
     return true;
