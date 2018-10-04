@@ -96,7 +96,7 @@ public:
 
     ASTPtr getSamplingExpression() const override { return data.sampling_expression; }
 
-    ASTPtr getPrimaryExpression() const override { return data.getPrimaryExpression(); }
+    ASTPtr getPrimaryExpression() const override { return data.primary_expr_ast; }
 
 private:
     String path;
