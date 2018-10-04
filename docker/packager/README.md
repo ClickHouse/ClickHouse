@@ -3,7 +3,7 @@ compilers and build settings. Correctly configured Docker daemon is single depen
 
 Usage:
 
-Build deb package with gcc-8 in debug mode:
+Build deb package with `gcc-8` in `debug` mode:
 ```
 $ mkdir deb/test_output
 $ ./packager --output-dir deb/test_output/ --package-type deb --compiler=gcc-8 --build-type=debug
@@ -18,7 +18,7 @@ $ ls -l deb/test_output
 
 ```
 
-Build ClickHouse binary with clang-6.0 and address sanitizer in relwithdebuginfo
+Build ClickHouse binary with `clang-6.0` and `address` sanitizer in `relwithdebuginfo`
 mode:
 ```
 $ mkdir $HOME/some_clickhouse
