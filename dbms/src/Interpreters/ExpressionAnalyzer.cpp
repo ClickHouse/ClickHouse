@@ -2450,16 +2450,23 @@ bool ExpressionAnalyzer::appendJoin(ExpressionActionsChain & chain, bool only_ty
     return true;
 }
 
-bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types, const ASTPtr & sampling_expression)
+bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool only_types,
+                                        const ASTPtr & sampling_expression, const ASTPtr & primary_expression)
 {
     assertSelect();
 
     if (!select_query->prewhere_expression)
         return false;
 
-    Names required_sample_columns;
+    Names additional_required_mergetree_columns;
     if (sampling_expression)
-        required_sample_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
+        additional_required_mergetree_columns = ExpressionAnalyzer(sampling_expression, context, storage).getRequiredSourceColumns();
+    if (primary_expression)
+    {
+        auto required_primary_columns = ExpressionAnalyzer(primary_expression, context, storage).getRequiredSourceColumns();
+        additional_required_mergetree_columns.insert(additional_required_mergetree_columns.end(),
+                                                     required_primary_columns.begin(), required_primary_columns.end());
+    }
 
     initChain(chain, source_columns);
     auto & step = chain.getLastStep();
@@ -2476,10 +2483,9 @@ bool ExpressionAnalyzer::appendPrewhere(ExpressionActionsChain & chain, bool onl
         auto required_columns = tmp_actions->getRequiredColumns();
         NameSet required_source_columns(required_columns.begin(), required_columns.end());
 
-        /// Add required columns for sample expression to required output in order not to remove them after
-        /// prewhere execution because sampling is executed after prewhere.
-        /// TODO: add sampling execution to common chain.
-        for (const auto & column : required_sample_columns)
+        /// Add required columns to required output in order not to remove them after prewhere execution.
+        /// TODO: add sampling and final execution to common chain.
+        for (const auto & column : additional_required_mergetree_columns)
         {
             if (required_source_columns.count(column))
             {
