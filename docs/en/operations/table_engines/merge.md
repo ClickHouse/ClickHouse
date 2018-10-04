@@ -22,8 +22,10 @@ It is possible to create two `Merge`  tables that will endlessly try to read eac
 
 The typical way to use the `Merge`  engine is for working with a large number of `TinyLog`  tables as if with a single table.
 
-Example2:
-Let's say you have a old table (WatchLog_old) and decided to change partitioning without moving data to a new table (WatchLog_new) and you need to see data from both tables. 
+Example 2:
+
+Let's say you have a old table (WatchLog_old) and decided to change partitioning without moving data to a new table (WatchLog_new) and you need to see data from both tables.
+
 ```
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
 ENGINE=MergeTree(date, (UserId, EventType), 8192);
@@ -46,6 +48,7 @@ FROM WatchLog
 └────────────┴────────┴───────────┴─────┘
 
 ```
+
 ## Virtual Columns
 
 Virtual columns are columns that are provided by the table engine, regardless of the table definition. In other words, these columns are not specified in `CREATE TABLE`, but they are accessible for `SELECT`.
