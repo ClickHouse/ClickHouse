@@ -4,6 +4,7 @@ import subprocess
 import os
 import argparse
 import logging
+import sys
 
 IMAGE_MAP = {
     "deb": "yandex/clickhouse-deb-builder",
@@ -34,11 +35,17 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
     if env_part:
         env_part = " -e " + env_part
 
-    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build {env} -it {img_name}".format(
+    if sys.stdout.isatty():
+        interactive = "-it"
+    else:
+        interactive = ""
+
+    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build {env} {interactive} {img_name}".format(
         output_path=output,
         ch_root=ch_root,
         env=env_part,
-        img_name=image_name
+        img_name=image_name,
+        interactive=interactive
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '{}'".format(cmd))
