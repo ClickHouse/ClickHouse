@@ -179,7 +179,7 @@ fi
 # For killall in pbuilder-hooks:
 EXTRAPACKAGES+=" psmisc "
 
-[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX "
+[[ $CCACHE_PREFIX == 'distcc' ]] && EXTRAPACKAGES+=" $CCACHE_PREFIX " && USENETWORK=yes && export DISTCC_DIR=/var/cache/pbuilder/distcc
 
 export DEB_BUILD_OPTIONS=parallel=`nproc`
 
