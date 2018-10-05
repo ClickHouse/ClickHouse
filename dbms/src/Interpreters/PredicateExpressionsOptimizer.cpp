@@ -222,6 +222,8 @@ void PredicateExpressionsOptimizer::cloneOuterPredicateForInnerPredicate(
 {
     inner_predicate = outer_predicate->clone();
 
+    /// clears the alias name contained in the outer predicate
+    cleanExpressionAlias(inner_predicate);
     IdentifiersWithQualifiedNameSet new_expression_requires;
     getDependenciesAndQualifiedOfExpression(inner_predicate, new_expression_requires, tables);
 
@@ -417,6 +419,16 @@ std::vector<ASTTableExpression *> PredicateExpressionsOptimizer::getSelectTables
     }
 
     return tables_expression;
+}
+
+void PredicateExpressionsOptimizer::cleanExpressionAlias(ASTPtr & expression)
+{
+    const auto my_alias = expression->tryGetAlias();
+    if (!my_alias.empty())
+        expression->setAlias("");
+
+    for (auto & child : expression->children)
+        cleanExpressionAlias(child);
 }
 
 }

@@ -61,7 +61,7 @@
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
 #if USE_READLINE
-#include "Suggest.h"
+#include "Suggest.h" // Y_IGNORE
 #endif
 
 #ifndef __clang__
