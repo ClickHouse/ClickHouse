@@ -133,6 +133,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     /// Detach from thread group
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
+
+    /// Must reset pointer to thread_group's memory_tracker, because it will be destroyed two lines below.
+    memory_tracker.setParent(nullptr);
+
     query_context = nullptr;
     thread_group.reset();
 
