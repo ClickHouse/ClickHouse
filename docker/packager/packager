@@ -85,11 +85,8 @@ if __name__ == "__main__":
         ch_root = args.clickhouse_repo_path
 
     dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
-    try:
-        if not check_image_exists_locally(image_name) or args.force_build_image:
-            if not pull_image(image_name) or args.force_build_image:
-                build_image(image_name, dockerfile)
-        run_image_with_env(image_name, args.output_dir, parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type), ch_root)
-        logging.info("Output placed into {}".format(args.output_dir))
-    except Exception as ex:
-        logging.info("Exception occured {}".format(ex))
+    if not check_image_exists_locally(image_name) or args.force_build_image:
+        if not pull_image(image_name) or args.force_build_image:
+            build_image(image_name, dockerfile)
+    run_image_with_env(image_name, args.output_dir, parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type), ch_root)
+    logging.info("Output placed into {}".format(args.output_dir))
