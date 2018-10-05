@@ -84,16 +84,14 @@ public:
       */
     virtual String getName() const = 0;
 
-    /// If this stream generates data in grouped by some keys, return true.
-    virtual bool isGroupedOutput() const { return false; }
     /// If this stream generates data in order by some keys, return true.
     virtual bool isSortedOutput() const { return false; }
-    /// In case of isGroupedOutput or isSortedOutput, return corresponding SortDescription
+    /// In case of isSortedOutput, return corresponding SortDescription
     virtual const SortDescription & getSortDescription() const { throw Exception("Output of " + getName() + " is not sorted", ErrorCodes::OUTPUT_IS_NOT_SORTED); }
 
     /** Must be called before read, readPrefix.
       */
-    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1);
+    void dumpTree(std::ostream & ostr, size_t indent = 0, size_t multiplier = 1) const;
 
     /** Check the depth of the pipeline.
       * If max_depth is specified and the `depth` is greater - throw an exception.

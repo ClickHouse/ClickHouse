@@ -1,0 +1,31 @@
+Initial
+4	4
+4	8
+4	8
+REPLACE simple
+2	2
+4	6
+4	6
+REPLACE empty
+2	4
+2	4
+REPLACE recursive
+4	8
+4	8
+1
+ATTACH FROM
+5	8
+5	8
+REPLACE with fetch
+4	6
+4	6
+REPLACE with fetch of merged
+4	6	4
+4	6	3
+4	6	3
+After restart
+4	6
+4	6
+DETACH+ATTACH PARTITION
+2	2
+2	2

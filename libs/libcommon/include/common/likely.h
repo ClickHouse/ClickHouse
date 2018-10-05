@@ -1,6 +1,6 @@
 #pragma once
 
-#if _MSC_VER
+#if defined(_MSC_VER)
 #define likely(x)   (x)
 #define unlikely(x) (x)
 #else

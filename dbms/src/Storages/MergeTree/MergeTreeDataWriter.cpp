@@ -140,13 +140,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum_t min_date(minmax_idx.min_values[data.minmax_idx_date_column_pos].get<UInt64>());
-        DayNum_t max_date(minmax_idx.max_values[data.minmax_idx_date_column_pos].get<UInt64>());
+        DayNum min_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].left.get<UInt64>());
+        DayNum max_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
         const auto & date_lut = DateLUT::instance();
 
-        DayNum_t min_month = date_lut.toFirstDayNumOfMonth(DayNum_t(min_date));
-        DayNum_t max_month = date_lut.toFirstDayNumOfMonth(DayNum_t(max_date));
+        DayNum min_month = date_lut.toFirstDayNumOfMonth(DayNum(min_date));
+        DayNum max_month = date_lut.toFirstDayNumOfMonth(DayNum(max_date));
 
         if (min_month != max_month)
             throw Exception("Logical error: part spans more than one month.");
@@ -183,7 +183,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             secondary_sort_expr->execute(block);
     }
 
-    SortDescription sort_descr = data.getSortDescription();
+    Names sort_columns = data.getSortColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    for (size_t i = 0; i < sort_columns_size; ++i)
+        sort_description.emplace_back(block.getPositionByName(sort_columns[i]), 1, 1);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
@@ -192,9 +198,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     IColumn::Permutation perm;
     if (data.hasPrimaryKey())
     {
-        if (!isAlreadySorted(block, sort_descr))
+        if (!isAlreadySorted(block, sort_description))
         {
-            stableGetPermutation(block, sort_descr, perm);
+            stableGetPermutation(block, sort_description, perm);
             perm_ptr = &perm;
         }
         else

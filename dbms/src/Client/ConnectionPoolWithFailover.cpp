@@ -83,6 +83,16 @@ std::vector<IConnectionPool::Entry> ConnectionPoolWithFailover::getMany(const Se
     return entries;
 }
 
+std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyForTableFunction(const Settings * settings, PoolMode pool_mode)
+{
+    TryGetEntryFunc try_get_entry = [&](NestedPool & pool, std::string & fail_message)
+    {
+        return tryGetEntry(pool, fail_message, settings);
+    };
+
+    return getManyImpl(settings, pool_mode, try_get_entry);
+}
+
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyChecked(
         const Settings * settings, PoolMode pool_mode, const QualifiedTableName & table_to_check)
 {
@@ -90,6 +100,7 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
     {
         return tryGetEntry(pool, fail_message, settings, &table_to_check);
     };
+
     return getManyImpl(settings, pool_mode, try_get_entry);
 }
 
@@ -145,9 +156,10 @@ ConnectionPoolWithFailover::tryGetEntry(
         String server_name;
         UInt64 server_version_major;
         UInt64 server_version_minor;
+        UInt64 server_version_patch;
         UInt64 server_revision;
         if (table_to_check)
-            result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_revision);
+            result.entry->getServerVersion(server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         if (!table_to_check || server_revision < DBMS_MIN_REVISION_WITH_TABLES_STATUS)
         {
@@ -214,6 +226,6 @@ ConnectionPoolWithFailover::tryGetEntry(
         }
     }
     return result;
-};
+}
 
 }

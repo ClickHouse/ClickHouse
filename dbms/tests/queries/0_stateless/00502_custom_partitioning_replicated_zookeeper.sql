@@ -12,6 +12,7 @@ INSERT INTO test.not_partitioned_replica1 VALUES (4), (5);
 
 SELECT 'Parts before OPTIMIZE:';
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'not_partitioned_replica1' AND active ORDER BY name;
+SYSTEM SYNC REPLICA test.not_partitioned_replica1;
 OPTIMIZE TABLE test.not_partitioned_replica1 PARTITION tuple() FINAL;
 SELECT 'Parts after OPTIMIZE:';
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'not_partitioned_replica2' AND active ORDER BY name;
@@ -38,6 +39,7 @@ INSERT INTO test.partitioned_by_week_replica1 VALUES ('2000-01-03', 4), ('2000-0
 
 SELECT 'Parts before OPTIMIZE:'; -- Select parts on the first replica to avoid waiting for replication.
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'partitioned_by_week_replica1' AND active ORDER BY name;
+SYSTEM SYNC REPLICA test.partitioned_by_week_replica1;
 OPTIMIZE TABLE test.partitioned_by_week_replica1 PARTITION '2000-01-03' FINAL;
 SELECT 'Parts after OPTIMIZE:'; -- After OPTIMIZE with replication_alter_partitions_sync=2 replicas must be in sync.
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'partitioned_by_week_replica2' AND active ORDER BY name;
@@ -63,6 +65,7 @@ INSERT INTO test.partitioned_by_tuple_replica1 VALUES ('2000-01-02', 1, 4), ('20
 
 SELECT 'Parts before OPTIMIZE:';
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'partitioned_by_tuple_replica1' AND active ORDER BY name;
+SYSTEM SYNC REPLICA test.partitioned_by_tuple_replica1;
 OPTIMIZE TABLE test.partitioned_by_tuple_replica1 PARTITION ('2000-01-01', 1) FINAL;
 OPTIMIZE TABLE test.partitioned_by_tuple_replica1 PARTITION ('2000-01-02', 1) FINAL;
 SELECT 'Parts after OPTIMIZE:';
@@ -89,6 +92,7 @@ INSERT INTO test.partitioned_by_string_replica1 VALUES ('bbb', 4), ('aaa', 5);
 
 SELECT 'Parts before OPTIMIZE:';
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'partitioned_by_string_replica1' AND active ORDER BY name;
+SYSTEM SYNC REPLICA test.partitioned_by_string_replica2;
 OPTIMIZE TABLE test.partitioned_by_string_replica2 PARTITION 'aaa' FINAL;
 SELECT 'Parts after OPTIMIZE:';
 SELECT partition, name FROM system.parts WHERE database = 'test' AND table = 'partitioned_by_string_replica2' AND active ORDER BY name;
@@ -111,7 +115,9 @@ CREATE TABLE test.without_fixed_size_columns_replica2(s String) ENGINE Replicate
 
 INSERT INTO test.without_fixed_size_columns_replica1 VALUES ('a'), ('aa'), ('b'), ('cc');
 
-OPTIMIZE TABLE test.without_fixed_size_columns_replica2 PARTITION 1 FINAL; -- Wait for replication.
+-- Wait for replication.
+SYSTEM SYNC REPLICA test.without_fixed_size_columns_replica2;
+OPTIMIZE TABLE test.without_fixed_size_columns_replica2 PARTITION 1 FINAL;
 
 SELECT 'Parts:';
 SELECT partition, name, rows FROM system.parts WHERE database = 'test' AND table = 'without_fixed_size_columns_replica2' AND active ORDER BY name;

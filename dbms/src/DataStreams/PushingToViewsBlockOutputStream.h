@@ -19,38 +19,15 @@ class PushingToViewsBlockOutputStream : public IBlockOutputStream
 {
 public:
     PushingToViewsBlockOutputStream(
-        const String & database, const String & table, const StoragePtr & storage,
+        const String & database, const String & table, const StoragePtr & storage_,
         const Context & context_, const ASTPtr & query_ptr_, bool no_destination = false);
 
     Block getHeader() const override { return storage->getSampleBlock(); }
     void write(const Block & block) override;
 
-    void flush() override
-    {
-        if (output)
-            output->flush();
-
-        for (auto & view : views)
-            view.out->flush();
-    }
-
-    void writePrefix() override
-    {
-        if (output)
-            output->writePrefix();
-
-        for (auto & view : views)
-            view.out->writePrefix();
-    }
-
-    void writeSuffix() override
-    {
-        if (output)
-            output->writeSuffix();
-
-        for (auto & view : views)
-            view.out->writeSuffix();
-    }
+    void flush() override;
+    void writePrefix() override;
+    void writeSuffix() override;
 
 private:
     StoragePtr storage;
@@ -70,6 +47,8 @@ private:
 
     std::vector<ViewInfo> views;
     std::unique_ptr<Context> views_context;
+
+    void process(const Block & block, size_t view_num);
 };
 
 

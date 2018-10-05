@@ -71,6 +71,8 @@ public:
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+    template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;
@@ -135,7 +137,7 @@ private:
 
     /** Non-constant arrays of constant values are quite rare.
       * Most functions can not work with them, and does not create such columns as a result.
-      * An exception is the function `replicate`(see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
+      * An exception is the function `replicate` (see FunctionsMiscellaneous.h), which has service meaning for the implementation of lambda functions.
       * Only for its sake is the implementation of the `replicate` method for ColumnArray(ColumnConst).
       */
     ColumnPtr replicateConst(const Offsets & replicate_offsets) const;

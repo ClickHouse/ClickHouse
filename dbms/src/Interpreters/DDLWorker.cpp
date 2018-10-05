@@ -1,42 +1,34 @@
 #include <Interpreters/DDLWorker.h>
-
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-
 #include <Storages/IStorage.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
-
 #include <Common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Lock.h>
 #include <Common/isLocalAddress.h>
 #include <Poco/Timestamp.h>
-
 #include <random>
 #include <pcg_random.hpp>
 #include <Poco/Net/NetException.h>
@@ -96,7 +88,7 @@ struct HostID
         {
             return DB::isLocalAddress(DNSResolver::instance().resolveAddress(host_name, port), clickhouse_port);
         }
-        catch (const Poco::Net::NetException & e)
+        catch (const Poco::Net::NetException &)
         {
             /// Avoid "Host not found" exceptions
             return false;
@@ -207,11 +199,13 @@ static std::unique_ptr<zkutil::Lock> createSimpleZooKeeperLock(
 static bool isSupportedAlterType(int type)
 {
     static const std::unordered_set<int> supported_alter_types{
-        ASTAlterQuery::ADD_COLUMN,
-        ASTAlterQuery::DROP_COLUMN,
-        ASTAlterQuery::MODIFY_COLUMN,
-        ASTAlterQuery::MODIFY_PRIMARY_KEY,
-        ASTAlterQuery::DROP_PARTITION
+        ASTAlterCommand::ADD_COLUMN,
+        ASTAlterCommand::DROP_COLUMN,
+        ASTAlterCommand::MODIFY_COLUMN,
+        ASTAlterCommand::MODIFY_PRIMARY_KEY,
+        ASTAlterCommand::DROP_PARTITION,
+        ASTAlterCommand::DELETE,
+        ASTAlterCommand::UPDATE,
     };
 
     return supported_alter_types.count(type) != 0;
@@ -430,7 +424,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
     }
 
     if (!task.query || !(task.query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(task.query.get())))
-        throw Exception("Recieved unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
+        throw Exception("Received unknown DDL query", ErrorCodes::UNKNOWN_TYPE_OF_QUERY);
 
     task.cluster_name = task.query_on_cluster->cluster;
     task.cluster = context.tryGetCluster(task.cluster_name);
@@ -524,9 +518,9 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
 
     try
     {
-        Context local_context(context);
-        local_context.setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, local_context, nullptr);
+        current_context = std::make_unique<Context>(context);
+        current_context->setCurrentQueryId(""); // generate random query_id
+        executeQuery(istr, ostr, false, *current_context, nullptr);
     }
     catch (...)
     {
@@ -542,6 +536,20 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
     return true;
 }
 
+void DDLWorker::attachToThreadGroup()
+{
+    if (thread_group)
+    {
+        /// Put all threads to one thread pool
+        CurrentThread::attachToIfDetached(thread_group);
+    }
+    else
+    {
+        CurrentThread::initializeQuery();
+        thread_group = CurrentThread::getGroup();
+    }
+}
+
 
 void DDLWorker::processTask(DDLTask & task)
 {
@@ -552,19 +560,19 @@ void DDLWorker::processTask(DDLTask & task)
     String finished_node_path = task.entry_path + "/finished/" + task.host_id_str;
 
     auto code = zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy);
-    if (code == ZooKeeperImpl::ZooKeeper::ZOK || code == ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
+    if (code == Coordination::ZOK || code == Coordination::ZNODEEXISTS)
     {
         // Ok
     }
-    else if (code == ZooKeeperImpl::ZooKeeper::ZNONODE)
+    else if (code == Coordination::ZNONODE)
     {
         /// There is no parent
         createStatusDirs(task.entry_path);
-        if (ZooKeeperImpl::ZooKeeper::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
-            throw zkutil::KeeperException(code, active_node_path);
+        if (Coordination::ZOK != zookeeper->tryCreate(active_node_path, "", zkutil::CreateMode::Ephemeral, dummy))
+            throw Coordination::Exception(code, active_node_path);
     }
     else
-        throw zkutil::KeeperException(code, active_node_path);
+        throw Coordination::Exception(code, active_node_path);
 
     if (!task.was_executed)
     {
@@ -585,7 +593,7 @@ void DDLWorker::processTask(DDLTask & task)
                 tryExecuteQuery(rewritten_query, task, task.execution_status);
             }
         }
-        catch (const zkutil::KeeperException & e)
+        catch (const Coordination::Exception &)
         {
             throw;
         }
@@ -601,7 +609,7 @@ void DDLWorker::processTask(DDLTask & task)
     /// FIXME: if server fails right here, the task will be executed twice. We need WAL here.
 
     /// Delete active flag and create finish flag
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(active_node_path, -1));
     ops.emplace_back(zkutil::makeCreateRequest(finished_node_path, task.execution_status.serializeText(), zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
@@ -620,13 +628,13 @@ void DDLWorker::processTaskAlter(
     bool execute_once_on_replica = storage->supportsReplication();
     bool execute_on_leader_replica = false;
 
-    for (const auto & param : ast_alter->parameters)
+    for (const auto & command : ast_alter->command_list->commands)
     {
-        if (!isSupportedAlterType(param.type))
+        if (!isSupportedAlterType(command->type))
             throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (execute_once_on_replica)
-            execute_on_leader_replica |= param.type == ASTAlterQuery::DROP_PARTITION;
+            execute_on_leader_replica |= command->type == ASTAlterCommand::DROP_PARTITION;
     }
 
     const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
@@ -741,7 +749,7 @@ void DDLWorker::cleanupQueue()
         String node_path = queue_dir + "/" + node_name;
         String lock_path = node_path + "/lock";
 
-        zkutil::Stat stat;
+        Coordination::Stat stat;
         String dummy;
 
         try
@@ -791,7 +799,7 @@ void DDLWorker::cleanupQueue()
                 }
 
                 /// Remove the lock node and its parent atomically
-                zkutil::Requests ops;
+                Coordination::Requests ops;
                 ops.emplace_back(zkutil::makeRemoveRequest(lock_path, -1));
                 ops.emplace_back(zkutil::makeRemoveRequest(node_path, -1));
                 zookeeper->multi(ops);
@@ -810,21 +818,21 @@ void DDLWorker::cleanupQueue()
 /// Try to create nonexisting "status" dirs for a node
 void DDLWorker::createStatusDirs(const std::string & node_path)
 {
-    zkutil::Requests ops;
+    Coordination::Requests ops;
     {
-        zkutil::CreateRequest request;
+        Coordination::CreateRequest request;
         request.path = node_path + "/active";
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
     {
-        zkutil::CreateRequest request;
+        Coordination::CreateRequest request;
         request.path = node_path + "/finished";
-        ops.emplace_back(std::make_shared<zkutil::CreateRequest>(std::move(request)));
+        ops.emplace_back(std::make_shared<Coordination::CreateRequest>(std::move(request)));
     }
-    zkutil::Responses responses;
+    Coordination::Responses responses;
     int code = zookeeper->tryMulti(ops, responses);
-    if (code && code != ZooKeeperImpl::ZooKeeper::ZNODEEXISTS)
-        throw zkutil::KeeperException(code);
+    if (code && code != Coordination::ZNODEEXISTS)
+        throw Coordination::Exception(code);
 }
 
 
@@ -869,10 +877,11 @@ void DDLWorker::run()
                 zookeeper->createAncestors(queue_dir + "/");
                 initialized = true;
             }
-            catch (const zkutil::KeeperException & e)
+            catch (const Coordination::Exception & e)
             {
-                if (!zkutil::isHardwareError(e.code))
+                if (!Coordination::isHardwareError(e.code))
                     throw;
+                tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
         catch (...)
@@ -886,6 +895,8 @@ void DDLWorker::run()
     {
         try
         {
+            attachToThreadGroup();
+
             processTasks();
 
             LOG_DEBUG(log, "Waiting a watch");
@@ -897,9 +908,9 @@ void DDLWorker::run()
             /// TODO: it might delay the execution, move it to separate thread.
             cleanupQueue();
         }
-        catch (zkutil::KeeperException & e)
+        catch (const Coordination::Exception & e)
         {
-            if (zkutil::isHardwareError(e.code))
+            if (Coordination::isHardwareError(e.code))
             {
                 LOG_DEBUG(log, "Recovering ZooKeeper session after: " << getCurrentExceptionMessage(false));
 
@@ -966,7 +977,7 @@ public:
         return "DDLQueryStatusInputSream";
     }
 
-    Block getHeader() const override { return sample; };
+    Block getHeader() const override { return sample; }
 
     Block readImpl() override
     {
@@ -1073,8 +1084,8 @@ private:
     {
         Strings res;
         int code = zookeeper->tryGetChildren(node_path, res);
-        if (code && code != ZooKeeperImpl::ZooKeeper::ZNONODE)
-            throw zkutil::KeeperException(code, node_path);
+        if (code && code != Coordination::ZNONODE)
+            throw Coordination::Exception(code, node_path);
         return res;
     }
 
@@ -1141,9 +1152,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 
     if (auto query_alter = dynamic_cast<const ASTAlterQuery *>(query_ptr.get()))
     {
-        for (const auto & param : query_alter->parameters)
+        for (const auto & command : query_alter->command_list->commands)
         {
-            if (!isSupportedAlterType(param.type))
+            if (!isSupportedAlterType(command->type))
                 throw Exception("Unsupported type of ALTER query", ErrorCodes::NOT_IMPLEMENTED);
         }
     }

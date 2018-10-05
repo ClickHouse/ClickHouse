@@ -1,56 +1,53 @@
-#include <Storages/System/StorageSystemFunctions.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
+#include <Storages/System/StorageSystemFunctions.h>
 
 
 namespace DB
 {
-
-StorageSystemFunctions::StorageSystemFunctions(const std::string & name_)
-    : name(name_)
+namespace
 {
-    setColumns(ColumnsDescription({
-        { "name",         std::make_shared<DataTypeString>() },
-        { "is_aggregate", std::make_shared<DataTypeUInt8>()  },
-    }));
+    template <typename Factory>
+    void fillRow(MutableColumns & res_columns, const String & name, UInt64 is_aggregate, const Factory & f)
+    {
+        res_columns[0]->insert(name);
+        res_columns[1]->insert(is_aggregate);
+        res_columns[2]->insert(UInt64(f.isCaseInsensitive(name)));
+        if (f.isAlias(name))
+            res_columns[3]->insert(f.aliasTo(name));
+        else
+            res_columns[3]->insert(String{});
+    }
 }
 
-
-BlockInputStreams StorageSystemFunctions::read(
-    const Names & column_names,
-    const SelectQueryInfo &,
-    const Context &,
-    QueryProcessingStage::Enum & processed_stage,
-    const size_t /*max_block_size*/,
-    const unsigned /*num_streams*/)
+NamesAndTypesList StorageSystemFunctions::getNamesAndTypes()
 {
-    check(column_names);
-    processed_stage = QueryProcessingStage::FetchColumns;
-
-    MutableColumns res_columns = getSampleBlock().cloneEmptyColumns();
-
-    const auto & functions = FunctionFactory::instance().functions;
-    for (const auto & it : functions)
-    {
-        res_columns[0]->insert(it.first);
-        res_columns[1]->insert(UInt64(0));
-    }
-
-    const auto & aggregate_functions = AggregateFunctionFactory::instance().aggregate_functions;
-    for (const auto & it : aggregate_functions)
-    {
-        res_columns[0]->insert(it.first);
-        res_columns[1]->insert(UInt64(1));
-    }
-
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(getSampleBlock().cloneWithColumns(std::move(res_columns))));
+    return {
+        {"name", std::make_shared<DataTypeString>()},
+        {"is_aggregate", std::make_shared<DataTypeUInt8>()},
+        {"case_insensitive", std::make_shared<DataTypeUInt8>()},
+        {"alias_to", std::make_shared<DataTypeString>()},
+    };
 }
 
+void StorageSystemFunctions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
+{
+    const auto & functions_factory = FunctionFactory::instance();
+    const auto & function_names = functions_factory.getAllRegisteredNames();
+    for (const auto & name : function_names)
+    {
+        fillRow(res_columns, name, UInt64(0), functions_factory);
+    }
+
+    const auto & aggregate_functions_factory = AggregateFunctionFactory::instance();
+    const auto & aggregate_function_names = aggregate_functions_factory.getAllRegisteredNames();
+    for (const auto & name : aggregate_function_names)
+    {
+        fillRow(res_columns, name, UInt64(1), aggregate_functions_factory);
+    }
+}
 }

@@ -457,8 +457,8 @@ To build, follow the instructions in <a href="https://github.com/yandex/ClickHou
 
 You can compile packages and install them. You can also use programs without installing packages.
 
-Client: src/dbms/src/Client/
-Server: src/dbms/src/Server/
+Client: src/dbms/programs/clickhouse-client
+Server: src/dbms/programs/clickhouse-server
 
 For the server, create a catalog with data, such as:
 
@@ -470,7 +470,7 @@ For the server, create a catalog with data, such as:
 (Configured in the server config.)
 Run &#39;chown&#39; for the desired user.
 
-Note the path to logs in the server config (src/dbms/src/Server/config.xml).
+Note the path to logs in the server config (src/dbms/programs/server/config.xml).
 
 
 ===Other methods of installation===

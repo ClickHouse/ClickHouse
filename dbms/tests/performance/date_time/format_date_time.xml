@@ -1,0 +1,38 @@
+<test>
+    <name>Function formatDateTime</name>
+
+    <type>once</type>
+
+    <tags>
+    </tags>
+
+    <stop_conditions>
+        <any_of>
+            <average_speed_not_changing_for_ms>10000</average_speed_not_changing_for_ms>
+            <total_time_ms>1000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+    <metrics>
+        <max_rows_per_second />
+        <max_bytes_per_second />
+        <avg_rows_per_second />
+        <avg_bytes_per_second />
+    </metrics>
+
+    <substitutions>
+       <substitution>
+           <name>format</name>
+           <values>
+               <value>%F %T</value>
+               <value>%H:%M:%S</value>
+               <value>%Y-%m-%d %H:%M:%S</value>
+               <value>%m/%d/%Y %H:%M:%S</value>
+               <value>Hello</value>
+               <value>The current time is: %I:%M %p</value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM system.numbers WHERE NOT ignore(toDateTime('2017-01-01 00:00:00') + number % 100000000 + rand() % 100000 AS t, formatDateTime(t, '{format}'))</query>
+</test>

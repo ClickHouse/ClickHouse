@@ -8,14 +8,17 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <Functions/IFunction.h>
-#include <Functions/FunctionsArithmetic.h>
 #include <Functions/FunctionHelpers.h>
+#include <Common/FieldVisitors.h>
 #include <type_traits>
 
+
 #if USE_EMBEDDED_COMPILER
+#include <DataTypes/Native.h>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/IRBuilder.h> // Y_IGNORE
 #pragma GCC diagnostic pop
 #endif
 
@@ -25,7 +28,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /** Behaviour in presence of NULLs:
@@ -197,7 +203,7 @@ class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionAnyArityLogical>(); }
 
 private:
     bool extractConstColumns(ColumnRawPtrs & in, UInt8 & res)
@@ -303,8 +309,8 @@ public:
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (size_t i = 0; i < arguments.size(); ++i)
-            if (!(arguments[i]->isNumber()
-                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || removeNullable(arguments[i])->isNumber()))))
+            if (!(isNumber(arguments[i])
+                || (Impl::specialImplementationForNulls() && (arguments[i]->onlyNull() || isNumber(removeNullable(arguments[i]))))))
                 throw Exception("Illegal type ("
                     + arguments[i]->getName()
                     + ") of " + toString(i + 1) + " argument of function " + getName(),
@@ -425,12 +431,33 @@ public:
 };
 
 
+template <typename A, typename Op>
+struct UnaryOperationImpl
+{
+    using ResultType = typename Op::ResultType;
+    using ArrayA = typename ColumnVector<A>::Container;
+    using ArrayC = typename ColumnVector<ResultType>::Container;
+
+    static void NO_INLINE vector(const ArrayA & a, ArrayC & c)
+    {
+        size_t size = a.size();
+        for (size_t i = 0; i < size; ++i)
+            c[i] = Op::apply(a[i]);
+    }
+
+    static void constant(A a, ResultType & c)
+    {
+        c = Op::apply(a);
+    }
+};
+
+
 template <template <typename> class Impl, typename Name>
 class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionUnaryLogical>(); }
 
 private:
     template <typename T>
@@ -461,7 +488,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isNumber())
+        if (!isNumber(arguments[0]))
             throw Exception("Illegal type ("
                 + arguments[0]->getName()
                 + ") of argument of function " + getName(),

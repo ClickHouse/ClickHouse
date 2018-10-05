@@ -34,7 +34,7 @@ private:
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
 
-    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {};
+    ColumnFixedString(const ColumnFixedString & src) : chars(src.chars.begin(), src.chars.end()), n(src.n) {}
 
 public:
     std::string getName() const override { return "FixedString(" + std::to_string(n) + ")"; }
@@ -108,6 +108,11 @@ public:
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+
     ColumnPtr replicate(const Offsets & offsets) const override;
 
     MutableColumns scatter(ColumnIndex num_columns, const Selector & selector) const override
@@ -120,7 +125,7 @@ public:
     void reserve(size_t size) override
     {
         chars.reserve(n * size);
-    };
+    }
 
     void getExtremes(Field & min, Field & max) const override;
 

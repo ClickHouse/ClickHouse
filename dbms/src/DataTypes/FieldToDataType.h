@@ -19,11 +19,15 @@ class FieldToDataType : public StaticVisitor<DataTypePtr>
 public:
     DataTypePtr operator() (const Null & x) const;
     DataTypePtr operator() (const UInt64 & x) const;
+    DataTypePtr operator() (const UInt128 & x) const;
     DataTypePtr operator() (const Int64 & x) const;
     DataTypePtr operator() (const Float64 & x) const;
     DataTypePtr operator() (const String & x) const;
     DataTypePtr operator() (const Array & x) const;
     DataTypePtr operator() (const Tuple & x) const;
+    DataTypePtr operator() (const DecimalField<Decimal32> & x) const;
+    DataTypePtr operator() (const DecimalField<Decimal64> & x) const;
+    DataTypePtr operator() (const DecimalField<Decimal128> & x) const;
 };
 
 }

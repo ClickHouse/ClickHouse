@@ -57,6 +57,8 @@ public:
             DenominatorType
         >;
 
+    using value_type = Key;
+
 private:
     using Small = SmallSet<Key, small_set_size_max>;
     using Medium = HashContainer;

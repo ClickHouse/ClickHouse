@@ -32,7 +32,7 @@ public:
 
     String getName() const override { return "MongoDB"; }
 
-    Block getHeader() const override { return description.sample_block; };
+    Block getHeader() const override { return description.sample_block; }
 
 private:
     Block readImpl() override;

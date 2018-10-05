@@ -44,7 +44,7 @@ ${CLICKHOUSE_LOCAL} -q "SET max_rows_in_distinct=33; SELECT name, value FROM sys
 ${CLICKHOUSE_LOCAL} --max_bytes_before_external_group_by=1 --max_block_size=10 -q "SELECT sum(ignore(*)) FROM (SELECT number, count() FROM numbers(1000) GROUP BY number)"
 echo
 # Check exta options
-(${CLICKHOUSE_LOCAL} --ignore-error --echo --silent -q "SELECT nothing_to_do();SELECT 42;" 2>&1 && echo "Wrong RC") || true
+(${CLICKHOUSE_LOCAL} --ignore-error --echo -q "SELECT nothing_to_do();SELECT 42;" 2>/dev/null && echo "Wrong RC") || true
 echo
 ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 (
@@ -61,23 +61,3 @@ ${CLICKHOUSE_LOCAL} -q "CREATE TABLE sophisticated_default
 
 # Help is not skipped
 [[ `${CLICKHOUSE_LOCAL} --help | wc -l` > 100 ]]
-
-
-if [ -t 0 ] ; then
-    # this shell has a std-input, so we're not in batch mode
-
-    # Check that help width is adaptive
-    stty cols 99999
-    rows1=`${CLICKHOUSE_LOCAL} --help | wc -l`
-    stty cols 80
-    rows2=`${CLICKHOUSE_LOCAL} --help | wc -l`
-    [[ $rows1 < $rows2 ]]
-
-    stty cols 99999
-    rows1=`${CLICKHOUSE_CLIENT} --help | wc -l`
-    stty cols 80
-    rows2=`${CLICKHOUSE_CLIENT} --help | wc -l`
-    [[ $rows1 < $rows2 ]]
-
-    shopt -s checkwinsize || true
-fi

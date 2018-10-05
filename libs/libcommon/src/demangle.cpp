@@ -1,7 +1,17 @@
 #include <common/demangle.h>
-#include <cxxabi.h>
-#include <stdlib.h>
 
+#if _MSC_VER
+
+std::string demangle(const char * name, int & status)
+{
+    status = 0;
+    return name;
+}
+
+#else
+
+#include <stdlib.h>
+#include <cxxabi.h>
 
 std::string demangle(const char * name, int & status)
 {
@@ -26,3 +36,5 @@ std::string demangle(const char * name, int & status)
 
     return res;
 }
+
+#endif

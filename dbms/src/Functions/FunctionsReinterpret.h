@@ -33,7 +33,7 @@ class FunctionReinterpretAsStringImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsStringImpl>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsStringImpl>(); }
 
     String getName() const override
     {
@@ -98,7 +98,7 @@ class FunctionReinterpretAsFixedStringImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsFixedStringImpl>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretAsFixedStringImpl>(); }
 
     String getName() const override
     {
@@ -153,7 +153,7 @@ class FunctionReinterpretStringAs : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretStringAs>(); };
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionReinterpretStringAs>(); }
 
     using ToFieldType = typename ToDataType::FieldType;
 
@@ -167,7 +167,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         const IDataType & type = *arguments[0];
-        if (!type.isStringOrFixedString())
+        if (!isStringOrFixedString(type))
             throw Exception("Cannot reinterpret " + type.getName() + " as " + ToDataType().getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<ToDataType>();

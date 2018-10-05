@@ -16,10 +16,6 @@
 #include <common/LocalDateTime.h>
 
 
-/// Обрезать длинный запрос до указанной длины для текста исключения.
-#define MYSQLXX_QUERY_PREVIEW_LENGTH 1000
-
-
 namespace mysqlxx
 {
 

@@ -1,4 +1,4 @@
-# HTTP interface
+# HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
@@ -26,9 +26,6 @@ $ curl 'http://localhost:8123/?query=SELECT%201'
 $ wget -O- -q 'http://localhost:8123/?query=SELECT 1'
 1
 
-$ GET 'http://localhost:8123/?query=SELECT 1'
-1
-
 $ echo -ne 'GET /?query=SELECT%201 HTTP/1.0\r\n\r\n' | nc localhost 8123
 HTTP/1.0 200 OK
 Connection: Close
@@ -37,7 +34,8 @@ Date: Fri, 16 Nov 2012 19:21:50 GMT
 1
 ```
 
-As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.Although wget escapes everything itself, we don't recommend using it because it doesn't work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
+As you can see, curl is somewhat inconvenient in that spaces must be URL escaped.
+Although wget escapes everything itself, we don't recommend using it because it doesn't work well over HTTP 1.1 when using keep-alive and Transfer-Encoding: chunked.
 
 ```bash
 $ echo 'SELECT 1' | curl 'http://localhost:8123/' --data-binary @-
@@ -77,37 +75,37 @@ The POST method of transmitting data is necessary for INSERT queries. In this ca
 Examples: Creating a table:
 
 ```bash
-echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | POST 'http://localhost:8123/'
+echo 'CREATE TABLE t (a UInt8) ENGINE = Memory' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Using the familiar INSERT query for data insertion:
 
 ```bash
-echo 'INSERT INTO t VALUES (1),(2),(3)' | POST 'http://localhost:8123/'
+echo 'INSERT INTO t VALUES (1),(2),(3)' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 Data can be sent separately from the query:
 
 ```bash
-echo '(4),(5),(6)' | POST 'http://localhost:8123/?query=INSERT INTO t VALUES'
+echo '(4),(5),(6)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20VALUES' --data-binary @-
 ```
 
 You can specify any data format. The 'Values' format is the same as what is used when writing INSERT INTO t VALUES:
 
 ```bash
-echo '(7),(8),(9)' | POST 'http://localhost:8123/?query=INSERT INTO t FORMAT Values'
+echo '(7),(8),(9)' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20Values' --data-binary @-
 ```
 
 To insert data from a tab-separated dump, specify the corresponding format:
 
 ```bash
-echo -ne '10\n11\n12\n' | POST 'http://localhost:8123/?query=INSERT INTO t FORMAT TabSeparated'
+echo -ne '10\n11\n12\n' | curl 'http://localhost:8123/?query=INSERT%20INTO%20t%20FORMAT%20TabSeparated' --data-binary @-
 ```
 
 Reading the table contents. Data is output in random order due to parallel query processing:
 
 ```bash
-$ GET 'http://localhost:8123/?query=SELECT a FROM t'
+$ curl 'http://localhost:8123/?query=SELECT%20a%20FROM%20t'
 7
 8
 9
@@ -125,7 +123,7 @@ $ GET 'http://localhost:8123/?query=SELECT a FROM t'
 Deleting the table.
 
 ```bash
-POST 'http://localhost:8123/?query=DROP TABLE t'
+echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 ```
 
 For successful requests that don't return a data table, an empty response body is returned.
@@ -173,8 +171,7 @@ echo 'SELECT 1' | curl 'http://localhost:8123/?user=user&password=password' -d @
 ```
 
 If the user name is not indicated, the username 'default' is used. If the password is not indicated, an empty password is used.
-You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:
-http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
+You can also use the URL parameters to specify any settings for processing a single query, or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
 For more information, see the section "Settings".
 
@@ -205,7 +202,7 @@ The optional 'quota_key' parameter can be passed as the quota key (any string). 
 
 The HTTP interface allows passing external data (external temporary tables) for querying. For more information, see the section "External data for query processing".
 
-## Response buffering
+## Response Buffering
 
 You can enable response buffering on the server side. The `buffer_size` and `wait_end_of_query` URL parameters are provided for this purpose.
 

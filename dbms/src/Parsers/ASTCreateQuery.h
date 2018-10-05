@@ -94,7 +94,7 @@ public:
     ASTSelectWithUnionQuery * select = nullptr;
 
     /** Get the text that identifies this element. */
-    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; };
+    String getID() const override { return (attach ? "AttachQuery_" : "CreateQuery_") + database + "_" + table; }
 
     ASTPtr clone() const override
     {

@@ -44,9 +44,9 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        const IDataType * type = arguments[0].get();
+        const DataTypePtr & type = arguments[0];
 
-        if (!type->isInteger())
+        if (!isInteger(type))
             throw Exception("Cannot format " + type->getName() + " as bitmask string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();
@@ -139,7 +139,7 @@ public:
     {
         const IDataType & type = *arguments[0];
 
-        if (!type.isNumber())
+        if (!isNumber(type))
             throw Exception("Cannot format " + type.getName() + " as size in bytes", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeString>();

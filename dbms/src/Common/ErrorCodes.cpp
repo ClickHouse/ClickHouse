@@ -273,8 +273,8 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP = 269;
     extern const int CANNOT_COMPRESS = 270;
     extern const int CANNOT_DECOMPRESS = 271;
-    extern const int AIO_SUBMIT_ERROR = 272;
-    extern const int AIO_COMPLETION_ERROR = 273;
+    extern const int CANNOT_IO_SUBMIT = 272;
+    extern const int CANNOT_IO_GETEVENTS = 273;
     extern const int AIO_READ_ERROR = 274;
     extern const int AIO_WRITE_ERROR = 275;
     extern const int INDEX_NOT_USED = 277;
@@ -372,7 +372,30 @@ namespace ErrorCodes
     extern const int FUNCTION_THROW_IF_VALUE_IS_NON_ZERO = 395;
     extern const int TOO_MANY_ROWS_OR_BYTES = 396;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW = 397;
-
+    extern const int UNKNOWN_MUTATION_COMMAND = 398;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT = 399;
+    extern const int CANNOT_STAT = 400;
+    extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME = 401;
+    extern const int CANNOT_IOSETUP = 402;
+    extern const int INVALID_JOIN_ON_EXPRESSION = 403;
+    extern const int BAD_ODBC_CONNECTION_STRING = 404;
+    extern const int PARTITION_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT = 405;
+    extern const int TOP_AND_LIMIT_TOGETHER = 406;
+    extern const int DECIMAL_OVERFLOW = 407;
+    extern const int BAD_REQUEST_PARAMETER = 408;
+    extern const int EXTERNAL_EXECUTABLE_NOT_FOUND = 409;
+    extern const int EXTERNAL_SERVER_IS_NOT_RESPONDING = 410;
+    extern const int PTHREAD_ERROR = 411;
+    extern const int NETLINK_ERROR = 412;
+    extern const int CANNOT_SET_SIGNAL_HANDLER = 413;
+    extern const int CANNOT_READLINE = 414;
+    extern const int ALL_REPLICAS_LOST = 415;
+    extern const int REPLICA_STATUS_CHANGED = 416;
+    extern const int EXPECTED_ALL_OR_ANY = 417;
+    extern const int UNKNOWN_JOIN_STRICTNESS = 418;
+    extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN = 419;
+    extern const int CANNOT_UPDATE_COLUMN = 420;
+    extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

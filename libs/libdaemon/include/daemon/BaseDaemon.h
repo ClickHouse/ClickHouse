@@ -13,7 +13,6 @@
 #include <Poco/Process.h>
 #include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
-#include <Poco/NumberFormatter.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
 #include <Poco/Net/SocketAddress.h>
@@ -35,7 +34,7 @@ namespace Poco { class TaskManager; }
 /// #    --config-file или --config - имя файла конфигурации. По умолчанию - config.xml
 /// #    --pid-file - имя PID файла. По умолчанию - pid
 /// #    --log-file - имя лог файла
-/// #    --error-file - имя лог файла, в который будут помещаться только ошибки
+/// #    --errorlog-file - имя лог файла, в который будут помещаться только ошибки
 /// #    --daemon - запустить в режиме демона; если не указан - логгирование будет вестись на консоль
 /// <daemon_name> --daemon --config-file=localfile.xml --pid-file=pid.pid --log-file=log.log --errorlog-file=error.log
 /// \endcode
@@ -58,7 +57,7 @@ public:
     static constexpr char DEFAULT_GRAPHITE_CONFIG_NAME[] = "graphite";
 
     BaseDaemon();
-    ~BaseDaemon();
+    ~BaseDaemon() override;
 
     /// Загружает конфигурацию и "строит" логгеры на запись в файлы
     void initialize(Poco::Util::Application &) override;
@@ -145,6 +144,11 @@ public:
         return layer;    /// layer выставляется в классе-наследнике BaseDaemonApplication.
     }
 
+    /// close all process FDs except
+    /// 0-2 -- stdin, stdout, stderr
+    /// also doesn't close global internal pipes for signal handling
+    void closeFDs();
+
 protected:
     /// Возвращает TaskManager приложения
     /// все методы task_manager следует вызывать из одного потока
@@ -158,6 +162,9 @@ protected:
 
     /// thread safe
     virtual void handleSignal(int signal_id);
+
+    /// initialize termination process and signal handlers
+    virtual void initializeTerminationAndSignalProcessing();
 
     /// реализация обработки сигналов завершения через pipe не требует блокировки сигнала с помощью sigprocmask во всех потоках
     void waitForTerminationRequest()
@@ -214,7 +221,7 @@ protected:
     /// Файлы с логами.
     Poco::AutoPtr<Poco::FileChannel> log_file;
     Poco::AutoPtr<Poco::FileChannel> error_log_file;
-    Poco::AutoPtr<Poco::SyslogChannel> syslog_channel;
+    Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     std::map<std::string, std::unique_ptr<GraphiteWriter>> graphite_writers;
 

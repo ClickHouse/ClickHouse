@@ -7,6 +7,7 @@
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
+#include <Common/Stopwatch.h>
 
 
 namespace ProfileEvents
@@ -14,6 +15,7 @@ namespace ProfileEvents
     extern const Event WriteBufferFromFileDescriptorWrite;
     extern const Event WriteBufferFromFileDescriptorWriteFailed;
     extern const Event WriteBufferFromFileDescriptorWriteBytes;
+    extern const Event DiskWriteElapsedMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -38,6 +40,8 @@ void WriteBufferFromFileDescriptor::nextImpl()
     if (!offset())
         return;
 
+    Stopwatch watch;
+
     size_t bytes_written = 0;
     while (bytes_written != offset())
     {
@@ -59,6 +63,7 @@ void WriteBufferFromFileDescriptor::nextImpl()
             bytes_written += res;
     }
 
+    ProfileEvents::increment(ProfileEvents::DiskWriteElapsedMicroseconds, watch.elapsedMicroseconds());
     ProfileEvents::increment(ProfileEvents::WriteBufferFromFileDescriptorWriteBytes, bytes_written);
 }
 

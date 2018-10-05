@@ -1,6 +1,7 @@
 #include <common/shift10.h>
 #include <common/likely.h>
 #include <limits>
+#include <port/ssize_t.h>
 
 
 template <typename T>

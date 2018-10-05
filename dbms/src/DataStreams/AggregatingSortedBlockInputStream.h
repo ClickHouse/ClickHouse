@@ -26,7 +26,6 @@ public:
 
     String getName() const override { return "AggregatingSorted"; }
 
-    bool isGroupedOutput() const override { return true; }
     bool isSortedOutput() const override { return true; }
 
 protected:

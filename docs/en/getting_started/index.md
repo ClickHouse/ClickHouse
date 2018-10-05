@@ -1,22 +1,26 @@
-# Getting started
+# Getting Started
 
-## System requirements
+## System Requirements
 
-This is not a cross-platform system. It requires Linux Ubuntu Precise (12.04) or newer, with x86_64 architecture and support for the SSE 4.2 instruction set.
+Installation from the official repository requires Linux with x86_64 architecture and support for the SSE 4.2 instruction set.
+
 To check for SSE 4.2:
 
 ```bash
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-We recommend using Ubuntu Trusty, Ubuntu Xenial, or Ubuntu Precise.
-The terminal must use UTF-8 encoding (the default in Ubuntu).
+We recommend using Ubuntu or Debian. The terminal must use UTF-8 encoding.
+
+For rpm-based systems, you can use 3rd-party packages: https://packagecloud.io/altinity/clickhouse or install debian packages.
+
+ClickHouse also works on FreeBSD and Mac OS X. It can be compiled for x86_64 processors without SSE 4.2 support, and for AArch64 CPUs.
 
 ## Installation
 
 For testing and development, the system can be installed on a single server or on a desktop computer.
 
-### Installing from packages for Debian/Ubuntu
+### Installing from Packages for Debian/Ubuntu
 
 In `/etc/apt/sources.list` (or in a separate `/etc/apt/sources.list.d/clickhouse.list` file), add the repository:
 
@@ -40,7 +44,7 @@ ClickHouse contains access restriction settings. They are located in the 'users.
 By default, access is allowed from anywhere for the 'default' user, without a password. See 'user/default/networks'.
 For more information, see the section "Configuration files".
 
-### Installing from sources
+### Installing from Sources
 
 To compile, follow the instructions: build.md
 
@@ -48,8 +52,8 @@ You can compile packages and install them.
 You can also use programs without installing packages.
 
 ```text
-Client: dbms/src/Client/
-Server: dbms/src/Server/
+Client: dbms/programs/clickhouse-client
+Server: dbms/programs/clickhouse-server
 ```
 
 For the server, create a catalog with data, such as:
@@ -62,15 +66,15 @@ For the server, create a catalog with data, such as:
 (Configurable in the server config.)
 Run 'chown' for the desired user.
 
-Note the path to logs in the server config (src/dbms/src/Server/config.xml).
+Note the path to logs in the server config (src/dbms/programs/server/config.xml).
 
-### Other installation methods
+### Other Installation Methods
 
 Docker image: <https://hub.docker.com/r/yandex/clickhouse-server/>
 
 RPM packages for CentOS or RHEL: <https://github.com/Altinity/clickhouse-rpm-install>
 
-Gentoo overlay: <https://github.com/kmeaw/clickhouse-overlay>
+Gentoo: `emerge clickhouse`
 
 ## Launch
 

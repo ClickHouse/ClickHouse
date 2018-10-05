@@ -1,5 +1,6 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
@@ -9,6 +10,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTColumnDeclaration.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -20,6 +24,83 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+
+std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_ast)
+{
+    const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
+
+    if (command_ast->type == ASTAlterCommand::ADD_COLUMN)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::ADD_COLUMN;
+
+        const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*command_ast->col_decl);
+
+        command.column_name = ast_col_decl.name;
+        if (ast_col_decl.type)
+        {
+            command.data_type = data_type_factory.get(ast_col_decl.type);
+        }
+        if (ast_col_decl.default_expression)
+        {
+            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.default_expression;
+        }
+
+        if (command_ast->column)
+            command.after_column = typeid_cast<const ASTIdentifier &>(*command_ast->column).name;
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::DROP_COLUMN && !command_ast->partition)
+    {
+        if (command_ast->clear_column)
+            throw Exception("\"ALTER TABLE table CLEAR COLUMN column\" queries are not supported yet. Use \"CLEAR COLUMN column IN PARTITION\".", ErrorCodes::NOT_IMPLEMENTED);
+
+        AlterCommand command;
+        command.type = AlterCommand::DROP_COLUMN;
+        command.column_name = typeid_cast<const ASTIdentifier &>(*(command_ast->column)).name;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_COLUMN;
+
+        const auto & ast_col_decl = typeid_cast<const ASTColumnDeclaration &>(*command_ast->col_decl);
+
+        command.column_name = ast_col_decl.name;
+        if (ast_col_decl.type)
+        {
+            command.data_type = data_type_factory.get(ast_col_decl.type);
+        }
+
+        if (ast_col_decl.default_expression)
+        {
+            command.default_kind = columnDefaultKindFromString(ast_col_decl.default_specifier);
+            command.default_expression = ast_col_decl.default_expression;
+        }
+
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_PRIMARY_KEY)
+    {
+        AlterCommand command;
+        command.type = AlterCommand::MODIFY_PRIMARY_KEY;
+        command.primary_key = command_ast->primary_key;
+        return command;
+    }
+    else
+        return {};
+}
+
+
+/// the names are the same if they match the whole name or name_without_dot matches the part of the name up to the dot
+static bool namesEqual(const String & name_without_dot, const DB::NameAndTypePair & name_type)
+{
+    String name_with_dot = name_without_dot + ".";
+    return (name_with_dot == name_type.name.substr(0, name_without_dot.length() + 1) || name_without_dot == name_type.name);
+}
 
 void AlterCommand::apply(ColumnsDescription & columns_description) const
 {
@@ -187,7 +268,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
         {
             const auto & column_name = command.column_name;
             const auto column_it = std::find_if(std::begin(all_columns), std::end(all_columns),
-                std::bind(AlterCommand::namesEqual, std::cref(command.column_name), std::placeholders::_1));
+                std::bind(namesEqual, std::cref(command.column_name), std::placeholders::_1));
 
             if (command.type == AlterCommand::ADD_COLUMN)
             {
@@ -251,7 +332,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
             auto found = false;
             for (auto it = std::begin(all_columns); it != std::end(all_columns);)
             {
-                if (AlterCommand::namesEqual(command.column_name, *it))
+                if (namesEqual(command.column_name, *it))
                 {
                     found = true;
                     it = all_columns.erase(it);
@@ -262,7 +343,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
 
             for (auto it = std::begin(defaults); it != std::end(defaults);)
             {
-                if (AlterCommand::namesEqual(command.column_name, { it->first, nullptr }))
+                if (namesEqual(command.column_name, { it->first, nullptr }))
                     it = defaults.erase(it);
                 else
                     ++it;
@@ -280,7 +361,7 @@ void AlterCommands::validate(const IStorage & table, const Context & context)
     {
         const auto & column_name = col_def.first;
         const auto column_it = std::find_if(all_columns.begin(), all_columns.end(), [&] (const NameAndTypePair & name_type)
-            { return AlterCommand::namesEqual(column_name, name_type); });
+            { return namesEqual(column_name, name_type); });
 
         const auto tmp_column_name = column_name + "_tmp";
         const auto & column_type_ptr = column_it->type;
