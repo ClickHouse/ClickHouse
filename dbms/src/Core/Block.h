@@ -33,6 +33,11 @@ private:
     Container data;
     IndexByName index_by_name;
 
+    /// The number of rows in block.
+    /// Now it's a temporary value with setter and getter.
+    /// TODO: support and check invariant that all columns sizes == num_rows, use num_rows for empty block (e.g. for select count())
+    size_t num_rows;
+
 public:
     BlockInfo info;
 
@@ -133,6 +138,10 @@ public:
       *  with same structure, but different data.
       */
     void updateHash(SipHash & hash) const;
+
+    /// TODO: remove setter and getter.
+    size_t getNumRows() const { return num_rows; }
+    void setNumRows(size_t num_rows_) { num_rows = num_rows_; }
 
 private:
     void eraseImpl(size_t position);
