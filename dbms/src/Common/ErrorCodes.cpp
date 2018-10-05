@@ -397,6 +397,8 @@ namespace ErrorCodes
     extern const int CANNOT_UPDATE_COLUMN = 420;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
 
+    extern const int PROCESSOR_CANNOT_PROCESS_ALL_DATA = 422;
+
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
