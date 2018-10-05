@@ -4,6 +4,7 @@ import subprocess
 import os
 import argparse
 import logging
+import sys
 
 IMAGE_MAP = {
     "deb": "yandex/clickhouse-deb-builder",
@@ -34,11 +35,17 @@ def run_image_with_env(image_name, output, env_variables, ch_root):
     if env_part:
         env_part = " -e " + env_part
 
-    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build {env} -it {img_name}".format(
+    if sys.stdout.isatty():
+        interactive = "-it"
+    else:
+        interactive = ""
+
+    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build {env} {interactive} {img_name}".format(
         output_path=output,
         ch_root=ch_root,
         env=env_part,
-        img_name=image_name
+        img_name=image_name,
+        interactive=interactive
     )
 
     logging.info("Will build ClickHouse pkg with cmd: '{}'".format(cmd))
@@ -85,11 +92,8 @@ if __name__ == "__main__":
         ch_root = args.clickhouse_repo_path
 
     dockerfile = os.path.join(ch_root, "docker/packager", args.package_type, "Dockerfile")
-    try:
-        if not check_image_exists_locally(image_name) or args.force_build_image:
-            if not pull_image(image_name) or args.force_build_image:
-                build_image(image_name, dockerfile)
-        run_image_with_env(image_name, args.output_dir, parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type), ch_root)
-        logging.info("Output placed into {}".format(args.output_dir))
-    except Exception as ex:
-        logging.info("Exception occured {}".format(ex))
+    if not check_image_exists_locally(image_name) or args.force_build_image:
+        if not pull_image(image_name) or args.force_build_image:
+            build_image(image_name, dockerfile)
+    run_image_with_env(image_name, args.output_dir, parse_env_variables(args.build_type, args.compiler, args.sanitizer, args.package_type), ch_root)
+    logging.info("Output placed into {}".format(args.output_dir))
