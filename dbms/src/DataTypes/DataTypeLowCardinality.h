@@ -5,13 +5,13 @@
 namespace DB
 {
 
-class DataTypeWithDictionary : public IDataType
+class DataTypeLowCardinality : public IDataType
 {
 private:
     DataTypePtr dictionary_type;
 
 public:
-    DataTypeWithDictionary(DataTypePtr dictionary_type_);
+    DataTypeLowCardinality(DataTypePtr dictionary_type_);
 
     const DataTypePtr & getDictionaryType() const { return dictionary_type; }
 
@@ -136,7 +136,7 @@ public:
     bool isCategorial() const override { return false; }
     bool isNullable() const override { return false; }
     bool onlyNull() const override { return false; }
-    bool withDictionary() const override { return true; }
+    bool lowCardinality() const override { return true; }
 
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type);
     static MutableColumnUniquePtr createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys);
@@ -161,7 +161,7 @@ private:
     static MutableColumnUniquePtr createColumnUniqueImpl(const IDataType & keys_type, const Creator & creator);
 };
 
-/// Returns dictionary type if type is DataTypeWithDictionary, type otherwise.
+/// Returns dictionary type if type is DataTypeLowCardinality, type otherwise.
 DataTypePtr removeLowCardinality(const DataTypePtr & type);
 
 }

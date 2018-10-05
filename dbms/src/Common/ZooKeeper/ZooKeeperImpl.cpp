@@ -1027,7 +1027,7 @@ void ZooKeeper::sendAuth(const String & scheme, const String & data)
     read(err);
 
     if (read_xid != auth_xid)
-        throw Exception("Unexpected event recieved in reply to auth request: " + toString(read_xid),
+        throw Exception("Unexpected event received in reply to auth request: " + toString(read_xid),
             ZMARSHALLINGERROR);
 
     int32_t actual_length = in->count() - count_before_event;
