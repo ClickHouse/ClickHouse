@@ -50,7 +50,7 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
     AggregateFunctionPtr res;
     DataTypePtr data_type = argument_types[0];
     if (isDecimal(data_type))
-        res.reset(createWithDecimalType<Function>(*data_type));
+        res.reset(createWithDecimalType<Function>(*data_type, *data_type));
     else
         res.reset(createWithNumericType<Function>(*data_type));
 

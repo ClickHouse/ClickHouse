@@ -1,9 +1,9 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnWithDictionary.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
 
 
@@ -27,13 +27,13 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool useDefaultImplementationForColumnsWithDictionary() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        auto * type = typeid_cast<const DataTypeWithDictionary *>(arguments[0].get());
+        auto * type = typeid_cast<const DataTypeLowCardinality *>(arguments[0].get());
         if (!type)
-            throw Exception("First first argument of function lowCardinalityIndexes must be ColumnWithDictionary, but got"
+            throw Exception("First first argument of function lowCardinalityIndexes must be ColumnLowCardinality, but got"
                             + arguments[0]->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeUInt64>();
@@ -44,7 +44,7 @@ public:
         auto arg_num = arguments[0];
         const auto & arg = block.getByPosition(arg_num);
         auto & res = block.getByPosition(result);
-        auto indexes_col = typeid_cast<const ColumnWithDictionary *>(arg.column.get())->getIndexesPtr();
+        auto indexes_col = typeid_cast<const ColumnLowCardinality *>(arg.column.get())->getIndexesPtr();
         auto new_indexes_col = ColumnUInt64::create(indexes_col->size());
         auto & data = new_indexes_col->getData();
         for (size_t i = 0; i < data.size(); ++i)

@@ -1,4 +1,4 @@
-#include <Columns/ColumnWithDictionary.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <DataTypes/NumberTraits.h>
@@ -109,34 +109,34 @@ namespace
 }
 
 
-ColumnWithDictionary::ColumnWithDictionary(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
+ColumnLowCardinality::ColumnLowCardinality(MutableColumnPtr && column_unique_, MutableColumnPtr && indexes_, bool is_shared)
     : dictionary(std::move(column_unique_), is_shared), idx(std::move(indexes_))
 {
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insert(const Field & x)
+void ColumnLowCardinality::insert(const Field & x)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsert(x));
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertDefault()
+void ColumnLowCardinality::insertDefault()
 {
     idx.insertPosition(getDictionary().getDefaultValueIndex());
 }
 
-void ColumnWithDictionary::insertFrom(const IColumn & src, size_t n)
+void ColumnLowCardinality::insertFrom(const IColumn & src, size_t n)
 {
-    auto * src_with_dict = typeid_cast<const ColumnWithDictionary *>(&src);
+    auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
-    if (!src_with_dict)
-        throw Exception("Expected ColumnWithDictionary, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+    if (!low_cardinality_src)
+        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-    size_t position = src_with_dict->getIndexes().getUInt(n);
+    size_t position = low_cardinality_src->getIndexes().getUInt(n);
 
-    if (&src_with_dict->getDictionary() == &getDictionary())
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only index.
         idx.insertPosition(position);
@@ -144,31 +144,31 @@ void ColumnWithDictionary::insertFrom(const IColumn & src, size_t n)
     else
     {
         compactIfSharedDictionary();
-        const auto & nested = *src_with_dict->getDictionary().getNestedColumn();
+        const auto & nested = *low_cardinality_src->getDictionary().getNestedColumn();
         idx.insertPosition(dictionary.getColumnUnique().uniqueInsertFrom(nested, position));
     }
 
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertFromFullColumn(const IColumn & src, size_t n)
+void ColumnLowCardinality::insertFromFullColumn(const IColumn & src, size_t n)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertFrom(src, n));
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertRangeFrom(const IColumn & src, size_t start, size_t length)
+void ColumnLowCardinality::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    auto * src_with_dict = typeid_cast<const ColumnWithDictionary *>(&src);
+    auto * low_cardinality_src = typeid_cast<const ColumnLowCardinality *>(&src);
 
-    if (!src_with_dict)
-        throw Exception("Expected ColumnWithDictionary, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
+    if (!low_cardinality_src)
+        throw Exception("Expected ColumnLowCardinality, got" + src.getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-    if (&src_with_dict->getDictionary() == &getDictionary())
+    if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
-        idx.insertPositionsRange(src_with_dict->getIndexes(), start, length);
+        idx.insertPositionsRange(low_cardinality_src->getIndexes(), start, length);
     }
     else
     {
@@ -176,10 +176,10 @@ void ColumnWithDictionary::insertRangeFrom(const IColumn & src, size_t start, si
 
         /// TODO: Support native insertion from other unique column. It will help to avoid null map creation.
 
-        auto sub_idx = (*src_with_dict->getIndexes().cut(start, length)).mutate();
+        auto sub_idx = (*low_cardinality_src->getIndexes().cut(start, length)).mutate();
         auto idx_map = mapUniqueIndex(*sub_idx);
 
-        auto src_nested = src_with_dict->getDictionary().getNestedColumn();
+        auto src_nested = low_cardinality_src->getDictionary().getNestedColumn();
         auto used_keys = src_nested->index(*idx_map, 0);
 
         auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(*used_keys, 0, used_keys->size());
@@ -188,7 +188,7 @@ void ColumnWithDictionary::insertRangeFrom(const IColumn & src, size_t start, si
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length)
+void ColumnLowCardinality::insertRangeFromFullColumn(const IColumn & src, size_t start, size_t length)
 {
     compactIfSharedDictionary();
     auto inserted_indexes = dictionary.getColumnUnique().uniqueInsertRangeFrom(src, start, length);
@@ -196,7 +196,7 @@ void ColumnWithDictionary::insertRangeFromFullColumn(const IColumn & src, size_t
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions)
+void ColumnLowCardinality::insertRangeFromDictionaryEncodedColumn(const IColumn & keys, const IColumn & positions)
 {
     Index(positions.getPtr()).check(keys.size());
     compactIfSharedDictionary();
@@ -205,26 +205,26 @@ void ColumnWithDictionary::insertRangeFromDictionaryEncodedColumn(const IColumn 
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertData(const char * pos, size_t length)
+void ColumnLowCardinality::insertData(const char * pos, size_t length)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertData(pos, length));
     idx.check(getDictionary().size());
 }
 
-void ColumnWithDictionary::insertDataWithTerminatingZero(const char * pos, size_t length)
+void ColumnLowCardinality::insertDataWithTerminatingZero(const char * pos, size_t length)
 {
     compactIfSharedDictionary();
     idx.insertPosition(dictionary.getColumnUnique().uniqueInsertDataWithTerminatingZero(pos, length));
     idx.check(getDictionary().size());
 }
 
-StringRef ColumnWithDictionary::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
+StringRef ColumnLowCardinality::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return getDictionary().serializeValueIntoArena(getIndexes().getUInt(n), arena, begin);
 }
 
-const char * ColumnWithDictionary::deserializeAndInsertFromArena(const char * pos)
+const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * pos)
 {
     compactIfSharedDictionary();
 
@@ -235,26 +235,26 @@ const char * ColumnWithDictionary::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
-void ColumnWithDictionary::gather(ColumnGathererStream & gatherer)
+void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
 }
 
-MutableColumnPtr ColumnWithDictionary::cloneResized(size_t size) const
+MutableColumnPtr ColumnLowCardinality::cloneResized(size_t size) const
 {
     auto unique_ptr = dictionary.getColumnUniquePtr();
-    return ColumnWithDictionary::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
+    return ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), getIndexes().cloneResized(size));
 }
 
-int ColumnWithDictionary::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
+int ColumnLowCardinality::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
 {
-    const auto & column_with_dictionary = static_cast<const ColumnWithDictionary &>(rhs);
+    const auto & low_cardinality_column = static_cast<const ColumnLowCardinality &>(rhs);
     size_t n_index = getIndexes().getUInt(n);
-    size_t m_index = column_with_dictionary.getIndexes().getUInt(m);
-    return getDictionary().compareAt(n_index, m_index, column_with_dictionary.getDictionary(), nan_direction_hint);
+    size_t m_index = low_cardinality_column.getIndexes().getUInt(m);
+    return getDictionary().compareAt(n_index, m_index, low_cardinality_column.getDictionary(), nan_direction_hint);
 }
 
-void ColumnWithDictionary::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
+void ColumnLowCardinality::getPermutation(bool reverse, size_t limit, int nan_direction_hint, Permutation & res) const
 {
     if (limit == 0)
         limit = size();
@@ -289,65 +289,65 @@ void ColumnWithDictionary::getPermutation(bool reverse, size_t limit, int nan_di
     }
 }
 
-std::vector<MutableColumnPtr> ColumnWithDictionary::scatter(ColumnIndex num_columns, const Selector & selector) const
+std::vector<MutableColumnPtr> ColumnLowCardinality::scatter(ColumnIndex num_columns, const Selector & selector) const
 {
     auto columns = getIndexes().scatter(num_columns, selector);
     for (auto & column : columns)
     {
         auto unique_ptr = dictionary.getColumnUniquePtr();
-        column = ColumnWithDictionary::create((*std::move(unique_ptr)).mutate(), std::move(column));
+        column = ColumnLowCardinality::create((*std::move(unique_ptr)).mutate(), std::move(column));
     }
 
     return columns;
 }
 
-void ColumnWithDictionary::setSharedDictionary(const ColumnPtr & column_unique)
+void ColumnLowCardinality::setSharedDictionary(const ColumnPtr & column_unique)
 {
     if (!empty())
-        throw Exception("Can't set ColumnUnique for ColumnWithDictionary because is't not empty.",
+        throw Exception("Can't set ColumnUnique for ColumnLowCardinality because is't not empty.",
                         ErrorCodes::LOGICAL_ERROR);
 
     dictionary.setShared(column_unique);
 }
 
-ColumnWithDictionary::MutablePtr ColumnWithDictionary::compact()
+ColumnLowCardinality::MutablePtr ColumnLowCardinality::compact()
 {
     auto positions = idx.getPositions();
     /// Create column with new indexes and old dictionary.
-    auto column = ColumnWithDictionary::create(getDictionary().assumeMutable(), (*std::move(positions)).mutate());
+    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), (*std::move(positions)).mutate());
     /// Will create new dictionary.
     column->compactInplace();
 
     return column;
 }
 
-ColumnWithDictionary::MutablePtr ColumnWithDictionary::cutAndCompact(size_t start, size_t length) const
+ColumnLowCardinality::MutablePtr ColumnLowCardinality::cutAndCompact(size_t start, size_t length) const
 {
     auto sub_positions = (*idx.getPositions()->cut(start, length)).mutate();
     /// Create column with new indexes and old dictionary.
-    auto column = ColumnWithDictionary::create(getDictionary().assumeMutable(), std::move(sub_positions));
+    auto column = ColumnLowCardinality::create(getDictionary().assumeMutable(), std::move(sub_positions));
     /// Will create new dictionary.
     column->compactInplace();
 
     return column;
 }
 
-void ColumnWithDictionary::compactInplace()
+void ColumnLowCardinality::compactInplace()
 {
     auto positions = idx.detachPositions();
     dictionary.compact(positions);
     idx.attachPositions(std::move(positions));
 }
 
-void ColumnWithDictionary::compactIfSharedDictionary()
+void ColumnLowCardinality::compactIfSharedDictionary()
 {
     if (dictionary.isShared())
         compactInplace();
 }
 
 
-ColumnWithDictionary::DictionaryEncodedColumn
-ColumnWithDictionary::getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const
+ColumnLowCardinality::DictionaryEncodedColumn
+ColumnLowCardinality::getMinimalDictionaryEncodedColumn(size_t offset, size_t limit) const
 {
     MutableColumnPtr sub_indexes = (*std::move(idx.getPositions()->cut(offset, limit))).mutate();
     auto indexes_map = mapUniqueIndex(*sub_indexes);
@@ -356,7 +356,7 @@ ColumnWithDictionary::getMinimalDictionaryEncodedColumn(size_t offset, size_t li
     return {std::move(sub_keys), std::move(sub_indexes)};
 }
 
-ColumnPtr ColumnWithDictionary::countKeys() const
+ColumnPtr ColumnLowCardinality::countKeys() const
 {
     const auto & nested_column = getDictionary().getNestedColumn();
     size_t dict_size = nested_column->size();
@@ -368,20 +368,20 @@ ColumnPtr ColumnWithDictionary::countKeys() const
 
 
 
-ColumnWithDictionary::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
+ColumnLowCardinality::Index::Index() : positions(ColumnUInt8::create()), size_of_type(sizeof(UInt8)) {}
 
-ColumnWithDictionary::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(MutableColumnPtr && positions) : positions(std::move(positions))
 {
     updateSizeOfType();
 }
 
-ColumnWithDictionary::Index::Index(ColumnPtr positions) : positions(std::move(positions))
+ColumnLowCardinality::Index::Index(ColumnPtr positions) : positions(std::move(positions))
 {
     updateSizeOfType();
 }
 
 template <typename Callback>
-void ColumnWithDictionary::Index::callForType(Callback && callback, size_t size_of_type)
+void ColumnLowCardinality::Index::callForType(Callback && callback, size_t size_of_type)
 {
     switch (size_of_type)
     {
@@ -390,13 +390,13 @@ void ColumnWithDictionary::Index::callForType(Callback && callback, size_t size_
         case sizeof(UInt32): { callback(UInt32()); break; }
         case sizeof(UInt64): { callback(UInt64()); break; }
         default: {
-            throw Exception("Unexpected size of index type for ColumnWithDictionary: " + toString(size_of_type),
+            throw Exception("Unexpected size of index type for ColumnLowCardinality: " + toString(size_of_type),
                             ErrorCodes::LOGICAL_ERROR);
         }
     }
 }
 
-size_t ColumnWithDictionary::Index::getSizeOfIndexType(const IColumn & column, size_t hint)
+size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, size_t hint)
 {
     auto checkFor = [&](auto type) { return typeid_cast<const ColumnVector<decltype(type)> *>(&column) != nullptr; };
     auto tryGetSizeFor = [&](auto type) -> size_t { return checkFor(type) ? sizeof(decltype(type)) : 0; };
@@ -419,22 +419,22 @@ size_t ColumnWithDictionary::Index::getSizeOfIndexType(const IColumn & column, s
     if (auto size = tryGetSizeFor(UInt64()))
         return size;
 
-    throw Exception("Unexpected indexes type for ColumnWithDictionary. Expected UInt, got " + column.getName(),
+    throw Exception("Unexpected indexes type for ColumnLowCardinality. Expected UInt, got " + column.getName(),
                     ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void ColumnWithDictionary::Index::attachPositions(ColumnPtr positions_)
+void ColumnLowCardinality::Index::attachPositions(ColumnPtr positions_)
 {
     positions = std::move(positions_);
     updateSizeOfType();
 }
 
 template <typename IndexType>
-typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPositionsData()
+typename ColumnVector<IndexType>::Container & ColumnLowCardinality::Index::getPositionsData()
 {
     auto * positions_ptr = typeid_cast<ColumnVector<IndexType> *>(positions->assumeMutable().get());
     if (!positions_ptr)
-        throw Exception("Invalid indexes type for ColumnWithDictionary."
+        throw Exception("Invalid indexes type for ColumnLowCardinality."
                         " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
                         ErrorCodes::LOGICAL_ERROR);
 
@@ -442,11 +442,11 @@ typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPo
 }
 
 template <typename IndexType>
-const typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index::getPositionsData() const
+const typename ColumnVector<IndexType>::Container & ColumnLowCardinality::Index::getPositionsData() const
 {
     const auto * positions_ptr = typeid_cast<const ColumnVector<IndexType> *>(positions.get());
     if (!positions_ptr)
-        throw Exception("Invalid indexes type for ColumnWithDictionary."
+        throw Exception("Invalid indexes type for ColumnLowCardinality."
                         " Expected UInt" + toString(8 * sizeof(IndexType)) + ", got " + positions->getName(),
                         ErrorCodes::LOGICAL_ERROR);
 
@@ -454,7 +454,7 @@ const typename ColumnVector<IndexType>::Container & ColumnWithDictionary::Index:
 }
 
 template <typename IndexType>
-void ColumnWithDictionary::Index::convertPositions()
+void ColumnLowCardinality::Index::convertPositions()
 {
     auto convert = [&](auto x)
     {
@@ -485,14 +485,14 @@ void ColumnWithDictionary::Index::convertPositions()
     checkSizeOfType();
 }
 
-void ColumnWithDictionary::Index::expandType()
+void ColumnLowCardinality::Index::expandType()
 {
     auto expand = [&](auto type)
     {
         using CurIndexType = decltype(type);
         constexpr auto next_size = NumberTraits::nextSize(sizeof(CurIndexType));
         if (next_size == sizeof(CurIndexType))
-            throw Exception("Can't expand indexes type for ColumnWithDictionary from type: "
+            throw Exception("Can't expand indexes type for ColumnLowCardinality from type: "
                             + demangle(typeid(CurIndexType).name()), ErrorCodes::LOGICAL_ERROR);
 
         using NewIndexType = typename NumberTraits::Construct<false, false, next_size>::Type;
@@ -502,14 +502,14 @@ void ColumnWithDictionary::Index::expandType()
     callForType(std::move(expand), size_of_type);
 }
 
-UInt64 ColumnWithDictionary::Index::getMaxPositionForCurrentType() const
+UInt64 ColumnLowCardinality::Index::getMaxPositionForCurrentType() const
 {
     UInt64 value = 0;
     callForType([&](auto type) { value = std::numeric_limits<decltype(type)>::max(); }, size_of_type);
     return value;
 }
 
-size_t ColumnWithDictionary::Index::getPositionAt(size_t row) const
+size_t ColumnLowCardinality::Index::getPositionAt(size_t row) const
 {
     size_t pos;
     auto getPosition = [&](auto type)
@@ -522,7 +522,7 @@ size_t ColumnWithDictionary::Index::getPositionAt(size_t row) const
     return pos;
 }
 
-void ColumnWithDictionary::Index::insertPosition(UInt64 position)
+void ColumnLowCardinality::Index::insertPosition(UInt64 position)
 {
     while (position > getMaxPositionForCurrentType())
         expandType();
@@ -531,7 +531,7 @@ void ColumnWithDictionary::Index::insertPosition(UInt64 position)
     checkSizeOfType();
 }
 
-void ColumnWithDictionary::Index::insertPositionsRange(const IColumn & column, size_t offset, size_t limit)
+void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, size_t offset, size_t limit)
 {
     auto insertForType = [&](auto type)
     {
@@ -571,13 +571,13 @@ void ColumnWithDictionary::Index::insertPositionsRange(const IColumn & column, s
         !insertForType(UInt16()) &&
         !insertForType(UInt32()) &&
         !insertForType(UInt64()))
-        throw Exception("Invalid column for ColumnWithDictionary index. Expected UInt, got " + column.getName(),
+        throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
 
     checkSizeOfType();
 }
 
-void ColumnWithDictionary::Index::check(size_t /*max_dictionary_size*/)
+void ColumnLowCardinality::Index::check(size_t /*max_dictionary_size*/)
 {
     /// TODO: remove
     /*
@@ -601,14 +601,14 @@ void ColumnWithDictionary::Index::check(size_t /*max_dictionary_size*/)
      */
 }
 
-void ColumnWithDictionary::Index::checkSizeOfType()
+void ColumnLowCardinality::Index::checkSizeOfType()
 {
     if (size_of_type != getSizeOfIndexType(*positions, size_of_type))
         throw Exception("Invalid size of type. Expected "  + toString(8 * size_of_type) +
                         ", but positions are " + positions->getName(), ErrorCodes::LOGICAL_ERROR);
 }
 
-void ColumnWithDictionary::Index::countKeys(ColumnUInt64::Container & counts) const
+void ColumnLowCardinality::Index::countKeys(ColumnUInt64::Container & counts) const
 {
     auto counter = [&](auto x)
     {
@@ -621,25 +621,25 @@ void ColumnWithDictionary::Index::countKeys(ColumnUInt64::Container & counts) co
 }
 
 
-ColumnWithDictionary::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
+ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
 }
-ColumnWithDictionary::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_shared)
+ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
 }
 
-void ColumnWithDictionary::Dictionary::checkColumn(const IColumn & column)
+void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
 {
 
     if (!dynamic_cast<const IColumnUnique *>(&column))
-        throw Exception("ColumnUnique expected as an argument of ColumnWithDictionary.", ErrorCodes::ILLEGAL_COLUMN);
+        throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
-void ColumnWithDictionary::Dictionary::setShared(const ColumnPtr & dictionary)
+void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & dictionary)
 {
     checkColumn(*dictionary);
 
@@ -647,7 +647,7 @@ void ColumnWithDictionary::Dictionary::setShared(const ColumnPtr & dictionary)
     shared = true;
 }
 
-void ColumnWithDictionary::Dictionary::compact(ColumnPtr & positions)
+void ColumnLowCardinality::Dictionary::compact(ColumnPtr & positions)
 {
     auto new_column_unique = column_unique->cloneEmpty();
 

@@ -1,4 +1,4 @@
-#include <Columns/ColumnWithDictionary.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
@@ -6,7 +6,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/TypeListNumber.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeWithDictionary.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -24,18 +24,18 @@ namespace ErrorCodes
 
 namespace
 {
-    const ColumnWithDictionary & getColumnWithDictionary(const IColumn & column)
+    const ColumnLowCardinality & getColumnLowCardinality(const IColumn & column)
     {
-        return typeid_cast<const ColumnWithDictionary &>(column);
+        return typeid_cast<const ColumnLowCardinality &>(column);
     }
 
-    ColumnWithDictionary & getColumnWithDictionary(IColumn & column)
+    ColumnLowCardinality & getColumnLowCardinality(IColumn & column)
     {
-        return typeid_cast<ColumnWithDictionary &>(column);
+        return typeid_cast<ColumnLowCardinality &>(column);
     }
 }
 
-DataTypeWithDictionary::DataTypeWithDictionary(DataTypePtr dictionary_type_)
+DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
         : dictionary_type(std::move(dictionary_type_))
 {
     auto inner_type = dictionary_type;
@@ -45,11 +45,11 @@ DataTypeWithDictionary::DataTypeWithDictionary(DataTypePtr dictionary_type_)
     if (!isStringOrFixedString(inner_type)
         && !isDateOrDateTime(inner_type)
         && !isNumber(inner_type))
-        throw Exception("DataTypeWithDictionary is supported only for numbers, strings, Date or DateTime, but got "
+        throw Exception("DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got "
                         + dictionary_type->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
 
-void DataTypeWithDictionary::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void DataTypeLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
     path.push_back(Substream::DictionaryKeys);
     dictionary_type->enumerateStreams(callback, path);
@@ -74,7 +74,7 @@ struct  KeysSerializationVersion
     static void checkVersion(UInt64 version)
     {
         if (version != SharedDictionariesWithAdditionalKeys)
-            throw Exception("Invalid version for DataTypeWithDictionary key column.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Invalid version for DataTypeLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
     }
 
     KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
@@ -115,7 +115,7 @@ struct IndexesSerializationType
         if (value <= TUInt64)
             return;
 
-        throw Exception("Invalid type for DataTypeWithDictionary index column.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Invalid type for DataTypeLowCardinality index column.", ErrorCodes::LOGICAL_ERROR);
     }
 
     void serialize(WriteBuffer & buffer) const
@@ -179,15 +179,15 @@ struct IndexesSerializationType
     IndexesSerializationType() = default;
 };
 
-struct SerializeStateWithDictionary : public IDataType::SerializeBinaryBulkState
+struct SerializeStateLowCardinality : public IDataType::SerializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
     MutableColumnUniquePtr shared_dictionary;
 
-    explicit SerializeStateWithDictionary(UInt64 key_version) : key_version(key_version) {}
+    explicit SerializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
 };
 
-struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkState
+struct DeserializeStateLowCardinality : public IDataType::DeserializeBinaryBulkState
 {
     KeysSerializationVersion key_version;
     ColumnUniquePtr global_dictionary;
@@ -197,46 +197,46 @@ struct DeserializeStateWithDictionary : public IDataType::DeserializeBinaryBulkS
     ColumnPtr null_map;
     UInt64 num_pending_rows = 0;
 
-    explicit DeserializeStateWithDictionary(UInt64 key_version) : key_version(key_version) {}
+    explicit DeserializeStateLowCardinality(UInt64 key_version) : key_version(key_version) {}
 };
 
-static SerializeStateWithDictionary * checkAndGetWithDictionarySerializeState(
+static SerializeStateLowCardinality * checkAndGetLowCardinalitySerializeState(
     IDataType::SerializeBinaryBulkStatePtr & state)
 {
     if (!state)
-        throw Exception("Got empty state for DataTypeWithDictionary.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Got empty state for DataTypeLowCardinality.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * with_dictionary_state = typeid_cast<SerializeStateWithDictionary *>(state.get());
-    if (!with_dictionary_state)
+    auto * low_cardinality_state = typeid_cast<SerializeStateLowCardinality *>(state.get());
+    if (!low_cardinality_state)
     {
         auto & state_ref = *state;
-        throw Exception("Invalid SerializeBinaryBulkState for DataTypeWithDictionary. Expected: "
-                        + demangle(typeid(SerializeStateWithDictionary).name()) + ", got "
+        throw Exception("Invalid SerializeBinaryBulkState for DataTypeLowCardinality. Expected: "
+                        + demangle(typeid(SerializeStateLowCardinality).name()) + ", got "
                         + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
-    return with_dictionary_state;
+    return low_cardinality_state;
 }
 
-static DeserializeStateWithDictionary * checkAndGetWithDictionaryDeserializeState(
+static DeserializeStateLowCardinality * checkAndGetLowCardinalityDeserializeState(
     IDataType::DeserializeBinaryBulkStatePtr & state)
 {
     if (!state)
-        throw Exception("Got empty state for DataTypeWithDictionary.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Got empty state for DataTypeLowCardinality.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * with_dictionary_state = typeid_cast<DeserializeStateWithDictionary *>(state.get());
-    if (!with_dictionary_state)
+    auto * low_cardinality_state = typeid_cast<DeserializeStateLowCardinality *>(state.get());
+    if (!low_cardinality_state)
     {
         auto & state_ref = *state;
-        throw Exception("Invalid DeserializeBinaryBulkState for DataTypeWithDictionary. Expected: "
-                        + demangle(typeid(DeserializeStateWithDictionary).name()) + ", got "
+        throw Exception("Invalid DeserializeBinaryBulkState for DataTypeLowCardinality. Expected: "
+                        + demangle(typeid(DeserializeStateLowCardinality).name()) + ", got "
                         + demangle(typeid(state_ref).name()), ErrorCodes::LOGICAL_ERROR);
     }
 
-    return with_dictionary_state;
+    return low_cardinality_state;
 }
 
-void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
+void DataTypeLowCardinality::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
@@ -245,7 +245,7 @@ void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 
     if (!stream)
-        throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStatePrefix",
+        throw Exception("Got empty stream in DataTypeLowCardinality::serializeBinaryBulkStatePrefix",
                         ErrorCodes::LOGICAL_ERROR);
 
     /// Write version and create SerializeBinaryBulkState.
@@ -253,36 +253,36 @@ void DataTypeWithDictionary::serializeBinaryBulkStatePrefix(
 
     writeIntBinary(key_version, *stream);
 
-    state = std::make_shared<SerializeStateWithDictionary>(key_version);
+    state = std::make_shared<SerializeStateLowCardinality>(key_version);
 }
 
-void DataTypeWithDictionary::serializeBinaryBulkStateSuffix(
+void DataTypeLowCardinality::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
-    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
+    auto * low_cardinality_state = checkAndGetLowCardinalitySerializeState(state);
+    KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    if (state_with_dictionary->shared_dictionary && settings.low_cardinality_max_dictionary_size)
+    if (low_cardinality_state->shared_dictionary && settings.low_cardinality_max_dictionary_size)
     {
-        auto nested_column = state_with_dictionary->shared_dictionary->getNestedNotNullableColumn();
+        auto nested_column = low_cardinality_state->shared_dictionary->getNestedNotNullableColumn();
 
         settings.path.push_back(Substream::DictionaryKeys);
         auto * stream = settings.getter(settings.path);
         settings.path.pop_back();
 
         if (!stream)
-            throw Exception("Got empty stream in DataTypeWithDictionary::serializeBinaryBulkStateSuffix",
+            throw Exception("Got empty stream in DataTypeLowCardinality::serializeBinaryBulkStateSuffix",
                             ErrorCodes::LOGICAL_ERROR);
 
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*nested_column, *stream, 0, num_keys);
-        state_with_dictionary->shared_dictionary = nullptr;
+        low_cardinality_state->shared_dictionary = nullptr;
     }
 }
 
-void DataTypeWithDictionary::deserializeBinaryBulkStatePrefix(
+void DataTypeLowCardinality::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
@@ -296,7 +296,7 @@ void DataTypeWithDictionary::deserializeBinaryBulkStatePrefix(
     UInt64 keys_version;
     readIntBinary(keys_version, *stream);
 
-    state = std::make_shared<DeserializeStateWithDictionary>(keys_version);
+    state = std::make_shared<DeserializeStateLowCardinality>(keys_version);
 }
 
 namespace
@@ -475,7 +475,7 @@ namespace
     }
 }
 
-void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
+void DataTypeLowCardinality::serializeBinaryBulkWithMultipleStreams(
     const IColumn & column,
     size_t offset,
     size_t limit,
@@ -492,16 +492,16 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception("Got empty stream for DataTypeWithDictionary keys.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Got empty stream for DataTypeLowCardinality keys.", ErrorCodes::LOGICAL_ERROR);
 
     if (!indexes_stream)
-        throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Got empty stream for DataTypeLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    const ColumnWithDictionary & column_with_dictionary = typeid_cast<const ColumnWithDictionary &>(column);
+    const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
 
-    auto * state_with_dictionary = checkAndGetWithDictionarySerializeState(state);
-    auto & global_dictionary = state_with_dictionary->shared_dictionary;
-    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
+    auto * low_cardinality_state = checkAndGetLowCardinalitySerializeState(state);
+    auto & global_dictionary = low_cardinality_state->shared_dictionary;
+    KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     bool need_update_dictionary = global_dictionary == nullptr;
     if (need_update_dictionary)
@@ -510,7 +510,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     size_t max_limit = column.size() - offset;
     limit = limit ? std::min(limit, max_limit) : max_limit;
 
-    auto sub_column = column_with_dictionary.cutAndCompact(offset, limit);
+    auto sub_column = low_cardinality_column.cutAndCompact(offset, limit);
     ColumnPtr positions = sub_column->getIndexesPtr();
     ColumnPtr keys = sub_column->getDictionary().getNestedColumn();
 
@@ -520,7 +520,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
                                                                                       settings.low_cardinality_max_dictionary_size);
         size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
-        ColumnWithDictionary::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
+        ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
@@ -553,7 +553,7 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
         UInt64 num_keys = nested_column->size();
         writeIntBinary(num_keys, *keys_stream);
         removeNullable(dictionary_type)->serializeBinaryBulk(*nested_column, *keys_stream, 0, num_keys);
-        state_with_dictionary->shared_dictionary = nullptr;
+        low_cardinality_state->shared_dictionary = nullptr;
     }
 
     if (need_additional_keys)
@@ -568,13 +568,13 @@ void DataTypeWithDictionary::serializeBinaryBulkWithMultipleStreams(
     index_version.getDataType()->serializeBinaryBulk(*positions, *indexes_stream, 0, num_rows);
 }
 
-void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
+void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     IColumn & column,
     size_t limit,
     DeserializeBinaryBulkSettings & settings,
     DeserializeBinaryBulkStatePtr & state) const
 {
-    ColumnWithDictionary & column_with_dictionary = typeid_cast<ColumnWithDictionary &>(column);
+    ColumnLowCardinality & low_cardinality_column = typeid_cast<ColumnLowCardinality &>(column);
 
     settings.path.push_back(Substream::DictionaryKeys);
     auto * keys_stream = settings.getter(settings.path);
@@ -586,15 +586,15 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     if (!keys_stream)
-        throw Exception("Got empty stream for DataTypeWithDictionary keys.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Got empty stream for DataTypeLowCardinality keys.", ErrorCodes::LOGICAL_ERROR);
 
     if (!indexes_stream)
-        throw Exception("Got empty stream for DataTypeWithDictionary indexes.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Got empty stream for DataTypeLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * state_with_dictionary = checkAndGetWithDictionaryDeserializeState(state);
-    KeysSerializationVersion::checkVersion(state_with_dictionary->key_version.value);
+    auto * low_cardinality_state = checkAndGetLowCardinalityDeserializeState(state);
+    KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    auto readDictionary = [this, state_with_dictionary, keys_stream]()
+    auto readDictionary = [this, low_cardinality_state, keys_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *keys_stream);
@@ -604,62 +604,62 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
         keys_type->deserializeBinaryBulk(*global_dict_keys, *keys_stream, num_keys, 0);
 
         auto column_unique = createColumnUnique(*dictionary_type, std::move(global_dict_keys));
-        state_with_dictionary->global_dictionary = std::move(column_unique);
+        low_cardinality_state->global_dictionary = std::move(column_unique);
     };
 
-    auto readAdditionalKeys = [this, state_with_dictionary, indexes_stream]()
+    auto readAdditionalKeys = [this, low_cardinality_state, indexes_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
         auto keys_type = removeNullable(dictionary_type);
         auto additional_keys = keys_type->createColumn();
         keys_type->deserializeBinaryBulk(*additional_keys, *indexes_stream, num_keys, 0);
-        state_with_dictionary->additional_keys = std::move(additional_keys);
+        low_cardinality_state->additional_keys = std::move(additional_keys);
 
-        if (!state_with_dictionary->index_type.need_global_dictionary && dictionary_type->isNullable())
+        if (!low_cardinality_state->index_type.need_global_dictionary && dictionary_type->isNullable())
         {
             auto null_map = ColumnUInt8::create(num_keys, 0);
             if (num_keys)
                 null_map->getElement(0) = 1;
 
-            state_with_dictionary->null_map = std::move(null_map);
+            low_cardinality_state->null_map = std::move(null_map);
         }
     };
 
-    auto readIndexes = [this, state_with_dictionary, indexes_stream, &column_with_dictionary](UInt64 num_rows)
+    auto readIndexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
     {
-        auto indexes_type = state_with_dictionary->index_type.getDataType();
+        auto indexes_type = low_cardinality_state->index_type.getDataType();
         MutableColumnPtr indexes_column = indexes_type->createColumn();
         indexes_type->deserializeBinaryBulk(*indexes_column, *indexes_stream, num_rows, 0);
 
-        auto & global_dictionary = state_with_dictionary->global_dictionary;
-        const auto & additional_keys = state_with_dictionary->additional_keys;
+        auto & global_dictionary = low_cardinality_state->global_dictionary;
+        const auto & additional_keys = low_cardinality_state->additional_keys;
 
-        bool has_additional_keys = state_with_dictionary->index_type.has_additional_keys;
-        bool column_is_empty = column_with_dictionary.empty();
+        bool has_additional_keys = low_cardinality_state->index_type.has_additional_keys;
+        bool column_is_empty = low_cardinality_column.empty();
 
-        if (!state_with_dictionary->index_type.need_global_dictionary)
+        if (!low_cardinality_state->index_type.need_global_dictionary)
         {
             ColumnPtr keys_column = additional_keys;
-            if (state_with_dictionary->null_map)
-                keys_column = ColumnNullable::create(additional_keys, state_with_dictionary->null_map);
-            column_with_dictionary.insertRangeFromDictionaryEncodedColumn(*keys_column, *indexes_column);
+            if (low_cardinality_state->null_map)
+                keys_column = ColumnNullable::create(additional_keys, low_cardinality_state->null_map);
+            low_cardinality_column.insertRangeFromDictionaryEncodedColumn(*keys_column, *indexes_column);
         }
         else if (!has_additional_keys)
         {
             if (column_is_empty)
-                column_with_dictionary.setSharedDictionary(global_dictionary);
+                low_cardinality_column.setSharedDictionary(global_dictionary);
 
-            auto local_column = ColumnWithDictionary::create(global_dictionary, std::move(indexes_column));
-            column_with_dictionary.insertRangeFrom(*local_column, 0, num_rows);
+            auto local_column = ColumnLowCardinality::create(global_dictionary, std::move(indexes_column));
+            low_cardinality_column.insertRangeFrom(*local_column, 0, num_rows);
         }
         else
         {
             auto maps = mapIndexWithAdditionalKeys(*indexes_column, global_dictionary->size());
 
-            ColumnWithDictionary::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
+            ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
 
-            ColumnWithDictionary::Index(indexes_column->getPtr()).check(
+            ColumnLowCardinality::Index(indexes_column->getPtr()).check(
                     maps.dictionary_map->size() + maps.additional_keys_map->size());
 
             auto used_keys = (*std::move(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0))).mutate();
@@ -677,23 +677,23 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
                 used_keys->insertRangeFrom(*used_add_keys, 0, used_add_keys->size());
             }
 
-            column_with_dictionary.insertRangeFromDictionaryEncodedColumn(*used_keys, *indexes_column);
+            low_cardinality_column.insertRangeFromDictionaryEncodedColumn(*used_keys, *indexes_column);
         }
     };
 
     if (!settings.continuous_reading)
-        state_with_dictionary->num_pending_rows = 0;
+        low_cardinality_state->num_pending_rows = 0;
 
     bool first_dictionary = true;
     while (limit)
     {
-        if (state_with_dictionary->num_pending_rows == 0)
+        if (low_cardinality_state->num_pending_rows == 0)
         {
             if (indexes_stream->eof())
                 break;
 
-            auto & index_type = state_with_dictionary->index_type;
-            auto & global_dictionary = state_with_dictionary->global_dictionary;
+            auto & index_type = low_cardinality_state->index_type;
+            auto & global_dictionary = low_cardinality_state->global_dictionary;
 
             index_type.deserialize(*indexes_stream);
 
@@ -703,51 +703,51 @@ void DataTypeWithDictionary::deserializeBinaryBulkWithMultipleStreams(
                 first_dictionary = false;
             }
 
-            if (state_with_dictionary->index_type.has_additional_keys)
+            if (low_cardinality_state->index_type.has_additional_keys)
                 readAdditionalKeys();
             else
-                state_with_dictionary->additional_keys = nullptr;
+                low_cardinality_state->additional_keys = nullptr;
 
-            readIntBinary(state_with_dictionary->num_pending_rows, *indexes_stream);
+            readIntBinary(low_cardinality_state->num_pending_rows, *indexes_stream);
         }
 
-        size_t num_rows_to_read = std::min(limit, state_with_dictionary->num_pending_rows);
+        size_t num_rows_to_read = std::min(limit, low_cardinality_state->num_pending_rows);
         readIndexes(num_rows_to_read);
         limit -= num_rows_to_read;
-        state_with_dictionary->num_pending_rows -= num_rows_to_read;
+        low_cardinality_state->num_pending_rows -= num_rows_to_read;
     }
 }
 
-void DataTypeWithDictionary::serializeBinary(const Field & field, WriteBuffer & ostr) const
+void DataTypeLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr) const
 {
     dictionary_type->serializeBinary(field, ostr);
 }
-void DataTypeWithDictionary::deserializeBinary(Field & field, ReadBuffer & istr) const
+void DataTypeLowCardinality::deserializeBinary(Field & field, ReadBuffer & istr) const
 {
     dictionary_type->deserializeBinary(field, istr);
 }
 
 template <typename ... Args>
-void DataTypeWithDictionary::serializeImpl(
+void DataTypeLowCardinality::serializeImpl(
         const IColumn & column, size_t row_num, WriteBuffer & ostr,
-        DataTypeWithDictionary::SerealizeFunctionPtr<Args ...> func, Args & ... args) const
+        DataTypeLowCardinality::SerealizeFunctionPtr<Args ...> func, Args & ... args) const
 {
-    auto & column_with_dictionary = getColumnWithDictionary(column);
-    size_t unique_row_number = column_with_dictionary.getIndexes().getUInt(row_num);
-    (dictionary_type.get()->*func)(*column_with_dictionary.getDictionary().getNestedColumn(), unique_row_number, ostr, std::forward<Args>(args)...);
+    auto & low_cardinality_column = getColumnLowCardinality(column);
+    size_t unique_row_number = low_cardinality_column.getIndexes().getUInt(row_num);
+    (dictionary_type.get()->*func)(*low_cardinality_column.getDictionary().getNestedColumn(), unique_row_number, ostr, std::forward<Args>(args)...);
 }
 
 template <typename ... Args>
-void DataTypeWithDictionary::deserializeImpl(
+void DataTypeLowCardinality::deserializeImpl(
         IColumn & column, ReadBuffer & istr,
-        DataTypeWithDictionary::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
+        DataTypeLowCardinality::DeserealizeFunctionPtr<Args ...> func, Args & ... args) const
 {
-    auto & column_with_dictionary = getColumnWithDictionary(column);
-    auto temp_column = column_with_dictionary.getDictionary().getNestedColumn()->cloneEmpty();
+    auto & low_cardinality_column= getColumnLowCardinality(column);
+    auto temp_column = low_cardinality_column.getDictionary().getNestedColumn()->cloneEmpty();
 
     (dictionary_type.get()->*func)(*temp_column, istr, std::forward<Args>(args)...);
 
-    column_with_dictionary.insertFromFullColumn(*temp_column, 0);
+    low_cardinality_column.insertFromFullColumn(*temp_column, 0);
 }
 
 namespace
@@ -774,7 +774,7 @@ namespace
 }
 
 template <typename Creator>
-MutableColumnUniquePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDataType & keys_type,
+MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDataType & keys_type,
                                                                       const Creator & creator)
 {
     auto * type = &keys_type;
@@ -800,12 +800,12 @@ MutableColumnUniquePtr DataTypeWithDictionary::createColumnUniqueImpl(const IDat
         return column;
     }
 
-    throw Exception("Unexpected dictionary type for DataTypeWithDictionary: " + type->getName(),
+    throw Exception("Unexpected dictionary type for DataTypeLowCardinality: " + type->getName(),
                     ErrorCodes::LOGICAL_ERROR);
 }
 
 
-MutableColumnUniquePtr DataTypeWithDictionary::createColumnUnique(const IDataType & keys_type)
+MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataType & keys_type)
 {
     auto creator = [&](auto x)
     {
@@ -815,7 +815,7 @@ MutableColumnUniquePtr DataTypeWithDictionary::createColumnUnique(const IDataTyp
     return createColumnUniqueImpl(keys_type, creator);
 }
 
-MutableColumnUniquePtr DataTypeWithDictionary::createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys)
+MutableColumnUniquePtr DataTypeLowCardinality::createColumnUnique(const IDataType & keys_type, MutableColumnPtr && keys)
 {
     auto creator = [&](auto x)
     {
@@ -825,20 +825,20 @@ MutableColumnUniquePtr DataTypeWithDictionary::createColumnUnique(const IDataTyp
     return createColumnUniqueImpl(keys_type, creator);
 }
 
-MutableColumnPtr DataTypeWithDictionary::createColumn() const
+MutableColumnPtr DataTypeLowCardinality::createColumn() const
 {
     MutableColumnPtr indexes = DataTypeUInt8().createColumn();
     MutableColumnPtr dictionary = createColumnUnique(*dictionary_type);
-    return ColumnWithDictionary::create(std::move(dictionary), std::move(indexes));
+    return ColumnLowCardinality::create(std::move(dictionary), std::move(indexes));
 }
 
-bool DataTypeWithDictionary::equals(const IDataType & rhs) const
+bool DataTypeLowCardinality::equals(const IDataType & rhs) const
 {
     if (typeid(rhs) != typeid(*this))
         return false;
 
-    auto & rhs_with_dictionary = static_cast<const DataTypeWithDictionary &>(rhs);
-    return dictionary_type->equals(*rhs_with_dictionary.dictionary_type);
+    auto & low_cardinality_rhs= static_cast<const DataTypeLowCardinality &>(rhs);
+    return dictionary_type->equals(*low_cardinality_rhs.dictionary_type);
 }
 
 
@@ -848,10 +848,10 @@ static DataTypePtr create(const ASTPtr & arguments)
         throw Exception("LowCardinality data type family must have single argument - type of elements",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    return std::make_shared<DataTypeWithDictionary>(DataTypeFactory::instance().get(arguments->children[0]));
+    return std::make_shared<DataTypeLowCardinality>(DataTypeFactory::instance().get(arguments->children[0]));
 }
 
-void registerDataTypeWithDictionary(DataTypeFactory & factory)
+void registerDataTypeLowCardinality(DataTypeFactory & factory)
 {
     factory.registerDataType("LowCardinality", create);
 }
@@ -859,8 +859,8 @@ void registerDataTypeWithDictionary(DataTypeFactory & factory)
 
 DataTypePtr removeLowCardinality(const DataTypePtr & type)
 {
-    if (auto * type_with_dictionary = typeid_cast<const DataTypeWithDictionary *>(type.get()))
-        return type_with_dictionary->getDictionaryType();
+    if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        return low_cardinality_type->getDictionaryType();
     return type;
 }
 
