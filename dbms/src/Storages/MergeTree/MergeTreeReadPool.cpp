@@ -24,6 +24,7 @@ MergeTreeReadPool::MergeTreeReadPool(
       column_names{column_names}, do_not_steal_tasks{do_not_steal_tasks},
       predict_block_size_bytes{preferred_block_size_bytes > 0}, prewhere_info{prewhere_info}
 {
+    /// parts don't contain duplicate MergeTreeDataPart's.
     const auto per_part_sum_marks = fillPerPartInfo(parts, prewhere_info, check_columns);
     fillPerThreadInfo(threads, sum_marks, per_part_sum_marks, parts, min_marks_for_concurrent_read);
 }
@@ -44,6 +45,7 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     if (!tasks_remaining_for_this_thread && do_not_steal_tasks)
         return nullptr;
 
+    /// Steal task if nothing to do and it's not prohibited
     const auto thread_idx = tasks_remaining_for_this_thread ? thread : *std::begin(remaining_thread_tasks);
     auto & thread_tasks = threads_tasks[thread_idx];
 
