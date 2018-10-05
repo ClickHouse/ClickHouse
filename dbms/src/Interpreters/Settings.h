@@ -336,6 +336,7 @@ struct Settings
     /// Dumps profile events to two columns of type Array(String)
     void dumpToArrayColumns(IColumn * column_names, IColumn * column_values, bool changed_only = true);
 
+    /// Get value defined by user or default_value if user defines nothing
     template <typename SETTING, typename TYPE>
     static void setDefaultValue(SETTING && setting, TYPE && default_value)
     {
