@@ -45,17 +45,24 @@ public:
     using Base = PoolBase<Connection>;
 
     ConnectionPool(unsigned max_connections_,
-            const String & host_, UInt16 port_,
+            const String & host_,
+            UInt16 port_,
             const String & default_database_,
-            const String & user_, const String & password_,
+            const String & user_,
+            const String & password_,
             const ConnectionTimeouts & timeouts,
             const String & client_name_ = "client",
             Protocol::Compression compression_ = Protocol::Compression::Enable,
             Protocol::Secure secure_ = Protocol::Secure::Disable)
-       : Base(max_connections_, &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
-        host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_),
-        client_name(client_name_), compression(compression_),
+       : Base(max_connections_,
+        &Logger::get("ConnectionPool (" + host_ + ":" + toString(port_) + ")")),
+        host(host_),
+        port(port_),
+        default_database(default_database_),
+        user(user_),
+        password(password_),
+        client_name(client_name_),
+        compression(compression_),
         secure{secure_},
         timeouts(timeouts)
     {

@@ -44,7 +44,7 @@ Block ReplacingSortedBlockInputStream::readImpl()
     if (merged_columns.empty())
         return Block();
 
-    merge(merged_columns, queue);
+    merge(merged_columns, queue_without_collation);
     return header.cloneWithColumns(std::move(merged_columns));
 }
 
@@ -109,7 +109,8 @@ void ReplacingSortedBlockInputStream::merge(MutableColumns & merged_columns, std
     }
 
     /// We will write the data for the last primary key.
-    insertRow(merged_columns, merged_rows);
+    if (!selected_row.empty())
+        insertRow(merged_columns, merged_rows);
 
     finished = true;
 }

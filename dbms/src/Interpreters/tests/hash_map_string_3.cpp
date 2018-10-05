@@ -61,7 +61,7 @@ namespace ZeroTraits \
  \
     template <> \
     inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } \
-}; \
+} \
  \
 template <> \
 struct DefaultHash<STRUCT> \
@@ -94,13 +94,16 @@ inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
 }
 
 
-#define mix(h) ({                   \
-    (h) ^= (h) >> 23;               \
-    (h) *= 0x2127599bf4325c37ULL;   \
-    (h) ^= (h) >> 47; })
-
 struct FastHash64
 {
+    static inline uint64_t mix(uint64_t h)
+    {
+        h ^= h >> 23;
+        h *= 0x2127599bf4325c37ULL;
+        h ^= h >> 47;
+        return h;
+    }
+
     size_t operator() (StringRef x) const
     {
         const char * buf = x.data;
@@ -316,7 +319,7 @@ struct FarmHash64
 {
     size_t operator() (StringRef x) const
     {
-        return farmhash::Hash64(x.data, x.size);
+        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data, x.size);
     }
 };
 

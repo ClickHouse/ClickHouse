@@ -244,8 +244,8 @@ void ComplexKeyHashedDictionary::blockToAttributes(const Block & block)
 
         for (const auto attribute_idx : ext::range(0, attributes_size))
         {
-            const auto &attribute_column = *attribute_column_ptrs[attribute_idx];
-            auto &attribute = attributes[attribute_idx];
+            const auto & attribute_column = *attribute_column_ptrs[attribute_idx];
+            auto & attribute = attributes[attribute_idx];
             const auto inserted = setAttributeValue(attribute, key, attribute_column[row_idx]);
             if (!inserted)
                 should_rollback = true;
@@ -289,7 +289,7 @@ void ComplexKeyHashedDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
 
         stream->readPrefix();
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto saved_key_column_ptrs = ext::map<Columns>(ext::range(0, keys_size), [&](const size_t key_idx)
             {
@@ -592,18 +592,18 @@ std::vector<StringRef> ComplexKeyHashedDictionary::getKeys() const
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8: return getKeys<UInt8>(attribute); break;
-        case AttributeUnderlyingType::UInt16: return getKeys<UInt16>(attribute); break;
-        case AttributeUnderlyingType::UInt32: return getKeys<UInt32>(attribute); break;
-        case AttributeUnderlyingType::UInt64: return getKeys<UInt64>(attribute); break;
-        case AttributeUnderlyingType::UInt128: return getKeys<UInt128>(attribute); break;
-        case AttributeUnderlyingType::Int8: return getKeys<Int8>(attribute); break;
-        case AttributeUnderlyingType::Int16: return getKeys<Int16>(attribute); break;
-        case AttributeUnderlyingType::Int32: return getKeys<Int32>(attribute); break;
-        case AttributeUnderlyingType::Int64: return getKeys<Int64>(attribute); break;
-        case AttributeUnderlyingType::Float32: return getKeys<Float32>(attribute); break;
-        case AttributeUnderlyingType::Float64: return getKeys<Float64>(attribute); break;
-        case AttributeUnderlyingType::String: return getKeys<StringRef>(attribute); break;
+        case AttributeUnderlyingType::UInt8: return getKeys<UInt8>(attribute);
+        case AttributeUnderlyingType::UInt16: return getKeys<UInt16>(attribute);
+        case AttributeUnderlyingType::UInt32: return getKeys<UInt32>(attribute);
+        case AttributeUnderlyingType::UInt64: return getKeys<UInt64>(attribute);
+        case AttributeUnderlyingType::UInt128: return getKeys<UInt128>(attribute);
+        case AttributeUnderlyingType::Int8: return getKeys<Int8>(attribute);
+        case AttributeUnderlyingType::Int16: return getKeys<Int16>(attribute);
+        case AttributeUnderlyingType::Int32: return getKeys<Int32>(attribute);
+        case AttributeUnderlyingType::Int64: return getKeys<Int64>(attribute);
+        case AttributeUnderlyingType::Float32: return getKeys<Float32>(attribute);
+        case AttributeUnderlyingType::Float64: return getKeys<Float64>(attribute);
+        case AttributeUnderlyingType::String: return getKeys<StringRef>(attribute);
     }
     return {};
 }

@@ -1,7 +1,9 @@
 #include <Columns/ColumnTuple.h>
+#include <DataStreams/ColumnGathererStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 #include <ext/map.h>
 #include <ext/range.h>
-#include <DataStreams/ColumnGathererStream.h>
 
 
 namespace DB
@@ -17,7 +19,7 @@ namespace ErrorCodes
 
 std::string ColumnTuple::getName() const
 {
-    std::stringstream res;
+    WriteBufferFromOwnString res;
     res << "Tuple(";
     bool is_first = true;
     for (const auto & column : columns)
@@ -52,7 +54,7 @@ ColumnTuple::Ptr ColumnTuple::create(const Columns & columns)
     auto column_tuple = ColumnTuple::create(MutableColumns());
     column_tuple->columns = columns;
 
-    return std::move(column_tuple);
+    return column_tuple;
 }
 
 MutableColumnPtr ColumnTuple::cloneEmpty() const
@@ -175,6 +177,17 @@ ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
 
     for (size_t i = 0; i < tuple_size; ++i)
         new_columns[i] = columns[i]->permute(perm, limit);
+
+    return ColumnTuple::create(new_columns);
+}
+
+ColumnPtr ColumnTuple::index(const IColumn & indexes, size_t limit) const
+{
+    const size_t tuple_size = columns.size();
+    Columns new_columns(tuple_size);
+
+    for (size_t i = 0; i < tuple_size; ++i)
+        new_columns[i] = columns[i]->index(indexes, limit);
 
     return ColumnTuple::create(new_columns);
 }

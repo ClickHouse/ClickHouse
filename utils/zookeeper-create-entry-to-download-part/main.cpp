@@ -34,7 +34,7 @@ try
 
     DB::ReplicatedMergeTreeLogEntry entry;
     entry.type = DB::ReplicatedMergeTreeLogEntry::MERGE_PARTS;
-    entry.parts_to_merge = {name};
+    entry.source_parts = {name};
     entry.new_part_name = name;
 
     zookeeper.create(path + "/queue-", entry.toString(), zkutil::CreateMode::PersistentSequential);

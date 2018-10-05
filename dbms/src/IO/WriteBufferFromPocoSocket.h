@@ -28,7 +28,7 @@ protected:
 public:
     WriteBufferFromPocoSocket(Poco::Net::Socket & socket_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    ~WriteBufferFromPocoSocket();
+    ~WriteBufferFromPocoSocket() override;
 };
 
 }

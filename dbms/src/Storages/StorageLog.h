@@ -30,7 +30,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -39,6 +39,8 @@ public:
     void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name) override;
 
     bool checkData() const override;
+
+    void truncate(const ASTPtr &) override;
 
     std::string full_path() const { return path + escapeForFileName(name) + '/';}
 

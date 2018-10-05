@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/Arena.h>
-
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <Columns/IColumn.h>
@@ -15,6 +13,10 @@
 
 namespace DB
 {
+
+class Arena;
+using ArenaPtr = std::shared_ptr<Arena>;
+using Arenas = std::vector<ArenaPtr>;
 
 
 /** Column of states of aggregate functions.
@@ -72,6 +74,11 @@ private:
         return res;
     }
 
+    /// If we have another column as a source (owner of data), copy all data to ourself and reset source.
+    /// This is needed before inserting new elements, because we must own these elements (to destroy them in destructor),
+    ///  but ownership of different elements cannot be mixed by different columns.
+    void ensureOwnership();
+
     ColumnAggregateFunction(const AggregateFunctionPtr & func_)
         : func(func_)
     {
@@ -88,7 +95,7 @@ private:
     }
 
 public:
-    ~ColumnAggregateFunction();
+    ~ColumnAggregateFunction() override;
 
     void set(const AggregateFunctionPtr & func_)
     {
@@ -123,14 +130,14 @@ public:
 
     void insertData(const char * pos, size_t length) override;
 
-    void insertFrom(const IColumn & src, size_t n) override;
+    void insertFrom(const IColumn & from, size_t n) override;
 
     void insertFrom(ConstAggregateDataPtr place);
 
     /// Merge state at last row with specified state in another column.
     void insertMergeFrom(ConstAggregateDataPtr place);
 
-    void insertMergeFrom(const IColumn & src, size_t n);
+    void insertMergeFrom(const IColumn & from, size_t n);
 
     Arena & createOrGetArena();
 
@@ -155,6 +162,11 @@ public:
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
+
+    template <typename Type>
+    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const Offsets & offsets) const override;
 

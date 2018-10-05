@@ -36,7 +36,7 @@ public:
     int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
 
     Field operator[](size_t) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
-    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); };
+    void get(size_t, Field &) const override { throw Exception("Cannot get value from " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
     void insert(const Field &) override { throw Exception("Cannot insert element into " + getName(), ErrorCodes::NOT_IMPLEMENTED); }
 
     StringRef getDataAt(size_t) const override
@@ -85,6 +85,14 @@ public:
             throw Exception("Size of permutation doesn't match size of column.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
         return cloneDummy(limit ? std::min(s, limit) : s);
+    }
+
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override
+    {
+        if (indexes.size() < limit)
+            throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+        return cloneDummy(limit ? limit : s);
     }
 
     void getPermutation(bool /*reverse*/, size_t /*limit*/, int /*nan_direction_hint*/, Permutation & res) const override

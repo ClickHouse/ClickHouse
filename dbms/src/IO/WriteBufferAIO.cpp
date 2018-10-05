@@ -1,4 +1,4 @@
-#if !(defined(__FreeBSD__) || defined(__APPLE__) || defined(_MSC_VER))
+#if defined(__linux__)
 
 #include <IO/WriteBufferAIO.h>
 #include <Common/ProfileEvents.h>
@@ -12,7 +12,6 @@
 namespace ProfileEvents
 {
     extern const Event FileOpen;
-    extern const Event FileOpenFailed;
     extern const Event WriteBufferAIOWrite;
     extern const Event WriteBufferAIOWriteBytes;
 }
@@ -32,9 +31,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int AIO_READ_ERROR;
-    extern const int AIO_SUBMIT_ERROR;
     extern const int AIO_WRITE_ERROR;
-    extern const int AIO_COMPLETION_ERROR;
+    extern const int CANNOT_IO_SUBMIT;
+    extern const int CANNOT_IO_GETEVENTS;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int CANNOT_FSYNC;
 }
@@ -48,13 +47,13 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     flush_buffer(BufferWithOwnMemory<WriteBuffer>(this->memory.size(), nullptr, DEFAULT_AIO_FILE_BLOCK_SIZE)),
     filename(filename_)
 {
+    ProfileEvents::increment(ProfileEvents::FileOpen);
+
     /// Correct the buffer size information so that additional pages do not touch the base class `BufferBase`.
     this->buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     this->internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     flush_buffer.buffer().resize(this->buffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
     flush_buffer.internalBuffer().resize(this->internalBuffer().size() - DEFAULT_AIO_FILE_BLOCK_SIZE);
-
-    ProfileEvents::increment(ProfileEvents::FileOpen);
 
     int open_flags = (flags_ == -1) ? (O_RDWR | O_TRUNC | O_CREAT) : flags_;
     open_flags |= O_DIRECT;
@@ -62,7 +61,6 @@ WriteBufferAIO::WriteBufferAIO(const std::string & filename_, size_t buffer_size
     fd = ::open(filename.c_str(), open_flags, mode_);
     if (fd == -1)
     {
-        ProfileEvents::increment(ProfileEvents::FileOpenFailed);
         auto error_code = (errno == ENOENT) ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
         throwFromErrno("Cannot open file " + filename, error_code);
     }
@@ -119,12 +117,12 @@ void WriteBufferAIO::nextImpl()
     request.aio_offset = region_aligned_begin;
 
     /// Send the request.
-    while (io_submit(aio_context.ctx, request_ptrs.size(), request_ptrs.data()) < 0)
+    while (io_submit(aio_context.ctx, 1, &request_ptr) < 0)
     {
         if (errno != EINTR)
         {
             aio_failed =  true;
-            throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::AIO_SUBMIT_ERROR);
+            throw Exception("Cannot submit request for asynchronous IO on file " + filename, ErrorCodes::CANNOT_IO_SUBMIT);
         }
     }
 
@@ -182,19 +180,20 @@ bool WriteBufferAIO::waitForAIOCompletion()
     if (!is_pending_write)
         return false;
 
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::Write};
+    CurrentMetrics::Increment metric_increment_write{CurrentMetrics::Write};
 
-    while (io_getevents(aio_context.ctx, events.size(), events.size(), events.data(), nullptr) < 0)
+    io_event event;
+    while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) < 0)
     {
         if (errno != EINTR)
         {
             aio_failed = true;
-            throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::AIO_COMPLETION_ERROR);
+            throw Exception("Failed to wait for asynchronous IO completion on file " + filename, ErrorCodes::CANNOT_IO_GETEVENTS);
         }
     }
 
     is_pending_write = false;
-    bytes_written = events[0].res;
+    bytes_written = event.res;
 
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWrite);
     ProfileEvents::increment(ProfileEvents::WriteBufferAIOWriteBytes, bytes_written);
@@ -205,8 +204,7 @@ bool WriteBufferAIO::waitForAIOCompletion()
 void WriteBufferAIO::prepare()
 {
     /// Swap the main and duplicate buffers.
-    buffer().swap(flush_buffer.buffer());
-    std::swap(position(), flush_buffer.position());
+    swap(flush_buffer);
 
     truncation_count = 0;
 

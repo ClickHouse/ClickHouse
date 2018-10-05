@@ -42,3 +42,12 @@ select identity((1, 2)) in ((1, 2), identity((3, 4)));
 select '-';
 select (1,2)  as x, ((1,2),(3,4)) as y, 1 in x,  x in y;
 
+select '-';
+select 1 in (select 1);
+select tuple(1) in (select tuple(1));
+select (1, 2) in (select 1, 2);
+select (1, 2) in (select (1, 2));
+select identity(tuple(1)) in (select tuple(1));
+select identity((1, 2)) in (select 1, 2);
+select identity((1, 2)) in (select (1, 2));
+

@@ -1,5 +1,6 @@
-build:
-	docker run --network=host --rm --workdir /server --volume $(realpath ../..):/server -it yandex/clickhouse-builder
+build: image
+	mkdir -p $(HOME)/.ccache
+	docker run --network=host --rm --workdir /server --volume $(realpath ../..):/server --mount=type=bind,source=$(HOME)/.ccache,destination=/ccache -e CCACHE_DIR=/ccache -it yandex/clickhouse-builder
 
 pull:
 	docker pull yandex/clickhouse-builder

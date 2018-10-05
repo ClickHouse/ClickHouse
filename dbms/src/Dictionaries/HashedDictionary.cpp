@@ -258,7 +258,7 @@ void HashedDictionary::createAttributes()
 
         if (attribute.hierarchical)
         {
-            hierarchical_attribute = &attributes.back();
+            hierarchical_attribute = & attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::UInt64)
                 throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
@@ -266,15 +266,15 @@ void HashedDictionary::createAttributes()
     }
 }
 
-void HashedDictionary::blockToAttributes(const Block &block)
+void HashedDictionary::blockToAttributes(const Block & block)
 {
     const auto & id_column = *block.safeGetByPosition(0).column;
     element_count += id_column.size();
 
-    for (const auto attribute_idx : ext::range(0, attributes.size()))
+    for (const size_t attribute_idx : ext::range(0, attributes.size()))
     {
-        const auto &attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
-        auto &attribute = attributes[attribute_idx];
+        const IColumn & attribute_column = *block.safeGetByPosition(attribute_idx + 1).column;
+        auto & attribute = attributes[attribute_idx];
 
         for (const auto row_idx : ext::range(0, id_column.size()))
             setAttributeValue(attribute, id_column[row_idx].get<UInt64>(), attribute_column[row_idx]);
@@ -307,7 +307,7 @@ void HashedDictionary::updateData()
         auto stream = source_ptr->loadUpdatedAll();
         stream->readPrefix();
 
-        while (const auto block = stream->read())
+        while (Block block = stream->read())
         {
             const auto &saved_id_column = *saved_block->safeGetByPosition(0).column;
             const auto &update_id_column = *block.safeGetByPosition(0).column;
@@ -566,18 +566,18 @@ PaddedPODArray<HashedDictionary::Key> HashedDictionary::getIds() const
 
     switch (attribute.type)
     {
-        case AttributeUnderlyingType::UInt8: return getIds<UInt8>(attribute); break;
-        case AttributeUnderlyingType::UInt16: return getIds<UInt16>(attribute); break;
-        case AttributeUnderlyingType::UInt32: return getIds<UInt32>(attribute); break;
-        case AttributeUnderlyingType::UInt64: return getIds<UInt64>(attribute); break;
-        case AttributeUnderlyingType::UInt128: return getIds<UInt128>(attribute); break;
-        case AttributeUnderlyingType::Int8: return getIds<Int8>(attribute); break;
-        case AttributeUnderlyingType::Int16: return getIds<Int16>(attribute); break;
-        case AttributeUnderlyingType::Int32: return getIds<Int32>(attribute); break;
-        case AttributeUnderlyingType::Int64: return getIds<Int64>(attribute); break;
-        case AttributeUnderlyingType::Float32: return getIds<Float32>(attribute); break;
-        case AttributeUnderlyingType::Float64: return getIds<Float64>(attribute); break;
-        case AttributeUnderlyingType::String: return getIds<StringRef>(attribute); break;
+        case AttributeUnderlyingType::UInt8: return getIds<UInt8>(attribute);
+        case AttributeUnderlyingType::UInt16: return getIds<UInt16>(attribute);
+        case AttributeUnderlyingType::UInt32: return getIds<UInt32>(attribute);
+        case AttributeUnderlyingType::UInt64: return getIds<UInt64>(attribute);
+        case AttributeUnderlyingType::UInt128: return getIds<UInt128>(attribute);
+        case AttributeUnderlyingType::Int8: return getIds<Int8>(attribute);
+        case AttributeUnderlyingType::Int16: return getIds<Int16>(attribute);
+        case AttributeUnderlyingType::Int32: return getIds<Int32>(attribute);
+        case AttributeUnderlyingType::Int64: return getIds<Int64>(attribute);
+        case AttributeUnderlyingType::Float32: return getIds<Float32>(attribute);
+        case AttributeUnderlyingType::Float64: return getIds<Float64>(attribute);
+        case AttributeUnderlyingType::String: return getIds<StringRef>(attribute);
     }
     return PaddedPODArray<Key>();
 }

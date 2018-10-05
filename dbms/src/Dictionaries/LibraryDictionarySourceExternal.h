@@ -47,4 +47,18 @@ struct Table
     uint64_t error_code = 0; // 0 = ok; !0 = error, with message in error_string
     const char * error_string = nullptr;
 };
+
+enum LogLevel
+{
+    FATAL = 1,
+    CRITICAL,
+    ERROR,
+    WARNING,
+    NOTICE,
+    INFORMATION,
+    DEBUG,
+    TRACE,
+};
+
+void log(LogLevel level, CString msg);
 }

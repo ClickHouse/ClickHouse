@@ -108,7 +108,8 @@ private:
         inner,
         outer,
         singleLine,
-        pairOfLinesSinglePolygon,
+        pairOfLinesSingleConvexPolygon,
+        pairOfLinesSingleNonConvexPolygons,
         pairOfLinesDifferentPolygons,
         complexPolygon
     };
@@ -179,6 +180,9 @@ private:
 
     /// Returns a list of half-planes were formed from intersection edges without box edges.
     inline std::vector<HalfPlane> findHalfPlanes(const Box & box, const Polygon & intersection);
+
+    /// Check that polygon.outer() is convex.
+    inline bool isConvex(const Polygon & polygon);
 
     using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
 
@@ -306,9 +310,10 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
             return false;
         case CellType::singleLine:
             return cell.half_planes[0].contains(x, y);
-        case CellType::pairOfLinesSinglePolygon:
+        case CellType::pairOfLinesSingleConvexPolygon:
             return cell.half_planes[0].contains(x, y) && cell.half_planes[1].contains(x, y);
         case CellType::pairOfLinesDifferentPolygons:
+        case CellType::pairOfLinesSingleNonConvexPolygons:
             return cell.half_planes[0].contains(x, y) || cell.half_planes[1].contains(x, y);
         case CellType::complexPolygon:
             return boost::geometry::within(Point(x, y), polygons[cell.index_of_inner_polygon]);
@@ -333,6 +338,35 @@ PointInPolygonWithGrid<CoordinateType>::distance(
         distance = i ? std::min(current, distance) : current;
     }
     return distance;
+}
+
+template <typename CoordinateType>
+bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & polygon)
+{
+    const auto & outer = polygon.outer();
+    /// Segment or point.
+    if (outer.size() < 4)
+        return false;
+
+    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto getVector = [](const Point & from, const Point & to) -> Point
+    {
+        return Point(to.x() - from.x(), to.y() - from.y());
+    };
+
+    Point first = getVector(outer[0], outer[1]);
+    Point prev = first;
+
+    for (auto i : ext::range(1, outer.size() - 1))
+    {
+        Point cur = getVector(outer[i], outer[i + 1]);
+        if (vecProduct(prev, cur) < 0)
+            return false;
+
+        prev = cur;
+    }
+
+    return vecProduct(prev, first) >= 0;
 }
 
 template <typename CoordinateType>
@@ -423,7 +457,8 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
     }
     else if (half_planes.size() == 2)
     {
-        cells[index].type = CellType::pairOfLinesSinglePolygon;
+        cells[index].type = isConvex(intersection) ? CellType::pairOfLinesSingleConvexPolygon
+                                                   : CellType::pairOfLinesSingleNonConvexPolygons;
         cells[index].half_planes[0] = half_planes[0];
         cells[index].half_planes[1] = half_planes[1];
     }
@@ -528,7 +563,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
     }
 
-    return std::move(result);
+    return result;
 }
 
 template <typename ... Types>

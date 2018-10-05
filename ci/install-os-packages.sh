@@ -34,26 +34,20 @@ case $PACKAGE_MANAGER in
             cmake)
                 $SUDO apt-get install -y cmake3 || $SUDO apt-get install -y cmake
                 ;;
+            ninja)
+                $SUDO apt-get install -y ninja-build
+                ;;
             curl)
                 $SUDO apt-get install -y curl
                 ;;
             jq)
                 $SUDO apt-get install -y jq
                 ;;
-            libssl-dev)
-                $SUDO apt-get install -y libssl-dev
-                ;;
             libicu-dev)
                 $SUDO apt-get install -y libicu-dev
                 ;;
             libreadline-dev)
                 $SUDO apt-get install -y libreadline-dev
-                ;;
-            libunixodbc-dev)
-                $SUDO apt-get install -y unixodbc-dev
-                ;;
-            libmariadbclient-dev)
-                $SUDO apt-get install -y libmariadbclient-dev
                 ;;
             llvm-libs*)
                 $SUDO apt-get install -y ${WHAT/llvm-libs/liblld}-dev ${WHAT/llvm-libs/libclang}-dev
@@ -63,6 +57,42 @@ case $PACKAGE_MANAGER in
                 ;;
             vagrant-virtualbox)
                 $SUDO apt-get install -y vagrant virtualbox
+                ;;
+            *)
+                echo "Unknown package"; exit 1;
+                ;;
+        esac
+        ;;
+    yum)
+        case $WHAT in
+            prepare)
+                ;;
+            svn)
+                $SUDO yum install -y subversion
+                ;;
+            gcc*)
+                $SUDO yum install -y gcc gcc-c++ libstdc++-static
+                ;;
+            git)
+                $SUDO yum install -y git
+                ;;
+            cmake)
+                $SUDO yum install -y cmake
+                ;;
+            ninja)
+                $SUDO yum install -y ninja-build
+                ;;
+            curl)
+                $SUDO yum install -y curl
+                ;;
+            jq)
+                $SUDO yum install -y jq
+                ;;
+            libicu-dev)
+                $SUDO yum install -y libicu-devel
+                ;;
+            libreadline-dev)
+                $SUDO yum install -y readline-devel
                 ;;
             *)
                 echo "Unknown package"; exit 1;
@@ -88,26 +118,20 @@ case $PACKAGE_MANAGER in
             cmake)
                 $SUDO pkg install -y cmake
                 ;;
+            ninja)
+                $SUDO pkg install -y ninja-build
+                ;;
             curl)
                 $SUDO pkg install -y curl
                 ;;
             jq)
                 $SUDO pkg install -y jq
                 ;;
-            libssl-dev)
-                $SUDO pkg install -y openssl
-                ;;
             libicu-dev)
                 $SUDO pkg install -y icu
                 ;;
             libreadline-dev)
                 $SUDO pkg install -y readline
-                ;;
-            libunixodbc-dev)
-                $SUDO pkg install -y unixODBC libltdl
-                ;;
-            libmariadbclient-dev)
-                $SUDO pkg install -y mariadb102-client
                 ;;
             *)
                 echo "Unknown package"; exit 1;

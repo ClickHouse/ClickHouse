@@ -1,25 +1,29 @@
-#include <sys/stat.h>
-#include <string>
-#include <iostream>
+#include <Common/localBackup.h>
+#include <Common/createHardLink.h>
+#include <Common/Exception.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
-#include <Common/Exception.h>
-#include <port/unistd.h>
+#include <string>
+#include <iostream>
 #include <errno.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int TOO_DEEP_RECURSION;
     extern const int DIRECTORY_ALREADY_EXISTS;
 }
-}
 
 
-static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level)
+static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & destination_path, size_t level,
+                            std::optional<size_t> max_level)
 {
+    if (max_level && level > *max_level)
+        return;
+
     if (level >= 1000)
         throw DB::Exception("Too deep recursion", DB::ErrorCodes::TOO_DEEP_RECURSION);
 
@@ -36,42 +40,16 @@ static void localBackupImpl(const Poco::Path & source_path, const Poco::Path & d
         {
             dir_it->setReadOnly();
 
-            std::string source_str = source.toString();
-            std::string destination_str = destination.toString();
-
-            /** We are trying to create a hard link.
-              * If it already exists, we check that source and destination point to the same inode.
-              */
-            if (0 != link(source_str.c_str(), destination_str.c_str()))
-            {
-                if (errno == EEXIST)
-                {
-                    auto link_errno = errno;
-
-                    struct stat source_descr;
-                    struct stat destination_descr;
-
-                    if (0 != lstat(source_str.c_str(), &source_descr))
-                        DB::throwFromErrno("Cannot stat " + source_str);
-
-                    if (0 != lstat(destination_str.c_str(), &destination_descr))
-                        DB::throwFromErrno("Cannot stat " + destination_str);
-
-                    if (source_descr.st_ino != destination_descr.st_ino)
-                        DB::throwFromErrno("Destination file " + destination_str + " is already exist and have different inode.", 0, link_errno);
-                }
-                else
-                    DB::throwFromErrno("Cannot link " + source_str + " to " + destination_str);
-            }
+            createHardLink(source.toString(), destination.toString());
         }
         else
         {
-            localBackupImpl(source, destination, level + 1);
+            localBackupImpl(source, destination, level + 1, max_level);
         }
     }
 }
 
-void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path)
+void localBackup(const Poco::Path & source_path, const Poco::Path & destination_path, std::optional<size_t> max_level)
 {
     if (Poco::File(destination_path).exists()
         && Poco::DirectoryIterator(destination_path) != Poco::DirectoryIterator())
@@ -90,7 +68,7 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
     {
         try
         {
-            localBackupImpl(source_path, destination_path, 0);
+            localBackupImpl(source_path, destination_path, 0, max_level);
         }
         catch (const DB::ErrnoException & e)
         {
@@ -103,7 +81,7 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
 
             continue;
         }
-        catch (const Poco::FileNotFoundException & e)
+        catch (const Poco::FileNotFoundException &)
         {
             ++try_no;
             if (try_no == max_tries)
@@ -114,4 +92,6 @@ void localBackup(const Poco::Path & source_path, const Poco::Path & destination_
 
         break;
     }
+}
+
 }

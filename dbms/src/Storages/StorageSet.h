@@ -36,7 +36,7 @@ protected:
     String path;
     String table_name;
 
-    UInt64 increment = 0;    /// For the backup file names.
+    std::atomic<UInt64> increment = 0;    /// For the backup file names.
 
     /// Restore from backup.
     void restore();
@@ -64,6 +64,8 @@ public:
 
     /// Access the insides.
     SetPtr & getSet() { return set; }
+
+    void truncate(const ASTPtr &) override;
 
 private:
     SetPtr set;

@@ -11,7 +11,7 @@ INSERT INTO test.secure1 VALUES (11,12,13,14,15);
 INSERT INTO test.secure2 VALUES (21,22,23,24,25);
 INSERT INTO test.secure3 VALUES (31,32,33,34,35);
 
-SELECT sleep(1);
+SELECT 'sleep', sleep(1);
 
 SELECT * FROM test.secure1 ORDER BY a;
 SELECT * FROM test.secure2 ORDER BY a;

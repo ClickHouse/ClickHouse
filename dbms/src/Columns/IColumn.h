@@ -37,7 +37,7 @@ private:
 
 public:
     /// Name of a Column. It is used in info messages.
-    virtual std::string getName() const { return getFamilyName(); };
+    virtual std::string getName() const { return getFamilyName(); }
 
     /// Name of a Column kind, without parameters (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
@@ -46,6 +46,10 @@ public:
       * If column is constant, transforms constant to full column (if column type allows such tranform) and return it.
       */
     virtual Ptr convertToFullColumnIfConst() const { return {}; }
+
+    /// If column isn't ColumnLowCardinality, return itself.
+    /// If column is ColumnLowCardinality, transforms is to full column.
+    virtual Ptr convertToFullColumnIfLowCardinality() const { return getPtr(); }
 
     /// Creates empty column with the same type.
     virtual MutablePtr cloneEmpty() const { return cloneResized(0); }
@@ -118,7 +122,7 @@ public:
     {
         MutablePtr res = cloneEmpty();
         res->insertRangeFrom(*this, start, length);
-        return std::move(res);
+        return res;
     }
 
     /// Appends new value at the end of column (column's size is increased by 1).
@@ -129,7 +133,7 @@ public:
     /// Is used in merge-sort and merges. It could be implemented in inherited classes more optimally than default implementation.
     virtual void insertFrom(const IColumn & src, size_t n) { insert(src[n]); }
 
-    /// Appends range of elements from other column.
+    /// Appends range of elements from other column with the same type.
     /// Could be used to concatenate columns.
     virtual void insertRangeFrom(const IColumn & src, size_t start, size_t length) = 0;
 
@@ -188,7 +192,11 @@ public:
     using Permutation = PaddedPODArray<size_t>;
     virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
-    /** Compares (*this)[n] and rhs[m].
+    /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
+    /// Indexes must be one of the ColumnUInt. For default implementation, see selectIndexImpl from ColumnsCommon.h
+    virtual Ptr index(const IColumn & indexes, size_t limit) const = 0;
+
+    /** Compares (*this)[n] and rhs[m]. Column rhs should have the same type.
       * Returns negative number, 0, or positive number (*this)[n] is less, equal, greater than rhs[m] respectively.
       * Is used in sortings.
       *
@@ -241,7 +249,7 @@ public:
 
     /// Reserves memory for specified amount of elements. If reservation isn't possible, does nothing.
     /// It affects performance only (not correctness).
-    virtual void reserve(size_t /*n*/) {};
+    virtual void reserve(size_t /*n*/) {}
 
     /// Size of column data in memory (may be approximate) - for profiling. Zero, if could not be determined.
     virtual size_t byteSize() const = 0;
@@ -324,6 +332,8 @@ public:
 
     /// Can be inside ColumnNullable.
     virtual bool canBeInsideNullable() const { return false; }
+
+    virtual bool lowCardinality() const { return false; }
 
 
     virtual ~IColumn() {}

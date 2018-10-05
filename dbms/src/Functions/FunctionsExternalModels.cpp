@@ -32,7 +32,7 @@ DataTypePtr FunctionModelEvaluate::getReturnTypeImpl(const DataTypes & arguments
         throw Exception("Function " + getName() + " expects at least 2 arguments",
                         ErrorCodes::TOO_LESS_ARGUMENTS_FOR_FUNCTION);
 
-    if (!arguments[0]->isString())
+    if (!isString(arguments[0]))
         throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName()
                         + ", expected a string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

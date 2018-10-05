@@ -14,7 +14,7 @@
 #include <re2/stringpiece.h>
 
 #if USE_RE2_ST
-    #include <re2_st/re2.h>
+    #include <re2_st/re2.h> // Y_IGNORE
 #else
     #define re2_st re2
 #endif
@@ -159,7 +159,7 @@ struct PositionImpl
         const std::string & needle,
         PaddedPODArray<UInt64> & res)
     {
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -191,7 +191,8 @@ struct PositionImpl
             ++i;
         }
 
-        memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
+        if (i < res.size())
+            memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
     }
 
     /// Search for substring in string.
@@ -351,11 +352,14 @@ struct MatchImpl
         const std::string & pattern,
         PaddedPODArray<UInt8> & res)
     {
+        if (offsets.empty())
+            return;
+
         String strstr_pattern;
         /// A simple case where the LIKE expression reduces to finding a substring in a string
         if (like && likePatternIsStrstr(pattern, strstr_pattern))
         {
-            const UInt8 * begin = &data[0];
+            const UInt8 * begin = data.data();
             const UInt8 * pos = begin;
             const UInt8 * end = pos + data.size();
 
@@ -386,7 +390,8 @@ struct MatchImpl
             }
 
             /// Tail, in which there can be no substring.
-            memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+            if (i < res.size())
+                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
         }
         else
         {
@@ -404,7 +409,8 @@ struct MatchImpl
             {
                 if (!regexp->getRE2()) /// An empty regexp. Always matches.
                 {
-                    memset(&res[0], 1, size * sizeof(res[0]));
+                    if (size)
+                        memset(res.data(), 1, size * sizeof(res[0]));
                 }
                 else
                 {
@@ -428,7 +434,7 @@ struct MatchImpl
             {
                 /// NOTE This almost matches with the case of LikePatternIsStrstr.
 
-                const UInt8 * begin = &data[0];
+                const UInt8 * begin = data.data();
                 const UInt8 * pos = begin;
                 const UInt8 * end = pos + data.size();
 
@@ -485,7 +491,8 @@ struct MatchImpl
                     ++i;
                 }
 
-                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+                if (i < res.size())
+                    memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
             }
         }
     }
@@ -700,7 +707,7 @@ struct ReplaceRegexpImpl
         for (size_t i = 0; i < size; ++i)
         {
             int from = i > 0 ? offsets[i - 1] : 0;
-            re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), offsets[i] - from - 1);
+            re2_st::StringPiece input(reinterpret_cast<const char *>(data.data() + from), offsets[i] - from - 1);
 
             processString(input, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -727,7 +734,7 @@ struct ReplaceRegexpImpl
         for (size_t i = 0; i < size; ++i)
         {
             int from = i * n;
-            re2_st::StringPiece input(reinterpret_cast<const char *>(&data[0] + from), n);
+            re2_st::StringPiece input(reinterpret_cast<const char *>(data.data() + from), n);
 
             processString(input, res_data, res_offset, searcher, num_captures, instructions);
             res_offsets[i] = res_offset;
@@ -748,7 +755,7 @@ struct ReplaceStringImpl
         ColumnString::Chars_t & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -823,7 +830,7 @@ struct ReplaceStringImpl
         ColumnString::Chars_t & res_data,
         ColumnString::Offsets & res_offsets)
     {
-        const UInt8 * begin = &data[0];
+        const UInt8 * begin = data.data();
         const UInt8 * pos = begin;
         const UInt8 * end = pos + data.size();
 
@@ -947,15 +954,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!arguments[0]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[1]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[1]))
             throw Exception("Illegal type " + arguments[1]->getName() + " of second argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        if (!arguments[2]->isStringOrFixedString())
+        if (!isStringOrFixedString(arguments[2]))
             throw Exception("Illegal type " + arguments[2]->getName() + " of third argument of function " + getName(),
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

@@ -24,7 +24,7 @@ public:
         children.insert(children.end(), inputs.begin(), inputs.end());
     }
 
-    ~CollapsingFinalBlockInputStream();
+    ~CollapsingFinalBlockInputStream() override;
 
     String getName() const override { return "CollapsingFinal"; }
 

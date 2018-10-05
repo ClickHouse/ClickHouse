@@ -1,6 +1,6 @@
-# Command-line client
+# Command-line Client
 
-To work from the command line, you can use ` clickhouse-client`:
+To work from the command line, you can use `clickhouse-client`:
 
 ```bash
 $ clickhouse-client
@@ -31,6 +31,7 @@ _EOF
 
 cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
+
 In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
 
 By default, you can only process a single query in batch mode. To make multiple queries from a "script," use the --multiquery parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators.
@@ -51,7 +52,7 @@ The history is written to `~/.clickhouse-client-history`.
 
 By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.
 
-To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query:"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж", "q", "й", "q", "Q", ":q", "й", "Й", "Жй"
+To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query: "exit", "quit", "logout", "exit;", "quit;", "logout;", "q", "Q", ":q"
 
 When processing a query, the client shows:
 
@@ -78,7 +79,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 
    Settings in the configuration files override the default values.
 
-### Command line options
+### Command Line Options
 
 - `--host, -h` -– The server name, 'localhost' by default.  You can use either the name or the IPv4 or IPv6 address.
 - `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
@@ -94,7 +95,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 - `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 - `-config-file` – The name of the configuration file.
 
-### Configuration files
+### Configuration Files
 
 `clickhouse-client`  uses the first existing file of the following:
 

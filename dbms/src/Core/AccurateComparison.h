@@ -1,6 +1,9 @@
 #pragma once
 
+#include <cmath>
 #include <limits>
+
+#include <Common/NaNUtils.h>
 #include <Core/Types.h>
 #include <Common/UInt128.h>
 
@@ -32,7 +35,10 @@ using DB::UInt64;
 // Case 1. Is pair of floats or pair of ints or pair of uints
 template <typename A, typename B>
 constexpr bool is_safe_conversion = (std::is_floating_point_v<A> && std::is_floating_point_v<B>)
-    || (std::is_integral_v<A> && std::is_integral_v<B> && !(std::is_signed_v<A> ^ std::is_signed_v<B>));
+    || (std::is_integral_v<A> && std::is_integral_v<B> && !(std::is_signed_v<A> ^ std::is_signed_v<B>))
+    || (std::is_same_v<A, DB::Int128> && std::is_same_v<B, DB::Int128>)
+    || (std::is_integral_v<A> && std::is_same_v<B, DB::Int128>)
+    || (std::is_same_v<A, DB::Int128> && std::is_integral_v<B>);
 template <typename A, typename B>
 using bool_if_safe_conversion = std::enable_if_t<is_safe_conversion<A, B>, bool>;
 template <typename A, typename B>
@@ -138,7 +144,6 @@ inline bool_if_double_can_be_used<TAInt, TAFloat> equalsOpTmpl(TAFloat a, TAInt 
 {
     return static_cast<double>(a) == static_cast<double>(b);
 }
-
 
 /* Final realiztions */
 
@@ -333,6 +338,37 @@ inline bool equalsOp<DB::Float32, DB::UInt128>(DB::Float32 f, DB::UInt128 u)
     return equalsOp(static_cast<DB::Float64>(f), u);
 }
 
+inline bool greaterOp(DB::Int128 i, DB::Float64 f)
+{
+    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+
+    if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
+        return static_cast<DB::Float64>(i) > f;
+
+    return (f < static_cast<DB::Float64>(min_int128))
+        || (f < static_cast<DB::Float64>(max_int128) && i > static_cast<DB::Int128>(f));
+}
+
+inline bool greaterOp(DB::Float64 f, DB::Int128 i)
+{
+    static constexpr __int128 min_int128 = __int128(0x8000000000000000ll) << 64;
+    static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
+
+    if (-MAX_INT64_WITH_EXACT_FLOAT64_REPR <= i && i <= MAX_INT64_WITH_EXACT_FLOAT64_REPR)
+        return f > static_cast<DB::Float64>(i);
+
+    return (f >= static_cast<DB::Float64>(max_int128))
+        || (f > static_cast<DB::Float64>(min_int128) && static_cast<DB::Int128>(f) > i);
+}
+
+inline bool greaterOp(DB::Int128 i, DB::Float32 f) { return greaterOp(i, static_cast<DB::Float64>(f)); }
+inline bool greaterOp(DB::Float32 f, DB::Int128 i) { return greaterOp(static_cast<DB::Float64>(f), i); }
+
+inline bool equalsOp(DB::Int128 i, DB::Float64 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float64>(i) == f; }
+inline bool equalsOp(DB::Int128 i, DB::Float32 f) { return i == static_cast<DB::Int128>(f) && static_cast<DB::Float32>(i) == f; }
+inline bool equalsOp(DB::Float64 f, DB::Int128 i) { return equalsOp(i, f); }
+inline bool equalsOp(DB::Float32 f, DB::Int128 i) { return equalsOp(i, f); }
 
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> notEqualsOp(A a, B b)
@@ -363,6 +399,8 @@ inline bool_if_safe_conversion<A, B> lessOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 {
+    if (isNaN(a) || isNaN(b))
+        return false;
     return !greaterOp(a, b);
 }
 
@@ -376,6 +414,8 @@ inline bool_if_safe_conversion<A, B> lessOrEqualsOp(A a, B b)
 template <typename A, typename B>
 inline bool_if_not_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
 {
+    if (isNaN(a) || isNaN(b))
+        return false;
     return !greaterOp(b, a);
 }
 
@@ -385,5 +425,52 @@ inline bool_if_safe_conversion<A, B> greaterOrEqualsOp(A a, B b)
     return a >= b;
 }
 
+}
+
+
+namespace DB
+{
+
+template <typename A, typename B> struct EqualsOp
+{
+    /// An operation that gives the same result, if arguments are passed in reverse order.
+    using SymmetricOp = EqualsOp<B, A>;
+
+    static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+};
+
+template <typename A, typename B> struct NotEqualsOp
+{
+    using SymmetricOp = NotEqualsOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::notEqualsOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOp;
+
+template <typename A, typename B> struct LessOp
+{
+    using SymmetricOp = GreaterOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::lessOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOp
+{
+    using SymmetricOp = LessOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::greaterOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOrEqualsOp;
+
+template <typename A, typename B> struct LessOrEqualsOp
+{
+    using SymmetricOp = GreaterOrEqualsOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::lessOrEqualsOp(a, b); }
+};
+
+template <typename A, typename B> struct GreaterOrEqualsOp
+{
+    using SymmetricOp = LessOrEqualsOp<B, A>;
+    static UInt8 apply(A a, B b) { return accurate::greaterOrEqualsOp(a, b); }
+};
 
 }

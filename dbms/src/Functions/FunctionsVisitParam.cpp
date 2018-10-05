@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsVisitParam.h>
 #include <Functions/FunctionsStringSearch.h>
-#include <Functions/FunctionsString.h>
 #include <Functions/FunctionsURL.h>
 
 
@@ -24,7 +23,6 @@ using FunctionVisitParamExtractFloat = FunctionsStringSearch<ExtractParamImpl<Ex
 using FunctionVisitParamExtractBool = FunctionsStringSearch<ExtractParamImpl<ExtractBool>, NameVisitParamExtractBool>;
 using FunctionVisitParamExtractRaw = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractRaw>, NameVisitParamExtractRaw>;
 using FunctionVisitParamExtractString = FunctionsStringSearchToString<ExtractParamToStringImpl<ExtractString>, NameVisitParamExtractString>;
-
 
 
 void registerFunctionsVisitParam(FunctionFactory & factory)

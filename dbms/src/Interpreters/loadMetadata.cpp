@@ -18,6 +18,7 @@
 #include <Databases/DatabaseOrdinary.h>
 
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/escapeForFileName.h>
 
 #include <Common/Stopwatch.h>

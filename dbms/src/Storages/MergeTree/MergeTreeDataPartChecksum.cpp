@@ -1,5 +1,6 @@
 #include "MergeTreeDataPartChecksum.h"
 #include <Common/SipHash.h>
+#include <Common/hex.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
@@ -272,6 +273,34 @@ bool MergeTreeDataPartChecksums::isBadChecksumsErrorCode(int code)
            || code == ErrorCodes::UNEXPECTED_FILE_IN_DATA_PART;
 }
 
+/// Puts into hash "stream" length of the string and its bytes
+static void updateHash(SipHash & hash, const std::string & data)
+{
+    UInt64 len = data.size();
+    hash.update(len);
+    hash.update(data.data(), len);
+}
+
+/// Hash is the same as MinimalisticDataPartChecksums::hash_of_all_files
+String MergeTreeDataPartChecksums::getTotalChecksumHex() const
+{
+    SipHash hash_of_all_files;
+
+    for (const auto & elem : files)
+    {
+        const String & name = elem.first;
+        const auto & checksum = elem.second;
+
+        updateHash(hash_of_all_files, name);
+        hash_of_all_files.update(checksum.file_hash);
+    }
+
+    UInt64 lo, hi;
+    hash_of_all_files.get128(lo, hi);
+
+    return getHexUIntUppercase(hi) + getHexUIntUppercase(lo);
+}
+
 void MinimalisticDataPartChecksums::serialize(WriteBuffer & to) const
 {
     writeString("checksums format version: 5\n", to);
@@ -331,31 +360,24 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
     SipHash hash_of_uncompressed_files_;
     SipHash uncompressed_hash_of_compressed_files_;
 
-    auto update_hash = [] (SipHash & hash, const std::string & data)
-    {
-        UInt64 len = data.size();
-        hash.update(len);
-        hash.update(data.data(), len);
-    };
-
     for (const auto & elem : full_checksums.files)
     {
         const String & name = elem.first;
         const auto & checksum = elem.second;
 
-        update_hash(hash_of_all_files_, name);
+        updateHash(hash_of_all_files_, name);
         hash_of_all_files_.update(checksum.file_hash);
 
         if (!checksum.is_compressed)
         {
             ++num_uncompressed_files;
-            update_hash(hash_of_uncompressed_files_, name);
+            updateHash(hash_of_uncompressed_files_, name);
             hash_of_uncompressed_files_.update(checksum.file_hash);
         }
         else
         {
             ++num_compressed_files;
-            update_hash(uncompressed_hash_of_compressed_files_, name);
+            updateHash(uncompressed_hash_of_compressed_files_, name);
             uncompressed_hash_of_compressed_files_.update(checksum.uncompressed_hash);
         }
     }

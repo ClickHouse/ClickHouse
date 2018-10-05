@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <optional>
+#include <unordered_map>
 
 
 namespace DB
@@ -8,33 +10,36 @@ namespace DB
 
 class IStorage;
 class Context;
+class WriteBuffer;
+class ReadBuffer;
 
 struct MutationCommand
 {
+    ASTPtr ast; /// The AST of the whole command
+
     enum Type
     {
         EMPTY,     /// Not used.
         DELETE,
+        UPDATE,
     };
 
     Type type = EMPTY;
 
     ASTPtr predicate;
 
-    static MutationCommand delete_(const ASTPtr & predicate)
-    {
-        MutationCommand res;
-        res.type = DELETE;
-        res.predicate = predicate;
-        return res;
-    }
+    std::unordered_map<String, ASTPtr> column_to_update_expression;
+
+    static std::optional<MutationCommand> parse(ASTAlterCommand * command);
 };
 
-struct MutationCommands
+class MutationCommands : public std::vector<MutationCommand>
 {
-    std::vector<MutationCommand> commands;
+public:
+    std::shared_ptr<ASTAlterCommandList> ast() const;
 
-    void validate(const IStorage & table, const Context & context);
+    void writeText(WriteBuffer & out) const;
+    void readText(ReadBuffer & in);
 };
 
 }

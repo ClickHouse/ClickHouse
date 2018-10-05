@@ -17,14 +17,11 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_end{ "END"};
     ParserExpressionWithOptionalAlias p_expr{false};
 
-    if (!s_case.parse(pos, node, expected))
-    {
-        /// Parse as a simple ASTFunction.
-        return ParserFunction{}.parse(pos, node, expected);
-    }
+    if (!s_case.ignore(pos, expected))
+        return false;
 
     auto old_pos = pos;
-    bool has_case_expr = !s_when.parse(pos, node, expected);
+    bool has_case_expr = !s_when.ignore(pos, expected);
     pos = old_pos;
 
     ASTs args;
@@ -32,7 +29,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     auto parse_branches = [&]()
     {
         bool has_branch = false;
-        while (s_when.parse(pos, node, expected))
+        while (s_when.ignore(pos, expected))
         {
             has_branch = true;
 
@@ -41,7 +38,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
             args.push_back(expr_when);
 
-            if (!s_then.parse(pos, node, expected))
+            if (!s_then.ignore(pos, expected))
                 return false;
 
             ASTPtr expr_then;
@@ -53,15 +50,21 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!has_branch)
             return false;
 
-        if (!s_else.parse(pos, node, expected))
-            return false;
-
         ASTPtr expr_else;
-        if (!p_expr.parse(pos, expr_else, expected))
-            return false;
+        if (s_else.ignore(pos, expected))
+        {
+            if (!p_expr.parse(pos, expr_else, expected))
+                return false;
+        }
+        else
+        {
+            Field field_with_null;
+            ASTLiteral null_literal(field_with_null);
+            expr_else = std::make_shared<ASTLiteral>(null_literal);
+        }
         args.push_back(expr_else);
 
-        if (!s_end.parse(pos, node, expected))
+        if (!s_end.ignore(pos, expected))
             return false;
 
         return true;

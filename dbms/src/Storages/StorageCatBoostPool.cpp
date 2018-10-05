@@ -1,14 +1,17 @@
+#include <fstream>
+#include <sstream>
+#include <boost/filesystem.hpp>
+
 #include <Storages/StorageCatBoostPool.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFile.h>
-#include <fstream>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/FilterColumnsBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <boost/filesystem.hpp>
 #include <Parsers/ASTIdentifier.h>
+
 
 namespace DB
 {
@@ -31,7 +34,7 @@ public:
             : file_name(file_name), format_name(format_name)
     {
         read_buf = std::make_unique<ReadBufferFromFile>(file_name);
-        reader = FormatFactory().getInput(format_name, *read_buf, sample_block, context, max_block_size);
+        reader = FormatFactory::instance().getInput(format_name, *read_buf, sample_block, context, max_block_size);
     }
 
     String getName() const override
@@ -54,10 +57,9 @@ public:
         reader->readSuffix();
     }
 
-    Block getHeader() const override { return sample_block; };
+    Block getHeader() const override { return reader->getHeader(); }
 
 private:
-    Block sample_block;
     std::unique_ptr<ReadBufferFromFileDescriptor> read_buf;
     BlockInputStreamPtr reader;
     std::string file_name;
@@ -75,8 +77,8 @@ static std::string resolvePath(const boost::filesystem::path & base_path, std::s
 {
     boost::filesystem::path resolved_path(path);
     if (!resolved_path.is_absolute())
-        return (base_path / resolved_path).string();
-    return resolved_path.string();
+        return boost::filesystem::canonical(resolved_path, base_path).string();
+    return boost::filesystem::canonical(resolved_path).string();
 }
 
 static void checkCreationIsAllowed(const String & base_path, const String & path)
@@ -259,7 +261,7 @@ void StorageCatBoostPool::createSampleBlockAndColumns()
 BlockInputStreams StorageCatBoostPool::read(const Names & column_names,
                        const SelectQueryInfo & /*query_info*/,
                        const Context & context,
-                       QueryProcessingStage::Enum & /*processed_stage*/,
+                       QueryProcessingStage::Enum /*processed_stage*/,
                        size_t max_block_size,
                        unsigned /*threads*/)
 {

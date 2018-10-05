@@ -3,6 +3,7 @@
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -18,21 +19,22 @@ class MergeTreeBaseBlockInputStream : public IProfilingBlockInputStream
 public:
     MergeTreeBaseBlockInputStream(
         MergeTreeData & storage,
-        const ExpressionActionsPtr & prewhere_actions,
-        const String & prewhere_column,
-        size_t max_block_size_rows,
-        size_t preferred_block_size_bytes,
-        size_t preferred_max_column_in_block_size_bytes,
-        size_t min_bytes_to_use_direct_io,
-        size_t max_read_buffer_size,
+        const PrewhereInfoPtr & prewhere_info,
+        UInt64 max_block_size_rows,
+        UInt64 preferred_block_size_bytes,
+        UInt64 preferred_max_column_in_block_size_bytes,
+        UInt64 min_bytes_to_use_direct_io,
+        UInt64 max_read_buffer_size,
         bool use_uncompressed_cache,
         bool save_marks_in_cache = true,
         const Names & virt_column_names = {});
 
     ~MergeTreeBaseBlockInputStream() override;
 
+    static void executePrewhereActions(Block & block, const PrewhereInfoPtr & prewhere_info);
+
 protected:
-    Block readImpl() override final;
+    Block readImpl() final;
 
     /// Creates new this->task, and initilizes readers
     virtual bool getNewTask() = 0;
@@ -47,15 +49,14 @@ protected:
 protected:
     MergeTreeData & storage;
 
-    ExpressionActionsPtr prewhere_actions;
-    String prewhere_column_name;
+    PrewhereInfoPtr prewhere_info;
 
-    size_t max_block_size_rows;
-    size_t preferred_block_size_bytes;
-    size_t preferred_max_column_in_block_size_bytes;
+    UInt64 max_block_size_rows;
+    UInt64 preferred_block_size_bytes;
+    UInt64 preferred_max_column_in_block_size_bytes;
 
-    size_t min_bytes_to_use_direct_io;
-    size_t max_read_buffer_size;
+    UInt64 min_bytes_to_use_direct_io;
+    UInt64 max_read_buffer_size;
 
     bool use_uncompressed_cache;
     bool save_marks_in_cache;
@@ -71,7 +72,7 @@ protected:
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 
-    size_t max_block_size_marks;
+    UInt64 max_block_size_marks;
 };
 
 }

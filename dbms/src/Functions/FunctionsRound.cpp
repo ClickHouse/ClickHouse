@@ -16,8 +16,8 @@ void registerFunctionsRound(FunctionFactory & factory)
     factory.registerFunction<FunctionTrunc>("trunc", FunctionFactory::CaseInsensitive);
 
     /// Compatibility aliases.
-    factory.registerFunction<FunctionCeil>("ceiling", FunctionFactory::CaseInsensitive);
-    factory.registerFunction<FunctionTrunc>("truncate", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("ceiling", "ceil", FunctionFactory::CaseInsensitive);
+    factory.registerAlias("truncate", "trunc", FunctionFactory::CaseInsensitive);
 }
 
 }

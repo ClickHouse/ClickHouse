@@ -3,6 +3,9 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <vector>
@@ -57,6 +60,8 @@ namespace
             case ValueType::String: static_cast<ColumnString &>(column).insert(value.convert<String>()); break;
             case ValueType::Date: static_cast<ColumnUInt16 &>(column).insert(UInt16{LocalDate{value.convert<String>()}.getDayNum()}); break;
             case ValueType::DateTime: static_cast<ColumnUInt32 &>(column).insert(time_t{LocalDateTime{value.convert<String>()}}); break;
+            case ValueType::UUID: static_cast<ColumnUInt128 &>(column).insert(parse<UUID>(value.convert<std::string>())); break;
+
         }
     }
 

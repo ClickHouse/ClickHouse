@@ -102,18 +102,18 @@ StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & contex
 
 void replaceDatabaseAndTable(ASTPtr & database_and_table, const String & database_name, const String & table_name)
 {
-    ASTPtr table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+    ASTPtr table = ASTIdentifier::createSpecial(table_name);
 
     if (!database_name.empty())
     {
-        ASTPtr database = std::make_shared<ASTIdentifier>(database_name, ASTIdentifier::Database);
+        ASTPtr database = ASTIdentifier::createSpecial(database_name);
 
-        database_and_table = std::make_shared<ASTIdentifier>(database_name + "." + table_name, ASTIdentifier::Table);
+        database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name);
         database_and_table->children = {database, table};
     }
     else
     {
-        database_and_table = std::make_shared<ASTIdentifier>(table_name, ASTIdentifier::Table);
+        database_and_table = ASTIdentifier::createSpecial(table_name);
     }
 }
 
@@ -144,13 +144,15 @@ void InJoinSubqueriesPreprocessor::process(ASTSelectQuery * query) const
     ASTTableExpression * table_expression = static_cast<ASTTableExpression *>(tables_element.table_expression.get());
 
     /// If not ordinary table, skip it.
-    if (!table_expression || !table_expression->database_and_table_name)
+    if (!table_expression->database_and_table_name)
         return;
 
     /// If not really distributed table, skip it.
-    StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
-    if (!storage || !hasAtLeastTwoShards(*storage))
-        return;
+    {
+        StoragePtr storage = tryGetTable(table_expression->database_and_table_name, context);
+        if (!storage || !hasAtLeastTwoShards(*storage))
+            return;
+    }
 
     forEachNonGlobalSubquery(query, [&] (IAST * subquery, IAST * function, IAST * table_join)
     {

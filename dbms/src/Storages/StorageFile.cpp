@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/FormatFactory.h>
+#include <Formats/FormatFactory.h>
 #include <DataStreams/IProfilingBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
@@ -36,7 +36,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-};
+}
 
 
 static std::string getTablePath(const std::string & db_dir_path, const std::string & table_name, const std::string & format_name)
@@ -145,7 +145,7 @@ public:
             read_buf = std::make_unique<ReadBufferFromFile>(storage.path);
         }
 
-        reader = FormatFactory().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
+        reader = FormatFactory::instance().getInput(storage.format_name, *read_buf, storage.getSampleBlock(), context, max_block_size);
     }
 
     ~StorageFileBlockInputStream() override
@@ -166,7 +166,7 @@ public:
         return reader->read();
     }
 
-    Block getHeader() const override { return reader->getHeader(); };
+    Block getHeader() const override { return reader->getHeader(); }
 
     void readPrefixImpl() override
     {
@@ -190,7 +190,7 @@ BlockInputStreams StorageFile::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
-    QueryProcessingStage::Enum & /*processed_stage*/,
+    QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned /*num_streams*/)
 {
@@ -218,7 +218,7 @@ public:
             write_buf = std::make_unique<WriteBufferFromFile>(storage.path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_APPEND | O_CREAT);
         }
 
-        writer = FormatFactory().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
+        writer = FormatFactory::instance().getOutput(storage.format_name, *write_buf, storage.getSampleBlock(), storage.context_global);
     }
 
     Block getHeader() const override { return storage.getSampleBlock(); }

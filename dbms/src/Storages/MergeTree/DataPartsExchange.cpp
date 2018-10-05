@@ -3,6 +3,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <Common/typeid_cast.h>
+#include <IO/HTTPCommon.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Poco/File.h>
 #include <ext/scope_guard.h>
@@ -124,7 +125,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         part->checksums.checkEqual(data_checksums, false);
     }
-    catch (const NetException & e)
+    catch (const NetException &)
     {
         /// Network error or error on remote side. No need to enqueue part for check.
         throw;
@@ -160,10 +161,14 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     const String & host,
     int port,
     const ConnectionTimeouts & timeouts,
-    bool to_detached)
+    const String & user,
+    const String & password,
+    const String & interserver_scheme,
+    bool to_detached,
+    const String & tmp_prefix_)
 {
     Poco::URI uri;
-    uri.setScheme("http");
+    uri.setScheme(interserver_scheme);
     uri.setHost(host);
     uri.setPort(port);
     uri.setQueryParameters(
@@ -173,10 +178,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
         {"compress", "false"}
     });
 
-    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts};
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!user.empty())
+    {
+        creds.setUsername(user);
+        creds.setPassword(password);
+    }
+
+    ReadWriteBufferFromHTTP in{uri, Poco::Net::HTTPRequest::HTTP_POST, {}, timeouts, creds};
 
     static const String TMP_PREFIX = "tmp_fetch_";
-    String relative_part_path = String(to_detached ? "detached/" : "") + TMP_PREFIX + part_name;
+    String tmp_prefix = tmp_prefix_.empty() ? TMP_PREFIX : tmp_prefix_;
+
+    String relative_part_path = String(to_detached ? "detached/" : "") + tmp_prefix + part_name;
     String absolute_part_path = data.getFullPath() + relative_part_path + "/";
     Poco::File part_file(absolute_part_path);
 

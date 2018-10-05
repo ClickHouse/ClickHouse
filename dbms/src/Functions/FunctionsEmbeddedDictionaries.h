@@ -19,6 +19,8 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 
+#include <IO/WriteHelpers.h>
+
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
 
@@ -218,7 +220,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -314,7 +316,7 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -450,7 +452,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -726,7 +728,7 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    bool isDeterministic() override { return false; }
+    bool isDeterministic() const override { return false; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -766,4 +768,4 @@ public:
     }
 };
 
-};
+}

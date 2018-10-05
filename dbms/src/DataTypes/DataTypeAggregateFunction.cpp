@@ -6,9 +6,12 @@
 #include <Columns/ColumnAggregateFunction.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/AlignedBuffer.h>
 
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeFactory.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -66,7 +69,7 @@ void DataTypeAggregateFunction::deserializeBinary(Field & field, ReadBuffer & is
     field = String();
     String & s = get<String &>(field);
     s.resize(size);
-    istr.readStrict(&s[0], size);
+    istr.readStrict(s.data(), size);
 }
 
 void DataTypeAggregateFunction::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
@@ -80,7 +83,7 @@ void DataTypeAggregateFunction::deserializeBinary(IColumn & column, ReadBuffer &
 
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alloc(size_of_state);
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
 
     function->create(place);
     try
@@ -121,13 +124,14 @@ void DataTypeAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuff
     vec.reserve(vec.size() + limit);
 
     size_t size_of_state = function->sizeOfData();
+    size_t align_of_state = function->alignOfData();
 
     for (size_t i = 0; i < limit; ++i)
     {
         if (istr.eof())
             break;
 
-        AggregateDataPtr place = arena.alloc(size_of_state);
+        AggregateDataPtr place = arena.alignedAlloc(size_of_state, align_of_state);
 
         function->create(place);
 
@@ -158,7 +162,7 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
 
     Arena & arena = column_concrete.createOrGetArena();
     size_t size_of_state = function->sizeOfData();
-    AggregateDataPtr place = arena.alloc(size_of_state);
+    AggregateDataPtr place = arena.alignedAlloc(size_of_state, function->alignOfData());
 
     function->create(place);
 
@@ -176,19 +180,19 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
     column_concrete.getData().push_back(place);
 }
 
-void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeEscapedString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
     readEscapedString(s, istr);
@@ -196,13 +200,13 @@ void DataTypeAggregateFunction::deserializeTextEscaped(IColumn & column, ReadBuf
 }
 
 
-void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextQuoted(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeQuotedString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
     readQuotedStringWithSQLStyle(s, istr);
@@ -210,13 +214,13 @@ void DataTypeAggregateFunction::deserializeTextQuoted(IColumn & column, ReadBuff
 }
 
 
-void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettingsJSON &) const
+void DataTypeAggregateFunction::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeJSONString(serializeToString(function, column, row_num), ostr);
+    writeJSONString(serializeToString(function, column, row_num), ostr, settings);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr) const
+void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     String s;
     readJSONString(s, istr);
@@ -224,22 +228,22 @@ void DataTypeAggregateFunction::deserializeTextJSON(IColumn & column, ReadBuffer
 }
 
 
-void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeXMLString(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
+void DataTypeAggregateFunction::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     writeCSV(serializeToString(function, column, row_num), ostr);
 }
 
 
-void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const char delimiter) const
+void DataTypeAggregateFunction::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String s;
-    readCSV(s, istr, delimiter);
+    readCSV(s, istr, settings.csv);
     deserializeFromString(function, column, s);
 }
 
@@ -255,7 +259,7 @@ Field DataTypeAggregateFunction::getDefault() const
 {
     Field field = String();
 
-    PODArrayWithStackMemory<char, 16> place_buffer(function->sizeOfData());
+    AlignedBuffer place_buffer(function->sizeOfData(), function->alignOfData());
     AggregateDataPtr place = place_buffer.data();
 
     function->create(place);

@@ -2,7 +2,7 @@
 
 ## Technical info
 Developer guide for writing code for ClickHouse is published on official website alongside the usage and operations documentation:
-https://clickhouse.yandex/docs/en/development/index.html
+https://clickhouse.yandex/docs/en/development/architecture/
 
 ## Legal info
 

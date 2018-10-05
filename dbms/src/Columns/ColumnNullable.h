@@ -52,7 +52,7 @@ public:
     void insertData(const char * pos, size_t length) override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
-    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;;
+    void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     void insert(const Field & x) override;
     void insertFrom(const IColumn & src, size_t n) override;
 
@@ -65,6 +65,7 @@ public:
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
+    ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int null_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int null_direction_hint, Permutation & res) const override;
     void reserve(size_t n) override;

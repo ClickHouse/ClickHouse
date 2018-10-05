@@ -2,6 +2,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Columns/ColumnString.h>
@@ -117,7 +118,7 @@ public:
         return "SynchronousQueryKiller";
     }
 
-    Block getHeader() const override { return res_sample_block; };
+    Block getHeader() const override { return res_sample_block; }
 
     Block readImpl() override
     {
@@ -171,6 +172,9 @@ public:
 BlockIO InterpreterKillQueryQuery::execute()
 {
     ASTKillQueryQuery & query = typeid_cast<ASTKillQueryQuery &>(*query_ptr);
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context, {"system"});
 
     BlockIO res_io;
     Block processes_block = getSelectFromSystemProcessesResult();

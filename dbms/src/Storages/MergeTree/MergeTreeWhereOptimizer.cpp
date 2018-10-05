@@ -12,6 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
 #include <ext/scope_guard.h>
+#include <ext/collection_cast.h>
 #include <ext/map.h>
 #include <memory>
 #include <unordered_map>
@@ -39,8 +40,7 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     const MergeTreeData & data,
     const Names & column_names,
     Logger * log)
-        : primary_key_columns{ext::map<std::unordered_set>(data.getPrimarySortDescription(),
-            [] (const SortColumnDescription & col) { return col.column_name; })},
+        : primary_key_columns{ext::collection_cast<std::unordered_set>(data.getPrimarySortColumns())},
         table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, context, data.getColumns().getAllPhysical())},
@@ -334,7 +334,7 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const IAST * const ast) const
         if ((primary_key_columns.count(first_arg_name) && isConstant(args[1])) ||
             (primary_key_columns.count(second_arg_name) && isConstant(args[0])) ||
             (primary_key_columns.count(first_arg_name)
-                && (prepared_sets.count(args[1].get()) || typeid_cast<const ASTSubquery *>(args[1].get()))))
+                && (prepared_sets.count(args[1]->range) || typeid_cast<const ASTSubquery *>(args[1].get()))))
             return true;
     }
 
@@ -384,7 +384,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const IAST * ptr) const
     else if (const auto identifier_ptr = typeid_cast<const ASTIdentifier *>(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
-        if (identifier_ptr->kind == ASTIdentifier::Column)
+        if (identifier_ptr->general())
             if (array_joined_names.count(identifier_ptr->name) ||
                 array_joined_names.count(Nested::extractTableName(identifier_ptr->name)))
                 return true;

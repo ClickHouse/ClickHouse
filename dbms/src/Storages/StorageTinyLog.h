@@ -31,7 +31,7 @@ public:
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
-        QueryProcessingStage::Enum & processed_stage,
+        QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
@@ -51,6 +51,8 @@ public:
     std::string full_path() const { return path + escapeForFileName(name) + '/';}
 
     String getDataPath() const override { return full_path(); }
+
+    void truncate(const ASTPtr &) override;
 
 private:
     String path;

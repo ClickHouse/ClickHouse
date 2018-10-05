@@ -48,7 +48,7 @@ class ASTDescribeQuery : public ASTQueryWithOutput
 public:
     ASTPtr table_expression;
 
-    String getID() const override { return "DescribeQuery"; };
+    String getID() const override { return "DescribeQuery"; }
 
     ASTPtr clone() const override
     {
