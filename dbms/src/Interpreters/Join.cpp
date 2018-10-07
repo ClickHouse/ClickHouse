@@ -524,16 +524,20 @@ namespace
     struct Adder<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
+            size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/,
             const std::vector<size_t> & right_indexes)
         {
+            (*filter)[i] = 1;
+
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertFrom(*it->second.block->getByPosition(right_indexes[j]).column.get(), it->second.row_num);
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t /*i*/, IColumn::Filter * /*filter*/, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
+            size_t i, IColumn::Filter * filter, IColumn::Offset & /*current_offset*/, IColumn::Offsets * /*offsets*/)
         {
+            (*filter)[i] = 0;
+
             for (size_t j = 0; j < num_columns_to_add; ++j)
                 added_columns[j]->insertDefault();
         }
@@ -563,9 +567,11 @@ namespace
     struct Adder<KIND, ASTTableJoin::Strictness::All, Map>
     {
         static void addFound(const typename Map::const_iterator & it, size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
+            size_t i, IColumn::Filter * filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets,
             const std::vector<size_t> & right_indexes)
         {
+            (*filter)[i] = 1;
+
             size_t rows_joined = 0;
             for (auto current = &static_cast<const typename Map::mapped_type::Base_t &>(it->second); current != nullptr; current = current->next)
             {
@@ -580,8 +586,10 @@ namespace
         }
 
         static void addNotFound(size_t num_columns_to_add, MutableColumns & added_columns,
-            size_t i, IColumn::Filter * /*filter*/, IColumn::Offset & current_offset, IColumn::Offsets * offsets)
+            size_t i, IColumn::Filter * filter, IColumn::Offset & current_offset, IColumn::Offsets * offsets)
         {
+            (*filter)[i] = 0;
+
             if (KIND == ASTTableJoin::Kind::Inner)
             {
                 (*offsets)[i] = current_offset;
@@ -741,8 +749,8 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
     /// Used with ANY INNER JOIN
     std::unique_ptr<IColumn::Filter> filter;
 
-    if ((kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any)
-        filter = std::make_unique<IColumn::Filter>(rows);
+    bool filter_left_keys = (kind == ASTTableJoin::Kind::Inner || kind == ASTTableJoin::Kind::Right) && strictness == ASTTableJoin::Strictness::Any;
+    filter = std::make_unique<IColumn::Filter>(rows);
 
     /// Used with ALL ... JOIN
     IColumn::Offset current_offset = 0;
@@ -771,14 +779,11 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         block.insert(ColumnWithTypeAndName(std::move(added_columns[i]), added_type_name[i].first, added_type_name[i].second));
 
     /// If ANY INNER | RIGHT JOIN - filter all the columns except the new ones.
-    if (filter)
+    if (filter_left_keys)
         for (size_t i = 0; i < existing_columns; ++i)
             block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->filter(*filter, -1);
 
-    /// If ALL ... JOIN - we replicate all the columns except the new ones.
-    if (offsets_to_replicate)
-        for (size_t i = 0; i < existing_columns; ++i)
-            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
+    ColumnUInt64::Ptr mapping;
 
     /// Add join key columns from right block if they has different name.
     for (size_t i = 0; i < key_names_right.size(); ++i)
@@ -789,8 +794,33 @@ void Join::joinBlockImpl(Block & block, const Maps & maps) const
         if (needed_key_names_right.count(right_name) && !block.has(right_name))
         {
             const auto & col = block.getByName(left_name);
-            block.insert({col.column, col.type, right_name});
+            auto column = col.column;
+            if (!filter_left_keys)
+            {
+                if (!mapping)
+                {
+                    auto mut_mapping = ColumnUInt64::create(column->size());
+                    auto & data = mut_mapping->getData();
+                    size_t size = column->size();
+                    for (size_t j = 0; j < size; ++j)
+                        data[j] = (*filter)[j] ? j : size;
+
+                    mapping = std::move(mut_mapping);
+                }
+
+                auto mut_column = (*std::move(column)).mutate();
+                mut_column->insertDefault();
+                column = mut_column->index(*mapping, 0);
+            }
+            block.insert({column, col.type, right_name});
         }
+    }
+
+    /// If ALL ... JOIN - we replicate all the columns except the new ones.
+    if (offsets_to_replicate)
+    {
+        for (size_t i = 0; i < existing_columns; ++i)
+            block.safeGetByPosition(i).column = block.safeGetByPosition(i).column->replicate(*offsets_to_replicate);
     }
 }
 
