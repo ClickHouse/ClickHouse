@@ -1204,6 +1204,7 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
             if (i == order_descr.size() - 1)
             {
+                /// Threads can not steal task. (for order)
                 storage->do_not_read_with_order = false;
                 use_sorting = false;
 
