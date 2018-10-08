@@ -12,7 +12,7 @@ class ReverseBlockInputStream : public IProfilingBlockInputStream
 public:.
     ReverseBlockInputStream(const BlockInputStreamPtr & input)
     {
-    	children.push_back(input);
+        children.push_back(input);
     }
 
     String getName() const override { return "Reverse"; }
@@ -22,20 +22,20 @@ public:.
 protected:
     Block readImpl() override
     {
-		auto res = children.back()->read();
+        auto res = children.back()->read();
 
-		if (!res)
-			return Block();
+        if (!res)
+            return Block();
 
-		PaddedPODArray<size_t> perm;
+        PaddedPODArray<size_t> perm;
 
-		for (int i = res.rows() - 1; i >= 0; --i)
-			perm.push_back(static_cast<size_t>(i));
+        for (int i = res.rows() - 1; i >= 0; --i)
+            perm.push_back(static_cast<size_t>(i));
 
-		for (auto it = res.begin(); it != res.end(); ++it)
-			it->column = it->column->permute(perm, 0);
+        for (auto it = res.begin(); it != res.end(); ++it)
+            it->column = it->column->permute(perm, 0);
 
-		return res;
+        return res;
     }
 };
 
