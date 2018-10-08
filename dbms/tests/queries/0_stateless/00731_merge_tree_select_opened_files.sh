@@ -20,9 +20,7 @@ $CLICKHOUSE_CLIENT $settings -q "OPTIMIZE TABLE test.merge_tree_table FINAL;"
 
 $CLICKHOUSE_CLIENT $settings -q "SELECT count() from (SELECT toDayOfWeek(date) as m, id, count() FROM test.merge_tree_table GROUP BY id, m ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1);" &> /dev/null
 
-$CLICKHOUSE_CLIENT $settings -q "SELECT sleep(3);" &> /dev/null
-$CLICKHOUSE_CLIENT $settings -q "SELECT sleep(3);" &> /dev/null
-$CLICKHOUSE_CLIENT $settings -q "SELECT sleep(3);" &> /dev/null
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH SYSTEM TABLES"
 
 $CLICKHOUSE_CLIENT $settings -q "SELECT pi.Values FROM system.query_log ARRAY JOIN ProfileEvents as pi WHERE query='SELECT count() from (SELECT toDayOfWeek(date) as m, id, count() FROM test.merge_tree_table GROUP BY id, m ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1, log_queries=1, log_query_threads=1, log_profile_events=1, log_query_settings=1)' and pi.Names = 'FileOpen' ORDER BY event_time DESC LIMIT 1;"
 
