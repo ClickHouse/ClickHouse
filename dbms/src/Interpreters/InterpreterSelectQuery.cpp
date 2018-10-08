@@ -21,6 +21,7 @@
 #include <DataStreams/RollupBlockInputStream.h>
 #include <DataStreams/CubeBlockInputStream.h>
 #include <DataStreams/ConvertColumnLowCardinalityToFullBlockInputStream.h>
+#include <DataStreams/ReverseBlockInputStream.h>
 
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -1182,39 +1183,65 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 {
     SortDescription order_descr = getSortDescription(query);
 
+    if (order_descr.size() == 0)
+        return;
+
+    const Settings & settings = context.getSettingsRef();
+    size_t limit = getLimitForSorting(query);
+
+    bool use_sorting = true;
+
+    auto order = order_descr[0].direction;
+
     if (auto merge_tree = static_cast<StorageMergeTree *>(&*storage))
     {
         auto column_sorted_order = merge_tree->getData().getSortColumns();
 
         for (size_t i = 0; i < order_descr.size(); ++i)
         {
-            if ((i == column_sorted_order.size()) || (order_descr[i].column_name != column_sorted_order[i]))
+            if ((i == column_sorted_order.size()) || (order_descr[i].column_name != column_sorted_order[i]) || (order != order_descr[i].direction))
                 break;
 
             if (i == order_descr.size() - 1)
             {
                 storage->do_not_read_with_order = false;
-                return;
+                use_sorting = false;
+
+                pipeline.transform([&](auto & stream)
+                {
+                    auto sorting_stream = std::make_shared<AsynchronousBlockInputStream>(stream);
+                    stream = sorting_stream;
+                });
+
+                if (order == -1)
+                {
+                    pipeline.transform([&](auto & stream)
+                    {
+                        auto sorting_stream = std::make_shared<ReverseBlockInputStream>(stream);
+                        stream = sorting_stream;
+                    });
+                }
+
             }
         }
     }
 
-    size_t limit = getLimitForSorting(query);
-
-    const Settings & settings = context.getSettingsRef();
-
-    pipeline.transform([&](auto & stream)
+    if (use_sorting)
     {
-        auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
-        /// Limits on sorting
-        IProfilingBlockInputStream::LocalLimits limits;
-        limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
-        limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
-        sorting_stream->setLimits(limits);
+        pipeline.transform([&](auto & stream)
+        {
+            auto sorting_stream = std::make_shared<PartialSortingBlockInputStream>(stream, order_descr, limit);
 
-        stream = sorting_stream;
-    });
+            /// Limits on sorting
+            IProfilingBlockInputStream::LocalLimits limits;
+            limits.mode = IProfilingBlockInputStream::LIMITS_TOTAL;
+            limits.size_limits = SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode);
+            sorting_stream->setLimits(limits);
+
+            stream = sorting_stream;
+        });
+    }
 
     /// If there are several streams, we merge them into one
     executeUnion(pipeline);
