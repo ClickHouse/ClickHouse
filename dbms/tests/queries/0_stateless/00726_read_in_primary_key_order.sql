@@ -9,4 +9,4 @@ INSERT INTO test.merge1 VALUES (1, 1), (1, 2), (1, 3), (100, 1), (100, 2), (200,
 SELECT b FROM test.merge1 ORDER BY b;
 SELECT b FROM test.merge1 ORDER BY b DESC;
 
-DROP TABLE IF EXISTS test.merge;
+DROP TABLE IF EXISTS test.merge1;
