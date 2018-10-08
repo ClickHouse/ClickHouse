@@ -1222,7 +1222,6 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
                         stream = sorting_stream;
                     });
                 }
-
             }
         }
     }
