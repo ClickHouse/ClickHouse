@@ -9,7 +9,7 @@ namespace DB
 /// The order of the rows in the block is reversed.
 class ReverseBlockInputStream : public IProfilingBlockInputStream
 {
-public:.
+public:
     ReverseBlockInputStream(const BlockInputStreamPtr & input)
     {
         children.push_back(input);
