@@ -73,7 +73,7 @@ void MemoryTracker::alloc(Int64 size)
       */
     Int64 will_be = size + amount.fetch_add(size, std::memory_order_relaxed);
 
-    if (!parent.load(std::memory_order_relaxed))
+    if (metric != CurrentMetrics::end())
         CurrentMetrics::add(metric, size);
 
     Int64 current_limit = limit.load(std::memory_order_relaxed);
@@ -153,7 +153,8 @@ void MemoryTracker::free(Int64 size)
 
     if (auto loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
-    else
+
+    if (metric != CurrentMetrics::end())
         CurrentMetrics::sub(metric, size);
 }
 
