@@ -1,3 +1,5 @@
+CREATE DATABASE IF NOT EXISTS test;
+
 DROP TABLE IF EXISTS test.merge1;
 
 CREATE TABLE test.merge1(a Date, b UInt64) ENGINE=MergeTree() PARTITION BY a ORDER BY b;
