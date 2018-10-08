@@ -1,5 +1,5 @@
-//#include <cstring>
 #include <cmath>
+#include <ext/bit_cast.h>
 
 #include <Common/Exception.h>
 #include <Common/Arena.h>
@@ -45,6 +45,12 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(*reinterpret_cast<const T *>(pos));
     return pos + sizeof(T);
+}
+
+template <typename T>
+UInt64 ColumnDecimal<T>::get64(size_t n) const
+{
+    return ext::bit_cast<UInt64>(data[n]);
 }
 
 template <typename T>
