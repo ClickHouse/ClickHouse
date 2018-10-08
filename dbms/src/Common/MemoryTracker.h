@@ -7,12 +7,6 @@
 #include <Common/VariableContext.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric MemoryTracking;
-}
-
-
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -31,7 +25,7 @@ class MemoryTracker
     std::atomic<MemoryTracker *> parent {};
 
     /// You could specify custom metric to track memory usage.
-    CurrentMetrics::Metric metric = CurrentMetrics::MemoryTracking;
+    CurrentMetrics::Metric metric = CurrentMetrics::end();
 
     /// This description will be used as prefix into log messages (if isn't nullptr)
     const char * description = nullptr;
