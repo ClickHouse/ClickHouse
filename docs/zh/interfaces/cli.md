@@ -61,7 +61,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 您可以通过 Ctrl+C 来取消一个长时间的查询。然而，您依然需要等待服务端来中止请求。在某个阶段去取消查询是不可能的。如果您不等待并再次按下 Ctrl + C，客户端将会退出。
 
-命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 "[外部数据查询处理](../../table_engines/external_data.html)".
+命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 "[外部数据查询处理](../operations/table_engines/external_data.md#external-data)".
 
 <a name="interfaces_cli_configuration"></a>
 
