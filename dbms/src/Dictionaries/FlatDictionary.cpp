@@ -115,7 +115,7 @@ void FlatDictionary::isInConstantVector(
 
 
 #define DECLARE(TYPE)\
-void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
+void FlatDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -138,6 +138,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void FlatDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
@@ -156,7 +159,7 @@ void FlatDictionary::getString(const std::string & attribute_name, const PaddedP
 #define DECLARE(TYPE)\
 void FlatDictionary::get##TYPE(\
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
-    PaddedPODArray<TYPE> & out) const\
+    ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -177,6 +180,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void FlatDictionary::getString(
@@ -194,8 +200,7 @@ void FlatDictionary::getString(
 
 #define DECLARE(TYPE)\
 void FlatDictionary::get##TYPE(\
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def,\
-    PaddedPODArray<TYPE> & out) const\
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const\
 {\
     const auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -216,6 +221,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void FlatDictionary::getString(
@@ -250,6 +258,10 @@ void FlatDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UInt8> 
         case AttributeUnderlyingType::Float32: has<Float32>(attribute, ids, out); break;
         case AttributeUnderlyingType::Float64: has<Float64>(attribute, ids, out); break;
         case AttributeUnderlyingType::String: has<String>(attribute, ids, out); break;
+
+        case AttributeUnderlyingType::Decimal32: has<Decimal32>(attribute, ids, out); break;
+        case AttributeUnderlyingType::Decimal64: has<Decimal64>(attribute, ids, out); break;
+        case AttributeUnderlyingType::Decimal128: has<Decimal128>(attribute, ids, out); break;
     }
 }
 
@@ -408,6 +420,11 @@ void FlatDictionary::calculateBytesAllocated()
             case AttributeUnderlyingType::Int64: addAttributeSize<Int64>(attribute); break;
             case AttributeUnderlyingType::Float32: addAttributeSize<Float32>(attribute); break;
             case AttributeUnderlyingType::Float64: addAttributeSize<Float64>(attribute); break;
+
+            case AttributeUnderlyingType::Decimal32: addAttributeSize<Decimal32>(attribute); break;
+            case AttributeUnderlyingType::Decimal64: addAttributeSize<Decimal64>(attribute); break;
+            case AttributeUnderlyingType::Decimal128: addAttributeSize<Decimal128>(attribute); break;
+
             case AttributeUnderlyingType::String:
             {
                 addAttributeSize<StringRef>(attribute);
@@ -460,6 +477,10 @@ FlatDictionary::Attribute FlatDictionary::createAttributeWithType(const Attribut
         case AttributeUnderlyingType::Float32: createAttributeImpl<Float32>(attr, null_value); break;
         case AttributeUnderlyingType::Float64: createAttributeImpl<Float64>(attr, null_value); break;
         case AttributeUnderlyingType::String: createAttributeImpl<String>(attr, null_value); break;
+
+        case AttributeUnderlyingType::Decimal32: createAttributeImpl<Decimal32>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal64: createAttributeImpl<Decimal64>(attr, null_value); break;
+        case AttributeUnderlyingType::Decimal128: createAttributeImpl<Decimal128>(attr, null_value); break;
     }
 
     return attr;
@@ -488,6 +509,9 @@ void FlatDictionary::getItemsNumber(
     DISPATCH(Int64)
     DISPATCH(Float32)
     DISPATCH(Float64)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
 #undef DISPATCH
     else
         throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
@@ -563,6 +587,10 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const Key id, cons
         case AttributeUnderlyingType::Float32: setAttributeValueImpl<Float32>(attribute, id, value.get<Float64>()); break;
         case AttributeUnderlyingType::Float64: setAttributeValueImpl<Float64>(attribute, id, value.get<Float64>()); break;
         case AttributeUnderlyingType::String: setAttributeValueImpl<String>(attribute, id, value.get<String>()); break;
+
+        case AttributeUnderlyingType::Decimal32: setAttributeValueImpl<Decimal32>(attribute, id, value.get<Decimal128>()); break;
+        case AttributeUnderlyingType::Decimal64: setAttributeValueImpl<Decimal64>(attribute, id, value.get<Decimal128>()); break;
+        case AttributeUnderlyingType::Decimal128: setAttributeValueImpl<Decimal128>(attribute, id, value.get<Decimal128>()); break;
     }
 }
 
