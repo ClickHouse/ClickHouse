@@ -8,4 +8,3 @@ SELECT b FROM test.merge1 ORDER BY b;
 SELECT b FROM test.merge1 ORDER BY b DESC;
 
 DROP TABLE IF EXISTS test.merge;
-
