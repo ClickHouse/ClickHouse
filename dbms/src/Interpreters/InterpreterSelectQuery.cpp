@@ -1193,8 +1193,9 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
     auto order = order_descr[0].direction;
 
-    if (auto merge_tree = static_cast<StorageMergeTree *>(&*storage))
+    if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
     {
+        merge_tree->do_not_read_with_order = true;
         auto column_sorted_order = merge_tree->getData().getSortColumns();
 
         for (size_t i = 0; i < order_descr.size(); ++i)
@@ -1205,21 +1206,21 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
             if (i == order_descr.size() - 1)
             {
                 /// Threads can not steal task. (for order)
-                storage->do_not_read_with_order = false;
+                merge_tree->do_not_read_with_order = false;
                 use_sorting = false;
 
                 pipeline.transform([&](auto & stream)
                 {
-                    auto sorting_stream = std::make_shared<AsynchronousBlockInputStream>(stream);
-                    stream = sorting_stream;
+                    auto async_stream = std::make_shared<AsynchronousBlockInputStream>(stream);
+                    stream = async_stream;
                 });
 
                 if (order == -1)
                 {
                     pipeline.transform([&](auto & stream)
                     {
-                        auto sorting_stream = std::make_shared<ReverseBlockInputStream>(stream);
-                        stream = sorting_stream;
+                        auto reverse_stream = std::make_shared<ReverseBlockInputStream>(stream);
+                        stream = reverse_stream;
                     });
                 }
             }
