@@ -2,7 +2,7 @@
 
 # Dictionary
 
-Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md) как таблицу ClickHouse. Данный способ позволяет избежать задания словарей отдельными XML-файлами, описывая их в SQL-синтаксисе.
+Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md) как таблицу ClickHouse.
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 
