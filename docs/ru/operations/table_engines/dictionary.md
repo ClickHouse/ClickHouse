@@ -3,6 +3,17 @@
 # Dictionary
 
 Движок `Dictionary` отображает данные словаря как таблицу ClickHouse.
+Настройки словарей берутся из отдельных xml-конфигов, перечисленных в config.xml в секции dictionaries_config.
+
+Доступны следующие источники данных:
+- clickhouse
+- mysql (via MySQL library)
+- odbc (via POCO library)
+- mongodb (via POCO library)
+- file
+- http
+- executable
+- library
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 
