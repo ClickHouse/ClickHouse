@@ -23,7 +23,7 @@ enum
     NESTED_FIELD = size_t(-2)
 };
 
-} // unnamed namespace
+}
 
 
 JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const Block & header_, const FormatSettings & format_settings)
@@ -35,7 +35,7 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
     size_t num_columns = header.columns();
     for (size_t i = 0; i < num_columns; ++i)
     {
-        const String& colname = columnName(i);
+        const String & colname = columnName(i);
         name_map[colname] = i;        /// NOTE You could place names more cache-locally.
         if (format_settings.import_nested_json)
         {
@@ -49,9 +49,9 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
     }
 }
 
-const String& JSONEachRowRowInputStream::columnName(size_t i) const
+const String & JSONEachRowRowInputStream::columnName(size_t i) const
 {
-    return header.safeGetByPosition(i).name;
+    return header.getByPosition(i).name;
 }
 
 size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
