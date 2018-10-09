@@ -141,8 +141,9 @@ public:
     bool appendArrayJoin(ExpressionActionsChain & chain, bool only_types);
     bool appendJoin(ExpressionActionsChain & chain, bool only_types);
     /// remove_filter is set in ExpressionActionsChain::finalize();
-    /// sampling_expression is needed if sampling is used in order to not remove columns are used in it.
-    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types, const ASTPtr & sampling_expression);
+    /// sampling_expression and primary_expression are needed in order to not remove columns are used in it.
+    bool appendPrewhere(ExpressionActionsChain & chain, bool only_types,
+                        const ASTPtr & sampling_expression, const ASTPtr & primary_expression);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types);
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
@@ -237,7 +238,7 @@ private:
           * It's possible to use name `expr(t2 columns)`.
           */
         Names key_names_left;
-        Names key_names_right;
+        Names key_names_right; /// Duplicating names are qualified.
         ASTs key_asts_left;
         ASTs key_asts_right;
 
@@ -254,10 +255,11 @@ private:
 
         using JoinedColumnsList = std::list<JoinedColumn>;
 
-        /// All columns which can be read from joined table.
-        NamesAndTypesList columns_from_joined_table;
-        /// Columns which will be used in query to the joined query.
-        Names required_columns_from_joined_table;
+        /// All columns which can be read from joined table. Duplicating names are qualified.
+        JoinedColumnsList columns_from_joined_table;
+        /// Columns which will be used in query to the joined query. Duplicating names are qualified.
+        NameSet required_columns_from_joined_table;
+
         /// Columns which will be added to block, possible including some columns from right join key.
         JoinedColumnsList columns_added_by_join;
         /// Such columns will be copied from left join keys during join.
@@ -265,11 +267,15 @@ private:
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions;
 
-        void createJoinedBlockActions(const ASTSelectQuery * select_query_with_join, const Context & context);
+        void createJoinedBlockActions(const NamesAndTypesList & source_columns,
+                                      const ASTSelectQuery * select_query_with_join,
+                                      const Context & context);
 
         NamesAndTypesList getColumnsAddedByJoin() const;
 
-        NamesAndTypesList getColumnsFromJoinedTable(const Context & context, const ASTSelectQuery * select_query_with_join);
+        const JoinedColumnsList & getColumnsFromJoinedTable(const NamesAndTypesList & source_columns,
+                                                            const Context & context,
+                                                            const ASTSelectQuery * select_query_with_join);
     };
 
     AnalyzedJoin analyzed_join;

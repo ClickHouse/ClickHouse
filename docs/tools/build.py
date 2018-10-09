@@ -67,9 +67,16 @@ def build_for_lang(lang, args):
 
         }
 
+        site_names = {
+            'en': 'ClickHouse Documentation',
+            'ru': 'Документация ClickHouse',
+            'zh': 'ClickHouse文档',
+            'fa': 'مستندات ClickHouse'
+        }
+
         cfg = config.load_config(
             config_file=config_path,
-            site_name='ClickHouse Documentation' if lang == 'en' or lang == 'fa' else 'Документация ClickHouse',
+            site_name=site_names.get(lang, site_names['en']),
             site_url='https://clickhouse.yandex/docs/%s/' % lang,
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=os.path.join(args.output_dir, lang),
@@ -171,7 +178,7 @@ def build(args):
 
 if __name__ == '__main__':
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,ru,fa')
+    arg_parser.add_argument('--lang', default='en,ru,zh,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--output-dir', default='build')

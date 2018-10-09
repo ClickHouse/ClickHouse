@@ -137,6 +137,9 @@ std::pair<String, String> getDatabaseAndTableNameFromIdentifier(const ASTIdentif
 
 String DatabaseAndTableWithAlias::getQualifiedNamePrefix() const
 {
+    if (alias.empty() && table.empty())
+        return "";
+
     return (!alias.empty() ? alias : (database + '.' + table)) + '.';
 }
 
