@@ -1,1 +1,4 @@
-../../../en/data_types/special_data_types/set.md
+# Set
+
+Used for the right half of an IN expression.
+

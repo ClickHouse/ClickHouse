@@ -1,1 +1,4 @@
-../../../en/data_types/special_data_types/expression.md
+# Expression
+
+Used for representing lambda expressions in high-order functions.
+
