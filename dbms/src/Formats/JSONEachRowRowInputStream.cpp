@@ -57,7 +57,7 @@ const String & JSONEachRowRowInputStream::columnName(size_t i) const
     return header.getByPosition(i).name;
 }
 
-size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, size_t key_index)
+inline size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, size_t key_index)
 {
     /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -112,7 +112,7 @@ StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 }
 
 
-static void skipColonDelimeter(ReadBuffer & istr)
+static inline void skipColonDelimeter(ReadBuffer & istr)
 {
     skipWhitespaceIfAny(istr);
     assertChar(':', istr);
@@ -145,7 +145,7 @@ void JSONEachRowRowInputStream::readField(size_t index, MutableColumns & columns
     read_columns[index] = true;
 }
 
-bool JSONEachRowRowInputStream::advanceToNextKey(size_t key_index)
+inline bool JSONEachRowRowInputStream::advanceToNextKey(size_t key_index)
 {
     skipWhitespaceIfAny(istr);
 
