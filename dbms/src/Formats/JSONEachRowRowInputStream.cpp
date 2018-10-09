@@ -68,7 +68,8 @@ size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
   */
 StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 {
-    // This is just an optimization: try to avoid copying the name into current_column_name
+    // This is just an optimization: try to avoid calling readJSONStringInto()
+
     if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
     {
         const char * next_pos = find_first_symbols<'\\', '"'>(buf.position() + 1, buf.buffer().end());
@@ -77,10 +78,10 @@ StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
         {
             /// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
             assertChar('"', buf);
-            StringRef res(buf.position(), next_pos - buf.position());
+            current_column_name.assign(buf.position(), next_pos - buf.position());
             buf.position() += next_pos - buf.position();
             assertChar('"', buf);
-            return res;
+            return current_column_name;
         }
     }
 
@@ -150,7 +151,6 @@ void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(istr);
-
         skipColonDelimeter(istr);
 
         const size_t column_index = columnIndex(name_ref);
