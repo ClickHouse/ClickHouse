@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -54,7 +55,7 @@ const String & JSONEachRowRowInputStream::columnName(size_t i) const
     return header.getByPosition(i).name;
 }
 
-size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
+size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name) const
 {
     /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
@@ -65,10 +66,11 @@ size_t JSONEachRowRowInputStream::columnIndex(const StringRef& name) const
 
 /** Read the field name and convert it to column name
   *  (taking into account the current nested name prefix)
+  * Resulting StringRef is valid only before next read from buf.
   */
 StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
 {
-    // This is just an optimization: try to avoid calling readJSONStringInto()
+    // This is just an optimization: try to avoid copying the name into current_column_name
 
     if (nested_prefix_length == 0 && buf.position() + 1 < buf.buffer().end())
     {
@@ -78,10 +80,10 @@ StringRef JSONEachRowRowInputStream::readColumnName(ReadBuffer & buf)
         {
             /// The most likely option is that there is no escape sequence in the key name, and the entire name is placed in the buffer.
             assertChar('"', buf);
-            current_column_name.assign(buf.position(), next_pos - buf.position());
+            StringRef res(buf.position(), next_pos - buf.position());
             buf.position() += next_pos - buf.position();
             assertChar('"', buf);
-            return current_column_name;
+            return res;
         }
     }
 
@@ -151,15 +153,31 @@ void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(istr);
-        skipColonDelimeter(istr);
-
         const size_t column_index = columnIndex(name_ref);
-        if (column_index == UNKNOWN_FIELD)
-            skipUnknownField(name_ref);
-        else if (column_index == NESTED_FIELD)
-            readNestedData(name_ref.toString(), columns);
+
+        if (unlikely(ssize_t(column_index) < 0))
+        {
+            /// name_ref may point directly to the input buffer
+            /// and input buffer may be filled with new data on next read
+            /// If we want to use name_ref after another reads from buffer, we must copy it to temporary string.
+
+            current_column_name.assign(name_ref.data, name_ref.size);
+            name_ref = StringRef(current_column_name);
+
+            skipColonDelimeter(istr);
+
+            if (column_index == UNKNOWN_FIELD)
+                skipUnknownField(name_ref);
+            else if (column_index == NESTED_FIELD)
+                readNestedData(name_ref.toString(), columns);
+            else
+                throw Exception("Logical error: illegal value of column_index", ErrorCodes::LOGICAL_ERROR);
+        }
         else
+        {
+            skipColonDelimeter(istr);
             readField(column_index, columns);
+        }
     }
 }
 
