@@ -8,6 +8,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
+#include <Processors/IProcessor.h>
 
 
 namespace llvm
@@ -52,12 +53,11 @@ using PreparedFunctionLowCardinalityResultCachePtr = std::shared_ptr<PreparedFun
 class PreparedFunctionImpl : public IPreparedFunction
 {
 public:
-    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final;
-
-    /// Create cache which will be used to store result of function executed on LowCardinality column.
-    /// Only for default LowCardinality implementation.
-    /// Cannot be called concurrently for the same object.
-    void createLowCardinalityResultCache(size_t cache_size);
+    void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) final
+    {
+        /// TODO: Remove executeImpl
+        executeImpl(block, arguments, result, input_rows_count);
+    }
 
 protected:
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) = 0;
@@ -91,17 +91,6 @@ protected:
       * Counterexample: modulo(0, 0)
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
-
-private:
-    bool defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
-                                       size_t input_rows_count);
-    bool defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
-                                                   size_t input_rows_count);
-    void executeWithoutLowCardinalityColumns(Block & block, const ColumnNumbers & arguments, size_t result,
-                                             size_t input_rows_count);
-
-    /// Cache is created by function createLowCardinalityResultCache()
-    PreparedFunctionLowCardinalityResultCachePtr low_cardinality_result_cache;
 };
 
 using ValuePlaceholders = std::vector<std::function<llvm::Value * ()>>;
@@ -122,11 +111,13 @@ public:
     /// sample_block should contain data types of arguments and values of constants, if relevant.
     virtual PreparedFunctionPtr prepare(const Block & sample_block, const ColumnNumbers & arguments, size_t result) const = 0;
 
+    virtual ProcessorPtr execute(Block & block, const ColumnNumbers & arguments, size_t result);
+
     /// TODO: make const
-    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
-    {
-        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count);
-    }
+//    virtual void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+//    {
+//        return prepare(block, arguments, result)->execute(block, arguments, result, input_rows_count);
+//    }
 
 #if USE_EMBEDDED_COMPILER
 

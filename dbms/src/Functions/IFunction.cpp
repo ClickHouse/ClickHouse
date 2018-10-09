@@ -15,6 +15,16 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Functions/FunctionHelpers.h>
+
+#include <Functions/Helpers/ExecuteFunctionTransform.h>
+#include <Functions/Helpers/RemoveConstantsTransform.h>
+#include <Functions/Helpers/RemoveLowCardinalityTransform.h>
+#include <Functions/Helpers/RemoveNullableTransform.h>
+#include <Functions/Helpers/WrapConstantsTransform.h>
+#include <Functions/Helpers/WrapLowCardinalityTransform.h>
+#include <Functions/Helpers/WrapNullableTransform.h>
+#include <Functions/Helpers/CreateConstantColumnTransform.h>
+
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/WriteHelpers.h>
@@ -506,6 +516,111 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
     }
     else
         executeWithoutLowCardinalityColumns(block, args, result, input_rows_count);
+}
+
+ProcessorPtr IFunctionBase::execute(Block & block, const ColumnNumbers & arguments, size_t result)
+{
+    Processors processors;
+
+    std::function<void(const Block & header)> executeWithoutLowCardinality;
+
+    auto executePreparedFunction = [&](const Block & header)
+    {
+        auto function = prepare(header, arguments, result);
+        auto processor = std::make_shared<ExecuteFunctionTransform>(function, header, arguments, result);
+        processors.emplace_back(processor);
+    };
+
+    auto executeRemoveNullables = [&](const Block & header) -> bool
+    {
+        if (arguments.empty() || !useDefaultImplementationForNulls())
+            return false;
+
+        NullPresence null_presence = getNullPresense(block, arguments);
+
+        if (null_presence.has_null_constant)
+        {
+            processors.emplace_back(std::make_shared<CreateConstantColumnTransform>(header, result, Null()));
+            return true;
+        }
+
+        if (null_presence.has_nullable)
+        {
+            auto remove_nullable = std::make_shared<RemoveNullableTransform>(header, arguments, result);
+            processors.emplace_back(remove_nullable);
+            const auto & header_without_nullable = remove_nullable->getOutputs().at(0).getHeader();
+            const auto & header_null_maps = remove_nullable->getOutputs().at(1).getHeader();
+
+            executeWithoutLowCardinality(header_without_nullable, arguments, result);
+            const auto & exec_function = processors.back();
+            const auto & header_func_result = exec_function->getOutputs().at(0).getHeader();
+
+            auto wrap_nullable = std::make_shared<WrapNullableTransform>({header_func_result, header_null_maps}, arguments, result);
+            processors.emplace_back(wrap_nullable);
+
+            return true;
+        }
+
+        return false;
+    };
+
+    auto executeRemoveConstants = [&](const Block & header) -> ProcessorPtr
+    {
+        ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
+
+        /// Check that these arguments are really constant.
+        for (auto arg_num : arguments_to_remain_constants)
+            if (arg_num < arguments.size() && !header.getByPosition(arguments[arg_num]).column->isColumnConst())
+                throw Exception("Argument at index " + toString(arg_num) + " for function " + getName()
+                                + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
+
+        if (arguments.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
+            return nullptr;
+
+        auto remove_constants = std::make_shared<RemoveConstantsTransform>(header, arguments_to_remain_constants, arguments, result);
+        const auto & header_without_constants = remove_constants->getOutputs().at(0).getHeader();
+
+        auto exec_function = executeWithoutLowCardinality(header_without_constants, arguments, result);
+        const auto & header_func_result = exec_function->getOutputs().at(0).getHeader();
+
+        auto wrap_constants = std::make_shared<WrapConstantsTransform>(header_func_result, arguments, result);
+
+        processors.emplace_back(remove_constants);
+        processors.emplace_back(wrap_constants);
+        return wrap_constants;
+    };
+
+    executeWithoutLowCardinality = [&](const Block & header) -> ProcessorPtr
+    {
+        if (auto remove_constants = executeRemoveConstants(block))
+            return remove_constants;
+
+        if (auto remove_nullable = executeRemoveNullables(block))
+            return remove_nullable;
+
+        executePreparedFunction(block);
+    };
+
+    auto executeRemoveLowCardinality = [&](const Block & header)
+    {
+        if (!useDefaultImplementationForLowCardinalityColumns())
+            return executeWithoutLowCardinality(block);
+
+        auto remove_low_cadrinality = std::make_shared<RemoveLowCardinalityTransform>(header, arguments, result, canBeExecutedOnDefaultArguments());
+        const auto & header_without_low_cardinality = remove_low_cadrinality->getOutputs().at(0).getHeader();
+        const auto & header_positions = header_without_low_cardinality->getOutputs().at(1).getHeader();
+
+        auto exec_function = executeWithoutLowCardinality(header_without_low_cardinality, arguments, result);
+        const auto & header_func_result = exec_function->getOutputs().at(0).getHeader();
+
+        auto wrap_low_cardinality = std::make_shared<WrapLowCardinalityTransform>({header_func_result, header_positions}, arguments, result);
+
+        processors.emplace_back(remove_low_cadrinality);
+        processors.emplace_back(wrap_low_cardinality);
+        return wrap_low_cardinality;
+    };
+
+
 }
 
 void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
