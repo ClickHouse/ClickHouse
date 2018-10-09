@@ -185,12 +185,9 @@ public:
 protected:
     Poco::URI createBaseURI() const
     {
-        size_t bridge_port = config.getUInt(BridgeHelperMixin::serviceAlias() + ".port", DEFAULT_PORT);
-        std::string bridge_host = config.getString(BridgeHelperMixin::serviceAlias() + ".host", DEFAULT_HOST);
-
         Poco::URI uri;
-        uri.setHost(bridge_host);
-        uri.setPort(bridge_port);
+        uri.setHost(ping_url.getHost());
+        uri.setPort(ping_url.getPort());
         uri.setScheme("http");
         return uri;
     }
