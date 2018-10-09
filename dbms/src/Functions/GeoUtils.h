@@ -622,17 +622,22 @@ float calcLinestringRotation(const Linestring & points)
 
     auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
     auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto scalarProduct = [](const Point & from, const Point & to) { return from.x() * to.x() + from.y() * to.y(); };
     auto getVector = [](const Point & from, const Point & to) -> Point
     {
         return Point(to.x() - from.x(), to.y() - from.y());
     };
 
-    for (auto it = points.begin(); std::next(it) != points.end(); ++it)
+    for (auto it = points.begin(); it != points.end(); ++it)
     {
         if (it != points.begin())
         {
             auto prev = std::prev(it);
             auto next = std::next(it);
+
+            if (next == points.end())
+                next = std::next(points.begin());
+
             Point from = getVector(*prev, *it);
             Point to = getVector(*it, *next);
             float sqr_from_len = sqrLength(from);
@@ -641,9 +646,13 @@ float calcLinestringRotation(const Linestring & points)
             if (std::isfinite(sqr_len_product))
             {
                 float vec_prod = vecProduct(from, to);
+                float scalar_prod = scalarProduct(from, to);
                 float sin_ang = vec_prod * std::fabs(vec_prod) / sqr_len_product;
+                float cos_ang = scalar_prod * std::fabs(scalar_prod) / sqr_len_product;
                 sin_ang = std::max(-1.f, std::min(1.f, sin_ang));
-                rotation += std::asin(sin_ang);
+                cos_ang = std::max(-1.f, std::min(1.f, cos_ang));
+                float ang = std::atan2(sin_ang, cos_ang);
+                rotation += ang;
             }
         }
     }
