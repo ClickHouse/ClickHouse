@@ -14,6 +14,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/formatAST.h>
+#include <Parsers/DumpASTNode.h>
 
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -73,15 +74,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 
-#if 0
-constexpr std::ostream * debug_ast_stream = &std::cout;
-#else
-constexpr std::ostream * debug_ast_stream = nullptr;
-#endif
-
-
 namespace DB
 {
+
+using LogAST = DebugASTLog<true>;
+
 
 namespace ErrorCodes
 {
@@ -237,8 +234,11 @@ ExpressionAnalyzer::ExpressionAnalyzer(
     LogicalExpressionsOptimizer(select_query, settings).perform();
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
-    QueryAliasesVisitor queryAliasesVisitor(debug_ast_stream);
-    queryAliasesVisitor.visit(query, aliases);
+    {
+        LogAST log;
+        QueryAliasesVisitor query_aliases_visitor(log.stream());
+        query_aliases_visitor.visit(query, aliases);
+    }
 
     /// Common subexpression elimination. Rewrite rules.
     normalizeTree();
@@ -318,26 +318,28 @@ void ExpressionAnalyzer::translateQualifiedNames()
     std::vector<DatabaseAndTableWithAlias> tables;
     std::vector<ASTTableExpression> tables_expression = getTableExpressions(query);
 
+    LogAST log;
+
     for (const auto & table_expression : tables_expression)
     {
         auto table = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
 
         { /// debug print
             size_t depth = 0;
-            DumpASTNode dump(table_expression, debug_ast_stream, depth, "getTableNames");
+            DumpASTNode dump(table_expression, log.stream(), depth, "getTableNames");
             if (table_expression.database_and_table_name)
-                DumpASTNode(*table_expression.database_and_table_name, debug_ast_stream, depth);
+                DumpASTNode(*table_expression.database_and_table_name, log.stream(), depth);
             if (table_expression.table_function)
-                DumpASTNode(*table_expression.table_function, debug_ast_stream, depth);
+                DumpASTNode(*table_expression.table_function, log.stream(), depth);
             if (table_expression.subquery)
-                DumpASTNode(*table_expression.subquery, debug_ast_stream, depth);
+                DumpASTNode(*table_expression.subquery, log.stream(), depth);
             dump.print("getTableNameWithAlias", table.database + '.' + table.table + ' ' + table.alias);
         }
 
         tables.emplace_back(table);
     }
 
-    TranslateQualifiedNamesVisitor visitor(source_columns, tables, debug_ast_stream);
+    TranslateQualifiedNamesVisitor visitor(source_columns, tables, log.stream());
     visitor.visit(query);
 }
 
@@ -2283,7 +2285,7 @@ const ExpressionAnalyzer::AnalyzedJoin::JoinedColumnsList & ExpressionAnalyzer::
         if (const ASTTablesInSelectQueryElement * node = select_query_with_join->join())
         {
             const auto & table_expression = static_cast<const ASTTableExpression &>(*node->table_expression);
-            auto table_name_with_alias = getTableNameWithAliasFromTableExpression(table_expression, context);
+            auto table_name_with_alias = getTableNameWithAliasFromTableExpression(table_expression, context.getCurrentDatabase());
 
             auto columns = getNamesAndTypeListFromTableExpression(table_expression, context);
 

@@ -1,11 +1,12 @@
 #include <ostream>
 #include <sstream>
+#include <Common/typeid_cast.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Common/typeid_cast.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/DumpASTNode.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB

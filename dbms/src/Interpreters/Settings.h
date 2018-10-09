@@ -292,6 +292,7 @@ struct Settings
     M(SettingBool, calculate_text_stack_trace, 1, "Calculate text stack trace in case of exceptions during query execution. This is the default. It requires symbol lookups that may slow down fuzzing tests when huge amount of wrong queries are executed. In normal cases you should not disable this option.") \
     M(SettingBool, allow_ddl, true, "If it is set to true, then a user is allowed to executed DDL queries.") \
     M(SettingBool, parallel_view_processing, false, "Enables pushing to attached views concurrently instead of sequentially.") \
+    M(SettingBool, enable_debug_queries, false, "Enables debug queries such as AST.") \
 
 
 #define DECLARE(TYPE, NAME, DEFAULT, DESCRIPTION) \

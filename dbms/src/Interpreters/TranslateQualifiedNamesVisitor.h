@@ -4,7 +4,7 @@
 #include <vector>
 
 #include <Common/typeid_cast.h>
-#include <Parsers/IAST.h>
+#include <Parsers/DumpASTNode.h>
 #include <Interpreters/evaluateQualified.h>
 
 namespace DB

@@ -95,7 +95,6 @@ std::ostream & operator<<(std::ostream & stream, const Connection::Packet & what
     return stream;
 }
 
-#if 0
 std::ostream & operator<<(std::ostream & stream, const IAST & what)
 {
     stream << "IAST{";
@@ -103,6 +102,5 @@ std::ostream & operator<<(std::ostream & stream, const IAST & what)
     stream << "}";
     return stream;
 }
-#endif
 
 }
