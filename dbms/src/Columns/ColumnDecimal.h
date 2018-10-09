@@ -111,6 +111,7 @@ public:
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
     bool getBool(size_t n) const override { return bool(data[n]); }
     Int64 getInt(size_t n) const override { return Int64(data[n] * scale); }
+    UInt64 get64(size_t n) const override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr permute(const IColumn::Permutation & perm, size_t limit) const override;
