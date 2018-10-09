@@ -15,12 +15,12 @@
 namespace DB
 {
 
-static void replaceConstFunction(const IAST & node, const Context & context, const NamesAndTypesList & all_columns)
+static void replaceConstFunction(IAST & node, const Context & context, const NamesAndTypesList & all_columns)
 {
     for (size_t i = 0; i < node.children.size(); ++i)
     {
         auto child = node.children[i];
-        if (const ASTExpressionList * exp_list = typeid_cast<const ASTExpressionList *>(&*child))
+        if (ASTExpressionList * exp_list = typeid_cast<ASTExpressionList *>(&*child))
             replaceConstFunction(*exp_list, context, all_columns);
 
         if (ASTFunction * function = typeid_cast<ASTFunction *>(&*child))
@@ -31,9 +31,7 @@ static void replaceConstFunction(const IAST & node, const Context & context, con
 
             auto result_column = result_block.getByName(child->getColumnName()).column;
 
-            auto new_node = const_cast<IAST *>(&node);
-
-            new_node->children[i] = std::make_shared<ASTLiteral>((*result_column)[0]);
+            node.children[i] = std::make_shared<ASTLiteral>((*result_column)[0]);
         }
     }
 }
