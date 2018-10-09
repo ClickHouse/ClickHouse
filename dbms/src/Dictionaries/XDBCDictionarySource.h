@@ -3,40 +3,40 @@
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
 
-#include <Common/ODBCBridgeHelper.h>
-
-#include <Dictionaries/IDictionarySource.h>
-#include <Dictionaries/ExternalQueryBuilder.h>
 #include <Dictionaries/DictionaryStructure.h>
+#include <Dictionaries/ExternalQueryBuilder.h>
+#include <Dictionaries/IDictionarySource.h>
 
 #include <IO/ConnectionTimeouts.h>
+#include <Common/XDBCBridgeHelper.h>
 
 
 namespace Poco
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+namespace Util
+{
+    class AbstractConfiguration;
+}
 
-    class Logger;
+class Logger;
 }
 
 
 namespace DB
 {
-
-
-/// Allows loading dictionaries from a ODBC source
-class ODBCDictionarySource final : public IDictionarySource
+/// Allows loading dictionaries from a XDBC source via bridges
+class XDBCDictionarySource final : public IDictionarySource
 {
 public:
-    ODBCDictionarySource(const DictionaryStructure & dict_struct_,
-        const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix,
-        const Block & sample_block, const Context & context);
+    XDBCDictionarySource(const DictionaryStructure & dict_struct_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::string & config_prefix_,
+        const Block & sample_block_,
+        const Context & context_,
+        BridgeHelperPtr bridge);
 
     /// copy-constructor is provided in order to support cloneability
-    ODBCDictionarySource(const ODBCDictionarySource & other);
+    XDBCDictionarySource(const XDBCDictionarySource & other);
 
     BlockInputStreamPtr loadAll() override;
 
@@ -44,8 +44,7 @@ public:
 
     BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    BlockInputStreamPtr loadKeys(
-        const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -79,12 +78,9 @@ private:
     std::string invalidate_query;
     mutable std::string invalidate_query_response;
 
-    ODBCBridgeHelper odbc_bridge_helper;
+    BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
     ConnectionTimeouts timeouts;
     const Context & global_context;
-
 };
-
-
 }
