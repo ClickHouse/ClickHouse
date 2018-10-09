@@ -1195,33 +1195,36 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
 
     if (auto merge_tree = dynamic_cast<StorageMergeTree *>(storage.get()))
     {
-        merge_tree->do_not_read_with_order = true;
-        auto column_sorted_order = merge_tree->getData().getSortColumns();
-
-        for (size_t i = 0; i < order_descr.size(); ++i)
+        if (!query.distinct && !query.group_expression_list)
         {
-            if ((i == column_sorted_order.size()) || (order_descr[i].column_name != column_sorted_order[i]) || (order != order_descr[i].direction))
-                break;
+            merge_tree->do_not_read_with_order = true;
+            auto column_sorted_order = merge_tree->getData().getSortColumns();
 
-            if (i == order_descr.size() - 1)
+            for (size_t i = 0; i < order_descr.size(); ++i)
             {
-                /// Threads can not steal task. (for order)
-                merge_tree->do_not_read_with_order = false;
-                use_sorting = false;
+                if ((i == column_sorted_order.size()) || (order_descr[i].column_name != column_sorted_order[i]) || (order != order_descr[i].direction))
+                    break;
 
-                pipeline.transform([&](auto & stream)
+                if (i == order_descr.size() - 1)
                 {
-                    auto async_stream = std::make_shared<AsynchronousBlockInputStream>(stream);
-                    stream = async_stream;
-                });
+                    /// Threads can not steal task. (for order)
+                    merge_tree->do_not_read_with_order = false;
+                    use_sorting = false;
 
-                if (order == -1)
-                {
                     pipeline.transform([&](auto & stream)
                     {
-                        auto reverse_stream = std::make_shared<ReverseBlockInputStream>(stream);
-                        stream = reverse_stream;
+                        auto async_stream = std::make_shared<AsynchronousBlockInputStream>(stream);
+                        stream = async_stream;
                     });
+
+                    if (order == -1)
+                    {
+                        pipeline.transform([&](auto & stream)
+                        {
+                            auto reverse_stream = std::make_shared<ReverseBlockInputStream>(stream);
+                            stream = reverse_stream;
+                        });
+                    }
                 }
             }
         }
