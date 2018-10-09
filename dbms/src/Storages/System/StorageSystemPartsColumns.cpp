@@ -106,7 +106,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns, con
             size_t j = 0;
             {
                 WriteBufferFromOwnString out;
-                part->partition.serializeTextQuoted(*info.data, out, format_settings);
+                part->partition.serializeText(*info.data, out, format_settings);
                 columns[j++]->insert(out.str());
             }
             columns[j++]->insert(part->name);
