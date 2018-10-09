@@ -278,12 +278,12 @@ Useful for breaking away from a specific network interface.
 
 ## keep_alive_timeout
 
-The number of milliseconds that ClickHouse waits for incoming requests before closing the connection.
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds
 
 **Example**
 
 ```xml
-<keep_alive_timeout>3</keep_alive_timeout>
+<keep_alive_timeout>10</keep_alive_timeout>
 ```
 
 <a name="server_settings-listen_host"></a>
