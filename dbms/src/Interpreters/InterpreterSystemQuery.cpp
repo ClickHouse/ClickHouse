@@ -204,7 +204,7 @@ BlockIO InterpreterSystemQuery::execute()
                 throw Exception("There is no " + query.target_database + "." + query.target_table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
-        case Type::FLUSH_SYSTEM_TABLES:
+        case Type::FLUSH_LOGS:
             executeCommandsAndThrowIfError(
                     [&] () { if (auto query_log = context.getQueryLog(false)) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("", false)) part_log->flush(); },
