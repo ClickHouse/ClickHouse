@@ -9,25 +9,11 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Storages/transformQueryForExternalDatabase.h>
+#include <Storages/MergeTree/KeyCondition.h>
 
 
 namespace DB
 {
-
-Block getBlockWithConstants(
-    const ASTPtr & query, const Context & context, const NamesAndTypesList & all_columns)
-{
-    Block result
-    {
-        { DataTypeUInt8().createColumnConstWithDefaultValue(1), std::make_shared<DataTypeUInt8>(), "_dummy" }
-    };
-
-    const auto expr_for_constant_folding = ExpressionAnalyzer{query, context, nullptr, all_columns}.getConstActions();
-
-    expr_for_constant_folding->execute(result);
-
-    return result;
-}
 
 static void replaceConstFunction(const IAST & node, const Context & context, const NamesAndTypesList & all_columns)
 {
@@ -37,9 +23,9 @@ static void replaceConstFunction(const IAST & node, const Context & context, con
         if (const ASTExpressionList * exp_list = typeid_cast<const ASTExpressionList *>(&*child))
             replaceConstFunction(*exp_list, context, all_columns);
 
-        if (const ASTFunction * function = typeid_cast<const ASTFunction *>(&*child))
+        if (ASTFunction * function = typeid_cast<ASTFunction *>(&*child))
         {
-            auto result_block = getBlockWithConstants(function->clone(), context, all_columns);
+            auto result_block = KeyCondition::getBlockWithConstants(function->ptr(), context, all_columns);
             if (!result_block.has(child->getColumnName()))
                 return;
 
@@ -123,7 +109,7 @@ String transformQueryForExternalDatabase(
       * copy only compatible parts of it.
       */
 
-    const ASTPtr & original_where = typeid_cast<const ASTSelectQuery &>(*clone_query).where_expression;
+    ASTPtr & original_where = typeid_cast<ASTSelectQuery &>(*clone_query).where_expression;
     if (original_where)
     {
         replaceConstFunction(*original_where, context, available_columns);
