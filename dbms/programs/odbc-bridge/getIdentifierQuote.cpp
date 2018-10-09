@@ -29,7 +29,7 @@ std::string getIdentifierQuote(SQLHDBC hdbc)
 
     if (t > 0)
     {
-        // I have not idea, why to add '2' here, got from: contrib/poco/Data/ODBC/src/ODBCStatementImpl.cpp:60 (SQL_DRIVER_NAME)
+        // I have no idea, why to add '2' here, got from: contrib/poco/Data/ODBC/src/ODBCStatementImpl.cpp:60 (SQL_DRIVER_NAME)
         identifier.resize(static_cast<std::size_t>(t) + 2);
 
         if (POCO_SQL_ODBC_CLASS::Utility::isError(POCO_SQL_ODBC_CLASS::SQLGetInfo(
