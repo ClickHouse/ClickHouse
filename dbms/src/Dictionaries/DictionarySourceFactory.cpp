@@ -164,7 +164,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     }
     else if ("jdbc" == source_type)
     {
-        throw Exception{"Dictionary source of type `jdbc` is disabled until consistend dealing with nullable fields.",
+        throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
 //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_connection_timeout, config.getString(config_prefix + ".connection_string"));
 //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
