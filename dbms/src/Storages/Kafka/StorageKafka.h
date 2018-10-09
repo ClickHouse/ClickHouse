@@ -6,6 +6,7 @@
 
 #include <ext/shared_ptr_helper.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <DataStreams/IBlockOutputStream.h>
 #include <Poco/Event.h>
@@ -62,6 +63,7 @@ private:
 
         void subscribe(const Names & topics);
         void unsubscribe();
+        void close();
 
         struct rd_kafka_s * stream = nullptr;
     };
@@ -93,8 +95,7 @@ private:
     std::vector<ConsumerPtr> consumers; /// Available consumers
 
     // Stream thread
-    Poco::Event event_update;
-    std::thread stream_thread;
+    BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
 
     void consumerConfiguration(struct rd_kafka_conf_s * conf);
@@ -103,7 +104,7 @@ private:
     void pushConsumer(ConsumerPtr c);
 
     void streamThread();
-    void streamToViews();
+    bool streamToViews();
 
 protected:
     StorageKafka(
