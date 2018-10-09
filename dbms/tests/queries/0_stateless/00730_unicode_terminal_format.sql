@@ -27,4 +27,3 @@ SELECT 'Control characters \x1f\x1f\x1f\x1f with zero width', 'Invalid UTF-8 whi
 SELECT 'Russian ё and ё', 'Zero bytes \0 \0 in middle' FORMAT Vertical;
 
 DROP TABLE IF EXISTS test.unicode;
-DROP DATABASE test;
