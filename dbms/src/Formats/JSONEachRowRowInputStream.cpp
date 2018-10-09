@@ -48,6 +48,8 @@ JSONEachRowRowInputStream::JSONEachRowRowInputStream(ReadBuffer & istr_, const B
             }
         }
     }
+
+    prev_positions.assign(num_columns, name_map.end());
 }
 
 const String & JSONEachRowRowInputStream::columnName(size_t i) const
@@ -55,13 +57,31 @@ const String & JSONEachRowRowInputStream::columnName(size_t i) const
     return header.getByPosition(i).name;
 }
 
-size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name) const
+size_t JSONEachRowRowInputStream::columnIndex(const StringRef & name, size_t key_index)
 {
-    /// NOTE Optimization is possible by caching the order of fields (which is almost always the same)
+    /// Optimization by caching the order of fields (which is almost always the same)
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
-    const auto it = name_map.find(name);
-    return name_map.end() == it ? UNKNOWN_FIELD : it->second;
+    if (prev_positions.size() > key_index
+        && prev_positions[key_index] != name_map.end()
+        && name == prev_positions[key_index]->first)
+    {
+        return prev_positions[key_index]->second;
+    }
+    else
+    {
+        const auto it = name_map.find(name);
+
+        if (name_map.end() != it)
+        {
+            if (key_index < prev_positions.size())
+                prev_positions[key_index] = it;
+
+            return it->second;
+        }
+        else
+            return UNKNOWN_FIELD;
+    }
 }
 
 /** Read the field name and convert it to column name
@@ -153,7 +173,7 @@ void JSONEachRowRowInputStream::readJSONObject(MutableColumns & columns)
     for (size_t key_index = 0; advanceToNextKey(key_index); ++key_index)
     {
         StringRef name_ref = readColumnName(istr);
-        const size_t column_index = columnIndex(name_ref);
+        const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
         {
