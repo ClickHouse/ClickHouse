@@ -8,8 +8,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 
-#include <iostream>
-
 namespace DB
 {
 
