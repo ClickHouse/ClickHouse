@@ -8,7 +8,6 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Storages/StorageODBC.h>

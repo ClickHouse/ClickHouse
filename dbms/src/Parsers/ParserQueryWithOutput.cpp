@@ -36,10 +36,9 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     ParserKeyword s_ast("AST");
     bool explain_ast = false;
-#if 0
-    if (s_ast.ignore(pos, expected))
+
+    if (enable_explain && s_ast.ignore(pos, expected))
         explain_ast = true;
-#endif
 
     bool parsed = select_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/DumpASTNode.h>
 #include <unordered_map>
 
 namespace DB
@@ -8,6 +8,7 @@ namespace DB
 
 using Aliases = std::unordered_map<String, ASTPtr>;
 
+/// Visits AST nodes and collect their aliases in one map (with links to source nodes).
 class QueryAliasesVisitor
 {
 public:

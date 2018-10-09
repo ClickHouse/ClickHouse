@@ -7,6 +7,7 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/InterpreterExplainQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/DumpASTNode.h>
 
 
 namespace DB
