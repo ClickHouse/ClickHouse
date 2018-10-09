@@ -2,7 +2,6 @@
 #include <sstream>
 #include <memory>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnString.h>
 #include <Common/BitHelpers.h>
 #include <Common/randomSeed.h>
@@ -209,7 +208,7 @@ void CacheDictionary::isInConstantVector(
 
 
 #define DECLARE(TYPE)\
-void CacheDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, PaddedPODArray<TYPE> & out) const\
+void CacheDictionary::get##TYPE(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ResultArrayType<TYPE> & out) const\
 {\
     auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -230,6 +229,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void CacheDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
@@ -246,7 +248,7 @@ void CacheDictionary::getString(const std::string & attribute_name, const Padded
 #define DECLARE(TYPE)\
 void CacheDictionary::get##TYPE(\
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const PaddedPODArray<TYPE> & def,\
-    PaddedPODArray<TYPE> & out) const\
+    ResultArrayType<TYPE> & out) const\
 {\
     auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -265,6 +267,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void CacheDictionary::getString(
@@ -280,7 +285,7 @@ void CacheDictionary::getString(
 
 #define DECLARE(TYPE)\
 void CacheDictionary::get##TYPE(\
-    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, PaddedPODArray<TYPE> & out) const\
+    const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE def, ResultArrayType<TYPE> & out) const\
 {\
     auto & attribute = getAttribute(attribute_name);\
     if (!isAttributeTypeConvertibleTo(attribute.type, AttributeUnderlyingType::TYPE))\
@@ -299,6 +304,9 @@ DECLARE(Int32)
 DECLARE(Int64)
 DECLARE(Float32)
 DECLARE(Float64)
+DECLARE(Decimal32)
+DECLARE(Decimal64)
+DECLARE(Decimal128)
 #undef DECLARE
 
 void CacheDictionary::getString(
@@ -491,6 +499,21 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
             std::get<ContainerPtrType<Int64>>(attr.arrays) = std::make_unique<ContainerType<Int64>>(size);
             bytes_allocated += size * sizeof(Int64);
             break;
+        case AttributeUnderlyingType::Decimal32:
+            std::get<Decimal32>(attr.null_values) = null_value.get<Decimal32>();
+            std::get<ContainerPtrType<Decimal32>>(attr.arrays) = std::make_unique<ContainerType<Decimal32>>(size);
+            bytes_allocated += size * sizeof(Decimal32);
+            break;
+        case AttributeUnderlyingType::Decimal64:
+            std::get<Decimal64>(attr.null_values) = null_value.get<Decimal64>();
+            std::get<ContainerPtrType<Decimal64>>(attr.arrays) = std::make_unique<ContainerType<Decimal64>>(size);
+            bytes_allocated += size * sizeof(Decimal64);
+            break;
+        case AttributeUnderlyingType::Decimal128:
+            std::get<Decimal128>(attr.null_values) = null_value.get<Decimal128>();
+            std::get<ContainerPtrType<Decimal128>>(attr.arrays) = std::make_unique<ContainerType<Decimal128>>(size);
+            bytes_allocated += size * sizeof(Decimal128);
+            break;
         case AttributeUnderlyingType::Float32:
             std::get<Float32>(attr.null_values) = null_value.get<Float64>();
             std::get<ContainerPtrType<Float32>>(attr.arrays) = std::make_unique<ContainerType<Float32>>(size);
@@ -518,7 +541,7 @@ template <typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumber(
     Attribute & attribute,
     const PaddedPODArray<Key> & ids,
-    PaddedPODArray<OutputType> & out,
+    ResultArrayType<OutputType> & out,
     DefaultGetter && get_default) const
 {
     if (false) {}
@@ -536,6 +559,9 @@ void CacheDictionary::getItemsNumber(
     DISPATCH(Int64)
     DISPATCH(Float32)
     DISPATCH(Float64)
+    DISPATCH(Decimal32)
+    DISPATCH(Decimal64)
+    DISPATCH(Decimal128)
 #undef DISPATCH
     else
         throw Exception("Unexpected type of attribute: " + toString(attribute.type), ErrorCodes::LOGICAL_ERROR);
@@ -545,7 +571,7 @@ template <typename AttributeType, typename OutputType, typename DefaultGetter>
 void CacheDictionary::getItemsNumberImpl(
     Attribute & attribute,
     const PaddedPODArray<Key> & ids,
-    PaddedPODArray<OutputType> & out,
+    ResultArrayType<OutputType> & out,
     DefaultGetter && get_default) const
 {
     /// Mapping: <id> -> { all indices `i` of `ids` such that `ids[i]` = <id> }
@@ -893,6 +919,17 @@ void CacheDictionary::setDefaultAttributeValue(Attribute & attribute, const Key 
         case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = std::get<Int64>(attribute.null_values); break;
         case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = std::get<Float32>(attribute.null_values); break;
         case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = std::get<Float64>(attribute.null_values); break;
+
+        case AttributeUnderlyingType::Decimal32:
+            std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = std::get<Decimal32>(attribute.null_values);
+            break;
+        case AttributeUnderlyingType::Decimal64:
+            std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = std::get<Decimal64>(attribute.null_values);
+            break;
+        case AttributeUnderlyingType::Decimal128:
+            std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = std::get<Decimal128>(attribute.null_values);
+            break;
+
         case AttributeUnderlyingType::String:
         {
             const auto & null_value_ref = std::get<String>(attribute.null_values);
@@ -926,6 +963,11 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
         case AttributeUnderlyingType::Int64: std::get<ContainerPtrType<Int64>>(attribute.arrays)[idx] = value.get<Int64>(); break;
         case AttributeUnderlyingType::Float32: std::get<ContainerPtrType<Float32>>(attribute.arrays)[idx] = value.get<Float64>(); break;
         case AttributeUnderlyingType::Float64: std::get<ContainerPtrType<Float64>>(attribute.arrays)[idx] = value.get<Float64>(); break;
+
+        case AttributeUnderlyingType::Decimal32: std::get<ContainerPtrType<Decimal32>>(attribute.arrays)[idx] = value.get<Decimal32>(); break;
+        case AttributeUnderlyingType::Decimal64: std::get<ContainerPtrType<Decimal64>>(attribute.arrays)[idx] = value.get<Decimal64>(); break;
+        case AttributeUnderlyingType::Decimal128: std::get<ContainerPtrType<Decimal128>>(attribute.arrays)[idx] = value.get<Decimal128>(); break;
+
         case AttributeUnderlyingType::String:
         {
             const auto & string = value.get<String>();
