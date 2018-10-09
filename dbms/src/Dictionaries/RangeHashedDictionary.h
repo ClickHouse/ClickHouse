@@ -4,6 +4,7 @@
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Common/HashTable/HashMap.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 
 #include <atomic>
@@ -61,12 +62,15 @@ public:
 
     typedef Int64 RangeStorageType;
 
+    template <typename T>
+    using ResultArrayType = std::conditional_t<IsDecimalNumber<T>, DecimalPaddedPODArray<T>, PaddedPODArray<T>>;
+
 #define DECLARE_MULTIPLE_GETTER(TYPE)\
     void get##TYPE(\
         const std::string & attribute_name,\
         const PaddedPODArray<Key> & ids,\
         const PaddedPODArray<RangeStorageType> & dates,\
-        PaddedPODArray<TYPE> & out) const;
+        ResultArrayType<TYPE> & out) const;
     DECLARE_MULTIPLE_GETTER(UInt8)
     DECLARE_MULTIPLE_GETTER(UInt16)
     DECLARE_MULTIPLE_GETTER(UInt32)
@@ -78,6 +82,9 @@ public:
     DECLARE_MULTIPLE_GETTER(Int64)
     DECLARE_MULTIPLE_GETTER(Float32)
     DECLARE_MULTIPLE_GETTER(Float64)
+    DECLARE_MULTIPLE_GETTER(Decimal32)
+    DECLARE_MULTIPLE_GETTER(Decimal64)
+    DECLARE_MULTIPLE_GETTER(Decimal128)
 #undef DECLARE_MULTIPLE_GETTER
 
     void getString(
@@ -114,11 +121,13 @@ private:
         std::tuple<UInt8, UInt16, UInt32, UInt64,
                    UInt128,
                    Int8, Int16, Int32, Int64,
+                   Decimal32, Decimal64, Decimal128,
                    Float32, Float64,
                    String> null_values;
         std::tuple<Ptr<UInt8>, Ptr<UInt16>, Ptr<UInt32>, Ptr<UInt64>,
                    Ptr<UInt128>,
                    Ptr<Int8>, Ptr<Int16>, Ptr<Int32>, Ptr<Int64>,
+                   Ptr<Decimal32>, Ptr<Decimal64>, Ptr<Decimal128>,
                    Ptr<Float32>, Ptr<Float64>, Ptr<StringRef>> maps;
         std::unique_ptr<Arena> string_arena;
     };
