@@ -1197,12 +1197,16 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline)
     {
         if (!query.distinct && !query.group_expression_list)
         {
+            auto aliases = query_analyzer->getAliases();
             merge_tree->do_not_read_with_order = true;
             auto column_sorted_order = merge_tree->getData().getSortColumns();
 
             for (size_t i = 0; i < order_descr.size(); ++i)
             {
-                if ((i == column_sorted_order.size()) || (order_descr[i].column_name != column_sorted_order[i]) || (order != order_descr[i].direction))
+                if ((i == column_sorted_order.size())
+                    || (order_descr[i].column_name != column_sorted_order[i])
+                    || (order != order_descr[i].direction)
+                    || aliases.find(order_descr[i].column_name) != aliases.end())
                     break;
 
                 if (i == order_descr.size() - 1)

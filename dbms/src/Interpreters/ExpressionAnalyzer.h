@@ -186,6 +186,8 @@ public:
 
     bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
+    std::set<std::string> getAliases();
+
 private:
     ASTPtr query;
     ASTSelectQuery * select_query;

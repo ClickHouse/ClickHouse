@@ -3250,4 +3250,16 @@ void ExpressionAnalyzer::removeUnneededColumnsFromSelectClause()
     elements = std::move(new_elements);
 }
 
+
+std::set<std::string> ExpressionAnalyzer::getAliases()
+{
+    std::set<std::string> aliases_names;
+    for (const auto & alias : aliases)
+    {
+        aliases_names.emplace(alias.first);
+    }
+
+    return aliases_names;
+}
+
 }
