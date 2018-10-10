@@ -186,6 +186,8 @@ public:
 
     bool isRewriteSubqueriesPredicate() { return rewrite_subqueries; }
 
+    bool hasGlobalSubqueries() { return has_global_subqueries; }
+
 private:
     ASTPtr query;
     ASTSelectQuery * select_query;
@@ -216,6 +218,7 @@ private:
 
     /// Do I need to prepare for execution global subqueries when analyzing the query.
     bool do_global;
+    bool has_global_subqueries = false;
 
     SubqueriesForSets subqueries_for_sets;
 
