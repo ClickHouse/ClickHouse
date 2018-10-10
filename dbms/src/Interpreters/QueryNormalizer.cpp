@@ -164,15 +164,15 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                 ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(qualified_asterisk->children[0].get());
                 size_t num_components = identifier->children.size();
 
-                for (const auto table_name_and_columns_name : table_names_and_columns_name)
+                for (const auto & table_name_and_columns_name : table_names_and_columns_name)
                 {
-                    const auto table_name = table_name_and_columns_name.first;
-                    const auto table_all_columns_name = table_name_and_columns_name.second;
+                    const auto & table_name = table_name_and_columns_name.first;
+                    const auto & table_all_columns_name = table_name_and_columns_name.second;
 
                     if ((num_components == 2
-                         && !table_name.database.empty()
-                         && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
-                         && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
+                        && !table_name.database.empty()
+                        && static_cast<const ASTIdentifier &>(*identifier->children[0]).name == table_name.database
+                        && static_cast<const ASTIdentifier &>(*identifier->children[1]).name == table_name.table)
                         || (num_components == 0
                             && ((!table_name.table.empty() && identifier->name == table_name.table)
                                 || (!table_name.alias.empty() && identifier->name == table_name.alias))))
