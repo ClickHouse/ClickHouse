@@ -160,8 +160,8 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
             }
             else if (typeid_cast<const ASTQualifiedAsterisk *>(asts[i].get()) && !table_names_and_column_names.empty())
             {
-                ASTQualifiedAsterisk * qualified_asterisk = static_cast<ASTQualifiedAsterisk *>(asts[i].get());
-                ASTIdentifier * identifier = typeid_cast<ASTIdentifier *>(qualified_asterisk->children[0].get());
+                const ASTQualifiedAsterisk * qualified_asterisk = static_cast<const ASTQualifiedAsterisk *>(asts[i].get());
+                const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
                 size_t num_components = identifier->children.size();
 
                 for (const auto & [table_name, table_all_column_names] : table_names_and_column_names)
