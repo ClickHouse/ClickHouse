@@ -91,8 +91,7 @@ Most other file systems should also work fine. File systems with delayed allocat
 
 ## Linux Kernel
 
-Don't use an outdated Linux kernel. In 2015, 3.18.19 was new enough.
-Consider using the kernel build from Yandex:<https://github.com/yandex/smart> – it provides at least a 5% performance increase.
+Don't use an outdated Linux kernel.
 
 ## Network
 
