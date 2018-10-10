@@ -1,11 +1,12 @@
 #include <ostream>
 #include <sstream>
-#include <Interpreters/getQueryAliases.h>
-#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/QueryAliasesVisitor.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/DumpASTNode.h>
 #include <IO/WriteHelpers.h>
 
 namespace DB
@@ -18,8 +19,9 @@ namespace ErrorCodes
 
 /// ignore_levels - aliases in how many upper levels of the subtree should be ignored.
 /// For example, with ignore_levels=1 ast can not be put in the dictionary, but its children can.
-void getQueryAliases(ASTPtr & ast, Aliases & aliases, int ignore_levels)
+void QueryAliasesVisitor::getQueryAliases(const ASTPtr & ast, Aliases & aliases, int ignore_levels) const
 {
+    DumpASTNode dump(*ast, ostr, visit_depth, "getQueryAliases");
 
     /// Bottom-up traversal. We do not go into subqueries.
     for (auto & child : ast->children)
@@ -40,6 +42,11 @@ void getQueryAliases(ASTPtr & ast, Aliases & aliases, int ignore_levels)
     if (ignore_levels > 0)
         return;
 
+    getNodeAlias(ast, aliases, dump);
+}
+
+void QueryAliasesVisitor::getNodeAlias(const ASTPtr & ast, Aliases & aliases, const DumpASTNode & dump) const
+{
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
@@ -56,6 +63,7 @@ void getQueryAliases(ASTPtr & ast, Aliases & aliases, int ignore_levels)
         }
 
         aliases[alias] = ast;
+        dump.print(visit_action, alias);
     }
     else if (auto subquery = typeid_cast<ASTSubquery *>(ast.get()))
     {
@@ -76,6 +84,7 @@ void getQueryAliases(ASTPtr & ast, Aliases & aliases, int ignore_levels)
             subquery->setAlias(alias);
             subquery->prefer_alias_to_column_name = true;
             aliases[alias] = ast;
+            dump.print(visit_action, alias);
         }
     }
 }

@@ -11,6 +11,7 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserKillQueryQuery.h>
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ASTExplainQuery.h>
 
 
 namespace DB
@@ -32,6 +33,12 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKillQueryQuery kill_query_p;
 
     ASTPtr query;
+
+    ParserKeyword s_ast("AST");
+    bool explain_ast = false;
+
+    if (enable_explain && s_ast.ignore(pos, expected))
+        explain_ast = true;
 
     bool parsed = select_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
@@ -74,7 +81,14 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         query_with_output.children.push_back(query_with_output.format);
     }
 
-    node = query;
+    if (explain_ast)
+    {
+        node = std::make_shared<ASTExplainQuery>();
+        node->children.push_back(query);
+    }
+    else
+        node = query;
+
     return true;
 }
 
