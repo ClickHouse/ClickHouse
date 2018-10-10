@@ -149,18 +149,18 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
     {
         /// Replace *, alias.*, database.table.* with a list of columns.
         ASTs & asts = expr_list->children;
-        for (ssize_t i = asts.size() - 1; i >= 0; --i)
+        for (ssize_t expr_idx = asts.size() - 1; expr_idx >= 0; --expr_idx)
         {
-            if (typeid_cast<const ASTAsterisk *>(asts[i].get()) && !all_column_names.empty())
+            if (typeid_cast<const ASTAsterisk *>(asts[expr_idx].get()) && !all_column_names.empty())
             {
-                asts.erase(asts.begin() + i);
+                asts.erase(asts.begin() + expr_idx);
 
-                for (size_t idx = 0; idx < all_column_names.size(); idx++)
-                    asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(all_column_names[idx]));
+                for (size_t column_idx = 0; column_idx < all_column_names.size(); ++column_idx)
+                    asts.insert(asts.begin() + column_idx + expr_idx, std::make_shared<ASTIdentifier>(all_column_names[column_idx]));
             }
-            else if (typeid_cast<const ASTQualifiedAsterisk *>(asts[i].get()) && !table_names_and_column_names.empty())
+            else if (typeid_cast<const ASTQualifiedAsterisk *>(asts[expr_idx].get()) && !table_names_and_column_names.empty())
             {
-                const ASTQualifiedAsterisk * qualified_asterisk = static_cast<const ASTQualifiedAsterisk *>(asts[i].get());
+                const ASTQualifiedAsterisk * qualified_asterisk = static_cast<const ASTQualifiedAsterisk *>(asts[expr_idx].get());
                 const ASTIdentifier * identifier = typeid_cast<const ASTIdentifier *>(qualified_asterisk->children[0].get());
                 size_t num_components = identifier->children.size();
 
@@ -174,9 +174,9 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                             && ((!table_name.table.empty() && identifier->name == table_name.table)         /// table.*
                                 || (!table_name.alias.empty() && identifier->name == table_name.alias))))   /// alias.*
                     {
-                        asts.erase(asts.begin() + i);
-                        for (size_t idx = 0; idx < table_all_column_names.size(); idx++)
-                            asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(table_all_column_names[idx]));
+                        asts.erase(asts.begin() + expr_idx);
+                        for (size_t column_idx = 0; column_idx < table_all_column_names.size(); ++column_idx)
+                            asts.insert(asts.begin() + column_idx + expr_idx, std::make_shared<ASTIdentifier>(table_all_column_names[column_idx]));
 
                         break;
                     }
