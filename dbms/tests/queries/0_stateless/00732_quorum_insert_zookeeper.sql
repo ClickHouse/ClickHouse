@@ -1,8 +1,8 @@
 DROP TABLE IF EXISTS test.quorum1;
 DROP TABLE IF EXISTS test.quorum2;
 
-CREATE TABLE test.quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/fetches', '1') ORDER BY x PARTITION BY y;
-CREATE TABLE test.quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/fetches', '2') ORDER BY x PARTITION BY y;
+CREATE TABLE test.quorum1(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/quorum', '1') ORDER BY x PARTITION BY y;
+CREATE TABLE test.quorum2(x UInt32, y Date) ENGINE ReplicatedMergeTree('/clickhouse/tables/test/quorum', '2') ORDER BY x PARTITION BY y;
 
 SET insert_quorum=2;
 SET select_sequential_consistency=1;
@@ -31,3 +31,6 @@ SYSTEM SYNC REPLICA test.quorum1;
 
 SELECT count(*) FROM test.quorum1;
 SELECT count(*) FROM test.quorum2;
+
+DROP TABLE IF EXISTS test.quorum1;
+DROP TABLE IF EXISTS test.quorum2;
