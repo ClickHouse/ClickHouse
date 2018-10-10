@@ -177,6 +177,8 @@ void QueryNormalizer::performImpl(ASTPtr & ast, MapOfASTs & finished_asts, SetOf
                         asts.erase(asts.begin() + i);
                         for (size_t idx = 0; idx < table_all_column_names.size(); idx++)
                             asts.insert(asts.begin() + idx + i, std::make_shared<ASTIdentifier>(table_all_column_names[idx]));
+
+                        break;
                     }
                 }
             }
