@@ -404,9 +404,9 @@ void PointInPolygonWithGrid<CoordinateType>::addComplexPolygonCell(
     cells[index].index_of_inner_polygon = polygons.size();
 
     /// Expand box in (1 + eps_factor) times to eliminate errors for points on box bound.
-    static constexpr float eps_factor = 0.01;
-    float x_eps = eps_factor * (box.max_corner().x() - box.min_corner().x());
-    float y_eps = eps_factor * (box.max_corner().y() - box.min_corner().y());
+    static constexpr CoordinateType eps_factor = 0.01;
+    auto x_eps = eps_factor * (box.max_corner().x() - box.min_corner().x());
+    auto y_eps = eps_factor * (box.max_corner().y() - box.min_corner().y());
 
     Point min_corner(box.min_corner().x() - x_eps, box.min_corner().y() - y_eps);
     Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y() + y_eps);
@@ -615,12 +615,11 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 
 /// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
 template <typename Linestring>
-float calcLinestringRotation(const Linestring & points)
+double calcLinestringRotation(const Linestring & points)
 {
     using Point = std::decay_t<decltype(*points.begin())>;
-    float rotation = 0;
+    double rotation = 0;
 
-    auto sqrLength = [](const Point & point) { return point.x() * point.x() + point.y() * point.y(); };
     auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
     auto scalarProduct = [](const Point & from, const Point & to) { return from.x() * to.x() + from.y() * to.y(); };
     auto getVector = [](const Point & from, const Point & to) -> Point
@@ -640,20 +639,11 @@ float calcLinestringRotation(const Linestring & points)
 
             Point from = getVector(*prev, *it);
             Point to = getVector(*it, *next);
-            float sqr_from_len = sqrLength(from);
-            float sqr_to_len = sqrLength(to);
-            float sqr_len_product = (sqr_from_len * sqr_to_len);
-            if (std::isfinite(sqr_len_product))
-            {
-                float vec_prod = vecProduct(from, to);
-                float scalar_prod = scalarProduct(from, to);
-                float sin_ang = vec_prod * std::fabs(vec_prod) / sqr_len_product;
-                float cos_ang = scalar_prod * std::fabs(scalar_prod) / sqr_len_product;
-                sin_ang = std::max(-1.f, std::min(1.f, sin_ang));
-                cos_ang = std::max(-1.f, std::min(1.f, cos_ang));
-                float ang = std::atan2(sin_ang, cos_ang);
-                rotation += ang;
-            }
+
+            auto vec_prod = vecProduct(from, to);
+            auto scalar_prod = scalarProduct(from, to);
+            auto ang = std::atan2(vec_prod, scalar_prod);
+            rotation += ang;
         }
     }
 
