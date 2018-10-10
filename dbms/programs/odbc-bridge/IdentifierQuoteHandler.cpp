@@ -34,7 +34,8 @@ void IdentifierQuoteHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
     Poco::Net::HTMLForm params(request, request.stream());
     LOG_TRACE(log, "Request URI: " + request.getURI());
 
-    auto process_error = [&response, this](const std::string & message) {
+    auto process_error = [&response, this](const std::string & message)
+    {
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR);
         if (!response.sent())
             response.send() << message << std::endl;
