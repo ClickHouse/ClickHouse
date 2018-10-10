@@ -8,7 +8,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
