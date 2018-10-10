@@ -2986,7 +2986,7 @@ BlockInputStreams StorageReplicatedMergeTree::read(
             ReplicatedMergeTreeQuorumAddedParts part_with_quorum(added_parts_str, data.format_version);
             auto added_parts = part_with_quorum.added_parts;
 
-            for (auto & added_part : added_parts)
+            for (const auto & added_part : added_parts)
                 if (!data.getActiveContainingPart(added_part.second))
                     throw Exception("Replica doesn't have part " + added_part.second + " which was successfully written to quorum of other replicas."
                         " Send query to another replica or disable 'select_sequential_consistency' setting.", ErrorCodes::REPLICA_IS_NOT_IN_QUORUM);
