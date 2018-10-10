@@ -77,7 +77,7 @@
 namespace DB
 {
 
-using LogAST = DebugASTLog<true>;
+using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
 
 namespace ErrorCodes
