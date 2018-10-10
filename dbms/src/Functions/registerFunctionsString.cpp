@@ -19,6 +19,8 @@ void registerFunctionSubstringUTF8(FunctionFactory &);
 void registerFunctionAppendTrailingCharIfAbsent(FunctionFactory &);
 void registerFunctionStartsWith(FunctionFactory &);
 void registerFunctionEndsWith(FunctionFactory &);
+void registerFunctionBase64Encode(FunctionFactory &);
+void registerFunctionBase64Decode(FunctionFactory &);
 
 void registerFunctionsString(FunctionFactory & factory)
 {
@@ -38,6 +40,8 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionAppendTrailingCharIfAbsent(factory);
     registerFunctionStartsWith(factory);
     registerFunctionEndsWith(factory);
+    registerFunctionBase64Encode(factory);
+    registerFunctionBase64Decode(factory);
 }
 
 }

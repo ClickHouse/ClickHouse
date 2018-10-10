@@ -174,3 +174,6 @@ if (USE_INTERNAL_GTEST_LIBRARY)
     target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
     target_include_directories (gtest SYSTEM INTERFACE ${ClickHouse_SOURCE_DIR}/contrib/googletest/include)
 endif ()
+
+
+add_subdirectory (base64-cmake)
